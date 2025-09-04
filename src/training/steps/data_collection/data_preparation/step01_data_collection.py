@@ -6,10 +6,8 @@ It downloads and consolidates all required data for training.
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Tuple
-import pandas as pd
-from src.core.decorators import handles_errors
-from src.training.base_step import BaseStep
-import asyncio
+from .core.decorators import handles_errors
+from .training.base_step import BaseStep
 
 class DataCollectionStep(BaseStep):
     """Step 1: Data Collection using standardized base class."""
@@ -29,7 +27,7 @@ class DataCollectionStep(BaseStep):
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         try:
-            from src.training.steps.data_downloader import download_all_data_with_consolidation
+            from .training.steps.data_downloader import download_all_data_with_consolidation
             self.data_downloader = download_all_data_with_consolidation
             self.logger.info('✅ Data downloader initialized')
         except ImportError:
@@ -169,8 +167,9 @@ class DataCollectionStep(BaseStep):
         Returns:
             Mock DataFrame with OHLCV data
         """
-        import numpy as np
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
+import pandas as pd
+
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)
         freq_map = {'1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1H', '4h': '4H', '1d': '1D'}

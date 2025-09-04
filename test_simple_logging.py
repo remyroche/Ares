@@ -69,20 +69,20 @@ def test_imports():
     
     try:
         # Test core imports
-        from src.training.steps.market_analysis.enhanced_logging_metrics import (
+        from src.utils.enhanced_logger import (
             EnhancedPipelineLogger, 
             FeatureQualityMetrics, 
             RegimeQualityMetrics,
             StepMetrics
         )
         
-        from src.training.steps.market_analysis.progress_monitor import (
+        from src.utils.progress_monitor import (
             ProgressMonitor, 
             ProgressContext, 
             monitor_progress
         )
         
-        from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator import (
+        from src.training.steps.market_analysis import (
             MarketAnalysisPipelineOrchestrator
         )
         
@@ -125,5 +125,6 @@ def main():
 
 
 if __name__ == "__main__":
-    success = main()
+    import asyncio
+    success = asyncio.run(main())
     sys.exit(0 if success else 1)

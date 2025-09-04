@@ -1,18 +1,18 @@
+
+from typing import Dict
+import pandas as pd
+from typing import Any
 # src/training/steps/step7_feature_engineering_validator.py
 
 
-from src.core.decorators import validates
-from src.core.domain import smart_validation_cache, validate_step6_comprehensive
-import pandas as pd
+from .core.decorators import validates
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 
-from src.utils.base_validator import BaseValidator
-from src.utils.logger import system_logger
+from .utils.base_validator import BaseValidator
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 
@@ -319,7 +319,6 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    import datetime
     
     test_input = {
         "symbol": "ETHUSDT",
@@ -331,5 +330,5 @@ if __name__ == "__main__":
     
     test_state = {}
     
-    result = asyncio.run(run_validator(test_input, test_state))
+    result = asyncio.run(await run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

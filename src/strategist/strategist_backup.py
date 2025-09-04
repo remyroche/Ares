@@ -7,7 +7,6 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
-from src.core.decorators import handles_errors, retry, timeout
 
 
 # src/strategist/strategist.py
@@ -15,21 +14,18 @@ from src.core.decorators import handles_errors, retry, timeout
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
     missing
 )
-from copy import copy
-import asyncio
-import numpy as np
 
 if TYPE_CHECKING:
-    from src.analyst.analyst import Analyst
-    from src.tactician.tactician import Tactician
-from src.core.decorators.errors import handles_errors
+    from .analyst.analyst import Analyst
+    from .tactician.tactician import Tactician
+from .core.decorators.errors import handles_errors
+import pandas as pd
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods

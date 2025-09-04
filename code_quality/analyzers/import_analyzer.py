@@ -4,11 +4,11 @@ Import Analysis - Detects import conflicts, duplicates, and circular dependencie
 
 import ast
 import os
+import importlib
 from collections import defaultdict
 from typing import Any
 
 try:
-    import networkx as nx  # type: ignore
     HAS_NETWORKX = True
 except Exception:
     nx = None  # type: ignore
@@ -17,7 +17,6 @@ except Exception:
 from ..core.config import CodeQualityConfig
 
 try:
-    import matplotlib.pyplot as plt  # type: ignore
     HAS_MATPLOTLIB = True
 except Exception:
     plt = None  # type: ignore
@@ -48,6 +47,7 @@ class ImportAnalyzer:
         self.circular_dependencies = []
         self.unused_imports = []
         self.conflicting_imports = []
+        self.unresolvable_imports = []
 
     def analyze_directory(self, directory_path: str) -> dict[str, Any]:
         """Analyze imports in all Python files in a directory."""
@@ -79,6 +79,7 @@ class ImportAnalyzer:
             self._detect_circular_dependencies()
         self._detect_unused_imports()
         self._detect_conflicting_imports()
+        self._detect_unresolvable_imports(file_paths)
 
         return self._generate_report()
 
@@ -297,11 +298,209 @@ class ImportAnalyzer:
                             },
                         ))
 
+    def _detect_unresolvable_imports(self, file_paths: list[str]) -> None:
+        """Detect imports that cannot be resolved (missing modules, invalid paths, etc.)."""
+        # Build a set of all Python files in the project for relative import resolution
+        project_files = set()
+        project_dirs = set()
+        
+        for file_path in file_paths:
+            project_files.add(file_path)
+            project_dirs.add(os.path.dirname(file_path))
+            
+        # Also add all Python files in the project directories
+        for project_dir in project_dirs:
+            try:
+                for root, dirs, files in os.walk(project_dir):
+                    # Skip excluded directories
+                    dirs[:] = [d for d in dirs if d not in self.config.analysis.exclude_patterns]
+                    for file in files:
+                        if file.endswith(".py"):
+                            project_files.add(os.path.join(root, file))
+            except Exception as e:
+                print(f"Error scanning directory {project_dir}: {e}")
+
+        for file_path, imports in self.imports_by_file.items():
+            file_dir = os.path.dirname(file_path)
+            
+            for imp in imports:
+                if imp["type"] == "import":
+                    module_name = imp["module"]
+                    if not self._can_resolve_module(module_name, file_dir, project_files):
+                        self.unresolvable_imports.append(ImportIssue(
+                            file_path=file_path,
+                            line_number=imp["line"],
+                            issue_type="unresolvable_import",
+                            message=f"Cannot resolve import: {module_name}",
+                            severity="error",
+                            details={
+                                "module": module_name,
+                                "import_type": "import",
+                                "reason": self._get_resolution_failure_reason(module_name, file_dir, project_files)
+                            },
+                        ))
+                        
+                elif imp["type"] == "from_import":
+                    module_name = imp["module"]
+                    imported_name = imp["name"]
+                    
+                    if not self._can_resolve_from_import(module_name, imported_name, file_dir, project_files):
+                        self.unresolvable_imports.append(ImportIssue(
+                            file_path=file_path,
+                            line_number=imp["line"],
+                            issue_type="unresolvable_from_import",
+                            message=f"Cannot resolve from import: {module_name}.{imported_name}",
+                            severity="error",
+                            details={
+                                "module": module_name,
+                                "name": imported_name,
+                                "import_type": "from_import",
+                                "reason": self._get_from_import_failure_reason(module_name, imported_name, file_dir, project_files)
+                            },
+                        ))
+
+    def _can_resolve_module(self, module_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a module can be resolved."""
+        try:
+            # Try to import the module
+            importlib.import_module(module_name)
+            return True
+        except ImportError:
+            pass
+        
+        # Check if it's a relative import that can be resolved locally
+        if module_name.startswith('.'):
+            return self._can_resolve_relative_import(module_name, file_dir, project_files)
+        
+        # Check if it's a local module in the project
+        if self._is_local_module(module_name, file_dir, project_files):
+            return True
+            
+        return False
+
+    def _can_resolve_from_import(self, module_name: str, imported_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a from import can be resolved."""
+        try:
+            # Try to import the module first
+            module = importlib.import_module(module_name)
+            # Check if the attribute exists
+            if hasattr(module, imported_name):
+                return True
+        except ImportError:
+            pass
+        
+        # Check if it's a relative import
+        if module_name.startswith('.'):
+            return self._can_resolve_relative_from_import(module_name, imported_name, file_dir, project_files)
+        
+        # Check if it's a local module
+        if self._is_local_module(module_name, file_dir, project_files):
+            return self._can_resolve_local_from_import(module_name, imported_name, file_dir, project_files)
+            
+        return False
+
+    def _can_resolve_relative_import(self, module_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a relative import can be resolved."""
+        # Count the number of dots to determine the level
+        level = 0
+        while module_name.startswith('.'):
+            level += 1
+            module_name = module_name[1:]
+        
+        if not module_name:  # Relative import without module name
+            return False
+            
+        # Build the path based on the relative level
+        current_dir = file_dir
+        for _ in range(level - 1):
+            current_dir = os.path.dirname(current_dir)
+            if not current_dir:
+                return False
+        
+        # Check if the module file exists
+        module_file = os.path.join(current_dir, f"{module_name}.py")
+        if module_file in project_files:
+            return True
+            
+        # Check if it's a package
+        package_dir = os.path.join(current_dir, module_name)
+        init_file = os.path.join(package_dir, "__init__.py")
+        if init_file in project_files:
+            return True
+            
+        return False
+
+    def _can_resolve_relative_from_import(self, module_name: str, imported_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a relative from import can be resolved."""
+        # First check if the module can be resolved
+        if not self._can_resolve_relative_import(module_name, file_dir, project_files):
+            return False
+            
+        # For now, assume the attribute exists if the module can be resolved
+        # A more thorough check would require actually importing and checking the module
+        return True
+
+    def _is_local_module(self, module_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a module is a local module in the project."""
+        # Check if there's a corresponding .py file
+        module_file = os.path.join(file_dir, f"{module_name}.py")
+        if module_file in project_files:
+            return True
+            
+        # Check if it's a package
+        package_dir = os.path.join(file_dir, module_name)
+        init_file = os.path.join(package_dir, "__init__.py")
+        if init_file in project_files:
+            return True
+            
+        # Check parent directories
+        current_dir = file_dir
+        while current_dir:
+            module_file = os.path.join(current_dir, f"{module_name}.py")
+            if module_file in project_files:
+                return True
+                
+            package_dir = os.path.join(current_dir, module_name)
+            init_file = os.path.join(package_dir, "__init__.py")
+            if init_file in project_files:
+                return True
+                
+            current_dir = os.path.dirname(current_dir)
+            if current_dir == os.path.dirname(current_dir):  # Reached root
+                break
+                
+        return False
+
+    def _can_resolve_local_from_import(self, module_name: str, imported_name: str, file_dir: str, project_files: set[str]) -> bool:
+        """Check if a local from import can be resolved."""
+        # For now, assume the attribute exists if the module is local
+        # A more thorough check would require parsing the module file
+        return True
+
+    def _get_resolution_failure_reason(self, module_name: str, file_dir: str, project_files: set[str]) -> str:
+        """Get a human-readable reason why a module cannot be resolved."""
+        if module_name.startswith('.'):
+            return "Relative import path cannot be resolved"
+        elif self._is_local_module(module_name, file_dir, project_files):
+            return "Local module exists but may have import issues"
+        else:
+            return "Module not found in Python path or project"
+
+    def _get_from_import_failure_reason(self, module_name: str, imported_name: str, file_dir: str, project_files: set[str]) -> str:
+        """Get a human-readable reason why a from import cannot be resolved."""
+        if module_name.startswith('.'):
+            return "Relative import path cannot be resolved"
+        elif self._is_local_module(module_name, file_dir, project_files):
+            return f"Module exists but '{imported_name}' attribute not found"
+        else:
+            return "Module not found in Python path or project"
+
     def _generate_report(self) -> dict[str, Any]:
         """Generate a comprehensive import analysis report."""
         total_issues = (len(self.duplicate_imports) +
                        len(self.circular_dependencies) +
-                       len(self.conflicting_imports))
+                       len(self.conflicting_imports) +
+                       len(self.unresolvable_imports))
 
         def _sanitize_details(details: dict[str, Any]) -> dict[str, Any]:
             """Make issue details JSON-serializable by removing AST nodes."""
@@ -333,6 +532,7 @@ class ImportAnalyzer:
                 "duplicate_imports": len(self.duplicate_imports),
                 "circular_dependencies": len(self.circular_dependencies),
                 "conflicting_imports": len(self.conflicting_imports),
+                "unresolvable_imports": len(self.unresolvable_imports),
             },
             "issues": {
                 "duplicate_imports": [
@@ -367,6 +567,17 @@ class ImportAnalyzer:
                         "details": _sanitize_details(issue.details),
                     }
                     for issue in self.conflicting_imports
+                ],
+                "unresolvable_imports": [
+                    {
+                        "file": issue.file_path,
+                        "line": issue.line_number,
+                        "type": issue.issue_type,
+                        "message": issue.message,
+                        "severity": issue.severity,
+                        "details": _sanitize_details(issue.details),
+                    }
+                    for issue in self.unresolvable_imports
                 ],
             },
             "import_graph": (

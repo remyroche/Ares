@@ -3,10 +3,8 @@ Validates data integrity and logical consistency for market data.
 Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional, Tuple
-import pandas as pd
-import numpy as np
 from datetime import timedelta
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class DataIntegrityChecker:

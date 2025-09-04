@@ -6,9 +6,6 @@ Script to create the missing regime splits file from existing HMM composite data
 import json
 import os
 
-import pandas as pd
-from copy import copy
-import datetime
 
 
 def create_regime_splits_file():

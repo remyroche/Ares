@@ -5,9 +5,7 @@ This script tests the full pipeline: analyze code -> generate data -> create vis
 """
 
 import sys
-import json
 from pathlib import Path
-from datetime import datetime
 
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))

@@ -5,12 +5,8 @@ This module implements regime detection at multiple timeframes (5m, 15m, 30m, 1h
 with hierarchical alignment and cross-timeframe validation.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
-import asyncio
-from datetime import datetime, timedelta
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class HierarchicalRegimeDetector:

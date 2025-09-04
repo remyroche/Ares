@@ -22,8 +22,6 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 from src.utils.logger import ensure_logging_setup, get_logger
 
@@ -832,5 +830,5 @@ def main():
     return 0
 
 if __name__== "__main__":
-    exit_code = main()
+    exit_code = await main()
     sys.exit(exit_code)

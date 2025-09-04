@@ -12,9 +12,7 @@ import logging
 import os
 import random
 import sys
-import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
 
 import psutil
 from fastapi import (
@@ -26,8 +24,8 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel
+from typing import Dict, Any, List
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -437,7 +435,7 @@ try:
     import os
     gui_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, gui_dir)
-    from launcher_integration import (
+    from ares_launcher import (
         start_launcher_mode, start_training, stop_process, stop_all_processes,
         get_process_status, get_available_modes, get_available_training_modes,
         get_available_exchanges

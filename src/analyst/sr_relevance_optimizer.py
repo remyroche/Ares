@@ -10,15 +10,9 @@ Optimizes the weights for the 5 relevance scoring factors:
 5. Success rate
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Any
-from scipy.optimize import differential_evolution, minimize
-from sklearn.metrics import accuracy_score, roc_auc_score
 import optuna
 from datetime import datetime
-import logging
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class SRRelevanceOptimizer:

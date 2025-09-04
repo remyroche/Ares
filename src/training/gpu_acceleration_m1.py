@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from src.core.decorators import log_call, validates
 from src.core.domain import secure_data_processing
@@ -14,7 +13,6 @@ Provides optimized matrix operations leveraging Apple's Metal framework.
 import time
 from typing import Any
 
-import numpy as np
 import torch
 
 from src.utils.logger import system_logger

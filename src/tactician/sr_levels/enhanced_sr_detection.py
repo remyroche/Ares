@@ -1,3 +1,8 @@
+
+from typing import Optional
+from typing import Dict
+import pandas as pd
+from typing import Any
 #!/usr/bin/env python3
 """Enhanced S/R Detection Module.
 
@@ -5,18 +10,14 @@ This module implements advanced S/R detection algorithms with improved accuracy
 and robustness for 1-30m timeframes.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
-from scipy import stats
 from scipy.signal import find_peaks
 import warnings
 warnings.filterwarnings('ignore')
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

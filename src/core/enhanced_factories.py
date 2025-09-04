@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/core/enhanced_factories.py
 
@@ -11,9 +10,9 @@ using proper dependency injection patterns.
 from typing import Any
 
 from exchange.factory import ExchangeFactory
-from src.core.dependency_injection import DependencyContainer
-from src.database.firestore_manager import FirestoreManager
-from src.database.influxdb_manager import InfluxDBManager
+from .core.dependency_injection import DependencyContainer
+from .database.firestore_manager import FirestoreManager
+from .database.influxdb_manager import InfluxDBManager
 from src.interfaces.base_interfaces import (
     IAnalyst,
     IExchangeClient,
@@ -23,10 +22,9 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
 )
-import asyncio
-from src.supervisor.performance_reporter import PerformanceReporter
-from src.utils.logger import system_logger
-from src.utils.state_manager import StateManager
+from .supervisor.performance_reporter import PerformanceReporter
+from .utils.logger import system_logger
+from .utils.state_manager import StateManager
 
 
 class TradingSystemFactory:

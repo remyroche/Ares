@@ -1,15 +1,13 @@
-from __future__ import annotations
 
 import contextlib
 import os
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 
 # Import ML Confidence Predictor
-from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-from src.core.decorators import (
+from .analyst.ml_confidence_predictor import MLConfidencePredictor
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     handles_errors,
@@ -17,10 +15,9 @@ from src.core.decorators import (
     log_execution_time,
     validates,
 )
-import asyncio
-from src.core.domain import quality_gate, secure_data_processing
-from src.utils.confidence import aggregate_directional_confidences
-from src.utils.logger import system_logger
+from .core.domain import quality_gate, secure_data_processing
+from .utils.confidence import aggregate_directional_confidences
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     execution_error,
@@ -437,6 +434,7 @@ class DualModelSystem:
 
             if os.path.exists(tactician_model_path):
                 import pickle
+import pandas as pd
 
                 with open(tactician_model_path, "rb") as f:
                     self.tactician_model = pickle.load(f)
@@ -1566,7 +1564,7 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    def get_training_status(self) -> dict[str, Any]:
+    async def get_training_status(self) -> dict[str, Any]:
         """Get training status for the dual model system."""
         try:
             training_status: dict[str, Any] = {}
@@ -1574,7 +1572,7 @@ class DualModelSystem:
             # Get ML confidence predictor training status
             if self.ml_confidence_predictor:
                 training_status["ml_confidence_predictor"] = (
-                    self.ml_confidence_predictor.get_training_status()
+                    await self.ml_confidence_predictor.get_training_status()
                 )
 
             # Add dual model system specific training info

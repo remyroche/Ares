@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Type definitions and type safety utilities for the Ares trading system.
@@ -6,7 +5,6 @@ This module provides comprehensive type coverage to eliminate Any types
 and improve type safety throughout the codebase.
 """
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,
@@ -22,7 +20,6 @@ from src.utils.warning_symbols import (
 )
 
 # Import specific types from each module
-from .base_types import (
     Interval,
     Percentage,
     Price,
@@ -31,7 +28,6 @@ from .base_types import (
     Timestamp,
     Volume,
 )
-from .config_types import (
     ConfigDict,
     DatabaseConfig,
     ExchangeConfig,
@@ -39,7 +35,6 @@ from .config_types import (
     MonitoringConfig,
     TradingConfig,
 )
-from .data_types import (
     AccountInfo,
     MarketDataDict,
     OHLCVData,
@@ -48,7 +43,6 @@ from .data_types import (
     TickerData,
     TradeData,
 )
-from .ml_types import (
     FeatureDict,
     ModelInput,
     ModelMetrics,
@@ -57,7 +51,6 @@ from .ml_types import (
     TrainingData,
     ValidationData,
 )
-from .protocol_types import (
     DataProvider,
     EventHandler,
     ModelPredictor,
@@ -66,7 +59,6 @@ from .protocol_types import (
     StateManager,
     TradingComponent,
 )
-from .trading_types import (
     OrderSide,
     OrderStatus,
     OrderType,
@@ -75,7 +67,6 @@ from .trading_types import (
     RiskLevel,
     TradeAction,
 )
-from .validation import (
     RuntimeTypeError,
     TypeValidator,
     validate_config,

@@ -1,17 +1,14 @@
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
-from src.core.decorators import (
+from src.utils.decorators import (
     handles_errors,
     log_execution_time,
     retry,
     traced,
 )
-from copy import copy
-import asyncio
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 # Removed trading_decorators imports - using core decorators instead
 from src.utils.warning_symbols import (
@@ -134,7 +131,7 @@ class EnsembleManager:
         """Initialize ensemble components."""
         try:
             # Initialize ensemble creator
-            from src.training.ensemble_creator import EnsembleCreator
+            from .training.ensemble_creator import EnsembleCreator
 
             self.ensemble_creator = EnsembleCreator(self.config)
             await self.ensemble_creator.initialize()

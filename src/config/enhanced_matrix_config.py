@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/config/enhanced_matrix_config.py
 
@@ -8,7 +7,7 @@ Provides comprehensive settings for GPU acceleration and matrix operations.
 
 from typing import Any
 
-from src.config.m1_gpu_config import get_m1_gpu_config
+from .m1_gpu_config import get_m1_gpu_config
 
 
 def get_enhanced_matrix_training_config() -> dict[str, Any]:

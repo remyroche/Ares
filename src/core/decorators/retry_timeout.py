@@ -1,12 +1,12 @@
-from __future__ import annotations
 '\nRetry, timeout, and circuit breaker decorators.\n\nProvides resilience patterns for handling transient failures,\ntimeouts, and cascading failures.\n'
 import asyncio
 import random
 import time
 from dataclasses import dataclass
 from enum import Enum
-from src.core.errors.base import ServiceUnavailableError
-from src.core.errors.base import TimeoutError as AppTimeoutError
+from typing import Any, Callable
+from ..errors.base import ServiceUnavailableError
+from ..errors.base import TimeoutError as AppTimeoutError
 from .compose import P, R, uniform_wrapper
 
 class CircuitState(Enum):

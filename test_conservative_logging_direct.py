@@ -10,7 +10,6 @@ import sys
 import traceback
 from pathlib import Path
 from io import StringIO
-from datetime import datetime
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -389,5 +388,5 @@ def main():
         return False
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

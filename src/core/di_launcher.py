@@ -1,12 +1,10 @@
-from __future__ import annotations
 '\nDependency injection-aware launcher for the Ares trading system.\n\nThis module provides a launcher that uses proper dependency injection\npatterns for creating and managing trading system components.\n'
 from typing import Any
-from src.config import CONFIG
-from src.core.dependency_injection import DependencyContainer
-from src.core.enhanced_factories import TradingSystemFactory
-from src.core.service_registry import ServiceRegistry
-from src.utils.logger import system_logger
-import asyncio
+from .config import CONFIG
+from .core.dependency_injection import DependencyContainer
+from .core.enhanced_factories import TradingSystemFactory
+from .core.service_registry import ServiceRegistry
+from .utils.logger import system_logger
 
 class DILauncher:
     """
@@ -40,11 +38,11 @@ class DILauncher:
             self.logger.info(f'Launching paper trading for {symbol} on {exchange}')
             trading_config = self._create_paper_trading_config(symbol, exchange)
             self.registry.register_all_services(trading_config)
-            from src.exchange.binance import BinanceClient
+            from .exchange.binance import BinanceClient
             exchange_client = BinanceClient(trading_config.get('exchange', {}))
-            from src.utils.state_manager import StateManager
+            from .utils.state_manager import StateManager
             state_manager = StateManager(trading_config.get('state', {}))
-            from src.supervisor.performance_reporter import PerformanceReporter
+            from .supervisor.performance_reporter import PerformanceReporter
             performance_reporter = PerformanceReporter(trading_config.get('performance', {}))
             self.system_components = await self.factory.create_complete_trading_system(exchange_client, state_manager, performance_reporter)
             await self._start_all_components()
@@ -70,11 +68,11 @@ class DILauncher:
             self.logger.info(f'Launching live trading for {symbol} on {exchange}')
             trading_config = self._create_live_trading_config(symbol, exchange)
             self.registry.register_all_services(trading_config)
-            from src.exchange.binance import BinanceClient
+            from .exchange.binance import BinanceClient
             exchange_client = BinanceClient(trading_config.get('exchange', {}))
-            from src.utils.state_manager import StateManager
+            from .utils.state_manager import StateManager
             state_manager = StateManager(trading_config.get('state', {}))
-            from src.supervisor.performance_reporter import PerformanceReporter
+            from .supervisor.performance_reporter import PerformanceReporter
             performance_reporter = PerformanceReporter(trading_config.get('performance', {}))
             self.system_components = await self.factory.create_complete_trading_system(exchange_client, state_manager, performance_reporter)
             await self._start_all_components()

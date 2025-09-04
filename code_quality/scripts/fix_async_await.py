@@ -220,9 +220,9 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Fix missing await statements")
-    parser.add_argument("--project-root", default="/workspace/src",
+    parser.add_argument("--project-root", default="/Users/remyroche/Documents/Ares",
                        help="Root directory of the project")
-    parser.add_argument("--issues-file", default="/workspace/code_quality/interaction_analysis.json",
+    parser.add_argument("--issues-file", default="code_quality/reports/function_validation_report.json",
                        help="JSON file with validation issues")
     parser.add_argument("--fix", action="store_true",
                        help="Actually fix the files (default is dry run)")
@@ -238,11 +238,11 @@ def main():
     if not args.fix:
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = f"/workspace/code_quality/reports/async_fixes_report_{timestamp}.json"
+        report_file = f"code_quality/reports/async_fixes_report_{timestamp}.json"
         with open(report_file, "w") as f:
             json.dump(result, f, indent=2)
         print(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":
-    main()
+    await main()

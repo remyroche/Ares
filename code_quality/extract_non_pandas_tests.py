@@ -354,7 +354,7 @@ def run_minimal_tests():
         # Import test module with our minimal implementation
         import importlib
 
-        import common_operations
+        from src.utils import common_operations
 
         # Replace the real module with our minimal one
         sys.modules["src.utils.common_operations"] = common_operations

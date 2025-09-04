@@ -1,3 +1,9 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """Optimized Bayesian Parameter Optimization for Enhanced Computational Efficiency.
 
@@ -10,19 +16,12 @@ This module implements several optimization strategies:
 """
 
 import asyncio
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
 import optuna
 from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from optuna.samplers import TPESampler, CmaEsSampler
-from optuna.integration import LightGBMPruningCallback
-import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-import joblib
-from functools import lru_cache
 import time
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class OptimizedBayesianParameterOptimization:
@@ -585,7 +584,6 @@ class OptimizedBayesianParameterOptimization:
         """Detailed HMM evaluation."""
         try:
             from hmmlearn import hmm
-            from sklearn.model_selection import cross_val_score
             
             n_components = params.get('hmm_n_components', 4)
             covariance_type = params.get('hmm_covariance_type', 'full')

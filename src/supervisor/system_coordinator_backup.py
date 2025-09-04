@@ -4,10 +4,11 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict
-import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid
 from src.utils.tracing import with_tracing_span
+
+import pandas as pd
 DEFAULT_SUPERVISOR_CONFIG = {'supervisor': {'supervision_interval': 60, 'max_history': 100}}
 
 class CircuitBreaker:
@@ -341,8 +342,6 @@ class SystemCoordinator:
         """
         try:
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-            import copy
-            import numpy as np
             enhanced_manager = EnhancedExecutionManager(self.config)
             analyst_decision = analyst_signals.get('analyst_decision', {})
             if not analyst_decision.get('should_enter_position', False):

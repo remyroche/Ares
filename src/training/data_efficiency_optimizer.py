@@ -6,12 +6,10 @@ import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Number
+from typing import Any
+from numbers import Number
 
-import pandas as pd
 import psutil
-import pyarrow as pa
-import pyarrow.parquet as pq
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -23,10 +21,8 @@ from src.utils.warning_symbols import (
     validation_error,
     warning,
 )
-from copy import copy
-import asyncio
-from src.core.decorators import handles_errors
-from src.database.sqlite_manager import SQLiteManager
+from .core.decorators import handles_errors
+from .database.sqlite_manager import SQLiteManager
 import pickle
 import ast
 
@@ -445,6 +441,7 @@ class DataEfficiencyOptimizer:
                     )
                     try:
                         import pickle
+import pandas as pd
 
                         with open(data_file, "rb") as f:
                             legacy_data = pickle.load(f)

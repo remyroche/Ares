@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import time
 from typing import Any
@@ -9,7 +8,6 @@ from src.training.steps.data_preparation_components.training_validation_config i
     get_progression_rules,
     get_validation_config,
 )
-from copy import copy
 
 # src/training/validator.py
 

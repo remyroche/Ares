@@ -14,7 +14,6 @@ Runs a suite of checks:
 Outputs human-readable and JSON reports in reports/.
 """
 
-from __future__ import annotations
 
 import argparse
 import ast
@@ -61,7 +60,6 @@ def _ensure_reports_dir(path: Path) -> None:
 
 def _load_syntax_scanner_class():
     """Load SyntaxErrorScanner from scripts/syntax_error_scanner.py without a package."""
-    import importlib.util
 
     target=SCRIPTS_DIR / "syntax_error_scanner.py"
     spec = importlib.util.spec_from_file_location("syntax_error_scanner", target)
@@ -486,4 +484,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__== "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())

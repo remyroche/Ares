@@ -155,10 +155,10 @@ class SRComprehensiveConfigLoader:
             sr_comprehensive_integration=self._get_comprehensive_integration_config()
         )
     
-    def get_config_dict(self) -> Dict[str, Any]:
+    async def get_config_dict(self) -> Dict[str, Any]:
         """Get configuration as dictionary."""
         if not self.config:
-            self.load_config()
+            await self.load_config()
         
         config_dict = {
             'sr_optimization': asdict(self.config.sr_optimization),
@@ -198,11 +198,11 @@ class SRComprehensiveConfigLoader:
         
         return component_map.get(component, {})
     
-    def update_config(self, updates: Dict[str, Any]) -> bool:
+    async def update_config(self, updates: Dict[str, Any]) -> bool:
         """Update configuration with new values."""
         try:
             if not self.config:
-                self.load_config()
+                await self.load_config()
             
             for key, value in updates.items():
                 if hasattr(self.config, key):
@@ -233,13 +233,13 @@ def get_sr_comprehensive_config_loader() -> SRComprehensiveConfigLoader:
     return _sr_config_loader
 
 
-def get_sr_comprehensive_config() -> SRComprehensiveConfig:
+async def get_sr_comprehensive_config() -> SRComprehensiveConfig:
     """Get comprehensive S/R configuration."""
     loader = get_sr_comprehensive_config_loader()
-    return loader.load_config()
+    return await loader.load_config()
 
 
-def get_sr_comprehensive_config_dict() -> Dict[str, Any]:
+async def get_sr_comprehensive_config_dict() -> Dict[str, Any]:
     """Get comprehensive S/R configuration as dictionary."""
     loader = get_sr_comprehensive_config_loader()
-    return loader.get_config_dict()
+    return await loader.get_config_dict()

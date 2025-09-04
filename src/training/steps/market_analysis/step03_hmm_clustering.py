@@ -1,3 +1,5 @@
+
+from typing import Any
 #!/usr/bin/env python3
 """Step 3: Enhanced HMM Regime Discovery with All Improvements.
 
@@ -16,17 +18,15 @@ import sys
 from pathlib import Path
 import time
 import json
-from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.logger import system_logger
-from src.training.steps.hmm_clustering import run_enhanced_step
-from src.training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+from .utils.logger import system_logger
+from .training.steps.hmm_clustering import run_enhanced_step
+from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
 
 logger = system_logger.getChild("Step3HMMClustering")
 
@@ -330,4 +330,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the enhanced step 3
-    asyncio.run(main())
+    asyncio.run(await main())

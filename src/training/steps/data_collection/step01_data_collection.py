@@ -1,6 +1,3 @@
-from __future__ import annotations
-import ast
-from typing import Dict, List, Optional, Union, Any, Tuple
 'Step 1: Data Collection.\n\nThis module handles the data collection step of the training pipeline.\nIt downloads and consolidates all required data for training.\n'
 import os
 import sys
@@ -9,7 +6,8 @@ from pathlib import Path
 from typing import Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.pipeline_standards import pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards
+from src.utils.decorators.errors import handles_errors
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 CONFIG = PipelineStandards.safe_import('src.config', {'SYMBOL': None, 'INTERVAL': '1m', 'LOOKBACK_YEARS': 2})
@@ -25,9 +23,15 @@ def create_fallback_logger() -> Any:
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
-
-    def decorator(func: Callable) -> None:
-        return func
+    def decorator(*args, **kwargs):
+        def wrapper(func: Callable) -> Callable:
+            return func
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            # Called as @decorator
+            return args[0]
+        else:
+            # Called as @decorator(args)
+            return wrapper
     return decorator
 if system_logger is None:
     system_logger = create_fallback_logger()
@@ -184,7 +188,6 @@ class DataCollectionStep:
             return False
         self.logger.info(f'🔍 Validating {file_name}...')
         try:
-            import pandas as pd
             df = pd.read_parquet(file_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
             
@@ -335,7 +338,6 @@ class DataCollectionStep:
                 return False
             self.logger.info('📊 Creating mock data for fallback collection...')
             from datetime import datetime, timedelta
-            import numpy as np
             import pandas as pd
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
@@ -676,6 +678,7 @@ if __name__ == '__main__':
             print('❌ Step 1: Data Collection failed')
         import gc
         gc.collect()
+    
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
@@ -684,6 +687,6 @@ if __name__ == '__main__':
         print(f'❌ Error: {e}')
     finally:
         import gc
-import os.path
-from src.core.decorators.errors import handles_errors
-gc.collect()
+import numpy as np
+
+        gc.collect()

@@ -3,22 +3,18 @@
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
-import os
 import sys
 import logging
 import asyncio
 from pathlib import Path
 from typing import Any, Optional, Callable, Dict, List
 
-import pandas as pd
 
-from src.core.decorators import handles_errors, traced
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.common_operations import (
     safe_read_parquet, 
     list_parquet_files, 
     safe_file_exists, 
@@ -28,14 +24,12 @@ from src.utils.common_operations import (
 
 # Import logger with fallback
 try:
-    from src.utils.logger import system_logger
+    from .utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger(__name__)
 
 # Import core domain functions with fallbacks
 try:
-    from src.training.steps.step01_5_data_converter import ParquetDatasetManager
-    from src.core.domain import (
         guard_dataframe_nulls, 
         secure_file_path, 
         validate_dataframe_schema, 
@@ -376,4 +370,4 @@ if __name__ == "__main__":
         else:
             print("Failed to load data")
 
-    asyncio.run(main())
+    asyncio.run(await main())

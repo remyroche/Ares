@@ -5,7 +5,6 @@ Command Line Interface for Code Complexity Analysis Pipeline
 
 import argparse
 import sys
-import os
 from pathlib import Path
 
 # Add the current directory to the path
@@ -220,4 +219,4 @@ def print_summary(results):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(await main())

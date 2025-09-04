@@ -15,27 +15,24 @@ Features:
 - Real-time validation during API collection
 """
 
-from __future__ import annotations
 
 import asyncio
-import logging
 import sys
-import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable
 
-import numpy as np
-import pandas as pd
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
+from .utils.logger import system_logger
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import List
+from typing import Callable
 
 logger = system_logger.getChild("EnhancedDataValidation")
 
@@ -823,4 +820,4 @@ if __name__ == "__main__":
         # Print validation summary
         print("Validation Summary:", validator.get_validation_summary())
     
-    asyncio.run(test_validation())
+    asyncio.run(await test_validation())

@@ -4,12 +4,7 @@ Complexity Heatmap Visualizer
 Creates heatmap visualizations of code complexity metrics.
 """
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
 from .code_visualizer import CodeVisualizer
 
 
@@ -95,7 +90,6 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
         Returns:
             Matplotlib figure
         """
-        import matplotlib.patches as mpatches
         
         fig, ax = plt.subplots(figsize=(14, 10))
         

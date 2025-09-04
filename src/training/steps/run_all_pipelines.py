@@ -20,8 +20,6 @@ import asyncio
 import sys
 from pathlib import Path
 import time
-import json
-import logging
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -31,25 +29,23 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities and decorators
-from src.core.domain import handle_errors, memory_efficient, validate_data_quality, monitor_pipeline_step
+from .core.domain import handle_errors, memory_efficient, validate_data_quality, monitor_pipeline_step
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, ensure_directory, 
     safe_json_dump, safe_json_load, safe_file_exists
 )
-from src.utils.validator_orchestrator import ValidatorOrchestrator
-from src.utils.data_quality_framework import DataQualityFramework
-from src.utils.pipeline_standards import pipeline_standards, PipelineStandards
-from src.utils.logger import system_logger
-from src.utils.prometheus_metrics import metrics
-from src.utils.enhanced_memory_management import memory_efficient as memory_efficient_util
-from src.utils.data_formatting_framework import DataFormattingFramework
+from .utils.validator_orchestrator import ValidatorOrchestrator
+from .utils.data_quality_framework import DataQualityFramework
+from .utils.logger import system_logger
+from .utils.prometheus_metrics import metrics
+from .utils.data_formatting_framework import DataFormattingFramework
 
 # Import all pipeline modules
-from src.training.steps.data_collection import run_data_collection_pipeline
-from src.training.steps.market_analysis import run_market_analysis_pipeline
-from src.training.steps.model_training import run_model_training_pipeline
-from src.training.steps.optimisation import run_optimisation_pipeline
-from src.training.steps.backtesting import run_backtesting_pipeline
+from .training.steps.data_collection import run_data_collection_pipeline
+from .training.steps.market_analysis import run_market_analysis_pipeline
+from .training.steps.model_training import run_model_training_pipeline
+from .training.steps.optimisation import run_optimisation_pipeline
+from .training.steps.backtesting import run_backtesting_pipeline
 
 
 class PipelineStatus(Enum):
@@ -554,7 +550,7 @@ class EnhancedPipelineOrchestrator:
         
         # Save enhanced results using the report manager
         try:
-            from src.utils.report_manager import get_report_manager
+            from .utils.report_manager import get_report_manager
             report_manager = get_report_manager()
             
             enhanced_results = {
@@ -605,7 +601,7 @@ class EnhancedPipelineOrchestrator:
             
             # Generate comprehensive report collection summary
             try:
-                from src.utils.report_collector import get_report_collector
+                from .utils.report_collector import get_report_collector
                 report_collector = get_report_collector()
                 collection_summary_file = report_collector.generate_collection_summary(
                     symbol=self.config.symbol,
@@ -701,4 +697,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run all pipelines
-    asyncio.run(main())
+    asyncio.run(await main())

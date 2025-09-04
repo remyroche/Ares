@@ -16,8 +16,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 
@@ -410,6 +408,8 @@ async def main():
         return obj
 
     import json
+import pandas as pd
+
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=convert_numpy_types)
 
@@ -440,4 +440,4 @@ async def main():
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

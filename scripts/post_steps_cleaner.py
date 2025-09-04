@@ -7,7 +7,6 @@ Repairs:
 - chained param corruption in function defs: `a: T=b: U` -> `a: T, b: U`
 - simple default literals in function defs: `a: T, 123` -> `a: T=123`
 """
-from __future__ import annotations
 
 import re
 import sys
@@ -92,5 +91,5 @@ def main() -> int:
 
 
 if __name__== "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())
 

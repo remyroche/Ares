@@ -5,7 +5,6 @@ Function Validator Wrapper - Provides compatibility methods for pipeline integra
 
 from collections import defaultdict
 
-from function_validator import FunctionValidator as BaseValidator
 
 
 class FunctionValidator(BaseValidator):

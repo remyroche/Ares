@@ -1,12 +1,10 @@
-from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
-import pandas as pd
-import asyncio
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Any, Callable
 
+
+import pandas as pd
 @dataclass
 class MarketData:
     """Standardized market data structure"""

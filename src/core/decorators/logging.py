@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Structured logging decorators with correlation IDs.
@@ -11,9 +10,9 @@ import logging
 import time
 import uuid
 from contextvars import ContextVar
+from typing import Any, Callable
 
 from .compose import P, R, uniform_wrapper
-import asyncio
 
 # Context variable for correlation ID
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)

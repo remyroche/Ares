@@ -4,14 +4,8 @@ Plugin Manager
 Manages plugin execution, lifecycle, and coordination.
 """
 
-import asyncio
-import concurrent.futures
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Set, Union, Any
-from .base_plugin import BasePlugin, PluginContext, PluginResult, PluginCategory, PluginPriority
 from .plugin_registry import PluginRegistry
-from .exceptions import PluginError, PluginExecutionError, PluginTimeoutError
 
 
 class PluginManager:

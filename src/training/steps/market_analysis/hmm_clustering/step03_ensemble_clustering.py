@@ -1,3 +1,5 @@
+
+import numpy as np
 #!/usr/bin/env python3
 """Ensemble Clustering Methods for HMM Regime Discovery - Vectorized Implementation.
 
@@ -5,15 +7,8 @@ This module implements computationally efficient ensemble clustering using vecto
 operations for HMM + K-means + DBSCAN combination.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
 from sklearn.cluster import KMeans, DBSCAN
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-from scipy.spatial.distance import pdist, squareform
-from scipy.cluster.hierarchy import linkage, fcluster
 import warnings
 warnings.filterwarnings('ignore')
 

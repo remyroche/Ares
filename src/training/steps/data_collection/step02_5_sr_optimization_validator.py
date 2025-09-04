@@ -1,3 +1,5 @@
+
+from src.utils.error_handler import handles_errors
 #!/usr/bin/env python3
 """Step 2.5: S/R Detection Optimization Validator.
 
@@ -11,7 +13,6 @@ This module validates the S/R detection optimization step to ensure:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 import json
 import time
 
@@ -19,15 +20,17 @@ import time
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
+from src.utils.trading_decorators import (
     handle_errors,
     monitor_step_execution,
     secure_step_execution,
     validate_pipeline_step,
     quality_gate
 )
-from src.utils.logger import system_logger
-from src.utils.common_operations import safe_json_load
+from .utils.logger import system_logger
+from .utils.common_operations import safe_json_load
+from typing import Any
+from typing import Dict
 
 logger = system_logger.getChild("Step2_5SROptimizationValidator")
 
@@ -382,5 +385,5 @@ async def _run_test_validation() -> bool:
 
 if __name__ == "__main__":
     # Test the validator
-    success = asyncio.run(_run_test_validation())
+    success = asyncio.run(await _run_test_validation())
     print(f"Validation {'successful' if success else 'failed'}")

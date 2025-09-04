@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 """Step 6: Advanced Feature Engineering - Refactored and modular.
 
 This module generates advanced features including technical indicators,
@@ -5,16 +8,12 @@ wavelet features, and market microstructure features.
 """
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-import numpy as np
-import pandas as pd
-from src.core.decorators import handles_errors
-from src.training.base_step import BaseStep
-from src.training.utils.feature_engineering.resampling import OptimizedResampler
-from src.training.utils.feature_engineering.technical_indicators import TechnicalIndicatorCalculator
-from src.training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
-from copy import copy
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors
+from .training.base_step import BaseStep
+from .training.utils.feature_engineering.resampling import OptimizedResampler
+from .training.utils.feature_engineering.technical_indicators import TechnicalIndicatorCalculator
+from .training.utils.feature_engineering.wavelet_features import WaveletTransformAnalyzer
+from .core.decorators.errors import handles_errors
 
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Step 6: Advanced Feature Engineering using modular components."""

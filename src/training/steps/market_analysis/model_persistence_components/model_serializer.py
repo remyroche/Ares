@@ -1,20 +1,17 @@
+
+from src.utils.error_handler import handles_errors
 """Model serializer component for model persistence."""
-import asyncio
 import pickle
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-import numpy as np
-from src.core.decorators import handles_errors, log_execution_time
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 try:
     import joblib
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False
 try:
-    import onnx
-    import skl2onnx
     ONNX_AVAILABLE = True
 except ImportError:
     ONNX_AVAILABLE = False
@@ -262,7 +259,6 @@ class ModelSerializer:
             self.logger.error('ONNX not available')
             return None
         try:
-            import onnxruntime as ort
             session = ort.InferenceSession(str(file_path))
             return session
         except Exception as e:

@@ -1,4 +1,3 @@
-from __future__ import annotations
 import argparse
 import asyncio
 import os
@@ -7,28 +6,29 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-import pandas as pd
 from exchange.factory import RootExchangeFactory
-from src.analyst.analyst import Analyst
-from src.config import get_dual_model_config
-from src.config.environment import get_exchange_name
-from src.core.config_service import ConfigurationService
-from src.core.decorators import handles_errors
-from src.core.dependency_injection import DependencyContainer, ServiceLocator
-from src.database.sqlite_manager import SQLiteManager
-from src.interfaces.base_interfaces import IAnalyst, IEventBus, IStateManager, IStrategist, ISupervisor, ITactician
-from src.interfaces.event_bus import EventBus
-from src.monitoring.dual_model_system import DualModelSystem, setup_dual_model_system
-from src.monitoring.performance_dashboard import PerformanceDashboard, setup_performance_dashboard
-from src.monitoring.performance_monitor import PerformanceMonitor, setup_performance_monitor
-from src.strategist.strategist import Strategist
-from src.supervisor.supervisor import Supervisor
-from src.tactician.tactician import Tactician
-from src.utils.logger import setup_logging, system_logger
-from src.utils.observability import init_observability
-from src.utils.state_manager import StateManager
-from src.utils.warning_symbols import critical, error, failed, warning
-from src.core.decorators.errors import handles_errors
+from analyst import Analyst
+from config import get_dual_model_config
+from environment import get_exchange_name
+from config_service import ConfigurationService
+from decorators import handles_errors
+from dependency_injection import DependencyContainer, ServiceLocator
+from sqlite_manager import SQLiteManager
+from base_interfaces import IAnalyst, IEventBus, IStateManager, IStrategist, ISupervisor, ITactician
+from event_bus import EventBus
+from dual_model_system import DualModelSystem, setup_dual_model_system
+from performance_dashboard import PerformanceDashboard, setup_performance_dashboard
+from performance_monitor import PerformanceMonitor, setup_performance_monitor
+from strategist import Strategist
+from supervisor import Supervisor
+from tactician import Tactician
+from logger import setup_logging, system_logger
+from observability import init_observability
+from state_manager import StateManager
+from warning_symbols import critical, error, failed, warning
+from errors import handles_errors
+import pandas as pd
+
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -666,4 +666,4 @@ async def main() -> None:
         await pipeline.stop()
         sys.exit(1)
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

@@ -1,8 +1,7 @@
 # src/training/enhanced_matrix_gpu_integration.py
 
-from __future__ import annotations
 
-from src.core.decorators import (
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     handles_errors,
@@ -10,8 +9,7 @@ from src.core.decorators import (
     log_execution_time,
     validates,
 )
-from copy import copy
-from src.core.domain import quality_gate, secure_data_processing
+from .core.domain import quality_gate, secure_data_processing
 
 """
 Enhanced Matrix Operations with M1 GPU Integration.
@@ -22,16 +20,16 @@ import asyncio
 import time
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from sklearn.linear_model import LinearRegression
 
-from src.training.gpu_acceleration_m1 import M1GPUAcceleration
+from .training.gpu_acceleration_m1 import M1GPUAcceleration
 from src.training.steps.step07_enhanced_matrix_operations import (
     EnhancedMatrixOperations,
 )
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
+import numpy as np
+import pandas as pd
 
 
 class EnhancedMatrixGPUIntegration:
@@ -569,4 +567,4 @@ async def demonstrate_gpu_integration() -> None:
 
 if __name__ == "__main__":
     # Run GPU integration demonstration
-    asyncio.run(demonstrate_gpu_integration())
+    asyncio.run(await demonstrate_gpu_integration())

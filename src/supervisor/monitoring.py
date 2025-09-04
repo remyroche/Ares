@@ -1,5 +1,6 @@
-from __future__ import annotations
 
+
+from logging import error
 """Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,
@@ -9,11 +10,10 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from src.core.domain import handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, invalid
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .core.domain import handle_specific_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import failed, invalid
+from .core.decorators.errors import handles_errors
 
 # src/supervisor/monitoring.py
 

@@ -1,16 +1,14 @@
-from __future__ import annotations
+
+from src.utils.error_handler import handles_errors
 '\nFeature Engineering Optimization Module\n\nThis module optimizes feature engineering parameters using:\n1. Random Forest + SHAP for correlation analysis\n2. Mutual importance matrix for feature parameter selection\n3. Regime-specific optimization for each HMM regime\n4. Top 3 parameter selection based on correlation, multicollinearity, and mutual information\n5. Feature Interaction Engineering for capturing non-linear relationships\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
-import pandas as pd
 import shap
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 
 class FeatureEngineeringOptimizer:
     """
@@ -511,6 +509,9 @@ class FeatureEngineeringOptimizer:
             combined_features = pd.concat([interactions], axis=1)
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import cross_val_score
+import pandas as pd
+import numpy as np
+
             model = RandomForestClassifier(n_estimators=50, random_state=42)
             scores = cross_val_score(model, combined_features, target, cv=3, scoring='accuracy')
             return {'mean_accuracy': float(np.mean(scores)), 'std_accuracy': float(np.std(scores)), 'min_accuracy': float(np.min(scores)), 'max_accuracy': float(np.max(scores)), 'n_interactions': len(interactions.columns)}

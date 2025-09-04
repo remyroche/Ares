@@ -1,4 +1,6 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import pandas as pd
+import numpy as np
 """
 Advanced Optimization Engine for Step17
 
@@ -10,34 +12,23 @@ This module implements the core advanced optimization strategies:
 
 These are production-ready implementations with robust error handling and optimization.
 """
-import asyncio
 import logging
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union, NamedTuple
-import json
 import warnings
 from dataclasses import dataclass
 from enum import Enum
 from sklearn.model_selection import KFold
-from sklearn.metrics import mean_squared_error, accuracy_score
-import itertools
 warnings.filterwarnings('ignore')
 try:
     import optuna
-    from optuna.samplers import NSGAIISampler, TPESampler
     from optuna.pruners import MedianPruner
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
 try:
-    import mlflow
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
-import copy
 
 class OptimizationObjective(Enum):
     """Enumeration of optimization objectives."""

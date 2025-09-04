@@ -8,13 +8,10 @@ including data formatting, analysis protection, and access control decorators.
 
 import asyncio
 import functools
-import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # Core decorators
-from src.core.decorators import (
     handles_errors,
     traced,
     validates,
@@ -27,7 +24,6 @@ from src.core.decorators import (
     get_correlation_id,
     set_correlation_id,
 )
-from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
     ensure_directory,
@@ -642,7 +638,6 @@ if __name__ == "__main__":
         return True
     
     # Test the decorators
-    import pandas as pd
     
     test_data = pd.DataFrame({
         'open': [100, 101, 102],
@@ -652,4 +647,4 @@ if __name__ == "__main__":
         'volume': [1000, 1100, 1200]
     })
     
-    asyncio.run(example_function(test_data, "data_cache/test_output.parquet"))
+    asyncio.run(await example_function(test_data, "data_cache/test_output.parquet"))

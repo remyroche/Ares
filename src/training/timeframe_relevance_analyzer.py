@@ -1,15 +1,13 @@
-from __future__ import annotations
 '\nTimeframe Relevance Analyzer\n\nThis module analyzes the relevance of different timeframes for high leverage trading (10x-100x)\nand optimizes the ensemble configuration accordingly.\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from .utils.logger import system_logger
+from .core.decorators import handles_errors
+from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-import asyncio
-from src.core.decorators.errors import handles_errors
 
 class TimeframeRelevanceAnalyzer:
     """

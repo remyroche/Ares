@@ -18,7 +18,6 @@ project_root=Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -219,4 +218,4 @@ async def main() -> None:
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

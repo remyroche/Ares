@@ -1,6 +1,4 @@
-from __future__ import annotations
 
-import numpy as np
 
 DUAL_CONF_BASELINE = 0.216
 DUAL_CONF_RANGE = 0.784

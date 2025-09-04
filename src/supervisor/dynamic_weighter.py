@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Dynamic Weighter Module.
 
@@ -12,10 +11,8 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from src.utils.logger import system_logger
-from copy import copy
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class DynamicWeighter:

@@ -5,7 +5,6 @@ Demonstrates how to create a plugin for syntax fixing functionality.
 """
 
 import ast
-import tempfile
 from pathlib import Path
 from typing import Dict, Any, Set
 from code_quality.plugins.base_plugin import FileProcessorPlugin, PluginMetadata, PluginCategory, PluginPriority

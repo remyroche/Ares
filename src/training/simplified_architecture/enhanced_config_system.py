@@ -1,3 +1,8 @@
+
+from typing import Optional
+from typing import List
+from typing import Dict
+from typing import Any
 """
 Enhanced Configuration-Driven Architecture System
 
@@ -7,11 +12,9 @@ configuration files.
 """
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Type
 import yaml
 from enum import Enum
 import asyncio
@@ -254,7 +257,6 @@ class ConfigurationManager:
 
     def _load_python(self, path: Path) -> Dict[str, Any]:
         """Load Python configuration file."""
-        import importlib.util
         spec = importlib.util.spec_from_file_location("config", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

@@ -1,4 +1,4 @@
-from src.core.domain import get_hyperparameter_config
+from .core.domain import get_hyperparameter_config
 import asyncio
 import contextlib
 import json
@@ -6,14 +6,13 @@ import os
 import pickle
 from datetime import datetime
 from typing import Any
-import numpy as np
-import pandas as pd
-from src.config_optuna import get_optimizable_parameters, get_optuna_config
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, missing
-from typing import Dict, List, Optional, Union, Any, Tuple
+from .config_optuna import get_optimizable_parameters, get_optuna_config
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, failed, missing
 
+
+from functools import cached_property
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
@@ -57,7 +56,7 @@ class FinalParametersOptimizationStep:
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             data_dir = training_input.get('data_dir', 'data/training')
-            from src.utils.logger import heartbeat
+            from .utils.logger import heartbeat
             with heartbeat(self.logger, name='Step12 load_calibration_results', interval_seconds=60.0):
                 calibration_results = await self._load_calibration_results(symbol, exchange, data_dir)
             if not calibration_results:
@@ -595,7 +594,7 @@ class FinalParametersOptimizationStep:
         """Select the best solution from Pareto front."""
         try:
             from sklearn.metrics import accuracy_score
-            from src.training.steps.validation.step17_final_parameters_optimization.hyperparameter_optimization_config import get_hyperparameter_config
+            from .training.steps.validation.step17_final_parameters_optimization.hyperparameter_optimization_config import get_hyperparameter_config
             config = get_hyperparameter_config()
             weights = getattr(config, 'composite_score_weights', {'win_rate': 0.25, 'profit_factor': 0.25, 'sharpe_ratio': 0.25, 'max_drawdown': 0.1, 'enhanced_prediction_performance': 0.15})
             best_solution = None
@@ -691,9 +690,7 @@ class FinalParametersOptimizationStep:
         except Exception:
             self.print(failed('Evaluation failed: {e}'))
             return {'accuracy': 0.5, 'win_rate': 0.5, 'avg_win': 0.01, 'avg_loss': 0.01, 'max_drawdown': 0.1, 'sharpe_ratio': 1.0}
-from src.training.decorators import artifact_versioning, artifact_write_lock, circuit_breaker_protection, debug_training_step, deterministic_seed, idempotent_step, memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage, quality_gate, resource_monitor, secure_data_processing, time_budget_watchdog, validate_step_output, validate_step_prerequisites
-from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @deterministic_seed(42)
@@ -733,4 +730,4 @@ if __name__ == '__main__':
 
     async def test() -> None:
         await run_step('ETHUSDT', 'BINANCE', 'data/training')
-    asyncio.run(test())
+    asyncio.run(await test())

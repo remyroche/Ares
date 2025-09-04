@@ -9,7 +9,10 @@ import asyncio
 from typing import Any, Dict
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 from src.supervisor.coordinator import (
     CircuitBreaker,

@@ -1,7 +1,5 @@
-from __future__ import annotations
 import os
 from typing import Any, Literal
-from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -21,8 +19,7 @@ except Exception:
 
     def Field(default: Any=None, env: str | None=None) -> None:
         return default
-import os.path
-from src.utils.logger import system_logger
+from ..utils.logger import system_logger
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)

@@ -5,13 +5,11 @@ Advanced dead code detection and mapping utilities that integrate with the
 code_quality analyzers to provide comprehensive dead code analysis.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
 
-from code_quality.analyzers.dead_code_analyzer import DeadCodeAnalyzer, DeadCodeReport, DeprecatedCodeIssue
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
 

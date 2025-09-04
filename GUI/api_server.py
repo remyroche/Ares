@@ -39,8 +39,6 @@ try:
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
-    from src.monitoring.metrics_dashboard import MetricsDashboard as MetricsDashboard_src_monitoring_metrics_dashboard
-    from src.monitoring.ml_monitor import MLMonitor as MLMonitor_src_monitoring_ml_monitor
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter
@@ -988,7 +986,7 @@ async def get_monitoring_dashboard():
         dashboard_data = {}
         # Metrics Dashboard
         if metrics_dashboard and hasattr(metrics_dashboard, "get_dashboard_data"):
-            dashboard_data["metrics_dashboard"] = metrics_dashboard.get_dashboard_data()
+            dashboard_data["metrics_dashboard"] = await metrics_dashboard.get_dashboard_data()
         # Performance Dashboard
         if performance_dashboard and hasattr(performance_dashboard, "get_dashboard_summary"):
             dashboard_data["performance_dashboard"] = performance_dashboard.get_dashboard_summary()
@@ -1486,7 +1484,7 @@ class DriftAlertModel(BaseModel):
 @app.get("/api/monitoring/drift-alerts", response_model=list[DriftAlertModel])
 async def get_drift_alerts():
     if ml_monitor and hasattr(ml_monitor, "get_drift_alerts"):
-        alerts = ml_monitor.get_drift_alerts()
+        alerts = await ml_monitor.get_drift_alerts()
         # Convert to DriftAlertModel, ensuring timestamp is str
         return [
             DriftAlertModel(
@@ -1512,7 +1510,7 @@ async def get_feature_importance(model_id: str):
 @app.get("/api/monitoring/online-learning/{model_id}")
 async def get_online_learning_metrics(model_id: str):
     if ml_monitor and hasattr(ml_monitor, "get_online_learning_metrics"):
-        metrics = ml_monitor.get_online_learning_metrics(model_id)
+        metrics = await ml_monitor.get_online_learning_metrics(model_id)
         return metrics.__dict__ if metrics else {}
     return {}
 
@@ -1563,7 +1561,7 @@ try:
     import os
     gui_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, gui_dir)
-    from launcher_integration import (
+    from ares_launcher import (
         start_launcher_mode, start_training, stop_process, stop_all_processes,
         get_process_status, get_available_modes, get_available_training_modes,
         get_available_exchanges

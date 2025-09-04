@@ -316,4 +316,5 @@ def main():
     print("   python comprehensive_professional_analysis.py")
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

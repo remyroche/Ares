@@ -21,7 +21,6 @@ import re
 import shutil
 import sys
 from pathlib import Path
-import numpy as np
 
 # Configure logging
 logging.basicConfig(
@@ -372,4 +371,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    await main()

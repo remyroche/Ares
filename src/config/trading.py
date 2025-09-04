@@ -1,8 +1,7 @@
-from __future__ import annotations
 
 from typing import Any
 
-from src.config.environment import get_environment_settings
+from .environment import get_environment_settings
 
 # src/config/trading.py
 

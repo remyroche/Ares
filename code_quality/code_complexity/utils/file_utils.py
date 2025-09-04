@@ -4,7 +4,6 @@ File Utilities for Code Complexity Analysis
 
 import os
 import logging
-from typing import List, Set
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

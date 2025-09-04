@@ -10,7 +10,6 @@ Usage:
     python scripts/fix_multicollinearity.py
 """
 
-from __future__ import annotations
 
 from typing import Any
 
@@ -240,5 +239,5 @@ def main() -> bool:
 
 
 if __name__== "__main__":
-    success = main()
+    success = await main()
     raise SystemExit(0 if success else 1)

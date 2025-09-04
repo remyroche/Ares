@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Supervisor Package.
 
@@ -15,10 +14,6 @@ try:
 except Exception:  # pragma: no cover - optional component may be absent
     ABTester = None  # type: ignore
 
-from .main import Supervisor
-from .optimizer import Optimizer
-from .performance_reporter import PerformanceReporter
-from .risk_allocator import RiskAllocator
 
 # Define __all__ to explicitly export these modules/classes
 __all__ = [

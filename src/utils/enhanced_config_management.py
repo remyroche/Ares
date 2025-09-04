@@ -239,7 +239,7 @@ class ConfigManager:
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f'pipeline_config_{environment}.json'
-        config = self.load_config(config_name)
+        config = await self.load_config(config_name)
         if config.environment != environment:
             config = self.create_environment_config(environment)
             self.save_config(config, config_name)

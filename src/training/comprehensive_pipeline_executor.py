@@ -1,5 +1,3 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
 '\nComprehensive Pipeline Executor with Integrated Data Quality Management.\n\nThis script provides a complete execution framework for steps 1-7 of the enhanced training pipeline,\nwith integrated data quality monitoring, compatibility validation, format verification, and proper indexing.\n'
 import asyncio
 import sys
@@ -7,13 +5,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.training.data_quality_monitor import DataQualityMonitor
-from src.training.steps_1_7_comprehensive_executor import Steps1To7ComprehensiveExecutor
-from src.utils.enhanced_mlflow_integration import log_step_metrics, log_step_report
-from src.utils.logger import system_logger
+from .training.data_quality_monitor import DataQualityMonitor
+from .training.steps_1_7_comprehensive_executor import Steps1To7ComprehensiveExecutor
+from .utils.enhanced_mlflow_integration import log_step_metrics, log_step_report
+from .utils.logger import system_logger
 
 class ComprehensivePipelineExecutor:
     """
@@ -194,6 +191,9 @@ async def main() -> None:
     except Exception as e:
         print(f'❌ Pipeline execution failed: {e}')
         import traceback
+from typing import List
+import numpy as np
+
         traceback.print_exc()
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

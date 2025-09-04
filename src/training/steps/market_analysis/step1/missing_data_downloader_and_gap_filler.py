@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import pandas as pd
 """Missing Data Downloader and Gap Filler for Step1.
 
 Downloads missing data and fills gaps automatically.
@@ -7,14 +8,12 @@ import asyncio
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
-    from src.core.domain import comprehensive_data_validation, guard_dataframe_nulls, handle_errors, optimize_memory_usage, secure_data_processing, validate_data_quality, validate_data_structure, with_tracing_span
-    from src.utils.logger import system_logger
-    from src.training.steps.step01.data_gap_detector import DataGapDetector
-    from src.exchange.binance_exchange import BinanceExchange
+    from .utils.logger import system_logger
+    from .training.steps.step01.data_gap_detector import DataGapDetector
+    from .exchange.binance_exchange import BinanceExchange
     CONFIG = {'API_KEY': '', 'API_SECRET': '', 'TESTNET': True}
 except ImportError as e:
     import logging
@@ -72,8 +71,8 @@ except ImportError as e:
     DataGapDetector = None
     BinanceExchange = None
     import logging
-from src.core.decorators import handles_errors, traced
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .core.decorators.errors import handles_errors
 logging.basicConfig(level=logging.INFO)
 system_logger = logging.getLogger('MissingDataDownloaderFallback')
 logger = system_logger.getChild('MissingDataDownloader')

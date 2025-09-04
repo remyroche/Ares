@@ -1,11 +1,10 @@
-from __future__ import annotations
+
+import pandas as pd
 '\nTactics Orchestrator for coordinating all tactical components.\n'
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-import pandas as pd
-from copy import copy
 
 @dataclass
 class TradeDecision:
@@ -16,18 +15,18 @@ class TradeDecision:
     price: float = None
     metadata: dict = None
 import contextlib
-from src.tactician.enhanced_order_manager import EnhancedOrderManager
-from src.tactician.leverage_sizer import LeverageSizer
-from src.tactician.position_closing import PositionCloser
-from src.tactician.position_division_strategy import PositionDivisionStrategy
-from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
-from src.tactician.position_sizer import PositionSizer
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, invalid, warning
-from src.core.decorators import handles_errors
-from src.tactician.ml_tactics_manager import MLTacticsManager
-from src.core.decorators.errors import handles_errors
+from .tactician.enhanced_order_manager import EnhancedOrderManager
+from .tactician.leverage_sizer import LeverageSizer
+from .tactician.position_closing import PositionCloser
+from .tactician.position_division_strategy import PositionDivisionStrategy
+from .tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
+from .tactician.position_sizer import PositionSizer
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from .utils.logger import system_logger
+from .utils.warning_symbols import failed, invalid, warning
+from .core.decorators import handles_errors
+from .tactician.ml_tactics_manager import MLTacticsManager
+from .core.decorators.errors import handles_errors
 
 class DecisionPolicy:
     """

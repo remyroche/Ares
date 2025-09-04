@@ -26,8 +26,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import setup_logging
@@ -906,5 +904,5 @@ def main() -> int:
 
 
 if __name__== "__main__":
-    exit_code = main()
+    exit_code = await main()
     sys.exit(exit_code)

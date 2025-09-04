@@ -7,10 +7,8 @@ Combines PyExamine, Radon, and Xenon for comprehensive complexity analysis
 import os
 import sys
 import json
-import subprocess
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import argparse
@@ -26,6 +24,10 @@ from analyzers.pandas_analyzer import PandasAnalyzer
 from utils.report_generator import ReportGenerator
 from utils.file_utils import FileUtils
 from config.complexity_config import ComplexityConfig
+from typing import Optional
+from typing import Any
+from typing import Dict
+from typing import List
 
 # Configure logging
 logging.basicConfig(
@@ -340,4 +342,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    await main()

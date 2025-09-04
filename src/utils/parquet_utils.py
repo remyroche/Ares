@@ -2,11 +2,11 @@ import gc
 import os
 import shutil
 from typing import Any
-
 import pandas as pd
 
-from src.core.decorators.errors import handles_errors
-from src.utils.logger import system_logger
+
+from .decorators.errors import handles_errors
+from .logger import system_logger
 
 # src/utils/parquet_utils.py
 
@@ -152,3 +152,5 @@ class ParquetUtils:
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""
     return ParquetUtils()
+
+

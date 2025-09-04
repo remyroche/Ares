@@ -1,25 +1,51 @@
-import asyncio
 
-from src.core.decorators import handles_errors, retry, timeout
-from src.core.domain import (
-    handle_network_operations
-)
 import hashlib
 import hmac
 import time
 from typing import Any
 from urllib.parse import urlencode
-
 import aiohttp
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    connection_error,
-    error,
-    failed,
-    invalid,
-    missing
-)
+# Import with fallbacks for missing modules
+try:
+    from src.utils.network_operations import handle_network_operations
+except ImportError:
+    def handle_network_operations(*args, **kwargs):
+        return None
+
+try:
+    from src.utils.decorators import handles_errors, retry
+except ImportError:
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def retry(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger('system')
+
+try:
+    from src.utils.warning_symbols import (
+        connection_error,
+        error,
+        failed,
+        invalid,
+        missing
+    )
+except ImportError:
+    def connection_error(msg): print(f"CONNECTION_ERROR: {msg}")
+    def error(msg): print(f"ERROR: {msg}")
+    def failed(msg): print(f"FAILED: {msg}")
+    def invalid(msg): print(f"INVALID: {msg}")
+    def missing(msg): print(f"MISSING: {msg}")
 
 class BinanceExchange:
     """

@@ -5,22 +5,14 @@ This module provides visualization capabilities for model interpretability resul
 including SHAP and LIME analysis outputs.
 """
 
-import asyncio
-import json
-import logging
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-import time
 
-from src.core.decorators import handles_errors, validates, log_call, traced
+from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 class InterpretabilityVisualizer:
     """Visualizer for model interpretability results."""
@@ -38,8 +30,13 @@ class InterpretabilityVisualizer:
     def _check_visualization_libraries(self):
         """Check if visualization libraries are available."""
         try:
-            import matplotlib.pyplot as plt
             import matplotlib
+from typing import Any
+from typing import Dict
+from typing import Optional
+import numpy as np
+import pandas as pd
+
             matplotlib.use('Agg')  # Use non-interactive backend
             self.plt = plt
             self.matplotlib = matplotlib
@@ -52,7 +49,6 @@ class InterpretabilityVisualizer:
             self.matplotlib_available = False
         
         try:
-            import seaborn as sns
             self.sns = sns
             self.seaborn_available = True
             self.logger.info("✅ Seaborn available for enhanced visualization")

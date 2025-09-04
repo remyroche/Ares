@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Core decorators package.
@@ -8,6 +7,18 @@ behavior for both sync and async functions.
 """
 
 # Core composition utilities
+from .compose import (
+    compose,
+    copy_decorator_metadata,
+    ensure_async,
+    ensure_sync,
+    get_decorator_metadata,
+    is_wrapped,
+    mark_wrapped,
+    set_decorator_metadata,
+    uniform_wrapper,
+)
+
 # Authentication/authorization decorators
 from .auth import (
     AuthProvider,
@@ -31,17 +42,6 @@ from .cache import (
     cached,
     clear_request_cache,
     memoize,
-)
-from .compose import (
-    compose,
-    copy_decorator_metadata,
-    ensure_async,
-    ensure_sync,
-    get_decorator_metadata,
-    is_wrapped,
-    mark_wrapped,
-    set_decorator_metadata,
-    uniform_wrapper,
 )
 
 # Error handling decorators

@@ -3,7 +3,6 @@ Import hygiene fixer: normalize aliases, move type-only imports under TYPE_CHECK
 Note: conservative edits based on simple heuristics.
 """
 
-from __future__ import annotations
 
 import ast
 from typing import Any

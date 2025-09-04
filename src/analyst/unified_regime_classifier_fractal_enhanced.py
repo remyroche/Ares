@@ -8,27 +8,28 @@ This version integrates:
 3. Better ML integration through richer feature sets
 """
 
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 import os
 from datetime import datetime
 from typing import Any, List, Dict, Optional, Tuple
-import joblib
 import numpy as np
 import pandas as pd
-import talib
+try:
+    import talib
+except ImportError:
+    talib = None
+    print("Warning: talib not available")
 from sklearn.preprocessing import StandardScaler
-from functools import lru_cache
 import numba
-from src.config import CONFIG
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.logger import system_logger
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from .utils.logger import system_logger
 import logging
 import asyncio
 from src.core.decorators import (
     validates as validate_data_quality,
     traced as with_tracing_span,
 )
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 class UnifiedRegimeClassifierFractalEnhanced:

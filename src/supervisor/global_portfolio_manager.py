@@ -1,5 +1,6 @@
-from __future__ import annotations
 
+
+from logging import error
 """Global Portfolio Manager Module."
 
 This module manages portfolio allocation, position sizing, and risk management
@@ -9,12 +10,10 @@ portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
 from datetime import datetime
 from typing import Any
 
-from src.core.domain import handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import initialization_error, invalid
-from copy import copy
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.domain import handle_specific_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import initialization_error, invalid
+from .core.decorators.errors import handles_errors
 
 # src/supervisor/global_portfolio_manager.py
 

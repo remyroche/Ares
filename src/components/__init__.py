@@ -1,6 +1,4 @@
-from __future__ import annotations
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,
@@ -15,10 +13,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-from .modular_analyst import ModularAnalyst
-from .modular_strategist import ModularStrategist
-from .modular_supervisor import ModularSupervisor
-from .modular_tactician import ModularTactician
 
 # src/components/__init__.py
 

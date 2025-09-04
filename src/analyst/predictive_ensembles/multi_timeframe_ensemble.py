@@ -11,24 +11,22 @@ import os
 import time
 from datetime import datetime
 from typing import Any
+import pandas as pd
+import numpy as np
 
 import joblib
-import lightgbm as lgb
-import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from src.config import CONFIG
-from src.utils.logger import system_logger
+from .config import CONFIG
+from .utils.logger import system_logger
 import logging
-from src.utils.warning_symbols import (
+from ..utils.warning_symbols import (
     error,
     failed,
     warning,
 )
-from copy import copy
 
 
 class MultiTimeframeEnsemble:

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from .base_interfaces import (
     IAnalyst,
@@ -11,7 +10,6 @@ from .base_interfaces import (
     ISupervisor,
     ITactician,
 )
-from .event_bus import Event, EventBus, EventType
 
 # src/interfaces/__init__.py
 

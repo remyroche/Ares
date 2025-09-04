@@ -1,7 +1,6 @@
-from __future__ import annotations
 
-from src.core.decorators import cached, log_execution_time
-from src.core.domain import PerformanceLevel
+from .core.decorators import cached, log_execution_time
+from .core.domain import PerformanceLevel
 
 # src/monitoring/performance_dashboard.py
 
@@ -16,13 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
     from datetime import datetime
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

@@ -12,10 +12,7 @@ This module provides a comprehensive data collection pipeline with:
 
 import asyncio
 import logging
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-import pandas as pd
 
 # Import our enhanced components
 from .validators.pipeline_validators import (
@@ -23,7 +20,6 @@ from .validators.pipeline_validators import (
     ValidationResult,
     ValidationReport
 )
-from .decorators.step_decorators import (
     data_operation_protection,
     data_formatting_protection,
     data_analysis_protection,
@@ -40,7 +36,6 @@ from .utils.data_operations_utils import (
     DataFormat,
     CompressionType
 )
-from .error_handling.enhanced_error_handler import (
     EnhancedErrorHandler,
     ErrorContext,
     DataQualityError,
@@ -339,7 +334,6 @@ class EnhancedDataCollectionPipeline:
         """Collect raw data from exchange."""
         # This would implement the actual data collection logic
         # For now, return a placeholder DataFrame
-        import numpy as np
         
         # Create sample data for demonstration
         dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
@@ -498,4 +492,4 @@ if __name__ == "__main__":
         )
         print(f"Pipeline result: {result}")
     
-    asyncio.run(main())
+    asyncio.run(await main())

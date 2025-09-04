@@ -11,9 +11,7 @@ All outputs are stored in code_quality/visualizers/reports/report_YYYYMMDD_HHMMS
 """
 
 import sys
-import json
 import argparse
-from pathlib import Path
 from datetime import datetime
 
 # Since we demonstrated the simplified version works, this documents how 
@@ -202,4 +200,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

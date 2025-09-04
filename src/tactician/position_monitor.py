@@ -1,5 +1,5 @@
 # src/tactician/position_monitor.py
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 
 """
 Position Monitor for real-time position monitoring and confidence assessment.
@@ -15,18 +15,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.tactician.enhanced_order_manager import EnhancedOrderManager
-from src.tactician.position_division_strategy import PositionDivisionStrategy
-from src.utils.confidence import normalize_dual_confidence
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
+from .tactician.enhanced_order_manager import EnhancedOrderManager
+from .tactician.position_division_strategy import PositionDivisionStrategy
+from .utils.confidence import normalize_dual_confidence
+from .utils.logger import system_logger
     error,
     failed,
     initialization_error,
     invalid,
     missing,
 )
-from copy import copy
 
 
 class PositionAction(Enum):

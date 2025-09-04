@@ -6,7 +6,6 @@ Comprehensive cleanup script to update ALL old decorator imports to new system.
 import re
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, Optional
 
 
 # Mapping of old decorators to their new locations
@@ -286,4 +285,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

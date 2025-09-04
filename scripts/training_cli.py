@@ -1,3 +1,5 @@
+
+from logging import error
 #!/usr/bin/env python3
 """
 Training Command Line Interface for Ares Trading Bot
@@ -36,6 +38,7 @@ from typing import Any
 
 import mlflow
 from backtesting.ares_backtester import run_backtest
+
 from backtesting.ares_data_preparer import (
     calculate_and_label_regimes,
     get_sr_levels,

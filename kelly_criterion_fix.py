@@ -3,8 +3,6 @@
 Kelly Criterion calculation utilities for position sizing.
 """
 
-import numpy as np
-from typing import Dict, Any
 
 
 def calculate_correct_kelly_position_size(

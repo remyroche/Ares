@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/config/config_manager.py
 
@@ -18,7 +17,6 @@ from .config_position_sizing import (
     get_position_sizing_config,
     get_position_sizing_search_space,
 )
-from copy import copy
 from .config_regime_transitions import (
     get_regime_transition_config,
     get_regime_transition_search_space,

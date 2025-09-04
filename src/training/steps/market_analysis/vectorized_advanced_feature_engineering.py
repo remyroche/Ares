@@ -1,13 +1,11 @@
-from __future__ import annotations
+
+import pandas as pd
 '\nRefactored VectorizedAdvancedFeatureEngineering with reduced complexity and type hints.\nThis refactored version breaks down the massive engineer_features method into smaller,\nfocused methods with proper type annotations.\n'
 import asyncio
 import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-import numpy as np
-import pandas as pd
-import datetime
 
 class FeatureCategory(Enum):
     """Enumeration of feature categories"""

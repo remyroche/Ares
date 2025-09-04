@@ -6,8 +6,6 @@ Simulation script to test regime merging parameters using existing HMM data
 from sklearn.metrics.pairwise import cosine_similarity
 import json
 
-import pandas as pd
-from copy import copy
 
 
 def load_existing_data():
@@ -177,9 +175,11 @@ def run_parameter_sweep():
 
                 try:
                     result=simulate_merging_with_parameters(
-                        counts = centroids,
-                        min_freq=sim_thresh,
-                        max_reg=max_reg)
+                        counts=counts,
+                        centroids=centroids,
+                        min_frequency=sim_thresh,
+                        similarity_threshold=similarity_threshold,
+                        max_regimes=max_reg)
 
                     if result and result["total_regimes"] > 0:
                         results.append(
@@ -260,7 +260,13 @@ def test_specific_parameters():
         return counts, data.get("combination_counts", {})
     centroids=data.get("cluster_centroids", {})
 
-    result=simulate_merging_with_parameters(centroids, 0.005, 0.80, 15)
+    result=simulate_merging_with_parameters(
+        counts=counts,
+        centroids=centroids,
+        min_frequency=0.005,
+        similarity_threshold=0.80,
+        max_regimes=15
+    )
 
     if result:
         print("Results with freq=0.005, sim=0.80, max=15:")

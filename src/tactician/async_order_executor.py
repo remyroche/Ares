@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/tactician/async_order_executor.py
 
@@ -25,7 +24,6 @@ except Exception:
     PerformanceReporter = None  # type: ignore
     def setup_performance_reporter(*_a, **_k):  # type: ignore
         return None
-from copy import copy
 from src.tactician.enhanced_order_manager import (
     EnhancedOrderManager,
     OrderRequest,
@@ -39,7 +37,6 @@ from src.utils.warning_symbols import (
     invalid,
 )
 from src.core.decorators import handles_errors
-from src.core.decorators.errors import handles_errors
 
 
 class ExecutionStrategy(Enum):

@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nConfiguration file for optimizable two-tier system parameters.\nThese parameters can be optimized in step12.\n'
 from dataclasses import dataclass
 from typing import Any

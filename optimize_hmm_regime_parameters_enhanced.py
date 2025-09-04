@@ -15,9 +15,7 @@ import time
 import warnings
 from typing import Any
 
-import numpy as np
 import optuna
-import pandas as pd
 from optuna.pruners import HyperbandPruner, MedianPruner
 from optuna.samplers import CmaEsSampler, TPESampler
 from sklearn.model_selection import TimeSeriesSplit
@@ -425,4 +423,4 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    await main()

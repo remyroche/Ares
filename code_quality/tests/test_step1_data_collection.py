@@ -9,8 +9,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
-import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent

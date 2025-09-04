@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """Enhanced ML-Based Regime Transition Detection with Random Forest + LGBM.
 
@@ -7,18 +10,13 @@ This module implements the specific approach requested:
 3. Stop when performance plateaus or decreases
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
-from sklearn.model_selection import train_test_split, TimeSeriesSplit, cross_val_score
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, f1_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
-import lightgbm as lgb
 import joblib
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class EnhancedMLRegimeTransitionDetector:

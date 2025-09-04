@@ -7,19 +7,15 @@ ensuring data quality, schema validation, and proper step transitions.
 """
 
 import asyncio
-import json
-import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Core decorators and utilities
-from src.core.decorators import (
+
     handles_errors,
     traced,
     validates,
     log_execution_time,
 )
-from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
     safe_file_exists,
@@ -28,7 +24,7 @@ from src.utils.common_operations import (
     validate_data_quality,
     get_logger,
 )
-from src.utils.data_quality_framework import DataQualityFramework
+from .utils.data_quality_framework import DataQualityFramework
 
 
 class EnhancedStepValidator:
@@ -322,7 +318,6 @@ class EnhancedStepValidator:
         }
         
         try:
-            import pandas as pd
             
             # Read the file
             if file_path.endswith('.parquet'):

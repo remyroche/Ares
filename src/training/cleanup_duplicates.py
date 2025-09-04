@@ -113,4 +113,4 @@ def main() -> None:
     print('4. Use version control instead of keeping backup copies')
     print('5. Follow the new module structure in MODULE_STRUCTURE.md')
 if __name__ == '__main__':
-    main()
+    await main()

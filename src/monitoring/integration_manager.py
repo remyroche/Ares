@@ -5,17 +5,16 @@ Monitoring Integration Manager (minimal scaffold)
 Coordinates monitoring components.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from src.core.decorators import log_execution_time
-from src.utils.logger import system_logger
+from .core.decorators import log_execution_time
+from .utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

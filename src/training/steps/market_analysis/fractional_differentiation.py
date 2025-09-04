@@ -3,13 +3,10 @@ Implements fractional-order differentiation to preserve memory and maintain
 stationarity while avoiding over-differencing.
 """
 from typing import Any
-import numpy as np
-import pandas as pd
 from statsmodels.tsa.stattools import adfuller
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import get_logger
-from copy import copy
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .utils.logger import get_logger
+from .core.decorators.errors import handles_errors
 
 class FractionalDifferentiation:
     """Fractional differentiation for enhanced feature engineering.

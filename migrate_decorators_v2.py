@@ -6,7 +6,6 @@ Improved script to migrate from old decorators to new core decorators.
 import re
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, Optional
 
 # Mapping of old decorator imports to new ones
 DECORATOR_MAPPING = {
@@ -300,4 +299,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

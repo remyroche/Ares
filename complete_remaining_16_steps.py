@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 # Steps that need full integration
+
 STEPS_TO_INTEGRATE=[
     "step3_hmm_regime_discovery.py",
     "step6_feature_engineering.py",
@@ -467,4 +468,5 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

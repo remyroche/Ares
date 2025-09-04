@@ -2,19 +2,16 @@
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
 
-from __future__ import annotations
 
 import numba
-import numpy as np
 import optuna
 import pandas as pd
-
+import numpy as np
 # src/training/tpsl_optimizer.py
-from copy import copy
 
 
 try:
-    import pandas_ta as ta  # noqa: F401 - ensure .ta accessor is registered
+    import pandas_ta as ta
 except ImportError as e:
     # pandas_ta is required for this optimizer per project policy
     msg = (
@@ -27,8 +24,8 @@ except ImportError as e:
 
 from sklearn.linear_model import LogisticRegression
 
-from src.database.sqlite_manager import SQLiteManager
-from src.utils.logger import get_logger
+from .database.sqlite_manager import SQLiteManager
+from .utils.logger import get_logger
 
 # Component logger
 logger = get_logger("TpSlOptimizer")

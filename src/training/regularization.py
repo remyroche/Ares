@@ -3,9 +3,7 @@
 # to correctly apply the config to the ensemble instances.
 from typing import Any
 
-import lightgbm as lgb
 import optuna
-import pandas as pd
 from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import cross_val_score
 from torch import nn
@@ -13,13 +11,11 @@ from torch import nn
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
-import asyncio
-import numpy as np
-from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
+from .analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
 
 # Ensure these imports are correct relative to the project root
-from src.config import CONFIG
-from src.utils.logger import system_logger
+from .config import CONFIG
+from .utils.logger import system_logger
 
 
 class RegularizationManager:
@@ -326,6 +322,8 @@ class RegularizationManager:
 
                     # Convert to tensors for PyTorch model
                     import torch
+import pandas as pd
+
                 except Exception as e:
                     pass  # TODO: Handle exception
                 except Exception as e:

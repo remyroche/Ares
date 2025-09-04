@@ -1,3 +1,7 @@
+
+from typing import Optional
+from typing import Any
+from typing import Dict
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
@@ -11,19 +15,22 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple, Callable
+from typing import Any, Callable, List
+import numpy as np
+import pandas as pd
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.tactician.sr_breakout_predictor']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-system_logger = PipelineStandards.safe_import('src.utils.logger', None)
-enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
-sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
-psutil = PipelineStandards.safe_import('psutil', None)
-numpy = PipelineStandards.safe_import('numpy', None)
-pandas = PipelineStandards.safe_import('pandas', None)
+# from .utils.pipeline_standards import PipelineStandards, pipeline_standards
+# REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.tactician.sr_breakout_predictor']
+# dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+# centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
+from src.utils.logger import system_logger
+# enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
+# sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
+import psutil
+import numpy
+import pandas
 
 # Define PSUTIL_AVAILABLE for memory monitoring
 PSUTIL_AVAILABLE = psutil is not None
@@ -33,8 +40,10 @@ def create_fallback_logger() -> Any:
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
-    def decorator(func: Callable) -> None:
-        return func
+    def decorator(*args, **kwargs):
+        def inner_decorator(func: Callable) -> Callable:
+            return func
+        return inner_decorator
     return decorator
 
 def ensure_directory(path: Path) -> Path:
@@ -48,62 +57,62 @@ def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
         json.dump(data, f, **kwargs)
 if system_logger is None:
     system_logger = create_fallback_logger()
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
-    handle_errors = create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
-    validate_data_structure = create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
-    ensure_data_integrity = create_fallback_decorator()
-    monitor_step_execution = create_fallback_decorator()
-    secure_step_execution = create_fallback_decorator()
-    validate_pipeline_step = create_fallback_decorator()
-    validates = create_fallback_decorator()
-    cached = create_fallback_decorator()
-    traced = create_fallback_decorator()
-    handles_errors = create_fallback_decorator()
-    log_execution_time = create_fallback_decorator()
-else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
-    handle_errors = centralized_decorators.handle_errors
-    memory_efficient = centralized_decorators.memory_efficient
-    resource_monitor = centralized_decorators.resource_monitor
-    secure_data_processing = centralized_decorators.secure_data_processing
-    validate_data_structure = centralized_decorators.validate_data_structure
-    with_tracing_span = centralized_decorators.with_tracing_span
-    quality_gate = centralized_decorators.quality_gate
-    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
-    ensure_data_integrity = centralized_decorators.ensure_data_integrity
-    monitor_step_execution = centralized_decorators.monitor_step_execution
-    secure_step_execution = centralized_decorators.secure_step_execution
-    validate_pipeline_step = centralized_decorators.validate_pipeline_step
-    validates = centralized_decorators.validates
-    cached = centralized_decorators.cached
-    traced = centralized_decorators.traced
-    handles_errors = centralized_decorators.handles_errors
-    log_execution_time = getattr(centralized_decorators, 'log_execution_time', create_fallback_decorator())
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
-    log_step_dataframe = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_report = lambda *args, **kwargs: 'fallback_report'
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-    log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
-    log_step_model = lambda *args, **kwargs: 'fallback_model'
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_artifact = enhanced_mlflow.log_step_artifact
-    log_step_dataframe = enhanced_mlflow.log_step_dataframe
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_report = enhanced_mlflow.log_step_report
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_model = enhanced_mlflow.log_step_model
+# if centralized_decorators is None:
+comprehensive_data_validation = create_fallback_decorator()
+handle_errors = create_fallback_decorator()
+memory_efficient = create_fallback_decorator()
+resource_monitor = create_fallback_decorator()
+secure_data_processing = create_fallback_decorator()
+validate_data_structure = create_fallback_decorator()
+with_tracing_span = create_fallback_decorator()
+quality_gate = create_fallback_decorator()
+monitor_feature_engineering = create_fallback_decorator()
+ensure_data_integrity = create_fallback_decorator()
+monitor_step_execution = create_fallback_decorator()
+secure_step_execution = create_fallback_decorator()
+validate_pipeline_step = create_fallback_decorator()
+validates = create_fallback_decorator()
+cached = create_fallback_decorator()
+traced = create_fallback_decorator()
+handles_errors = create_fallback_decorator()
+log_execution_time = create_fallback_decorator()
+# else:
+#     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+#     handle_errors = centralized_decorators.handle_errors
+#     memory_efficient = centralized_decorators.memory_efficient
+#     resource_monitor = centralized_decorators.resource_monitor
+#     secure_data_processing = centralized_decorators.secure_data_processing
+#     validate_data_structure = centralized_decorators.validate_data_structure
+#     with_tracing_span = centralized_decorators.with_tracing_span
+#     quality_gate = centralized_decorators.quality_gate
+#     monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+#     ensure_data_integrity = centralized_decorators.ensure_data_integrity
+#     monitor_step_execution = centralized_decorators.monitor_step_execution
+#     secure_step_execution = centralized_decorators.secure_step_execution
+#     validate_pipeline_step = centralized_decorators.validate_pipeline_step
+#     validates = centralized_decorators.validates
+#     cached = centralized_decorators.cached
+#     traced = centralized_decorators.traced
+#     handles_errors = centralized_decorators.handles_errors
+#     log_execution_time = getattr(centralized_decorators, 'log_execution_time', create_fallback_decorator())
+# if enhanced_mlflow is None:
+with_enhanced_mlflow_logging = create_fallback_decorator()
+log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
+log_step_dataframe = lambda *args, **kwargs: 'fallback_dataframe'
+log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+log_step_report = lambda *args, **kwargs: 'fallback_report'
+log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
+log_step_model = lambda *args, **kwargs: 'fallback_model'
+# else:
+#     with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+#     log_step_artifact = enhanced_mlflow.log_step_artifact
+#     log_step_dataframe = enhanced_mlflow.log_step_dataframe
+#     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+#     log_step_report = enhanced_mlflow.log_step_report
+#     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+#     log_step_metrics = enhanced_mlflow.log_step_metrics
+#     log_step_model = enhanced_mlflow.log_step_model
 logger = system_logger.getChild('Step3HMMRegimeDiscovery')
 
 class HMMRegimeDiscoveryStep:
@@ -205,6 +214,7 @@ class HMMRegimeDiscoveryStep:
             if not data_ready:
                 self.logger.error('❌ Data not ready for HMM regime discovery')
                 pipeline_state['hmm_regime_discovery_completed'] = False
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
                 pipeline_state['regime_discovery_error'] = 'Data quality check failed'
                 return pipeline_state
             self.logger.info('=' * 60)
@@ -219,6 +229,7 @@ class HMMRegimeDiscoveryStep:
                 error_msg = data_loaded.get('error', 'Unknown error')
                 self.logger.error(f'   Error details: {error_msg}')
                 pipeline_state['hmm_regime_discovery_completed'] = False
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
                 pipeline_state['regime_discovery_error'] = f'Data loading failed: {error_msg}'
                 return pipeline_state
             symbol = training_input.get('symbol', 'ETHUSDT')
@@ -252,6 +263,7 @@ class HMMRegimeDiscoveryStep:
             if regime_results.get('success', False):
                 self.logger.info('✅ HMM regime discovery completed successfully')
                 pipeline_state['hmm_regime_discovery_completed'] = True
+                pipeline_state['step03_hmm_regime_discovery_completed'] = True  # For SimplifiedTrainingManager
                 pipeline_state['regime_states'] = regime_results.get('regime_states', [])
                 pipeline_state['regime_transitions'] = regime_results.get('regime_transitions', {})
                 pipeline_state['regime_metrics'] = regime_results.get('metrics', {})
@@ -272,10 +284,12 @@ class HMMRegimeDiscoveryStep:
                 error_msg = regime_results.get('error', 'Unknown error')
                 self.logger.error(f'   Error details: {error_msg}')
                 pipeline_state['hmm_regime_discovery_completed'] = False
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
                 pipeline_state['regime_discovery_error'] = error_msg
         except Exception as e:
             self.logger.exception(f'❌ Unexpected error during HMM regime discovery: {e}')
             pipeline_state['hmm_regime_discovery_completed'] = False
+            pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
             pipeline_state['regime_discovery_error'] = str(e)
         total_elapsed = time.time() - step_start
         self.logger.info('=' * 60)
@@ -1166,7 +1180,6 @@ class HMMRegimeDiscoveryStep:
         try:
             self.logger.info('📊 Modeling regime persistence...')
             from scipy.stats import weibull_min, expon, gamma
-            from scipy.optimize import minimize
             durations = self._calculate_regime_durations(regime_sequence)
             unique_durations = np.unique(durations)
             if len(unique_durations) < 3:

@@ -117,7 +117,7 @@ class EnhancedPipelineOrchestrator:
         if config:
             self.config = config
         elif config_path:
-            self.config = self.config_manager.load_config(config_path)
+            self.config = await self.config_manager.load_config(config_path)
         else:
             raise ValueError("Either config_path or config must be provided")
 
@@ -545,4 +545,4 @@ async def example_usage():
         print(f"Failed steps: {result.failed_steps}")
 
 if __name__ == "__main__":
-    asyncio.run(example_usage())
+    asyncio.run(await example_usage())

@@ -10,25 +10,19 @@ This module provides enhanced data conversion with:
 - Integration with existing pipeline
 """
 
-from __future__ import annotations
 
 import asyncio
 import sys
-import time
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
-from .enhanced_data_validation_framework import DataType, EnhancedDataValidator, get_validator
-from .enhanced_data_collector import EnhancedDataCollectionManager
+from .utils.logger import system_logger
+from .utils.pipeline_standards import pipeline_standards
 
 logger = system_logger.getChild("EnhancedStep01_5DataConverter")
 
@@ -546,6 +540,8 @@ class EnhancedUnifiedDataConverter:
             
             # Load and validate unified data
             import pandas as pd
+from datetime import datetime
+
             df = pd.read_parquet(unified_filepath)
             
             # Basic quality checks
@@ -722,4 +718,4 @@ if __name__ == "__main__":
         else:
             print("❌ Enhanced data conversion failed")
     
-    asyncio.run(main())
+    asyncio.run(await main())

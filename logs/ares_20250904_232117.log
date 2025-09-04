@@ -1,0 +1,58 @@
+2025-09-04 23:21:17,719 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 23:21:17,719 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:21:17,719 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 23:21:17,719 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 23:21:17
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_232117.log
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:21:17,720 - AresTradingSystem - INFO - 🚀 Launcher started: step02
+2025-09-04 23:21:17,720 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - 🚀 Running step02 with existing data for ETHUSDT on BINANCE
+2025-09-04 23:21:17,720 - AresComponent.AresLauncher - INFO - 📊 Using existing data from step01 and step1_5 - no new downloads
+2025-09-04 23:21:17,721 - AresComponent.AresLauncher - WARNING - ⚠️ Could not run existing validators: No module named 'src.utils.utils'
+2025-09-04 23:21:17,721 - AresComponent.AresLauncher - WARNING - Proceeding with basic file existence check
+2025-09-04 23:21:17,739 - AresComponent.AresLauncher - INFO - ✅ Found unified data: data/training/unified/binance/ETHUSDT/1m/exchange=BINANCE (742 parquet files)
+2025-09-04 23:21:17,739 - AresComponent.AresLauncher - INFO - Starting from step: step02_data_reading
+2025-09-04 23:21:17,756 - AresComponent.AresLauncher - INFO - 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)
+2025-09-04 23:21:17,757 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-09-04 23:21:17,757 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-09-04 23:21:17,757 - AresTradingSystem.System.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-09-04 23:21:17,757 - AresComponent.AresLauncher - INFO - 🔍 Step validation will be performed by EnhancedTrainingManager
+2025-09-04 23:21:17,757 - AresTradingSystem.System.StepOrchestrator - INFO - 🚀 Starting execution from step: step02_data_reading
+2025-09-04 23:21:17,763 - AresTradingSystem.System.StepOrchestrator - ERROR - Failed to setup enhanced training manager: cannot import name 'StepDependencyValidator' from 'src.utils.step_dependency_validator' (/Users/remyroche/Documents/Ares/src/utils/step_dependency_validator.py)
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/training/step_orchestrator.py", line 84, in _setup_enhanced_training_manager
+    from src.training.core.training_manager import (
+  File "/Users/remyroche/Documents/Ares/src/training/core/training_manager.py", line 15, in <module>
+    from ..simplified_training_manager import SimplifiedTrainingManager
+  File "/Users/remyroche/Documents/Ares/src/training/simplified_training_manager.py", line 21, in <module>
+    from ..utils.step_dependency_validator import StepDependencyValidator
+ImportError: cannot import name 'StepDependencyValidator' from 'src.utils.step_dependency_validator' (/Users/remyroche/Documents/Ares/src/utils/step_dependency_validator.py)
+2025-09-04 23:21:17,765 - AresComponent.AresLauncher - ERROR - ❌ Failed to run step-based training pipeline: 'StepOrchestrator' object has no attribute 'print'
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/training/step_orchestrator.py", line 84, in _setup_enhanced_training_manager
+    from src.training.core.training_manager import (
+  File "/Users/remyroche/Documents/Ares/src/training/core/training_manager.py", line 15, in <module>
+    from ..simplified_training_manager import SimplifiedTrainingManager
+  File "/Users/remyroche/Documents/Ares/src/training/simplified_training_manager.py", line 21, in <module>
+    from ..utils.step_dependency_validator import StepDependencyValidator
+ImportError: cannot import name 'StepDependencyValidator' from 'src.utils.step_dependency_validator' (/Users/remyroche/Documents/Ares/src/utils/step_dependency_validator.py)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 3204, in _run_step_pipeline
+    success = await orchestrator.execute_from_step(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/step_orchestrator.py", line 311, in execute_from_step
+    setup_success = await self._setup_enhanced_training_manager(config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/step_orchestrator.py", line 104, in _setup_enhanced_training_manager
+    self.print(failed + " " + error_msg)
+    ^^^^^^^^^^
+AttributeError: 'StepOrchestrator' object has no attribute 'print'
+2025-09-04 23:21:17,766 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 23:21:17,767 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 23:21:17,767 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/validation/critical_path_validators.py
 
@@ -17,14 +16,13 @@ from src.custom_types import (
     TradeDecision,
     TradingSignal,
 )
-from copy import copy
 from src.custom_types.validation import (
     RuntimeTypeError,
     TypeValidator,
     validate_market_data,
     validate_model_input,
 )
-from src.utils.warning_symbols import failed
+from .utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Validator for Step 9: Tactician Specialist Training."""
 
@@ -9,7 +8,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
 from src.utils.warning_symbols import (
     error,
@@ -21,9 +19,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG  # noqa: E402
-from src.utils.base_validator import BaseValidator as BaseValidator_src_utils_base_validator  # noqa: E402
-from src.utils.common_operations import safe_json_load
+from .config import CONFIG  # noqa: E402
+from .utils.common_operations import safe_json_load
 
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
@@ -552,4 +549,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(test_validator())
+    _asyncio.run(await test_validator())

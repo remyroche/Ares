@@ -7,15 +7,13 @@ quality assessment, and detailed error reporting for the backtesting pipeline.
 
 import logging
 import time
-import json
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-from datetime import datetime
 import traceback
 import psutil
 import threading
 from contextlib import contextmanager
+
 
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 

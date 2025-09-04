@@ -1,19 +1,19 @@
+
+from typing import Optional
+from typing import Dict
+import pandas as pd
 """Triple Barrier Parameter Optimizer for Step 17.
 
 This module optimizes triple barrier parameters during the training process,
 ensuring that barrier values are tuned for optimal performance.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, Tuple, Optional, List
 import optuna
 from dataclasses import dataclass
-import logging
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

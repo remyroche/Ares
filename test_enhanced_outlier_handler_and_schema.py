@@ -22,8 +22,6 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
-import numpy as np
-import pandas as pd
 
 from src.utils.enhanced_outlier_handler import (
     OutlierSeverity,
@@ -625,5 +623,5 @@ def main():
 
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

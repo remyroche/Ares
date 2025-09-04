@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """Progress Manager for Training Steps.
 
@@ -13,10 +12,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.utils.logger import system_logger
+from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
 )
+from ..core.decorators.errors import handles_errors
 
 
 class ProgressManager:

@@ -4,27 +4,19 @@ Quality Alert System for Data Quality Monitoring
 This module provides an alert system that can send notifications when data quality
 issues are detected, supporting multiple channels like Slack, email, and webhooks.
 """
-import json
-import logging
-import os
 import smtplib
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
 import requests
 
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-from src.utils.advanced_ml_validation import Alert, AlertConfig, MLValidationResult
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from .utils.advanced_ml_validation import Alert, AlertConfig, MLValidationResult
+from .utils.logger import system_logger
 
 
 class QualityAlertManager:

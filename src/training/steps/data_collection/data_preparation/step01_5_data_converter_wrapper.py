@@ -6,9 +6,8 @@ the BaseStep execution contract and the pipeline orchestration.
 
 from typing import Any, Dict, Tuple
 
-from src.training.base_step import BaseStep
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+from .training.base_step import BaseStep
+from .core.decorators import handles_errors
 
 
 class DataConverterStep(BaseStep):
@@ -55,7 +54,6 @@ class DataConverterStep(BaseStep):
 
     async def _run_conversion_step(self, params: Dict[str, Any]) -> bool:
         """Run the actual conversion step."""
-        from src.training.steps.data_preparation.step01_5_data_converter import run_step as run_step_15
         
         self.logger.info("🔄 Running unified data converter (Step 01_5)...")
         return await run_step_15(
@@ -68,7 +66,7 @@ class DataConverterStep(BaseStep):
 
     def _update_pipeline_state(self, pipeline_state: Dict[str, Any], params: Dict[str, Any], conversion_success: bool):
         """Update pipeline state with conversion results."""
-        from src.training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
+        from .training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
         
         converter = UnifiedDataConverter({})
         unified_path = converter.get_unified_data_path(params["symbol"], params["exchange"], params["timeframe"])

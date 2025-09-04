@@ -1,3 +1,10 @@
+
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Optional
+from datetime import datetime
+import numpy as np
 #!/usr/bin/env python3
 """Real-time Streaming Pipeline for Regime Discovery.
 
@@ -5,14 +12,7 @@ This module implements a real-time streaming pipeline for processing live market
 with an agnostic approach that can work with different exchanges (Binance, Gate.io, etc.).
 """
 
-import ast
 import asyncio
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Callable, Protocol
-import json
-import time
-from datetime import datetime, timedelta
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import warnings

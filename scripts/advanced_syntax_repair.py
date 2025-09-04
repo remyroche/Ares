@@ -7,7 +7,6 @@ Repairs:
   and fix chained type corruption like `a: T=b: U` (with optional default).
 - Decorator argument lists: insert missing commas between keyword args.
 """
-from __future__ import annotations
 
 import re
 import sys
@@ -117,5 +116,5 @@ def main() -> int:
 
 
 if __name__== "__main__":
-    raise SystemExit(main())
+    raise SystemExit(await main())
 

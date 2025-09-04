@@ -2,18 +2,16 @@
 
 import logging
 
-from src.core.decorators import (
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     log_call,
     log_execution_time,
     validates
 )
-from copy import copy
 import numpy as np
 import pandas as pd
 
-from src.core.domain import (
     artifact_versioning,
     artifact_write_lock,
     deterministic_seed,
@@ -45,7 +43,7 @@ import sys
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -921,7 +919,6 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     ) -> dict[str, Any]:
         """Train XGBoost model."""
         try:
-            import xgboost as xgb
             from sklearn.metrics import accuracy_score
 
             best_params = {
@@ -1440,4 +1437,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(test())
+    asyncio.run(await test())

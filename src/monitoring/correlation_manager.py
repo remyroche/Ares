@@ -6,16 +6,14 @@ Centralized correlation ID management and request/response correlation tracking
 for the Ares trading bot.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from src.utils.logger import system_logger
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class CorrelationStatus(Enum):

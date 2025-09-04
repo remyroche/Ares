@@ -19,7 +19,6 @@ class ExchangeFactory:
 
         if name == "binance":
             # Prefer the refactored, canonical implementation
-            from src.exchange.binance import BinanceExchange as CleanBinance
 
             return CleanBinance(cfg)
 

@@ -1,3 +1,8 @@
+
+from typing import Optional
+from typing import Dict
+import pandas as pd
+from typing import Any
 """
 Comprehensive S/R Detection Integration Module
 
@@ -5,13 +10,7 @@ This module integrates all S/R detection components to provide a unified interfa
 for the step02_5_sr_optimization pipeline step.
 """
 
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
-import asyncio
-import numpy as np
-import pandas as pd
 from datetime import datetime
-from pathlib import Path
 
 # Import all S/R detection modules
 from .sr_strength_optimizer import SRStrengthOptimizer
@@ -28,7 +27,7 @@ from .sr_performance_monitor import SRPerformanceMonitor
 from .sr_weight_optimizer import SRWeightOptimizer
 from .sr_levels_manager import SRLevelsManager
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 logger = system_logger.getChild('SRComprehensiveIntegration')
 

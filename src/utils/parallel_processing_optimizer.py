@@ -5,22 +5,17 @@ This module provides optimized parallel processing utilities designed
 for Apple Silicon as well as other platforms. It offers a simple
 parallel apply for DataFrame workloads and a convenience decorator.
 """
-from __future__ import annotations
 
 import asyncio
 import logging
-import multiprocessing as mp
 import os
 import platform
 import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from copy import copy
 from functools import partial, wraps
 from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
 import psutil
 
 if TYPE_CHECKING:

@@ -7,10 +7,7 @@ FawltyDeps identifies undeclared and unused third-party dependencies.
 
 import json
 import subprocess
-import tempfile
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
 
 from .base_plugin import BasePlugin, PluginContext, PluginResult, PluginMetadata, PluginCategory, PluginPriority
 

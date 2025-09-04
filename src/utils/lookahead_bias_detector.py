@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Lookahead Bias Detection System
@@ -8,13 +7,11 @@ in financial machine learning pipelines.
 """
 
 import re
-from copy import copy
 from typing import Any
 
-import pandas as pd
 
-from src.core.decorators.errors import handles_errors
-from src.utils.logger import system_logger
+from .core.decorators.errors import handles_errors
+from .utils.logger import system_logger
 
 
 class LookaheadBiasDetector:

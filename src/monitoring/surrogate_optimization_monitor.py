@@ -1,14 +1,10 @@
-from __future__ import annotations
+
+from dataclasses import dataclass
 '\nSurrogate Optimization Monitoring System\n\nThis module provides comprehensive monitoring capabilities for surrogate optimization:\n- Real-time performance tracking\n- Automated reporting\n- Performance alerts\n- Historical analysis\n- Dashboard integration\n'
-import os.path
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
-import numpy as np
-import pandas as pd
-import seaborn as sns
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 
 
 @dataclass

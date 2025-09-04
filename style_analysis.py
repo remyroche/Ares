@@ -163,4 +163,4 @@ def main():
     analyzer.analyze_style()
 
 if __name__ == "__main__":
-    main()
+    await main()

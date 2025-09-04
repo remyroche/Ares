@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/core/di_integration.py
 
@@ -10,11 +9,11 @@ throughout the Ares trading system.
 """
 from typing import Any
 
-from src.analyst.di_analyst import DIAnalyst
-from src.config import CONFIG
-from src.core.dependency_injection import DependencyContainer, ServiceLifetime
-from src.core.enhanced_factories import TradingSystemFactory
-from src.core.service_registry import ServiceRegistry
+from .analyst.di_analyst import DIAnalyst
+from .config import CONFIG
+from .core.dependency_injection import DependencyContainer, ServiceLifetime
+from .core.enhanced_factories import TradingSystemFactory
+from .core.service_registry import ServiceRegistry
 from src.interfaces.base_interfaces import (
     IAnalyst,
     IEventBus,
@@ -22,9 +21,8 @@ from src.interfaces.base_interfaces import (
     ISupervisor,
     ITactician,
 )
-import asyncio
-from src.training.di_training_manager import DITrainingManager
-from src.utils.logger import system_logger
+from .training.di_training_manager import DITrainingManager
+from .utils.logger import system_logger
 
 
 class DIIntegration:

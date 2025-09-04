@@ -9,8 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
-import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -283,6 +281,8 @@ class TestDataReadingStep(unittest.TestCase):
     def test_log_step_timing(self):
         """Test step timing logging."""
         import time
+import pandas as pd
+
         start_time = time.time()
 
         # Add a small delay

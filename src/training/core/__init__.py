@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Core training API exports.
 
@@ -8,7 +7,6 @@ are intentionally not imported here to avoid hard dependencies that are not
 required by the current codebase.
 """
 
-from .training_manager import TrainingManager, create_training_manager
 
 __all__ = [
     "TrainingManager",

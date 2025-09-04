@@ -1,11 +1,9 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """
 PnL-Aware Loss Function for Keras Models.
 
 This module contains the factory function for creating custom Keras loss functions
 that combine standard classification loss with financial components.
 """
-from keras import backend as K
 
 def create_pnl_aware_loss(pnl_multiplier: Any=0.1, liquidation_penalty: Any=2.0, reward_boost: Any=1.5) -> Any:
     """

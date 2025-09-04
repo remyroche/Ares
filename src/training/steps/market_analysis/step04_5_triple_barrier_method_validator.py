@@ -1,3 +1,5 @@
+
+import pandas as pd
 """Validator for Step 4: Triple Barrier Method.
 
 This module validates the triple barrier method step outputs.
@@ -8,9 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.logger import system_logger
-from src.core.domain import comprehensive_data_validation, handle_errors, memory_efficient, resource_monitor, secure_data_processing, validate_data_structure, with_tracing_span, quality_gate
-from src.core.decorators import handles_errors, traced, validates
+from .utils.logger import system_logger
+from .core.decorators import handles_errors, traced, validates
 logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
 
 @traced(span_name='validate_triple_barrier_method')
@@ -107,11 +108,10 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         
         # Load and validate data
         try:
-            import pandas as pd
             data = pd.read_parquet(triple_barrier_path)
             
             # Validate data content
-            content_validation_error = _validate_data_content(data)
+            content_validation_error = await _validate_data_content(data)
             if content_validation_error:
                 return content_validation_error
             
@@ -142,4 +142,4 @@ if __name__ == '__main__':
         test_state = {}
         result = await run_validator(test_input, test_state)
         print(f'Validation result: {result}')
-    asyncio.run(test())
+    asyncio.run(await test())

@@ -1,23 +1,23 @@
+
+import pandas as pd
+import numpy as np
 """S/R Strength Parameter Optimizer Module.
 
 This module optimizes parameters for identifying strong S/R levels through comprehensive backtesting,
 focusing on level strength characteristics rather than breakout predictions.
 """
 
-import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
 from dataclasses import dataclass, asdict
 import optuna
 import json
-from collections import deque
 import warnings
+
 warnings.filterwarnings('ignore')
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
 
 # Try to import optional dependencies
 try:
@@ -27,7 +27,6 @@ except ImportError:
     NUMBA_AVAILABLE = False
     
 try:
-    from joblib import Parallel, delayed
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False

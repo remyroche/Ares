@@ -1,0 +1,53 @@
+2025-09-04 20:37:38,550 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 20:37:38
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_203738.log
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:37:38,551 - AresTradingSystem - INFO - 🚀 Launcher started: step02_5
+2025-09-04 20:37:38,551 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - 🚀 Running step-based training with validation for ETHUSDT on BINANCE
+2025-09-04 20:37:38,551 - AresComponent.AresLauncher - INFO - 📊 Starting from: step2_5_sr_optimization
+2025-09-04 20:37:38,552 - AresComponent.AresLauncher - INFO - 🎯 Training mode: blank
+2025-09-04 20:37:38,552 - AresComponent.AresLauncher - INFO - 🔍 Validating previous steps before starting from step2_5_sr_optimization
+2025-09-04 20:37:38,728 - AresComponent.AresLauncher - INFO - 🔍 Validating 3 previous steps: ['step1_data_collection', 'step1_5_data_converter', 'step2_data_reading']
+2025-09-04 20:37:38,728 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_data_collection...
+2025-09-04 20:37:38,728 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_data_collection
+2025-09-04 20:37:38,728 - AresComponent.ValidatorOrchestrator - ERROR - ❌ Exception while running validator for step1_data_collection: No validator mapping found for step: step1_data_collection
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 52, in run_step_validator
+    raw_result = await self._run_validator(step_name, training_input, pipeline_state, config, validation_level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 205, in _run_validator
+    raise ValueError(msg)
+ValueError: No validator mapping found for step: step1_data_collection
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - ERROR - ❌ step1_data_collection validation failed: No validator mapping found for step: step1_data_collection
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_5_data_converter...
+2025-09-04 20:37:38,732 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_5_data_converter
+2025-09-04 20:37:38,732 - AresComponent.ValidatorOrchestrator - ERROR - ❌ Exception while running validator for step1_5_data_converter: No validator mapping found for step: step1_5_data_converter
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 52, in run_step_validator
+    raw_result = await self._run_validator(step_name, training_input, pipeline_state, config, validation_level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 205, in _run_validator
+    raise ValueError(msg)
+ValueError: No validator mapping found for step: step1_5_data_converter
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - ERROR - ❌ step1_5_data_converter validation failed: No validator mapping found for step: step1_5_data_converter
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - INFO - 🔍 Validating step2_data_reading...
+2025-09-04 20:37:38,732 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step2_data_reading
+2025-09-04 20:37:38,732 - AresComponent.ValidatorOrchestrator - ERROR - ❌ Exception while running validator for step2_data_reading: No validator mapping found for step: step2_data_reading
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 52, in run_step_validator
+    raw_result = await self._run_validator(step_name, training_input, pipeline_state, config, validation_level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 205, in _run_validator
+    raise ValueError(msg)
+ValueError: No validator mapping found for step: step2_data_reading
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - ERROR - ❌ step2_data_reading validation failed: No validator mapping found for step: step2_data_reading
+2025-09-04 20:37:38,732 - AresComponent.AresLauncher - ERROR - ❌ Cannot start from step2_5_sr_optimization - previous step validation failed
+2025-09-04 20:37:38,733 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 20:37:38,733 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 20:37:38,733 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

@@ -2,20 +2,14 @@ import gc
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from typing import Any
-import lightgbm as lgb
-import numpy as np
 import optuna
-import pandas as pd
 import psutil
-import xgboost as xgb
 from catboost import CatBoostClassifier
 from optuna.pruners import SuccessiveHalvingPruner
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import TimeSeriesSplit
-from copy import copy
-from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     from pytorch_tabnet.tab_model import TabNetClassifier
     TABNET_AVAILABLE = True
@@ -34,9 +28,9 @@ try:
 except ImportError:
     LSTM_AVAILABLE = False
     nn = None
-from src.database.sqlite_manager import SQLiteManager
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, warning
+from .database.sqlite_manager import SQLiteManager
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, failed, warning
 
 class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 from typing import Any
 
@@ -8,11 +7,11 @@ from typing import Any
 # Version information
 ARES_VERSION = "0.1.0"
 
-from src.config.environment import get_environment_settings
-from src.config.system import get_system_config
-from src.config.trading import get_trading_config
-from src.config.training import get_training_config
-from src.config.validation import validate_complete_config
+from .environment import get_environment_settings
+from .system import get_system_config
+from .trading import get_trading_config
+from .training import get_training_config
+from .validation import validate_complete_config
 
 
 def get_complete_config() -> dict[str, Any]:
@@ -62,7 +61,7 @@ def get_complete_config() -> dict[str, Any]:
     ok, errors = validate_complete_config(complete_config)
     if not ok:
         # Import logger lazily to avoid cycles
-        from src.utils.logger import system_logger
+        from .utils.logger import system_logger
 
         for err in errors:
             system_logger.error(f"Config validation error: {err}")

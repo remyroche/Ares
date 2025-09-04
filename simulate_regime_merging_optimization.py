@@ -6,7 +6,6 @@ Simulation script to find optimal regime merging parameters for 70-80% concentra
 from sklearn.metrics.pairwise import cosine_similarity
 import json
 
-import pandas as pd
 
 
 def load_regime_data():
@@ -133,8 +132,10 @@ def run_parameter_sweep():
             for max_reg in max_regimes_options:
                 try:
                     result=simulate_regime_merging(
-                        regime_data = min_freq,
-                        sim_thresh=max_reg,
+                        regime_data=regime_data,
+                        min_frequency=min_freq,
+                        similarity_threshold=sim_thresh,
+                        max_regimes=max_reg
                     )
 
                     if result:

@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
@@ -312,5 +311,5 @@ def main() -> bool:
 
 
 if __name__== "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

@@ -1,19 +1,16 @@
+
+from typing import Dict
+import pandas as pd
+from typing import Any
 """Step 5: Labeling - Refactored to use BaseStep.
 
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
 """
-from typing import Any, Dict, Tuple, Optional, List
 from pathlib import Path
-import pandas as pd
-import numpy as np
 import json
-from datetime import datetime
-from src.training.base_step import BaseStep
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-from copy import copy
-import asyncio
+from .training.base_step import BaseStep
+from .core.decorators import handles_errors
 
 class LabelingStep(BaseStep):
     """Step 5: Labeling using standardized base class."""
@@ -33,10 +30,10 @@ class LabelingStep(BaseStep):
         """Initialize step-specific components."""
         try:
             if self.labeling_config.get('use_triple_barrier', True):
-                from src.training.steps.model_training.labeling_components import TripleBarrierLabeler
+                from .training.steps.model_training.labeling_components import TripleBarrierLabeler
                 self.triple_barrier_labeler = TripleBarrierLabeler(self.labeling_config.get('barrier_config', {}))
             if self.labeling_config.get('use_meta_labeling', True):
-                from src.analyst.meta_labeling_system import MetaLabelingSystem
+                from .analyst.meta_labeling_system import MetaLabelingSystem
                 
                 self.meta_labeler = MetaLabelingSystem()
             self.logger.info('✅ Labeling components initialized')

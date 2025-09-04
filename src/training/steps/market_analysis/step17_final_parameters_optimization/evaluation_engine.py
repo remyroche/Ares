@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
 
@@ -12,10 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     warning,

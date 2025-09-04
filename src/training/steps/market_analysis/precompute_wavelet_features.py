@@ -10,18 +10,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
-from copy import copy
-from src.utils.data_optimizer import ohlcv_columns
-from src.core.domain import validate_wavelet_data_quality
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
+from .utils.data_optimizer import ohlcv_columns
+from .core.domain import validate_wavelet_data_quality
+from .utils.logger import system_logger
     error,
     failed,
     initialization_error,
@@ -142,7 +138,7 @@ class WaveletFeaturePrecomputer:
                             str(file_path), columns=columns, to_pandas=True
                         )
                     else:
-                        from src.utils.logger import log_io_operation
+                        from .utils.logger import log_io_operation
 
                         with log_io_operation(
                             self.logger,
@@ -152,12 +148,12 @@ class WaveletFeaturePrecomputer:
                         ):
                             dataset = pd.read_parquet(data_path, columns=columns)
                 except Exception:
-                    from src.utils.logger import log_io_operation
+                    from .utils.logger import log_io_operation
 
                     with log_io_operation(self.logger, "read_parquet", data_path):
                         dataset = pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
-                from src.utils.logger import log_io_operation
+                from .utils.logger import log_io_operation
                 
                 with log_io_operation(self.logger, "read_csv", data_path):
                     dataset = pd.read_csv(data_path, parse_dates=True)
@@ -496,4 +492,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

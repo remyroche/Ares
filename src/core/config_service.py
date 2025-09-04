@@ -1,20 +1,18 @@
-from __future__ import annotations
 import asyncio
 import importlib
 import json
 import os
-import os.path
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 import yaml
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, warning
-from copy import copy
-from typing import Dict, List, Optional, Union, Any, Tuple
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .utils.warning_symbols import failed, warning
+from .core.decorators.errors import handles_errors
+
+from logging import error
 try:
     _watchdog_events = importlib.import_module('watchdog.events')
     _watchdog_observers = importlib.import_module('watchdog.observers')
@@ -156,12 +154,12 @@ class ConfigurationService:
             self.logger.exception(f'Error reading config value for key: {dotted_key}')
             return default
 
-    def print(self, message: str) -> None:
+    def print_message(self, message: str) -> None:
         """Proxy print to logger to keep output consistent in terminal."""
         try:
             self.logger.info(message)
         except Exception:
-            self.print(message)
+            self.print_message(message)
 
     @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration service setup'), AttributeError: (False, 'Missing required configuration parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='configuration service initialization')
     async def initialize(self) -> bool:
@@ -174,7 +172,7 @@ class ConfigurationService:
                 self.loop = None
             await self._load_configuration()
             if not await self._validate_configuration():
-                self.print(failed('Configuration validation failed'))
+                self.print_message(failed('Configuration validation failed'))
                 return False
             await self._setup_configuration_sections()
             if self.enable_hot_reload:
@@ -206,7 +204,7 @@ class ConfigurationService:
                 self.load_times = self.load_times[-10:]
             self.logger.info(f'Configuration loaded successfully in {load_time:.3f}s')
         except Exception as e:
-            self.print(error(f'Error loading configuration: {e}'))
+            self.print_message(error(f'Error loading configuration: {e}'))
 
     @handles_errors(default_return=None, context='config file loading')
     async def _load_config_file(self, config_file: str) -> None:
@@ -298,7 +296,7 @@ class ConfigurationService:
                     self.validation_errors.append('Exchange API key is required')
             if self.validation_errors:
                 for error_msg in self.validation_errors:
-                    self.print(error(f'Configuration validation error: {error_msg}'))
+                    self.print_message(error(f'Configuration validation error: {error_msg}'))
                 return False
             return True
         except Exception as e:
@@ -324,7 +322,7 @@ class ConfigurationService:
         """Setup hot-reload for configuration files."""
         try:
             if not WATCHDOG_AVAILABLE:
-                self.print(warning('Watchdog not available, hot-reload disabled'))
+                self.print_message(warning('Watchdog not available, hot-reload disabled'))
                 return
             if not self.watcher:
                 self.watcher = Observer()
@@ -343,7 +341,7 @@ class ConfigurationService:
         try:
             self.encryption_key = os.getenv('CONFIG_ENCRYPTION_KEY')
             if not self.encryption_key:
-                self.print(warning('No encryption key provided, encryption disabled'))
+                self.print_message(warning('No encryption key provided, encryption disabled'))
                 self.encryption_enabled = False
         except Exception as e:
             self.logger.exception(f'Error setting up encryption: {e}')
@@ -377,7 +375,7 @@ class ConfigurationService:
         """Update configuration dynamically."""
         try:
             if section not in self.config_sections:
-                self.print(error(f'Unknown configuration section: {section}'))
+                self.print_message(error(f'Unknown configuration section: {section}'))
                 return False
             current_config = asdict(self.config_sections[section])
             current_config.update(updates)

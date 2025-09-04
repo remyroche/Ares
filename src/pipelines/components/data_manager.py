@@ -1,24 +1,20 @@
 """
 Data manager for pipeline data operations (minimal scaffold).
 """
-from __future__ import annotations
 
-from src.core.decorators import (
     cached,
     compose,
     handles_errors,
 )
-import asyncio
 
-from src.core.domain import (
     PerformanceLevel,
     secure_data_processing,
     validate_data_quality
 )
 
 from typing import Any
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 class DataManager:
     def __init__(self, config: dict[str, Any]) -> None:

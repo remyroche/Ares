@@ -57,7 +57,7 @@ async def main():
 
 if __name__== "__main__":
     try:
-        success = asyncio.run(main())
+        success = asyncio.run(await main())
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")

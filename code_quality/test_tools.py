@@ -255,4 +255,4 @@ def main():
 
 
 if __name__ == "__main__":
-    test_project_dir = main()
+    test_project_dir = await main()

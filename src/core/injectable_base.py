@@ -4,13 +4,11 @@ Base classes for dependency injection support.
 This module provides base classes that make it easy for trading components
 to participate in the dependency injection system.
 """
-from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 if TYPE_CHECKING:
-    from src.interfaces.base_interfaces import IEventBus, IExchangeClient, IStateManager
+    from .interfaces.base_interfaces import IEventBus, IExchangeClient, IStateManager
 
 class InjectableBase:
     """

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Generate visual diagrams for Tactician architecture."""
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, ConnectionPatch
-import numpy as np
 
 
 def create_architecture_diagram():

@@ -1,33 +1,31 @@
-from __future__ import annotations
 '\nComprehensive Steps 1-7 Executor with Enhanced Data Quality Management.\n\nThis script systematically executes steps 1-7 of the enhanced training pipeline,\nensuring data compatibility, quality, format compatibility, and proper indexing\nat every step with comprehensive validation and error handling.\n'
 import asyncio
 import sys
 import time
 from pathlib import Path
 from typing import Any
-import numpy as np
-import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.training.steps.step01_5_data_converter import DataConverterStep
-from src.training.steps.step01_5_data_converter_validator import run_validator as validate_step1_5
-from src.training.steps.data_preparation.step01_data_collection import DataCollectionStep
-from src.training.steps.step01_data_collection_validator import run_validator as validate_step1
-from src.training.steps.data_preparation.step02_data_reading import DataReadingStep
-from src.training.steps.step02_data_reading_validator import run_validator as validate_step2
-from src.training.steps.hmm_clustering.step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep
-from src.training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator as validate_step3
-from src.training.steps.market_analysis.step04_regime_data_splitting import RegimeDataSplittingStep
-from src.training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
-from src.training.steps.model_training.step05_labeling import LabelingStep
-from src.training.steps.step05_labeling_validator import run_validator as validate_step5
-from src.training.steps.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
-from src.training.steps.step06_feature_engineering_validator import run_validator as validate_step6
-from src.training.steps.model_training.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
-from src.training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
-from src.utils.enhanced_mlflow_integration import log_step_report
-from src.utils.logger import system_logger
-from src.utils.step_dependency_validator import validate_step_dependencies
+from .training.steps.step01_5_data_converter import DataConverterStep
+from .training.steps.data_preparation.step01_data_collection import DataCollectionStep
+from .training.steps.step01_data_collection_validator import run_validator as validate_step1
+from .training.steps.data_preparation.step02_data_reading import DataReadingStep
+from .training.steps.step02_data_reading_validator import run_validator as validate_step2
+from .training.steps.hmm_clustering.step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep
+from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator as validate_step3
+from .training.steps.market_analysis.step04_regime_data_splitting import RegimeDataSplittingStep
+from .training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
+from .training.steps.model_training.step05_labeling import LabelingStep
+from .training.steps.step05_labeling_validator import run_validator as validate_step5
+from .training.steps.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+from .training.steps.step06_feature_engineering_validator import run_validator as validate_step6
+from .training.steps.model_training.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+from .training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
+from .utils.enhanced_mlflow_integration import log_step_report
+from .utils.logger import system_logger
+from .utils.step_dependency_validator import validate_step_dependencies
+import numpy as np
+import pandas as pd
 
 class Steps1To7ComprehensiveExecutor:
     """
@@ -377,4 +375,4 @@ async def main() -> None:
         for error in result['errors_encountered']:
             print(f'  - {error}')
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(await main())

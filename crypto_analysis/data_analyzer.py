@@ -6,13 +6,18 @@ Analyzes OHLCV data to calculate potential profits from different triple barrier
 
 import warnings
 from pathlib import Path
-
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 import seaborn as sns
 
-from centralized_logging import get_logger
+# Import centralized logging with fallback
+try:
+    from centralized_logging import get_logger
+except ImportError:
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
 
 warnings.filterwarnings("ignore")
 

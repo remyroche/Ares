@@ -1,3 +1,5 @@
+
+from typing import Union
 """Real-time Regime Monitoring Dashboard and Infrastructure."""
 import asyncio
 import json
@@ -6,12 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
-import numpy as np
-from src.monitoring.regime_performance_tracker import RegimePerformanceTracker
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
+from .monitoring.regime_performance_tracker import RegimePerformanceTracker
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
 logger = system_logger.getChild('RegimeMonitoring')
 
 @dataclass
@@ -247,4 +247,4 @@ if __name__ == '__main__':
     async def main() -> None:
         config = {'symbols': ['BTCUSDT', 'ETHUSDT'], 'update_frequency': 60, 'alert_handlers': ['console', 'file'], 'enable_websocket': True, 'dashboard_dir': 'dashboard', 'data_dir': 'data'}
         await start_regime_monitoring(config)
-    asyncio.run(main())
+    asyncio.run(await main())

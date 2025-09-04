@@ -9,7 +9,10 @@ import asyncio
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 from src.supervisor.dependency_container import ComponentBuilder, DependencyContainer
 from src.supervisor.main import Supervisor

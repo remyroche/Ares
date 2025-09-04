@@ -682,7 +682,7 @@ async def main():
 
 if __name__== "__main__":
     import asyncio
+import pandas as pd
 
-    import pandas as pd
 
-    asyncio.run(main())
+    asyncio.run(await main())

@@ -6,7 +6,6 @@ Analyzes actual feature data to investigate the issues mentioned in the logs.
 
 # ruff: noqa: E501, C901, PLR2004, PLR0912, PLR0915
 
-from __future__ import annotations
 
 import sys
 import traceback
@@ -14,8 +13,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 warnings.filterwarnings("ignore")
 
@@ -733,4 +730,4 @@ def main() -> None:
 
 
 if __name__== "__main__":
-    main()
+    await main()

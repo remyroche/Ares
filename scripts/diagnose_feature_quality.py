@@ -4,25 +4,23 @@ Feature Quality Diagnostic Script
 Investigates feature calculation issues, NaN sources, and data quality in HMM regime discovery.
 """
 
-from __future__ import annotations
 
 import sys
 import traceback
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, A, Callableny
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
 
 warnings.filterwarnings("ignore")
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.utils.logger import system_logger  # noqa: E402
+try:
+    from src.utils.logger import system_logger  # noqa: E402
+except ImportError:
+    import logging
+    system_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -574,4 +572,5 @@ def main() -> None:
 
 
 if __name__== "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

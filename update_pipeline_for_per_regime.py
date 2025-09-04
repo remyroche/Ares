@@ -9,11 +9,10 @@ from pathlib import Path
 from typing import Dict, Any
 import json
 
-from src.training.steps.per_regime_pipeline_integration import (
+from src.training.steps.per_regime_integrator import (
     per_regime_integrator,
     integrate_per_regime_processing
 )
-from src.utils.logger import getChild as get_logger
 
 
 logger = get_logger('UpdatePipelineForPerRegime')

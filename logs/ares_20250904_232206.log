@@ -1,0 +1,42 @@
+2025-09-04 23:22:06,792 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 23:22:06
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 23:22:06,793 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_232206.log
+2025-09-04 23:22:06,794 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:22:06,794 - AresTradingSystem - INFO - 🚀 Launcher started: step02
+2025-09-04 23:22:06,794 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 23:22:06,794 - AresComponent.AresLauncher - INFO - 🚀 Running step02 with existing data for ETHUSDT on BINANCE
+2025-09-04 23:22:06,794 - AresComponent.AresLauncher - INFO - 📊 Using existing data from step01 and step1_5 - no new downloads
+2025-09-04 23:22:06,795 - AresComponent.AresLauncher - WARNING - ⚠️ Could not run existing validators: No module named 'src.utils.utils'
+2025-09-04 23:22:06,795 - AresComponent.AresLauncher - WARNING - Proceeding with basic file existence check
+2025-09-04 23:22:06,813 - AresComponent.AresLauncher - INFO - ✅ Found unified data: data/training/unified/binance/ETHUSDT/1m/exchange=BINANCE (742 parquet files)
+2025-09-04 23:22:06,813 - AresComponent.AresLauncher - INFO - Starting from step: step02_data_reading
+2025-09-04 23:22:06,832 - AresComponent.AresLauncher - INFO - 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)
+2025-09-04 23:22:06,832 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-09-04 23:22:06,832 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-09-04 23:22:06,832 - AresTradingSystem.System.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-09-04 23:22:06,833 - AresComponent.AresLauncher - INFO - 🔍 Step validation will be performed by EnhancedTrainingManager
+2025-09-04 23:22:06,833 - AresTradingSystem.System.StepOrchestrator - INFO - 🚀 Starting execution from step: step02_data_reading
+2025-09-04 23:22:06,836 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for BTCUSDT on binance
+2025-09-04 23:22:06,836 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/progress/binance_BTCUSDT
+2025-09-04 23:22:06,837 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - Initialized SimplifiedTrainingManager for BTCUSDT on binance
+2025-09-04 23:22:06,837 - AresTradingSystem.System.TrainingManager - INFO - 🔧 Initializing Training Manager...
+2025-09-04 23:22:06,837 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔧 Initializing training manager...
+2025-09-04 23:22:06,838 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Step sequence validated: 23 steps, 23 enabled
+2025-09-04 23:22:06,839 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Training manager initialized successfully
+2025-09-04 23:22:06,841 - AresTradingSystem.System.TrainingManager - INFO - ✅ Training Manager initialized successfully
+2025-09-04 23:22:06,842 - AresTradingSystem.System.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-09-04 23:22:06,842 - AresTradingSystem.System.TrainingManager - INFO - 🚀 Starting training for ETHUSDT on BINANCE
+2025-09-04 23:22:06,842 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🚀 Starting pipeline execution...
+2025-09-04 23:22:06,843 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔄 Executing step: step02_data_reading
+2025-09-04 23:22:06,853 - AresTradingSystem.System.SimplifiedTrainingManager - ERROR - Failed to load step step02_data_reading: No module named 'src.training.core.decorators'
+2025-09-04 23:22:06,854 - AresTradingSystem.System.TrainingManager - ERROR - ❌ Training failed: Required step failed: step02_data_reading
+2025-09-04 23:22:06,854 - AresTradingSystem.System.StepOrchestrator - INFO - 💥 ❌ Enhanced 16-step training pipeline failed
+2025-09-04 23:22:06,855 - AresComponent.AresLauncher - ERROR - ❌ Step-based training pipeline failed
+2025-09-04 23:22:06,855 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 23:22:06,856 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 23:22:06,857 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

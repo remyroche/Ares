@@ -1,5 +1,6 @@
-from __future__ import annotations
 
+
+from src.utils.error_handler import handles_errors
 # src/tactician/position_closing.py
 
 
@@ -10,8 +11,6 @@ Handles position closure based on dual model confidence scores and ATR-based exi
 from datetime import datetime
 from typing import Any
 
-from copy import copy
-import asyncio
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (

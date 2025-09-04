@@ -1,12 +1,9 @@
-from __future__ import annotations
 '\nStandardized Model Manager\n\nThis module provides centralized model management functionality including:\n- Model saving/loading with standardized paths\n- Model versioning and metadata tracking\n- Model validation and testing\n- Model lifecycle management\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 import joblib
-import numpy as np
-import pandas as pd
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
 
@@ -150,10 +147,8 @@ class StandardizedModelManager:
                 self.logger.warning('PyTorch models require model class for loading')
                 return (None, metadata)
             if file_path.suffix == '.txt':
-                import lightgbm as lgb
                 model = lgb.Booster(model_file=str(file_path))
             elif file_path.suffix == '.json':
-                import xgboost as xgb
                 
                 model = xgb.Booster()
                 model.load_model(str(file_path))

@@ -23,8 +23,6 @@ __version__ = "1.0.0"
 __author__ = "Code Quality Team"
 __email__ = "code-quality@example.com"
 
-from .complexity_pipeline import ComplexityPipeline, ComplexityMetrics, DirectoryMetrics
-from .config.complexity_config import ComplexityConfig
 
 __all__ = [
     'ComplexityPipeline',

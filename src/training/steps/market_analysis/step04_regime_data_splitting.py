@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 4: Regime Data Splitting with Standardized Data Quality Management."
 
 This module creates a unified dataset with regime labels for regime-aware processing.
@@ -6,23 +5,21 @@ Uses labels to differentiate regimes instead of creating separate files per regi
 This ensures trading indicators have the necessary lookback periods.
 """
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
-from src.core.domain import monitor_feature_engineering
-import numpy as np
+from .core.decorators import handles_errors, traced, validates, cached, log_execution_time
+from .core.domain import monitor_feature_engineering
 import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 pandas = PipelineStandards.safe_import('pandas', None)
 numpy = PipelineStandards.safe_import('numpy', None)
@@ -312,4 +309,4 @@ if __name__ == '__main__':
         test_config = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m'}
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', force_rerun=False, config=test_config)
         print(f'Test result: {success}')
-    asyncio.run(test())
+    asyncio.run(await test())

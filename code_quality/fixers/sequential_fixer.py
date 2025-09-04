@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from ..analyzers.import_analyzer import ImportAnalyzer
-from ..analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer as SignatureAnalyzer
 from ..analyzers.linter_analyzer import LinterAnalyzer
 from ..analyzers.syntax_validator import SyntaxValidator
 from ..analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from ..analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
+from ..analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
 from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer
 from ..utils.file_utils import find_python_files
@@ -32,7 +32,8 @@ class SequentialFixer:
     5. Analyze function signatures for compatibility issues
     6. Run comprehensive static analysis (Pylint, Flake8, MyPy, Bandit)
     7. Run advanced AST analysis (Astroid, Rope, Jedi)
-    8. Generate comprehensive report
+    8. Analyze undefined names and variables
+    9. Generate comprehensive report
     """
 
     def __init__(self, config: CodeQualityConfig | None = None):
@@ -169,6 +170,14 @@ class SequentialFixer:
             ast_results = self._run_ast_analysis(target_files)
             self.results["step_results"]["ast_analysis"] = ast_results
 
+            # Step 8: Undefined names and variables analysis
+            print("\n" + "-"*50)
+            print("STEP 8: UNDEFINED NAMES AND VARIABLES ANALYSIS")
+            print("-"*50)
+            undefined_names_results = self._run_undefined_names_analysis(target_files)
+            self.results["step_results"]["undefined_names_analysis"] = undefined_names_results
+
+
             # Optional: Pre-commit integration
             if run_pre_commit:
                 print("\n" + "-"*50)
@@ -177,18 +186,18 @@ class SequentialFixer:
                 pre_commit_results = self._run_pre_commit(target_files)
                 self.results["step_results"]["pre_commit"] = pre_commit_results
 
-            # Step 8: Generate comprehensive summary
+            # Step 9: Generate comprehensive summary
             print("\n" + "-"*50)
-            print("STEP 8: GENERATING COMPREHENSIVE SUMMARY")
+            print("STEP 9: GENERATING COMPREHENSIVE SUMMARY")
             print("-"*50)
             summary = self._generate_comprehensive_summary()
             self.results["summary"] = summary
 
-            # Step 7: Save reports if requested
+            # Step 10: Save reports if requested
             if output_dir:
                 self._save_reports(output_dir)
 
-            # Step 8: Print final summary
+            # Step 11: Print final summary
             self._print_final_summary()
 
         except Exception as e:
@@ -663,6 +672,64 @@ class SequentialFixer:
             print(f"Error running AST analysis: {e}")
             return {"status": "error", "error": str(e)}
 
+    def _run_undefined_names_analysis(self, files: list[str]) -> dict[str, Any]:
+        """Run undefined names and variables analysis on the target files."""
+        print(f"Running undefined names analysis on {len(files)} files...")
+
+        try:
+            # Find the common parent directory
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                # Find common ancestor directory
+                paths = [Path(f) for f in files]
+                common_prefix = Path(os.path.commonpath([str(p) for p in paths]))
+                target_dir = str(common_prefix)
+
+            undefined_names_analyzer = UndefinedNamesAnalyzer(self.config)
+            undefined_names_results = undefined_names_analyzer.analyze_directory(target_dir)
+
+            # Filter results to only include our target files
+            filtered_results = {
+                "summary": {
+                    "total_files_analyzed": len(files),
+                    "total_errors": 0,
+                    "files_with_errors": 0,
+                    "undefined_names": 0,
+                    "undefined_imports": 0,
+                    "unused_imports": 0,
+                    "import_conflicts": 0,
+                },
+                "files": {}
+            }
+
+            # Filter file results to only include our target files
+            for file_path in files:
+                if file_path in undefined_names_results.get("files", {}):
+                    file_result = undefined_names_results["files"][file_path]
+                    filtered_results["files"][file_path] = file_result
+                    
+                    # Update summary
+                    if file_result.get("total_errors", 0) > 0:
+                        filtered_results["summary"]["files_with_errors"] += 1
+                        filtered_results["summary"]["total_errors"] += file_result["total_errors"]
+                        
+                        file_summary = file_result.get("summary", {})
+                        filtered_results["summary"]["undefined_names"] += file_summary.get("total_undefined_names", 0)
+                        filtered_results["summary"]["undefined_imports"] += file_summary.get("total_undefined_imports", 0)
+                        filtered_results["summary"]["unused_imports"] += file_summary.get("total_unused_imports", 0)
+                        filtered_results["summary"]["import_conflicts"] += file_summary.get("total_import_conflicts", 0)
+
+            return {
+                "status": "success",
+                "results": filtered_results,
+                "full_results": undefined_names_results,
+            }
+
+        except Exception as e:
+            print(f"Error running undefined names analysis: {e}")
+            return {"status": "error", "error": str(e)}
+
     def _generate_comprehensive_summary(self) -> dict[str, Any]:
         """Generate a comprehensive summary of all pipeline steps."""
         summary = {
@@ -691,6 +758,7 @@ class SequentialFixer:
         signatures = self.results["step_results"].get("signature_analysis", {})
         static_analysis = self.results["step_results"].get("static_analysis", {})
         ast_analysis = self.results["step_results"].get("ast_analysis", {})
+        undefined_names_analysis = self.results["step_results"].get("undefined_names_analysis", {})
 
         summary["metrics"] = {
             "files_processed": auto_fix.get("total_files_processed", 0),
@@ -708,6 +776,11 @@ class SequentialFixer:
             "ast_analysis_issues": ast_analysis.get("results", {}).get("summary", {}).get("total_issues_found", 0) if ast_analysis.get("status") == "success" else 0,
             "ast_analysis_complexity": ast_analysis.get("results", {}).get("summary", {}).get("complexity_issues", 0) if ast_analysis.get("status") == "success" else 0,
             "ast_analysis_refactoring": ast_analysis.get("results", {}).get("summary", {}).get("refactoring_opportunities", 0) if ast_analysis.get("status") == "success" else 0,
+            "undefined_names_issues": undefined_names_analysis.get("results", {}).get("summary", {}).get("total_errors", 0) if undefined_names_analysis.get("status") == "success" else 0,
+            "undefined_names_count": undefined_names_analysis.get("results", {}).get("summary", {}).get("undefined_names", 0) if undefined_names_analysis.get("status") == "success" else 0,
+            "undefined_imports_count": undefined_names_analysis.get("results", {}).get("summary", {}).get("undefined_imports", 0) if undefined_names_analysis.get("status") == "success" else 0,
+            "unused_imports_count": undefined_names_analysis.get("results", {}).get("summary", {}).get("unused_imports", 0) if undefined_names_analysis.get("status") == "success" else 0,
+            "import_conflicts_count": undefined_names_analysis.get("results", {}).get("summary", {}).get("import_conflicts", 0) if undefined_names_analysis.get("status") == "success" else 0,
             "pre_commit_return_code": self.results.get("step_results", {}).get("pre_commit", {}).get("return_code"),
         }
 
@@ -780,6 +853,41 @@ class SequentialFixer:
                 "priority": "medium",
                 "category": "refactoring",
                 "message": f"Consider {summary['metrics']['ast_analysis_refactoring']} refactoring opportunities identified by AST analysis",
+            })
+
+        if summary["metrics"]["undefined_names_issues"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "undefined_names",
+                "message": f"Fix {summary['metrics']['undefined_names_issues']} undefined names and variables issues",
+            })
+
+        if summary["metrics"]["undefined_names_count"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "undefined_names",
+                "message": f"Address {summary['metrics']['undefined_names_count']} undefined variable/function names",
+            })
+
+        if summary["metrics"]["undefined_imports_count"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "imports",
+                "message": f"Fix {summary['metrics']['undefined_imports_count']} undefined import references",
+            })
+
+        if summary["metrics"]["unused_imports_count"] > 0:
+            summary["recommendations"].append({
+                "priority": "medium",
+                "category": "imports",
+                "message": f"Remove {summary['metrics']['unused_imports_count']} unused imports",
+            })
+
+        if summary["metrics"]["import_conflicts_count"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "imports",
+                "message": f"Resolve {summary['metrics']['import_conflicts_count']} import conflicts",
             })
 
         return summary
@@ -858,6 +966,11 @@ class SequentialFixer:
         print(f"  AST analysis issues: {metrics['ast_analysis_issues']}")
         print(f"  AST analysis complexity: {metrics['ast_analysis_complexity']}")
         print(f"  AST analysis refactoring: {metrics['ast_analysis_refactoring']}")
+        print(f"  Undefined names issues: {metrics['undefined_names_issues']}")
+        print(f"  Undefined names count: {metrics['undefined_names_count']}")
+        print(f"  Undefined imports count: {metrics['undefined_imports_count']}")
+        print(f"  Unused imports count: {metrics['unused_imports_count']}")
+        print(f"  Import conflicts count: {metrics['import_conflicts_count']}")
 
         if summary["recommendations"]:
             print("\nRecommendations:")
@@ -921,4 +1034,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import asyncio
+    sys.exit(asyncio.run(main()))

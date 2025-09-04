@@ -17,8 +17,6 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 
 
 def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int=30):
@@ -349,4 +347,4 @@ def main():
     print("The enhanced_training_manager can now use this data for steps 1_5, 2, 3, and 4.")
 
 if __name__== "__main__":
-    main()
+    await main()

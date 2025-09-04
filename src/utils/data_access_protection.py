@@ -9,20 +9,12 @@ This module provides comprehensive data access protection including:
 - Access rate limiting and throttling
 - Data sanitization and privacy protection
 """
-import hashlib
-import json
-import logging
 import time
-from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
-import pandas as pd
-import numpy as np
 
-from src.core.decorators import handles_errors, validates, log_call, traced, authenticated, requires_permission
+from .core.decorators import handles_errors, validates, log_call, traced, authenticated, requires_permission
 from .logger import system_logger
-from .common_operations import (
     safe_file_exists, safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, generate_hash
 )

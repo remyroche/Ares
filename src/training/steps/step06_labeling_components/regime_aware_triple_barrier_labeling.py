@@ -1,3 +1,5 @@
+
+from typing import Dict
 """
 Regime-Aware Triple Barrier Labeling
 
@@ -14,13 +16,8 @@ Key Features:
 - Comprehensive regime-aware performance tracking
 """
 import contextlib
-from typing import Any, Dict, List, Optional, Union
-import warnings
-from src.core.decorators import handles_errors, traced
-import numpy as np
-import pandas as pd
-from src.core.domain import guard_dataframe_nulls, handle_errors, with_tracing_span
-from src.utils.logger import get_logger
+from .core.decorators import handles_errors, traced
+from .utils.logger import get_logger
 try:
     import numba
 except Exception:
@@ -530,7 +527,6 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
         return labeled_data
     except Exception as e:
         import logging
-        import copy
         logger = logging.getLogger(__name__)
         logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')
         data_copy = data.copy()

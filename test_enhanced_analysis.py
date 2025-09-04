@@ -4,7 +4,6 @@ Test script for enhanced dead code analysis
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add the code_quality directory to Python path
@@ -14,8 +13,6 @@ sys.path.insert(0, str(code_quality_path))
 # Now we can import the modules
 try:
     from analyzers.dead_code_analyzer import DeadCodeAnalyzer
-    from visualizers.dependency_visualizer import DependencyVisualizer
-    from visualizers.dashboard_generator import DashboardGenerator
     print("✅ Successfully imported all required modules")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -56,8 +53,6 @@ def test_enhanced_analysis():
         
         # Create a simple test visualization
         try:
-            import matplotlib.pyplot as plt
-            import numpy as np
             
             # Create a simple test chart
             fig, ax = plt.subplots(figsize=(10, 6))

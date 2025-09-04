@@ -10,13 +10,7 @@ Enhanced with comprehensive logging, progress tracking, and quality monitoring.
 """
 
 from .step16_confidence_calibration_per_regime import ConfidenceCalibrationPerRegimeStep
-from .step16_confidence_calibration_validator import ConfidenceCalibrationValidator
 from .step17_final_parameters_optimization_new import FinalParametersOptimizationStep
-from .step17_final_parameters_optimization_per_regime import PerRegimeFinalParametersOptimizationStep
-from .step17_final_parameters_optimization_validator import FinalParametersOptimizationValidator
-from .step17_parameter_optimization_wrapper import ParameterOptimizationWrapper
-from .optimisation_pipeline_validator import OptimisationPipelineValidator
-from .step_validators import (
     ConfidenceCalibrationStepValidator,
     FinalParametersOptimizationStepValidator,
     OptimisationPipelineStepValidator,
@@ -35,15 +29,12 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
     - 📈 Performance metrics tracking
     - 🛡️ Data quality monitoring throughout the process
     """
-    from src.utils.common_operations import (
         format_datetime, get_current_datetime, safe_file_exists, 
         ensure_directory, safe_json_dump, safe_json_load, safe_sleep
     )
-    from src.utils.data_quality_framework import DataQualityFramework
-    from src.utils.logger import system_logger
-    from src.core.decorators import handles_errors, validates, traced, log_execution_time
+    from .utils.data_quality_framework import DataQualityFramework
+    from .utils.logger import system_logger
     import time
-    import asyncio
     
     logger = system_logger.getChild('OptimisationPipeline')
     
@@ -580,7 +571,6 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
             
             # Basic data quality check
             try:
-                import pandas as pd
                 
                 logger.info(f"📖 Reading parquet file: {file_path}")
                 print(f"📖 Reading parquet file: {file_path}")

@@ -2,19 +2,18 @@
 
 """Factory for creating optimized training components based on configuration."""
 
-import copy
 import os
 from typing import Any
 
 import psutil
 
-from src.config.computational_optimization_config import get_optimization_config
+from .config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
-from src.training.memory_profiler import MemoryLeakDetector, MemoryProfiler
-from src.training.steps.optimized_step_executor import OptimizedStepExecutor
-from src.utils.logger import system_logger
+from .training.memory_profiler import MemoryLeakDetector, MemoryProfiler
+from .training.steps.optimized_step_executor import OptimizedStepExecutor
+from .utils.logger import system_logger
 
 class OptimizedTrainingFactory:
     """Factory for creating optimized training components."""

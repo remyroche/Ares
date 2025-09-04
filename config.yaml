@@ -423,6 +423,9 @@ logging:
 # DATA CONFIGURATION
 # =============================================================================
 data:
+  # Data Directory
+  data_dir: "data"
+  
   # Data Sources
   sources:
     klines: true

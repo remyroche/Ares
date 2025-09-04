@@ -13,19 +13,15 @@ Features:
 - Report aggregation and summary generation
 """
 
-import os
 import json
-import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import shutil
 
-from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 
 class ReportManager:

@@ -41,7 +41,6 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
 
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -407,4 +406,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

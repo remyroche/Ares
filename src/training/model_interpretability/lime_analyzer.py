@@ -5,22 +5,14 @@ This module provides LIME (Local Interpretable Model-agnostic Explanations) anal
 for understanding individual model predictions.
 """
 
-import asyncio
-import json
-import logging
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-import time
 
-from src.core.decorators import handles_errors, validates, log_call, traced
+from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 class LIMEAnalyzer:
     """LIME analyzer for model interpretability."""
@@ -38,7 +30,13 @@ class LIMEAnalyzer:
         """Check if LIME is available and initialize if possible."""
         try:
             import lime
-            import lime.lime_tabular
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+import numpy as np
+import pandas as pd
+
             self.lime = lime
             self.lime_tabular = lime.lime_tabular
             self.lime_available = True

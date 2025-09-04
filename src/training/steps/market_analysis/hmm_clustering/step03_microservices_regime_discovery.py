@@ -1,3 +1,10 @@
+
+from typing import Any
+from typing import Dict
+import pandas as pd
+from dataclasses import dataclass
+from typing import Optional
+import numpy as np
 #!/usr/bin/env python3
 """Microservices Architecture for Regime Discovery.
 
@@ -6,13 +13,8 @@ breaking the monolithic step into specialized services with async communication.
 """
 
 import asyncio
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Callable
-import json
 import time
 from datetime import datetime
-from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 import warnings
 warnings.filterwarnings('ignore')
@@ -216,7 +218,7 @@ class ValidationService(BaseService):
         regimes = data.get('regimes')
         
         # Run economic significance validation
-        validation_results = self.validator.run_step(market_data, regimes)
+        validation_results = await self.validator.run_step(market_data, regimes)
         
         return ServiceResponse(
             service_id=self.service_id,

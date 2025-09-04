@@ -1,3 +1,6 @@
+
+import pandas as pd
+from src.utils.error_handler import handles_errors
 """
 Enhanced Prediction Service for ML Profit Integration System.
 
@@ -8,7 +11,6 @@ import pickle
 from pathlib import Path
 from typing import Any, Dict, Optional
 import joblib
-import pandas as pd
 from src.config.enhanced_prediction_service_config import get_enhanced_prediction_service_config
 from src.utils.caching import intelligent_caching
 from src.utils.error_handling import error, warning
@@ -16,7 +18,6 @@ from src.utils.logging_config import get_logger
 from src.utils.performance import performance_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
-import asyncio
 
 def _safe_load_model(filepath: Path, logger: logging.Logger) -> Any:
     """

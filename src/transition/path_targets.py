@@ -1,18 +1,19 @@
 # src/transition/path_targets.py
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from pandas import pd
+from numpy import np
 
-import numpy as np
-
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     # TODO: Add proper implementation
+    pass
+else:
+    # Runtime implementation
+    pass
 
 
 @dataclass

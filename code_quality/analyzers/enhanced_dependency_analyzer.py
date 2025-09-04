@@ -8,7 +8,6 @@ Replaces the basic import analysis in the pipeline.
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
 
 from plugins.fawltydeps_analyzer import FawltyDepsAnalyzer
 from plugins.creosote_analyzer import CreosoteAnalyzer

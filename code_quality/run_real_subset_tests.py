@@ -32,7 +32,11 @@ sys.modules["pandas"] = pandas_mock
 
 # Now we can import the real module
 sys.path.insert(0, str(Path(__file__).parent.parent))
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
+    print("Warning: pytest not available")
 
 from src.utils.common_operations import (  # File operations; Hashing operations; DateTime operations; Collection operations; Type conversions; String operations; Async operations
     chunked_iterable,

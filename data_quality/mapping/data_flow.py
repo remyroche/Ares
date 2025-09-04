@@ -5,9 +5,7 @@ Advanced data flow analysis and mapping utilities that track how data moves
 through the codebase and identify potential dead code through data flow patterns.
 """
 
-from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from typing import Any

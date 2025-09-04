@@ -379,12 +379,12 @@ Examples:
         list_available_timeframes()
         success=True
     elif args.quick_test:
-        success = asyncio.run(run_quick_multi_timeframe_test(args.symbol)) is not None
+        success = asyncio.run(await run_quick_multi_timeframe_test(args.symbol)) is not None
     elif args.ensemble_only:
-        success=asyncio.run(run_ensemble_only(args.symbol, timeframes)) is not None
+        success=asyncio.run(await run_ensemble_only(args.symbol, timeframes)) is not None
     elif args.analyze:
         success=(
-            asyncio.run(analyze_timeframe_correlations(args.symbol, timeframes))
+            asyncio.run(await analyze_timeframe_correlations(args.symbol, timeframes))
             is not None
         )
     else:
@@ -403,4 +403,4 @@ Examples:
 
 
 if __name__== "__main__":
-    main()
+    await main()

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 # src/paper_trader.py
 """
@@ -10,12 +9,8 @@ from datetime import datetime
 # Removed trading_decorators imports - using core decorators instead
 from enum import Enum
 from typing import Any
-from copy import copy
-import asyncio
 
-import numpy as np
 from copy import copy
-import asyncio
 
 from src.config.constants import (
     DEFAULT_COMMISSION_RATE,
@@ -23,14 +18,14 @@ from src.config.constants import (
     DEFAULT_MAX_POSITION_SIZE,
     DEFAULT_SLIPPAGE_RATE,
 )
-from src.core.decorators import (
+from src.utils.decorators import (
     handles_errors,
     log_call,
     log_execution_time,
     traced,
 )
-from src.core.domain import handle_specific_errors
-from src.utils.logger import system_logger
+from domain import handle_specific_errors
+from logger import system_logger
 
 
 class ExecutionMode(Enum):

@@ -1,28 +1,22 @@
-from src.core.decorators import handles_errors
+from .core.decorators import handles_errors
 import gc
-import multiprocessing as mp
 import os
 import pickle
 import random
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
-import numpy as np
-import pandas as pd
 import psutil
-import asyncio
-from copy import copy
-from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     import pyarrow as pa
-    import pyarrow.dataset as ds
     import pyarrow.parquet as pq
+    import pyarrow.dataset as ds
 except ImportError:
     pa = None
     pq = None
     ds = None
 import contextlib
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 def _make_hashable(obj: Any) -> Any:
     """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples."
@@ -287,8 +281,10 @@ class StreamingDataProcessor:
             import pyarrow.parquet as pq_mod
         except Exception as e:
             pass
-        import json
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
+import pandas as pd
+import numpy as np
+
         writer = None
         for df in chunks_iter:
             table = pa.Table.from_pandas(df)

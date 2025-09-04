@@ -1,3 +1,5 @@
+
+from src.utils.error_handler import handles_errors
 """
 State manager for managing application state and persistence.
 
@@ -12,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     invalid,
@@ -69,7 +71,7 @@ class StateManager:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.print(invalid("Invalid configuration for state manager"))
+            self.print_message(invalid("Invalid configuration for state manager"))
             return False
 
         # Load existing state
@@ -97,19 +99,19 @@ class StateManager:
         try:
             # Validate state file path
             if not self.state_file:
-                self.print(invalid("Invalid state file path"))
+                self.print_message(invalid("Invalid state file path"))
                 return False
 
             # Validate save interval
             if self.save_interval <= 0:
-                self.print(invalid("Invalid save interval"))
+                self.print_message(invalid("Invalid save interval"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
         except Exception as e:
-            self.print(error(f"Error validating configuration: {e}"))
+            self.print_message(error(f"Error validating configuration: {e}"))
             return False
 
     @handles_errors(fallback=None)
@@ -229,9 +231,9 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error stopping state manager: {e}")
 
-    def print(self, message: str) -> None:
+    def print_message(self, message: str) -> None:
         """Print message to console."""
-        self.print(message)
+        print(message)
 
 
 # Global state manager instance

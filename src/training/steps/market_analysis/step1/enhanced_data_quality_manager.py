@@ -8,20 +8,15 @@ This module provides comprehensive data quality management including:
 - Integration with step03/step04 data requirements
 """
 
-import asyncio
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
-from src.core.decorators import handles_errors, traced, validates
+from .core.decorators import handles_errors, traced, validates
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -32,7 +27,7 @@ from src.core.domain import (
     validate_data_structure,
     with_tracing_span
 )
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 logger = system_logger.getChild("EnhancedDataQualityManager")
 
@@ -524,7 +519,6 @@ class EnhancedDataQualityManager:
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str) -> bool:
         """Run step01 data collection."""
         try:
-            from ..step1_data_collection import run_step as run_step1
             step1_success = await run_step1(
                 symbol=symbol,
                 exchange=exchange,

@@ -22,7 +22,6 @@ Usage:
 
 # ruff: noqa: E501, I001, C901, PLR2004
 
-from __future__ import annotations
 
 import argparse
 import asyncio
@@ -33,9 +32,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import optuna
-import pandas as pd
 from optuna.visualization import (
     plot_optimization_history,
     plot_param_importances,
@@ -53,6 +50,7 @@ from src.training.steps.step17_final_parameters_optimization.optimized_optuna_op
     OptimizationResult,
 )
 from src.utils.logger import setup_logging  # noqa: E402
+import pandas as pd
 
 setup_logging()
 warnings.filterwarnings("ignore")
@@ -658,5 +656,5 @@ async def main() -> int:
 
 
 if __name__== "__main__":
-    exit_code = asyncio.run(main())
+    exit_code = asyncio.run(await main())
     sys.exit(exit_code)

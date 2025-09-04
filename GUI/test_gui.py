@@ -6,11 +6,7 @@ This script tests the GUI functionality by starting the API server
 and checking if all endpoints are working correctly.
 """
 
-import asyncio
-import json
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import requests
@@ -157,4 +153,4 @@ def main():
     print("3. Or use the unified script: bash GUI/start.sh")
 
 if __name__ == "__main__":
-    main()
+    await main()

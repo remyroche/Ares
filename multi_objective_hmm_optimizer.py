@@ -14,9 +14,6 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
 warnings.filterwarnings("ignore")
 
@@ -1115,4 +1112,5 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

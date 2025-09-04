@@ -5,9 +5,8 @@ Bridges existing parameter optimization implementations to the BaseStep interfac
 
 from typing import Any, Dict, Tuple
 
-from src.core.decorators import handles_errors
-from src.training.base_step import BaseStep
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .training.base_step import BaseStep
 
 
 class ParameterOptimizationStep(BaseStep):
@@ -40,7 +39,7 @@ class ParameterOptimizationStep(BaseStep):
             from src.training.steps.validation.step17_final_parameters_optimization import (
                 FinalParametersOptimizationStep,
             )
-            from src.core.decorators.errors import handles_errors
+            from .core.decorators.errors import handles_errors
             impl = FinalParametersOptimizationStep(self.config)
 
         # Prepare compatibility input/state

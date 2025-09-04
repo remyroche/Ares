@@ -130,6 +130,7 @@ class DependencyManager:
                 return astroid
             except ImportError:
                 pass
+                return None
         
         # Fallback to standard ast
         import ast

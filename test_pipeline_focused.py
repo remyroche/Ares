@@ -52,6 +52,7 @@ class FocusedPipelineTester:
         try:
             import astroid
         except ImportError:
+            astroid = None
             missing_deps.append("astroid")
         
         # Check if other common dependencies are available
@@ -408,4 +409,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(await main())

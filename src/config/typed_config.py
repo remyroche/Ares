@@ -1,10 +1,9 @@
-from __future__ import annotations
 '\nType-safe configuration management with runtime validation.\n'
 import json
 import logging
 from pathlib import Path
 from typing import Any
-from src.custom_types import ConfigDict, DatabaseConfig, ExchangeConfig, MLConfig, MonitoringConfig, RuntimeTypeError, SystemConfig, TradingConfig, TrainingConfig, TypeValidator, validate_config
+from .custom_types import ConfigDict, DatabaseConfig, ExchangeConfig, MLConfig, MonitoringConfig, RuntimeTypeError, SystemConfig, TradingConfig, TrainingConfig, TypeValidator, validate_config
 logger = logging.getLogger(__name__)
 
 class TypedConfigManager:
@@ -194,10 +193,10 @@ def get_typed_config_manager() -> TypedConfigManager:
         _global_config_manager = TypedConfigManager()
     return _global_config_manager
 
-def load_typed_config(config_path: str) -> ConfigDict:
+async def load_typed_config(config_path: str) -> ConfigDict:
     """Load typed configuration from file."""
     manager = get_typed_config_manager()
-    return manager.load_config(config_path)
+    return await manager.load_config(config_path)
 
 def get_typed_config() -> ConfigDict:
     """Get current typed configuration."""

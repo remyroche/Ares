@@ -1,4 +1,6 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import pandas as pd
+import numpy as np
 """
 Modular Components with Single Responsibility
 
@@ -10,10 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
-from copy import copy
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 class IDataSource(ABC):
     """Interface for data sources."""
@@ -467,7 +466,6 @@ class LightGBMTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train LightGBM model."""
-        import lightgbm as lgb
         self.model = lgb.LGBMClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
         if validation_data is not None:
@@ -514,7 +512,6 @@ class XGBoostTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train XGBoost model."""
-        import xgboost as xgb
         self.model = xgb.XGBClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
         if validation_data is not None:
@@ -630,8 +627,6 @@ class NeuralNetworkTrainer(BaseModelTrainer):
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train Neural Network model."""
         import torch
-        import torch.nn as nn
-        import torch.optim as optim
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)

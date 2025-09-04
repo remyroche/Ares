@@ -1,0 +1,91 @@
+2025-09-04 23:44:45,236 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 23:44:45
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_234445.log
+2025-09-04 23:44:45,236 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:44:45,236 - AresTradingSystem - INFO - 🚀 Launcher started: step02
+2025-09-04 23:44:45,236 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 23:44:45,237 - AresComponent.AresLauncher - INFO - 🚀 Running step02 with existing data for ETHUSDT on BINANCE
+2025-09-04 23:44:45,237 - AresComponent.AresLauncher - INFO - 📊 Using existing data from step01 and step1_5 - no new downloads
+2025-09-04 23:44:45,237 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_data_collection using existing validator
+2025-09-04 23:44:45,237 - AresTradingSystem.System.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_data_collection
+2025-09-04 23:44:45,239 - AresTradingSystem.System.ValidatorOrchestrator - ERROR - ❌ Exception while running validator for step1_data_collection: 'str' object is not callable
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 239, in _run_validator
+    validator_module = importlib.import_module(module_path)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'src.training.steps.step01_data_collection_validator'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 49, in run_step_validator
+    raw_result = await self._run_validator(step_name, training_input, pipeline_state, config, validation_level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 253, in _run_validator
+    self.logger.warning(missing(f'⚠️ Validator module not found for {step_name}: {e}'))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'str' object is not callable
+2025-09-04 23:44:45,241 - AresComponent.AresLauncher - WARNING - ⚠️ Could not run existing validators: name 'metrics' is not defined
+2025-09-04 23:44:45,241 - AresComponent.AresLauncher - WARNING - Proceeding with basic file existence check
+2025-09-04 23:44:45,254 - AresComponent.AresLauncher - INFO - ✅ Found unified data: data/training/unified/binance/ETHUSDT/1m/exchange=BINANCE (742 parquet files)
+2025-09-04 23:44:45,254 - AresComponent.AresLauncher - INFO - Starting from step: step02_data_reading
+2025-09-04 23:44:45,264 - AresComponent.AresLauncher - INFO - 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)
+2025-09-04 23:44:45,264 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-09-04 23:44:45,264 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-09-04 23:44:45,264 - AresTradingSystem.System.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-09-04 23:44:45,264 - AresComponent.AresLauncher - INFO - 🔍 Step validation will be performed by EnhancedTrainingManager
+2025-09-04 23:44:45,264 - AresTradingSystem.System.StepOrchestrator - INFO - 🚀 Starting execution from step: step02_data_reading
+2025-09-04 23:44:45,266 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for BTCUSDT on binance
+2025-09-04 23:44:45,266 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/progress/binance_BTCUSDT
+2025-09-04 23:44:45,266 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - Initialized SimplifiedTrainingManager for BTCUSDT on binance
+2025-09-04 23:44:45,266 - AresTradingSystem.System.TrainingManager - INFO - 🔧 Initializing Training Manager...
+2025-09-04 23:44:45,266 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔧 Initializing training manager...
+2025-09-04 23:44:45,266 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Step sequence validated: 23 steps, 23 enabled
+2025-09-04 23:44:45,266 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Training manager initialized successfully
+2025-09-04 23:44:45,267 - AresTradingSystem.System.TrainingManager - INFO - ✅ Training Manager initialized successfully
+2025-09-04 23:44:45,267 - AresTradingSystem.System.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-09-04 23:44:45,267 - AresTradingSystem.System.TrainingManager - INFO - 🚀 Starting training for ETHUSDT on BINANCE
+2025-09-04 23:44:45,267 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🚀 Starting pipeline execution...
+2025-09-04 23:44:45,267 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔄 Executing step: step02_data_reading
+2025-09-04 23:44:45,268 - AresTradingSystem.System.DataReadingStep - INFO - ✅ Data reading step initialized
+2025-09-04 23:44:45,268 - AresTradingSystem.System.DataReadingStep - INFO - 📖 Reading data from: None
+2025-09-04 23:44:45,269 - AresTradingSystem.System.DataReadingStep - INFO - ✅ Loaded 0 rows with 0 columns
+2025-09-04 23:44:45,270 - AresTradingSystem.System.DataReadingStep - WARNING - Index is not DatetimeIndex; attempting auto-conversion from timestamp/date/time column
+2025-09-04 23:44:45,270 - AresTradingSystem.System.DataReadingStep - WARNING - ⚠️ Missing OHLCV columns: ['open', 'high', 'low', 'close', 'volume']
+2025-09-04 23:44:45,271 - AresTradingSystem.System.DataReadingStep - INFO - 📊 Data Validation Summary:
+2025-09-04 23:44:45,271 - AresTradingSystem.System.DataReadingStep - INFO -    - Total rows: 0
+2025-09-04 23:44:45,271 - AresTradingSystem.System.DataReadingStep - INFO -    - Total columns: 0
+2025-09-04 23:44:45,271 - AresTradingSystem.System.DataReadingStep - INFO -    - Missing data: 0.00%
+2025-09-04 23:44:45,271 - AresTradingSystem.System.DataReadingStep - INFO -    - Duplicate rows: 0
+2025-09-04 23:44:45,272 - AresTradingSystem.System.DataReadingStep - INFO -    - Quality score: 80/100
+2025-09-04 23:44:45,272 - AresTradingSystem.System.DataReadingStep - WARNING - ⚠️ Data quality issues found:
+2025-09-04 23:44:45,272 - AresTradingSystem.System.DataReadingStep - WARNING -    - Missing required columns: {'open', 'high', 'close', 'volume', 'low'}
+2025-09-04 23:44:45,272 - AresTradingSystem.System.SimplifiedTrainingManager - ERROR - ❌ Error executing step step02_data_reading: name 'data_info' is not defined
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/training/simplified_training_manager.py", line 268, in _execute_step
+    result = await step_instance.execute(training_input, self.pipeline_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/data_collection/data_preparation/step02_data_reading.py", line 50, in execute
+    return await self.execute_logic(training_input, pipeline_state)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/data_collection/data_preparation/step02_data_reading.py", line 164, in execute_logic
+    pipeline_state["data_info"] = data_info
+                                  ^^^^^^^^^
+NameError: name 'data_info' is not defined
+2025-09-04 23:44:45,278 - AresTradingSystem.System.TrainingManager - ERROR - ❌ Training failed: Required step failed: step02_data_reading
+2025-09-04 23:44:45,278 - AresTradingSystem.System.StepOrchestrator - INFO - 💥 ❌ Enhanced 16-step training pipeline failed
+2025-09-04 23:44:45,278 - AresComponent.AresLauncher - ERROR - ❌ Step-based training pipeline failed
+2025-09-04 23:44:45,278 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 23:44:45,278 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 23:44:45,278 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

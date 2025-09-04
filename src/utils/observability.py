@@ -76,7 +76,6 @@ def init_otlp_logging() -> None:
 
     try:
         # Minimal setup for OTLP logging exporter
-        from opentelemetry import _logs as otel_logs
         from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
         from opentelemetry.sdk._logs import LoggerProvider
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor

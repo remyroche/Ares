@@ -1,22 +1,21 @@
+
+import pandas as pd
 """Context-Aware S/R Calculator Module.
 
 This module adjusts S/R parameters and calculations based on market context,
 including time of day, volatility regime, news events, and correlations.
 """
 
-import asyncio
 from datetime import datetime, time
 from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import pandas as pd
 from dataclasses import dataclass, asdict
 import json
 import os
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
-from src.tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
-from src.tactician.sr_strength_optimizer import SRLevelIdentifier
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
+from .tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
+from .tactician.sr_strength_optimizer import SRLevelIdentifier
 
 
 @dataclass
@@ -311,7 +310,7 @@ class ContextAwareSRCalculator:
     def _load_base_parameters(self) -> Dict[str, Any]:
         """Load base S/R parameters."""
         try:
-            from src.utils.sr_parameter_loader import SRParameterLoader
+            from .utils.sr_parameter_loader import SRParameterLoader
             return SRParameterLoader.load_optimized_parameters(self.config)
         except Exception as e:
             self.logger.error(f"Error loading base parameters: {e}")

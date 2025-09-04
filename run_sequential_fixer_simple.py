@@ -33,11 +33,11 @@ class MockProgress:
         pass
 
 class MockConsole:
-    def print(self, *args, **kwargs):
-        self.print(args[0] if args else "")
+    def print_output(self, *args, **kwargs):
+        self.print_output(args[0] if args else "")
     
     def log(self, *args, **kwargs):
-        self.print(args[0] if args else "")
+        self.print_output(args[0] if args else "")
 
 class MockLive:
     def __init__(self, *args, **kwargs):
@@ -85,8 +85,6 @@ sys.modules['rich.progress'] = mock_rich.progress
 sys.modules['rich.table'] = mock_rich.table
 
 # Now we can import the sequential fixer
-from code_quality.fixers.sequential_fixer import SequentialFixer as SequentialFixer_3
-from code_quality.core.config import get_default_config as get_default_config_code_quality_core_config
 
 def main():
     # Configure for a simpler run
@@ -152,4 +150,5 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import asyncio
+    sys.exit(asyncio.run(main()))

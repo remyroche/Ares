@@ -1,4 +1,3 @@
-from __future__ import annotations
 from typing import Dict, List, Optional, Union, Any, Tuple
 '\nEnhanced Scenario-Based Predictor for Tactician\n\nImplements advanced probabilistic scenario analysis with:\n- All step07 technical indicators\n- 15-minute look-ahead period\n- Fractal scenario definitions (linear progression)\n- Full step17 optimization for all parameters\n- Complete migration from existing system\n'
 import logging
@@ -7,11 +6,16 @@ from typing import Any
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import talib
+try:
+    try:
+    import talib
+except ImportError:
+    talib = None
+except ImportError:
+    talib = None
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

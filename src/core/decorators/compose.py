@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """
 Decorator composition utilities with a uniform wrapper.
@@ -9,7 +8,7 @@ preserving signature and metadata.
 
 import asyncio
 import functools
-from typing import ParamSpec, TypeVar, cast
+from typing import ParamSpec, TypeVar, cast, Callable, Any
 
 P = ParamSpec("P")
 R = TypeVar("R")

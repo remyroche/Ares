@@ -1,0 +1,32 @@
+2025-09-04 20:34:56,940 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 20:34:56
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_203456.log
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 20:34:56,941 - AresTradingSystem - INFO - 🚀 Launcher started: step03
+2025-09-04 20:34:56,941 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - 🚀 Running step-based training with validation for ETHUSDT on BINANCE
+2025-09-04 20:34:56,941 - AresComponent.AresLauncher - INFO - 📊 Starting from: step3_hmm_regime_discovery
+2025-09-04 20:34:56,942 - AresComponent.AresLauncher - INFO - 🎯 Training mode: light
+2025-09-04 20:34:56,942 - AresComponent.AresLauncher - INFO - 🔍 Validating previous steps before starting from step3_hmm_regime_discovery
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - INFO - 🔍 Validating 4 previous steps: ['step1_data_collection', 'step1_5_data_converter', 'step2_data_reading', 'step2_5_sr_optimization']
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_data_collection...
+2025-09-04 20:34:56,960 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_data_collection
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - ERROR - ❌ step1_data_collection validation failed: Missing data_dir in configuration
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_5_data_converter...
+2025-09-04 20:34:56,960 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_5_data_converter
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - ERROR - ❌ step1_5_data_converter validation failed: Missing data_dir in configuration
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - INFO - 🔍 Validating step2_data_reading...
+2025-09-04 20:34:56,960 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step2_data_reading
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - ERROR - ❌ step2_data_reading validation failed: Missing data_dir in configuration
+2025-09-04 20:34:56,960 - AresComponent.AresLauncher - INFO - 🔍 Validating step2_5_sr_optimization...
+2025-09-04 20:34:56,961 - AresComponent.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step2_5_sr_optimization
+2025-09-04 20:34:56,961 - AresComponent.AresLauncher - ERROR - ❌ step2_5_sr_optimization validation failed: Missing data_dir in configuration
+2025-09-04 20:34:56,961 - AresComponent.AresLauncher - ERROR - ❌ Cannot start from step3_hmm_regime_discovery - previous step validation failed
+2025-09-04 20:34:56,961 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 20:34:56,961 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 20:34:56,961 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

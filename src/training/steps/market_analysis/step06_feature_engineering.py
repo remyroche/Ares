@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nStep6: Feature Interaction Engineering\n\nThis module implements comprehensive feature interaction engineering for the Tactician model.\nIt creates interaction terms between technical indicators, market features, and derived metrics\nto capture non-linear relationships and improve model performance.\n\nKey Features:\n- Integrates with DiverseLookbackOptimizer for optimal period selection\n- Ensures non-correlated lookback periods for each indicator\n- Creates meaningful feature interactions\n- Implements stability analysis for feature selection\n'
 import logging
 from collections import Counter
@@ -6,11 +5,13 @@ from datetime import datetime
 from typing import Any
 import numpy as np
 import pandas as pd
-import talib
+try:
+    import talib
+except ImportError:
+    talib = None
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.preprocessing import StandardScaler
 from copy import copy
-import asyncio
 logger = logging.getLogger(__name__)
 
 class FeatureInteractionEngine:
@@ -38,7 +39,7 @@ class FeatureInteractionEngine:
         self.logger = logger
         step6_config = config.get('step06_feature_engineering', {})
         try:
-            from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+            from .training.diverse_lookback_optimizer import DiverseLookbackOptimizer
             self.diverse_optimizer = DiverseLookbackOptimizer(config)
             self.use_dynamic_periods = True
             self.logger.info('✅ Integrated with DiverseLookbackOptimizer for dynamic period selection')
@@ -50,7 +51,7 @@ class FeatureInteractionEngine:
         self.use_matrix_optimizer = bool(step6_config.get('use_matrix_optimizer', True))
         if self.use_matrix_optimizer:
             try:
-                from src.training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
+                from .training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
                 self.matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
                 self.use_dynamic_periods = True
                 self.logger.info('✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection')

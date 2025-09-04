@@ -1,4 +1,3 @@
-from __future__ import annotations
 import asyncio
 import os
 import uuid
@@ -6,12 +5,15 @@ from functools import partial
 from typing import TYPE_CHECKING
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
-from src.config import CONFIG, get_environment_settings
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, missing, warning
+from .config import CONFIG, get_environment_settings
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, missing, warning
+
+from typing import Callable
+from typing import Any
 if TYPE_CHECKING:
     import logging
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 class FirestoreManager:
     """

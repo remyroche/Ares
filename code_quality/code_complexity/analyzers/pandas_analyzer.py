@@ -3,15 +3,10 @@ Pandas Analyzer for Code Complexity Analysis
 Metrics data analysis and visualization using pandas
 """
 
-import os
-import json
 import logging
-from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 
 try:
-    import pandas as pd
-    import numpy as np
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False

@@ -4,11 +4,6 @@ Dependency Graph Visualizer
 Creates visual representations of module and package dependencies.
 """
 
-import networkx as nx
-import matplotlib.pyplot as plt
-from typing import Dict, List, Optional, Set, Tuple
-import json
-from pathlib import Path
 from .code_visualizer import CodeVisualizer
 
 

@@ -1,12 +1,12 @@
+
+from typing import Dict
+from src.utils.error_handler import handles_errors
+from typing import Any
 """Metadata tracker component for model persistence."""
-import asyncio
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from src.core.decorators import handles_errors, log_execution_time
-from src.utils.logger import system_logger
-from copy import copy
+from .utils.logger import system_logger
 
 class MetadataTracker:
     """Handles comprehensive metadata tracking for models."""

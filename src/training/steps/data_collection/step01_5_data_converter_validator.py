@@ -1,6 +1,5 @@
 """Validator for Step 1.5: Data Converter."""
 
-from __future__ import annotations
 
 import asyncio
 import glob
@@ -9,17 +8,16 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-import pandas as pd
 
 # Add the project root to the Python path (only if not present)
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
-from src.utils.common_operations import safe_json_load
-from src.utils.logger import system_logger
+from .config import CONFIG
+from .utils.base_validator import BaseValidator
+from .utils.common_operations import safe_json_load
+from .utils.logger import system_logger
 
 
 class Step1_5DataConverterValidator(BaseValidator):
@@ -413,8 +411,8 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
+import pandas as pd
 
-import os.path
 
 
     # Example usage
@@ -430,4 +428,5 @@ async def test_validator() -> None:
 
         await run_validator(training_input, pipeline_state)
 
-_asyncio.run(test_validator())
+if __name__ == "__main__":
+    asyncio.run(test_validator())

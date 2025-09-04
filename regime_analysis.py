@@ -6,14 +6,8 @@ This script analyzes the collected ETHUSDT data to identify different market reg
 based on various market characteristics including volatility, volume, price movements, etc.
 """
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -279,4 +273,5 @@ def main():
         raise
 
 if __name__ == "__main__":
-    regime_analysis, features = main()
+    import asyncio
+    regime_analysis, features = asyncio.run(main())

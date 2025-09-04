@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """Step Orchestrator for Training Pipeline."
 
@@ -17,8 +16,8 @@ from src.utils.warning_symbols import (
     error,
     failed,
 )
-from copy import copy
-import asyncio
+from .progress_manager import ProgressManager
+from src.config.training_modes import apply_mode_parameters_to_config, get_step_specific_parameters
 
 
 class StepOrchestrator:
@@ -39,28 +38,27 @@ class StepOrchestrator:
         self.available_steps = [
             "step01_data_collection",
             "step01_5_data_converter",
-            "step02_feature_engineering",
-            "step02_5_sr_optimization",
-            "step03_hmm_clustering",
-            "step04_processing_labeling",
-            "step05_regime_data_splitting",
-            "step06_hmm_based_training",
-            "step06_5_unified_regime_intelligence",
-            "step07_analyst_enhancement",
-            "step08_tactician_labeling",
-            "step09_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving",
+            "step02_data_reading",
+            "step2_5_sr_optimization",
+            "step03_hmm_regime_discovery",
+            "step04_regime_data_splitting",
+            "step05_labeling",
+            "step06_advanced_feature_engineering",
+            "step07_enhanced_matrix_operations",
+            "step08_advanced_feature_selection",
+            "step09_hmm_based_training",
+            "step10_unified_regime_intelligence",
+            "step11_analyst_creation",
+            "step12_analyst_enhancement",
+            "step13_analyst_ensemble_creation",
+            "step14_tactician_labeling",
+            "step15_tactician_specialist_training",
             "step16_confidence_calibration",
-            "step17_final_parameters_optimization",
+            "step17_parameter_optimization",
             "step18_walk_forward_validation",
             "step19_monte_carlo_validation",
             "step20_ab_testing",
-            "step21_saving",
+            "step21_model_persistence",
         ]
 
         # Enhanced training manager
@@ -68,6 +66,10 @@ class StepOrchestrator:
 
         self.logger.info(f"Initialized StepOrchestrator for {symbol} on {exchange}")
 
+    def print_message(self, message: str) -> None:
+        """Print a message using the logger."""
+        self.logger.info(message)
+    
     def print(self, message: str) -> None:
         """Print a message using the logger."""
         self.logger.info(message)
@@ -85,14 +87,13 @@ class StepOrchestrator:
         try:
             from src.training.core.training_manager import (
                 create_training_manager,
-                setup_enhanced_training_manager,
             )
 
-            self.enhanced_training_manager = await setup_enhanced_training_manager(
+            self.enhanced_training_manager = await create_training_manager(
                 config,
             )
             if not self.enhanced_training_manager:
-                self.print(failed("❌ Failed to setup enhanced training manager"))
+                self.print(failed + " Failed to setup enhanced training manager")
                 return False
 
             # The enhanced training manager is already initialized when returned from setup_enhanced_training_manager
@@ -104,7 +105,7 @@ class StepOrchestrator:
         except Exception as e:
             error_msg = f"Failed to setup enhanced training manager: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.print(failed + " " + error_msg)
             return False
 
     def get_step_module(self, step_name: str) -> Any | None:
@@ -123,7 +124,7 @@ class StepOrchestrator:
             self.logger.info(f"✅ Loaded step module: {step_name}")
             return module
         except ImportError:
-            self.print(failed("❌ Failed to import step module {step_name}: {e}"))
+            self.print(failed + " ❌ Failed to import step module {step_name}: {e}")
             return None
 
     def get_step_class(self, step_name: str) -> Any | None:
@@ -152,7 +153,7 @@ class StepOrchestrator:
             self.logger.info(f"✅ Found step class: {step_classes[0]}")
             return step_class
 
-        self.print(error("❌ No step class found in {step_name}"))
+        self.print_message(error("❌ No step class found in {step_name}"))
         return None
 
     async def execute_step(
@@ -185,7 +186,7 @@ class StepOrchestrator:
                 pipeline_state = self._build_pipeline_state(step_name)
                 deps_ok = await validate_step_dependencies(step_name, pipeline_state)
                 if not deps_ok:
-                    self.print(failed(f"❌ Dependencies not satisfied for {step_name}"))
+                    self.print(failed + " ❌ Dependencies not satisfied for {step_name}")
                     return False
             except Exception as e:
                 self.logger.warning(f"⚠️ Dependency validation error for {step_name}: {e}")
@@ -245,15 +246,15 @@ class StepOrchestrator:
                 ):
                     self.logger.info(f"✅ Step {step_name} completed successfully")
                     return True
-                self.print(failed("❌ Failed to save progress for {step_name}"))
+                self.print(failed + " ❌ Failed to save progress for {step_name}")
                 return False
-            self.print(failed("❌ Step {step_name} failed"))
+            self.print(failed + " ❌ Step {step_name} failed")
             return False
 
         except Exception as e:
             error_msg = f"Step {step_name} failed: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.print(failed + " " + error_msg)
             return False
 
     def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
@@ -307,7 +308,7 @@ class StepOrchestrator:
         try:
             self.available_steps.index(start_step)
         except ValueError:
-            self.print(error("❌ Unknown step: {start_step}"))
+            self.logger.error(f"❌ Unknown step: {start_step}")
             return False
 
         # Set up enhanced training manager
@@ -340,16 +341,20 @@ class StepOrchestrator:
         }
 
         # Execute the enhanced training pipeline
-        success = await self.enhanced_training_manager.execute_enhanced_training(
-            training_input,
+        result = await self.enhanced_training_manager.train(
+            symbol=self.symbol,
+            exchange=self.exchange,
+            start_step=start_step,
+            force_rerun=force_rerun,
         )
+        success = result.get('success', False)
 
         if success:
             self.logger.info(
                 "✅ Enhanced 16-step training pipeline completed successfully",
             )
             return True
-        self.print(failed("❌ Enhanced 16-step training pipeline failed"))
+        self.print(failed + " ❌ Enhanced 16-step training pipeline failed")
         return False
 
     async def execute_all_steps(

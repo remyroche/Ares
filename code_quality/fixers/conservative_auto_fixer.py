@@ -4,13 +4,13 @@ Conservative Auto-Fixer - A safer version of the auto-fixer that prioritizes not
 
 import ast
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..core.config import CodeQualityConfig, load_config
+
 from ..utils.file_utils import (
     backup_file,
     find_python_files,

@@ -1,11 +1,10 @@
-from __future__ import annotations
 
 """Validator for Step 20: Extended A/B Testing."""
 
 import asyncio
 from typing import Any
 
-from src.config import CONFIG
+from .config import CONFIG
 
 
 class Step20ABTestingValidator(BaseValidator):

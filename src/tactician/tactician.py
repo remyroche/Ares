@@ -1,16 +1,14 @@
+
+import pandas as pd
 """Tactician module for trading strategy execution."""
 
 from datetime import datetime
 from typing import Any, Dict
-import numpy as np
-import pandas as pd
 
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import failed, invalid, missing
-from copy import copy
-import asyncio
+from .utils.logger import system_logger
+from .utils.warning_symbols import failed, invalid, missing
 
-from src.core.decorators import handles_errors as _handles_errors
+from .core.decorators import handles_errors as _handles_errors
 
 # Backward-compatible wrapper for legacy signature usage
 def handles_errors(*_args, **kwargs):
@@ -197,17 +195,17 @@ class Tactician:
             await self.tactics_orchestrator.initialize()
 
             # Initialize position sizer
-            from src.tactician.position_sizer import PositionSizer
+            from .tactician.position_sizer import PositionSizer
             self.position_sizer = PositionSizer(self.config)
             await self.position_sizer.initialize()
 
             # Initialize leverage sizer
-            from src.tactician.leverage_sizer import LeverageSizer
+            from .tactician.leverage_sizer import LeverageSizer
             self.leverage_sizer = LeverageSizer(self.config)
             await self.leverage_sizer.initialize()
 
             # Initialize position division strategy
-            from src.tactician.position_division_strategy import PositionDivisionStrategy
+            from .tactician.position_division_strategy import PositionDivisionStrategy
             self.position_division_strategy = PositionDivisionStrategy(self.config)
             await self.position_division_strategy.initialize()
 

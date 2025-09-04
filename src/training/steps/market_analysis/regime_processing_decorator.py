@@ -1,17 +1,15 @@
+
+from typing import Callable
+from typing import Any
 """Decorator for automatic per-regime processing in training steps.
 
 This module provides a decorator that automatically handles per-regime processing
 for training steps, ensuring consistent regime-based execution across steps 4-21.
 """
 
-import asyncio
 import functools
-from typing import Any, Callable, Dict, Optional
-import pandas as pd
-from pathlib import Path
 
-from src.training.steps.regime_handler import regime_handler
-from src.utils.logger import getChild as get_logger
+from .training.steps.regime_handler import regime_handler
 
 
 logger = get_logger('RegimeProcessingDecorator')

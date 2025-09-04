@@ -4,7 +4,6 @@ Investigate Regime Calculation Issues
 Analyzes why regime features may have zero variance and provides fixes.
 """
 
-from __future__ import annotations
 
 import sys
 import traceback
@@ -12,8 +11,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -502,4 +499,4 @@ def main() -> None:
 
 
 if __name__== "__main__":
-    main()
+    await main()

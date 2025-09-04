@@ -1,12 +1,10 @@
 from collections.abc import Callable
 
-import pandas as pd
 
-from src.core.decorators import (
+from src.utils.decorators import (
     traced,
     validates,
 )
-import numpy as np
 
 
 class FeatureGenerator:

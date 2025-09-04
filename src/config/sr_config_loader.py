@@ -7,13 +7,14 @@ replacing hardcoded parameters throughout the codebase.
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
-import logging
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from ..core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
+from typing import Optional
+from typing import Tuple
+from typing import Dict
+from typing import Any
 
 
 @dataclass
@@ -388,16 +389,16 @@ class SRConfigLoader:
 _config_loader: Optional[SRConfigLoader] = None
 
 
-def get_sr_config_loader() -> SRConfigLoader:
+async def get_sr_config_loader() -> SRConfigLoader:
     """Get global S/R configuration loader instance."""
     global _config_loader
     if _config_loader is None:
         _config_loader = SRConfigLoader()
-        _config_loader.load_config()
+        await _config_loader.load_config()
     return _config_loader
 
 
-def get_sr_config() -> Optional[SROptimizationConfig]:
+async def get_sr_config() -> Optional[SROptimizationConfig]:
     """Get S/R optimization configuration."""
-    loader = get_sr_config_loader()
+    loader = await get_sr_config_loader()
     return loader.get_config()

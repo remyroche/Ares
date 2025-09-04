@@ -1,20 +1,15 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
 '\nEnhanced Feature Engineering Optimizer\n\nThis module optimizes the period optimization process itself using:\n1. Random Forest + SHAP for meta-optimization\n2. Mutual Information for parameter space reduction\n3. Adaptive parameter sampling based on performance\n4. Multi-objective optimization considering multiple metrics\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-import numpy as np
 import optuna
-import pandas as pd
 import shap
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
-from src.utils.logger import system_logger
-import asyncio
+from .utils.logger import system_logger
 
 class EnhancedFeatureEngineeringOptimizer:
     """
@@ -236,7 +231,7 @@ class EnhancedFeatureEngineeringOptimizer:
 
     def _calculate_feature_with_params(self, data: pd.DataFrame, feature_name: str, params: dict[str, Any]) -> pd.Series | None:
         """Calculate feature with given parameters."""
-        from src.training.feature_engineering_optimizer import FeatureEngineeringOptimizer
+        from .training.feature_engineering_optimizer import FeatureEngineeringOptimizer
         base_optimizer = FeatureEngineeringOptimizer(self.config)
         return base_optimizer._generate_synthetic_feature(data, feature_name, params)
 
@@ -385,7 +380,10 @@ class EnhancedFeatureEngineeringOptimizer:
     def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
         """Generate all parameter combinations."""
         import itertools
-        from src.core.decorators.errors import handles_errors
+        from .core.decorators.errors import handles_errors
+import numpy as np
+import pandas as pd
+
         param_names = list(params.keys())
         param_values = list(params.values())
         combinations = []

@@ -8,8 +8,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-import numpy as np
-import pandas as pd
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -367,6 +365,9 @@ class TestRegimeTripleBarrierIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up test data."""
         import shutil
+import pandas as pd
+import numpy as np
+
         if self.test_data_dir.exists():
             shutil.rmtree(self.test_data_dir)
 

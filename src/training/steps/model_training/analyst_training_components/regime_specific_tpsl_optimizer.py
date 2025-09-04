@@ -1,3 +1,6 @@
+
+from typing import Any
+import pandas as pd
 # TPSL OPTIMIZER - TEMPORARILY DISABLED
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
@@ -15,19 +18,15 @@ import sys
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple
-import numpy as np
 import optuna
-import pandas as pd
-import asyncio
 
-from src.core.decorators import handles_errors
-from src.core.domain import handle_specific_errors
+from .core.decorators import handles_errors
+from .core.domain import handle_specific_errors
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-from src.config import CONFIG
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, initialization_error, warning
+from .config import CONFIG
+from .utils.logger import system_logger
+from .utils.warning_symbols import error, failed, initialization_error, warning
 
 class RegimeSpecificTPSLOptimizer:
     """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes."
@@ -50,7 +49,7 @@ class RegimeSpecificTPSLOptimizer:
         
         # Initialize meta labeling system (optional, for backward compatibility)
         try:
-            from src.analyst.meta_labeling_system import MetaLabelingSystem
+            from .analyst.meta_labeling_system import MetaLabelingSystem
             self.meta_labeling_system = MetaLabelingSystem(config)
         except ImportError:
             self.logger.warning('MetaLabelingSystem not available, will use HMM regimes only')

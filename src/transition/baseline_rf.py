@@ -1,16 +1,13 @@
 # src/transition/baseline_rf.py
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 
 try:
     import shap  # type: ignore

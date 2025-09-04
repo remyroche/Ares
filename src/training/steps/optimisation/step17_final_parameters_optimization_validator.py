@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Validator for Step 12: Final Parameters Optimization."""
 
@@ -17,8 +16,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.common_operations import safe_json_load
+from .config import CONFIG
+from .utils.common_operations import safe_json_load
 
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
@@ -430,4 +429,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    asyncio.run(test_validator())
+    asyncio.run(await test_validator())

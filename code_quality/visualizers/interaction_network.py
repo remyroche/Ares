@@ -4,13 +4,7 @@ Interaction Network Visualizer
 Creates network visualizations of code interactions and relationships.
 """
 
-import networkx as nx
-import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
-import plotly.graph_objects as go
-from typing import Dict, List, Optional, Tuple, Any, Set
-import json
-from pathlib import Path
 from .code_visualizer import CodeVisualizer
 
 
@@ -468,7 +462,6 @@ class InteractionNetworkVisualizer(CodeVisualizer):
     
     def _plot_module_clusters(self, ax: plt.Axes, matrix: np.ndarray, modules: List[str]):
         """Plot module clustering analysis."""
-        from sklearn.cluster import AgglomerativeClustering
         from scipy.cluster.hierarchy import dendrogram, linkage
         
         try:

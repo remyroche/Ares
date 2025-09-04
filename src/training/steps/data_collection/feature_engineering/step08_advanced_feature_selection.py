@@ -1,3 +1,9 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+import numpy as np
 """Step 8: Advanced Feature Selection - Refactored to use BaseStep.
 
 This step performs sophisticated feature selection using:
@@ -7,26 +13,14 @@ with regime-aware selection, time-series validation, and interpretability analys
 """
 
 import asyncio
-import json
-import os
-import pickle
 import warnings
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
-from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-import lightgbm as lgb
 
 # Computational optimization imports
 try:
-    import numba
     from numba import jit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -34,7 +28,6 @@ except ImportError:
     warnings.warn("Numba not available - computations will be slower")
 
 try:
-    from joblib import Parallel, delayed
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False
@@ -56,18 +49,13 @@ except ImportError:
     warnings.warn("Boruta not available - will use alternative feature selection")
 
 try:
-    import lime
-    import lime.lime_tabular
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False
     warnings.warn("LIME not available - interpretability features will be limited")
 
-from src.training.base_step import BaseStep
-from src.core.decorators import handles_errors
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
+from .training.base_step import BaseStep
+from .utils.logger import system_logger
 
 
 # Numba-optimized functions for performance

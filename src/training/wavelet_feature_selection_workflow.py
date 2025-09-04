@@ -1,5 +1,6 @@
-from __future__ import annotations
 
+
+from src.utils.error_handler import handles_errors
 """Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:
@@ -22,8 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 import yaml
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.inspection import permutation_importance
@@ -34,7 +33,6 @@ from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomp
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-import asyncio
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -1103,4 +1101,7 @@ class WaveletFeatureSelectionWorkflow:
         except ImportError:
             # Fallback to old import path
             from shap import TreeExplainer
+import pandas as pd
+import numpy as np
+
         return TreeExplainer(model)

@@ -15,7 +15,6 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 
 from src.utils.logger import setup_logging, system_logger
 
@@ -23,7 +22,6 @@ from src.utils.logger import setup_logging, system_logger
 project_root=Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.utils.warning_symbols import warning as warning_src_utils_warning_symbols
 
 
 def _log_exceptions(logger_name: str, default_return):
@@ -228,5 +226,5 @@ def main() -> bool:
 
 
 if __name__== "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

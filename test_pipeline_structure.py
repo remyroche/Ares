@@ -6,7 +6,6 @@ This script tests the pipeline structure without requiring external dependencies
 
 
 import sys
-import os
 from pathlib import Path
 
 # Add project root to path
@@ -274,5 +273,5 @@ def main():
         return False
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

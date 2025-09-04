@@ -7,7 +7,6 @@ This script will:
 3. Ensure prices are valid and timestamps are indexed
 """
 
-from __future__ import annotations
 
 import os
 import pickle
@@ -16,7 +15,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import missing as missing_src_utils_warning_symbols, warning
@@ -200,5 +198,5 @@ def main() -> bool:
 
 
 if __name__== "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

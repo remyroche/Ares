@@ -5,7 +5,6 @@ Demonstrates how to create a plugin for import fixing functionality.
 """
 
 import ast
-import re
 from pathlib import Path
 from typing import Dict, Any, Set, List
 from code_quality.plugins.base_plugin import FileProcessorPlugin, PluginMetadata, PluginCategory, PluginPriority

@@ -1,13 +1,11 @@
-from __future__ import annotations
 
 '\nSteps 1-7 Compatibility Framework\n\nThis module provides comprehensive compatibility management between steps 1-7 including:\n- Data schema validation across steps\n- Input/output contract validation\n- Step dependency management\n- Cross-step data consistency checks\n- Configuration compatibility validation\n- Error propagation handling\n'
 import json
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards

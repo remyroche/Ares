@@ -1,14 +1,11 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+import pandas as pd
 '\nRegime-Specific Triple Barrier Optimizer\n\nThis module implements regime-specific optimization for the triple barrier method,\ncreating separate optimizers for each HMM regime to allow different barrier parameters\nfor different market conditions.\n\nThis optimizer is used by the triple barrier labeler to optimize parameters\nbefore ML training begins, ensuring optimal trading parameters for each regime.\n\nKey Features:\n- Separate optimization for each HMM regime (bull, bear, sideways, etc.)\n- Regime-specific barrier parameters (upper, lower, timeout, confidence)\n- Regime-aware parameter validation and constraints\n- Integration with triple barrier labeler\n- MLflow tracking for regime-specific experiments\n'
 import json
 import logging
 import warnings
 from datetime import datetime
 from typing import Any
-import numpy as np
-import pandas as pd
-import asyncio
 warnings.filterwarnings('ignore')
 try:
     import mlflow

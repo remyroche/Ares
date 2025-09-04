@@ -1,14 +1,13 @@
-"""Feature selection component for analyst enhancement."""
-import asyncio
-from typing import Any, Dict, List, Optional
-import numpy as np
+
+from typing import List
+from typing import Dict
 import pandas as pd
-from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_classif, RFE
+from typing import Any
+"""Feature selection component for analyst enhancement."""
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from src.core.decorators import handles_errors, log_execution_time
-from src.utils.logger import system_logger
-from src.core.decorators.errors import handles_errors
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 class FeatureSelector:
     """Handles feature selection for analyst models."""

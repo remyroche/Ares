@@ -6,7 +6,6 @@ This module provides comprehensive request/response tracing across all component
 of the Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
-from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
@@ -14,10 +13,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from src.core.decorators import log_execution_time
-from src.utils.logger import system_logger
-import asyncio
-from src.core.decorators.errors import handles_errors
+from .core.decorators import log_execution_time
+from .utils.logger import system_logger
+from .core.decorators.errors import handles_errors
 
 
 class TraceLevel(Enum):

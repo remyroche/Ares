@@ -7,7 +7,10 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 from src.strategist.config import (
     MarketIndicators,

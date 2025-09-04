@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import pandas as pd
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -376,4 +374,4 @@ def main():
 
 
 if __name__== "__main__":
-    main()
+    await main()

@@ -1,14 +1,11 @@
-from __future__ import annotations
+
+import pandas as pd
 '\nRefactored VectorizedLabellingOrchestrator with reduced complexity and type hints.\nThis version breaks down the massive orchestrate_labeling_and_feature_engineering method\ninto smaller, focused methods with proper type annotations.\n'
 import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-import numpy as np
-import pandas as pd
-from copy import copy
-import asyncio
 
 class PipelineStage(Enum):
     """Enumeration of pipeline stages"""

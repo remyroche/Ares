@@ -1,7 +1,5 @@
-from __future__ import annotations
 
 '\nValidator orchestrator for running individual step validators in the training pipeline.\n'
-import asyncio
 import importlib
 import inspect
 import sys
@@ -11,9 +9,9 @@ from typing import Any
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.logger import system_logger
-from src.utils.prometheus_metrics import metrics
-from src.utils.warning_symbols import missing
+from .logger import system_logger
+from .warning_symbols import missing
+from .prometheus_metrics import PrometheusMetrics
 
 
 class ValidatorOrchestrator:
@@ -23,6 +21,15 @@ class ValidatorOrchestrator:
         self.logger = system_logger.getChild('ValidatorOrchestrator')
         self.validators = {}
         self.validation_results = {}
+        # Initialize metrics only if not already initialized
+        try:
+            self.metrics = PrometheusMetrics()
+        except ValueError:
+            # Metrics already initialized, use a dummy object
+            self.metrics = type('DummyMetrics', (), {
+                'record_step_execution': lambda *args, **kwargs: None,
+                'record_validation_result': lambda *args, **kwargs: None
+            })()
 
     async def run_step_validator(self, step_name: str, training_input: dict[str, Any], pipeline_state: dict[str, Any], config: dict[str, Any], validation_level: str='CRITICAL') -> dict[str, Any]:
         """
@@ -198,14 +205,58 @@ class ValidatorOrchestrator:
         Returns:
             Dictionary containing validation results
         """
-        validator_mapping = {'step01_data_collection': 'step01_data_collection_validator', 'step01_5_data_converter': 'step01_5_data_converter_validator', 'step02_data_reading': 'step02_data_reading_validator', 'step02_5_sr_optimization': 'step02_5_sr_optimization_validator', 'step03_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator', 'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator', 'step04_regime_data_splitting': 'step04_regime_data_splitting_validator', 'step05_labeling': 'step05_labeling_validator', 'step06_feature_engineering': 'step06_feature_engineering_validator', 'step07_enhanced_matrix_operations': 'step07_enhanced_matrix_operations_validator', 'step8_regime_data_splitting': 'step8_regime_data_splitting_validator', 'step09_hmm_based_training': 'step09_hmm_based_training_validator', 'step09_5_multi_timeframe_hmm_ensemble': 'step09_5_multi_timeframe_hmm_ensemble_validator', 'step09_5_hmm_lm_generalist_training': 'step09_5_hmm_lm_generalist_training_validator', 'step10_unified_regime_intelligence': 'step10_unified_regime_intelligence_validator', 'step11_analyst_creation': 'step11_analyst_creation_validator', 'step12_analyst_enhancement': 'step12_analyst_enhancement_validator', 'step13_analyst_ensemble_creation': 'step13_analyst_ensemble_creation_validator', 'step14_tactician_labeling': 'step14_tactician_labeling_validator', 'step15_tactician_specialist_training': 'step15_tactician_specialist_training_validator', 'step16_confidence_calibration': 'step16_confidence_calibration_validator', 'step17_final_parameters_optimization': 'step17_final_parameters_optimization_validator', 'step18_walk_forward_validation': 'step18_walk_forward_validation_validator', 'step19_monte_carlo_validation': 'step19_monte_carlo_validation_validator', 'step20_ab_testing': 'step20_ab_testing_validator', 'step21_saving': 'step21_saving_validator'}
+        validator_mapping = {
+            # Support both naming conventions
+            'step1_data_collection': 'step01_data_collection_validator',
+            'step01_data_collection': 'step01_data_collection_validator',
+            'step1_5_data_converter': 'step01_5_data_converter_validator', 
+            'step01_5_data_converter': 'step01_5_data_converter_validator',
+            'step2_data_reading': 'step02_data_reading_validator',
+            'step02_data_reading': 'step02_data_reading_validator',
+            'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',
+            'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
+            'step3_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
+            'step03_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
+            'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
+            'step04_regime_data_splitting': 'step04_regime_data_splitting_validator',
+            'step05_labeling': 'step05_labeling_validator',
+            'step06_feature_engineering': 'step06_feature_engineering_validator',
+            'step07_enhanced_matrix_operations': 'step07_enhanced_matrix_operations_validator',
+            'step8_regime_data_splitting': 'step8_regime_data_splitting_validator',
+            'step09_hmm_based_training': 'step09_hmm_based_training_validator',
+            'step09_5_multi_timeframe_hmm_ensemble': 'step09_5_multi_timeframe_hmm_ensemble_validator',
+            'step09_5_hmm_lm_generalist_training': 'step09_5_hmm_lm_generalist_training_validator',
+            'step10_unified_regime_intelligence': 'step10_unified_regime_intelligence_validator',
+            'step11_analyst_creation': 'step11_analyst_creation_validator',
+            'step12_analyst_enhancement': 'step12_analyst_enhancement_validator',
+            'step13_analyst_ensemble_creation': 'step13_analyst_ensemble_creation_validator',
+            'step14_tactician_labeling': 'step14_tactician_labeling_validator',
+            'step15_tactician_specialist_training': 'step15_tactician_specialist_training_validator',
+            'step16_confidence_calibration': 'step16_confidence_calibration_validator',
+            'step17_final_parameters_optimization': 'step17_final_parameters_optimization_validator',
+            'step18_walk_forward_validation': 'step18_walk_forward_validation_validator',
+            'step19_monte_carlo_validation': 'step19_monte_carlo_validation_validator',
+            'step20_ab_testing': 'step20_ab_testing_validator',
+            'step21_saving': 'step21_saving_validator'
+        }
         validator_module_name = validator_mapping.get(step_name)
         if not validator_module_name:
             msg = f'No validator mapping found for step: {step_name}'
             raise ValueError(msg)
-        module_path = f'src.training.steps.{validator_module_name}'
-        try:
+        # Determine the correct subdirectory based on the step name
+        if validator_module_name.startswith('step01') or validator_module_name.startswith('step02'):
+            module_path = f'src.training.steps.data_collection.{validator_module_name}'
+        elif validator_module_name.startswith('step03') or validator_module_name.startswith('step04') or validator_module_name.startswith('step05') or validator_module_name.startswith('step06') or validator_module_name.startswith('step07'):
+            module_path = f'src.training.steps.market_analysis.{validator_module_name}'
+        elif validator_module_name.startswith('step09') or validator_module_name.startswith('step10') or validator_module_name.startswith('step11') or validator_module_name.startswith('step12') or validator_module_name.startswith('step13') or validator_module_name.startswith('step14') or validator_module_name.startswith('step15'):
+            module_path = f'src.training.steps.model_training.{validator_module_name}'
+        elif validator_module_name.startswith('step16') or validator_module_name.startswith('step17'):
+            module_path = f'src.training.steps.optimisation.{validator_module_name}'
+        elif validator_module_name.startswith('step18') or validator_module_name.startswith('step19') or validator_module_name.startswith('step20') or validator_module_name.startswith('step21'):
+            module_path = f'src.training.steps.backtesting.{validator_module_name}'
+        else:
             module_path = f'src.training.steps.{validator_module_name}'
+        try:
             validator_module = importlib.import_module(module_path)
             self.validators[step_name] = validator_module
             run_validator_func: Any | None = getattr(validator_module, 'run_validator', None)
@@ -220,7 +271,7 @@ class ValidatorOrchestrator:
             self.logger.info(f"✅ Validator for {step_name} completed: {(bool(result.get('validation_passed', False)) if isinstance(result, dict) else bool(result))}")
             return result if isinstance(result, dict) else {'validation_passed': bool(result)}
         except ImportError as e:
-            self.logger.warning(missing(f'⚠️ Validator module not found for {step_name}: {e}'))
+            self.logger.warning(f'{missing} ⚠️ Validator module not found for {step_name}: {e}')
             return {'step_name': step_name, 'validation_passed': True, 'warning': f'Validator module not found: {str(e)}'}
         except Exception:
             raise

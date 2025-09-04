@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 2: Data Reading and Validation."
 
 This module handles reading the unified data from step1_5 and performs comprehensive
@@ -9,13 +8,13 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
-from src.core.decorators import cached, handles_errors, log_execution_time, traced, validates
-from src.core.decorators.errors import handles_errors
+from .core.decorators import cached, handles_errors, log_execution_time, traced, validates
+from .core.decorators.errors import handles_errors
 from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.common_operations import ensure_directory, safe_json_dump, safe_read_parquet
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from .utils.common_operations import ensure_directory, safe_json_dump, safe_read_parquet
+from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
@@ -23,6 +22,8 @@ system_logger = PipelineStandards.safe_import('src.utils.logger', None)
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 psutil = PipelineStandards.safe_import('psutil', None)
 numpy = PipelineStandards.safe_import('numpy', None)
+if not numpy:
+    print("Warning: numpy not available")
 pandas = PipelineStandards.safe_import('pandas', None)
 
 def create_fallback_logger() -> Any:

@@ -1,11 +1,8 @@
-from __future__ import annotations
 '\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
-import numpy as np
-import pandas as pd
 
 class TimeframeType(Enum):
     """Types of timeframes for analysis"""

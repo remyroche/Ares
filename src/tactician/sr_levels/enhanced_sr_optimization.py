@@ -1,3 +1,9 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Optional
 #!/usr/bin/env python3
 """Enhanced S/R Optimization Module.
 
@@ -5,23 +11,19 @@ This module integrates all enhanced S/R detection, validation, and confluence
 components to provide comprehensive S/R optimization for step2_5.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from datetime import datetime
-import asyncio
 import warnings
+
 warnings.filterwarnings('ignore')
 
-from src.core.decorators import handles_errors, traced
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
 
 # Import enhanced components
 from .enhanced_sr_detection import EnhancedSRDetector, SRLevel
 from .enhanced_sr_validation import EnhancedSRValidator, ValidationResult, BacktestResult
-from .enhanced_sr_confluence import EnhancedSRConfluenceDetector, ConfluenceResult, ConfluenceLevel
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 @dataclass

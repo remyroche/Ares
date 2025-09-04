@@ -1,9 +1,7 @@
 # src/training/model_trainer.py
 
-from copy import copy
-import numpy as np
 
-from src.core.decorators import (
+from src.utils.decorators import (
     cached,
     circuit_breaker,
     handles_errors,
@@ -27,25 +25,22 @@ from datetime import datetime
 from typing import Any
 
 import joblib
-import matplotlib.pyplot as plt
 import mlflow
-import pandas as pd
 import ray
+import pandas as pd
 import shap
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
 
-from src.training.data_cleaning import handle_missing_data
-from src.training.feature_engineering import FeatureGenerator
-from src.training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
+from .training.data_cleaning import handle_missing_data
+from .training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
 
-from src.utils.logger import system_logger
-from src.utils.mlflow_utils import log_training_metadata_to_mlflow
+from .utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 
@@ -307,7 +302,7 @@ class RayModelTrainer:
                 lookback_period = f"{lookback_years}_years"
                 
                 # Log enhanced training metadata
-                from src.utils.mlflow_utils import log_enhanced_training_metadata
+                from .utils.mlflow_utils import log_enhanced_training_metadata
                 log_enhanced_training_metadata(
                     asset=symbol,
                     exchange=exchange,

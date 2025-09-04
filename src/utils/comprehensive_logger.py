@@ -6,7 +6,6 @@ This module provides comprehensive logging functionality with enhanced features.
 """
 
 import logging
-import os
 import sys
 import datetime
 from pathlib import Path

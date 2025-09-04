@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 """
 Standard Interfaces for ML Pipeline Components
 
@@ -12,9 +15,6 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional, TypeVar, Union
-import numpy as np
-import pandas as pd
-from copy import copy
 T = TypeVar('T')
 DataType = Union[pd.DataFrame, np.ndarray, Dict[str, Any]]
 
@@ -343,4 +343,4 @@ async def example_usage() -> None:
     await data_step.cleanup()
     await labeling_step.cleanup()
 if __name__ == '__main__':
-    asyncio.run(example_usage())
+    asyncio.run(await example_usage())

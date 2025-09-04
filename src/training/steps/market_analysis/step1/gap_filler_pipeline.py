@@ -1,5 +1,6 @@
-from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+from typing import Any
+import pandas as pd
 'Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n'
 import asyncio
 import io
@@ -10,8 +11,7 @@ from datetime import datetime
 from pathlib import Path
 import aiohttp
 import certifi
-import pandas as pd
-from src.utils.logger import system_logger
+from .utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 logger = system_logger.getChild('GapFillerPipeline')
@@ -210,4 +210,4 @@ async def run_gap_filling_pipeline(symbol: str='ETHUSDT', exchange: str='BINANCE
     gap_filler = GapFillerPipeline(data_cache_path)
     return await gap_filler.run_pipeline(symbol, exchange)
 if __name__ == '__main__':
-    asyncio.run(run_gap_filling_pipeline())
+    asyncio.run(await run_gap_filling_pipeline())

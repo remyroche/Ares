@@ -14,9 +14,8 @@ from src.config.config_manager import (
     get_search_space,
     update_optimizable_config,
 )
-import asyncio
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
 
 
 class FinalParametersOptimizationStepNew:
@@ -69,7 +68,7 @@ class FinalParametersOptimizationStepNew:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Load calibration results
-            from src.utils.logger import heartbeat
+            from .utils.logger import heartbeat
 
             with heartbeat(
                 self.logger,

@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """ML-Based Regime Transition Detection for Step 3.
 
@@ -5,16 +8,9 @@ This module implements machine learning models to detect regime transitions,
 replacing hardcoded logic with trained models that learn transition patterns.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, cross_val_score, TimeSeriesSplit
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 from sklearn.utils.class_weight import compute_class_weight
 import joblib
 import warnings

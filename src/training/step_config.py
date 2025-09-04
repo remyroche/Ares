@@ -9,7 +9,6 @@ This module defines the standardized step configuration, including:
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
-from copy import copy
 
 
 @dataclass
@@ -40,7 +39,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         step_number="01",
         step_name="data_collection",
         description="Download and consolidate market data",
-        module_path="src.training.steps.data_preparation.step01_data_collection",
+        module_path="src.training.steps.data_collection.data_preparation.step01_data_collection",
         class_name="DataCollectionStep",
         dependencies=[],
         required_inputs=["symbol", "exchange", "timeframe"],
@@ -52,7 +51,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         step_number="01_5",
         step_name="data_converter",
         description="Convert data to unified format",
-        module_path="src.training.steps.data_preparation.step01_5_data_converter_wrapper",
+        module_path="src.training.steps.data_collection.data_preparation.step01_5_data_converter_wrapper",
         class_name="DataConverterStep",
         dependencies=["01"],
         required_inputs=["raw_market_data"],
@@ -64,7 +63,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         step_number="02",
         step_name="data_reading",
         description="Read unified data and validate quality",
-        module_path="src.training.steps.data_preparation.step02_data_reading",
+        module_path="src.training.steps.data_collection.data_preparation.step02_data_reading",
         class_name="DataReadingStep",
         dependencies=["01_5"],
         required_inputs=["unified_data_path"],
@@ -72,14 +71,26 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_files=[]
     ),
     
+    "2_5": StepConfig(
+        step_number="2_5",
+        step_name="sr_optimization",
+        description="Optimize Support and Resistance levels",
+        module_path="src.training.steps.data_collection.data_preparation.step02_5_sr_optimization",
+        class_name="SROptimizationStep",
+        dependencies=["02"],
+        required_inputs=["validated_data"],
+        produced_outputs=["sr_levels", "sr_optimization_results"],
+        required_files=["data/sr_levels/*/*/*/*.parquet"]
+    ),
+    
     "03": StepConfig(
         step_number="03",
         step_name="hmm_regime_discovery",
         description="Identify market regimes using HMM",
-        module_path="src.training.steps.market_analysis.step03_hmm_clustering",
+        module_path="src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery",
         class_name="HMMRegimeDiscoveryStep",
-        dependencies=["02"],
-        required_inputs=["validated_data"],
+        dependencies=["2_5"],
+        required_inputs=["sr_levels"],
         produced_outputs=["regime_labels", "regime_transitions"],
         required_files=["data/hmm_regimes/*_composite_clusters.parquet"]
     ),
@@ -320,6 +331,36 @@ def get_step_config(step_number: str) -> StepConfig:
     return PIPELINE_STEPS[step_number]
 
 
+def get_step_number_from_full_name(full_name: str) -> str:
+    """Extract step number from full step name.
+    
+    Args:
+        full_name: Full step name (e.g., "step03_hmm_regime_discovery", "step2_5_sr_optimization")
+        
+    Returns:
+        Step number (e.g., "03", "2_5")
+        
+    Raises:
+        ValueError: If full name format is invalid
+    """
+    if not full_name.startswith("step"):
+        raise ValueError(f"Invalid step name format: {full_name}")
+    
+    # Remove "step" prefix
+    remaining = full_name[4:]
+    
+    # Find the first underscore that separates step number from step name
+    # We need to be careful with step numbers like "2_5" which contain underscores
+    # The step name part should start with a letter, not a number
+    import re
+    match = re.match(r'^(\d+(?:_\d+)*)_([a-zA-Z])', remaining)
+    if match:
+        step_number = match.group(1)
+        return step_number
+    else:
+        raise ValueError(f"Invalid step name format: {full_name}")
+
+
 def get_all_steps() -> List[StepConfig]:
     """Get all step configurations in order.
     
@@ -359,6 +400,15 @@ def get_step_execution_order() -> List[str]:
     """
     # This is already in the correct order in PIPELINE_STEPS
     return list(PIPELINE_STEPS.keys())
+
+
+def get_step_execution_order_full_names() -> List[str]:
+    """Get the correct execution order for all steps with full names.
+    
+    Returns:
+        List of full step names in execution order
+    """
+    return [step.full_name for step in PIPELINE_STEPS.values()]
 
 
 def validate_step_sequence() -> Dict[str, Any]:

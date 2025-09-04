@@ -5,7 +5,6 @@ Demonstrates how to create a plugin for linting functionality.
 """
 
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, Any, Set, List
 from code_quality.plugins.base_plugin import DirectoryProcessorPlugin, PluginMetadata, PluginCategory, PluginPriority

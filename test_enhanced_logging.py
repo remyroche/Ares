@@ -8,8 +8,6 @@ features of the enhanced market analysis pipeline.
 
 import asyncio
 import time
-import pandas as pd
-import numpy as np
 from pathlib import Path
 import sys
 
@@ -17,7 +15,7 @@ import sys
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.market_analysis.enhanced_logging_metrics import (
+from src.utils.enhanced_logger import (
     EnhancedPipelineLogger, 
     FeatureQualityMetrics, 
     RegimeQualityMetrics,
@@ -347,4 +345,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

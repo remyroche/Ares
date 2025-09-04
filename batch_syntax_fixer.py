@@ -3,8 +3,6 @@
 Batch syntax fixer for common issues in the codebase.
 """
 
-import os
-import sys
 import json
 import subprocess
 from pathlib import Path
@@ -118,14 +116,12 @@ if __name__ == "__main__":
     
     # Try to install autopep8 if not available
     try:
-        import autopep8
         print("✓ autopep8 is available")
     except ImportError:
         print("✗ autopep8 not found - Some fixes may not work")
     
     # Try to install black if not available
     try:
-        import black
         print("✓ black is available")
     except ImportError:
         print("✗ black not found - Some fixes may not work")

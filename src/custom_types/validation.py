@@ -1,4 +1,3 @@
-from __future__ import annotations
 '\nRuntime type validation utilities for critical paths.\n'
 import inspect
 import logging

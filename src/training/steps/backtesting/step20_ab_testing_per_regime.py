@@ -2,17 +2,16 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple
-import pandas as pd
-import numpy as np
 import json
-from datetime import datetime
 
-from src.training.steps.step20_ab_testing import Step20ABTesting
-from src.training.steps.regime_continuity_decorator import per_regime_step
-from src.utils.logger import getChild as get_logger
-from src.utils.pipeline_standards import pipeline_standards
-from src.core.decorators import traced, validates, handles_errors
+from .training.steps.step20_ab_testing import Step20ABTesting
+from .training.steps.regime_continuity_decorator import per_regime_step
+from .utils.pipeline_standards import pipeline_standards
+from .core.decorators import traced, validates, handles_errors
+from typing import Any
+from typing import Dict
+import numpy as np
+from typing import Optional
 
 logger = get_logger('Step20ABTestingPerRegime')
 
@@ -284,4 +283,4 @@ if __name__ == '__main__':
     async def test():
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Per-regime AB testing result: {success}')
-    asyncio.run(test())
+    asyncio.run(await test())

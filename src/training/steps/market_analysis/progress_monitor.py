@@ -1,3 +1,6 @@
+
+from typing import Dict
+from typing import Any
 #!/usr/bin/env python3
 """
 Progress Monitor for Market Analysis Pipeline
@@ -8,7 +11,6 @@ and detailed status updates for the market analysis pipeline.
 
 import time
 import threading
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 

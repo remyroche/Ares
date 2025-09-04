@@ -1,3 +1,8 @@
+
+from typing import Optional
+from typing import List
+from typing import Dict
+from typing import Any
 """Per-Regime Pipeline Orchestrator.
 
 This module orchestrates the entire per-regime pipeline, ensuring that regime
@@ -7,23 +12,17 @@ monitoring and validation.
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-import pandas as pd
-import numpy as np
 import json
 from datetime import datetime
 from dataclasses import dataclass, asdict
 
-from src.utils.logger import getChild as get_logger
-from src.utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
-from src.utils.pipeline_standards import pipeline_standards
-from src.core.decorators import traced, cached, validates, handles_errors, log_execution_time
+from .utils.pipeline_standards import pipeline_standards
 
-from src.training.steps.regime_continuity_manager import regime_continuity_manager
-from src.training.steps.regime_continuity_validator import regime_continuity_validator
-from src.training.steps.per_regime_pipeline_integration import PerRegimePipelineIntegrator
-from src.training.steps.regime_handler import regime_handler
-from src.core.decorators.errors import handles_errors
+from .training.steps.regime_continuity_manager import regime_continuity_manager
+from .training.steps.regime_continuity_validator import regime_continuity_validator
+from .training.steps.per_regime_pipeline_integration import PerRegimePipelineIntegrator
+from .training.steps.regime_handler import regime_handler
+from .core.decorators.errors import handles_errors
 
 
 logger = get_logger('PerRegimePipelineOrchestrator')
@@ -636,4 +635,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime pipeline result: {success}')
         
-    asyncio.run(test())
+    asyncio.run(await test())

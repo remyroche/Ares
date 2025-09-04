@@ -19,7 +19,6 @@ Usage:
     python3 scripts/unified_optuna_optimization_demo.py --optimization-type sr_parameters --n-trials 100
 """
 
-from __future__ import annotations
 
 import argparse
 import asyncio
@@ -30,9 +29,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import optuna
-import pandas as pd
 from optuna.visualization import plot_optimization_history, plot_param_importances
 
 # Ensure src on path
@@ -574,5 +571,5 @@ async def main() -> int:
 
 
 if __name__== "__main__":
-    exit_code = asyncio.run(main())
+    exit_code = asyncio.run(await main())
     sys.exit(exit_code)

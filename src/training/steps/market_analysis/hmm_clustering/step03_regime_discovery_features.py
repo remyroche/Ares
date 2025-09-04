@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """Enhanced Regime Discovery Feature Engineering for Step 3.
 
@@ -5,12 +8,6 @@ This module creates regime-aware features specifically designed for regime disco
 focusing on features that help distinguish between different market regimes.
 """
 
-import ast
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
-from scipy import stats
-from scipy.signal import find_peaks
 import warnings
 warnings.filterwarnings('ignore')
 

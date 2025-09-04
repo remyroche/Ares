@@ -1,3 +1,10 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Optional
+import numpy as np
 #!/usr/bin/env python3
 """S/R Machine Learning Enhancer.
 
@@ -5,28 +12,18 @@ This module enhances S/R detection and qualification using machine learning mode
 for better accuracy and prediction capabilities.
 """
 
-import asyncio
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 import joblib
 from pathlib import Path
 
-from src.core.decorators import handles_errors
-from src.utils.logger import system_logger
-from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
+from .utils.logger import system_logger
+from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
 
 # ML imports with fallback
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
-    from sklearn.svm import SVC
-    from sklearn.model_selection import train_test_split, cross_val_score
     from sklearn.preprocessing import StandardScaler
-    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-    from sklearn.feature_selection import SelectKBest, f_classif
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

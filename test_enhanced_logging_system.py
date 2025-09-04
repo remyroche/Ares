@@ -14,7 +14,6 @@ import asyncio
 import logging
 import sys
 import traceback
-from datetime import datetime
 from pathlib import Path
 
 # Add src to path for imports
@@ -32,7 +31,7 @@ def test_enhanced_logger():
         )
         
         # Setup logging
-        logger = setup_logging()
+        logger = setup_logging(config={})
         if logger:
             print("✅ Enhanced logger setup successful")
         else:
@@ -76,7 +75,6 @@ def test_decorator_system():
     print("🧪 Testing Enhanced Decorator System...")
     
     try:
-        from src.utils.decorator_config import DecoratorConfig, global_config
         from src.utils.decorator_registry import DecoratorRegistry, register_decorator
         
         # Test DecoratorConfig
@@ -189,7 +187,7 @@ def test_validation_system():
             result = await validator.validate({"input": "test"}, {"state": "test"})
             return result
         
-        validation_result = asyncio.run(run_validation())
+        validation_result = asyncio.run(await run_validation())
         print(f"✅ Validation result: {'PASSED' if validation_result else 'FAILED'}")
         
         # Test error absence validation
@@ -305,5 +303,5 @@ def main():
         return False
 
 if __name__ == "__main__":
-    success = main()
+    success = await main()
     sys.exit(0 if success else 1)

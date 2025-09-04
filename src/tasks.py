@@ -1,11 +1,9 @@
-from __future__ import annotations
 import asyncio
 import os
 from celery import Celery
 from celery.schedules import crontab
-from src.ares_pipeline import AresPipeline
-from src.database.sqlite_manager import SQLiteManager
-from src.training.core.training_manager import create_training_manager
+from ares_pipeline import AresPipeline
+from sqlite_manager import SQLiteManager
 app = Celery('ares_tasks', broker='redis://localhost:6379/0')
 
 @app.task

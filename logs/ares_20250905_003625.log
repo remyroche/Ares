@@ -1,0 +1,66 @@
+2025-09-05 00:36:25,873 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - Start time: 2025-09-05 00:36:25
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250905_003625.log
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-05 00:36:25,874 - AresTradingSystem - INFO - 🚀 Launcher started: step02
+2025-09-05 00:36:25,874 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - 🚀 Running step02 with existing data for ETHUSDT on BINANCE
+2025-09-05 00:36:25,874 - AresComponent.AresLauncher - INFO - 📊 Using existing data from step01 and step1_5 - no new downloads
+2025-09-05 00:36:25,929 - AresComponent.AresLauncher - INFO - 🔍 Validating step1_data_collection using existing validator
+2025-09-05 00:36:25,929 - AresTradingSystem.System.ValidatorOrchestrator - INFO - 🔍 Running CRITICAL validator for step1_data_collection
+2025-09-05 00:36:25,932 - AresTradingSystem.System.Validator.Step1 - INFO - 🔍 Validating Step 1 data collection for BINANCE ETHUSDT 1m
+2025-09-05 00:36:25,933 - AresTradingSystem.System.Validator.Step1 - INFO - 📊 Found klines file: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet
+2025-09-05 00:36:25,935 - AresTradingSystem.System.Validator.Step1 - INFO - ✅ Found consolidated files: ['data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet']
+2025-09-05 00:36:25,935 - AresTradingSystem.System.Validator.Step1 - INFO - 🔍 Validating klines file: data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet
+2025-09-05 00:36:26,063 - AresTradingSystem.System.Validator.Step1 - WARNING - ⚠️ Consolidated data quality issues detected
+2025-09-05 00:36:26,064 - AresTradingSystem.System.Validator.Step1 - ERROR - ❌ No market data found in state or consolidated files
+2025-09-05 00:36:26,065 - AresTradingSystem.System.ValidatorOrchestrator - ERROR - ❌ Exception while running validator for step1_data_collection: 'Step1DataCollectionValidator' object has no attribute 'validation_results'
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 59, in run_step_validator
+    raw_result = await self._run_validator(step_name, training_input, pipeline_state, config, validation_level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/utils/validator_orchestrator.py", line 268, in _run_validator
+    result = await run_validator_func(training_input, pipeline_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/src/training/steps/data_collection/step01_data_collection_validator.py", line 411, in run_validator
+    "validation_results": validator.validation_results,
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Step1DataCollectionValidator' object has no attribute 'validation_results'
+2025-09-05 00:36:26,070 - AresComponent.AresLauncher - WARNING - ⚠️ Could not run existing validators: name 'metrics' is not defined
+2025-09-05 00:36:26,070 - AresComponent.AresLauncher - WARNING - Proceeding with basic file existence check
+2025-09-05 00:36:26,108 - AresComponent.AresLauncher - INFO - ✅ Found unified data: data/training/unified/binance/ETHUSDT/1m/exchange=BINANCE (742 parquet files)
+2025-09-05 00:36:26,108 - AresComponent.AresLauncher - INFO - Starting from step: step02_data_reading
+2025-09-05 00:36:26,120 - AresComponent.AresLauncher - INFO - 🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)
+2025-09-05 00:36:26,120 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for ETHUSDT on BINANCE
+2025-09-05 00:36:26,120 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/training/progress/BINANCE_ETHUSDT
+2025-09-05 00:36:26,120 - AresTradingSystem.System.StepOrchestrator - INFO - Initialized StepOrchestrator for ETHUSDT on BINANCE
+2025-09-05 00:36:26,120 - AresComponent.AresLauncher - INFO - 🔍 Step validation will be performed by EnhancedTrainingManager
+2025-09-05 00:36:26,120 - AresTradingSystem.System.StepOrchestrator - INFO - 🚀 Starting execution from step: step02_data_reading
+2025-09-05 00:36:26,122 - AresTradingSystem.System.ProgressManager - INFO - Initialized ProgressManager for BTCUSDT on binance
+2025-09-05 00:36:26,122 - AresTradingSystem.System.ProgressManager - INFO - Progress directory: data/progress/binance_BTCUSDT
+2025-09-05 00:36:26,122 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - Initialized SimplifiedTrainingManager for BTCUSDT on binance
+2025-09-05 00:36:26,122 - AresTradingSystem.System.TrainingManager - INFO - 🔧 Initializing Training Manager...
+2025-09-05 00:36:26,122 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔧 Initializing training manager...
+2025-09-05 00:36:26,123 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Step sequence validated: 23 steps, 23 enabled
+2025-09-05 00:36:26,123 - AresTradingSystem.System.ProgressManager - INFO - 📋 Latest completed step: step02_data_reading
+2025-09-05 00:36:26,123 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 📂 Found previous execution, latest step: step02_data_reading
+2025-09-05 00:36:26,123 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✅ Training manager initialized successfully
+2025-09-05 00:36:26,124 - AresTradingSystem.System.TrainingManager - INFO - ✅ Training Manager initialized successfully
+2025-09-05 00:36:26,124 - AresTradingSystem.System.StepOrchestrator - INFO - ✅ Enhanced training manager setup successfully
+2025-09-05 00:36:26,124 - AresTradingSystem.System.TrainingManager - INFO - 🚀 Starting training for ETHUSDT on BINANCE
+2025-09-05 00:36:26,124 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🚀 Starting pipeline execution...
+2025-09-05 00:36:26,124 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✓ Step already completed: step02_data_reading
+2025-09-05 00:36:26,124 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - ✓ Step already completed: step2_5_sr_optimization
+2025-09-05 00:36:26,124 - AresTradingSystem.System.SimplifiedTrainingManager - INFO - 🔄 Executing step: step03_hmm_regime_discovery
+2025-09-05 00:36:26,140 - AresTradingSystem.System.SimplifiedTrainingManager - ERROR - Failed to load step step03_hmm_regime_discovery: name 'pipeline_standards' is not defined
+2025-09-05 00:36:26,140 - AresTradingSystem.System.TrainingManager - ERROR - ❌ Training failed: Required step failed: step03_hmm_regime_discovery
+2025-09-05 00:36:26,140 - AresTradingSystem.System.StepOrchestrator - INFO - 💥 ❌ Enhanced 16-step training pipeline failed
+2025-09-05 00:36:26,140 - AresComponent.AresLauncher - ERROR - ❌ Step-based training pipeline failed
+2025-09-05 00:36:26,140 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-05 00:36:26,140 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-05 00:36:26,140 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

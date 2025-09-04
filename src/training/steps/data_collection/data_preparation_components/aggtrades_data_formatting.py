@@ -1,11 +1,8 @@
-from __future__ import annotations
 import csv
 import glob
 import os
-import os.path
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
 
 def check_file_format(file_path: Union[str, Path]) -> bool | None:
     """Check if a CSV file follows the correct format.

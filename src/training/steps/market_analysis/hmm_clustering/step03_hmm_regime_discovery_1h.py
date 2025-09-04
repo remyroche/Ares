@@ -1,3 +1,7 @@
+
+from typing import Optional
+import pandas as pd
+import numpy as np
 """Enhanced Step 3: HMM Regime Discovery using 1h timeframe only.
 
 This module performs Hidden Markov Model (HMM) regime discovery exclusively on 1h data
@@ -8,15 +12,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Tuple
-import numpy as np
-import pandas as pd
-from copy import copy
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators import handles_errors, traced
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import pipeline_standards
+from .core.decorators import handles_errors, traced
+from .utils.common_operations import ensure_directory, safe_json_dump
+from .utils.logger import system_logger
+from .utils.pipeline_standards import pipeline_standards
 logger = system_logger.getChild('HMMRegimeDiscovery1H')
 
 class HMMRegimeDiscovery1H:
@@ -242,4 +243,4 @@ if __name__ == '__main__':
         results = await run_enhanced_regime_discovery(config['symbol'], config['exchange'], config['timeframe'], config['data_dir'], config)
         print(f'Regime discovery completed')
         print(f"Regime statistics: {results['regime_statistics']}")
-    asyncio.run(main())
+    asyncio.run(await main())

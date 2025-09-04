@@ -184,4 +184,4 @@ def main():
     print("💡 Tip: Focus on files in src/ directory first for maximum impact")
 
 if __name__== "__main__":
-    main()
+    await main()

@@ -1,3 +1,6 @@
+
+import pandas as pd
+import numpy as np
 #!/usr/bin/env python3
 """Economic Significance Testing for Regime Validation - Pre-ML Model Approach.
 
@@ -5,11 +8,7 @@ This module validates that discovered regimes have economically meaningful diffe
 BEFORE training ML models, using statistical tests on market data characteristics.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
 from scipy import stats
-from scipy.stats import ks_2samp, mannwhitneyu, chi2_contingency
 import warnings
 warnings.filterwarnings('ignore')
 

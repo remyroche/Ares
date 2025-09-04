@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Database Security Module
 
@@ -10,9 +9,6 @@ This module provides comprehensive database security including:
 - Database access auditing
 - Connection pooling with security limits
 """
-import hashlib
-import json
-import logging
 import os
 import re
 import ssl
@@ -22,8 +18,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from .error_handler import handles_errors
 from .logger import system_logger
-from .pipeline_standards import PipelineStandards, pipeline_standards
-from copy import copy
 
 class DatabaseType:
     """Database type enumeration."""
@@ -157,7 +151,6 @@ class DatabaseSecurityManager:
     def _create_mysql_connection(self, params: Dict[str, Any]) -> Any:
         """Create secure MySQL connection."""
         try:
-            import mysql.connector
             ssl_config = {}
             if params.get('ssl', False):
                 ssl_config = {'ssl_ca': params.get('sslca'), 'ssl_cert': params.get('sslcert'), 'ssl_key': params.get('sslkey'), 'ssl_verify_cert': True}

@@ -3,9 +3,8 @@
 
 """Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."""
 
-from src.core.decorators import handles_errors
-from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-from src.utils.enhanced_mlflow_integration import (
+from .core.decorators import handles_errors
+from .tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -19,14 +18,11 @@ import contextlib
 import os
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Tuple, Optional
 
-import numpy as np
-import pandas as pd
 
-from src.training.data_sharing_manager import get_data_sharing_manager
-from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.logger import system_logger, dependency_status
+from .training.data_sharing_manager import get_data_sharing_manager
+from .training.steps.unified_data_loader import get_unified_data_loader
+from .utils.logger import system_logger, dependency_status
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
@@ -616,8 +612,8 @@ class TacticianLabelingStep:
 
             # Load unified data with optimizations for ML training
             # Use data sharing manager to avoid redundant loading
-            from src.utils.logger import log_dataframe_overview, log_io_operation
-            from src.core.domain import BLANK_TRAINING_LOOKBACK_DAYS
+            from .utils.logger import log_dataframe_overview, log_io_operation
+            from .core.domain import BLANK_TRAINING_LOOKBACK_DAYS
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
@@ -839,7 +835,7 @@ class TacticianLabelingStep:
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
-            from src.data.parquet_dataset_manager import ParquetDatasetManager
+            from .data.parquet_dataset_manager import ParquetDatasetManager
 
             ParquetDatasetManager(logger=self.logger).write_flat_parquet(
                 labeled_data,
@@ -878,7 +874,7 @@ class TacticianLabelingStep:
         try:
             # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
-            from src.data.parquet_dataset_manager import ParquetDatasetManager
+            from .data.parquet_dataset_manager import ParquetDatasetManager
 
             ParquetDatasetManager(logger=self.logger).write_flat_parquet(
                 _signals_df,
@@ -912,7 +908,7 @@ class TacticianLabelingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.core.decorators import (
+from src.utils.decorators import (
     deterministic_seed,
     idempotent_step,
     timeout,
@@ -922,8 +918,7 @@ from src.core.decorators import (
     log_call,
     circuit_breaker
 )
-import copy
-from src.core.decorators.errors import handles_errors
+from .core.decorators.errors import handles_errors
 
 
 # For backward compatibility with existing step structure
@@ -1038,4 +1033,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(test())
+    asyncio.run(await test())

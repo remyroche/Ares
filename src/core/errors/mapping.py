@@ -1,7 +1,9 @@
-from __future__ import annotations
 '\nException mapping to transport-specific responses.\n\nMaps internal exceptions to appropriate HTTP/gRPC/CLI responses.\n'
 import logging
 import traceback
+from typing import Callable, Any
+import pandas as pd
+import numpy as np
 from .base import AppError, ErrorCode, NotFoundError, RateLimitError, ServiceUnavailableError
 from .base import TimeoutError as AppTimeoutError
 from .base import ValidationError
@@ -13,12 +15,10 @@ class ErrorMapper:
     def __init__(self) -> None:
         self._exception_map: dict[type[Exception], Callable[[Exception], AppError]] = {ValueError: lambda e: ValidationError(str(e)), KeyError: lambda e: NotFoundError(f'Key not found: {e}'), TypeError: lambda e: ValidationError(f'Type error: {e}'), AttributeError: lambda e: ValidationError(f'Attribute error: {e}'), ConnectionError: lambda e: ServiceUnavailableError('Connection failed', service_name='external'), TimeoutError: lambda e: AppTimeoutError(str(e)), OSError: lambda e: AppError(f'System error: {e}', code=ErrorCode.INTERNAL_ERROR, status_code=500)}
         try:
-            import pandas as pd
             self._exception_map.update({pd.errors.EmptyDataError: lambda e: ValidationError('Empty data provided'), pd.errors.ParserError: lambda e: ValidationError(f'Data parsing error: {e}')})
         except ImportError:
             pass
         try:
-            import numpy as np
             self._exception_map.update({np.linalg.LinAlgError: lambda e: ValidationError(f'Linear algebra error: {e}')})
         except ImportError:
             pass

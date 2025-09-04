@@ -13,11 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
-import networkx as nx
-import numpy as np
-import pandas as pd
-import seaborn as sns
 
 # Set up plotting style
 plt.style.use("seaborn-v0_8")
@@ -2118,4 +2113,4 @@ def main():
     )
 
 if __name__== "__main__":
-    main()
+    await main()

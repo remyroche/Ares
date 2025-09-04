@@ -1,7 +1,4 @@
 """Test script for refactored data preparation and quality components."""
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 
 # Import the refactored components
 from data_preparation_components import DataFormatConverter, DataValidator, DataCleaner
@@ -56,7 +53,7 @@ def test_data_preparation_components():
     print("=" * 80)
     
     # Create sample data
-    data = create_sample_data()
+    data = await create_sample_data()
     print(f"\nCreated sample data with shape: {data.shape}")
     print(f"Data has {data.isna().sum().sum()} missing values")
     print(f"Data has {data.index.duplicated().sum()} duplicate timestamps")
@@ -105,7 +102,7 @@ def test_data_quality_components():
     print("=" * 80)
     
     # Create sample data with some issues
-    data = create_sample_data()
+    data = await create_sample_data()
     
     # Test QualityMetricsCalculator
     print("\n1. Testing QualityMetricsCalculator:")
@@ -155,7 +152,7 @@ def test_integration():
     print("=" * 80)
     
     # Create sample data
-    data = create_sample_data()
+    data = await create_sample_data()
     
     # Clean data first
     cleaner = DataCleaner()

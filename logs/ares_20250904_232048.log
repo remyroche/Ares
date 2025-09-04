@@ -1,0 +1,52 @@
+2025-09-04 23:20:48,143 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 23:20:48
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 23:20:48,143 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_232048.log
+2025-09-04 23:20:48,144 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 23:20:48,144 - AresTradingSystem - INFO - 🚀 Launcher started: step02
+2025-09-04 23:20:48,144 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 23:20:48,144 - AresComponent.AresLauncher - INFO - 🚀 Running step02 with existing data for ETHUSDT on BINANCE
+2025-09-04 23:20:48,144 - AresComponent.AresLauncher - INFO - 📊 Using existing data from step01 and step1_5 - no new downloads
+2025-09-04 23:20:48,145 - AresComponent.AresLauncher - WARNING - ⚠️ Could not run existing validators: No module named 'src.utils.utils'
+2025-09-04 23:20:48,145 - AresComponent.AresLauncher - WARNING - Proceeding with basic file existence check
+2025-09-04 23:20:48,174 - AresComponent.AresLauncher - INFO - ✅ Found unified data: data/training/unified/binance/ETHUSDT/1m/exchange=BINANCE (742 parquet files)
+2025-09-04 23:20:48,175 - AresComponent.AresLauncher - INFO - Starting from step: step02_data_reading
+2025-09-04 23:20:48,199 - AresTradingSystem - ERROR - Main function exception: cannot import name 'converts_errors' from 'src.core.decorators.errors' (/Users/remyroche/Documents/Ares/src/core/decorators/errors.py)
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 3958, in main
+    success=execute_command(launcher, args)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 3898, in execute_command
+    success=command_handlers[args.command]()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 3530, in <lambda>
+    "step02": lambda: asyncio.run(
+                      ^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniforge/base/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 2647, in run_step2_with_existing_data
+    return await self._run_step_pipeline(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/ares_launcher.py", line 3143, in _run_step_pipeline
+    from src.training.step_orchestrator import StepOrchestrator
+  File "/Users/remyroche/Documents/Ares/src/training/step_orchestrator.py", line 19, in <module>
+    from .progress_manager import ProgressManager
+  File "/Users/remyroche/Documents/Ares/src/training/progress_manager.py", line 19, in <module>
+    from ..core.decorators.errors import handles_errors
+  File "/Users/remyroche/Documents/Ares/src/core/decorators/__init__.py", line 48, in <module>
+    from .errors import (
+ImportError: cannot import name 'converts_errors' from 'src.core.decorators.errors' (/Users/remyroche/Documents/Ares/src/core/decorators/errors.py)
+2025-09-04 23:20:48,204 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 23:20:48,204 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 23:20:48,204 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

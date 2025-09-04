@@ -1,3 +1,9 @@
+
+from typing import List
+from typing import Dict
+from typing import Any
+import pandas as pd
+from typing import Tuple
 # TPSL OPTIMIZATION - TEMPORARILY DISABLED
 # This file contains TPSL optimization functionality that is temporarily disabled
 # as TPSL parameters are commented out in config.yaml
@@ -18,28 +24,17 @@ Key Features:
 - Statistical significance testing per regime
 - Comprehensive reporting and visualization
 """
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
-import numpy as np
-import pandas as pd
 import optuna
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 from optuna.visualization import plot_optimization_history, plot_param_importances
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from scipy import stats
-from src.utils.logger import setup_logging
+from .utils.logger import setup_logging
 from pathlib import Path
-import copy
-from src.config.config_optuna import SROptimizationParameters, HyperparameterOptimizationConfig, get_parameter_search_space
-from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 setup_logging()
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -190,7 +185,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
         """Extract regime names from data using shared regime accessor."""
         try:
-            from src.utils.regime_data_access import get_regime_column
+            from .utils.regime_data_access import get_regime_column
             regime_column = get_regime_column(data)
         except Exception:
             regime_column = None

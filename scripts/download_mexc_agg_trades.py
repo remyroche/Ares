@@ -1,3 +1,5 @@
+
+from logging import error
 #!/usr/bin/env python3
 """
 Download aggregated trades from MEXC with the same format as Binance.
@@ -11,12 +13,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
 
 from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error as error_src_utils_warning_symbols, failed, missing, warning
+import pandas as pd
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent
@@ -178,4 +180,4 @@ async def main():
         sys.exit(1)
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

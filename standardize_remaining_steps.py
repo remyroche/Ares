@@ -161,4 +161,4 @@ def main():
         print("⚠️ Some steps failed standardization. Please check the errors above.")
 
 if __name__== "__main__":
-    main()
+    await main()

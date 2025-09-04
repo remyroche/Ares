@@ -7,7 +7,6 @@ Provides a unified CLI for all dead code detection and mapping capabilities.
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 # Add the parent directory to the path to import mapping modules
 sys.path.insert(0, str(Path(__file__).parent))
@@ -343,4 +342,5 @@ def generate_summary_report(path: str, output_file: str, config_path: str | None
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import asyncio
+    sys.exit(asyncio.run(main()))

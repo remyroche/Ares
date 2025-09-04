@@ -14,7 +14,7 @@ async def main():
     """Run step2_feature_engineering directly."""
     try:
         # Import the step function
-        from src.training.steps.step2_feature_engineering import run_step
+        from src.training.steps.data_collection.step02_data_reading import run_step
 
         print("🚀 Running step2_feature_engineering directly...")
 
@@ -38,4 +38,4 @@ async def main():
         traceback.print_exc()
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

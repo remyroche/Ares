@@ -2,8 +2,8 @@
 Signal Aggregation Configuration with Step17 Optimization Support
 """
 
-from dataclasses import dataclass, field
 from typing import Dict, Any
+from dataclasses import dataclass
 
 
 @dataclass

@@ -8,7 +8,6 @@ import os
 import re
 import json
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
 import shutil
 from datetime import datetime
 from collections import defaultdict
@@ -276,4 +275,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    await main()

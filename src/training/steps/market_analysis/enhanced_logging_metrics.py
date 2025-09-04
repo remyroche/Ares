@@ -1,3 +1,8 @@
+
+from typing import List
+from typing import Dict
+from typing import Tuple
+from typing import Any
 #!/usr/bin/env python3
 """
 Enhanced Logging and Metrics System for Market Analysis Pipeline
@@ -11,14 +16,10 @@ import time
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, asdict
-from collections import defaultdict
 
 # Optional imports
 try:
-    import pandas as pd
-    import numpy as np
     HAS_PANDAS_NUMPY = True
 except ImportError:
     HAS_PANDAS_NUMPY = False
@@ -45,7 +46,7 @@ except ImportError:
 
 # Core utilities
 try:
-    from src.utils.common_operations import get_logger, get_current_datetime, format_datetime
+    from .utils.common_operations import get_logger, get_current_datetime, format_datetime
 except ImportError:
     # Fallback logging setup
     import logging

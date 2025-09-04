@@ -413,71 +413,118 @@ class FinalRegimeClusteringStep:
             self.logger.info("🎯 Performing final clustering...")
             
             # Get optimized clustering parameters
-            n_clusters = self.optimized_params.get("n_clusters", 20)
-            method = self.optimized_params.get("method", "kmeans")
-            random_state = self.optimized_params.get("random_state", 42)
+            clustering_params = self._get_clustering_parameters()
             
             # Prepare features
             features = await self._prepare_features_with_optimized_params(data)
-            
             if features.empty:
                 self.logger.error("No features available for clustering")
                 return {}
             
             # Create composite features with HMM states
-            if hmm_results and "state_sequence" in hmm_results:
-                composite_features = features.copy()
-                composite_features["hmm_state"] = hmm_results["state_sequence"]
-                composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis=1)
-                
-                # Add HMM state interactions
-                for col in features.columns:
-                    composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
-            else:
-                composite_features = features
+            composite_features = await self._create_composite_features(features, hmm_results)
             
-            # Scale features
-            from sklearn.preprocessing import StandardScaler
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(composite_features)
+            # Scale features and perform clustering
+            clustering_results = await self._execute_clustering_algorithm(
+                composite_features, clustering_params
+            )
             
-            # Perform clustering
-            if method == "kmeans":
-                from sklearn.cluster import KMeans
-                clustering = KMeans(
-                    n_clusters=n_clusters,
-                    random_state=random_state,
-                    n_init=10
-                )
-                cluster_labels = clustering.fit_predict(features_scaled)
-                clustering_model = clustering
-            else:
-                # Default to K-means
-                from sklearn.cluster import KMeans
-                clustering = KMeans(
-                    n_clusters=n_clusters,
-                    random_state=random_state,
-                    n_init=10
-                )
-                cluster_labels = clustering.fit_predict(features_scaled)
-                clustering_model = clustering
-            
-            clustering_results = {
-                "model": clustering_model,
-                "scaler": scaler,
-                "cluster_labels": cluster_labels,
-                "n_clusters": n_clusters,
-                "method": method,
+            # Add metadata to results
+            clustering_results.update({
                 "hmm_results": hmm_results,
                 "composite_features": composite_features
-            }
+            })
             
-            self.logger.info(f"✅ Final clustering completed: {n_clusters} clusters")
+            self.logger.info(f"✅ Final clustering completed: {clustering_params['n_clusters']} clusters")
             return clustering_results
             
         except Exception as e:
             self.logger.error(f"Failed to perform final clustering: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="get_clustering_parameters"
+    )
+    def _get_clustering_parameters(self) -> dict[str, Any]:
+        """Get optimized clustering parameters."""
+        return {
+            "n_clusters": self.optimized_params.get("n_clusters", 20),
+            "method": self.optimized_params.get("method", "kmeans"),
+            "random_state": self.optimized_params.get("random_state", 42)
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=pd.DataFrame(),
+        context="create_composite_features"
+    )
+    async def _create_composite_features(self, features: pd.DataFrame, hmm_results: dict[str, Any]) -> pd.DataFrame:
+        """Create composite features with HMM states."""
+        if not hmm_results or "state_sequence" not in hmm_results:
+            return features
+        
+        composite_features = features.copy()
+        composite_features["hmm_state"] = hmm_results["state_sequence"]
+        composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis=1)
+        
+        # Add HMM state interactions
+        for col in features.columns:
+            composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
+        
+        return composite_features
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="execute_clustering_algorithm"
+    )
+    async def _execute_clustering_algorithm(
+        self, 
+        composite_features: pd.DataFrame, 
+        clustering_params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute the clustering algorithm."""
+        # Scale features
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(composite_features)
+        
+        # Perform clustering
+        clustering_model, cluster_labels = await self._perform_clustering(
+            features_scaled, clustering_params
+        )
+        
+        return {
+            "model": clustering_model,
+            "scaler": scaler,
+            "cluster_labels": cluster_labels,
+            "n_clusters": clustering_params["n_clusters"],
+            "method": clustering_params["method"]
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=(None, np.array([])),
+        context="perform_clustering"
+    )
+    async def _perform_clustering(
+        self, 
+        features_scaled: np.ndarray, 
+        clustering_params: dict[str, Any]
+    ) -> tuple[Any, np.ndarray]:
+        """Perform the actual clustering."""
+        from sklearn.cluster import KMeans
+        
+        clustering = KMeans(
+            n_clusters=clustering_params["n_clusters"],
+            random_state=clustering_params["random_state"],
+            n_init=10
+        )
+        cluster_labels = clustering.fit_predict(features_scaled)
+        
+        return clustering, cluster_labels
 
     @handles_errors(
         exceptions=(Exception,),
@@ -507,38 +554,9 @@ class FinalRegimeClusteringStep:
             
             # Analyze each cluster
             unique_clusters = np.unique(cluster_labels)
-            
-            for cluster_id in unique_clusters:
-                cluster_mask = cluster_labels == cluster_id
-                cluster_data = data[cluster_mask]
-                cluster_features = features[cluster_mask] if not features.empty else pd.DataFrame()
-                
-                # Basic statistics
-                cluster_stats = {
-                    "size": len(cluster_data),
-                    "percentage": len(cluster_data) / len(data) * 100,
-                    "date_range": {
-                        "start": cluster_data["timestamp"].min().isoformat(),
-                        "end": cluster_data["timestamp"].max().isoformat()
-                    }
-                }
-                
-                # Price characteristics
-                if not cluster_data.empty:
-                    cluster_stats["price_stats"] = {
-                        "mean_price": float(cluster_data["close"].mean()),
-                        "price_volatility": float(cluster_data["close"].pct_change().std()),
-                        "price_momentum": float(cluster_data["close"].pct_change().mean())
-                    }
-                
-                # Volume characteristics
-                if not cluster_data.empty:
-                    cluster_stats["volume_stats"] = {
-                        "mean_volume": float(cluster_data["volume"].mean()),
-                        "volume_volatility": float(cluster_data["volume"].pct_change().std())
-                    }
-                
-                analysis["cluster_statistics"][f"cluster_{cluster_id}"] = cluster_stats
+            analysis["cluster_statistics"] = await self._analyze_cluster_statistics(
+                cluster_labels, data, features, unique_clusters
+            )
             
             # Analyze regime transitions
             analysis["regime_transitions"] = self._analyze_regime_transitions(cluster_labels)
@@ -552,6 +570,85 @@ class FinalRegimeClusteringStep:
         except Exception as e:
             self.logger.error(f"Failed to analyze regime characteristics: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_cluster_statistics"
+    )
+    async def _analyze_cluster_statistics(
+        self, 
+        cluster_labels: np.ndarray, 
+        data: pd.DataFrame, 
+        features: pd.DataFrame, 
+        unique_clusters: np.ndarray
+    ) -> dict[str, Any]:
+        """Analyze statistics for each cluster."""
+        cluster_statistics = {}
+        
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_data = data[cluster_mask]
+            cluster_features = features[cluster_mask] if not features.empty else pd.DataFrame()
+            
+            cluster_stats = await self._calculate_cluster_basic_stats(cluster_data, data)
+            cluster_stats.update(await self._calculate_cluster_price_stats(cluster_data))
+            cluster_stats.update(await self._calculate_cluster_volume_stats(cluster_data))
+            
+            cluster_statistics[f"cluster_{cluster_id}"] = cluster_stats
+        
+        return cluster_statistics
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_cluster_basic_stats"
+    )
+    async def _calculate_cluster_basic_stats(self, cluster_data: pd.DataFrame, total_data: pd.DataFrame) -> dict[str, Any]:
+        """Calculate basic statistics for a cluster."""
+        return {
+            "size": len(cluster_data),
+            "percentage": len(cluster_data) / len(total_data) * 100,
+            "date_range": {
+                "start": cluster_data["timestamp"].min().isoformat(),
+                "end": cluster_data["timestamp"].max().isoformat()
+            }
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_cluster_price_stats"
+    )
+    async def _calculate_cluster_price_stats(self, cluster_data: pd.DataFrame) -> dict[str, Any]:
+        """Calculate price statistics for a cluster."""
+        if cluster_data.empty:
+            return {}
+        
+        return {
+            "price_stats": {
+                "mean_price": float(cluster_data["close"].mean()),
+                "price_volatility": float(cluster_data["close"].pct_change().std()),
+                "price_momentum": float(cluster_data["close"].pct_change().mean())
+            }
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="calculate_cluster_volume_stats"
+    )
+    async def _calculate_cluster_volume_stats(self, cluster_data: pd.DataFrame) -> dict[str, Any]:
+        """Calculate volume statistics for a cluster."""
+        if cluster_data.empty:
+            return {}
+        
+        return {
+            "volume_stats": {
+                "mean_volume": float(cluster_data["volume"].mean()),
+                "volume_volatility": float(cluster_data["volume"].pct_change().std())
+            }
+        }
 
     @handles_errors(
         exceptions=(Exception,),

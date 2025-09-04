@@ -345,46 +345,64 @@ class EnhancedUnifiedDataConverter:
         try:
             self.logger.info('🔄 Merging aggtrades data with klines...')
             
-            # Ensure timestamp columns are in the same format
-            if 'timestamp' in klines_df.columns and 'timestamp' in aggtrades_df.columns:
-                # Convert timestamps to datetime for merging
-                klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
-                aggtrades_df['datetime'] = pd.to_datetime(aggtrades_df['timestamp'], unit='ms', utc=True)
-                
-                # Round aggtrades timestamps to minute boundaries
-                aggtrades_df['kline_datetime'] = aggtrades_df['datetime'].dt.floor('1min')
-                
-                # Aggregate aggtrades data by minute
-                aggtrades_agg = aggtrades_df.groupby('kline_datetime').agg({
-                    'quantity': ['sum', 'count'],
-                    'price': ['mean', 'min', 'max']
-                }).reset_index()
-                
-                # Flatten column names
-                aggtrades_agg.columns = ['kline_datetime', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
-                
-                # Merge with klines data
-                klines_df = klines_df.merge(aggtrades_agg, left_on='datetime', right_on='kline_datetime', how='left')
-                
-                # Fill missing values
-                for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']:
-                    if col in klines_df.columns:
-                        klines_df[col] = klines_df[col].fillna(0.0)
-                
-                # Calculate volume ratio
-                if 'trade_volume' in klines_df.columns and 'volume' in klines_df.columns:
-                    klines_df['volume_ratio'] = (klines_df['trade_volume'] / klines_df['volume']).fillna(0.0)
-                
-                # Clean up temporary columns
-                klines_df = klines_df.drop(columns=['datetime', 'kline_datetime'], errors='ignore')
-                
-                self.logger.info('✅ Successfully merged aggtrades data')
+            # Check if timestamp columns exist
+            if not ('timestamp' in klines_df.columns and 'timestamp' in aggtrades_df.columns):
+                self.logger.warning('⚠️ Missing timestamp columns for merging')
+                return klines_df
             
+            # Prepare data for merging
+            klines_df = self._prepare_klines_for_merge(klines_df)
+            aggtrades_agg = self._prepare_aggtrades_for_merge(aggtrades_df)
+            
+            # Merge the data
+            klines_df = self._perform_aggtrades_merge(klines_df, aggtrades_agg)
+            
+            self.logger.info('✅ Successfully merged aggtrades data')
             return klines_df
             
         except Exception as e:
             self.logger.exception(f'❌ Error merging aggtrades data: {e}')
             return klines_df
+
+    def _prepare_klines_for_merge(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare klines data for merging."""
+        klines_df = klines_df.copy()
+        klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
+        return klines_df
+
+    def _prepare_aggtrades_for_merge(self, aggtrades_df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare aggtrades data for merging."""
+        aggtrades_df = aggtrades_df.copy()
+        aggtrades_df['datetime'] = pd.to_datetime(aggtrades_df['timestamp'], unit='ms', utc=True)
+        aggtrades_df['kline_datetime'] = aggtrades_df['datetime'].dt.floor('1min')
+        
+        # Aggregate aggtrades data by minute
+        aggtrades_agg = aggtrades_df.groupby('kline_datetime').agg({
+            'quantity': ['sum', 'count'],
+            'price': ['mean', 'min', 'max']
+        }).reset_index()
+        
+        # Flatten column names
+        aggtrades_agg.columns = ['kline_datetime', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
+        return aggtrades_agg
+
+    def _perform_aggtrades_merge(self, klines_df: pd.DataFrame, aggtrades_agg: pd.DataFrame) -> pd.DataFrame:
+        """Perform the actual merge and post-processing."""
+        # Merge with klines data
+        klines_df = klines_df.merge(aggtrades_agg, left_on='datetime', right_on='kline_datetime', how='left')
+        
+        # Fill missing values
+        for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']:
+            if col in klines_df.columns:
+                klines_df[col] = klines_df[col].fillna(0.0)
+        
+        # Calculate volume ratio
+        if 'trade_volume' in klines_df.columns and 'volume' in klines_df.columns:
+            klines_df['volume_ratio'] = (klines_df['trade_volume'] / klines_df['volume']).fillna(0.0)
+        
+        # Clean up temporary columns
+        klines_df = klines_df.drop(columns=['datetime', 'kline_datetime'], errors='ignore')
+        return klines_df
 
     async def _merge_futures_data(self, klines_df: pd.DataFrame, futures_df: pd.DataFrame) -> pd.DataFrame:
         """Merge futures data with klines data."""

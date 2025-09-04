@@ -162,6 +162,7 @@ class DataCollectionStep:
             ]
             
             quality_results = []
+            
             for file_name in expected_files:
                 result = await self._validate_single_file(file_name, data_dir)
                 if result is None:  # File validation failed
@@ -170,7 +171,6 @@ class DataCollectionStep:
                     quality_results.append(result)
             
             return self._process_quality_results(quality_results)
-            
         except Exception as e:
             self.logger.exception(f'❌ Error running standardized quality check: {e}')
             return False
@@ -182,7 +182,6 @@ class DataCollectionStep:
         if not os.path.exists(file_path):
             self.logger.warning(f'⚠️ Expected file not found: {file_name}')
             return False
-            
         self.logger.info(f'🔍 Validating {file_name}...')
         try:
             import pandas as pd
@@ -191,7 +190,6 @@ class DataCollectionStep:
             
             schema_name = self._determine_schema_name(file_name)
             validation_result = self.standards.validate_data_quality(df, schema_name)
-            
             self._log_validation_result(file_name, validation_result)
             return validation_result
             
@@ -207,7 +205,6 @@ class DataCollectionStep:
             return 'aggtrades'
         else:
             return 'unified'
-
     def _log_validation_result(self, file_name: str, validation_result):
         """Log validation result details."""
         if validation_result.passed:

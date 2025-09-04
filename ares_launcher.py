@@ -870,99 +870,134 @@ class AresLauncher:
             # Import enhanced backtesting components
             import asyncio
             from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
+            from src.training.steps.backtesting.enhanced_logging import get_backtesting_logger
             from src.utils.common_operations import safe_file_exists, format_datetime, get_current_datetime
 
-            # Enhanced configuration for backtesting
-            enhanced_config = {
-                'force_rerun': True,
-                'walk_forward_validation': True,
-                'monte_carlo_validation': True,
-                'ab_testing': True,
-                'model_saving': True,
-                'random_state': 42,
-                
-                # Enhanced validation settings
-                'enable_validation': True,
-                'strict_validation': False,
-                'validate_data_quality': True,
-                
-                # Error handling
-                'retry_failed_steps': True,
-                'max_retries': 3,
-                'timeout_seconds': 3600,
-                
-                # Performance monitoring
-                'enable_performance_monitoring': True,
-                'log_detailed_metrics': True,
-            }
+            # Initialize enhanced logger for launcher
+            launcher_logger = get_backtesting_logger(f"launcher_{symbol}_{exchange}", log_dir="log/backtesting")
+            launcher_logger.start_performance_monitoring(interval=5.0)
 
-            # Pre-flight validation
-            self.logger.info("🔍 Running pre-flight validation...")
-            
-            # Validate data directory and files
-            data_dir = "data_cache"
-            required_files = [
-                f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
-                f"volume_{exchange}_{symbol}_consolidated.parquet"
-            ]
-            
-            missing_files = []
-            for file_name in required_files:
-                file_path = f"{data_dir}/{file_name}"
-                if not safe_file_exists(file_path):
-                    missing_files.append(file_name)
-            
-            if missing_files:
-                self.logger.error(f"❌ Missing required data files: {missing_files}")
-                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
-                return False
-            
-            self.logger.info("✅ Pre-flight validation passed")
+            try:
+                launcher_logger.log_info("🚀 Starting Enhanced Backtesting from Launcher", "LAUNCHER")
+                launcher_logger.log_info(f"📊 Configuration: {symbol} on {exchange}", "LAUNCHER")
 
-            # Run enhanced backtesting pipeline
-            self.logger.info("🚀 Starting enhanced backtesting pipeline...")
-            print("🚀 Starting enhanced backtesting pipeline...")
-            print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+                # Enhanced configuration for backtesting
+                enhanced_config = {
+                    'force_rerun': True,
+                    'walk_forward_validation': True,
+                    'monte_carlo_validation': True,
+                    'ab_testing': True,
+                    'model_saving': True,
+                    'random_state': 42,
+                    
+                    # Enhanced validation settings
+                    'enable_validation': True,
+                    'strict_validation': False,
+                    'validate_data_quality': True,
+                    
+                    # Error handling
+                    'retry_failed_steps': True,
+                    'max_retries': 3,
+                    'timeout_seconds': 3600,
+                    
+                    # Performance monitoring
+                    'enable_performance_monitoring': True,
+                    'log_detailed_metrics': True,
+                }
 
-            success = asyncio.run(
-                run_backtesting_pipeline(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe="1m",
-                    data_dir=data_dir,
-                    **enhanced_config
+                # Log configuration
+                launcher_logger.log_info("📋 Enhanced Configuration:", "CONFIG")
+                for key, value in enhanced_config.items():
+                    launcher_logger.log_info(f"   • {key}: {value}", "CONFIG")
+
+                # Pre-flight validation with enhanced logging
+                launcher_logger.log_progress("Pre-flight Validation", 0, "Starting validation checks")
+                
+                # Validate data directory and files
+                data_dir = "data_cache"
+                required_files = [
+                    f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                    f"volume_{exchange}_{symbol}_consolidated.parquet"
+                ]
+                
+                missing_files = []
+                for file_name in required_files:
+                    file_path = f"{data_dir}/{file_name}"
+                    if not safe_file_exists(file_path):
+                        missing_files.append(file_name)
+                    else:
+                        launcher_logger.log_success(f"Required file found: {file_name}", "VALIDATION")
+                
+                if missing_files:
+                    launcher_logger.log_error(Exception(f"Missing required data files: {missing_files}"), "VALIDATION")
+                    launcher_logger.log_quality_flag("MISSING_DATA_FILES", f"Missing required data files: {missing_files}", "ERROR")
+                    launcher_logger.log_info("💡 Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE", "VALIDATION")
+                    return False
+                
+                launcher_logger.log_success("All required data files found", "VALIDATION")
+                launcher_logger.log_progress("Pre-flight Validation", 100, "Validation completed successfully")
+
+                # Run enhanced backtesting pipeline
+                launcher_logger.log_info("🚀 Starting enhanced backtesting pipeline", "EXECUTION")
+                print("🚀 Starting enhanced backtesting pipeline...")
+                print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+
+                success = asyncio.run(
+                    run_backtesting_pipeline(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe="1m",
+                        data_dir=data_dir,
+                        **enhanced_config
+                    )
                 )
-            )
 
-            if success:
-                self.logger.info("🎉 Enhanced backtesting completed successfully!")
-                print("🎉 Enhanced backtesting completed successfully!")
-                print("=" * 80)
-                print("✅ Enhanced backtesting results:")
-                print("   ✅ Comprehensive validation passed")
-                print("   ✅ Walk forward validation completed")
-                print("   ✅ Monte Carlo validation completed")
-                print("   ✅ A/B testing completed")
-                print("   ✅ Model saving completed")
-                print("   ✅ Performance monitoring completed")
-                print("=" * 80)
-                
-                # Print performance summary
-                print("📈 ENHANCED BACKTESTING SUMMARY")
-                print(f"Symbol: {symbol}")
-                print(f"Exchange: {exchange}")
-                print(f"Timeframe: 1m")
-                print(f"Validation: Comprehensive")
-                print(f"Error Handling: Enhanced")
-                print(f"Performance Monitoring: Enabled")
-                print("=" * 80)
-                
-                return True
-            else:
-                self.logger.error("❌ Enhanced backtesting failed!")
-                print("❌ Enhanced backtesting failed!")
-                print("Please check the logs for detailed error information")
-                return False
+                if success:
+                    launcher_logger.log_success("🎉 Enhanced backtesting completed successfully!", "COMPLETION")
+                    print("🎉 Enhanced backtesting completed successfully!")
+                    print("=" * 80)
+                    print("✅ Enhanced backtesting results:")
+                    print("   ✅ Comprehensive validation with quality assessment")
+                    print("   ✅ Walk forward validation with detailed logging")
+                    print("   ✅ Monte Carlo validation with performance monitoring")
+                    print("   ✅ A/B testing with quality flags")
+                    print("   ✅ Model saving with comprehensive reporting")
+                    print("   ✅ Performance monitoring and resource tracking")
+                    print("   ✅ Enhanced logging with emojis and progress indicators")
+                    print("=" * 80)
+                    
+                    # Print performance summary
+                    print("📈 ENHANCED BACKTESTING SUMMARY")
+                    print(f"Symbol: {symbol}")
+                    print(f"Exchange: {exchange}")
+                    print(f"Timeframe: 1m")
+                    print(f"Validation: Comprehensive with Quality Assessment")
+                    print(f"Error Handling: Enhanced with Quality Flags")
+                    print(f"Performance Monitoring: Enabled with Resource Tracking")
+                    print(f"Logging: Enhanced with Emojis and Progress Indicators")
+                    print("=" * 80)
+                    
+                    # Generate launcher report
+                    launcher_report_file = f"data_cache/launcher_backtesting_report_{symbol}_{exchange}.json"
+                    launcher_report = launcher_logger.generate_report(launcher_report_file)
+                    
+                    return True
+                else:
+                    launcher_logger.log_error(Exception("Enhanced backtesting failed"), "EXECUTION")
+                    launcher_logger.log_quality_flag("BACKTESTING_FAILURE", "Enhanced backtesting failed", "ERROR")
+                    print("❌ Enhanced backtesting failed!")
+                    print("Please check the logs for detailed error information")
+                    
+                    # Generate failure report
+                    failure_report_file = f"data_cache/launcher_backtesting_failure_report_{symbol}_{exchange}.json"
+                    failure_report = launcher_logger.generate_report(failure_report_file)
+                    
+                    return False
+
+            finally:
+                # Cleanup launcher logger
+                launcher_logger.stop_performance_monitoring()
+                launcher_logger.cleanup()
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")

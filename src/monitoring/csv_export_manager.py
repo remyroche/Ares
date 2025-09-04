@@ -78,7 +78,8 @@ class CSVExportManager:
     
     @handles_errors(default_return=False, context="csv_export_manager.export_trade_decisions")
     async def export_trade_decisions(self, trade_decisions: List[Any], 
-                                   export_id: Optional[str] = None) -> bool:
+                                   export_id: Optional[str] = None,
+                                   separate_by_mode: bool = True) -> bool:
         """Export trade decisions to CSV with comprehensive details."""
         try:
             start_time = time.time()
@@ -88,6 +89,89 @@ class CSVExportManager:
                 self.logger.warning("No trade decisions to export")
                 return False
             
+            if separate_by_mode:
+                # Separate by trading mode
+                return await self._export_trade_decisions_by_mode(trade_decisions, export_id, start_time)
+            else:
+                # Export all together (legacy behavior)
+                return await self._export_trade_decisions_combined(trade_decisions, export_id, start_time)
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting trade decisions: {e}")
+            return False
+    
+    async def _export_trade_decisions_by_mode(self, trade_decisions: List[Any], 
+                                            export_id: str, start_time: float) -> bool:
+        """Export trade decisions separated by trading mode."""
+        try:
+            # Group by trading mode
+            mode_groups = {}
+            for decision in trade_decisions:
+                mode = decision.trading_mode.value
+                if mode not in mode_groups:
+                    mode_groups[mode] = []
+                mode_groups[mode].append(decision)
+            
+            exported_files = []
+            total_records = 0
+            
+            # Export each mode separately
+            for mode, decisions in mode_groups.items():
+                mode_export_id = f"{export_id}_{mode}"
+                
+                # Create DataFrame for this mode
+                df = await self._create_trade_decisions_dataframe(decisions)
+                
+                # Export main file for this mode
+                main_file = await self._export_dataframe_to_csv(
+                    df, f"{mode_export_id}_main.csv", f"Trade Decisions - {mode.title()}"
+                )
+                
+                if main_file:
+                    exported_files.append(main_file)
+                    total_records += len(df)
+                
+                # Export detailed breakdowns for this mode
+                await self._export_trading_indicators_breakdown(decisions, mode_export_id)
+                await self._export_ensemble_breakdown(decisions, mode_export_id)
+                await self._export_model_breakdown(decisions, mode_export_id)
+                await self._export_context_analysis(decisions, mode_export_id)
+                
+                # Create summary statistics for this mode
+                if self.export_config.include_summary_stats:
+                    await self._export_trade_decisions_summary(df, mode_export_id)
+                
+                self.logger.info(f"Exported {len(df)} {mode} trade decisions to {mode_export_id}")
+            
+            # Record export metadata
+            export_duration = (time.time() - start_time) * 1000
+            total_size = sum(f.stat().st_size for f in exported_files if f)
+            
+            metadata = ExportMetadata(
+                export_id=export_id,
+                timestamp=datetime.now(),
+                file_type="trade_decisions_by_mode",
+                record_count=total_records,
+                file_size_bytes=total_size,
+                export_duration_ms=export_duration
+            )
+            self.export_history.append(metadata)
+            
+            self.logger.info(
+                f"Exported {total_records} trade decisions across {len(mode_groups)} modes "
+                f"in {export_duration:.1f}ms"
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting trade decisions by mode: {e}")
+            return False
+    
+    async def _export_trade_decisions_combined(self, trade_decisions: List[Any], 
+                                             export_id: str, start_time: float) -> bool:
+        """Export all trade decisions in a single file (legacy behavior)."""
+        try:
             # Create comprehensive DataFrame
             df = await self._create_trade_decisions_dataframe(trade_decisions)
             
@@ -126,7 +210,7 @@ class CSVExportManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error exporting trade decisions: {e}")
+            self.logger.error(f"Error exporting combined trade decisions: {e}")
             return False
     
     async def _create_trade_decisions_dataframe(self, trade_decisions: List[Any]) -> pd.DataFrame:
@@ -486,6 +570,7 @@ class CSVExportManager:
             for summary in daily_summaries:
                 row = {
                     'date': summary.date.strftime(self.export_config.date_format),
+                    'trading_mode': summary.trading_mode,
                     'total_trades': summary.total_trades,
                     'long_trades': summary.long_trades,
                     'short_trades': summary.short_trades,

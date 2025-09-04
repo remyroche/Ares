@@ -39,10 +39,11 @@ class MonitoringDashboard:
         self.window_height = self.gui_config.get("window_height", 900)
         self.refresh_interval = self.gui_config.get("refresh_interval_ms", 5000)
         
-        # Data storage
-        self.trade_data: Optional[pd.DataFrame] = None
-        self.daily_summary_data: Optional[pd.DataFrame] = None
-        self.current_data_path: Optional[str] = None
+        # Data storage - separate by trading mode
+        self.trade_data: Dict[str, pd.DataFrame] = {}  # mode -> DataFrame
+        self.daily_summary_data: Dict[str, pd.DataFrame] = {}  # mode -> DataFrame
+        self.current_data_paths: Dict[str, str] = {}  # mode -> path
+        self.current_mode: str = "all"  # Currently selected mode
         
         # GUI components
         self.root: Optional[tk.Tk] = None
@@ -287,6 +288,15 @@ class MonitoringDashboard:
         # Apply button
         ttk.Button(control_frame, text="Apply", command=self._apply_refresh_interval).pack(side=tk.LEFT, padx=5)
         
+        # Trading mode selection
+        ttk.Label(control_frame, text="Trading Mode:").pack(side=tk.LEFT, padx=5)
+        self.trading_mode_var = tk.StringVar(value="all")
+        mode_combo = ttk.Combobox(control_frame, textvariable=self.trading_mode_var, 
+                                 values=["all", "backtest", "paper", "live"], 
+                                 state="readonly", width=10)
+        mode_combo.pack(side=tk.LEFT, padx=5)
+        mode_combo.bind("<<ComboboxSelected>>", self._on_mode_changed)
+        
         # Data path display
         ttk.Label(control_frame, text="Data Path:").pack(side=tk.LEFT, padx=5)
         self.data_path_var = tk.StringVar(value="No data loaded")
@@ -311,20 +321,34 @@ class MonitoringDashboard:
             # Load CSV data
             df = pd.read_csv(file_path)
             
-            # Determine data type based on columns
+            # Determine data type and trading mode based on columns and filename
             if 'decision_id' in df.columns:
-                self.trade_data = df
-                self._populate_trade_tree()
-                self.status_var.set(f"Loaded {len(df)} trade decisions")
+                # Trade decisions data
+                mode = self._extract_mode_from_filename(file_path, df)
+                self.trade_data[mode] = df
+                self.current_data_paths[mode] = file_path
+                
+                # Update current mode if it matches
+                if mode == self.current_mode or self.current_mode == "all":
+                    self._populate_trade_tree()
+                
+                self.status_var.set(f"Loaded {len(df)} {mode} trade decisions")
+                
             elif 'date' in df.columns and 'total_trades' in df.columns:
-                self.daily_summary_data = df
-                self._populate_summary_tree()
-                self.status_var.set(f"Loaded {len(df)} daily summaries")
+                # Daily summary data
+                mode = self._extract_mode_from_filename(file_path, df)
+                self.daily_summary_data[mode] = df
+                self.current_data_paths[mode] = file_path
+                
+                # Update current mode if it matches
+                if mode == self.current_mode or self.current_mode == "all":
+                    self._populate_summary_tree()
+                
+                self.status_var.set(f"Loaded {len(df)} {mode} daily summaries")
             else:
                 messagebox.showwarning("Warning", "Unknown CSV format")
                 return
             
-            self.current_data_path = file_path
             self.data_path_var.set(file_path)
             self.last_update_var.set(f"Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -333,17 +357,60 @@ class MonitoringDashboard:
             messagebox.showerror("Error", f"Failed to load data: {e}")
             self.status_var.set("Error loading data")
     
+    def _extract_mode_from_filename(self, file_path: str, df: pd.DataFrame) -> str:
+        """Extract trading mode from filename or data."""
+        try:
+            filename = Path(file_path).name.lower()
+            
+            # Check filename for mode indicators
+            if 'backtest' in filename:
+                return 'backtest'
+            elif 'paper' in filename:
+                return 'paper'
+            elif 'live' in filename:
+                return 'live'
+            
+            # Check data for trading_mode column
+            if 'trading_mode' in df.columns:
+                modes = df['trading_mode'].unique()
+                if len(modes) == 1:
+                    return modes[0]
+                else:
+                    return 'mixed'
+            
+            # Default to 'all' if no mode can be determined
+            return 'all'
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting mode from filename: {e}")
+            return 'all'
+    
     def _populate_trade_tree(self):
         """Populate the trade decisions tree."""
-        if self.trade_data is None or self.trade_tree is None:
+        if self.trade_tree is None:
             return
         
         # Clear existing data
         for item in self.trade_tree.get_children():
             self.trade_tree.delete(item)
         
+        # Get data for current mode
+        if self.current_mode == "all":
+            # Combine all modes
+            all_data = []
+            for mode, df in self.trade_data.items():
+                all_data.append(df)
+            if all_data:
+                df = pd.concat(all_data, ignore_index=True)
+            else:
+                return
+        elif self.current_mode in self.trade_data:
+            df = self.trade_data[self.current_mode]
+        else:
+            return
+        
         # Update columns based on data
-        columns = list(self.trade_data.columns)
+        columns = list(df.columns)
         self.trade_tree['columns'] = columns
         self.trade_tree['show'] = 'headings'
         
@@ -353,21 +420,36 @@ class MonitoringDashboard:
             self.trade_tree.column(col, width=120, minwidth=80)
         
         # Insert data
-        for index, row in self.trade_data.iterrows():
+        for index, row in df.iterrows():
             values = [str(row[col]) if pd.notna(row[col]) else "" for col in columns]
             self.trade_tree.insert("", tk.END, values=values)
     
     def _populate_summary_tree(self):
         """Populate the daily summary tree."""
-        if self.daily_summary_data is None or self.summary_tree is None:
+        if self.summary_tree is None:
             return
         
         # Clear existing data
         for item in self.summary_tree.get_children():
             self.summary_tree.delete(item)
         
+        # Get data for current mode
+        if self.current_mode == "all":
+            # Combine all modes
+            all_data = []
+            for mode, df in self.daily_summary_data.items():
+                all_data.append(df)
+            if all_data:
+                df = pd.concat(all_data, ignore_index=True)
+            else:
+                return
+        elif self.current_mode in self.daily_summary_data:
+            df = self.daily_summary_data[self.current_mode]
+        else:
+            return
+        
         # Update columns based on data
-        columns = list(self.daily_summary_data.columns)
+        columns = list(df.columns)
         self.summary_tree['columns'] = columns
         self.summary_tree['show'] = 'headings'
         
@@ -377,21 +459,36 @@ class MonitoringDashboard:
             self.summary_tree.column(col, width=120, minwidth=80)
         
         # Insert data
-        for index, row in self.daily_summary_data.iterrows():
+        for index, row in df.iterrows():
             values = [str(row[col]) if pd.notna(row[col]) else "" for col in columns]
             self.summary_tree.insert("", tk.END, values=values)
     
     def _populate_regime_tree(self):
         """Populate the regime analysis tree."""
-        if self.trade_data is None or self.regime_tree is None:
+        if self.regime_tree is None:
             return
         
         # Clear existing data
         for item in self.regime_tree.get_children():
             self.regime_tree.delete(item)
         
+        # Get data for current mode
+        if self.current_mode == "all":
+            # Combine all modes
+            all_data = []
+            for mode, df in self.trade_data.items():
+                all_data.append(df)
+            if all_data:
+                df = pd.concat(all_data, ignore_index=True)
+            else:
+                return
+        elif self.current_mode in self.trade_data:
+            df = self.trade_data[self.current_mode]
+        else:
+            return
+        
         # Analyze regime data
-        regime_stats = self._analyze_regime_data()
+        regime_stats = self._analyze_regime_data(df)
         
         # Insert regime statistics
         for regime_id, stats in regime_stats.items():
@@ -407,16 +504,13 @@ class MonitoringDashboard:
             ]
             self.regime_tree.insert("", tk.END, values=values)
     
-    def _analyze_regime_data(self) -> Dict[str, Dict[str, Any]]:
+    def _analyze_regime_data(self, df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """Analyze regime data from trade decisions."""
-        if self.trade_data is None:
-            return {}
-        
         regime_stats = {}
         
         # Group by regime
-        if 'hmm_regime_id' in self.trade_data.columns:
-            for regime_id, group in self.trade_data.groupby('hmm_regime_id'):
+        if 'hmm_regime_id' in df.columns:
+            for regime_id, group in df.groupby('hmm_regime_id'):
                 stats = {
                     'name': regime_id,
                     'trade_count': len(group),
@@ -437,34 +531,74 @@ class MonitoringDashboard:
         
         self.stats_text.delete(1.0, tk.END)
         
-        stats_text = "=== MONITORING STATISTICS ===\n\n"
+        stats_text = f"=== MONITORING STATISTICS ({self.current_mode.upper()}) ===\n\n"
         
-        if self.trade_data is not None:
-            stats_text += f"Trade Decisions: {len(self.trade_data)}\n"
+        # Trade decisions statistics
+        if self.current_mode == "all":
+            total_trades = sum(len(df) for df in self.trade_data.values())
+            stats_text += f"Total Trade Decisions: {total_trades}\n"
             
-            if 'action' in self.trade_data.columns:
-                action_counts = self.trade_data['action'].value_counts()
+            for mode, df in self.trade_data.items():
+                stats_text += f"\n{mode.upper()} Mode:\n"
+                stats_text += f"  Trades: {len(df)}\n"
+                
+                if 'action' in df.columns:
+                    action_counts = df['action'].value_counts()
+                    stats_text += f"  Actions: {dict(action_counts)}\n"
+                
+                if 'overall_confidence' in df.columns:
+                    avg_confidence = df['overall_confidence'].mean()
+                    stats_text += f"  Avg Confidence: {avg_confidence:.3f}\n"
+                
+                if 'hmm_regime_id' in df.columns:
+                    regime_counts = df['hmm_regime_id'].value_counts()
+                    stats_text += f"  Regime Distribution: {dict(regime_counts)}\n"
+        elif self.current_mode in self.trade_data:
+            df = self.trade_data[self.current_mode]
+            stats_text += f"Trade Decisions: {len(df)}\n"
+            
+            if 'action' in df.columns:
+                action_counts = df['action'].value_counts()
                 stats_text += f"Actions: {dict(action_counts)}\n"
             
-            if 'overall_confidence' in self.trade_data.columns:
-                avg_confidence = self.trade_data['overall_confidence'].mean()
+            if 'overall_confidence' in df.columns:
+                avg_confidence = df['overall_confidence'].mean()
                 stats_text += f"Average Confidence: {avg_confidence:.3f}\n"
             
-            if 'hmm_regime_id' in self.trade_data.columns:
-                regime_counts = self.trade_data['hmm_regime_id'].value_counts()
+            if 'hmm_regime_id' in df.columns:
+                regime_counts = df['hmm_regime_id'].value_counts()
                 stats_text += f"Regime Distribution: {dict(regime_counts)}\n"
         
-        if self.daily_summary_data is not None:
-            stats_text += f"\nDaily Summaries: {len(self.daily_summary_data)}\n"
+        # Daily summary statistics
+        if self.current_mode == "all":
+            total_summaries = sum(len(df) for df in self.daily_summary_data.values())
+            stats_text += f"\nTotal Daily Summaries: {total_summaries}\n"
             
-            if 'total_pnl' in self.daily_summary_data.columns:
-                total_pnl = self.daily_summary_data['total_pnl'].sum()
-                avg_pnl = self.daily_summary_data['total_pnl'].mean()
+            for mode, df in self.daily_summary_data.items():
+                stats_text += f"\n{mode.upper()} Daily Summaries:\n"
+                stats_text += f"  Days: {len(df)}\n"
+                
+                if 'total_pnl' in df.columns:
+                    total_pnl = df['total_pnl'].sum()
+                    avg_pnl = df['total_pnl'].mean()
+                    stats_text += f"  Total PnL: {total_pnl:.2f}\n"
+                    stats_text += f"  Avg Daily PnL: {avg_pnl:.2f}\n"
+                
+                if 'win_rate' in df.columns:
+                    avg_win_rate = df['win_rate'].mean()
+                    stats_text += f"  Avg Win Rate: {avg_win_rate:.3f}\n"
+        elif self.current_mode in self.daily_summary_data:
+            df = self.daily_summary_data[self.current_mode]
+            stats_text += f"\nDaily Summaries: {len(df)}\n"
+            
+            if 'total_pnl' in df.columns:
+                total_pnl = df['total_pnl'].sum()
+                avg_pnl = df['total_pnl'].mean()
                 stats_text += f"Total PnL: {total_pnl:.2f}\n"
                 stats_text += f"Average Daily PnL: {avg_pnl:.2f}\n"
             
-            if 'win_rate' in self.daily_summary_data.columns:
-                avg_win_rate = self.daily_summary_data['win_rate'].mean()
+            if 'win_rate' in df.columns:
+                avg_win_rate = df['win_rate'].mean()
                 stats_text += f"Average Win Rate: {avg_win_rate:.3f}\n"
         
         self.stats_text.insert(1.0, stats_text)
@@ -490,10 +624,46 @@ class MonitoringDashboard:
         except ValueError:
             messagebox.showerror("Error", "Invalid refresh interval")
     
+    def _on_mode_changed(self, event=None):
+        """Handle trading mode selection change."""
+        try:
+            new_mode = self.trading_mode_var.get()
+            if new_mode != self.current_mode:
+                self.current_mode = new_mode
+                self._update_display_for_mode()
+                self.status_var.set(f"Switched to {new_mode} mode")
+        except Exception as e:
+            self.logger.error(f"Error changing trading mode: {e}")
+    
+    def _update_display_for_mode(self):
+        """Update display based on current trading mode."""
+        try:
+            # Update data path display
+            if self.current_mode in self.current_data_paths:
+                self.data_path_var.set(self.current_data_paths[self.current_mode])
+            else:
+                self.data_path_var.set(f"No {self.current_mode} data loaded")
+            
+            # Update current tab display
+            current_tab = self.notebook.tab(self.notebook.select(), "text")
+            
+            if current_tab == "Trade Decisions":
+                self._populate_trade_tree()
+            elif current_tab == "Daily Summary":
+                self._populate_summary_tree()
+            elif current_tab == "Regime Analysis":
+                self._populate_regime_tree()
+            elif current_tab == "Statistics":
+                self._update_statistics()
+                
+        except Exception as e:
+            self.logger.error(f"Error updating display for mode: {e}")
+    
     def _refresh_data(self):
-        """Refresh data from current file."""
-        if self.current_data_path:
-            self._load_data_from_file(self.current_data_path)
+        """Refresh data from current files."""
+        if self.current_data_paths:
+            for mode, path in self.current_data_paths.items():
+                self._load_data_from_file(path)
             self._update_statistics()
     
     def _load_trade_data(self):

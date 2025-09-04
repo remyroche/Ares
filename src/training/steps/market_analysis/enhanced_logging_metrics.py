@@ -145,19 +145,19 @@ class EnhancedPipelineLogger:
             'min_regime_samples': 100
         }
         
-        # Emoji mapping for different types of messages
+        # Emoji mapping for different types of messages - focused on troubleshooting and updates
         self.emoji_map = {
-            'start': '🚀',
-            'success': '✅',
+            'start': '▶️',
+            'success': '✓',
             'error': '❌',
             'warning': '⚠️',
             'info': 'ℹ️',
-            'progress': '📊',
+            'progress': '⏳',
             'feature': '🔧',
             'regime': '🎯',
             'matrix': '🧮',
             'validation': '🔍',
-            'quality': '📈',
+            'quality': '📊',
             'performance': '⚡',
             'memory': '💾',
             'time': '⏱️',
@@ -166,9 +166,15 @@ class EnhancedPipelineLogger:
             'threshold': '🎚️',
             'issue': '🚨',
             'fix': '🔧',
-            'complete': '🎉',
+            'complete': '✓',
             'step': '📝',
-            'pipeline': '🔄'
+            'pipeline': '🔄',
+            'troubleshoot': '🔍',
+            'update': '📊',
+            'check': '✓',
+            'fail': '❌',
+            'skip': '⏭️',
+            'retry': '🔄'
         }
     
     def start_pipeline(self, symbol: str, exchange: str, correlation_id: str = None):
@@ -177,7 +183,7 @@ class EnhancedPipelineLogger:
         self.correlation_id = correlation_id or f"market_analysis_{symbol}_{exchange}_{int(time.time())}"
         
         self.logger.info("=" * 100)
-        self.logger.info(f"{self.emoji_map['pipeline']} MARKET ANALYSIS PIPELINE STARTED")
+        self.logger.info(f"{self.emoji_map['start']} MARKET ANALYSIS PIPELINE INITIATED")
         self.logger.info("=" * 100)
         self.logger.info(f"{self.emoji_map['time']} Start Time: {format_datetime(self.pipeline_start_time)}")
         self.logger.info(f"{self.emoji_map['config']} Symbol: {symbol}")
@@ -192,9 +198,9 @@ class EnhancedPipelineLogger:
         
         self.logger.info("=" * 100)
         if success:
-            self.logger.info(f"{self.emoji_map['complete']} MARKET ANALYSIS PIPELINE COMPLETED SUCCESSFULLY!")
+            self.logger.info(f"{self.emoji_map['complete']} MARKET ANALYSIS PIPELINE COMPLETED")
         else:
-            self.logger.info(f"{self.emoji_map['error']} MARKET ANALYSIS PIPELINE FAILED!")
+            self.logger.info(f"{self.emoji_map['error']} MARKET ANALYSIS PIPELINE FAILED")
         
         self.logger.info("=" * 100)
         self.logger.info(f"{self.emoji_map['time']} End Time: {format_datetime(self.pipeline_end_time)}")
@@ -211,7 +217,7 @@ class EnhancedPipelineLogger:
         
         self.logger.info("=" * 100)
     
-    def start_step(self, step_name: str, description: str = ""):
+    def start_step(self, step_name: str, description: str = "", step_number: int = None, total_steps: int = None):
         """Start logging for a specific step."""
         start_time = get_current_datetime()
         
@@ -220,7 +226,12 @@ class EnhancedPipelineLogger:
             start_time=start_time
         )
         
-        self.logger.info(f"{self.emoji_map['step']} Starting Step: {step_name}")
+        # Add step numbering if provided
+        step_header = f"{self.emoji_map['step']} Starting Step: {step_name}"
+        if step_number is not None and total_steps is not None:
+            step_header = f"{self.emoji_map['step']} STEP {step_number}/{total_steps}: {step_name}"
+        
+        self.logger.info(step_header)
         if description:
             self.logger.info(f"{self.emoji_map['info']} Description: {description}")
         self.logger.info(f"{self.emoji_map['time']} Start Time: {format_datetime(start_time)}")
@@ -249,7 +260,7 @@ class EnhancedPipelineLogger:
         # Log step completion
         self.logger.info("-" * 80)
         if success:
-            self.logger.info(f"{self.emoji_map['success']} Step {step_name} completed successfully")
+            self.logger.info(f"{self.emoji_map['success']} Step {step_name} completed")
         else:
             self.logger.error(f"{self.emoji_map['error']} Step {step_name} failed: {error_message}")
         
@@ -565,7 +576,7 @@ class EnhancedPipelineLogger:
     
     def _log_step_summary(self):
         """Log a summary of all steps."""
-        self.logger.info(f"{self.emoji_map['pipeline']} PIPELINE STEP SUMMARY:")
+        self.logger.info(f"{self.emoji_map['update']} PIPELINE STEP SUMMARY:")
         self.logger.info("-" * 80)
         
         total_duration = 0
@@ -586,6 +597,13 @@ class EnhancedPipelineLogger:
         self.logger.info(f"{self.emoji_map['time']} Total Step Duration: {total_duration:.2f}s")
         self.logger.info(f"{self.emoji_map['success']} Successful Steps: {successful_steps}")
         self.logger.info(f"{self.emoji_map['error']} Failed Steps: {failed_steps}")
+        
+        # Add troubleshooting information if there were failures
+        if failed_steps > 0:
+            self.logger.info(f"{self.emoji_map['troubleshoot']} TROUBLESHOOTING REQUIRED:")
+            for step_name, metrics in self.step_metrics.items():
+                if not metrics.success:
+                    self.logger.error(f"   ❌ {step_name}: {metrics.error_message}")
     
     def _save_metrics_to_file(self):
         """Save all metrics to a JSON file."""

@@ -543,7 +543,8 @@ class ModelManager:
         timestamp = format_datetime(get_current_datetime(), "%Y%m%d_%H%M%S")
         backup_path = os.path.join(
             backup_dir,
-            f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}",
+            f"{model_name}_backup_{timestamp}{os.path.splitext(model_path)[1]}"
+        )
 
         # Copy model file
         shutil.copy2(model_path, backup_path)

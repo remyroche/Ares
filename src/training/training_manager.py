@@ -289,7 +289,7 @@ class TrainingManager:
         context="training execution",
     )
     async def execute_training(self, training_input: dict[str, Any]) -> bool:
-        """Execute training operations."""
+        """Execute training operations.
 
         Args:
             training_input: Training input dictionary

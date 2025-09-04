@@ -42,6 +42,7 @@ from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 from src.tactician.sr_levels_manager import create_sr_levels_manager
+from src.tactician.sr_levels.sr_comprehensive_integration import create_sr_comprehensive_integration
 
 # Note: Enhanced S/R components will be implemented as improvements to existing components
 from src.utils.enhanced_mlflow_integration import (
@@ -66,6 +67,7 @@ class SROptimizationStep:
         self.sr_predictor = None
         self.sr_data_integration = None
         self.sr_levels_manager = None
+        self.sr_comprehensive_integration = None  # New comprehensive integration
         # Removed enhanced_optimizer - will improve existing components instead
         self._initialize_components()
 
@@ -128,6 +130,17 @@ class SROptimizationStep:
             if hasattr(self.sr_data_integration, 'initialize'):
                 await self.sr_data_integration.initialize()
                 self.logger.info("✅ SR Data Integration initialized successfully")
+            
+            # Initialize comprehensive S/R integration
+            try:
+                self.sr_comprehensive_integration = await create_sr_comprehensive_integration(self.config)
+                self.logger.info("✅ Comprehensive S/R integration initialized successfully")
+                # Log component status
+                component_status = self.sr_comprehensive_integration.get_component_status()
+                self.logger.info(f"S/R component status: {component_status}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Comprehensive S/R integration initialization failed: {e}")
+                # Continue without it - existing components can still work
             
             self.logger.info("✅ S/R optimization step initialized successfully")
             return True
@@ -456,6 +469,29 @@ class SROptimizationStep:
                 self.logger.error("No market data available for enhanced optimization")
                 return None
             
+            # First, try comprehensive integration if available
+            comprehensive_result = None
+            if self.sr_comprehensive_integration:
+                try:
+                    self.logger.info("🔍 Using comprehensive S/R integration for detection...")
+                    
+                    # Detect S/R levels using all components
+                    comprehensive_result = await self.sr_comprehensive_integration.detect_sr_levels(
+                        market_data=market_data,
+                        timeframe="1m",
+                        use_ensemble=True
+                    )
+                    
+                    # Optimize parameters
+                    optimization_params = await self.sr_comprehensive_integration.optimize_parameters(
+                        market_data=market_data
+                    )
+                    
+                    self.logger.info(f"✅ Comprehensive S/R detection found {len(comprehensive_result.get('support_levels', []))} support and {len(comprehensive_result.get('resistance_levels', []))} resistance levels")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Comprehensive integration failed: {e}")
+            
             # Use enhanced optimization method
             if hasattr(self.optimizer, 'optimize_sr_detection_enhanced'):
                 optimization_result = await self.optimizer.optimize_sr_detection_enhanced(
@@ -469,6 +505,10 @@ class SROptimizationStep:
                     market_data=market_data,
                     target_timeframe="15m"
                 )
+            
+            # Merge comprehensive results if available
+            if comprehensive_result and optimization_result:
+                optimization_result.advanced_params['comprehensive_sr_analysis'] = comprehensive_result
             
             if optimization_result:
                 self.logger.info(f"✅ Enhanced S/R optimization completed. Score: {optimization_result.optimization_score:.4f}")

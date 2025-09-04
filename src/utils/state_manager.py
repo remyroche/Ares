@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 State manager for managing application state and persistence.
 

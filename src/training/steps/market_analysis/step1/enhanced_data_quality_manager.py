@@ -316,47 +316,24 @@ class EnhancedDataQualityManager:
             missing = []
             ready = True
             
-            # Check for unified data (required by step1_5)
-            unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
-            if not unified_path.exists():
-                missing.append("Unified data directory not found")
-                ready = False
+            # Check unified data
+            unified_ready = await self._check_unified_data_completeness(symbol, exchange, timeframe, missing)
+            ready = ready and unified_ready
             
-            # Check for minimum data requirements for HMM (step03)
-            klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-            if klines_file.exists():
-                try:
-                    df = pd.read_parquet(klines_file)
-                    if len(df) < 10000:  # Minimum rows for HMM
-                        missing.append("Insufficient klines data for HMM analysis")
-                        ready = False
-                    
-                    # Check for required columns
-                    required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-                    missing_columns = [col for col in required_columns if col not in df.columns]
-                    if missing_columns:
-                        missing.append(f"Missing required columns: {missing_columns}")
-                        ready = False
-                        
-                except Exception as e:
-                    missing.append(f"Error reading klines file: {e}")
-                    ready = False
-            else:
-                missing.append("Klines consolidated file not found")
-                ready = False
+            # Check klines data
+            klines_ready = await self._check_klines_data_completeness(symbol, exchange, timeframe, missing)
+            ready = ready and klines_ready
             
-            # Check for aggtrades data (required for step04 labeling)
-            aggtrades_file = self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            if not aggtrades_file.exists():
-                missing.append("Aggtrades consolidated file not found")
-                ready = False
+            # Check aggtrades data
+            aggtrades_ready = await self._check_aggtrades_data_completeness(symbol, exchange, missing)
+            ready = ready and aggtrades_ready
             
             return {
                 "ready": ready,
                 "missing": missing,
-                "unified_data_exists": unified_path.exists(),
-                "klines_available": klines_file.exists(),
-                "aggtrades_available": aggtrades_file.exists()
+                "unified_data_exists": unified_ready,
+                "klines_available": klines_ready,
+                "aggtrades_available": aggtrades_ready
             }
             
         except Exception as e:
@@ -368,6 +345,85 @@ class EnhancedDataQualityManager:
                 "klines_available": False,
                 "aggtrades_available": False
             }
+
+    @traced(span_name="check_unified_data_completeness")
+    @handles_errors(
+        default_return=False,
+        context="check_unified_data_completeness"
+    )
+    async def _check_unified_data_completeness(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        missing: List[str]
+    ) -> bool:
+        """Check if unified data is complete."""
+        unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
+        if not unified_path.exists():
+            missing.append("Unified data directory not found")
+            return False
+        return True
+
+    @traced(span_name="check_klines_data_completeness")
+    @handles_errors(
+        default_return=False,
+        context="check_klines_data_completeness"
+    )
+    async def _check_klines_data_completeness(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        missing: List[str]
+    ) -> bool:
+        """Check if klines data is complete."""
+        klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+        
+        if not klines_file.exists():
+            missing.append("Klines consolidated file not found")
+            return False
+        
+        try:
+            df = pd.read_parquet(klines_file)
+            
+            # Check minimum data requirements
+            if len(df) < 10000:
+                missing.append("Insufficient klines data for HMM analysis")
+                return False
+            
+            # Check required columns
+            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                missing.append(f"Missing required columns: {missing_columns}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            missing.append(f"Error reading klines file: {e}")
+            return False
+
+    @traced(span_name="check_aggtrades_data_completeness")
+    @handles_errors(
+        default_return=False,
+        context="check_aggtrades_data_completeness"
+    )
+    async def _check_aggtrades_data_completeness(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        missing: List[str]
+    ) -> bool:
+        """Check if aggtrades data is complete."""
+        aggtrades_file = self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
+        
+        if not aggtrades_file.exists():
+            missing.append("Aggtrades consolidated file not found")
+            return False
+        
+        return True
 
     @traced(span_name="get_data_for_step3_step4")
     # @secure_data_processing - removed, handled by validates
@@ -439,44 +495,9 @@ class EnhancedDataQualityManager:
         try:
             logger.info("🔄 Attempting to fix missing data using step01/step1_5 components...")
             
-            # Try to run step01 data collection if needed
-            try:
-                from ..step1_data_collection import run_step as run_step1
-                step1_success = await run_step1(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    force_rerun=True
-                )
-                
-                if step1_success:
-                    logger.info("✅ Step1 data collection completed successfully")
-                else:
-                    logger.warning("⚠️ Step1 data collection failed")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Could not run step01: {e}")
-                step1_success = False
-            
-            # Try to run step1_5 data conversion if needed
-            try:
-                from ..step1_5_data_converter import run_step as run_step1_5
-from src.core.decorators.errors import handles_errors
-                step1_5_success = await run_step1_5(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    force_rerun=True
-                )
-                
-                if step1_5_success:
-                    logger.info("✅ Step1_5 data conversion completed successfully")
-                else:
-                    logger.warning("⚠️ Step1_5 data conversion failed")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Could not run step1_5: {e}")
-                step1_5_success = False
+            # Run step01 and step1_5 data collection
+            step1_success = await self._run_step1_data_collection(symbol, exchange, timeframe)
+            step1_5_success = await self._run_step1_5_data_conversion(symbol, exchange, timeframe)
             
             # Check if data is now ready
             completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
@@ -494,6 +515,60 @@ from src.core.decorators.errors import handles_errors
                 "success": False,
                 "error": str(e)
             }
+
+    @traced(span_name="run_step1_data_collection")
+    @handles_errors(
+        default_return=False,
+        context="run_step1_data_collection"
+    )
+    async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str) -> bool:
+        """Run step01 data collection."""
+        try:
+            from ..step1_data_collection import run_step as run_step1
+            step1_success = await run_step1(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                force_rerun=True
+            )
+            
+            if step1_success:
+                logger.info("✅ Step1 data collection completed successfully")
+            else:
+                logger.warning("⚠️ Step1 data collection failed")
+            
+            return step1_success
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not run step01: {e}")
+            return False
+
+    @traced(span_name="run_step1_5_data_conversion")
+    @handles_errors(
+        default_return=False,
+        context="run_step1_5_data_conversion"
+    )
+    async def _run_step1_5_data_conversion(self, symbol: str, exchange: str, timeframe: str) -> bool:
+        """Run step1_5 data conversion."""
+        try:
+            from ..step1_5_data_converter import run_step as run_step1_5
+            step1_5_success = await run_step1_5(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                force_rerun=True
+            )
+            
+            if step1_5_success:
+                logger.info("✅ Step1_5 data conversion completed successfully")
+            else:
+                logger.warning("⚠️ Step1_5 data conversion failed")
+            
+            return step1_5_success
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not run step1_5: {e}")
+            return False
 
 # Convenience function for easy integration
 @traced(span_name="ensure_data_quality")

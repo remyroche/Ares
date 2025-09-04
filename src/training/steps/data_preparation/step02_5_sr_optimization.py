@@ -42,6 +42,8 @@ from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 from src.tactician.sr_levels_manager import create_sr_levels_manager
+
+# Note: Enhanced S/R components will be implemented as improvements to existing components
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -64,11 +66,12 @@ class SROptimizationStep:
         self.sr_predictor = None
         self.sr_data_integration = None
         self.sr_levels_manager = None
+        # Removed enhanced_optimizer - will improve existing components instead
         self._initialize_components()
 
     @secure_step_execution
     def _initialize_components(self) -> None:
-        """Initialize S/R optimization components."""
+        """Initialize S/R optimization components (synchronous initialization)."""
         self.logger.info("🔧 Initializing S/R optimization components...")
         try:
             # Initialize S/R detection optimizer
@@ -87,12 +90,7 @@ class SROptimizationStep:
             self.sr_data_integration = create_sr_data_integration_simple(self.config)
             self.logger.info("✅ SR Data Integration initialized successfully")
             
-            # Initialize SR Levels Manager
-            self.sr_levels_manager = await create_sr_levels_manager(self.config)
-            if self.sr_levels_manager:
-                self.logger.info("✅ SR Levels Manager initialized successfully")
-            else:
-                self.logger.warning("⚠️ SR Levels Manager initialization failed")
+            # Note: SR Levels Manager will be initialized in the async initialize() method
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize S/R optimization components: {e}")
@@ -118,6 +116,13 @@ class SROptimizationStep:
             if hasattr(self.sr_predictor, 'initialize'):
                 await self.sr_predictor.initialize()
                 self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            
+            # Initialize SR Levels Manager (async initialization)
+            self.sr_levels_manager = await create_sr_levels_manager(self.config)
+            if self.sr_levels_manager:
+                self.logger.info("✅ SR Levels Manager initialized successfully")
+            else:
+                self.logger.warning("⚠️ SR Levels Manager initialization failed")
             
             # Initialize SR Data Integration
             if hasattr(self.sr_data_integration, 'initialize'):
@@ -147,12 +152,14 @@ class SROptimizationStep:
             self.logger.info("🎯 Starting S/R detection optimization with detailed reporting...")
             self.start_time = time.time()
             
-            # Step 1: Perform comprehensive S/R optimization
-            optimization_result = await self._perform_sr_optimization()
+            # Step 1: Perform enhanced S/R optimization with ML and regime optimization
+            optimization_result = await self._perform_enhanced_sr_optimization()
             
             if not optimization_result:
                 self.logger.error("S/R optimization failed")
                 return False
+            
+            # Enhanced S/R optimization improvements are now integrated into the standard optimization
             
             # Step 1.5: Calculate SR levels from backtesting data
             sr_levels_result = None
@@ -430,6 +437,58 @@ class SROptimizationStep:
             
         except Exception as e:
             self.logger.error(f"Failed to perform S/R optimization: {e}")
+            return None
+    
+    # Enhanced S/R optimization method with ML and regime optimization
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="enhanced_sr_optimization"
+    )
+    async def _perform_enhanced_sr_optimization(self) -> Optional[Dict[str, Any]]:
+        """Perform enhanced S/R optimization with ML, regime optimization, and computational efficiency."""
+        try:
+            self.logger.info("🚀 Starting enhanced S/R optimization with ML and regime optimization...")
+            
+            # Get market data for optimization
+            market_data = await self._get_market_data_for_sr_calculation()
+            if market_data is None:
+                self.logger.error("No market data available for enhanced optimization")
+                return None
+            
+            # Use enhanced optimization method
+            if hasattr(self.optimizer, 'optimize_sr_detection_enhanced'):
+                optimization_result = await self.optimizer.optimize_sr_detection_enhanced(
+                    market_data=market_data,
+                    target_timeframe="15m"
+                )
+            else:
+                # Fallback to standard optimization
+                self.logger.warning("Enhanced optimization not available, using standard optimization")
+                optimization_result = await self.optimizer.optimize_sr_detection(
+                    market_data=market_data,
+                    target_timeframe="15m"
+                )
+            
+            if optimization_result:
+                self.logger.info(f"✅ Enhanced S/R optimization completed. Score: {optimization_result.optimization_score:.4f}")
+                
+                # Log enhancement metadata if available
+                if 'enhancement_metadata' in optimization_result.advanced_params:
+                    metadata = optimization_result.advanced_params['enhancement_metadata']
+                    self.logger.info(f"📊 Enhancement features enabled:")
+                    self.logger.info(f"   - Regime optimization: {metadata.get('regime_optimization_enabled', False)}")
+                    self.logger.info(f"   - ML enhancement: {metadata.get('ml_enhancement_enabled', False)}")
+                    self.logger.info(f"   - Computational optimization: {metadata.get('computational_optimization_enabled', False)}")
+                    self.logger.info(f"   - Enhanced breakout prediction: {metadata.get('enhanced_breakout_prediction_enabled', False)}")
+                
+                return optimization_result
+            else:
+                self.logger.error("Enhanced S/R optimization failed")
+                return None
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced S/R optimization failed: {e}")
             return None
     
     @handles_errors(

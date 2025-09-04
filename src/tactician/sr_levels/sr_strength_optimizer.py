@@ -426,45 +426,98 @@ class SRStrengthOptimizer:
         params: SRStrengthParameters,
         features: Dict[str, pd.Series]
     ) -> Optional[SRLevel]:
-        """Analyze a potential S/R level."""
+        """Analyze a potential S/R level with enhanced wick analysis and time weighting."""
         
         touches = []
         bounces = []
         failures = []
         volumes = []
+        wick_touches = []
+        body_touches = []
+        
+        # Get ATR for dynamic thresholds
+        atr = features.get('atr_14', pd.Series())
+        dynamic_threshold = params.touch_proximity_threshold
+        if not atr.empty and len(atr) > origin_idx:
+            # Use ATR-based dynamic threshold
+            atr_value = atr.iloc[origin_idx] if origin_idx < len(atr) else atr.iloc[-1]
+            dynamic_threshold = min(max(atr_value / level_price, params.touch_proximity_threshold * 0.5), params.touch_proximity_threshold * 2.0)
         
         # Analyze each bar after the origin
         for i in range(origin_idx + 1, len(market_data)):
             high = market_data['high'].iloc[i]
             low = market_data['low'].iloc[i]
+            open_price = market_data['open'].iloc[i]
             close = market_data['close'].iloc[i]
             volume = market_data['volume'].iloc[i]
             
-            # Check if price touched the level
+            # Calculate body and wick components
+            body_high = max(open_price, close)
+            body_low = min(open_price, close)
+            upper_wick = high - body_high
+            lower_wick = body_low - low
+            
+            # Check if price touched the level with enhanced analysis
             if level_type == 'resistance':
-                if abs(high - level_price) / level_price < params.touch_proximity_threshold:
+                if abs(high - level_price) / level_price < dynamic_threshold:
                     touches.append(i)
                     volumes.append(volume)
                     
-                    # Check if it bounced
+                    # Analyze wick vs body touch
+                    if abs(body_high - level_price) / level_price < dynamic_threshold:
+                        body_touches.append(i)
+                    else:
+                        wick_touches.append(i)
+                    
+                    # Enhanced bounce detection with volume confirmation
                     if i < len(market_data) - 1:
                         next_close = market_data['close'].iloc[i + 1]
+                        next_volume = market_data['volume'].iloc[i + 1]
+                        
+                        # Check for bounce with volume confirmation
                         if next_close < close:
                             bounce_ratio = (high - next_close) / high
-                            bounces.append((i, bounce_ratio))
+                            # Require volume spike for valid bounce
+                            volume_ma = features.get('volume_ma_20', pd.Series())
+                            volume_spike = True
+                            if not volume_ma.empty and i < len(volume_ma):
+                                volume_spike = volume > volume_ma.iloc[i] * params.volume_spike_threshold
+                            
+                            if volume_spike:
+                                bounces.append((i, bounce_ratio, volume_spike))
+                            else:
+                                failures.append(i)
                         else:
                             failures.append(i)
             else:  # support
-                if abs(low - level_price) / level_price < params.touch_proximity_threshold:
+                if abs(low - level_price) / level_price < dynamic_threshold:
                     touches.append(i)
                     volumes.append(volume)
                     
-                    # Check if it bounced
+                    # Analyze wick vs body touch
+                    if abs(body_low - level_price) / level_price < dynamic_threshold:
+                        body_touches.append(i)
+                    else:
+                        wick_touches.append(i)
+                    
+                    # Enhanced bounce detection with volume confirmation
                     if i < len(market_data) - 1:
                         next_close = market_data['close'].iloc[i + 1]
+                        next_volume = market_data['volume'].iloc[i + 1]
+                        
+                        # Check for bounce with volume confirmation
                         if next_close > close:
                             bounce_ratio = (next_close - low) / low
-                            bounces.append((i, bounce_ratio))
+                            # Require volume spike for valid bounce
+                            volume_ma = features.get('volume_ma_20', pd.Series())
+                            volume_spike = True
+                            if not volume_ma.empty and i < len(volume_ma):
+                                volume_spike = volume > volume_ma.iloc[i] * params.volume_spike_threshold
+                            
+                            if volume_spike:
+                                bounces.append((i, bounce_ratio, volume_spike))
+                            else:
+                                failures.append(i)
                         else:
                             failures.append(i)
         
@@ -472,9 +525,9 @@ class SRStrengthOptimizer:
         if len(touches) < params.min_touches:
             return None
         
-        # Calculate strength metrics
-        strength = self._calculate_level_strength(
-            touches, bounces, failures, volumes,
+        # Calculate enhanced strength metrics with time weighting
+        strength = self._calculate_enhanced_level_strength(
+            touches, bounces, failures, volumes, wick_touches, body_touches,
             origin_idx, len(market_data), params, features
         )
         
@@ -486,12 +539,15 @@ class SRStrengthOptimizer:
         max_bounce = max([b[1] for b in bounces]) if bounces else 0
         
         volume_score = self._calculate_volume_confirmation(
-            volumes, features.get('volume_ma', pd.Series()), params
+            volumes, features.get('volume_ma_20', pd.Series()), params
         )
         
         consistency_score = self._calculate_consistency_score(
             bounces, params
         )
+        
+        # Calculate wick vs body ratio
+        wick_body_ratio = len(wick_touches) / max(len(body_touches), 1) if body_touches else 1.0
         
         return SRLevel(
             price=level_price,
@@ -508,9 +564,189 @@ class SRStrengthOptimizer:
             failure_count=len(failures),
             metadata={
                 'bounce_count': len(bounces),
-                'touch_indices': touches[:10]  # Store first 10 for analysis
+                'touch_indices': touches[:10],  # Store first 10 for analysis
+                'wick_touches': len(wick_touches),
+                'body_touches': len(body_touches),
+                'wick_body_ratio': wick_body_ratio,
+                'dynamic_threshold_used': dynamic_threshold,
+                'volume_spike_confirmations': sum(1 for b in bounces if len(b) > 2 and b[2])
             }
         )
+    
+    def _calculate_enhanced_level_strength(
+        self,
+        touches: List[int],
+        bounces: List[Tuple[int, float, bool]],
+        failures: List[int],
+        volumes: List[float],
+        wick_touches: List[int],
+        body_touches: List[int],
+        origin_idx: int,
+        total_bars: int,
+        params: SRStrengthParameters,
+        features: Dict[str, pd.Series]
+    ) -> float:
+        """Calculate enhanced strength score with non-linear scoring and market regime adaptation."""
+        
+        if not touches:
+            return 0.0
+        
+        # Get market regime indicators
+        rsi = features.get('rsi_14', pd.Series())
+        sma_20 = features.get('sma_20', pd.Series())
+        sma_50 = features.get('sma_50', pd.Series())
+        
+        # Determine market regime
+        market_regime = self._determine_market_regime(rsi, sma_20, sma_50)
+        
+        # Base score from touch count with time weighting
+        time_weighted_touches = 0
+        for i, touch_idx in enumerate(touches):
+            # Recent touches get higher weight (exponential decay)
+            time_factor = np.exp(-(total_bars - touch_idx) / 100.0)  # Decay over 100 bars
+            time_weighted_touches += time_factor
+        
+        touch_score = min(time_weighted_touches / len(touches), 1.0)
+        
+        # Enhanced bounce quality score with non-linear scaling
+        if bounces:
+            bounce_ratios = [b[1] for b in bounces]
+            avg_bounce = np.mean(bounce_ratios)
+            
+            # Non-linear bounce scoring (exponential for better discrimination)
+            if avg_bounce > params.min_bounce_ratio:
+                bounce_score = min(np.exp((avg_bounce - params.min_bounce_ratio) * 10), 1.0)
+            else:
+                bounce_score = 0.0
+            
+            # Apply multiplier for strong bounces
+            if avg_bounce > params.min_bounce_ratio * 2:
+                bounce_score *= params.bounce_strength_multiplier
+        else:
+            bounce_score = 0.0
+        
+        # Wick vs body analysis
+        wick_body_score = 1.0
+        if body_touches and wick_touches:
+            # Body touches are more significant than wick touches
+            body_ratio = len(body_touches) / len(touches)
+            wick_ratio = len(wick_touches) / len(touches)
+            wick_body_score = 0.7 * body_ratio + 0.3 * wick_ratio
+        elif body_touches:
+            wick_body_score = 1.0
+        elif wick_touches:
+            wick_body_score = 0.6
+        
+        # Failure penalty with non-linear scaling
+        failure_rate = len(failures) / max(len(touches), 1)
+        failure_penalty = np.exp(-failure_rate * 5)  # Exponential penalty
+        
+        # Age score with market regime adaptation
+        age = total_bars - origin_idx
+        if market_regime == 'trending':
+            # In trending markets, recent levels are more important
+            if age < params.recent_bonus_bars:
+                age_score = 1.2
+            elif age < params.optimal_age_bars:
+                age_score = 1.0
+            else:
+                age_score = params.age_decay_rate ** (age - params.optimal_age_bars)
+        else:  # ranging market
+            # In ranging markets, older levels can be more reliable
+            if age < params.optimal_age_bars:
+                age_score = 1.0
+            elif age < params.max_age_bars:
+                age_score = 1.1  # Slight bonus for older levels in ranging markets
+            else:
+                age_score = params.age_decay_rate ** (age - params.max_age_bars)
+        
+        # Volume confirmation with regime adaptation
+        if volumes and 'volume_ma_20' in features:
+            volume_ma = features['volume_ma_20']
+            volume_ratios = []
+            for i, volume in enumerate(volumes):
+                if i < len(touches) and touches[i] < len(volume_ma):
+                    volume_ratios.append(volume / volume_ma.iloc[touches[i]])
+            
+            if volume_ratios:
+                avg_volume_ratio = np.mean(volume_ratios)
+                if market_regime == 'trending':
+                    # In trending markets, volume spikes are more important
+                    volume_score = min(avg_volume_ratio / params.volume_spike_threshold, 1.0)
+                else:
+                    # In ranging markets, consistent volume is more important
+                    volume_score = min(avg_volume_ratio / (params.volume_spike_threshold * 0.8), 1.0)
+            else:
+                volume_score = 0.5
+        else:
+            volume_score = 0.5
+        
+        # Combine all factors with regime-adapted weights
+        if market_regime == 'trending':
+            weights = {
+                'touch': 0.3,
+                'bounce': 0.35,
+                'wick_body': 0.15,
+                'age': 0.1,
+                'volume': 0.1
+            }
+        else:  # ranging
+            weights = {
+                'touch': 0.25,
+                'bounce': 0.3,
+                'wick_body': 0.2,
+                'age': 0.15,
+                'volume': 0.1
+            }
+        
+        # Calculate final strength with non-linear combination
+        strength = (
+            weights['touch'] * touch_score +
+            weights['bounce'] * bounce_score +
+            weights['wick_body'] * wick_body_score +
+            weights['age'] * age_score +
+            weights['volume'] * volume_score
+        ) * failure_penalty
+        
+        return min(strength, 1.0)
+    
+    def _determine_market_regime(self, rsi: pd.Series, sma_20: pd.Series, sma_50: pd.Series) -> str:
+        """Determine market regime based on technical indicators."""
+        try:
+            if rsi.empty or sma_20.empty or sma_50.empty:
+                return 'unknown'
+            
+            # Get recent values
+            recent_rsi = rsi.iloc[-1] if len(rsi) > 0 else 50
+            recent_sma_20 = sma_20.iloc[-1] if len(sma_20) > 0 else 0
+            recent_sma_50 = sma_50.iloc[-1] if len(sma_50) > 0 else 0
+            
+            # Determine trend
+            if recent_sma_20 > recent_sma_50 * 1.02:  # 2% above
+                trend = 'uptrend'
+            elif recent_sma_20 < recent_sma_50 * 0.98:  # 2% below
+                trend = 'downtrend'
+            else:
+                trend = 'sideways'
+            
+            # Determine volatility/strength
+            if recent_rsi > 70:
+                strength = 'overbought'
+            elif recent_rsi < 30:
+                strength = 'oversold'
+            else:
+                strength = 'neutral'
+            
+            # Combine to determine regime
+            if trend in ['uptrend', 'downtrend'] and strength == 'neutral':
+                return 'trending'
+            elif trend == 'sideways':
+                return 'ranging'
+            else:
+                return 'transitional'
+                
+        except Exception:
+            return 'unknown'
     
     def _calculate_level_strength(
         self,

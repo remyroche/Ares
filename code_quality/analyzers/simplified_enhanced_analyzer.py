@@ -18,8 +18,8 @@ from datetime import datetime
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 
-from core.config import AnalysisConfig
-from utils.file_utils import find_python_files
+from ..core.config import AnalysisConfig
+from ..utils.file_utils import find_python_files
 
 
 @dataclass

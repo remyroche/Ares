@@ -1,15 +1,18 @@
 from __future__ import annotations
+
 '\nPipeline Standards and Utilities\n\nThis module provides standardized utilities for the data pipeline including:\n- Import management with consistent fallback patterns\n- Directory structure standardization\n- Timestamp format standardization\n- Schema validation\n- Data quality validation\n- File naming conventions\n- Metadata standards\n'
 import logging
 import sys
+from copy import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
 import numpy as np
 import pandas as pd
-from copy import copy
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 

@@ -11,11 +11,14 @@ import os.path
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+
 from src.core.decorators import validates, with_tracing_span
 from src.utils.logger import system_logger
+
 try:
     PYARROW_AVAILABLE = True
 except ImportError:

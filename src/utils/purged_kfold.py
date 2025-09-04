@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Any, Tuple
+
 
 @dataclass
 class PurgedKFoldTime:

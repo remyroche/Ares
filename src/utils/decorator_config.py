@@ -10,7 +10,7 @@ from typing import Any
 # Import enhanced logging functions
 try:
     from .logger import log_error_with_context, log_system_status
-    from .warning_symbols import error, warning, info, success
+    from .warning_symbols import error, info, success, warning
 except ImportError:
     # Fallback if imports fail
     def log_error_with_context(logger, error, context=None, operation="", recovery_attempted=False):

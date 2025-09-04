@@ -67,6 +67,7 @@ class FunctionCall:
     """Represents a function call found in the code."""
     name: str
     line_number: int
+    file_path: str
     args: list[str]
     keywords: list[tuple[str, str]]
     is_async: bool
@@ -520,6 +521,7 @@ class CodeQualityASTVisitor(ast.NodeVisitor):
         self.function_calls.append(FunctionCall(
             name=func_name,
             line_number=node.lineno,
+            file_path=str(self.file_path),
             args=[ast.unparse(arg) for arg in node.args],
             keywords=[(kw.arg, ast.unparse(kw.value)) for kw in node.keywords],
             is_async=func_name in self.reviewer.async_functions,

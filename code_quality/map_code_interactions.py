@@ -42,9 +42,8 @@ from pathlib import Path
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import enhanced analyzers
-from analyzers.simplified_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer
-from core.config import AnalysisConfig
+# Import standalone enhanced analyzer
+from standalone_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer, AnalysisConfig
 
 # Note: Enhanced complexity analysis is available as a separate pipeline
 # Use: python code_complexity/cli.py for comprehensive complexity analysis
@@ -1820,12 +1819,7 @@ class CodeInteractionMapper:
         """Run the enhanced interaction mapping with simplified approach."""
         print(f"Starting enhanced code interaction mapping for: {self.project_root}")
         print("=" * 80)
-        print(f"\nAll reports saved to: {report_files.get('report_dir', 'reports')}")
-        print("\nGenerated files:")
-        for report_type, file_path in report_files.items():
-            if report_type not in ['report_dir', 'timestamp']:
-                print(f"  - {report_type.upper()}: {Path(file_path).name}")
-                
+        
         print("\n" + "=" * 50)
         print("NEXT STEPS")
         print("=" * 50)
@@ -1849,11 +1843,24 @@ class CodeInteractionMapper:
             print(f"   - Unused imports: {self.stats['unused_imports']}")
             print(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
             print(f"   - Files analyzed: {self.stats['files_analyzed']}")
-            print(f"   - Files failed: {self.stats['files_failed']}")
+            
+            # Return results for JSON export
+            return {
+                "project_root": str(self.project_root),
+                "stats": self.stats,
+                "results": self.results,
+                "timestamp": datetime.now().isoformat()
+            }
             
         except Exception as e:
             print(f"❌ Analysis failed: {e}")
-            raise
+            return {
+                "project_root": str(self.project_root),
+                "stats": self.stats,
+                "results": {},
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
 
 
     def _build_comprehensive_dependency_map(self):
@@ -2452,11 +2459,19 @@ For comprehensive complexity analysis, use the separate complexity pipeline:
                        help="Root directory of the project to analyze")
     parser.add_argument("--exclude", nargs="*", default=["venv", "__pycache__", ".git"],
                        help="Directories to exclude from analysis")
+    parser.add_argument("--output", default="code_interactions_report.json",
+                       help="Output file for the analysis report")
 
     args = parser.parse_args()
 
     mapper = CodeInteractionMapper(args.project_root)
-    mapper.run()
+    results = mapper.run()
+    
+    # Save results to file
+    with open(args.output, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"📊 Analysis complete! Report saved to: {args.output}")
 
 
 if __name__ == "__main__":

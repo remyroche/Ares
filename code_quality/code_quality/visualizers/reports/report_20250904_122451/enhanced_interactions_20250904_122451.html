@@ -1,0 +1,776 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Code Interaction Analysis Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #7f8c8d;
+            margin-top: 25px;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: white;
+        }
+        .summary-card .number {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .dead-code-section {
+            background: #fff5f5;
+            border: 1px solid #fed7d7;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .deprecated-section {
+            background: #fffaf0;
+            border: 1px solid #fbd38d;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .impact-section {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .issue-item {
+            background: white;
+            border-left: 4px solid #e53e3e;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 5px 5px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .issue-item.high {
+            border-left-color: #e53e3e;
+        }
+        .issue-item.medium {
+            border-left-color: #dd6b20;
+        }
+        .issue-item.low {
+            border-left-color: #38a169;
+        }
+        .issue-header {
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+        .issue-details {
+            color: #4a5568;
+            font-size: 0.9em;
+        }
+        .code-snippet {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .recommendations {
+            background: #ebf8ff;
+            border: 1px solid #90cdf4;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .recommendations ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .recommendations li {
+            margin: 5px 0;
+        }
+        .phase-timeline {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .phase-card {
+            flex: 1;
+            min-width: 200px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .phase-card.phase-1 {
+            border-color: #38a169;
+        }
+        .phase-card.phase-2 {
+            border-color: #dd6b20;
+        }
+        .phase-card.phase-3 {
+            border-color: #e53e3e;
+        }
+        .risk-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .risk-high {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        .risk-medium {
+            background: #fbd38d;
+            color: #c05621;
+        }
+        .risk-low {
+            background: #c6f6d5;
+            color: #2f855a;
+        }
+        .timestamp {
+            text-align: center;
+            color: #718096;
+            font-size: 0.9em;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Enhanced Code Interaction Analysis Report</h1>
+        
+        
+        <h2>📊 Analysis Summary</h2>
+        <div class="summary-grid">
+            <div class="summary-card">
+                <h3>Total Dead Code Issues</h3>
+                <div class="number">5107</div>
+                <p>Issues found across the codebase</p>
+            </div>
+            <div class="summary-card">
+                <h3>Deprecated Code</h3>
+                <div class="number">1078</div>
+                <p>Deprecated functions and classes</p>
+            </div>
+            <div class="summary-card">
+                <h3>High Impact Issues</h3>
+                <div class="number">3</div>
+                <p>Issues requiring immediate attention</p>
+            </div>
+            <div class="summary-card">
+                <h3>Potential Lines Removed</h3>
+                <div class="number">3</div>
+                <p>Lines of code that can be safely removed</p>
+            </div>
+        </div>
+        
+        
+        
+        <div class="dead-code-section">
+            <h2>💀 Dead Code Analysis</h2>
+            <h3>🔴 High Priority Issues</h3>
+                <div class="issue-item high">
+                    <div class="issue-header">/workspace/src/training/training_manager.py:1046</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> syntax_error<br>
+                        <strong>Description:</strong> Syntax error: unterminated triple-quoted string literal (detected at line 1072) (<unknown>, line 1046)<br>
+                        <strong>Confidence:</strong> 100.0%<br>
+                        <strong>Impact:</strong> medium
+                    </div>
+                    
+                </div>
+                
+                <div class="issue-item high">
+                    <div class="issue-header">/workspace/src/exchange/binance.py:873</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> syntax_error<br>
+                        <strong>Description:</strong> Syntax error: invalid syntax (<unknown>, line 873)<br>
+                        <strong>Confidence:</strong> 100.0%<br>
+                        <strong>Impact:</strong> medium
+                    </div>
+                    
+                </div>
+                
+                <div class="issue-item high">
+                    <div class="issue-header">/workspace/src/utils/model_manager.py:575</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> syntax_error<br>
+                        <strong>Description:</strong> Syntax error: invalid syntax (<unknown>, line 575)<br>
+                        <strong>Confidence:</strong> 100.0%<br>
+                        <strong>Impact:</strong> medium
+                    </div>
+                    
+                </div>
+                <h3>🟢 Low Priority Issues</h3>
+                <div class="issue-item low">
+                    <div class="issue-header">/workspace/step_formatter.py:121</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> unreachable_code<br>
+                        <strong>Description:</strong> Code immediately after terminating statement may be unreachable
+                    </div>
+                </div>
+                
+                <div class="issue-item low">
+                    <div class="issue-header">/workspace/step_formatter.py:204</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> unreachable_code<br>
+                        <strong>Description:</strong> Code immediately after terminating statement may be unreachable
+                    </div>
+                </div>
+                
+                <div class="issue-item low">
+                    <div class="issue-header">/workspace/step_formatter.py:204</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> unreachable_code<br>
+                        <strong>Description:</strong> Code immediately after terminating statement may be unreachable
+                    </div>
+                </div>
+                
+                <div class="issue-item low">
+                    <div class="issue-header">/workspace/comprehensive_analysis_core.py:350</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> unreachable_code<br>
+                        <strong>Description:</strong> Code immediately after terminating statement may be unreachable
+                    </div>
+                </div>
+                
+                <div class="issue-item low">
+                    <div class="issue-header">/workspace/comprehensive_analysis_core.py:350</div>
+                    <div class="issue-details">
+                        <strong>Type:</strong> unreachable_code<br>
+                        <strong>Description:</strong> Code immediately after terminating statement may be unreachable
+                    </div>
+                </div>
+                
+        </div>
+        
+        
+        
+        <div class="dead-code-section">
+            <h2>📁 Per-File Analysis</h2>
+            
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Files with Issues</h3>
+                    <div class="number">431</div>
+                    <p>Total files containing dead code</p>
+                </div>
+                <div class="summary-card">
+                    <h3>High Impact Files</h3>
+                    <div class="number">3</div>
+                    <p>Files with high impact issues</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Deprecated Files</h3>
+                    <div class="number">321</div>
+                    <p>Files with deprecated code</p>
+                </div>
+            </div>
+            
+            <h3>🔝 Top Files by Issue Count</h3>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 probabilistic_bayesian_optimizer.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/training/probabilistic_bayesian_optimizer.py<br>
+                    <strong>Total Issues:</strong> 149<br>
+                    Types: unreachable_code(145)<br>Severity: low(145)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (4):</strong><ul><li>Line 263: Function 'create_tactician_model' is defined but never called</li><li>Line 268: Function 'create_analyst_model' is defined but never called</li><li>Line 203: Function 'get_recommended_hyperparameters' is defined but never called</li><li>... and 1 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 step03_hmm_regime_discovery.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/training/steps/step03_hmm_regime_discovery.py<br>
+                    <strong>Total Issues:</strong> 116<br>
+                    Types: unreachable_code(116)<br>Severity: low(116)
+                    
+                    
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 data_quality_framework.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/utils/data_quality_framework.py<br>
+                    <strong>Total Issues:</strong> 116<br>
+                    Types: unreachable_code(114)<br>Severity: low(114)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (2):</strong><ul><li>Line 12: Function 'DataQualityLevel' is defined but never called</li><li>Line 410: Function 'format_data' is defined but never called</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 ensemble_orchestrator.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py<br>
+                    <strong>Total Issues:</strong> 90<br>
+                    Types: unreachable_code(85)<br>Severity: low(85)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (5):</strong><ul><li>Line 43: Function 'train_all_models' is defined but never called</li><li>Line 110: Function 'get_all_predictions' is defined but never called</li><li>Line 278: Function 'get_current_regime' is defined but never called</li><li>... and 2 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 cross_timeframe_interaction_features.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/training/steps/cross_timeframe_interaction_features.py<br>
+                    <strong>Total Issues:</strong> 89<br>
+                    Types: unreachable_code(84)<br>Severity: low(84)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (5):</strong><ul><li>Line 10: Function 'TimeframeType' is defined but never called</li><li>Line 66: Function 'CrossTimeframeFeatureGenerator' is defined but never called</li><li>Line 376: Function 'InteractionFeatureGenerator' is defined but never called</li><li>... and 2 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 pnl_loss_functions_backup.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/supervisor/pnl_loss_functions_backup.py<br>
+                    <strong>Total Issues:</strong> 87<br>
+                    Types: unreachable_code(80)<br>Severity: low(80)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (7):</strong><ul><li>Line 11: Function 'create_pnl_aware_loss' is defined but never called</li><li>Line 593: Function 'setup_pnl_loss_functions' is defined but never called</li><li>Line 19: Function 'pnl_aware_loss' is defined but never called</li><li>... and 4 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 trade_tracker.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/tracking/trade_tracker.py<br>
+                    <strong>Total Issues:</strong> 86<br>
+                    Types: unreachable_code(73)<br>Severity: low(73)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (13):</strong><ul><li>Line 25: Function 'ModelType' is defined but never called</li><li>Line 35: Function 'FeatureImportance' is defined but never called</li><li>Line 46: Function 'ModelPrediction' is defined but never called</li><li>... and 10 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 utils.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/strategist/utils.py<br>
+                    <strong>Total Issues:</strong> 81<br>
+                    Types: unreachable_code(79)<br>Severity: low(79)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (2):</strong><ul><li>Line 18: Function 'StrategistError' is defined but never called</li><li>Line 196: Function 'wrapper' is defined but never called</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 architecture_analyzer.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/code_quality/analyzers/architecture_analyzer.py<br>
+                    <strong>Total Issues:</strong> 78<br>
+                    Types: unreachable_code(76)<br>Severity: low(76)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (2):</strong><ul><li>Line 15: Function 'ArchitectureIssue' is defined but never called</li><li>Line 37: Function 'ArchitectureMetrics' is defined but never called</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 ml_confidence_predictor.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/analyst/ml_confidence_predictor.py<br>
+                    <strong>Total Issues:</strong> 78<br>
+                    Types: unreachable_code(65)<br>Severity: low(65)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (13):</strong><ul><li>Line 3266: Function 'setup_ml_confidence_predictor' is defined but never called</li><li>Line 1624: Function 'predict_ensemble_confidence' is defined but never called</li><li>Line 1827: Function 'predict_directional_with_adversarial_analysis' is defined but never called</li><li>... and 10 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 intelligent_feature_cache.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/utils/intelligent_feature_cache.py<br>
+                    <strong>Total Issues:</strong> 73<br>
+                    Types: unreachable_code(68)<br>Severity: low(68)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (5):</strong><ul><li>Line 306: Function 'cache_feature_engineering' is defined but never called</li><li>Line 355: Function 'clear_feature_cache' is defined but never called</li><li>Line 360: Function 'log_feature_cache_stats' is defined but never called</li><li>... and 2 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 standalone_analyzers.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/standalone_analyzers.py<br>
+                    <strong>Total Issues:</strong> 65<br>
+                    Types: unreachable_code(65)<br>Severity: low(65)
+                    
+                    
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 parallel_processing_optimizer.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/utils/parallel_processing_optimizer.py<br>
+                    <strong>Total Issues:</strong> 63<br>
+                    Types: unreachable_code(58)<br>Severity: low(58)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (5):</strong><ul><li>Line 246: Function 'optimize_for_m1_mac' is defined but never called</li><li>Line 163: Function 'parallel_rolling_operations' is defined but never called</li><li>Line 168: Function 'rolling_operation' is defined but never called</li><li>... and 2 more</li></ul></div>
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 advanced_ast_analyzer.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/code_quality/analyzers/advanced_ast_analyzer.py<br>
+                    <strong>Total Issues:</strong> 59<br>
+                    Types: unreachable_code(59)<br>Severity: low(59)
+                    
+                    
+                </div>
+            </div>
+            
+            <div class="issue-item" style="margin-bottom: 20px;">
+                <div class="issue-header">📁 seq2seq_trainer.py</div>
+                <div class="issue-details">
+                    <strong>Path:</strong> /workspace/src/transition/seq2seq_trainer.py<br>
+                    <strong>Total Issues:</strong> 55<br>
+                    Types: unreachable_code(50)<br>Severity: low(50)
+                    
+                    <div style='margin-top: 10px;'><strong>Deprecated Code (5):</strong><ul><li>Line 222: Function 'train_seq2seq' is defined but never called</li><li>Line 165: Function 'forward' is defined but never called</li><li>Line 99: Function 'training_step' is defined but never called</li><li>... and 2 more</li></ul></div>
+                </div>
+            </div>
+            
+            
+            <p><em>... and 416 more files with issues</em></p>
+            
+            <h3>📊 File Type Analysis</h3>
+            <ul>
+                <li><strong>.py:</strong> 431 files, 6185 issues</li>
+            </ul>
+        </div>
+        
+        
+        
+        <div class="deprecated-section">
+            <h2>⚠️ Deprecated Code Analysis</h2>
+            <p>Found 1078 deprecated code items that should be updated or removed.</p>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/step_formatter.py:85</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'replace_step' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    83:             changes = 0
+    84:     
+    85: >>>         def replace_step(match):
+    86:                 nonlocal changes
+    87:                 step_num = match.group(1)</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/analyst_scanner.py:69</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'visit_ClassDef' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    67:             self.generic_visit(node)
+    68:     
+    69: >>>     def visit_ClassDef(self, node: ast.ClassDef):
+    70:             # Module-level class def detection
+    71:             if isinstance(getattr(node, "parent", None), ast.Module):</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/analyst_scanner.py:88</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'visit_ExceptHandler' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    86:             self.generic_visit(node)
+    87:     
+    88: >>>     def visit_ExceptHandler(self, node: ast.ExceptHandler):
+    89:             # Silent except: except Exception: pass
+    90:             is_exception = isinstance(node.type, ast.Name) and node.type.id == "Exception"</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/analyst_scanner.py:102</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'visit_Name' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">   100:             self.generic_visit(node)
+   101:     
+   102: >>>     def visit_Name(self, node: ast.Name):
+   103:             if isinstance(node.ctx, ast.Load):
+   104:                 self.name_loads.append((node.id, node.lineno))</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/optimize_hmm_regime_parameters_enhanced.py:208</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'objective' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">   206:             """Create enhanced objective function with cross-validation."""
+   207:     
+   208: >>>         def objective(trial: optuna.Trial) -> float:
+   209:                 """Enhanced objective function with cross-validation and early stopping."""
+   210:     </div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/run_sequential_fixer_simple.py:16</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'MockProgress' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    14:     
+    15:     # Mock the rich library imports to prevent import errors
+    16: >>> class MockProgress:
+    17:         def __init__(self, *args, **kwargs):
+    18:             pass</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/run_sequential_fixer_simple.py:35</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'MockConsole' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    33:             pass
+    34:     
+    35: >>> class MockConsole:
+    36:         def print(self, *args, **kwargs):
+    37:             self.print(args[0] if args else "")</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/run_sequential_fixer_simple.py:42</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'MockLive' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    40:             self.print(args[0] if args else "")
+    41:     
+    42: >>> class MockLive:
+    43:         def __init__(self, *args, **kwargs):
+    44:             pass</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/scripts/diagnose_feature_quality.py:35</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'wrapper' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    33:     
+    34:             def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    35: >>>             def wrapper(*args: Any, **kwargs: Any) -> Any:
+    36:                     logger=system_logger.getChild(func.__name__)
+    37:                     try:</div>
+            </div>
+            
+            <div class="issue-item">
+                <div class="issue-header">/workspace/scripts/post_steps_cleaner.py:19</div>
+                <div class="issue-details">
+                    <strong>Type:</strong> unused_function<br>
+                    <strong>Description:</strong> Function 'repl' is defined but never called<br>
+                    <strong>Reason:</strong> Function is defined but never called anywhere in the codebase<br>
+                    
+                    <strong>Alternative:</strong> Consider removing if truly unused, or add usage if needed<br>
+                </div>
+                <div class="code-snippet">    17:     def fix_bracket_types(text: str) -> str:
+    18:         # Replace ' = ' with ', ' inside type brackets for dict/tuple/list annotations
+    19: >>>     def repl(m: re.Match[str]) -> str:
+    20:             head=m.group(1)
+    21:             inside=m.group(2)</div>
+            </div>
+            
+        </div>
+        
+        
+        
+        <div class="impact-section">
+            <h2>📈 Impact Analysis</h2>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>High Impact</h3>
+                    <div class="number">0</div>
+                    <p>Issues with high removal impact</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Medium Impact</h3>
+                    <div class="number">5107</div>
+                    <p>Issues with medium removal impact</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Low Impact</h3>
+                    <div class="number">0</div>
+                    <p>Issues with low removal impact</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Total Impact Score</h3>
+                    <div class="number">20434</div>
+                    <p>Overall impact assessment</p>
+                </div>
+            </div>
+        </div>
+        
+        
+        
+        <div class="impact-section">
+            <h2>🗓️ Removal Plan</h2>
+            <h3>Estimated Time Savings</h3>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Hours Saved</h3>
+                    <div class="number">0.3</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Days Saved</h3>
+                    <div class="number">0.0</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Lines Removed</h3>
+                    <div class="number">3</div>
+                </div>
+            </div>
+            
+            <h3>Removal Phases</h3>
+            <div class="phase-timeline">
+                
+            <div class="phase-card phase-1">
+                <h3>Phase 1</h3>
+                <h4>Safe Low-Impact Removals</h4>
+                <p>Remove low-impact dead code with no dependencies</p>
+                <p><strong>Effort:</strong> 1-2 hours</p>
+                <span class="risk-indicator risk-low">low risk</span>
+            </div>
+            
+            <div class="phase-card phase-2">
+                <h3>Phase 2</h3>
+                <h4>Medium-Impact Removals</h4>
+                <p>Remove medium-impact dead code with careful review</p>
+                <p><strong>Effort:</strong> 4-8 hours</p>
+                <span class="risk-indicator risk-medium">medium risk</span>
+            </div>
+            
+            <div class="phase-card phase-3">
+                <h3>Phase 3</h3>
+                <h4>High-Impact Removals</h4>
+                <p>Remove high-impact dead code with extensive testing</p>
+                <p><strong>Effort:</strong> 1-2 days</p>
+                <span class="risk-indicator risk-high">high risk</span>
+            </div>
+            
+            </div>
+            
+            <h3>Risk Assessment</h3>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>High Risk</h3>
+                    <div class="number">5</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Medium Risk</h3>
+                    <div class="number">0</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Low Risk</h3>
+                    <div class="number">0</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Approach</h3>
+                    <div class="number">aggressive</div>
+                </div>
+            </div>
+        </div>
+        
+        
+        
+        <div class="recommendations">
+            <h2>💡 Recommendations</h2>
+            <ul>
+                <li>Start with 0 low-impact issues for quick wins</li><li>Address 1 dependency chains carefully</li><li>Review 5 potentially risky removals before proceeding</li><li>Run tests after each removal phase</li><li>Use version control to track changes</li><li>Consider gradual removal over multiple commits</li><li>Document removal decisions for future reference</li>
+            </ul>
+        </div>
+        
+        
+        <div class="timestamp">
+            Report generated on 2025-09-04 12:24:52
+        </div>
+    </div>
+</body>
+</html>

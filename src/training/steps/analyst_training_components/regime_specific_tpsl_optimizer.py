@@ -1,3 +1,7 @@
+# TPSL OPTIMIZER - TEMPORARILY DISABLED
+# This file is temporarily disabled as TPSL parameters are commented out in config.yaml
+# Uncomment when TPSL optimization is re-enabled
+
 from src.core.decorators import handles_errors
 from src.core.domain import handle_specific_errors
 from typing import Dict, List, Optional, Union, Any, Tuple

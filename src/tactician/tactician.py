@@ -84,8 +84,8 @@ class Tactician:
         self.risk_management = {
             "max_position_size": tactician_config.get("max_position_size", 0.1),
             "max_leverage": tactician_config.get("max_leverage", 3.0),
-            "stop_loss_multiplier": tactician_config.get("stop_loss_multiplier", 1.0),
-            "take_profit_multiplier": tactician_config.get("take_profit_multiplier", 1.0),
+            # "stop_loss_multiplier": tactician_config.get("stop_loss_multiplier", 1.0),  # TPSL commented out
+            # "take_profit_multiplier": tactician_config.get("take_profit_multiplier", 1.0),  # TPSL commented out
             "max_drawdown": tactician_config.get("max_drawdown", 0.05),
             "correlation_threshold": tactician_config.get("correlation_threshold", 0.8)
         }
@@ -907,8 +907,11 @@ class Tactician:
             analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
             analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
 
-            stop_loss = analyst_lower * self.risk_management["stop_loss_multiplier"]
-            take_profit = analyst_upper * self.risk_management["take_profit_multiplier"]
+            # TPSL parameters commented out
+            # stop_loss = analyst_lower * self.risk_management["stop_loss_multiplier"]
+            # take_profit = analyst_upper * self.risk_management["take_profit_multiplier"]
+            stop_loss = analyst_lower  # Use analyst barriers directly
+            take_profit = analyst_upper  # Use analyst barriers directly
 
             return {
                 "position_size": position_size,

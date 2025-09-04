@@ -1,3 +1,8 @@
+# TPSL OPTIMIZATION - TEMPORARILY DISABLED
+# This file contains TPSL optimization functionality that is temporarily disabled
+# as TPSL parameters are commented out in config.yaml
+# Uncomment TPSL sections when TPSL optimization is re-enabled
+
 """
 Per-HMM Regime Triple Barrier Thresholds and TPSL Parameters Optimization
 
@@ -7,7 +12,7 @@ It extends the existing optimization framework to provide regime-aware parameter
 
 Key Features:
 - Regime-specific triple barrier thresholds optimization
-- Per-regime TPSL parameter optimization
+- Per-regime TPSL parameter optimization (TEMPORARILY DISABLED)
 - Multi-objective optimization with regime-specific objectives
 - Cross-validation with regime-aware splits
 - Statistical significance testing per regime

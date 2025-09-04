@@ -96,7 +96,7 @@ step12_confidence_optimization:
       confidence_optimization: true
       position_sizing_optimization: true
       leverage_optimization: true
-      tpsl_optimization: true
+      # tpsl_optimization: true  # TPSL temporarily disabled
 
   # Validation Rules
   validation:

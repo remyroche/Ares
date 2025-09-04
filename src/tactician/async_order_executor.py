@@ -16,9 +16,15 @@ from uuid import uuid4
 
 import optuna
 
-from src.supervisor.performance_reporter import (
-    PerformanceReporter,
-)
+try:
+    from src.supervisor.performance_reporter import (
+        PerformanceReporter,
+        setup_performance_reporter,
+    )
+except Exception:
+    PerformanceReporter = None  # type: ignore
+    def setup_performance_reporter(*_a, **_k):  # type: ignore
+        return None
 from copy import copy
 from src.tactician.enhanced_order_manager import (
     EnhancedOrderManager,
@@ -29,7 +35,10 @@ from src.tactician.enhanced_order_manager import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
+    missing,
+    invalid,
 )
+from src.core.decorators import handles_errors
 
 
 class ExecutionStrategy(Enum):
@@ -88,6 +97,7 @@ class ExecutionResult:
     orders_placed: list[str]
     fills: list[dict[str, Any]]
     metadata: dict[str, Any] = field(default_factory=dict)
+    performance_metrics: dict[str, Any] = field(default_factory=dict)
 
 
 class AsyncOrderExecutor:
@@ -278,14 +288,19 @@ class AsyncOrderExecutor:
             self.total_executions += 1
 
             # Update performance metrics
-            if self.performance_reporter:
-                await self.performance_reporter.record_execution(result)
+            if self.performance_reporter and hasattr(self.performance_reporter, 'record_execution'):
+                await self.performance_reporter.record_execution(result)  # type: ignore
 
             return result
 
         except Exception as e:
             self.logger.exception(failed(f"❌ Order execution failed: {e}"))
             return None
+
+    async def execute_order_async(self, request: ExecutionRequest) -> str:
+        """Compatibility helper that executes the order and returns its execution_id."""
+        result = await self.execute_order(request)
+        return result.execution_id if result else ""
 
     async def _execute_immediate(
         self, request: ExecutionRequest, result: ExecutionResult
@@ -652,3 +667,12 @@ class AsyncOrderExecutor:
             self.logger.exception(
                 failed(f"❌ Async Order Executor cleanup failed: {e}")
             )
+
+    def get_execution_status(self, execution_id: str) -> ExecutionResult | None:
+        """Return execution status by id from active set or history."""
+        if execution_id in self.active_executions:
+            return self.active_executions[execution_id]
+        for res in reversed(self.execution_history):
+            if res.execution_id == execution_id:
+                return res
+        return None

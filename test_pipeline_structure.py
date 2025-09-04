@@ -4,6 +4,7 @@ Test script for the enhanced market analysis pipeline structure.
 This script tests the pipeline structure without requiring external dependencies.
 """
 
+
 import sys
 import os
 from pathlib import Path
@@ -243,7 +244,7 @@ def main():
         test_pipeline_components,
         test_step_configurations,
         test_decorator_integration,
-        test_validation_integration,
+        test_validation_integration
     ]
     
     passed = 0
@@ -269,6 +270,7 @@ def main():
         return True
     else:
         print("❌ Some structure tests failed. Please check the implementation.")
+
         return False
 
 if __name__ == "__main__":

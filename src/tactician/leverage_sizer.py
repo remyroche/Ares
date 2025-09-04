@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.logger import system_logger
+from src.utils.linear_confidence_scaling import LinearConfidenceScaler
 from copy import copy
 import asyncio
 from src.core.decorators import handles_errors as _handles_errors
@@ -76,6 +77,9 @@ class LeverageSizer:
         self.max_risk_leverage: float = leverage_optimization.get(
             "max_risk_leverage", 50.0
         )
+
+        # Initialize linear confidence scaler
+        self.linear_scaler = LinearConfidenceScaler(config)
 
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
@@ -226,40 +230,50 @@ class LeverageSizer:
             )
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
 
-            # NEW: Use combined confidence for leverage sizing if available
-            if combined_confidence >= self.leverage_combined_threshold:
-                # Calculate base ML leverage
-                ml_leverage = self._calculate_ml_leverage(
-                    price_target_confidences,
-                    adversarial_confidences,
-                )
+            # NEW: Use linear confidence scaling instead of threshold-based approach
+            # Extract intensity and reliability from predictions
+            intensity = ml_predictions.get("intensity", 1.0)
+            reliability = ml_predictions.get("reliability", 1.0)
+            risk_score = ml_predictions.get("risk_score", 0.0)
+            
+            # Calculate base ML leverage
+            ml_leverage = self._calculate_ml_leverage(
+                price_target_confidences,
+                adversarial_confidences,
+            )
 
-                # Calculate liquidation risk-adjusted leverage
-                liquidation_leverage = self._calculate_liquidation_safe_leverage(
-                    current_price,
-                    account_balance,
-                    market_health_analysis,
-                )
+            # Calculate liquidation risk-adjusted leverage
+            liquidation_leverage = self._calculate_liquidation_safe_leverage(
+                current_price,
+                account_balance,
+                market_health_analysis,
+            )
 
-                # Calculate weighted leverage
-                final_leverage = self._calculate_weighted_leverage(
-                    ml_leverage,
-                    liquidation_leverage,
-                )
+            # Calculate weighted leverage
+            base_leverage = self._calculate_weighted_leverage(
+                ml_leverage,
+                liquidation_leverage,
+            )
 
-                # Apply market-health and strategist risk modifiers
-                final_leverage = self._apply_leverage_modifiers(
-                    final_leverage,
-                    market_health_analysis=market_health_analysis,
-                    strategist_risk_parameters=strategist_risk_parameters,
-                    analyst_confidence=analyst_confidence,
-                    tactician_confidence=tactician_confidence,
-                )
-            else:
-                # If combined confidence is below threshold, use minimum leverage
-                final_leverage = self.min_leverage
-                ml_leverage = self.min_leverage
-                liquidation_leverage = self.min_leverage
+            # Apply linear confidence scaling
+            confidence_multiplier = self.linear_scaler.calculate_leverage_multiplier(
+                confidence=combined_confidence,
+                intensity=intensity,
+                reliability=reliability,
+                risk_score=risk_score
+            )
+            
+            # Apply confidence multiplier to base leverage
+            confidence_adjusted_leverage = base_leverage * confidence_multiplier
+
+            # Apply market-health and strategist risk modifiers
+            final_leverage = self._apply_leverage_modifiers(
+                confidence_adjusted_leverage,
+                market_health_analysis=market_health_analysis,
+                strategist_risk_parameters=strategist_risk_parameters,
+                analyst_confidence=analyst_confidence,
+                tactician_confidence=tactician_confidence,
+            )
 
             # Create leverage sizing analysis
             leverage_analysis = {
@@ -268,9 +282,15 @@ class LeverageSizer:
                 "account_balance": account_balance,
                 "ml_leverage": ml_leverage,
                 "liquidation_leverage": liquidation_leverage,
+                "base_leverage": base_leverage,
+                "confidence_adjusted_leverage": confidence_adjusted_leverage,
                 "final_leverage": final_leverage,
                 "combined_confidence": combined_confidence,
-                "leverage_combined_threshold": self.leverage_combined_threshold,
+                "intensity": intensity,
+                "reliability": reliability,
+                "risk_score": risk_score,
+                "confidence_multiplier": confidence_multiplier,
+                "linear_scaling_enabled": True,
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
                 "market_health_modifiers": (market_health_analysis or {}),

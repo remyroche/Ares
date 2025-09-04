@@ -118,6 +118,10 @@ class CrossTimeframeFeatureGenerator:
             if components['close'].isna().all() or components['close'].std() == 0:
                 self.logger.warning('⚠️ Invalid close data')
                 return {}
+        except Exception as e:
+            self.logger.exception(f'❌ Error extracting price components: {e}')
+            return {}
+
     def _generate_features_parallel(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame | None) -> dict[str, pd.Series]:
         """Generate features using parallel processing"""
         features = {}

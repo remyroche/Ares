@@ -192,6 +192,10 @@ class DataQualityFramework:
                         data[col] = data[col].fillna(data[col].mode()[0] if len(data[col].mode()) > 0 else 'unknown')
                 self.logger.info('Filled null values with appropriate defaults')
             return data
+        except Exception as e:
+            self.logger.exception(f'Null handling error: {e}')
+            return data
+
     def _handle_duplicates(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
         """Handle duplicate values according to rules."""
         try:
@@ -209,6 +213,10 @@ class DataQualityFramework:
                 if rows_removed > 0:
                     self.logger.info(f'Removed {rows_removed} duplicate rows')
             return data
+        except Exception as e:
+            self.logger.exception(f'Duplicate handling error: {e}')
+            return data
+
     def _handle_outliers(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
         """Handle outliers according to rules."""
         try:
@@ -261,6 +269,10 @@ class DataQualityFramework:
                         if capped_lower > 0 or capped_upper > 0:
                             self.logger.info(f'Capped {capped_lower + capped_upper} outliers in {col}')
             return data
+        except Exception as e:
+            self.logger.exception(f'Outlier handling error: {e}')
+            return data
+
     def generate_quality_report(self, data: pd.DataFrame) -> dict[str, Any]:
         """Generate comprehensive data quality report.
 
@@ -272,24 +284,40 @@ class DataQualityFramework:
         """
         try:
             return {'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'data_types': data.dtypes.to_dict(), 'null_analysis': self._analyze_nulls(data), 'duplicate_analysis': self._analyze_duplicates(data), 'outlier_analysis': self._analyze_outliers(data), 'data_quality_score': self._calculate_quality_score(data), 'recommendations': self._generate_recommendations(data)}
+        except Exception as e:
+            self.logger.exception(f'Error generating quality report: {e}')
+            return {'error': str(e)}
+
     def _analyze_nulls(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze null values in data."""
         try:
             null_counts = data.isnull().sum()
             null_percentages = null_counts / len(data) * 100
             return {'total_null_values': null_counts.sum(), 'columns_with_nulls': null_counts[null_counts > 0].to_dict(), 'null_percentages': null_percentages[null_percentages > 0].to_dict(), 'worst_column': null_counts.idxmax() if null_counts.max() > 0 else None, 'worst_percentage': max(0, null_percentages.max())}
+        except Exception as e:
+            self.logger.exception(f'Error analyzing nulls: {e}')
+            return {'error': str(e)}
+
     def _analyze_duplicates(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze duplicate values in data."""
         try:
             duplicate_rows = data.duplicated().sum()
             duplicate_percentage = duplicate_rows / len(data) * 100
             return {'duplicate_rows': duplicate_rows, 'duplicate_percentage': duplicate_percentage, 'has_duplicates': duplicate_rows > 0}
+        except Exception as e:
+            self.logger.exception(f'Error analyzing duplicates: {e}')
+            return {'error': str(e)}
+
     def _analyze_outliers(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze outliers in data."""
         try:
             outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold=1.5, raise_errors=False)
             if not outliers:
                 return {'total_outlier_groups': 0, 'severity_distribution': {}}
+        except Exception as e:
+            self.logger.exception(f'Error analyzing outliers: {e}')
+            return {'error': str(e)}
+
     def _calculate_quality_score(self, data: pd.DataFrame) -> float:
         """Calculate overall data quality score (0-100)."""
         try:
@@ -305,6 +333,10 @@ class DataQualityFramework:
                 score -= critical_outliers * 5.0
                 score -= high_outliers * 2.0
             return max(0.0, score)
+        except Exception as e:
+            self.logger.exception(f'Error calculating quality score: {e}')
+            return 0.0
+
     def _generate_recommendations(self, data: pd.DataFrame) -> list[str]:
         """Generate data quality improvement recommendations."""
         recommendations = []
@@ -332,6 +364,10 @@ class DataQualityFramework:
             if len(data.columns) > 100:
                 recommendations.append('High-dimensional data - consider feature selection')
             return recommendations
+        except Exception as e:
+            self.logger.exception(f'Error generating recommendations: {e}')
+            return ['Error generating recommendations']
+
     def format_data(self, data: pd.DataFrame, data_type: str='klines') -> pd.DataFrame:
         """Format data according to standardized formats.
 
@@ -481,6 +517,7 @@ class DataQualityFramework:
             now = pd.Timestamp.now()
             time_diff = abs((timestamps - now).dt.total_seconds())
             return 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)
-except:
+        except Exception:
             return 0.5
+
 data_quality_framework = DataQualityFramework()

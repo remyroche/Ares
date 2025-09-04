@@ -186,6 +186,10 @@ class RegimePredictiveEnsembles:
             ensemble_instance.trained = True
             self.logger.info(f'Successfully loaded pre-trained ensemble from {path}')
             return True
+        except Exception as e:
+            self.logger.error(f'Error loading ensemble model from {path}: {e}')
+            return False
+
     def load_weights(self, weights: dict[str, Any]) -> Any:
         """Loads updated weights into the ensembles for dynamic weighting."""
         for regime, ensemble_weights in weights.items():

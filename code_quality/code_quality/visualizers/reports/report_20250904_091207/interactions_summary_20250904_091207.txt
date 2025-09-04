@@ -1,0 +1,66 @@
+CODE INTERACTION MAPPING SUMMARY
+================================================================================
+
+MODULE DEPENDENCIES
+----------------------------------------
+
+
+FUNCTION CALL RELATIONSHIPS
+----------------------------------------
+
+
+ARCHITECTURAL COMPONENTS
+----------------------------------------
+
+
+IMPORT RELATIONSHIPS
+----------------------------------------
+
+
+DEAD CODE ANALYSIS
+----------------------------------------
+Total Dead Code Issues: 136853
+Deprecated Code Issues: 1176
+Potential Lines Removed: 86
+
+High Impact Issues (86):
+  • /workspace/simulate_regime_merging_from_existing_data.py:262 - Syntax error: positional argument follows keyword argument (<unknown>, line 262)
+  • /workspace/comprehensive_gap_filler.py:85 - Syntax error: invalid syntax (<unknown>, line 85)
+  • /workspace/simulate_regime_merging_optimization.py:104 - Syntax error: invalid syntax (<unknown>, line 104)
+  • /workspace/comprehensive_gap_filler_v2.py:343 - Syntax error: expected an indented block after 'for' statement on line 342 (<unknown>, line 343)
+  • /workspace/src/components/modular_supervisor.py:8 - Syntax error: invalid syntax (<unknown>, line 8)
+  • /workspace/src/interfaces/event_bus.py:11 - Syntax error: invalid syntax (<unknown>, line 11)
+  • /workspace/src/interfaces/enhanced_event_bus.py:17 - Syntax error: invalid syntax (<unknown>, line 17)
+  • /workspace/src/supervisor/exchange_volume_adapter.py:16 - Syntax error: invalid syntax (<unknown>, line 16)
+  • /workspace/src/pipelines/live_trading_pipeline.py:8 - Syntax error: invalid syntax (<unknown>, line 8)
+  • /workspace/src/pipelines/components/monitoring_manager.py:9 - Syntax error: invalid syntax (<unknown>, line 9)
+
+Deprecated Code (1176):
+  • /workspace/simple_test_analysis.py:72 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:83 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:476 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:72 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:72 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:83 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:476 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:83 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:83 - Deprecated code
+    Reason: Code marked as deprecated
+  • /workspace/simple_test_analysis.py:309 - Deprecated code
+    Reason: Code marked as deprecated
+
+Removal Plan:
+  Estimated Time Savings: 8.6 hours
+  Removal Phases: 3
+  Risk Assessment:
+    High Risk: 436
+    Medium Risk: 0
+    Recommended Approach: incremental

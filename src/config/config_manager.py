@@ -14,11 +14,10 @@ from .config_confidence import get_confidence_config, get_confidence_search_spac
 from .config_ensemble import get_ensemble_config, get_ensemble_search_space
 from .config_leverage import get_leverage_config, get_leverage_search_space
 from .config_position_sizing import (
-from copy import copy
-
     get_position_sizing_config,
     get_position_sizing_search_space,
 )
+from copy import copy
 from .config_regime_transitions import (
     get_regime_transition_config,
     get_regime_transition_search_space,

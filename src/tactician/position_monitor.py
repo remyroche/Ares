@@ -20,13 +20,13 @@ from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-from copy import copy
-
+    error,
     failed,
+    initialization_error,
     invalid,
     missing,
-    warning,
 )
+from copy import copy
 
 
 class PositionAction(Enum):

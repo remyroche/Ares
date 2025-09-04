@@ -465,6 +465,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="active model setting",
+    )
     async def set_active_model(self, model_name: str) -> bool:
         """
         Set the active model.
@@ -493,6 +494,7 @@ class ModelManager:
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="active model getting",
+    )
     async def get_active_model(self) -> str | None:
         """
         Get the active model name.

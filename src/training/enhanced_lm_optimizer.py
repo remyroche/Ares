@@ -26,12 +26,11 @@ import torch
 from optuna.samplers import TPESampler
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import (
-from copy import copy
-
     VarianceThreshold,
     mutual_info_classif,
     mutual_info_regression,
 )
+from copy import copy
 from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from torch import nn, optim

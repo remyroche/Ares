@@ -11,13 +11,12 @@ from typing import Any, Dict, Optional
 from src.core.decorators import handles_errors
 from src.training.progress_manager import ProgressManager
 from src.training.step_config import (
-import asyncio
-
     get_all_steps,
     get_step_config,
     get_step_execution_order,
     validate_step_sequence,
 )
+import asyncio
 from src.utils.logger import system_logger
 from src.utils.step_dependency_validator import StepDependencyValidator
 

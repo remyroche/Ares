@@ -19,8 +19,6 @@ from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
-import asyncio
-
     AnalysisResult,
     IAnalyst,
     IEventBus,
@@ -28,6 +26,7 @@ import asyncio
     IStateManager,
     MarketData,
 )
+import asyncio
 from src.training.dual_model_system import DualModelSystem
 from src.utils.warning_symbols import (
     failed,

@@ -29,8 +29,6 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
-import asyncio
-
     extract_training_metadata,
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
@@ -39,6 +37,7 @@ import asyncio
     log_params_with_metadata,
     validate_run_metadata,
 )
+import asyncio
 
 
 def with_enhanced_mlflow_logging(step_name: str):

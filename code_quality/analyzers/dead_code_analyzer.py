@@ -13,8 +13,8 @@ from typing import Any
 
 from vulture.core import Vulture
 
-from ..core.config import AnalysisConfig
-from ..utils.file_utils import find_python_files
+from core.config import AnalysisConfig
+from utils.file_utils import find_python_files
 
 
 @dataclass
@@ -194,14 +194,19 @@ class DeadCodeAnalyzer:
         all_issues = []
         all_deprecated_issues = []
 
+        # First pass: build global call graph for proper deprecated code detection
+        print("Building global call graph...")
+        global_call_graph = self._build_global_call_graph(python_files)
+        print(f"Found {len(global_call_graph['definitions'])} function definitions and {len(global_call_graph['calls'])} function calls")
+
         for file_path in python_files:
             try:
                 # Standard dead code analysis
                 file_issues = self.analyze_file(file_path)
                 all_issues.extend(file_issues)
                 
-                # Enhanced analysis
-                deprecated_issues = self.detect_deprecated_code(file_path)
+                # Enhanced analysis with global call graph
+                deprecated_issues = self.detect_deprecated_code_with_graph(file_path, global_call_graph)
                 all_deprecated_issues.extend(deprecated_issues)
                 
                 dynamic_import_issues = self.detect_dynamic_imports(file_path)
@@ -624,7 +629,8 @@ class DeadCodeAnalyzer:
 
     def detect_deprecated_code(self, file_path: str | Path) -> list[DeprecatedCodeIssue]:
         """
-        Detect deprecated code patterns in a file.
+        Detect deprecated code using call graph analysis instead of linguistic analysis.
+        A function/class is considered deprecated if it's defined but never called.
         
         Args:
             file_path: Path to Python file
@@ -642,32 +648,18 @@ class DeadCodeAnalyzer:
             
             tree = ast.parse(source)
             lines = source.split("\n")
-            deprecated_issues = []
             
-            for node in ast.walk(tree):
-                # Check for @deprecated decorators
-                if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
-                    for decorator in node.decorator_list:
-                        if self._is_deprecated_decorator(decorator):
-                            issue = self._create_deprecated_issue(
-                                node, decorator, lines, str(file_path), "decorator"
-                            )
-                            deprecated_issues.append(issue)
-                
-                # Check for DeprecationWarning usage
-                if isinstance(node, ast.Raise):
-                    if self._is_deprecation_warning(node):
-                        issue = self._create_deprecated_issue(
-                            node, None, lines, str(file_path), "warning"
-                        )
-                        deprecated_issues.append(issue)
-                
-                # Check for deprecation comments
-                if hasattr(node, 'lineno'):
-                    line_content = lines[node.lineno - 1] if node.lineno <= len(lines) else ""
-                    if self._is_deprecation_comment(line_content):
-                        issue = self._create_deprecated_issue(
-                            node, None, lines, str(file_path), "comment"
+            # Build call graph for this file
+            defined_functions, called_functions = self._build_call_graph(tree)
+            
+            # Find functions that are defined but never called
+            deprecated_issues = []
+            for func_name, func_node in defined_functions.items():
+                if func_name not in called_functions:
+                    # Skip private functions (starting with _) and special methods
+                    if not func_name.startswith('_') or func_name.startswith('__'):
+                        issue = self._create_unused_function_issue(
+                            func_node, lines, str(file_path)
                         )
                         deprecated_issues.append(issue)
             
@@ -677,16 +669,141 @@ class DeadCodeAnalyzer:
             print(f"Warning: Could not analyze deprecated code in {file_path}: {e}")
             return []
 
-    def _is_deprecated_decorator(self, decorator: ast.expr) -> bool:
-        """Check if a decorator indicates deprecation."""
-        if isinstance(decorator, ast.Name):
-            return decorator.id.lower() in ["deprecated", "deprecate"]
-        elif isinstance(decorator, ast.Call):
-            if isinstance(decorator.func, ast.Name):
-                return decorator.func.id.lower() in ["deprecated", "deprecate"]
-            elif isinstance(decorator.func, ast.Attribute):
-                return decorator.func.attr.lower() in ["deprecated", "deprecate"]
-        return False
+    def _build_call_graph(self, tree: ast.AST) -> tuple[dict[str, ast.AST], set[str]]:
+        """
+        Build a call graph for the AST.
+        
+        Returns:
+            Tuple of (defined_functions, called_functions)
+        """
+        defined_functions = {}
+        called_functions = set()
+        
+        for node in ast.walk(tree):
+            # Track function definitions
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                defined_functions[node.name] = node
+            elif isinstance(node, ast.ClassDef):
+                defined_functions[node.name] = node
+                
+            # Track function calls
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    called_functions.add(node.func.id)
+                elif isinstance(node.func, ast.Attribute):
+                    # For method calls like obj.method(), we track the method name
+                    called_functions.add(node.func.attr)
+                    
+        return defined_functions, called_functions
+
+    def _create_unused_function_issue(self, func_node: ast.AST, lines: list[str], file_path: str) -> DeprecatedCodeIssue:
+        """Create a DeprecatedCodeIssue for an unused function."""
+        line_number = getattr(func_node, 'lineno', 0)
+        code_snippet = self._extract_code_snippet(lines, line_number)
+        func_name = getattr(func_node, 'name', 'unknown')
+        
+        return DeprecatedCodeIssue(
+            file_path=file_path,
+            line_number=line_number,
+            deprecated_type="unused_function",
+            description=f"Function '{func_name}' is defined but never called",
+            deprecation_reason="Function is not referenced anywhere in the codebase",
+            removal_version="",
+            alternative="Consider removing if truly unused, or add usage if needed",
+            code_snippet=code_snippet,
+            severity="low"  # Lower severity since it might be intentionally unused
+        )
+
+    def _build_global_call_graph(self, python_files: list[Path]) -> dict[str, dict]:
+        """
+        Build a global call graph across all Python files.
+        
+        Returns:
+            Dictionary with 'definitions' and 'calls' keys
+        """
+        global_definitions = {}  # {function_name: {file_path, line_number, node}}
+        global_calls = set()     # Set of all function names that are called
+        
+        for file_path in python_files:
+            try:
+                with open(file_path, encoding="utf-8") as f:
+                    source = f.read()
+                
+                tree = ast.parse(source)
+                defined_functions, called_functions = self._build_call_graph(tree)
+                
+                # Add definitions to global registry
+                for func_name, func_node in defined_functions.items():
+                    global_definitions[func_name] = {
+                        'file_path': str(file_path),
+                        'line_number': getattr(func_node, 'lineno', 0),
+                        'node': func_node
+                    }
+                
+                # Add calls to global registry
+                global_calls.update(called_functions)
+                
+            except Exception as e:
+                print(f"Warning: Could not analyze {file_path} for call graph: {e}")
+                continue
+        
+        return {
+            'definitions': global_definitions,
+            'calls': global_calls
+        }
+
+    def detect_deprecated_code_with_graph(self, file_path: str | Path, global_call_graph: dict) -> list[DeprecatedCodeIssue]:
+        """
+        Detect deprecated code using global call graph analysis.
+        
+        Args:
+            file_path: Path to Python file
+            global_call_graph: Global call graph from _build_global_call_graph
+            
+        Returns:
+            List of DeprecatedCodeIssue objects
+        """
+        file_path = Path(file_path)
+        if not file_path.exists() or file_path.suffix != ".py":
+            return []
+            
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                source = f.read()
+            
+            tree = ast.parse(source)
+            lines = source.split("\n")
+            
+            # Build local call graph for this file
+            defined_functions, called_functions = self._build_call_graph(tree)
+            
+            deprecated_issues = []
+            global_definitions = global_call_graph['definitions']
+            global_calls = global_call_graph['calls']
+            
+            for func_name, func_node in defined_functions.items():
+                # Skip private functions and special methods
+                if func_name.startswith('_') and not func_name.startswith('__'):
+                    continue
+                
+                # Check if function is called anywhere in the codebase
+                is_called_locally = func_name in called_functions
+                is_called_globally = func_name in global_calls
+                
+                if not is_called_locally and not is_called_globally:
+                    # Function is defined but never called anywhere
+                    issue = self._create_unused_function_issue(
+                        func_node, lines, str(file_path)
+                    )
+                    issue.deprecation_reason = "Function is defined but never called anywhere in the codebase"
+                    issue.severity = "medium"  # Higher severity for truly unused functions
+                    deprecated_issues.append(issue)
+            
+            return deprecated_issues
+            
+        except Exception as e:
+            print(f"Warning: Could not analyze deprecated code in {file_path}: {e}")
+            return []
 
     def _is_deprecation_warning(self, node: ast.Raise) -> bool:
         """Check if a raise statement is a DeprecationWarning."""

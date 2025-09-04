@@ -13,9 +13,6 @@ from scipy.signal import find_peaks  # For volume profile peaks
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-from copy import copy
-import asyncio
-
     critical,
     failed,
     initialization_error,
@@ -23,6 +20,8 @@ import asyncio
     missing,
     warning,
 )
+from copy import copy
+import asyncio
 
 
 class DataUtils:

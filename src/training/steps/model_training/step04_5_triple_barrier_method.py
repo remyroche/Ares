@@ -1,6 +1,5 @@
-"""Step 4: Triple Barrier Method."
+"""Step 4: Triple Barrier Method.
 
-from src.core.decorators import handles_errors, traced
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
@@ -12,6 +11,8 @@ from src.utils.common_operations import ensure_directory
 from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
+from src.core.decorators import handles_errors, traced
+from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -155,42 +156,62 @@ class TripleBarrierMethodStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 4 artifacts and reports: {e}')
 
+    def _get_triple_barrier_config(self) -> Dict[str, float]:
+        """Extract triple barrier configuration parameters."""
+        triple_barrier_config = self.config.get("triple_barrier", {})
+        return {
+            "profit_take_multiplier": triple_barrier_config.get("profit_take_multiplier", 0.002),
+            "stop_loss_multiplier": triple_barrier_config.get("stop_loss_multiplier", 0.001),
+            "time_barrier_minutes": triple_barrier_config.get("time_barrier_minutes", 30),
+            "max_lookahead": triple_barrier_config.get("max_lookahead", 100)
+        }
+
+    def _create_triple_barrier_labeler(self, config: Dict[str, float]) -> OptimizedTripleBarrierLabeling:
+        """Create and configure triple barrier labeler."""
+        return OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=config["profit_take_multiplier"],
+            stop_loss_multiplier=config["stop_loss_multiplier"],
+            time_barrier_minutes=config["time_barrier_minutes"],
+            max_lookahead=config["max_lookahead"],
+            binary_classification=True
+        )
+
+    def _log_label_statistics(self, labeled_data: pd.DataFrame) -> None:
+        """Log comprehensive label and profit statistics."""
+        labels = labeled_data['label']
+        self.logger.info(f'✅ Generated {len(labels)} triple barrier labels with profit tracking')
+        self.logger.info(f'   - Long positions: {(labels == 1).sum()}')
+        self.logger.info(f'   - Short positions: {(labels == -1).sum()}')
+        self.logger.info(f'   - Hold signals: {(labels == 0).sum()}')
+        
+        if len(labeled_data) > 0:
+            self._log_profit_statistics(labeled_data)
+
+    def _log_profit_statistics(self, labeled_data: pd.DataFrame) -> None:
+        """Log profit tracking statistics."""
+        long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
+        short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
+        
+        self.logger.info('💰 Profit tracking statistics:')
+        self.logger.info(f'   - LONG positions avg profit: {long_profits.mean():.4f} ({long_profits.std():.4f} std)')
+        self.logger.info(f'   - SHORT positions avg profit: {short_profits.mean():.4f} ({short_profits.std():.4f} std)')
+        self.logger.info(f"   - Overall avg profit: {labeled_data['potential_profit_pct'].mean():.4f}")
+
     async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply optimized triple barrier labeling with profit tracking."""
         try:
             # Configure triple barrier parameters
-            profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
-            stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
-            time_barrier_minutes = self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
-            max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
-
-            # Create triple barrier labeler with configuration
-            from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
-from src.core.decorators.errors import handles_errors
+            config = self._get_triple_barrier_config()
             
-            labeler = OptimizedTripleBarrierLabeling(
-                profit_take_multiplier=profit_take_multiplier,
-                stop_loss_multiplier=stop_loss_multiplier,
-                time_barrier_minutes=time_barrier_minutes,
-                max_lookahead=max_lookahead,
-                binary_classification=True
-            )
+            # Create triple barrier labeler with configuration
+            labeler = self._create_triple_barrier_labeler(config)
 
             # Apply triple barrier labeling with profit tracking
             labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
-            labels = labeled_data['label']
-            profit_pcts = labeled_data['potential_profit_pct']
-            self.logger.info(f'✅ Generated {len(labels)} triple barrier labels with profit tracking')
-            self.logger.info(f'   - Long positions: {(labels == 1).sum()}')
-            self.logger.info(f'   - Short positions: {(labels == -1).sum()}')
-            self.logger.info(f'   - Hold signals: {(labels == 0).sum()}')
-            if len(labeled_data) > 0:
-                long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-                short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
-                self.logger.info('💰 Profit tracking statistics:')
-                self.logger.info(f'   - LONG positions avg profit: {long_profits.mean():.4f} ({long_profits.std():.4f} std)')
-                self.logger.info(f'   - SHORT positions avg profit: {short_profits.mean():.4f} ({short_profits.std():.4f} std)')
-                self.logger.info(f"   - Overall avg profit: {labeled_data['potential_profit_pct'].mean():.4f}")
+            
+            # Log comprehensive statistics
+            self._log_label_statistics(labeled_data)
+            
             return labeled_data
         except Exception as e:
             self.logger.exception(f'❌ Error in optimized triple barrier: {e}')

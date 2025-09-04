@@ -1,0 +1,64 @@
+2025-09-04 14:54:08,860 - __main__ - INFO - ℹ️ Step started at: 14:54:08
+2025-09-04 14:54:08,870 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,876 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,883 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,889 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,895 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:08,997 - __main__ - INFO - Collected 39966 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:09,000 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,006 - __main__ - INFO - ℹ️ Step started at: 14:54:09
+2025-09-04 14:54:09,207 - __main__ - INFO - ℹ️ Step started at: 14:54:09
+2025-09-04 14:54:09,212 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,221 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,225 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,235 - __main__ - INFO - Resampled data to 5m: 7777 rows
+2025-09-04 14:54:09,238 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,242 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,250 - __main__ - INFO - Resampled data to 15m: 2593 rows
+2025-09-04 14:54:09,252 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,257 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,265 - __main__ - INFO - Resampled data to 30m: 1297 rows
+2025-09-04 14:54:09,267 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,271 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,280 - __main__ - INFO - Resampled data to 1h: 649 rows
+2025-09-04 14:54:09,282 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,376 - __main__ - INFO - Collected 39827 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:54:09,386 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,387 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:54:09,390 - __main__ - ERROR - Error in progressive append: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+A suitable version of pyarrow or fastparquet is required for parquet support.
+Trying to import the above resulted in these errors:
+ - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+ - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 14:54:09,390 - __main__ - ERROR - Pipeline execution failed: type object 'EmojiLogger' has no attribute 'TIME'
+Traceback (most recent call last):
+  File "/workspace/standalone_data_collection.py", line 414, in run_pipeline
+    await self._complete_pipeline()
+  File "/workspace/standalone_data_collection.py", line 1232, in _complete_pipeline
+    self.emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Total duration: {duration:.2f} seconds")
+                                       ^^^^^^^^^^^^^^^^
+AttributeError: type object 'EmojiLogger' has no attribute 'TIME'

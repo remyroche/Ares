@@ -8,6 +8,7 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
 
 # Import modular components
 from .sr_modules import SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator
@@ -506,8 +507,6 @@ class SRBreakoutPredictor:
                 return self._get_default_outcome()
             
             # Use the optimized probability calculator
-            from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
-from src.core.decorators.errors import handles_errors
             prob_calculator = SRProbabilityCalculator(self.config)
             
             # Calculate probabilities using optimized parameters

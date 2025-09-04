@@ -22,7 +22,7 @@ class RegimeDiscoveryFeatureEngineer:
         
     def create_regime_discovery_features(self, df: pd.DataFrame, existing_regimes: Optional[np.ndarray] = None) -> pd.DataFrame:
         """
-        Create comprehensive regime discovery features.
+        Create comprehensive regime discovery features with optimized computation.
         
         Args:
             df: Market data with OHLCV columns
@@ -31,40 +31,380 @@ class RegimeDiscoveryFeatureEngineer:
         Returns:
             DataFrame with regime discovery features
         """
-        features = pd.DataFrame(index=df.index)
+        # Pre-compute common calculations for efficiency
+        self._precompute_common_features(df)
         
-        # 1. Regime Transition Prediction Features
-        features = pd.concat([features, self._create_regime_transition_features(df)], axis=1)
+        # Use vectorized operations for all feature creation
+        feature_dict = {}
         
-        # 2. Market Microstructure Features
-        features = pd.concat([features, self._create_microstructure_features(df)], axis=1)
+        # 1. Regime Transition Prediction Features (vectorized)
+        feature_dict.update(self._create_regime_transition_features_vectorized(df))
         
-        # 3. Temporal Regime Features
-        features = pd.concat([features, self._create_temporal_regime_features(df)], axis=1)
+        # 2. Market Microstructure Features (vectorized)
+        feature_dict.update(self._create_microstructure_features_vectorized(df))
         
-        # 4. Volatility Regime Features
-        features = pd.concat([features, self._create_volatility_regime_features(df)], axis=1)
+        # 3. Temporal Regime Features (vectorized)
+        feature_dict.update(self._create_temporal_regime_features_vectorized(df))
         
-        # 5. Volume Regime Features
-        features = pd.concat([features, self._create_volume_regime_features(df)], axis=1)
+        # 4. Volatility Regime Features (vectorized)
+        feature_dict.update(self._create_volatility_regime_features_vectorized(df))
         
-        # 6. Price Action Regime Features
-        features = pd.concat([features, self._create_price_action_regime_features(df)], axis=1)
+        # 5. Volume Regime Features (vectorized)
+        feature_dict.update(self._create_volume_regime_features_vectorized(df))
         
-        # 7. Cross-Asset Regime Features (if available)
-        features = pd.concat([features, self._create_cross_asset_regime_features(df)], axis=1)
+        # 6. Price Action Regime Features (vectorized)
+        feature_dict.update(self._create_price_action_regime_features_vectorized(df))
         
-        # 8. Regime Persistence Features
+        # 7. Regime Persistence Features (if available)
         if existing_regimes is not None:
-            features = pd.concat([features, self._create_regime_persistence_features(df, existing_regimes)], axis=1)
+            feature_dict.update(self._create_regime_persistence_features_vectorized(df, existing_regimes))
         
-        # 9. Regime Strength Features
-        features = pd.concat([features, self._create_regime_strength_features(df)], axis=1)
+        # 8. Regime Strength Features (vectorized)
+        feature_dict.update(self._create_regime_strength_features_vectorized(df))
         
-        # 10. Regime Change Early Warning Features
-        features = pd.concat([features, self._create_regime_change_warning_features(df)], axis=1)
+        # 9. Regime Change Early Warning Features (vectorized)
+        feature_dict.update(self._create_regime_change_warning_features_vectorized(df))
+        
+        # Convert to DataFrame efficiently
+        features = pd.DataFrame(feature_dict, index=df.index)
         
         return features.fillna(0)
+    
+    def _precompute_common_features(self, df: pd.DataFrame) -> None:
+        """Pre-compute common features for efficiency."""
+        # Pre-compute price changes
+        self.price_changes = df['close'].pct_change()
+        self.volume_changes = df['volume'].pct_change()
+        
+        # Pre-compute rolling statistics
+        self.volatility_5 = self.price_changes.rolling(5).std()
+        self.volatility_10 = self.price_changes.rolling(10).std()
+        self.volatility_20 = self.price_changes.rolling(20).std()
+        
+        self.volume_mean_5 = df['volume'].rolling(5).mean()
+        self.volume_mean_10 = df['volume'].rolling(10).mean()
+        self.volume_mean_20 = df['volume'].rolling(20).mean()
+        
+        # Pre-compute price position
+        self.high_20 = df['high'].rolling(20).max()
+        self.low_20 = df['low'].rolling(20).min()
+        self.price_position = (df['close'] - self.low_20) / (self.high_20 - self.low_20)
+        
+        # Pre-compute momentum
+        self.momentum_5 = df['close'].pct_change(5)
+        self.momentum_10 = df['close'].pct_change(10)
+        self.momentum_20 = df['close'].pct_change(20)
+    
+    def _create_regime_transition_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create regime transition features using vectorized operations."""
+        features = {}
+        
+        # Regime change probability indicators (vectorized)
+        features['regime_change_prob_volatility'] = self._calculate_regime_change_probability_vectorized(
+            self.volatility_20, window=10
+        )
+        features['regime_change_prob_volume'] = self._calculate_regime_change_probability_vectorized(
+            self.volume_mean_20, window=10
+        )
+        features['regime_change_prob_momentum'] = self._calculate_regime_change_probability_vectorized(
+            self.momentum_10, window=10
+        )
+        
+        # Regime persistence indicators (vectorized)
+        features['regime_persistence_volatility'] = self._calculate_regime_persistence_vectorized(
+            self.volatility_20, min_duration=5
+        )
+        features['regime_persistence_volume'] = self._calculate_regime_persistence_vectorized(
+            self.volume_mean_20, min_duration=5
+        )
+        
+        # Regime transition timing (vectorized)
+        features['regime_transition_timing'] = self._calculate_regime_transition_timing_vectorized(df)
+        
+        # Regime stability indicators (vectorized)
+        features['regime_stability_volatility'] = self._calculate_regime_stability_vectorized(
+            self.volatility_20, window=20
+        )
+        features['regime_stability_volume'] = self._calculate_regime_stability_vectorized(
+            self.volume_mean_20, window=20
+        )
+        
+        return features
+    
+    def _create_microstructure_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create microstructure features using vectorized operations."""
+        features = {}
+        
+        # Order flow imbalance (vectorized)
+        hl_range = df['high'] - df['low']
+        close_position = (df['close'] - df['low']) / (hl_range + 1e-8)
+        features['order_flow_imbalance'] = (close_position - 0.5) * 2
+        
+        # Volume profile analysis (vectorized)
+        vwap = (df['high'] + df['low'] + df['close']) / 3
+        price_range = df['high'] - df['low']
+        price_position = (vwap - df['low']) / (price_range + 1e-8)
+        
+        features['volume_profile_skew'] = (price_position * df['volume']).rolling(20).skew()
+        features['volume_profile_kurtosis'] = (price_position * df['volume']).rolling(20).kurt()
+        
+        # Price impact features (vectorized)
+        price_impact = self.price_changes / (self.volume_changes + 1e-8)
+        features['price_impact_ratio'] = price_impact
+        features['price_impact_volatility'] = price_impact.rolling(20).std()
+        
+        # Spread and depth proxies (vectorized)
+        features['spread_proxy'] = hl_range / df['close']
+        features['market_depth_proxy'] = df['volume'] / (hl_range + 1e-8)
+        
+        # Liquidity regime indicator (vectorized)
+        spread_norm = (features['spread_proxy'] - features['spread_proxy'].rolling(50).mean()) / features['spread_proxy'].rolling(50).std()
+        depth_norm = (features['market_depth_proxy'] - features['market_depth_proxy'].rolling(50).mean()) / features['market_depth_proxy'].rolling(50).std()
+        features['liquidity_regime_indicator'] = depth_norm - spread_norm
+        
+        return features
+    
+    def _create_temporal_regime_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create temporal regime features using vectorized operations."""
+        features = {}
+        
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            return features
+        
+        # Time-of-day features (vectorized)
+        hour = df.index.hour
+        day_of_week = df.index.dayofweek
+        
+        features['hour_of_day'] = hour
+        features['day_of_week'] = day_of_week
+        
+        # Cyclical features (vectorized)
+        features['hour_sin'] = np.sin(2 * np.pi * hour / 24)
+        features['hour_cos'] = np.cos(2 * np.pi * hour / 24)
+        features['day_sin'] = np.sin(2 * np.pi * day_of_week / 7)
+        features['day_cos'] = np.cos(2 * np.pi * day_of_week / 7)
+        
+        # Regime duration forecast (vectorized)
+        vol_factor = 1 / (1 + self.volatility_20 / self.volatility_20.rolling(50).mean())
+        vol_factor = 1 / (1 + self.volume_mean_20 / self.volume_mean_20.rolling(50).mean())
+        features['regime_duration_forecast'] = vol_factor * vol_factor * 20
+        
+        # Session-based regime indicator (vectorized)
+        session = np.zeros(len(df))
+        session[hour < 8] = 1  # Asian
+        session[(hour >= 8) & (hour < 16)] = 2  # European
+        session[hour >= 16] = 3  # US
+        features['session_regime_indicator'] = session
+        
+        return features
+    
+    def _create_volatility_regime_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create volatility regime features using vectorized operations."""
+        features = {}
+        
+        # Multi-timeframe volatility (vectorized)
+        features['volatility_5'] = self.volatility_5
+        features['volatility_10'] = self.volatility_10
+        features['volatility_20'] = self.volatility_20
+        
+        # Volatility of volatility (vectorized)
+        features['vol_of_vol_20'] = self.volatility_20.rolling(20).std()
+        features['vol_of_vol_50'] = self.volatility_20.rolling(50).std()
+        
+        # Volatility regime classification (vectorized)
+        low_threshold = self.volatility_20.rolling(100).quantile(0.33)
+        high_threshold = self.volatility_20.rolling(100).quantile(0.67)
+        
+        vol_regime = np.ones(len(df))  # Low volatility
+        vol_regime[self.volatility_20 > high_threshold] = 3  # High volatility
+        vol_regime[(self.volatility_20 > low_threshold) & (self.volatility_20 <= high_threshold)] = 2  # Medium volatility
+        features['volatility_regime'] = vol_regime
+        
+        # Volatility clustering (vectorized)
+        features['volatility_clustering'] = self.volatility_20.rolling(50).apply(lambda x: x.autocorr(lag=1))
+        
+        # Volatility persistence (vectorized)
+        features['volatility_persistence'] = self.volatility_20.rolling(50).apply(
+            lambda x: np.corrcoef(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0
+        )
+        
+        return features
+    
+    def _create_volume_regime_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create volume regime features using vectorized operations."""
+        features = {}
+        
+        # Volume regime classification (vectorized)
+        low_threshold = df['volume'].rolling(100).quantile(0.33)
+        high_threshold = df['volume'].rolling(100).quantile(0.67)
+        
+        vol_regime = np.ones(len(df))  # Low volume
+        vol_regime[df['volume'] > high_threshold] = 3  # High volume
+        vol_regime[(df['volume'] > low_threshold) & (df['volume'] <= high_threshold)] = 2  # Medium volume
+        features['volume_regime'] = vol_regime
+        
+        # Volume-momentum interaction (vectorized)
+        features['volume_momentum_interaction'] = self.volume_changes * self.momentum_5
+        
+        # Volume-price divergence (vectorized)
+        price_momentum = self.momentum_5
+        volume_momentum = self.volume_changes
+        features['volume_price_divergence'] = (price_momentum * volume_momentum < 0).astype(int)
+        
+        # Volume spike detection (vectorized)
+        rolling_mean = df['volume'].rolling(20).mean()
+        rolling_std = df['volume'].rolling(20).std()
+        features['volume_spike_indicator'] = (df['volume'] > rolling_mean + 2 * rolling_std).astype(int)
+        
+        return features
+    
+    def _create_price_action_regime_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create price action regime features using vectorized operations."""
+        features = {}
+        
+        # Price action regime classification (vectorized)
+        mom_norm = (self.momentum_10 - self.momentum_10.rolling(50).mean()) / self.momentum_10.rolling(50).std()
+        vol_norm = (self.volatility_20 - self.volatility_20.rolling(50).mean()) / self.volatility_20.rolling(50).std()
+        range_size = (df['high'] - df['low']) / df['close']
+        range_norm = (range_size - range_size.rolling(50).mean()) / range_size.rolling(50).std()
+        
+        price_action_regime = np.ones(len(df))  # Trending
+        price_action_regime[(np.abs(mom_norm) < 0.5) & (vol_norm < 0.5)] = 2  # Consolidation
+        price_action_regime[(vol_norm > 1) | (range_norm > 1)] = 3  # High volatility
+        features['price_action_regime'] = price_action_regime
+        
+        # Support/resistance proximity (vectorized)
+        resistance_proximity = (self.high_20 - df['close']) / df['close']
+        support_proximity = (df['close'] - self.low_20) / df['close']
+        features['sr_proximity'] = 1 / (1 + np.minimum(resistance_proximity, support_proximity))
+        
+        # Momentum regime (vectorized)
+        momentum_regime = np.ones(len(df))  # Bullish
+        momentum_regime[self.momentum_10 < -0.01] = 3  # Bearish
+        momentum_regime[(self.momentum_10 >= -0.01) & (self.momentum_10 <= 0.01)] = 2  # Neutral
+        features['momentum_regime'] = momentum_regime
+        
+        return features
+    
+    def _create_regime_persistence_features_vectorized(self, df: pd.DataFrame, existing_regimes: np.ndarray) -> Dict[str, np.ndarray]:
+        """Create regime persistence features using vectorized operations."""
+        features = {}
+        
+        # Regime duration (vectorized)
+        regime_changes = np.diff(existing_regimes) != 0
+        regime_duration = np.zeros(len(existing_regimes))
+        current_duration = 0
+        current_regime = existing_regimes[0]
+        
+        for i in range(len(existing_regimes)):
+            if existing_regimes[i] == current_regime:
+                current_duration += 1
+            else:
+                current_duration = 1
+                current_regime = existing_regimes[i]
+            regime_duration[i] = current_duration
+        
+        features['regime_duration'] = regime_duration
+        
+        # Regime stability score (vectorized)
+        stability = np.zeros(len(existing_regimes))
+        for i in range(len(existing_regimes)):
+            start_idx = max(0, i - 19)
+            recent_changes = np.sum(regime_changes[start_idx:i])
+            stability[i] = 1 / (1 + recent_changes)
+        
+        features['regime_stability_score'] = stability
+        
+        return features
+    
+    def _create_regime_strength_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create regime strength features using vectorized operations."""
+        features = {}
+        
+        # Regime strength indicators (vectorized)
+        volatility_trend = self.volatility_20.rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+        vol_of_vol = self.volatility_20.rolling(20).std()
+        features['regime_strength_volatility'] = 1 / (1 + vol_of_vol)
+        
+        volume_consistency = 1 / (1 + df['volume'].rolling(20).std() / df['volume'].rolling(20).mean())
+        features['regime_strength_volume'] = volume_consistency
+        
+        momentum_consistency = 1 / (1 + self.momentum_10.rolling(20).std())
+        features['regime_strength_momentum'] = momentum_consistency
+        
+        # Regime confidence score (vectorized)
+        confidence = (features['regime_strength_volatility'] + 
+                     features['regime_strength_volume'] + 
+                     features['regime_strength_momentum']) / 3
+        features['regime_confidence_score'] = confidence
+        
+        return features
+    
+    def _create_regime_change_warning_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Create regime change warning features using vectorized operations."""
+        features = {}
+        
+        # Regime change early warning (vectorized)
+        vol_change_prob = self._calculate_regime_change_probability_vectorized(self.volatility_20, window=10)
+        vol_change_prob = self._calculate_regime_change_probability_vectorized(self.volume_mean_20, window=10)
+        mom_change_prob = self._calculate_regime_change_probability_vectorized(self.momentum_10, window=10)
+        
+        early_warning = (vol_change_prob + vol_change_prob + mom_change_prob) / 3
+        features['regime_change_early_warning'] = early_warning
+        
+        # Regime weakening indicator (vectorized)
+        regime_strength = features.get('regime_confidence_score', np.zeros(len(df)))
+        weakening = np.diff(regime_strength) < 0
+        features['regime_weakening_indicator'] = np.concatenate([[0], weakening.astype(int)])
+        
+        # Regime transition readiness (vectorized)
+        readiness = early_warning * (1 + features['regime_weakening_indicator'])
+        features['regime_transition_readiness'] = readiness
+        
+        return features
+    
+    # Vectorized helper methods
+    def _calculate_regime_change_probability_vectorized(self, series: pd.Series, window: int = 10) -> np.ndarray:
+        """Calculate regime change probability using vectorized operations."""
+        rolling_mean = series.rolling(window).mean()
+        rolling_std = series.rolling(window).std()
+        z_scores = (series - rolling_mean) / rolling_std
+        regime_change_prob = np.abs(z_scores).rolling(window).mean()
+        return regime_change_prob.fillna(0).values
+    
+    def _calculate_regime_persistence_vectorized(self, series: pd.Series, min_duration: int = 5) -> np.ndarray:
+        """Calculate regime persistence using vectorized operations."""
+        rolling_mean = series.rolling(min_duration).mean()
+        regime_changes = (np.abs(series - rolling_mean) > rolling_mean.rolling(min_duration).std()).astype(int)
+        
+        persistence = np.zeros(len(series))
+        current_persistence = 0
+        
+        for i in range(len(series)):
+            if regime_changes.iloc[i] == 0:
+                current_persistence += 1
+            else:
+                current_persistence = 0
+            persistence[i] = current_persistence
+        
+        return persistence
+    
+    def _calculate_regime_transition_timing_vectorized(self, df: pd.DataFrame) -> np.ndarray:
+        """Calculate regime transition timing using vectorized operations."""
+        vol_norm = (self.volatility_20 - self.volatility_20.rolling(50).mean()) / self.volatility_20.rolling(50).std()
+        vol_vol_norm = (self.volume_mean_20 - self.volume_mean_20.rolling(50).mean()) / self.volume_mean_20.rolling(50).std()
+        mom_norm = (self.momentum_10 - self.momentum_10.rolling(50).mean()) / self.momentum_10.rolling(50).std()
+        
+        transition_timing = (vol_norm + vol_vol_norm + mom_norm) / 3
+        return transition_timing.fillna(0).values
+    
+    def _calculate_regime_stability_vectorized(self, series: pd.Series, window: int = 20) -> np.ndarray:
+        """Calculate regime stability using vectorized operations."""
+        rolling_mean = series.rolling(window).mean()
+        rolling_std = series.rolling(window).std()
+        cv = rolling_std / rolling_mean
+        stability = 1 / (1 + cv)
+        return stability.fillna(0).values
     
     def _create_regime_transition_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create features that predict regime transitions."""

@@ -12,8 +12,7 @@ import logging
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from analyzers.simplified_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer
-from core.config import AnalysisConfig
+from standalone_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer, AnalysisConfig
 
 def setup_logging():
     """Setup logging for the test."""
@@ -50,45 +49,31 @@ def test_simplified_enhanced_analyzer():
     try:
         # Run analysis
         print("🚀 Starting analysis...")
-        report = analyzer.analyze_directory(test_directory)
+        report = analyzer.analyze_project(test_directory)
         
         # Display results
         print("\n📊 Analysis Results:")
-        print(f"   Total Issues: {report.total_issues}")
-        print(f"   Issues by Type: {report.issues_by_type}")
-        print(f"   Issues by Severity: {dict(report.issues_by_severity)}")
-        print(f"   Issues by Tool: {dict(report.issues_by_tool)}")
-        print(f"   Call Graph Nodes: {len(report.call_graph_nodes)}")
-        print(f"   Dependency Graph Modules: {len(report.dependency_graph)}")
-        print(f"   False Positives Filtered: {report.false_positives_filtered}")
+        print(f"   Total Issues: {report['stats']['total_issues']}")
+        print(f"   Files Analyzed: {report['stats']['files_analyzed']}")
+        print(f"   Dead Code Issues: {report['stats']['dead_code_issues']}")
+        print(f"   Unused Import Issues: {report['stats']['unused_import_issues']}")
+        print(f"   Processing Time: {report['stats']['processing_time']:.2f} seconds")
         
         # Show sample issues
-        print("\n🔍 Sample Issues:")
-        issue_count = 0
-        for file_path, issues in report.issues_by_file.items():
-            if issue_count >= 5:  # Show only first 5 files
-                break
-            print(f"\n   📄 {file_path}:")
-            for issue in issues[:3]:  # Show first 3 issues per file
-                print(f"      Line {issue.line_number}: {issue.description}")
-                print(f"         Tool: {issue.tool_source}, Confidence: {issue.confidence}%")
-            issue_count += 1
-        
-        # Show call graph sample
-        print(f"\n🔗 Call Graph Sample (first 10 nodes):")
-        node_count = 0
-        for name, node in report.call_graph_nodes.items():
-            if node_count >= 10:
-                break
-            print(f"   {name} ({node.node_type}) - Called: {node.is_called}")
-            node_count += 1
+        if report['issues']:
+            print(f"\n📋 Sample Issues:")
+            for i, issue in enumerate(report['issues'][:3]):
+                print(f"   {i+1}. {issue['message']} ({issue['severity']})")
+                print(f"      File: {issue['file_path']}:{issue['line_number']}")
+                if issue['suggestion']:
+                    print(f"      Suggestion: {issue['suggestion']}")
         
         # Export results
         output_dir = Path("/workspace/code_quality/test_output")
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / "simplified_enhanced_analysis.json"
         print(f"\n💾 Exporting results to {output_file}...")
-        analyzer.export_results(report, output_file)
+        analyzer.export_results(str(output_file))
         
         print("\n✅ Analysis complete!")
         print(f"📁 Results saved to: {output_file}")
@@ -116,7 +101,9 @@ def test_individual_components():
             
             import ast
             tree = ast.parse(source)
-            issues = analyzer._analyze_file_ast(tree, test_file)
+            # Test individual file analysis
+            analyzer._analyze_file(test_file)
+            issues = analyzer.issues
             
             print(f"   Found {len(issues)} issues")
             for issue in issues[:3]:

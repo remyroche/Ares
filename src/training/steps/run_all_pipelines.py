@@ -552,43 +552,78 @@ class EnhancedPipelineOrchestrator:
         
         self.logger.info("=" * 100)
         
-        # Save enhanced results using pipeline standards
-        results_dir = PipelineStandards.build_path("reports", self.config.exchange, self.config.symbol)
-        ensure_directory(results_dir)
-        results_file = Path(results_dir) / f"enhanced_pipeline_results_{self.config.symbol}_{self.config.timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-        enhanced_results = {
-            'symbol': self.config.symbol,
-            'exchange': self.config.exchange,
-            'timeframe': self.config.timeframe,
-            'total_execution_time': total_time,
-            'successful_pipelines': successful_pipelines,
-            'failed_pipelines': failed_pipelines,
-            'rolled_back_pipelines': rolled_back_pipelines,
-            'pipeline_results': [
-                {
-                    'name': result.name,
-                    'status': result.status.value,
-                    'execution_time': result.execution_time,
-                    'error': result.error,
-                    'data_quality_score': result.data_quality_score,
-                    'rollback_required': result.rollback_required
-                }
-                for result in self.pipeline_results
-            ],
-            'config': {
+        # Save enhanced results using the report manager
+        try:
+            from src.utils.report_manager import get_report_manager
+            report_manager = get_report_manager()
+            
+            enhanced_results = {
                 'symbol': self.config.symbol,
                 'exchange': self.config.exchange,
                 'timeframe': self.config.timeframe,
-                'data_dir': self.config.data_dir,
-                'validation_level': self.config.validation_level,
-                'enable_rollback': self.config.enable_rollback,
-                'enable_monitoring': self.config.enable_monitoring
-            },
-            'timestamp': format_datetime(get_current_datetime())
-        }
-        
-        safe_json_dump(enhanced_results, results_file)
-        self.logger.info(f"💾 Enhanced results saved to: {results_file}")
+                'total_execution_time': total_time,
+                'successful_pipelines': successful_pipelines,
+                'failed_pipelines': failed_pipelines,
+                'rolled_back_pipelines': rolled_back_pipelines,
+                'pipeline_results': [
+                    {
+                        'name': result.name,
+                        'status': result.status.value,
+                        'execution_time': result.execution_time,
+                        'error': result.error,
+                        'data_quality_score': result.data_quality_score,
+                        'rollback_required': result.rollback_required
+                    }
+                    for result in self.pipeline_results
+                ],
+                'config': {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': self.config.timeframe,
+                    'data_dir': self.config.data_dir,
+                    'validation_level': self.config.validation_level,
+                    'enable_rollback': self.config.enable_rollback,
+                    'enable_monitoring': self.config.enable_monitoring
+                },
+                'timestamp': format_datetime(get_current_datetime())
+            }
+            
+            # Save as general report using report manager
+            results_file = report_manager.save_general_report(
+                report_type="pipeline_summary",
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                report_data=enhanced_results,
+                file_extension="json"
+            )
+            
+            # Also save as markdown for readability
+            report_manager.save_general_report(
+                report_type="pipeline_summary",
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                report_data=enhanced_results,
+                file_extension="md"
+            )
+            
+            # Generate run summary
+            run_summary_file = report_manager.generate_run_summary(
+                symbol=self.config.symbol,
+                exchange=self.config.exchange
+            )
+            
+            self.logger.info(f"💾 Enhanced results saved to: {results_file}")
+            self.logger.info(f"📊 Run summary generated: {run_summary_file}")
+            print(f"📁 All reports organized in: {report_manager.get_run_directory()}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to save results using report manager: {e}")
+            # Fallback to original method
+            results_dir = PipelineStandards.build_path("reports", self.config.exchange, self.config.symbol)
+            ensure_directory(results_dir)
+            results_file = Path(results_dir) / f"enhanced_pipeline_results_{self.config.symbol}_{self.config.timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
+            safe_json_dump(enhanced_results, results_file)
+            self.logger.info(f"💾 Enhanced results saved to: {results_file}")
         
         return failed_pipelines == 0
 

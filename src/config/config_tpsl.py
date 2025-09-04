@@ -1,3 +1,7 @@
+# TPSL CONFIG - TEMPORARILY DISABLED
+# This file is temporarily disabled as TPSL parameters are commented out in config.yaml
+# Uncomment when TPSL optimization is re-enabled
+
 from __future__ import annotations
 '\nConfiguration file for optimizable take profit and stop loss parameters.\nThese parameters can be optimized in step12.\n'
 from dataclasses import dataclass

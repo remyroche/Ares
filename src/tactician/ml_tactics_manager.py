@@ -65,8 +65,7 @@ class MLTacticsManager:
         # Load additional optimized parameters
         self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
         self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
-        self.confidence_boost_factor: float = ml_tactics_optimization.get("confidence_boost_factor", 1.2)
-        self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
+        # risk_adjustment_factor removed as requested
 
         # NEW: Multi-output prediction models
         self.multi_output_models: dict[str, Any] = {}
@@ -274,8 +273,8 @@ class MLTacticsManager:
                 # Update additional parameters
                 self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
                 self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
-                self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
-                self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+                # confidence_boost_factor removed as requested
+                # risk_adjustment_factor removed as requested
 
                 # Update barrier and threshold configurations
                 self.barrier_config = {
@@ -1098,11 +1097,15 @@ class MLTacticsManager:
             combined_confidence = self._calculate_combined_confidence(predictions, analyst_confidence)
             green_light_signal = self._evaluate_green_light_signal(predictions, combined_confidence)
 
+            # Generate triple barrier analysis for tactician
+            triple_barrier_analysis = self._generate_tactician_triple_barrier_analysis(predictions)
+
             # Add metadata
             result = {
                 **predictions,
                 "combined_confidence": combined_confidence,
                 "green_light_signal": green_light_signal,
+                "triple_barrier_analysis": triple_barrier_analysis,
                 "metadata": {
                     "symbol": symbol,
                     "timeframe": timeframe,
@@ -1557,6 +1560,178 @@ class MLTacticsManager:
                 "combined_confidence": 0.0,
                 "thresholds": self.green_light_thresholds,
             }
+
+    def _generate_tactician_triple_barrier_analysis(
+        self,
+        predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Generate triple barrier analysis for tactician predictions.
+        Converts tactician predictions to price target format and applies triple barrier logic.
+        
+        Args:
+            predictions: Tactician predictions dictionary
+            
+        Returns:
+            dict: Triple barrier analysis results
+        """
+        try:
+            # Convert tactician predictions to price target format
+            upside_probabilities = {}
+            downside_probabilities = {}
+            
+            # Process each barrier type
+            for barrier_type, prediction in predictions.items():
+                if not prediction:
+                    continue
+                    
+                confidence = prediction.get("confidence", 0.5)
+                upper_barrier = prediction.get("upper_barrier", 0.01)
+                lower_barrier = prediction.get("lower_barrier", -0.005)
+                
+                # Convert barriers to percentage strings
+                upper_pct = f"{upper_barrier * 100:.1f}%"
+                lower_pct = f"{abs(lower_barrier) * 100:.1f}%"
+                
+                # Add to upside probabilities (positive barriers)
+                if upper_barrier > 0:
+                    upside_probabilities[upper_pct] = confidence
+                
+                # Add to downside probabilities (negative barriers as positive values)
+                if lower_barrier < 0:
+                    downside_probabilities[lower_pct] = confidence
+            
+            # Use tactician's triple barrier configuration
+            # For tactician, we use the same barriers as analyst but with tactician-specific thresholds
+            tactician_profit_take = 0.002  # 0.2% (same as analyst)
+            tactician_stop_loss = 0.001    # 0.1% (same as analyst)
+            tactician_confidence_threshold = 0.6  # 60% (same as analyst)
+            
+            # Calculate cumulative confidence for upper barrier and above
+            cumulative_upper_confidence = 0.0
+            upper_barrier_targets = []
+            
+            for target, prob in upside_probabilities.items():
+                target_value = float(target.replace("%", ""))
+                upper_barrier_value = tactician_profit_take * 100
+                
+                if target_value >= upper_barrier_value:
+                    cumulative_upper_confidence += prob
+                    upper_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Calculate cumulative confidence for lower barrier and below
+            cumulative_lower_confidence = 0.0
+            lower_barrier_targets = []
+            
+            for target, prob in downside_probabilities.items():
+                target_value = float(target.replace("%", ""))
+                lower_barrier_value = tactician_stop_loss * 100
+                
+                if target_value >= lower_barrier_value:
+                    cumulative_lower_confidence += prob
+                    lower_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Determine if confidence threshold is met
+            threshold_met = cumulative_upper_confidence >= tactician_confidence_threshold
+            
+            # Green light decision logic (same as analyst)
+            green_light = (
+                threshold_met and 
+                cumulative_upper_confidence > cumulative_lower_confidence and
+                cumulative_upper_confidence > 0.5  # At least 50% confidence
+            )
+            
+            # Calculate risk-reward ratio
+            risk_reward_ratio = (
+                cumulative_upper_confidence / cumulative_lower_confidence 
+                if cumulative_lower_confidence > 0 else float('inf')
+            )
+            
+            return {
+                "upper_barrier_threshold": f"{tactician_profit_take * 100:.1f}%",
+                "lower_barrier_threshold": f"{tactician_stop_loss * 100:.1f}%",
+                "confidence_threshold": tactician_confidence_threshold,
+                "cumulative_upper_confidence": float(cumulative_upper_confidence),
+                "cumulative_lower_confidence": float(cumulative_lower_confidence),
+                "threshold_met": threshold_met,
+                "green_light": green_light,
+                "risk_reward_ratio": float(risk_reward_ratio),
+                "upper_barrier_targets": upper_barrier_targets,
+                "lower_barrier_targets": lower_barrier_targets,
+                "decision_reasoning": self._get_tactician_ml_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    green_light
+                ),
+                "tactician_specific": {
+                    "barrier_types_analyzed": list(predictions.keys()),
+                    "upside_probabilities": upside_probabilities,
+                    "downside_probabilities": downside_probabilities
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error generating tactician triple barrier analysis: {e}")
+            return {
+                "upper_barrier_threshold": "0.2%",
+                "lower_barrier_threshold": "0.1%",
+                "confidence_threshold": 0.6,
+                "cumulative_upper_confidence": 0.0,
+                "cumulative_lower_confidence": 0.0,
+                "threshold_met": False,
+                "green_light": False,
+                "risk_reward_ratio": 0.0,
+                "upper_barrier_targets": [],
+                "lower_barrier_targets": [],
+                "decision_reasoning": f"Error in calculation: {str(e)}",
+                "tactician_specific": {"error": str(e)}
+            }
+
+    def _get_tactician_ml_decision_reasoning(
+        self,
+        cumulative_upper_confidence: float,
+        cumulative_lower_confidence: float,
+        threshold_met: bool,
+        green_light: bool
+    ) -> str:
+        """
+        Generate human-readable decision reasoning for tactician ML predictions.
+        
+        Args:
+            cumulative_upper_confidence: Cumulative confidence for upper barrier
+            cumulative_lower_confidence: Cumulative confidence for lower barrier
+            threshold_met: Whether confidence threshold is met
+            green_light: Whether green light decision is made
+            
+        Returns:
+            str: Decision reasoning
+        """
+        if green_light:
+            return (
+                f"TACTICIAN ML GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"exceeds threshold (60.0%) and is higher than lower barrier confidence "
+                f"({cumulative_lower_confidence:.1%})"
+            )
+        elif threshold_met:
+            return (
+                f"TACTICIAN ML THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence "
+                f"({cumulative_upper_confidence:.1%}) meets threshold but lower barrier "
+                f"confidence ({cumulative_lower_confidence:.1%}) is too high"
+            )
+        else:
+            return (
+                f"TACTICIAN ML NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"below threshold (60.0%)"
+            )
 
     def _generate_fallback_predictions(self) -> dict[str, Any]:
         """

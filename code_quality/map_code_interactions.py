@@ -23,6 +23,7 @@ from analyzers.call_graph_analyzer import CallGraphAnalyzer as CallGraphAnalyzer
 from analyzers.complexity_analyzer import ComplexityAnalyzer as ComplexityAnalyzer_analyzers_complexity_analyzer
 from analyzers.dependency_analyzer import DependencyAnalyzer as DependencyAnalyzer_analyzers_dependency_analyzer
 from analyzers.import_analyzer import ImportAnalyzer as ImportAnalyzer_analyzers_import_analyzer
+from analyzers.dead_code_analyzer import DeadCodeAnalyzer
 from reporters.html_reporter import HTMLReporter
 
 from core.config import get_default_config
@@ -82,7 +83,7 @@ class CodeInteractionMapper:
 
     def analyze_complexity(self):
         """Analyze code complexity for context."""
-        print("\n[5/5] Analyzing code complexity...")
+        print("\n[5/6] Analyzing code complexity...")
         analyzer = ComplexityAnalyzer(self.config)
         self.results["complexity"] = analyzer.analyze_directory(str(self.project_root))
 
@@ -91,9 +92,34 @@ class CodeInteractionMapper:
         print(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
         print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
 
+    def analyze_dead_code(self):
+        """Analyze dead code with enhanced capabilities."""
+        print("\n[6/6] Analyzing dead code and deprecated patterns...")
+        analyzer = DeadCodeAnalyzer(self.config)
+        self.results["dead_code"] = analyzer.analyze_directory(str(self.project_root))
+
+        # Print summary
+        dead_code = self.results["dead_code"]
+        print(f"  - Total dead code issues: {dead_code.total_issues}")
+        print(f"  - Deprecated code issues: {len(dead_code.deprecated_issues or [])}")
+        print(f"  - High impact issues: {len(dead_code.issues_by_severity.get('high', []))}")
+        print(f"  - Potential lines removed: {dead_code.potential_savings.get('total_lines', 0)}")
+        
+        # Print dependency analysis summary
+        if dead_code.impact_analysis and "dependency_analysis" in dead_code.impact_analysis:
+            dep_analysis = dead_code.impact_analysis["dependency_analysis"]
+            print(f"  - Dependency chains: {len(dep_analysis.get('dependency_chains', []))}")
+            print(f"  - Risky removals: {len(dep_analysis.get('risky_removals', []))}")
+        
+        # Print removal plan summary
+        if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
+            removal_plan = dead_code.impact_analysis["removal_plan"]
+            print(f"  - Estimated time savings: {removal_plan.get('estimated_time_savings', {}).get('estimated_hours_saved', 0):.1f} hours")
+            print(f"  - Removal phases: {len(removal_plan.get('removal_phases', []))}")
+
     def generate_interaction_report(self):
         """Generate comprehensive interaction report."""
-        print("\n[6/6] Generating interaction reports...")
+        print("\n[7/7] Generating interaction reports...")
 
         # Create reports directory with datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -156,6 +182,47 @@ class CodeInteractionMapper:
                 f.write("\n\nCIRCULAR IMPORTS DETECTED\n")
                 f.write("-" * 40 + "\n")
                 f.writelines(f"  • {' → '.join(cycle)}\n" for cycle in circular)
+
+            # Dead code analysis
+            f.write("\n\nDEAD CODE ANALYSIS\n")
+            f.write("-" * 40 + "\n")
+            dead_code = self.results.get("dead_code")
+            if dead_code:
+                f.write(f"Total Dead Code Issues: {dead_code.total_issues}\n")
+                f.write(f"Deprecated Code Issues: {len(dead_code.deprecated_issues or [])}\n")
+                f.write(f"Potential Lines Removed: {dead_code.potential_savings.get('total_lines', 0)}\n")
+                
+                # High impact issues
+                high_impact = dead_code.issues_by_severity.get('high', [])
+                if high_impact:
+                    f.write(f"\nHigh Impact Issues ({len(high_impact)}):\n")
+                    for issue in high_impact[:10]:  # Show top 10
+                        f.write(f"  • {issue.file_path}:{issue.line_number} - {issue.description}\n")
+                
+                # Deprecated code
+                if dead_code.deprecated_issues:
+                    f.write(f"\nDeprecated Code ({len(dead_code.deprecated_issues)}):\n")
+                    for issue in dead_code.deprecated_issues[:10]:  # Show top 10
+                        f.write(f"  • {issue.file_path}:{issue.line_number} - {issue.description}\n")
+                        f.write(f"    Reason: {issue.deprecation_reason}\n")
+                        if issue.removal_version:
+                            f.write(f"    Removal Version: {issue.removal_version}\n")
+                        if issue.alternative:
+                            f.write(f"    Alternative: {issue.alternative}\n")
+                
+                # Removal plan summary
+                if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
+                    removal_plan = dead_code.impact_analysis["removal_plan"]
+                    f.write(f"\nRemoval Plan:\n")
+                    f.write(f"  Estimated Time Savings: {removal_plan.get('estimated_time_savings', {}).get('estimated_hours_saved', 0):.1f} hours\n")
+                    f.write(f"  Removal Phases: {len(removal_plan.get('removal_phases', []))}\n")
+                    
+                    # Risk assessment
+                    risk_assessment = removal_plan.get('risk_assessment', {})
+                    f.write(f"  Risk Assessment:\n")
+                    f.write(f"    High Risk: {risk_assessment.get('high_risk_count', 0)}\n")
+                    f.write(f"    Medium Risk: {risk_assessment.get('medium_risk_count', 0)}\n")
+                    f.write(f"    Recommended Approach: {risk_assessment.get('recommended_approach', 'unknown')}\n")
 
         print(f"  - Saved summary: {summary_file}")
 
@@ -271,6 +338,7 @@ class CodeInteractionMapper:
         self.analyze_architecture()
         self.analyze_imports()
         self.analyze_complexity()
+        self.analyze_dead_code()
 
         # Generate reports
         report_files = self.generate_interaction_report()

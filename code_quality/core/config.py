@@ -34,6 +34,61 @@ class AutoFixConfig:
 
 
 @dataclass
+class StaticAnalysisConfig:
+    """Configuration for static analysis tools."""
+    enabled: bool = True
+    tools: list[str] = field(default_factory=lambda: ["pylint", "flake8", "mypy", "bandit"])
+    pylint_config: dict[str, Any] = field(default_factory=lambda: {
+        "max_line_length": 120,
+        "disable": ["C0114", "C0116", "R0903", "W0613", "C0103"],
+        "max_args": 10,
+        "max_locals": 20,
+        "max_returns": 6,
+        "max_branches": 15,
+        "max_statements": 60
+    })
+    flake8_config: dict[str, Any] = field(default_factory=lambda: {
+        "max_line_length": 120,
+        "extend_ignore": ["E203", "W503"]
+    })
+    mypy_config: dict[str, Any] = field(default_factory=lambda: {
+        "ignore_missing_imports": True,
+        "show_error_codes": True,
+        "no_error_summary": True
+    })
+    bandit_config: dict[str, Any] = field(default_factory=lambda: {
+        "severity_level": "medium",
+        "confidence_level": "medium"
+    })
+
+
+@dataclass
+class ASTAnalysisConfig:
+    """Configuration for AST analysis tools."""
+    enabled: bool = True
+    tools: list[str] = field(default_factory=lambda: ["astroid", "rope", "jedi", "custom_ast"])
+    astroid_config: dict[str, Any] = field(default_factory=lambda: {
+        "max_function_length": 20,
+        "max_nesting_level": 4,
+        "check_unused_variables": True
+    })
+    rope_config: dict[str, Any] = field(default_factory=lambda: {
+        "find_duplicates": True,
+        "find_unused_imports": True,
+        "project_root": None
+    })
+    jedi_config: dict[str, Any] = field(default_factory=lambda: {
+        "check_undefined_names": True,
+        "check_import_resolution": True
+    })
+    custom_ast_config: dict[str, Any] = field(default_factory=lambda: {
+        "max_cyclomatic_complexity": 10,
+        "max_parameters": 5,
+        "max_line_length": 120
+    })
+
+
+@dataclass
 class AnalysisConfig:
     """Configuration for analysis tools."""
     linters: list[str] = field(default_factory=lambda: ["flake8", "pylint", "mypy"])
@@ -42,6 +97,8 @@ class AnalysisConfig:
     dead_code_detection: bool = True
     dependency_analysis: bool = True
     exclude_patterns: list[str] = field(default_factory=lambda: ["__pycache__", "*.pyc", ".git"])
+    static_analysis: StaticAnalysisConfig = field(default_factory=StaticAnalysisConfig)
+    ast_analysis: ASTAnalysisConfig = field(default_factory=ASTAnalysisConfig)
 
 
 @dataclass
@@ -99,6 +156,55 @@ class ConfigManager:
             "dead_code_detection": True,
             "dependency_analysis": True,
             "exclude_patterns": ["__pycache__", "*.pyc", ".git"],
+            "static_analysis": {
+                "enabled": True,
+                "tools": ["pylint", "flake8", "mypy", "bandit"],
+                "pylint_config": {
+                    "max_line_length": 120,
+                    "disable": ["C0114", "C0116", "R0903", "W0613", "C0103"],
+                    "max_args": 10,
+                    "max_locals": 20,
+                    "max_returns": 6,
+                    "max_branches": 15,
+                    "max_statements": 60
+                },
+                "flake8_config": {
+                    "max_line_length": 120,
+                    "extend_ignore": ["E203", "W503"]
+                },
+                "mypy_config": {
+                    "ignore_missing_imports": True,
+                    "show_error_codes": True,
+                    "no_error_summary": True
+                },
+                "bandit_config": {
+                    "severity_level": "medium",
+                    "confidence_level": "medium"
+                }
+            },
+            "ast_analysis": {
+                "enabled": True,
+                "tools": ["astroid", "rope", "jedi", "custom_ast"],
+                "astroid_config": {
+                    "max_function_length": 20,
+                    "max_nesting_level": 4,
+                    "check_unused_variables": True
+                },
+                "rope_config": {
+                    "find_duplicates": True,
+                    "find_unused_imports": True,
+                    "project_root": None
+                },
+                "jedi_config": {
+                    "check_undefined_names": True,
+                    "check_import_resolution": True
+                },
+                "custom_ast_config": {
+                    "max_cyclomatic_complexity": 10,
+                    "max_parameters": 5,
+                    "max_line_length": 120
+                }
+            }
         },
         "reporting": {
             "output_format": ["terminal", "html"],
@@ -141,9 +247,23 @@ class ConfigManager:
 
     def _create_config_from_dict(self, config_dict: dict[str, Any]) -> CodeQualityConfig:
         """Create configuration object from dictionary."""
+        # Handle nested configurations
+        analysis_config = config_dict.get("analysis", {})
+        static_analysis_config = analysis_config.get("static_analysis", {})
+        ast_analysis_config = analysis_config.get("ast_analysis", {})
+        
         return CodeQualityConfig(
             auto_fix=AutoFixConfig(**config_dict.get("auto_fix", {})),
-            analysis=AnalysisConfig(**config_dict.get("analysis", {})),
+            analysis=AnalysisConfig(
+                linters=analysis_config.get("linters", ["flake8", "pylint", "mypy"]),
+                complexity_threshold=analysis_config.get("complexity_threshold", 10),
+                security_checks=analysis_config.get("security_checks", True),
+                dead_code_detection=analysis_config.get("dead_code_detection", True),
+                dependency_analysis=analysis_config.get("dependency_analysis", True),
+                exclude_patterns=analysis_config.get("exclude_patterns", ["__pycache__", "*.pyc", ".git"]),
+                static_analysis=StaticAnalysisConfig(**static_analysis_config),
+                ast_analysis=ASTAnalysisConfig(**ast_analysis_config)
+            ),
             reporting=ReportingConfig(**config_dict.get("reporting", {})),
             project_root=os.getcwd(),
         )
@@ -187,6 +307,22 @@ class ConfigManager:
                     "dead_code_detection": self.config.analysis.dead_code_detection,
                     "dependency_analysis": self.config.analysis.dependency_analysis,
                     "exclude_patterns": self.config.analysis.exclude_patterns,
+                    "static_analysis": {
+                        "enabled": self.config.analysis.static_analysis.enabled,
+                        "tools": self.config.analysis.static_analysis.tools,
+                        "pylint_config": self.config.analysis.static_analysis.pylint_config,
+                        "flake8_config": self.config.analysis.static_analysis.flake8_config,
+                        "mypy_config": self.config.analysis.static_analysis.mypy_config,
+                        "bandit_config": self.config.analysis.static_analysis.bandit_config,
+                    },
+                    "ast_analysis": {
+                        "enabled": self.config.analysis.ast_analysis.enabled,
+                        "tools": self.config.analysis.ast_analysis.tools,
+                        "astroid_config": self.config.analysis.ast_analysis.astroid_config,
+                        "rope_config": self.config.analysis.ast_analysis.rope_config,
+                        "jedi_config": self.config.analysis.ast_analysis.jedi_config,
+                        "custom_ast_config": self.config.analysis.ast_analysis.custom_ast_config,
+                    },
                 },
                 "reporting": {
                     "output_format": self.config.reporting.output_format,

@@ -202,7 +202,6 @@ class ProbabilisticBayesianOptimizer:
                 optimization_history.append({'trial_number': trial.number, 'values': trial.values, 'params': trial.params, 'duration': trial.duration.total_seconds()})
         return {'best_solutions': best_solutions, 'pareto_front': pareto_front, 'parameter_importance': param_importance, 'optimization_history': optimization_history, 'study': self.study, 'config': self.config}
 
-
     def _log_mlflow_experiment(self, study_name: str, best_params: dict[str, Any], best_values: list[float]) -> None:
         """Log optimization results to MLflow."""
         try:

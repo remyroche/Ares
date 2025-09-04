@@ -1,4 +1,9 @@
-from typing import Dict, List, Optional, Union, Any, Tuple, Callable
+#!/usr/bin/env python3
+"""
+Script to create a minimal working version of the HMM file.
+"""
+
+hmm_content = '''from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
@@ -136,3 +141,18 @@ if __name__ == '__main__':
     # Test the module
     import asyncio
     asyncio.run(run_step('ETHUSDT', 'BINANCE', '1m'))
+'''
+
+def main():
+    """Create minimal HMM file."""
+    file_path = '/workspace/src/training/steps/market_analysis/hmm_clustering/step03_hmm_regime_discovery.py'
+    
+    print(f"Creating minimal working version of: {file_path}")
+    
+    with open(file_path, 'w') as f:
+        f.write(hmm_content)
+    
+    print(f"  ✅ Created minimal working version of {file_path}")
+
+if __name__ == "__main__":
+    main()

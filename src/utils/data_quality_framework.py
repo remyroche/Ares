@@ -12,7 +12,6 @@ import pandas as pd
 from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
 from .logger import system_logger
 
-
 class DataQualityLevel(Enum):
     """Data quality issue severity levels."""
     CRITICAL = 'critical'
@@ -153,40 +152,6 @@ class DataQualityFramework:
             rule_result['passed'] = False
             rule_result['issues'].append({'type': 'validation_error', 'severity': 'critical', 'message': f'Error during validation: {str(e)}', 'details': {'error': str(e)}})
         return rule_result
-
-    def _check_quality_policy_compliance(self, validation_results: dict[str, Any]) -> bool:
-        """Check if validation results comply with quality policies."""
-        summary = validation_results
-        if summary['critical_issues'] > self.quality_policies['max_issues_critical']:
-            return False
-        if summary['high_issues'] > self.quality_policies['max_issues_high']:
-            return False
-        if summary['medium_issues'] > self.quality_policies['max_issues_medium']:
-            return False
-        return not summary['low_issues'] > self.quality_policies['max_issues_low']
-
-    def _log_validation_results(self, results: dict[str, Any]) -> None:
-        """Log validation results."""
-        if results['overall_passed']:
-            self.logger.info(f"Data validation passed: {results['passed_rules']}/{results['total_rules']} rules passed")
-        else:
-            self.logger.error(f"Data validation failed: {results['failed_rules']}/{results['total_rules']} rules failed")
-            self.logger.error(f"Issues: Critical={results['critical_issues']}, High={results['high_issues']}, Medium={results['medium_issues']}, Low={results['low_issues']}")
-
-    def _validate_schema(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
-        """Validate data schema."""
-        try:
-            validation_result = self.outlier_handler.validate_data_schema(data, 'klines')
-            if not validation_result['valid']:
-                self.logger.warning(f"Schema validation issues: {validation_result['errors']}")
-                validation_result = self.outlier_handler.validate_data_schema(data, 'features')
-                if not validation_result['valid']:
-                    self.logger.warning(f"Features schema validation issues: {validation_result['errors']}")
-            return data
-        except Exception as e:
-            self.logger.exception(f'Schema validation error: {e}')
-            return data
-
     def _validate_data_types(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
         """Validate and fix data types."""
         try:
@@ -227,10 +192,6 @@ class DataQualityFramework:
                         data[col] = data[col].fillna(data[col].mode()[0] if len(data[col].mode()) > 0 else 'unknown')
                 self.logger.info('Filled null values with appropriate defaults')
             return data
-        except Exception as e:
-            self.logger.exception(f'Null handling error: {e}')
-            return data
-
     def _handle_duplicates(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
         """Handle duplicate values according to rules."""
         try:
@@ -248,10 +209,6 @@ class DataQualityFramework:
                 if rows_removed > 0:
                     self.logger.info(f'Removed {rows_removed} duplicate rows')
             return data
-        except Exception as e:
-            self.logger.exception(f'Duplicate handling error: {e}')
-            return data
-
     def _handle_outliers(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
         """Handle outliers according to rules."""
         try:
@@ -304,10 +261,6 @@ class DataQualityFramework:
                         if capped_lower > 0 or capped_upper > 0:
                             self.logger.info(f'Capped {capped_lower + capped_upper} outliers in {col}')
             return data
-        except Exception as e:
-            self.logger.exception(f'Outlier handling error: {e}')
-            return data
-
     def generate_quality_report(self, data: pd.DataFrame) -> dict[str, Any]:
         """Generate comprehensive data quality report.
 
@@ -319,51 +272,24 @@ class DataQualityFramework:
         """
         try:
             return {'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'data_types': data.dtypes.to_dict(), 'null_analysis': self._analyze_nulls(data), 'duplicate_analysis': self._analyze_duplicates(data), 'outlier_analysis': self._analyze_outliers(data), 'data_quality_score': self._calculate_quality_score(data), 'recommendations': self._generate_recommendations(data)}
-        except Exception as e:
-            self.logger.exception(f'Error generating quality report: {e}')
-            return {'error': str(e)}
-
     def _analyze_nulls(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze null values in data."""
         try:
             null_counts = data.isnull().sum()
             null_percentages = null_counts / len(data) * 100
             return {'total_null_values': null_counts.sum(), 'columns_with_nulls': null_counts[null_counts > 0].to_dict(), 'null_percentages': null_percentages[null_percentages > 0].to_dict(), 'worst_column': null_counts.idxmax() if null_counts.max() > 0 else None, 'worst_percentage': max(0, null_percentages.max())}
-        except Exception as e:
-            self.logger.exception(f'Error analyzing nulls: {e}')
-            return {'error': str(e)}
-
     def _analyze_duplicates(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze duplicate values in data."""
         try:
             duplicate_rows = data.duplicated().sum()
             duplicate_percentage = duplicate_rows / len(data) * 100
             return {'duplicate_rows': duplicate_rows, 'duplicate_percentage': duplicate_percentage, 'has_duplicates': duplicate_rows > 0}
-        except Exception as e:
-            self.logger.exception(f'Error analyzing duplicates: {e}')
-            return {'error': str(e)}
-
     def _analyze_outliers(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze outliers in data."""
         try:
             outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold=1.5, raise_errors=False)
             if not outliers:
                 return {'total_outlier_groups': 0, 'severity_distribution': {}}
-            severity_counts = {}
-            column_counts = {}
-            for outlier in outliers:
-                severity = outlier.severity.value
-                severity_counts[severity] = severity_counts.get(severity, 0) + 1
-                column = outlier.column
-                if column not in column_counts:
-                    column_counts[column] = {'count': 0, 'total_values': 0}
-                column_counts[column]['count'] += 1
-                column_counts[column]['total_values'] += len(outlier.indices)
-            return {'total_outlier_groups': len(outliers), 'severity_distribution': severity_counts, 'column_distribution': column_counts, 'worst_column': max(column_counts.items(), key=lambda x: x[1]['total_values'])[0] if column_counts else None}
-        except Exception as e:
-            self.logger.exception(f'Error analyzing outliers: {e}')
-            return {'error': str(e)}
-
     def _calculate_quality_score(self, data: pd.DataFrame) -> float:
         """Calculate overall data quality score (0-100)."""
         try:
@@ -379,10 +305,6 @@ class DataQualityFramework:
                 score -= critical_outliers * 5.0
                 score -= high_outliers * 2.0
             return max(0.0, score)
-        except Exception as e:
-            self.logger.exception(f'Error calculating quality score: {e}')
-            return 0.0
-
     def _generate_recommendations(self, data: pd.DataFrame) -> list[str]:
         """Generate data quality improvement recommendations."""
         recommendations = []
@@ -410,10 +332,6 @@ class DataQualityFramework:
             if len(data.columns) > 100:
                 recommendations.append('High-dimensional data - consider feature selection')
             return recommendations
-        except Exception as e:
-            self.logger.exception(f'Error generating recommendations: {e}')
-            return ['Error generating recommendations']
-
     def format_data(self, data: pd.DataFrame, data_type: str='klines') -> pd.DataFrame:
         """Format data according to standardized formats.
 
@@ -563,6 +481,6 @@ class DataQualityFramework:
             now = pd.Timestamp.now()
             time_diff = abs((timestamps - now).dt.total_seconds())
             return 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)
-        except:
+except:
             return 0.5
 data_quality_framework = DataQualityFramework()

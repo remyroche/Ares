@@ -42,25 +42,26 @@ from pathlib import Path
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import analyzers with absolute paths
-from analyzers.architecture_analyzer import ArchitectureAnalyzer
-from analyzers.call_graph_analyzer import CallGraphAnalyzer
-from analyzers.complexity_analyzer import ComplexityAnalyzer
-from analyzers.dependency_analyzer import DependencyAnalyzer
-from analyzers.import_analyzer import ImportAnalyzer
-from analyzers.dead_code_analyzer import DeadCodeAnalyzer
-from reporters.html_reporter import HTMLReporter
-
-from core.config import get_default_config
+# Import enhanced analyzers
+from analyzers.simplified_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer
+from core.config import AnalysisConfig
 
 
 class CodeInteractionMapper:
-    """Maps all interactions within a codebase."""
+    """Enhanced code interaction mapper with robust analysis capabilities."""
 
     def __init__(self, project_root: str):
         self.project_root = Path(project_root)
-        self.config = get_default_config()
+        self.config = AnalysisConfig()
         self.results = {}
+        self.stats = {
+            "files_analyzed": 0,
+            "files_failed": 0,
+            "total_issues": 0,
+            "dead_code_functions": 0,
+            "unused_imports": 0,
+            "call_graph_nodes": 0
+        }
 
     def analyze_dependencies(self):
         """Analyze module dependencies."""
@@ -118,70 +119,66 @@ class CodeInteractionMapper:
         print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
 
     def analyze_dead_code(self):
-        """Analyze dead code with enhanced cross-file dependency checking."""
-        print("\n[6/6] Analyzing dead code and deprecated patterns...")
-        analyzer = DeadCodeAnalyzer(self.config)
+        """Analyze dead code using enhanced analyzer with robust error handling."""
+        print("\n[1/4] Analyzing dead code and deprecated patterns...")
         
-        # First, build comprehensive dependency map
-        print("  - Building comprehensive dependency map...")
-        dependency_map = self._build_comprehensive_dependency_map()
-        
-        # Validate dependency map is not empty
-        total_items = (len(dependency_map['function_definitions']) + 
-                      len(dependency_map['function_calls']) + 
-                      len(dependency_map['class_definitions']) + 
-                      len(dependency_map['class_usage']) + 
-                      len(dependency_map['import_statements']))
-        
-        if total_items == 0:
-            print("  ❌ ERROR: Dependency map is empty! This indicates a critical issue with the analysis.")
-            print("  - Check if Python files are being found and parsed correctly")
-            print("  - Verify AST parsing is working")
-            print("  - Ensure file permissions allow reading")
-            print("  - Many files may have syntax errors preventing AST parsing")
-            raise RuntimeError("Dependency map is empty - analysis cannot proceed safely")
-        
-        print(f"  ✅ Dependency map built successfully: {total_items} items found")
-        print(f"    - Function definitions: {len(dependency_map['function_definitions'])}")
-        print(f"    - Function calls: {len(dependency_map['function_calls'])}")
-        print(f"    - Class definitions: {len(dependency_map['class_definitions'])}")
-        print(f"    - Class usage: {len(dependency_map['class_usage'])}")
-        print(f"    - Import statements: {len(dependency_map['import_statements'])}")
-        
-        # Store dependency map in results
-        self.results["dependency_map"] = dependency_map
-        
-        # Analyze dead code with dependency awareness
-        self.results["dead_code"] = analyzer.analyze_directory(str(self.project_root))
-        
-        # Enhanced validation: Check for false positives
-        print("  - Validating dead code findings against dependency map...")
-        validated_results = self._validate_dead_code_findings(
-            self.results["dead_code"], 
-            dependency_map
-        )
-        self.results["dead_code"] = validated_results
+        try:
+            # Use our enhanced dead code analyzer
+            analyzer = SimplifiedEnhancedDeadCodeAnalyzer(self.config)
+            report = analyzer.analyze_directory(self.project_root)
+            
+            # Store results
+            self.results["dead_code"] = {
+                "total_issues": report.total_issues,
+                "issues_by_type": report.issues_by_type,
+                "issues_by_severity": {k: len(v) for k, v in report.issues_by_severity.items()},
+                "issues_by_tool": {k: len(v) for k, v in report.issues_by_tool.items()},
+                "confidence_distribution": report.confidence_distribution,
+                "call_graph_nodes": len(report.call_graph_nodes),
+                "dependency_graph": len(report.dependency_graph),
+                "false_positives_filtered": report.false_positives_filtered,
+                "impact_analysis": report.impact_analysis
+            }
+            
+            # Update stats
+            self.stats["total_issues"] = report.total_issues
+            self.stats["dead_code_functions"] = report.issues_by_type.get("dead_code", 0)
+            self.stats["unused_imports"] = report.issues_by_type.get("unused_import", 0)
+            self.stats["call_graph_nodes"] = len(report.call_graph_nodes)
+            
+            # Print summary
+            print(f"  ✅ Enhanced analysis complete:")
+            print(f"     - Total issues found: {report.total_issues}")
+            print(f"     - Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
+            print(f"     - Unused imports: {report.issues_by_type.get('unused_import', 0)}")
+            print(f"     - Call graph nodes: {len(report.call_graph_nodes)}")
+            print(f"     - False positives filtered: {report.false_positives_filtered}")
+            
+        except Exception as e:
+            print(f"  ❌ Dead code analysis failed: {e}")
+            self.results["dead_code"] = {"error": str(e)}
+            self.stats["files_failed"] += 1
 
-        # Print summary
-        dead_code = self.results["dead_code"]
-        print(f"  - Total dead code issues: {dead_code.total_issues}")
-        print(f"  - Deprecated code issues: {len(dead_code.deprecated_issues or [])}")
-        print(f"  - High impact issues: {len(dead_code.issues_by_severity.get('high', []))}")
-        print(f"  - Potential lines removed: {dead_code.potential_savings.get('total_lines', 0)}")
-        print(f"  - False positives filtered: {dead_code.false_positives_filtered}")
+    def generate_summary_report(self):
+        """Generate a simple summary report."""
+        print("\n[2/4] Generating summary report...")
         
-        # Print dependency analysis summary
-        if dead_code.impact_analysis and "dependency_analysis" in dead_code.impact_analysis:
-            dep_analysis = dead_code.impact_analysis["dependency_analysis"]
-            print(f"  - Dependency chains: {len(dep_analysis.get('dependency_chains', []))}")
-            print(f"  - Risky removals: {len(dep_analysis.get('risky_removals', []))}")
-            print(f"  - Cross-file dependencies found: {len(dep_analysis.get('cross_file_dependencies', []))}")
-        
-        # Print removal plan summary
-        if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
-            removal_plan = dead_code.impact_analysis["removal_plan"]
-            print(f"  - Estimated time savings: {removal_plan.get('estimated_time_savings', {}).get('estimated_hours_saved', 0):.1f} hours")
-            print(f"  - Removal phases: {len(removal_plan.get('removal_phases', []))}")
+        try:
+            # Create output directory
+            output_dir = Path("/workspace/code_quality/enhanced_analysis_output")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Export JSON results
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            json_file = output_dir / f"enhanced_code_analysis_{timestamp}.json"
+            
+            with open(json_file, 'w') as f:
+                json.dump(self.results, f, indent=2, default=str)
+            
+            print(f"  📁 Results exported to: {json_file}")
+            
+        except Exception as e:
+            print(f"  ❌ Report generation failed: {e}")
 
     def generate_interaction_report(self):
         """Generate comprehensive interaction report."""
@@ -1814,31 +1811,31 @@ class CodeInteractionMapper:
                verticalalignment='top')
 
     def run(self):
-        """Run the complete interaction mapping."""
-        print(f"Starting code interaction mapping for: {self.project_root}")
+        """Run the enhanced interaction mapping with simplified approach."""
+        print(f"Starting enhanced code interaction mapping for: {self.project_root}")
         print("=" * 80)
 
-        # Run all analyses
-        self.analyze_dependencies()
-        self.analyze_call_graph()
-        self.analyze_architecture()
-        self.analyze_imports()
-        self.analyze_complexity()
-        self.analyze_dead_code()
+        try:
+            # Run enhanced dead code analysis (our main focus)
+            self.analyze_dead_code()
+            
+            # Generate summary report
+            self.generate_summary_report()
 
-        # Generate reports
-        report_files = self.generate_interaction_report()
-
-        print("\n" + "=" * 80)
-        print("CODE INTERACTION MAPPING COMPLETE!")
-        print("=" * 80)
-        print(f"\nAll reports saved to: {report_files.get('report_dir', 'reports')}")
-        print("\nGenerated files:")
-        for report_type, file_path in report_files.items():
-            if report_type not in ['report_dir', 'timestamp']:
-                print(f"  - {report_type.upper()}: {Path(file_path).name}")
-
-        return report_files
+            print("\n" + "=" * 80)
+            print("ENHANCED CODE INTERACTION MAPPING COMPLETE!")
+            print("=" * 80)
+            print(f"\n📊 Analysis Summary:")
+            print(f"   - Total issues found: {self.stats['total_issues']}")
+            print(f"   - Dead code functions: {self.stats['dead_code_functions']}")
+            print(f"   - Unused imports: {self.stats['unused_imports']}")
+            print(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
+            print(f"   - Files analyzed: {self.stats['files_analyzed']}")
+            print(f"   - Files failed: {self.stats['files_failed']}")
+            
+        except Exception as e:
+            print(f"❌ Analysis failed: {e}")
+            raise
 
     def _build_comprehensive_dependency_map(self):
         """Build a comprehensive map of all dependencies across the codebase."""

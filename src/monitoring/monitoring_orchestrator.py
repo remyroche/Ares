@@ -32,12 +32,13 @@ from src.utils.logger import system_logger
 from src.monitoring.enhanced_ml_monitoring import (
     EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision,
     EnsembleDecision, TradeDecision, TradingMode, ModelType,
-    ModelPerformanceMetrics, EnsemblePerformanceMetrics
+    ModelPerformanceMetrics, EnsemblePerformanceMetrics, HMMRegimeInfo
 )
 from src.monitoring.explainability_integration import ExplainabilityIntegrator
 from src.monitoring.ensemble_monitor import EnsembleMonitor, ModelContribution
 from src.monitoring.csv_export_manager import CSVExportManager
 from src.monitoring.trading_integration import TradingSystemIntegrator
+from src.monitoring.daily_summary_tracker import DailySummaryTracker
 
 
 @dataclass
@@ -97,6 +98,7 @@ class MonitoringOrchestrator:
         self.ensemble_monitor: Optional[EnsembleMonitor] = None
         self.csv_export_manager: Optional[CSVExportManager] = None
         self.trading_integrator: Optional[TradingSystemIntegrator] = None
+        self.daily_summary_tracker: Optional[DailySummaryTracker] = None
         
         # Orchestrator state
         self.is_initialized = False
@@ -132,6 +134,9 @@ class MonitoringOrchestrator:
             if self.monitoring_config.enable_csv_export:
                 self.csv_export_manager = CSVExportManager(self.config)
             
+            # Initialize daily summary tracker
+            self.daily_summary_tracker = DailySummaryTracker(self.config)
+            
             # Initialize trading system integrator
             self.trading_integrator = TradingSystemIntegrator(self.config)
             
@@ -162,6 +167,10 @@ class MonitoringOrchestrator:
             # Update ensemble monitoring
             if self.ensemble_monitor and self.monitoring_config.enable_ensemble_monitoring:
                 await self._update_ensemble_monitoring(decision)
+            
+            # Update daily summary tracking
+            if self.daily_summary_tracker:
+                await self.daily_summary_tracker.add_trade(decision)
             
             # Update statistics
             self.total_decisions_processed += 1
@@ -290,6 +299,13 @@ class MonitoringOrchestrator:
                 )
                 if success:
                     self.logger.info(f"Exported {len(self.enhanced_monitor.ensemble_performances)} ensemble performances")
+            
+            # Export daily summaries
+            if self.daily_summary_tracker and self.daily_summary_tracker.daily_summaries:
+                summaries = list(self.daily_summary_tracker.daily_summaries.values())
+                success = await self.csv_export_manager.export_daily_summaries(summaries)
+                if success:
+                    self.logger.info(f"Exported {len(summaries)} daily summaries")
             
             self.total_exports_performed += 1
             self.logger.info("✅ Monitoring data export completed successfully")

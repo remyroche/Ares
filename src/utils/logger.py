@@ -347,8 +347,12 @@ class EnhancedLogger:
                 return self._original_methods['exception'](context_msg, *args, **kwargs)
 
             def _enhanced_info(self, msg: str, *args, **kwargs) -> None:
-                """Enhanced info logging with emoji and context."""
-                enhanced_msg = info(msg)
+                """Enhanced info logging with context (no emoji for normal operations)."""
+                # Only add emoji if it's troubleshooting-related
+                if any(word in msg.lower() for word in ['troubleshoot', 'debug', 'investigate', 'issue', 'problem']):
+                    enhanced_msg = info(msg)
+                else:
+                    enhanced_msg = msg
                 # Add timestamp and context for better troubleshooting
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                 context_msg = f"[{timestamp}] {enhanced_msg}"
@@ -807,7 +811,7 @@ def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, 
 def log_validation_result(logger: logging.Logger, validator_name: str, result: bool, 
                          details: str = "", metrics: dict = None) -> None:
     """
-    Log validation results with comprehensive emoji indicators.
+    Log validation results (only failures for troubleshooting).
     
     Args:
         logger: Logger instance
@@ -817,14 +821,12 @@ def log_validation_result(logger: logging.Logger, validator_name: str, result: b
         metrics: Optional metrics dictionary
     """
     try:
+        # Only log failures - skip successful validations
         if result:
-            emoji = "✅"
-            status = "PASSED"
-            level = "info"
-        else:
-            emoji = "❌"
-            status = "FAILED"
-            level = "error"
+            return
+            
+        emoji = "❌"
+        status = "FAILED"
             
         message = f"{emoji} Validation {status} | {validator_name}"
         if details:
@@ -835,10 +837,7 @@ def log_validation_result(logger: logging.Logger, validator_name: str, result: b
             metrics_str = " | ".join([f"{k}={v}" for k, v in metrics.items()])
             message += f" | Metrics: {metrics_str}"
             
-        if level == "error":
-            logger.error(message)
-        else:
-            logger.info(message)
+        logger.error(message)
             
     except Exception as e:
         logger.error(f"❌ Failed to log validation result: {e}")
@@ -847,7 +846,7 @@ def log_validation_result(logger: logging.Logger, validator_name: str, result: b
 def log_data_quality_check(logger: logging.Logger, check_name: str, status: str, 
                           details: str = "", stats: dict = None) -> None:
     """
-    Log data quality check results with emoji indicators.
+    Log data quality check results (only failures and warnings for troubleshooting).
     
     Args:
         logger: Logger instance
@@ -857,14 +856,16 @@ def log_data_quality_check(logger: logging.Logger, check_name: str, status: str,
         stats: Optional statistics dictionary
     """
     try:
+        # Only log failures and warnings - skip passed checks
+        if status == "passed":
+            return
+            
         status_emojis = {
-            "passed": "✅",
             "failed": "❌", 
-            "warning": "⚠️",
-            "info": "ℹ️"
+            "warning": "⚠️"
         }
         
-        emoji = status_emojis.get(status, "📋")
+        emoji = status_emojis.get(status, "⚠️")
         message = f"{emoji} Data Quality Check | {check_name} | {status.upper()}"
         
         if details:
@@ -878,8 +879,6 @@ def log_data_quality_check(logger: logging.Logger, check_name: str, status: str,
             logger.error(message)
         elif status == "warning":
             logger.warning(message)
-        else:
-            logger.info(message)
             
     except Exception as e:
         logger.error(f"❌ Failed to log data quality check: {e}")
@@ -889,7 +888,7 @@ def log_performance_metrics(logger: logging.Logger, operation_name: str,
                            duration: float, memory_usage: float = None, 
                            additional_metrics: dict = None) -> None:
     """
-    Log performance metrics with emoji indicators.
+    Log performance metrics (only for slow operations that need troubleshooting).
     
     Args:
         logger: Logger instance
@@ -899,15 +898,21 @@ def log_performance_metrics(logger: logging.Logger, operation_name: str,
         additional_metrics: Additional metrics dictionary
     """
     try:
-        # Performance emoji based on duration
-        if duration < 1.0:
-            emoji = "⚡"  # Fast
-        elif duration < 10.0:
-            emoji = "🔄"  # Normal
-        else:
+        # Only log slow operations (>10s) or high memory usage (>1GB)
+        should_log = False
+        emoji = "🐌"
+        
+        if duration > 10.0:
+            should_log = True
             emoji = "🐌"  # Slow
+        elif memory_usage is not None and memory_usage > 1024:  # >1GB
+            should_log = True
+            emoji = "💾"  # High memory usage
             
-        message = f"{emoji} Performance | {operation_name} | Duration: {duration:.3f}s"
+        if not should_log:
+            return
+            
+        message = f"{emoji} Performance Issue | {operation_name} | Duration: {duration:.3f}s"
         
         if memory_usage is not None:
             message += f" | Memory: {memory_usage:.2f}MB"
@@ -916,7 +921,7 @@ def log_performance_metrics(logger: logging.Logger, operation_name: str,
             metrics_str = " | ".join([f"{k}={v}" for k, v in additional_metrics.items()])
             message += f" | {metrics_str}"
             
-        logger.info(message)
+        logger.warning(message)
         
     except Exception as e:
         logger.error(f"❌ Failed to log performance metrics: {e}")
@@ -964,7 +969,7 @@ def log_error_with_context(logger: logging.Logger, error: Exception, context: di
 def log_system_status(logger: logging.Logger, component: str, status: str, 
                      details: str = "", health_metrics: dict = None) -> None:
     """
-    Log system component status with health indicators.
+    Log system component status with health indicators (only for issues).
     
     Args:
         logger: Logger instance
@@ -974,16 +979,18 @@ def log_system_status(logger: logging.Logger, component: str, status: str,
         health_metrics: Optional health metrics
     """
     try:
+        # Only log if there are issues - skip healthy/starting status
+        if status in ["healthy", "starting"]:
+            return
+            
         status_emojis = {
-            "healthy": "🟢",
             "degraded": "🟡", 
             "failed": "🔴",
-            "starting": "🔄",
             "stopping": "⏹️",
             "maintenance": "🔧"
         }
         
-        emoji = status_emojis.get(status, "⚪")
+        emoji = status_emojis.get(status, "⚠️")
         message = f"{emoji} System Status | {component} | {status.upper()}"
         
         if details:
@@ -995,10 +1002,8 @@ def log_system_status(logger: logging.Logger, component: str, status: str,
             
         if status == "failed":
             logger.error(message)
-        elif status == "degraded":
+        elif status in ["degraded", "stopping", "maintenance"]:
             logger.warning(message)
-        else:
-            logger.info(message)
             
     except Exception as e:
         logger.error(f"❌ Failed to log system status: {e}")

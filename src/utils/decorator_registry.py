@@ -397,11 +397,13 @@ class DecoratorRegistry:
                 "decorator_health": [d.get_health_status() for d in self._decorators.values()]
             }
             
-            log_system_status(
-                logger, "DecoratorRegistry", status,
-                details=f"Health Score: {health_score}/100 | Decorators: {total_decorators} | Errors: {total_errors}",
-                health_metrics=health_info
-            )
+            # Only log health status if there are issues (fair/poor)
+            if status in ["fair", "poor"]:
+                log_system_status(
+                    logger, "DecoratorRegistry", status,
+                    details=f"Health Score: {health_score}/100 | Decorators: {total_decorators} | Errors: {total_errors}",
+                    health_metrics=health_info
+                )
             
             return health_info
             

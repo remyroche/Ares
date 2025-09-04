@@ -5,6 +5,7 @@ This module implements regime persistence modeling and forecasting capabilities,
 integrating with existing analyst forecasting logic for regime transition prediction.
 """
 
+import ast
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any

@@ -197,9 +197,9 @@ class SRMLEnhancer:
             feature_names = await self._get_combined_feature_names()
             
             self.logger.info(f"📊 Training data prepared: {len(features)} samples, {len(feature_names)} features")
-            self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())} (45 features)")
+            self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())} (47 features)")
             self.logger.info(f"   - Step06 features: {len(step06_features)} (200+ features)")
-            self.logger.info(f"   - S/R feature breakdown: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
+            self.logger.info(f"   - S/R feature breakdown: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(8)")
             self.logger.info(f"   - Target calculation: Optimized weights based on trading performance")
             self.logger.info(f"   - Quality definition: Bounce rate, false breakout rate, volume confirmation, timeframe consistency")
             
@@ -719,7 +719,7 @@ class SRMLEnhancer:
         market_data: pd.DataFrame,
         level: Dict[str, Any]
     ) -> List[float]:
-        """Extract S/R specific features (6 features)."""
+        """Extract S/R specific features (8 features)."""
         try:
             features = []
             
@@ -747,11 +747,19 @@ class SRMLEnhancer:
             sr_market_structure_alignment = level.get('sr_market_structure_alignment', 0.5)
             features.append(sr_market_structure_alignment)
             
+            # Average test strength (volume/momentum qualified)
+            avg_test_strength = await self._calculate_average_test_strength(level)
+            features.append(avg_test_strength)
+            
+            # Average breakout strength (volume/momentum qualified)
+            avg_breakout_strength = await self._calculate_average_breakout_strength(level)
+            features.append(avg_breakout_strength)
+            
             return features
             
         except Exception as e:
             self.logger.error(f"S/R specific feature extraction failed: {e}")
-            return [0.5] * 6  # Return default features
+            return [0.5] * 8  # Return default features
     
     async def _create_target_for_level(
         self,
@@ -777,15 +785,19 @@ class SRMLEnhancer:
             weights = self.ml_config.get("target_weights", {})
             
             # === CORE PERFORMANCE ASPECTS (60% weight) ===
-            # Bounce rate (most important - 20%)
+            # Qualified bounce rate (most important - 20%)
+            # Consider volume and momentum to qualify the testing strength
             bounce_rate = level.get('bounce_rate', 0.5)
+            volume_qualified_bounce_rate = await self._calculate_volume_qualified_bounce_rate(level)
             bounce_weight = weights.get('bounce_rate', 0.20)
-            target += bounce_rate * bounce_weight
+            target += volume_qualified_bounce_rate * bounce_weight
             
             # False breakout rate (penalty - 15%)
+            # Also consider volume/momentum context for false breakouts
             false_breakout_rate = level.get('false_breakout_rate', 0.0)
+            volume_qualified_false_breakout_rate = await self._calculate_volume_qualified_false_breakout_rate(level)
             false_breakout_weight = weights.get('false_breakout_rate', 0.15)
-            target -= false_breakout_rate * false_breakout_weight
+            target -= volume_qualified_false_breakout_rate * false_breakout_weight
             
             # Volume confirmation (10%)
             volume_confirmation = level.get('volume_confirmation_score', 0.5)
@@ -886,10 +898,11 @@ class SRMLEnhancer:
             "trendline_type", "trendline_strength", "trendline_touch_count", "trendline_angle"
         ]
         
-        # Support/Resistance specific features (6 features)
+        # Support/Resistance specific features (8 features)
         sr_specific_features = [
             "sr_type", "sr_timeframe_confluence", "sr_breakout_history",
-            "sr_retest_success_rate", "sr_volume_profile_strength", "sr_market_structure_alignment"
+            "sr_retest_success_rate", "sr_volume_profile_strength", "sr_market_structure_alignment",
+            "avg_test_strength", "avg_breakout_strength"
         ]
         
         return (core_features + hvn_features + fibonacci_features + 
@@ -1557,7 +1570,7 @@ class SRMLEnhancer:
     def _select_top_features_with_sr_priority(self, scores: np.ndarray, feature_names: List[str], top_k: int = 50) -> List[str]:
         """Select top K features with S/R feature prioritization."""
         try:
-            # Define S/R specific feature patterns (45 features total)
+            # Define S/R specific feature patterns (47 features total)
             sr_feature_patterns = [
                 # Core S/R features (15)
                 'touch_count', 'strength', 'age_bars', 'avg_bounce_ratio',
@@ -1584,9 +1597,10 @@ class SRMLEnhancer:
                 # Trend line features (4)
                 'trendline_type', 'trendline_strength', 'trendline_touch_count', 'trendline_angle',
                 
-                # S/R specific features (6)
+                # S/R specific features (8)
                 'sr_type', 'sr_timeframe_confluence', 'sr_breakout_history',
-                'sr_retest_success_rate', 'sr_volume_profile_strength', 'sr_market_structure_alignment'
+                'sr_retest_success_rate', 'sr_volume_profile_strength', 'sr_market_structure_alignment',
+                'avg_test_strength', 'avg_breakout_strength'
             ]
             
             # Identify S/R features
@@ -1634,7 +1648,7 @@ class SRMLEnhancer:
             self.logger.info(f"   - S/R features selected: {sr_count} (minimum {min_sr_ratio*100:.0f}% of total)")
             self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count}")
             self.logger.info(f"   - Total features selected: {len(selected_features)}")
-            self.logger.info(f"   - S/R feature categories: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
+            self.logger.info(f"   - S/R feature categories: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(8)")
             self.logger.info(f"   - Selection strategy: Minimum {min_sr_ratio*100:.0f}% S/R features, no upper limit")
             
             return selected_features
@@ -1866,3 +1880,218 @@ class SRMLEnhancer:
         except Exception as e:
             self.logger.error(f"Target weight evaluation failed: {e}")
             return 0.0
+    
+    async def _calculate_volume_qualified_bounce_rate(self, level: Dict[str, Any]) -> float:
+        """Calculate bounce rate qualified by volume and momentum strength."""
+        try:
+            base_bounce_rate = level.get('bounce_rate', 0.5)
+            
+            # Get volume and momentum data for each test
+            test_data = level.get('test_history', [])
+            if not test_data:
+                return base_bounce_rate
+            
+            qualified_bounces = 0
+            total_tests = len(test_data)
+            
+            for test in test_data:
+                # Extract test characteristics
+                volume_ratio = test.get('volume_ratio', 1.0)  # Volume vs average
+                momentum_strength = test.get('momentum_strength', 0.5)  # Price momentum
+                test_duration = test.get('test_duration', 1)  # Bars spent testing
+                wick_penetration = test.get('wick_penetration', 0.0)  # How deep the test went
+                
+                # Calculate test strength score
+                test_strength = self._calculate_test_strength(
+                    volume_ratio, momentum_strength, test_duration, wick_penetration
+                )
+                
+                # Only count as qualified bounce if it held against a strong test
+                if test.get('bounced', False) and test_strength > 0.6:  # Strong test threshold
+                    qualified_bounces += 1
+                elif test.get('bounced', False) and test_strength > 0.3:  # Medium test
+                    qualified_bounces += 0.7  # Partial credit
+                elif test.get('bounced', False):  # Weak test
+                    qualified_bounces += 0.3  # Minimal credit
+            
+            if total_tests == 0:
+                return base_bounce_rate
+            
+            qualified_bounce_rate = qualified_bounces / total_tests
+            return min(max(qualified_bounce_rate, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Volume qualified bounce rate calculation failed: {e}")
+            return level.get('bounce_rate', 0.5)
+    
+    async def _calculate_volume_qualified_false_breakout_rate(self, level: Dict[str, Any]) -> float:
+        """Calculate false breakout rate qualified by volume and momentum context."""
+        try:
+            base_false_breakout_rate = level.get('false_breakout_rate', 0.0)
+            
+            # Get breakout data
+            breakout_data = level.get('breakout_history', [])
+            if not breakout_data:
+                return base_false_breakout_rate
+            
+            qualified_false_breakouts = 0
+            total_breakouts = len(breakout_data)
+            
+            for breakout in breakout_data:
+                # Extract breakout characteristics
+                volume_ratio = breakout.get('volume_ratio', 1.0)
+                momentum_strength = breakout.get('momentum_strength', 0.5)
+                breakout_duration = breakout.get('breakout_duration', 1)
+                retest_success = breakout.get('retest_success', False)
+                
+                # Calculate breakout strength score
+                breakout_strength = self._calculate_breakout_strength(
+                    volume_ratio, momentum_strength, breakout_duration
+                )
+                
+                # False breakout is more significant if it happened with strong volume/momentum
+                if not retest_success:  # False breakout
+                    if breakout_strength > 0.7:  # Strong breakout that failed
+                        qualified_false_breakouts += 1.0  # Full penalty
+                    elif breakout_strength > 0.4:  # Medium breakout that failed
+                        qualified_false_breakouts += 0.7  # Partial penalty
+                    else:  # Weak breakout that failed
+                        qualified_false_breakouts += 0.3  # Minimal penalty
+            
+            if total_breakouts == 0:
+                return base_false_breakout_rate
+            
+            qualified_false_breakout_rate = qualified_false_breakouts / total_breakouts
+            return min(max(qualified_false_breakout_rate, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Volume qualified false breakout rate calculation failed: {e}")
+            return level.get('false_breakout_rate', 0.0)
+    
+    def _calculate_test_strength(
+        self, 
+        volume_ratio: float, 
+        momentum_strength: float, 
+        test_duration: int, 
+        wick_penetration: float
+    ) -> float:
+        """Calculate the strength of a test based on volume, momentum, duration, and penetration."""
+        try:
+            # Volume component (40% weight)
+            volume_score = min(volume_ratio / 2.0, 1.0)  # Normalize to 2x average volume
+            
+            # Momentum component (30% weight)
+            momentum_score = momentum_strength
+            
+            # Duration component (20% weight) - longer tests are stronger
+            duration_score = min(test_duration / 5.0, 1.0)  # Normalize to 5 bars
+            
+            # Penetration component (10% weight) - deeper penetration is stronger
+            penetration_score = min(wick_penetration / 0.02, 1.0)  # Normalize to 2% penetration
+            
+            # Weighted combination
+            test_strength = (
+                volume_score * 0.4 +
+                momentum_score * 0.3 +
+                duration_score * 0.2 +
+                penetration_score * 0.1
+            )
+            
+            return min(max(test_strength, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Test strength calculation failed: {e}")
+            return 0.5
+    
+    def _calculate_breakout_strength(
+        self, 
+        volume_ratio: float, 
+        momentum_strength: float, 
+        breakout_duration: int
+    ) -> float:
+        """Calculate the strength of a breakout based on volume, momentum, and duration."""
+        try:
+            # Volume component (50% weight) - most important for breakouts
+            volume_score = min(volume_ratio / 1.5, 1.0)  # Normalize to 1.5x average volume
+            
+            # Momentum component (35% weight)
+            momentum_score = momentum_strength
+            
+            # Duration component (15% weight) - sustained breakouts are stronger
+            duration_score = min(breakout_duration / 3.0, 1.0)  # Normalize to 3 bars
+            
+            # Weighted combination
+            breakout_strength = (
+                volume_score * 0.5 +
+                momentum_score * 0.35 +
+                duration_score * 0.15
+            )
+            
+            return min(max(breakout_strength, 0.0), 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Breakout strength calculation failed: {e}")
+            return 0.5
+    
+    async def _calculate_average_test_strength(self, level: Dict[str, Any]) -> float:
+        """Calculate average test strength for the level."""
+        try:
+            test_data = level.get('test_history', [])
+            if not test_data:
+                return 0.5  # Default value
+            
+            total_strength = 0.0
+            valid_tests = 0
+            
+            for test in test_data:
+                volume_ratio = test.get('volume_ratio', 1.0)
+                momentum_strength = test.get('momentum_strength', 0.5)
+                test_duration = test.get('test_duration', 1)
+                wick_penetration = test.get('wick_penetration', 0.0)
+                
+                test_strength = self._calculate_test_strength(
+                    volume_ratio, momentum_strength, test_duration, wick_penetration
+                )
+                
+                total_strength += test_strength
+                valid_tests += 1
+            
+            if valid_tests == 0:
+                return 0.5
+            
+            return total_strength / valid_tests
+            
+        except Exception as e:
+            self.logger.error(f"Average test strength calculation failed: {e}")
+            return 0.5
+    
+    async def _calculate_average_breakout_strength(self, level: Dict[str, Any]) -> float:
+        """Calculate average breakout strength for the level."""
+        try:
+            breakout_data = level.get('breakout_history', [])
+            if not breakout_data:
+                return 0.5  # Default value
+            
+            total_strength = 0.0
+            valid_breakouts = 0
+            
+            for breakout in breakout_data:
+                volume_ratio = breakout.get('volume_ratio', 1.0)
+                momentum_strength = breakout.get('momentum_strength', 0.5)
+                breakout_duration = breakout.get('breakout_duration', 1)
+                
+                breakout_strength = self._calculate_breakout_strength(
+                    volume_ratio, momentum_strength, breakout_duration
+                )
+                
+                total_strength += breakout_strength
+                valid_breakouts += 1
+            
+            if valid_breakouts == 0:
+                return 0.5
+            
+            return total_strength / valid_breakouts
+            
+        except Exception as e:
+            self.logger.error(f"Average breakout strength calculation failed: {e}")
+            return 0.5

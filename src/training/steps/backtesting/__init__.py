@@ -402,11 +402,21 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                     pipeline_results['walk_forward_results'] = walk_forward_results
                     bt_logger.log_success("Walk forward validation completed", "WALK_FORWARD")
                     
-                    # Log quality assessment
+                    # Log backtesting metrics and quality assessment
                     if walk_forward_results and isinstance(walk_forward_results, dict):
-                        bt_logger.log_info("📊 Walk Forward Results:", "WALK_FORWARD")
-                        for key, value in walk_forward_results.items():
-                            bt_logger.log_info(f"   • {key}: {value}", "WALK_FORWARD")
+                        bt_logger.log_backtesting_metrics(walk_forward_results, "Walk Forward Validation")
+                        
+                        # Log regime analysis if available
+                        if 'regime_performance' in walk_forward_results:
+                            bt_logger.log_regime_analysis(walk_forward_results['regime_performance'])
+                        
+                        # Log model performance if available
+                        if 'model_performance' in walk_forward_results:
+                            bt_logger.log_model_performance(walk_forward_results['model_performance'])
+                        
+                        # Log risk metrics if available
+                        if 'risk_metrics' in walk_forward_results:
+                            bt_logger.log_risk_metrics(walk_forward_results['risk_metrics'])
                     
                 except Exception as e:
                     bt_logger.log_error(e, "WALK_FORWARD")
@@ -430,11 +440,21 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                     pipeline_results['monte_carlo_results'] = monte_carlo_results
                     bt_logger.log_success("Monte Carlo validation completed", "MONTE_CARLO")
                     
-                    # Log quality assessment
+                    # Log backtesting metrics and quality assessment
                     if monte_carlo_results and isinstance(monte_carlo_results, dict):
-                        bt_logger.log_info("📊 Monte Carlo Results:", "MONTE_CARLO")
-                        for key, value in monte_carlo_results.items():
-                            bt_logger.log_info(f"   • {key}: {value}", "MONTE_CARLO")
+                        bt_logger.log_backtesting_metrics(monte_carlo_results, "Monte Carlo Validation")
+                        
+                        # Log regime analysis if available
+                        if 'regime_performance' in monte_carlo_results:
+                            bt_logger.log_regime_analysis(monte_carlo_results['regime_performance'])
+                        
+                        # Log model performance if available
+                        if 'model_performance' in monte_carlo_results:
+                            bt_logger.log_model_performance(monte_carlo_results['model_performance'])
+                        
+                        # Log risk metrics if available
+                        if 'risk_metrics' in monte_carlo_results:
+                            bt_logger.log_risk_metrics(monte_carlo_results['risk_metrics'])
                     
                 except Exception as e:
                     bt_logger.log_error(e, "MONTE_CARLO")
@@ -458,11 +478,21 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                     pipeline_results['ab_testing_results'] = ab_testing_results
                     bt_logger.log_success("A/B testing completed", "AB_TESTING")
                     
-                    # Log quality assessment
+                    # Log backtesting metrics and quality assessment
                     if ab_testing_results and isinstance(ab_testing_results, dict):
-                        bt_logger.log_info("📊 A/B Testing Results:", "AB_TESTING")
-                        for key, value in ab_testing_results.items():
-                            bt_logger.log_info(f"   • {key}: {value}", "AB_TESTING")
+                        bt_logger.log_backtesting_metrics(ab_testing_results, "A/B Testing")
+                        
+                        # Log regime analysis if available
+                        if 'regime_performance' in ab_testing_results:
+                            bt_logger.log_regime_analysis(ab_testing_results['regime_performance'])
+                        
+                        # Log model performance if available
+                        if 'model_performance' in ab_testing_results:
+                            bt_logger.log_model_performance(ab_testing_results['model_performance'])
+                        
+                        # Log risk metrics if available
+                        if 'risk_metrics' in ab_testing_results:
+                            bt_logger.log_risk_metrics(ab_testing_results['risk_metrics'])
                     
                 except Exception as e:
                     bt_logger.log_error(e, "AB_TESTING")
@@ -486,9 +516,9 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
                     pipeline_results['model_saving_results'] = model_saving_results
                     bt_logger.log_success("Model saving completed", "MODEL_SAVING")
                     
-                    # Log quality assessment
+                    # Log model saving results
                     if model_saving_results and isinstance(model_saving_results, dict):
-                        bt_logger.log_info("📊 Model Saving Results:", "MODEL_SAVING")
+                        bt_logger.log_info("Model Saving Results:", "MODEL_SAVING")
                         for key, value in model_saving_results.items():
                             bt_logger.log_info(f"   • {key}: {value}", "MODEL_SAVING")
                     

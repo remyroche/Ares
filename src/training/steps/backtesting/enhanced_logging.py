@@ -208,26 +208,29 @@ class BacktestingLogger:
         self.logger.warning(f"⚠️ Warning in {context}: {message}")
     
     def log_success(self, message: str, context: str = ""):
-        """Log success messages."""
-        self.logger.info(f"✅ Success in {context}: {message}")
+        """Log success messages - only use emoji for step completion."""
+        if "completed" in message.lower() or "finished" in message.lower():
+            self.logger.info(f"✅ {context}: {message}")
+        else:
+            self.logger.info(f"Success in {context}: {message}")
     
     def log_info(self, message: str, context: str = ""):
-        """Log info messages."""
+        """Log info messages - no emojis for normal operations."""
         if context:
-            self.logger.info(f"ℹ️ {context}: {message}")
+            self.logger.info(f"{context}: {message}")
         else:
-            self.logger.info(f"ℹ️ {message}")
+            self.logger.info(message)
     
     def log_debug(self, message: str, context: str = ""):
-        """Log debug messages."""
+        """Log debug messages - no emojis for normal operations."""
         if context:
-            self.logger.debug(f"🔍 {context}: {message}")
+            self.logger.debug(f"{context}: {message}")
         else:
-            self.logger.debug(f"🔍 {message}")
+            self.logger.debug(message)
     
     def log_data_quality(self, data_info: Dict[str, Any]):
         """Log data quality assessment."""
-        self.logger.info("📊 Data Quality Assessment:")
+        self.logger.info("Data Quality Assessment:")
         
         for key, value in data_info.items():
             if isinstance(value, (int, float)):
@@ -235,7 +238,7 @@ class BacktestingLogger:
             else:
                 self.logger.info(f"   • {key}: {value}")
         
-        # Check for quality issues
+        # Check for quality issues - use emojis only for problems
         if data_info.get('missing_percentage', 0) > 5:
             self.log_quality_flag(
                 "DATA_QUALITY", 
@@ -253,7 +256,7 @@ class BacktestingLogger:
     def log_validation_result(self, step: str, passed: bool, details: Dict[str, Any]):
         """Log validation results."""
         if passed:
-            self.logger.info(f"✅ Validation passed: {step}")
+            self.logger.info(f"Validation passed: {step}")
         else:
             self.logger.error(f"❌ Validation failed: {step}")
             self.log_quality_flag("VALIDATION", f"Validation failed for {step}", "ERROR")
@@ -261,6 +264,147 @@ class BacktestingLogger:
         # Log details
         for key, value in details.items():
             self.logger.info(f"   • {key}: {value}")
+    
+    def log_backtesting_metrics(self, metrics: Dict[str, Any], regime: str = "Overall"):
+        """Log backtesting performance metrics."""
+        self.logger.info(f"Backtesting Metrics - {regime}:")
+        
+        # Core performance metrics
+        if 'total_return' in metrics:
+            self.logger.info(f"   • Total Return: {metrics['total_return']:.2%}")
+        if 'sharpe_ratio' in metrics:
+            sharpe = metrics['sharpe_ratio']
+            if sharpe < 1.0:
+                self.log_quality_flag("PERFORMANCE", f"Low Sharpe ratio: {sharpe:.2f}", "WARNING")
+            self.logger.info(f"   • Sharpe Ratio: {sharpe:.2f}")
+        if 'win_rate' in metrics:
+            win_rate = metrics['win_rate']
+            if win_rate < 0.5:
+                self.log_quality_flag("PERFORMANCE", f"Low win rate: {win_rate:.2%}", "WARNING")
+            self.logger.info(f"   • Win Rate: {win_rate:.2%}")
+        if 'max_drawdown' in metrics:
+            max_dd = metrics['max_drawdown']
+            if max_dd > 0.2:  # > 20%
+                self.log_quality_flag("PERFORMANCE", f"High max drawdown: {max_dd:.2%}", "WARNING")
+            self.logger.info(f"   • Max Drawdown: {max_dd:.2%}")
+        
+        # Trade statistics
+        if 'total_trades' in metrics:
+            self.logger.info(f"   • Total Trades: {metrics['total_trades']:,}")
+        if 'avg_trade_return' in metrics:
+            self.logger.info(f"   • Avg Trade Return: {metrics['avg_trade_return']:.2%}")
+        if 'profit_factor' in metrics:
+            pf = metrics['profit_factor']
+            if pf < 1.2:
+                self.log_quality_flag("PERFORMANCE", f"Low profit factor: {pf:.2f}", "WARNING")
+            self.logger.info(f"   • Profit Factor: {pf:.2f}")
+        
+        # Risk metrics
+        if 'volatility' in metrics:
+            self.logger.info(f"   • Volatility: {metrics['volatility']:.2%}")
+        if 'var_95' in metrics:
+            self.logger.info(f"   • VaR (95%): {metrics['var_95']:.2%}")
+        if 'calmar_ratio' in metrics:
+            self.logger.info(f"   • Calmar Ratio: {metrics['calmar_ratio']:.2f}")
+    
+    def log_regime_analysis(self, regime_results: Dict[str, Any]):
+        """Log analysis results for each market regime."""
+        self.logger.info("Market Regime Analysis:")
+        
+        for regime, results in regime_results.items():
+            self.logger.info(f"  {regime}:")
+            
+            # Regime-specific metrics
+            if 'regime_duration' in results:
+                self.logger.info(f"    • Duration: {results['regime_duration']:.1f} days")
+            if 'regime_frequency' in results:
+                self.logger.info(f"    • Frequency: {results['regime_frequency']:.1%}")
+            
+            # Performance in this regime
+            if 'regime_return' in results:
+                regime_return = results['regime_return']
+                if regime_return < 0:
+                    self.log_quality_flag("REGIME_PERFORMANCE", f"Negative returns in {regime}: {regime_return:.2%}", "WARNING")
+                self.logger.info(f"    • Regime Return: {regime_return:.2%}")
+            
+            if 'regime_sharpe' in results:
+                regime_sharpe = results['regime_sharpe']
+                if regime_sharpe < 0.5:
+                    self.log_quality_flag("REGIME_PERFORMANCE", f"Low Sharpe in {regime}: {regime_sharpe:.2f}", "WARNING")
+                self.logger.info(f"    • Regime Sharpe: {regime_sharpe:.2f}")
+            
+            if 'regime_trades' in results:
+                self.logger.info(f"    • Trades in Regime: {results['regime_trades']:,}")
+    
+    def log_model_performance(self, model_results: Dict[str, Any]):
+        """Log model performance metrics."""
+        self.logger.info("Model Performance Analysis:")
+        
+        for model_name, results in model_results.items():
+            self.logger.info(f"  {model_name}:")
+            
+            # Model accuracy metrics
+            if 'accuracy' in results:
+                accuracy = results['accuracy']
+                if accuracy < 0.6:
+                    self.log_quality_flag("MODEL_PERFORMANCE", f"Low accuracy for {model_name}: {accuracy:.2%}", "WARNING")
+                self.logger.info(f"    • Accuracy: {accuracy:.2%}")
+            
+            if 'precision' in results:
+                self.logger.info(f"    • Precision: {results['precision']:.2%}")
+            if 'recall' in results:
+                self.logger.info(f"    • Recall: {results['recall']:.2%}")
+            if 'f1_score' in results:
+                self.logger.info(f"    • F1 Score: {results['f1_score']:.2%}")
+            
+            # Prediction confidence
+            if 'avg_confidence' in results:
+                confidence = results['avg_confidence']
+                if confidence < 0.7:
+                    self.log_quality_flag("MODEL_PERFORMANCE", f"Low confidence for {model_name}: {confidence:.2%}", "WARNING")
+                self.logger.info(f"    • Avg Confidence: {confidence:.2%}")
+            
+            # Feature importance
+            if 'top_features' in results:
+                self.logger.info(f"    • Top Features: {', '.join(results['top_features'][:3])}")
+    
+    def log_risk_metrics(self, risk_metrics: Dict[str, Any]):
+        """Log comprehensive risk metrics."""
+        self.logger.info("Risk Analysis:")
+        
+        # Portfolio risk metrics
+        if 'portfolio_var' in risk_metrics:
+            var = risk_metrics['portfolio_var']
+            if var > 0.05:  # > 5%
+                self.log_quality_flag("RISK", f"High portfolio VaR: {var:.2%}", "WARNING")
+            self.logger.info(f"   • Portfolio VaR: {var:.2%}")
+        
+        if 'portfolio_es' in risk_metrics:
+            es = risk_metrics['portfolio_es']
+            if es > 0.08:  # > 8%
+                self.log_quality_flag("RISK", f"High Expected Shortfall: {es:.2%}", "WARNING")
+            self.logger.info(f"   • Expected Shortfall: {es:.2%}")
+        
+        # Concentration risk
+        if 'concentration_risk' in risk_metrics:
+            conc_risk = risk_metrics['concentration_risk']
+            if conc_risk > 0.3:  # > 30%
+                self.log_quality_flag("RISK", f"High concentration risk: {conc_risk:.2%}", "WARNING")
+            self.logger.info(f"   • Concentration Risk: {conc_risk:.2%}")
+        
+        # Liquidity risk
+        if 'liquidity_risk' in risk_metrics:
+            liq_risk = risk_metrics['liquidity_risk']
+            if liq_risk > 0.1:  # > 10%
+                self.log_quality_flag("RISK", f"High liquidity risk: {liq_risk:.2%}", "WARNING")
+            self.logger.info(f"   • Liquidity Risk: {liq_risk:.2%}")
+        
+        # Correlation risk
+        if 'correlation_risk' in risk_metrics:
+            corr_risk = risk_metrics['correlation_risk']
+            if corr_risk > 0.8:  # > 80%
+                self.log_quality_flag("RISK", f"High correlation risk: {corr_risk:.2%}", "WARNING")
+            self.logger.info(f"   • Correlation Risk: {corr_risk:.2%}")
     
     def log_performance_summary(self):
         """Log performance summary."""

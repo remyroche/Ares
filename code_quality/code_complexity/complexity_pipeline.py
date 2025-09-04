@@ -21,6 +21,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 from analyzers.pyexamine_analyzer import PyExamineAnalyzer
 from analyzers.radon_analyzer import RadonAnalyzer
 from analyzers.xenon_analyzer import XenonAnalyzer
+from analyzers.wily_analyzer import WilyAnalyzer
+from analyzers.pandas_analyzer import PandasAnalyzer
 from utils.report_generator import ReportGenerator
 from utils.file_utils import FileUtils
 from config.complexity_config import ComplexityConfig
@@ -35,12 +37,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ComplexityMetrics:
-    """Data class for storing complexity metrics"""
+    """Data class for storing comprehensive complexity metrics"""
     file_path: str
+    # PyExamine metrics (Advanced code examination)
     pyexamine_score: Optional[float] = None
-    radon_cc: Optional[float] = None
-    radon_mi: Optional[float] = None
+    
+    # Radon metrics (Industry-standard complexity metrics)
+    radon_cc: Optional[float] = None  # Cyclomatic Complexity
+    radon_mi: Optional[float] = None  # Maintainability Index
+    radon_halstead: Optional[Dict[str, Any]] = None  # Halstead metrics
+    radon_raw: Optional[Dict[str, Any]] = None  # Raw metrics (LOC, comments, etc.)
+    radon_functions: Optional[List[Dict[str, Any]]] = None  # Function-level complexity
+    
+    # Xenon metrics (Continuous complexity monitoring)
     xenon_score: Optional[float] = None
+    xenon_detailed: Optional[Dict[str, Any]] = None  # Detailed analysis
+    xenon_functions: Optional[List[Dict[str, Any]]] = None  # Function-level monitoring
+    
+    # Wily metrics (Historical complexity tracking)
+    wily_current: Optional[Dict[str, Any]] = None  # Current metrics
+    wily_trends: Optional[List[Dict[str, Any]]] = None  # Historical trends
+    wily_evolution: Optional[Dict[str, Any]] = None  # Evolution analysis
+    
+    # Combined analysis
     combined_score: Optional[float] = None
     analysis_timestamp: str = None
     
@@ -76,6 +95,8 @@ class ComplexityPipeline:
         self.pyexamine = PyExamineAnalyzer(self.config)
         self.radon = RadonAnalyzer(self.config)
         self.xenon = XenonAnalyzer(self.config)
+        self.wily = WilyAnalyzer(self.config)
+        self.pandas = PandasAnalyzer(self.config)
         self.report_generator = ReportGenerator(self.config)
         self.file_utils = FileUtils()
         
@@ -89,25 +110,40 @@ class ComplexityPipeline:
         os.makedirs(self.config.logs_dir, exist_ok=True)
         
     def analyze_file(self, file_path: str) -> ComplexityMetrics:
-        """Analyze a single Python file for complexity"""
+        """Analyze a single Python file for complexity using all available tools"""
         logger.info(f"Analyzing file: {file_path}")
         
         metrics = ComplexityMetrics(file_path=file_path)
         
         try:
-            # Run PyExamine analysis
+            # Run PyExamine analysis (Advanced code examination)
             if self.config.enable_pyexamine:
                 metrics.pyexamine_score = self.pyexamine.analyze_file(file_path)
                 
-            # Run Radon analysis
+            # Run Radon analysis (Industry-standard complexity metrics)
             if self.config.enable_radon:
                 radon_results = self.radon.analyze_file(file_path)
                 metrics.radon_cc = radon_results.get('cyclomatic_complexity')
                 metrics.radon_mi = radon_results.get('maintainability_index')
+                # Store additional Radon metrics
+                metrics.radon_halstead = radon_results.get('halstead_metrics', {})
+                metrics.radon_raw = radon_results.get('raw_metrics', {})
+                metrics.radon_functions = radon_results.get('function_complexity', [])
                 
-            # Run Xenon analysis
+            # Run Xenon analysis (Continuous complexity monitoring)
             if self.config.enable_xenon:
                 metrics.xenon_score = self.xenon.analyze_file(file_path)
+                # Store additional Xenon metrics
+                metrics.xenon_detailed = self.xenon.get_detailed_analysis(file_path)
+                metrics.xenon_functions = self.xenon.get_function_complexity(file_path)
+                
+            # Run Wily analysis (Historical complexity tracking)
+            if self.config.enable_wily:
+                wily_results = self.wily.analyze_file(file_path)
+                if wily_results:
+                    metrics.wily_current = wily_results.get('current_metrics', {})
+                    metrics.wily_trends = wily_results.get('historical_trends', [])
+                    metrics.wily_evolution = wily_results.get('evolution', {})
                 
             # Calculate combined score
             metrics.combined_score = self._calculate_combined_score(metrics)

@@ -133,24 +133,30 @@ def check_tools(args):
     from analyzers.pyexamine_analyzer import PyExamineAnalyzer
     from analyzers.radon_analyzer import RadonAnalyzer
     from analyzers.xenon_analyzer import XenonAnalyzer
+    from analyzers.wily_analyzer import WilyAnalyzer
+    from analyzers.pandas_analyzer import PandasAnalyzer
     
     config = ComplexityConfig()
     
     tools = [
-        ('PyExamine', PyExamineAnalyzer(config)),
-        ('Radon', RadonAnalyzer(config)),
-        ('Xenon', XenonAnalyzer(config))
+        ('PyExamine', PyExamineAnalyzer(config), 'Advanced code examination'),
+        ('Radon', RadonAnalyzer(config), 'Industry-standard complexity metrics'),
+        ('Xenon', XenonAnalyzer(config), 'Continuous complexity monitoring'),
+        ('Wily', WilyAnalyzer(config), 'Historical complexity tracking'),
+        ('Pandas', PandasAnalyzer(config), 'Metrics data analysis')
     ]
     
     print("Checking analysis tools availability:")
-    print("=" * 40)
+    print("=" * 60)
     
     all_available = True
     
-    for tool_name, analyzer in tools:
+    for tool_name, analyzer, description in tools:
         is_available = analyzer.is_available()
         status = "✓ Available" if is_available else "✗ Not available"
         print(f"{tool_name:12} {status}")
+        if args.verbose:
+            print(f"  {description}")
         
         if not is_available:
             all_available = False
@@ -158,7 +164,7 @@ def check_tools(args):
         if args.verbose and not is_available:
             print(f"  Install with: pip install {tool_name.lower()}")
             
-    print("=" * 40)
+    print("=" * 60)
     
     if all_available:
         print("All tools are available!")

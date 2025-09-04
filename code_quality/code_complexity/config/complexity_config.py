@@ -26,6 +26,8 @@ class ComplexityConfig:
         self.enable_pyexamine = self.config.get('tools', {}).get('pyexamine', {}).get('enabled', True)
         self.enable_radon = self.config.get('tools', {}).get('radon', {}).get('enabled', True)
         self.enable_xenon = self.config.get('tools', {}).get('xenon', {}).get('enabled', True)
+        self.enable_wily = self.config.get('tools', {}).get('wily', {}).get('enabled', True)
+        self.enable_pandas = self.config.get('tools', {}).get('pandas', {}).get('enabled', True)
         
         # Analysis settings
         self.analysis_settings = self.config.get('analysis', {})
@@ -77,6 +79,16 @@ class ComplexityConfig:
                     'enabled': True,
                     'timeout': 30,
                     'options': ['--json']
+                },
+                'wily': {
+                    'enabled': True,
+                    'timeout': 60,
+                    'options': ['--format', 'json']
+                },
+                'pandas': {
+                    'enabled': True,
+                    'timeout': 30,
+                    'options': []
                 }
             },
             'analysis': {

@@ -1,5 +1,6 @@
 """
 PyExamine Analyzer for Code Complexity Analysis
+Advanced code examination and complexity assessment
 """
 
 import os
@@ -13,7 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 class PyExamineAnalyzer:
-    """Analyzer for PyExamine complexity metrics"""
+    """Analyzer for PyExamine advanced code examination
+    
+    PyExamine provides:
+    - Advanced code structure analysis
+    - Complexity scoring algorithms
+    - Code quality assessment
+    - Pattern recognition and analysis
+    - Detailed code metrics
+    """
     
     def __init__(self, config):
         """Initialize PyExamine analyzer"""

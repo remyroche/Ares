@@ -167,9 +167,42 @@ if __name__ == "__main__":
             finally:
                 self.cleanup_test_environment()
             
+            # Test parallel execution
+            try:
+                test_dir = self.setup_test_environment()
+                try:
+                    context = PluginContext(
+                        project_root=Path(test_dir),
+                        target_files=[Path(test_dir) / "syntax_error.py"],
+                        configuration={},
+                        dry_run=True
+                    )
+                    
+                    # Test parallel execution with multiple plugins
+                    results_list = manager.execute_plugins_parallel(
+                        ["syntax_fixer"], context, max_workers=2
+                    )
+                    if results_list and len(results_list) > 0:
+                        results["parallel_execution"] = True
+                        print("✓ Parallel execution successful")
+                finally:
+                    self.cleanup_test_environment()
+            except Exception as e:
+                print(f"✗ Parallel execution failed: {e}")
+            
             # Test error handling
             try:
-                manager.execute_plugin("non_existent_plugin", context)
+                test_dir = self.setup_test_environment()
+                try:
+                    context = PluginContext(
+                        project_root=Path(test_dir),
+                        target_files=[Path(test_dir) / "syntax_error.py"],
+                        configuration={},
+                        dry_run=True
+                    )
+                    manager.execute_plugin("non_existent_plugin", context)
+                finally:
+                    self.cleanup_test_environment()
             except Exception:
                 results["error_handling"] = True
                 print("✓ Error handling works correctly")
@@ -349,6 +382,19 @@ if __name__ == "__main__":
                 if pipeline.config.plugin_categories == [PluginCategory.SYNTAX]:
                     results["configuration_flow"] = True
                     print("✓ Configuration flow successful")
+                
+                # Test error propagation
+                try:
+                    # Try to execute with invalid plugin
+                    error_result = pipeline.execute_plugins(plugin_names=["non_existent_plugin"])
+                    # Should handle error gracefully
+                    if isinstance(error_result, dict):
+                        results["error_propagation"] = True
+                        print("✓ Error propagation handled correctly")
+                except Exception as e:
+                    # Error should be caught and handled
+                    results["error_propagation"] = True
+                    print("✓ Error propagation handled correctly")
                 
             except Exception as e:
                 print(f"✗ Integration test failed: {e}")

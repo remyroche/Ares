@@ -65,7 +65,6 @@ class MLTacticsManager:
         # Load additional optimized parameters
         self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
         self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
-        self.confidence_boost_factor: float = ml_tactics_optimization.get("confidence_boost_factor", 1.2)
         self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
 
         # NEW: Multi-output prediction models

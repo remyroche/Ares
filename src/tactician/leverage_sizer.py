@@ -75,9 +75,6 @@ class LeverageSizer:
         self.risk_adjustment_factor: float = leverage_optimization.get(
             "risk_adjustment_factor", 1.0
         )
-        self.confidence_boost_threshold: float = leverage_optimization.get(
-            "confidence_boost_threshold", 0.8
-        )
         self.max_risk_leverage: float = leverage_optimization.get(
             "max_risk_leverage", 50.0
         )

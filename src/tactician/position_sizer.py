@@ -68,9 +68,6 @@ class PositionSizer:
 
         # Load additional optimized parameters
         self.risk_adjustment_factor: float = position_sizing_optimization.get("risk_adjustment_factor", 1.0)
-        self.confidence_boost_threshold: float = position_sizing_optimization.get("confidence_boost_threshold", 0.8)
-        self.volatility_adjustment: float = position_sizing_optimization.get("volatility_adjustment", 1.0)
-        self.market_regime_multiplier: float = position_sizing_optimization.get("market_regime_multiplier", 1.0)
 
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []

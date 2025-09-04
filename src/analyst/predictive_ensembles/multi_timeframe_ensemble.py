@@ -24,12 +24,11 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 import logging
 from src.utils.warning_symbols import (
-from copy import copy
-
     error,
     failed,
     warning,
 )
+from copy import copy
 
 
 class MultiTimeframeEnsemble:

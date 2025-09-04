@@ -11,8 +11,6 @@ import time
 
 # Import decorators
 from src.core.decorators import (
-import numpy as np
-
     CachePolicy,
     authenticated,
     cached,
@@ -27,6 +25,7 @@ import numpy as np
     validate_schema,
     validates,
 )
+import numpy as np
 
 # Import errors
 from src.core.errors import (

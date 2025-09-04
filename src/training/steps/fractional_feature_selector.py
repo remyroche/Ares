@@ -14,11 +14,10 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.feature_selection import (
-import datetime
-
     SelectKBest, f_regression, mutual_info_regression,
     RFE, SelectFromModel
 )
+import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler

@@ -15,15 +15,13 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
+    execution_error,
     initialization_error,
     invalid,
     missing,
-)
-import asyncio
-    execution_error,
-    initialization_error,
     warning,
 )
+import asyncio
 
 
 class ExchangeVolumeAdapter:

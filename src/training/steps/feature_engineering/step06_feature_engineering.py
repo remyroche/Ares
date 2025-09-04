@@ -15,13 +15,12 @@ from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.feature_engineering.feature_components import (
-from copy import copy
-import asyncio
-
     TechnicalIndicatorEngine,
     FeatureInteractionEngine,
     RegimeAwareFeatureEngine
 )
+from copy import copy
+import asyncio
 
 
 class FeatureEngineeringStep(BaseStep):

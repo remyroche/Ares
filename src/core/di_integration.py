@@ -16,14 +16,13 @@ from src.core.dependency_injection import DependencyContainer, ServiceLifetime
 from src.core.enhanced_factories import TradingSystemFactory
 from src.core.service_registry import ServiceRegistry
 from src.interfaces.base_interfaces import (
-import asyncio
-
     IAnalyst,
     IEventBus,
     IStrategist,
     ISupervisor,
     ITactician,
 )
+import asyncio
 from src.training.di_training_manager import DITrainingManager
 from src.utils.logger import system_logger
 

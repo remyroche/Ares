@@ -14,11 +14,10 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
-from copy import copy
-
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
+from copy import copy
 from src.utils.data_optimizer import ohlcv_columns
 from src.core.domain import validate_wavelet_data_quality
 from src.utils.logger import system_logger

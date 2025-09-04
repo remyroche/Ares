@@ -2611,12 +2611,12 @@ class MLConfidencePredictor:
 
             # Import required components
             from src.tactician.enhanced_order_manager import (
-from src.core.decorators.errors import handles_errors
                 ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,
                 OrderType
             )
+            from src.core.decorators.errors import handles_errors
 
             # Convert side string to OrderSide enum
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL

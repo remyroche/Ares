@@ -38,9 +38,9 @@ class ParameterOptimizationStep(BaseStep):
             impl = FinalParametersOptimizationStepNew(self.config)
         except Exception:
             from src.training.steps.validation.step17_final_parameters_optimization import (
-from src.core.decorators.errors import handles_errors
                 FinalParametersOptimizationStep,
             )
+            from src.core.decorators.errors import handles_errors
             impl = FinalParametersOptimizationStep(self.config)
 
         # Prepare compatibility input/state

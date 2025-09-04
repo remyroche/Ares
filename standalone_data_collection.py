@@ -30,13 +30,14 @@ class PipelineStandards:
     FILE_NAMING = {
         'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet',
         'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet',
+        'futures': 'futures_{exchange}_{asset}_consolidated.parquet',
         'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet',
     }
     
     SCHEMAS = {
         'klines': {
             'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
-            'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'],
+            'optional_columns': [],  # No optional columns for klines
             'data_types': {
                 'timestamp': 'int64',
                 'open': 'float64',
@@ -44,6 +45,32 @@ class PipelineStandards:
                 'low': 'float64',
                 'close': 'float64',
                 'volume': 'float64'
+            }
+        },
+        'aggtrades': {
+            'required_columns': ['timestamp', 'price', 'quantity', 'is_buyer_maker', 'agg_trade_id'],
+            'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time'],
+            'data_types': {
+                'timestamp': 'int64',
+                'price': 'float64',
+                'quantity': 'float64',
+                'is_buyer_maker': 'bool',
+                'agg_trade_id': 'string',
+                'first_trade_id': 'int64',
+                'last_trade_id': 'int64',
+                'trade_time': 'int64'
+            }
+        },
+        'futures': {
+            'required_columns': ['timestamp', 'fundingRate'],
+            'optional_columns': ['symbol', 'mark_price', 'index_price', 'next_funding_time'],
+            'data_types': {
+                'timestamp': 'int64',
+                'fundingRate': 'float64',
+                'symbol': 'string',
+                'mark_price': 'float64',
+                'index_price': 'float64',
+                'next_funding_time': 'int64'
             }
         }
     }
@@ -145,7 +172,21 @@ class PipelineStandards:
 
 
 class StandaloneDataCollectionPipeline:
-    """Standalone enhanced data collection pipeline."""
+    """Standalone enhanced data collection pipeline with resampling and progressive append."""
+    
+    # Supported timeframes for resampling
+    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    
+    # Timeframe mappings for pandas resampling (updated for new pandas format)
+    TIMEFRAME_MAPPINGS = {
+        "1m": "1min",
+        "5m": "5min", 
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1D",
+    }
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
@@ -156,12 +197,22 @@ class StandaloneDataCollectionPipeline:
         self.symbol: Optional[str] = None
         self.exchange: Optional[str] = None
         self.data_dir: Optional[str] = None
+        self.timeframes: List[str] = self.config.get('timeframes', ['1m'])  # Default to 1m
+        
+        # Data collection types
+        self.collect_klines = self.config.get('collect_klines', True)
+        self.collect_aggtrades = self.config.get('collect_aggtrades', True)
+        self.collect_futures = self.config.get('collect_futures', True)
+        
+        # Progressive append settings
+        self.progressive_append = self.config.get('progressive_append', True)
+        self.quality_check_samples = self.config.get('quality_check_samples', 100)
         
         # Metrics
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
         self.steps_completed = 0
-        self.total_steps = 3
+        self.total_steps = 5  # Updated for multiple data types
         self.errors = []
         self.warnings = []
     
@@ -299,18 +350,80 @@ class StandaloneDataCollectionPipeline:
             self.logger.info(f"🔄 Running {step_name}")
             print(f"🔄 Running {step_name}")
             
-            # Simulate data formatting and storage
-            formatted_data = await self._format_and_store_data()
+            # Format and store all data types
+            results = {}
             
-            if formatted_data is None:
-                raise ValueError("Data formatting returned no results")
+            # Process klines data
+            if self.collect_klines:
+                for timeframe in self.timeframes:
+                    klines_data = await self._collect_raw_data('klines')
+                    klines_data = self._resample_data(klines_data, timeframe)
+                    klines_data = PipelineStandards.standardize_timestamp(klines_data, 'timestamp', 'int64')
+                    klines_data = PipelineStandards.enforce_schema(klines_data, 'klines')
+                    
+                    filename = PipelineStandards.generate_file_name('klines', self.exchange, self.symbol, timeframe)
+                    file_path = Path(self.data_dir) / filename
+                    
+                    if self.progressive_append:
+                        success = await self._progressive_append_data(klines_data, file_path, 'klines')
+                    else:
+                        klines_data.to_parquet(file_path, index=False, compression='snappy')
+                        success = True
+                    
+                    results[f'klines_{timeframe}'] = {
+                        'success': success,
+                        'file_path': str(file_path),
+                        'rows': len(klines_data)
+                    }
+            
+            # Process aggtrades data
+            if self.collect_aggtrades:
+                aggtrades_data = await self._collect_raw_data('aggtrades')
+                aggtrades_data = PipelineStandards.standardize_timestamp(aggtrades_data, 'timestamp', 'int64')
+                aggtrades_data = PipelineStandards.enforce_schema(aggtrades_data, 'aggtrades')
+                
+                filename = PipelineStandards.generate_file_name('aggtrades', self.exchange, self.symbol)
+                file_path = Path(self.data_dir) / filename
+                
+                if self.progressive_append:
+                    success = await self._progressive_append_data(aggtrades_data, file_path, 'aggtrades')
+                else:
+                    aggtrades_data.to_parquet(file_path, index=False, compression='snappy')
+                    success = True
+                
+                results['aggtrades'] = {
+                    'success': success,
+                    'file_path': str(file_path),
+                    'rows': len(aggtrades_data)
+                }
+            
+            # Process futures data
+            if self.collect_futures:
+                futures_data = await self._collect_raw_data('futures')
+                futures_data = PipelineStandards.standardize_timestamp(futures_data, 'timestamp', 'int64')
+                futures_data = PipelineStandards.enforce_schema(futures_data, 'futures')
+                
+                filename = PipelineStandards.generate_file_name('futures', self.exchange, self.symbol)
+                file_path = Path(self.data_dir) / filename
+                
+                if self.progressive_append:
+                    success = await self._progressive_append_data(futures_data, file_path, 'futures')
+                else:
+                    futures_data.to_parquet(file_path, index=False, compression='snappy')
+                    success = True
+                
+                results['futures'] = {
+                    'success': success,
+                    'file_path': str(file_path),
+                    'rows': len(futures_data)
+                }
             
             self.steps_completed += 1
             
             return {
                 "success": True,
                 "step": step_name,
-                "formatted_data": formatted_data,
+                "results": results,
                 "message": f"{step_name} completed successfully"
             }
             
@@ -324,8 +437,19 @@ class StandaloneDataCollectionPipeline:
                 "error": str(e)
             }
     
-    async def _collect_raw_data(self) -> pd.DataFrame:
+    async def _collect_raw_data(self, data_type: str = 'klines') -> pd.DataFrame:
         """Collect raw data from exchange (simulated)."""
+        if data_type == 'klines':
+            return await self._collect_klines_data()
+        elif data_type == 'aggtrades':
+            return await self._collect_aggtrades_data()
+        elif data_type == 'futures':
+            return await self._collect_futures_data()
+        else:
+            raise ValueError(f"Unknown data type: {data_type}")
+    
+    async def _collect_klines_data(self) -> pd.DataFrame:
+        """Collect klines data from exchange (simulated)."""
         # Create sample data for demonstration
         dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
         data = {
@@ -343,8 +467,128 @@ class StandaloneDataCollectionPipeline:
         df['high'] = np.maximum(df['high'], np.maximum(df['open'], df['close']))
         df['low'] = np.minimum(df['low'], np.minimum(df['open'], df['close']))
         
-        self.logger.info(f"Collected {len(df)} rows of raw data for {self.symbol} on {self.exchange}")
+        self.logger.info(f"Collected {len(df)} rows of klines data for {self.symbol} on {self.exchange}")
         return df
+    
+    async def _collect_aggtrades_data(self) -> pd.DataFrame:
+        """Collect aggtrades data from exchange (simulated)."""
+        # Create sample aggtrades data
+        dates = pd.date_range(start='2024-01-01', periods=5000, freq='1s')  # More frequent trades
+        data = {
+            'timestamp': dates,
+            'price': np.random.uniform(100, 200, 5000),
+            'quantity': np.random.uniform(0.1, 10, 5000),
+            'is_buyer_maker': np.random.choice([True, False], 5000),
+            'agg_trade_id': [f"agg_{i}_{int(dates[i].timestamp())}" for i in range(5000)],
+            'first_trade_id': np.random.randint(1000000, 9999999, 5000),
+            'last_trade_id': np.random.randint(1000000, 9999999, 5000),
+            'trade_time': [int(dates[i].timestamp() * 1000) for i in range(5000)]
+        }
+        
+        df = pd.DataFrame(data)
+        self.logger.info(f"Collected {len(df)} rows of aggtrades data for {self.symbol} on {self.exchange}")
+        return df
+    
+    async def _collect_futures_data(self) -> pd.DataFrame:
+        """Collect futures data from exchange (simulated)."""
+        # Create sample futures data
+        dates = pd.date_range(start='2024-01-01', periods=1000, freq='8h')  # Funding rate every 8 hours
+        data = {
+            'timestamp': dates,
+            'fundingRate': np.random.uniform(-0.01, 0.01, 1000),  # Funding rate between -1% and 1%
+            'symbol': [f"{self.symbol}PERP" for _ in range(1000)],
+            'mark_price': np.random.uniform(100, 200, 1000),
+            'index_price': np.random.uniform(100, 200, 1000),
+            'next_funding_time': [int((dates[i] + timedelta(hours=8)).timestamp() * 1000) for i in range(1000)]
+        }
+        
+        df = pd.DataFrame(data)
+        self.logger.info(f"Collected {len(df)} rows of futures data for {self.symbol} on {self.exchange}")
+        return df
+    
+    def _resample_data(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """Resample data to different timeframes."""
+        if timeframe == '1m':
+            return df  # Already 1m data
+        
+        # Convert timestamp to datetime for resampling
+        df_resampled = df.copy()
+        df_resampled['timestamp'] = pd.to_datetime(df_resampled['timestamp'], unit='ms')
+        df_resampled = df_resampled.set_index('timestamp')
+        
+        # Resample based on timeframe
+        pandas_freq = self.TIMEFRAME_MAPPINGS.get(timeframe, '1T')
+        
+        # Resample OHLCV data
+        resampled = df_resampled.resample(pandas_freq).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        # Convert back to milliseconds timestamp
+        resampled['timestamp'] = (resampled.index.astype('int64') // 10**6).astype('int64')
+        resampled = resampled.reset_index(drop=True)
+        
+        self.logger.info(f"Resampled data to {timeframe}: {len(resampled)} rows")
+        return resampled
+    
+    async def _progressive_append_data(self, new_data: pd.DataFrame, file_path: Path, schema_name: str) -> bool:
+        """Progressively append new data to existing file with quality checks."""
+        try:
+            # Check if file exists
+            if file_path.exists():
+                # Load existing data
+                existing_data = pd.read_parquet(file_path)
+                
+                # Check for duplicates and append only new data
+                if 'timestamp' in new_data.columns and 'timestamp' in existing_data.columns:
+                    # Remove duplicates based on timestamp
+                    combined_data = pd.concat([existing_data, new_data], ignore_index=True)
+                    combined_data = combined_data.drop_duplicates(subset=['timestamp'], keep='last')
+                else:
+                    combined_data = pd.concat([existing_data, new_data], ignore_index=True)
+            else:
+                combined_data = new_data
+            
+            # Quality check on sample
+            sample_size = min(self.quality_check_samples, len(combined_data))
+            sample_data = combined_data.sample(n=sample_size, random_state=42)
+            quality_issues = self._check_data_quality(sample_data)
+            
+            if quality_issues:
+                self.logger.warning(f"Quality issues found in sample: {quality_issues}")
+                # Continue anyway but log warnings
+            
+            # Save updated data
+            combined_data.to_parquet(file_path, index=False, compression='snappy')
+            
+            # Update metadata
+            metadata_file = file_path.with_suffix('.metadata.json')
+            metadata = PipelineStandards.create_metadata(
+                schema_name,
+                self.exchange,
+                self.symbol,
+                '1m',  # Base timeframe
+                pipeline_id=self.pipeline_id,
+                data_rows=len(combined_data),
+                data_columns=list(combined_data.columns),
+                quality_score=1.0 - (len(quality_issues) / 10),  # Simple quality score
+                processing_notes=f"Progressive append with quality checks (sample size: {sample_size})",
+                last_updated=datetime.now(UTC).isoformat()
+            )
+            
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2, default=str)
+            
+            self.logger.info(f"Progressive append completed: {len(combined_data)} total rows")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in progressive append: {e}")
+            return False
     
     def _check_data_quality(self, df: pd.DataFrame) -> List[str]:
         """Check data quality and return issues."""
@@ -505,25 +749,37 @@ async def main():
     # Configuration
     symbol = "ETHUSDT"
     exchange = "BINANCE"
-    timeframe = "1m"
     data_dir = "data_cache"
     
-    # Data collection parameters
+    # Enhanced data collection parameters
     config = {
         'force_rerun': True,
         'quality_checks': True,
         'validate_data': True,
         'convert_format': True,
         'random_state': 42,
+        # Multiple timeframes for resampling
+        'timeframes': ['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
+        # Data collection types
+        'collect_klines': True,
+        'collect_aggtrades': True,
+        'collect_futures': True,
+        # Progressive append settings
+        'progressive_append': True,
+        'quality_check_samples': 100,
     }
     
     print(f"📊 Configuration:")
     print(f"   Symbol: {symbol}")
     print(f"   Exchange: {exchange}")
-    print(f"   Timeframe: {timeframe}")
+    print(f"   Timeframes: {config['timeframes']}")
     print(f"   Data directory: {data_dir}")
     print(f"   Force rerun: {config['force_rerun']}")
     print(f"   Quality checks: {config['quality_checks']}")
+    print(f"   Progressive append: {config['progressive_append']}")
+    print(f"   Collect klines: {config['collect_klines']}")
+    print(f"   Collect aggtrades: {config['collect_aggtrades']}")
+    print(f"   Collect futures: {config['collect_futures']}")
     print("=" * 80)
     
     # Run data collection pipeline

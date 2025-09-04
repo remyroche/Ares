@@ -22,25 +22,20 @@ from .integrated_data_quality_pipeline import IntegratedDataQualityPipeline
 
 # Main pipeline function
 async def run_data_collection_pipeline(symbol, exchange, timeframe, data_dir, **config):
-    """Run the complete data collection pipeline."""
+    """Run the complete data collection pipeline with enhanced protection."""
     try:
-        # Step 1: Data Collection
-        data_collector = DataCollectionStep()
-        await data_collector.collect_data(symbol, exchange, timeframe, data_dir)
+        # Import enhanced pipeline
+        from .enhanced_data_collection_pipeline import run_enhanced_data_collection_pipeline
         
-        # Step 2: Data Reading and Validation
-        data_reader = DataReadingStep()
-        data = await data_reader.read_data(symbol, exchange, timeframe, data_dir)
+        # Run enhanced pipeline
+        result = await run_enhanced_data_collection_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
+            config=config
+        )
         
-        # Step 3: Quality Validation
-        quality_checker = RawDataQualityChecker()
-        quality_results = await quality_checker.validate_data_quality(data)
-        
-        # Step 4: Unified Data Loading
-        unified_loader = UnifiedDataLoader()
-        processed_data = await unified_loader.load_and_process(data)
-        
-        return True
+        return result.get("success", False)
         
     except Exception as e:
         print(f"Data collection pipeline failed: {e}")

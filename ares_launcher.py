@@ -105,7 +105,7 @@ except ImportError:
 
 from src.config import CONFIG
 from src.config.constants import (
-    FULL_TRAINING_LOOKBACK_DAYS,
+    DEFAULT_LOOKBACK_DAYS,
 )
 from src.config.training_modes import (
     get_intensity_comparison,
@@ -119,12 +119,23 @@ from src.config.training_modes import (
 from src.utils.comprehensive_logger import (
     setup_comprehensive_logging,
 )
-from src.utils.error_handler import handle_errors
+# Simple handle_errors decorator to avoid circular imports
+def handle_errors(exceptions=(Exception,), default_return=None, context="operation"):
+    """Simple error handling decorator."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except exceptions as e:
+                logging.error(f"Error in {context}: {e}")
+                return default_return
+        return wrapper
+    return decorator
 from src.utils.logger import (
     ensure_comprehensive_logging_available,
 )
 from src.utils.observability import init_observability
-from src.utils.signal_handler import setup_signal_handlers
+from src.utils.simple_signal_handler import setup_signal_handlers
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent
@@ -1397,16 +1408,23 @@ class AresLauncher:
         try:
             # Run the data collection pipeline
             print(f"🚀 Starting data collection pipeline for {symbol} on {exchange}...")
+            
+            # Set up environment with correct Python path
+            env = os.environ.copy()
+            env['PYTHONPATH'] = str(project_root)
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
-                    "src/training/steps/data_collection/step01_data_collection_main.py",
+                    "standalone_data_collection.py",
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=env,
+                cwd=str(project_root)
             )
             self.processes.append(process)
 
@@ -2254,7 +2272,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        lookback_days: int=FULL_TRAINING_LOOKBACK_DAYS,
+        lookback_days: int=DEFAULT_LOOKBACK_DAYS,
     ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
@@ -3234,7 +3252,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
         "load": lambda: launcher.run_data_loading(
             args.symbol,
             args.exchange,
-            lookback_days=FULL_TRAINING_LOOKBACK_DAYS
+            lookback_days=DEFAULT_LOOKBACK_DAYS
             if not args.blank_mode
             else 30,  # Use 730 for standard, 30 for blank
         ),

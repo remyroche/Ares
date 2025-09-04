@@ -1,0 +1,75 @@
+2025-09-04 14:11:26,648 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 14:11:26
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_141126.log
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:26,649 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 14:11:26,649 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 14:11:26,649 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 14:11:26,903 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:26,902 - __main__ - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 14:11:26,903 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:26,902 - __main__ - INFO - 📊 Running step1_data_collection
+2025-09-04 14:11:26,910 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:26,910 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:26,911 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:26,911 - __main__ - INFO - 🔍 Running step2_data_validation
+2025-09-04 14:11:27,012 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,011 - __main__ - INFO - 🔄 Running step3_data_formatting
+2025-09-04 14:11:27,018 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,017 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,057 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,057 - __main__ - INFO - Progressive append completed: 38881 total rows
+2025-09-04 14:11:27,063 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,063 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,072 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,072 - __main__ - INFO - Resampled data to 5m: 7777 rows
+2025-09-04 14:11:27,079 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,079 - __main__ - INFO - Progressive append completed: 7777 total rows
+2025-09-04 14:11:27,084 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,084 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,092 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,092 - __main__ - INFO - Resampled data to 15m: 2593 rows
+2025-09-04 14:11:27,098 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,098 - __main__ - INFO - Progressive append completed: 2593 total rows
+2025-09-04 14:11:27,103 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,103 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,111 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,111 - __main__ - INFO - Resampled data to 30m: 1297 rows
+2025-09-04 14:11:27,116 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,115 - __main__ - INFO - Progressive append completed: 1297 total rows
+2025-09-04 14:11:27,121 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,120 - __main__ - INFO - Collected 38881 rows of klines data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,128 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,128 - __main__ - INFO - Resampled data to 1h: 649 rows
+2025-09-04 14:11:27,133 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,133 - __main__ - INFO - Progressive append completed: 649 total rows
+2025-09-04 14:11:27,241 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,241 - __main__ - INFO - Collected 39965 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 14:11:27,290 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,290 - __main__ - INFO - Progressive append completed: 39965 total rows
+2025-09-04 14:11:27,291 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,291 - __main__ - INFO - Collected 82 rows of futures data for ETHUSDT on BINANCE (27 days, no gaps)
+2025-09-04 14:11:27,295 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,295 - __main__ - INFO - Progressive append completed: 82 total rows
+2025-09-04 14:11:27,295 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,295 - __main__ - INFO - Pipeline completed successfully
+2025-09-04 14:11:27,295 - AresComponent.AresLauncher - INFO - 2025-09-04 14:11:27,295 - __main__ - INFO - ✅ Enhanced data collection pipeline completed successfully
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🚀 Step 1: Enhanced Data Collection Pipeline
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 📊 Configuration:
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Symbol: ETHUSDT
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Exchange: BINANCE
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Timeframes: ['1m', '5m', '15m', '30m', '1h']
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Data directory: data_cache
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Force rerun: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Quality checks: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Progressive append: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Collect klines: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Collect aggtrades: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - Collect futures: True
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 📊 Running step1_data_collection
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🔍 Running step2_data_validation
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🔄 Running step3_data_formatting
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🎉 Pipeline completed successfully
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ✅ Enhanced data collection pipeline completed successfully
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 🎉 ENHANCED DATA COLLECTION COMPLETED SUCCESSFULLY!
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ✅ All data collection steps completed:
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ✅ Raw data collection from exchange
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ✅ Data quality validation
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ✅ Data formatting and preprocessing
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ⏱️ Total execution time: 0.39 seconds
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 📊 Pipeline ID: data_collection_20250904_141126
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - 📈 Steps completed: 3/5
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ⚠️ Warnings: 0
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ❌ Errors: 0
+2025-09-04 14:11:27,296 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:11:27,353 - AresComponent.AresLauncher - INFO - ✅ Data collection pipeline completed successfully
+2025-09-04 14:11:27,353 - AresTradingSystem - INFO - 🏁 Launcher ended: SUCCESS (exit code: 0)
+2025-09-04 14:11:27,353 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 14:11:27,353 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

@@ -29,6 +29,9 @@ from .step03_microservices_regime_discovery import MicroservicesRegimeDiscovery,
 from .step03_realtime_streaming_pipeline import RealTimeStreamingPipeline, StreamingRegimeDiscovery as RealtimeStreaming
 from .step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep, run_enhanced_step
 from .step03_hmm_clustering_wrapper import HMMRegimeDiscoveryStep, run_hmm_clustering_step
+from .step03_hmm_clustering_validator import HMMClusteringValidator, run_validator
+from .data_persistence_mixin import DataPersistenceMixin
+from .mlflow_integration import MLflowIntegrationMixin
 
 __all__ = [
     'OptimizedBayesianParameterOptimization',
@@ -49,5 +52,9 @@ __all__ = [
     'EnhancedHMMRegimeDiscoveryStep',
     'run_enhanced_step',
     'HMMRegimeDiscoveryStep',
-    'run_hmm_clustering_step'
+    'run_hmm_clustering_step',
+    'HMMClusteringValidator',
+    'run_validator',
+    'DataPersistenceMixin',
+    'MLflowIntegrationMixin'
 ]

@@ -43,10 +43,12 @@ from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
+from .data_persistence_mixin import DataPersistenceMixin
+from .mlflow_integration import MLflowIntegrationMixin
 
 logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
 
-class EnhancedHMMRegimeDiscoveryStep:
+class EnhancedHMMRegimeDiscoveryStep(DataPersistenceMixin, MLflowIntegrationMixin):
     """Enhanced Step 3: HMM Regime Discovery with all improvements integrated."""
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -210,8 +212,21 @@ class EnhancedHMMRegimeDiscoveryStep:
             # Log final results
             self._log_final_results(final_results)
             
-            # Log step artifacts to MLflow
-            await self._log_enhanced_artifacts_to_mlflow(final_results, training_input)
+            # Save results to disk
+            saved_files = self.save_regime_results(
+                final_results,
+                training_input.get('symbol', 'UNKNOWN'),
+                training_input.get('exchange', 'UNKNOWN'),
+                training_input.get('timeframe', '1m'),
+                training_input.get('data_dir', 'data')
+            )
+            
+            if saved_files:
+                self.logger.info(f'✅ Saved {len(saved_files)} files to disk')
+                pipeline_state['saved_files'] = {k: str(v) for k, v in saved_files.items()}
+            
+            # Log to MLflow
+            self.log_to_mlflow(final_results, training_input)
             
         except Exception as e:
             self.logger.exception(f'❌ Unexpected error during enhanced HMM regime discovery: {e}')
@@ -550,8 +565,13 @@ class EnhancedHMMRegimeDiscoveryStep:
                 # Required outputs for pipeline compatibility
                 'regime_labels': ensemble_results['consensus_regimes'].tolist(),  # For step 4 compatibility
                 'hmm_regime_discovery_completed': True,  # Standard completion flag
-                'composite_clusters': ensemble_results.get('composite_df', pd.DataFrame())  # For data saving
             }
+            
+            # Create composite DataFrame for compatibility
+            final_results['composite_df'] = self._create_composite_dataframe(
+                final_results['regime_states'],
+                enhanced_features
+            )
             
             self.logger.info('✅ Final results compiled successfully')
             
@@ -626,6 +646,29 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.info(f"🔄 Total transitions: {transitions.get('total_transitions', 0)}")
             self.logger.info(f"📈 Transition rate: {transitions.get('transition_rate', 0):.4f}")
 
+    def _create_composite_dataframe(self, regime_states: list, data: pd.DataFrame) -> pd.DataFrame:
+        """Create composite DataFrame for compatibility.
+        
+        Args:
+            regime_states: List of regime states
+            data: Original data DataFrame
+            
+        Returns:
+            Composite DataFrame with regime labels
+        """
+        if isinstance(data, pd.DataFrame) and 'timestamp' in data.columns:
+            composite_df = pd.DataFrame({
+                'timestamp': data['timestamp'][:len(regime_states)],
+                'composite_cluster_id': regime_states
+            })
+        else:
+            composite_df = pd.DataFrame({
+                'timestamp': pd.date_range(start='2024-01-01', periods=len(regime_states), freq='1min'),
+                'composite_cluster_id': regime_states
+            })
+        
+        return composite_df
+    
     @handles_errors(fallback=False)
     async def _log_enhanced_artifacts_to_mlflow(self, final_results: dict[str, Any], training_input: dict[str, Any]) -> None:
         """Log enhanced artifacts to MLflow."""

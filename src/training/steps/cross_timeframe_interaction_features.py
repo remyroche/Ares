@@ -7,6 +7,12 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+class TimeframeType(Enum):
+    """Types of timeframes for analysis"""
+    ULTRA_SHORT = [1, 2, 3]
+    SHORT = [5, 10, 15]
+    MEDIUM = [20, 30, 45]
+    LONG = [60, 120, 240]
 
 @dataclass
 class CrossTimeframeConfig:
@@ -57,3 +63,14 @@ class InteractionConfig:
     parallel_processing: bool = True
     max_workers: int = 4
 
+class CrossTimeframeFeatureGenerator:
+    """Refactored cross-timeframe feature generator with reduced complexity"""
+    def __init__(self, config: CrossTimeframeConfig | None=None, logger: logging.Logger | None=None) -> None:
+        self.config = config or CrossTimeframeConfig()
+        self.logger = logger or logging.getLogger(__name__)
+
+class InteractionFeatureGenerator:
+    """Refactored interaction feature generator with reduced complexity"""
+    def __init__(self, config: InteractionConfig | None=None, logger: logging.Logger | None=None) -> None:
+        self.config = config or InteractionConfig()
+        self.logger = logger or logging.getLogger(__name__)

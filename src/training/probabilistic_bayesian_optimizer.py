@@ -247,6 +247,32 @@ class ProbabilisticBayesianOptimizer:
         except Exception as e:
             self.logger.exception(f'Error plotting optimization results: {e}')
 
+def create_tactician_model(params: dict[str, Any]) -> Any:
+    """Factory function for creating Tactician models."""
+    from sklearn.ensemble import RandomForestClassifier
+    return RandomForestClassifier(n_estimators=params.get('n_estimators', 100), max_depth=params.get('max_depth', 10), random_state=42, n_jobs=1)
+
+def create_analyst_model(params: Dict[str, Any]) -> Any:
+    """Factory function for creating Analyst models."""
+    from sklearn.ensemble import RandomForestClassifier
+    return RandomForestClassifier(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
+
+def get_recommended_hyperparameters(study: Any, objectives: list[str], objective_weights: dict[str, float] | None=None) -> dict[str, Any]:
+    """Get recommended hyperparameters based on objective weights."""
+    if objective_weights is None:
+        objective_weights = {'total_profit': 0.5, 'win_rate': 0.25, 'sharpe_ratio': 0.25}
+    best_trial = None
+    best_weighted_score = float('-inf')
+    for trial in study.best_trials:
+        if trial.state == optuna.trial.TrialState.COMPLETE:
+            weighted_score = sum((objective_weights[obj] * trial.values[i] for i, obj in enumerate(objectives)))
+            if weighted_score > best_weighted_score:
+                best_weighted_score = weighted_score
+                best_trial = trial
+    if best_trial:
+        return {'hyperparameters': best_trial.params, 'objective_values': dict(zip(objectives, best_trial.values, strict=False)), 'weighted_score': best_weighted_score, 'trial_number': best_trial.number}
+    return {}
+
 if __name__ == '__main__':
     config = ProbabilisticOptimizationConfig(objectives=['calibration', 'sharpness', 'discrimination'], n_trials=50, n_jobs=1)
     tactician_optimizer = ProbabilisticBayesianOptimizer(config=config, model_type='tactician')

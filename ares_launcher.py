@@ -43,6 +43,16 @@ Usage:
     # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
     python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
+    # Individual pipeline execution (organized structure)
+    python ares_launcher.py data-collection --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py market-analysis --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py model-training --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py optimisation --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py backtesting --symbol ETHUSDT --exchange BINANCE
+
+    # Run all pipelines in sequence
+    python ares_launcher.py all-pipelines --symbol ETHUSDT --exchange BINANCE
+
     # Live trading for single token
     python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
 
@@ -1380,6 +1390,360 @@ class AresLauncher:
             self.logger.exception(f"❌ Failed to run blank training: {e}")
             return False
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_data_collection_pipeline",
+    )
+    def run_data_collection_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run data collection pipeline."""
+        self.logger.info(f"📊 Running data collection pipeline for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("data-collection", symbol, exchange):
+            return False
+
+        try:
+            # Run the data collection pipeline
+            print(f"🚀 Starting data collection pipeline for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/data_collection/step01_data_collection_main.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ Data collection pipeline completed successfully")
+                print("✅ Data collection pipeline completed successfully")
+                return True
+            self.logger.error(
+                f"❌ Data collection pipeline failed with return code: {return_code}",
+            )
+            print(f"❌ Data collection pipeline failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run data collection pipeline: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_market_analysis_pipeline",
+    )
+    def run_market_analysis_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run market analysis pipeline."""
+        self.logger.info(f"📊 Running market analysis pipeline for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("market-analysis", symbol, exchange):
+            return False
+
+        try:
+            # Run the market analysis pipeline
+            print(f"🚀 Starting market analysis pipeline for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/market_analysis/step03_market_analysis_main.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ Market analysis pipeline completed successfully")
+                print("✅ Market analysis pipeline completed successfully")
+                return True
+            self.logger.error(
+                f"❌ Market analysis pipeline failed with return code: {return_code}",
+            )
+            print(f"❌ Market analysis pipeline failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run market analysis pipeline: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_model_training_pipeline",
+    )
+    def run_model_training_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run model training pipeline."""
+        self.logger.info(f"📊 Running model training pipeline for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("model-training", symbol, exchange):
+            return False
+
+        try:
+            # Run the model training pipeline
+            print(f"🚀 Starting model training pipeline for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/model_training/step09_model_training_main.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ Model training pipeline completed successfully")
+                print("✅ Model training pipeline completed successfully")
+                return True
+            self.logger.error(
+                f"❌ Model training pipeline failed with return code: {return_code}",
+            )
+            print(f"❌ Model training pipeline failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run model training pipeline: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_optimisation_pipeline",
+    )
+    def run_optimisation_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run optimisation pipeline."""
+        self.logger.info(f"📊 Running optimisation pipeline for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("optimisation", symbol, exchange):
+            return False
+
+        try:
+            # Run the optimisation pipeline
+            print(f"🚀 Starting optimisation pipeline for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/optimisation/step16_optimisation_main.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ Optimisation pipeline completed successfully")
+                print("✅ Optimisation pipeline completed successfully")
+                return True
+            self.logger.error(
+                f"❌ Optimisation pipeline failed with return code: {return_code}",
+            )
+            print(f"❌ Optimisation pipeline failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run optimisation pipeline: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_backtesting_pipeline",
+    )
+    def run_backtesting_pipeline(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run backtesting pipeline."""
+        self.logger.info(f"📊 Running backtesting pipeline for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("backtesting", symbol, exchange):
+            return False
+
+        try:
+            # Run the backtesting pipeline
+            print(f"🚀 Starting backtesting pipeline for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/backtesting/step18_backtesting_main.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ Backtesting pipeline completed successfully")
+                print("✅ Backtesting pipeline completed successfully")
+                return True
+            self.logger.error(
+                f"❌ Backtesting pipeline failed with return code: {return_code}",
+            )
+            print(f"❌ Backtesting pipeline failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run backtesting pipeline: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_all_pipelines",
+    )
+    def run_all_pipelines(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run all pipelines in sequence."""
+        self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
+
+        if with_gui and not self.launch_gui("all-pipelines", symbol, exchange):
+            return False
+
+        try:
+            # Run the all pipelines orchestrator
+            print(f"🚀 Starting all pipelines for {symbol} on {exchange}...")
+            process=subprocess.Popen(
+                [
+                    sys.executable,
+                    "src/training/steps/run_all_pipelines.py",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True,
+            )
+            self.processes.append(process)
+
+            # Read output in real-time
+            while True:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
+                    break
+                if output:
+                    print(output.strip())  # Print to terminal in real-time
+                    self.logger.info(output.strip())  # Also log it
+
+            # Get the final return code
+            return_code=process.poll()
+
+            if return_code== 0:
+                self.logger.info("✅ All pipelines completed successfully")
+                print("✅ All pipelines completed successfully")
+                return True
+            self.logger.error(
+                f"❌ All pipelines failed with return code: {return_code}",
+            )
+            print(f"❌ All pipelines failed with return code: {return_code}")
+            return False
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to run all pipelines: {e}")
+            return False
+
 
 
     @handle_errors(
@@ -2175,6 +2539,14 @@ Examples:
     python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
     python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
 
+    # Individual pipeline execution (organized structure)
+    python ares_launcher.py data-collection --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py market-analysis --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py model-training --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py optimisation --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py backtesting --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py all-pipelines --symbol ETHUSDT --exchange BINANCE
+
     # Legacy step-based commands (still supported)
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
@@ -2232,6 +2604,8 @@ Examples:
             "precompute",
             "resume",
             "modes",  # Show available training modes
+            # New pipeline commands (organized structure)
+            "data-collection", "market-analysis", "model-training", "optimisation", "backtesting", "all-pipelines",
             # New step-based commands
             "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
             "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
@@ -2379,6 +2753,8 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "multi-timeframe",
         "load",
         "precompute",
+        # New pipeline commands (organized structure)
+        "data-collection", "market-analysis", "model-training", "optimisation", "backtesting", "all-pipelines",
         # Step-based commands
         "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
         "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
@@ -2756,6 +3132,37 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             args.gui,
         ),
         "modes": lambda: launcher.show_training_modes(),
+        # New pipeline commands (organized structure)
+        "data-collection": lambda: launcher.run_data_collection_pipeline(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
+        "market-analysis": lambda: launcher.run_market_analysis_pipeline(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
+        "model-training": lambda: launcher.run_model_training_pipeline(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
+        "optimisation": lambda: launcher.run_optimisation_pipeline(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
+        "backtesting": lambda: launcher.run_backtesting_pipeline(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
+        "all-pipelines": lambda: launcher.run_all_pipelines(
+            args.symbol,
+            args.exchange,
+            with_gui=args.gui,
+        ),
     }
 
     if args.command in command_handlers:

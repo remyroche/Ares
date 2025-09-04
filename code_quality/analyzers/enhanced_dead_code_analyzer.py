@@ -45,8 +45,8 @@ except ImportError:
     DEADCODE_AVAILABLE = False
     print("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
 
-from core.config import AnalysisConfig
-from utils.file_utils import find_python_files
+from ..core.config import AnalysisConfig
+from ..utils.file_utils import find_python_files
 
 
 @dataclass

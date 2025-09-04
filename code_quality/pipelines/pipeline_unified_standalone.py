@@ -55,12 +55,12 @@ class UnifiedStandalonePipeline:
             "function_validator": {
                 "script": "../function_validator.py",
                 "description": "Function Validation",
-                "args": [str(self.project_root)],
+                "args": ["--project-root", str(self.project_root)],
             },
             "comprehensive_review": {
                 "script": "../comprehensive_code_review.py",
                 "description": "Comprehensive Code Review",
-                "args": ["--directory", str(self.project_root)],
+                "args": ["--project-root", str(self.project_root)],
             },
         }
 

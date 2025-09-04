@@ -3,14 +3,15 @@ Enhanced Memory Management Utilities
 
 This module provides memory monitoring and optimization capabilities for the training pipeline.
 """
+import asyncio
 import functools
 import gc
 import logging
 import time
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
-import asyncio
-from copy import copy
+
 try:
     import psutil
     PSUTIL_AVAILABLE = True

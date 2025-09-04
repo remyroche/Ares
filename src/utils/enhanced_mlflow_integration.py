@@ -1240,7 +1240,7 @@ def create_detailed_step_report(
     metrics_calculated: dict[str, Any],
     errors_encountered: list[str] = None,
 ) -> dict[str, Any]:
-    """Create a detailed report for a pipeline step."
+    """Create a detailed report for a pipeline step and save it using the report manager.
 
     Args:
         step_name: Name of the pipeline step
@@ -1254,7 +1254,7 @@ def create_detailed_step_report(
     Returns:
         Detailed report dictionary
     """
-    return {
+    report_data = {
         "step_info": {
             "step_name": step_name,
             "execution_timestamp": datetime.now().isoformat(),
@@ -1332,6 +1332,30 @@ def create_detailed_step_report(
             ),
         },
     }
+    
+    # Save the report using the report manager
+    try:
+        from src.utils.report_manager import get_report_manager
+        report_manager = get_report_manager()
+        
+        symbol = training_input.get("symbol", "UNKNOWN")
+        exchange = training_input.get("exchange", "UNKNOWN")
+        
+        # Save as human-readable TXT report
+        report_path = report_manager.save_step_report(
+            step_name=step_name,
+            symbol=symbol,
+            exchange=exchange,
+            report_data=report_data,
+            file_extension="txt"
+        )
+        
+        system_logger.info(f"📄 Step report saved: {report_path}")
+        
+    except Exception as e:
+        system_logger.warning(f"⚠️ Failed to save step report using report manager: {e}")
+    
+    return report_data
 
 
 def cleanup_local_artifacts(base_dir: str = "artifacts", days: int = 30, dry_run: bool = True) -> list[str]:

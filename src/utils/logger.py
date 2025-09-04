@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Dict, List, Optional, Union, Any, Tuple
+
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 '\nCentralized logging configuration with Standardized Import Management.\n\nThis module provides a unified logging system with JSON formatting,\nfile rotation, and console output capabilities.\n'
 import logging
 import logging.handlers
@@ -12,7 +14,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
 from .pipeline_standards import PipelineStandards
+
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
@@ -477,6 +481,7 @@ def setup_logging(config: dict[str, Any] | None=None) -> logging.Logger | None:
 if system_logger is None:
     system_logger = setup_logging()
 import logging
+
 logging.getLogger().setLevel(logging.INFO)
 for handler in logging.getLogger().handlers:
     handler.setLevel(logging.INFO)

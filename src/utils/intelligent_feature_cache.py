@@ -1,18 +1,21 @@
 from __future__ import annotations
+
 '\nIntelligent Feature Caching System\n\nThis module provides an intelligent caching system for feature engineering\nthat optimizes memory usage and computational efficiency.\n'
 import asyncio
 import gc
 import gzip
 import hashlib
+import json
 import logging
 import pickle
 import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
+
 import numpy as np
 import pandas as pd
-import json
+
 logger = logging.getLogger(__name__)
 
 class IntelligentFeatureCache:

@@ -11,9 +11,9 @@ Primary responsibilities:
 - Load the unified regime dataset created in step04
 """
 
+import os
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-import os
 import pandas as pd
 
 try:

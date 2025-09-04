@@ -246,12 +246,13 @@ class EnhancedSRBreakoutPredictor:
         level: Dict[str, Any],
         current_price: float
     ) -> Dict[str, float]:
-        """Extract features for breakout prediction (12 specific factors)."""
+        """Extract features for breakout prediction (25+ specific factors)."""
         try:
             features = {}
-            
-            # Factor 1: Proximity to Level (0-1, closer = higher breakout probability)
             level_price = level.get('price', 0)
+            
+            # === CORE BREAKOUT FACTORS (12 factors) ===
+            # Factor 1: Proximity to Level (0-1, closer = higher breakout probability)
             features['proximity_to_level'] = abs(current_price - level_price) / level_price
             
             # Factor 2: Volume Spike (1.0+ = normal, >1.5 = spike)
@@ -286,6 +287,47 @@ class EnhancedSRBreakoutPredictor:
             
             # Factor 12: Market Sentiment (0-1, extreme sentiment = more likely to break)
             features['market_sentiment'] = self._calculate_market_sentiment(market_data)
+            
+            # === ADDITIONAL TECHNICAL FACTORS (8 factors) ===
+            # Factor 13: Stochastic Oscillator (0-100, extremes = more likely to break)
+            features['stochastic_k'] = self._calculate_stochastic_k(market_data)
+            
+            # Factor 14: Williams %R (-100 to 0, extremes = more likely to break)
+            features['williams_r'] = self._calculate_williams_r(market_data)
+            
+            # Factor 15: CCI (Commodity Channel Index, extremes = more likely to break)
+            features['cci'] = self._calculate_cci(market_data)
+            
+            # Factor 16: ADX (Average Directional Index, >25 = strong trend)
+            features['adx'] = self._calculate_adx(market_data)
+            
+            # Factor 17: ATR (Average True Range, higher = more volatile)
+            features['atr'] = self._calculate_atr(market_data)
+            
+            # Factor 18: Volume Profile (volume at current price level)
+            features['volume_profile'] = self._calculate_volume_profile(market_data, current_price)
+            
+            # Factor 19: Price Action Pattern (doji, hammer, etc.)
+            features['price_action_pattern'] = self._detect_price_action_pattern(market_data)
+            
+            # Factor 20: Support/Resistance Density (how many levels nearby)
+            features['sr_density'] = self._calculate_sr_density(level_price, level)
+            
+            # === MARKET STRUCTURE FACTORS (5 factors) ===
+            # Factor 21: Trend Strength (0-1, stronger trend = more likely to break)
+            features['trend_strength'] = self._calculate_trend_strength(market_data)
+            
+            # Factor 22: Market Regime (trending, ranging, transitional)
+            features['market_regime'] = self._determine_market_regime(market_data)
+            
+            # Factor 23: Volatility Regime (low, normal, high volatility)
+            features['volatility_regime'] = self._determine_volatility_regime(market_data)
+            
+            # Factor 24: Time of Day Factor (market session effects)
+            features['time_of_day_factor'] = self._calculate_time_of_day_factor(market_data)
+            
+            # Factor 25: Previous Breakout History (how often this level breaks)
+            features['previous_breakout_rate'] = self._get_previous_breakout_rate(level)
             
             return features
             
@@ -799,6 +841,242 @@ class EnhancedSRBreakoutPredictor:
             # Simplified - would need historical data
             return 0.5  # Neutral history
             
+        except Exception:
+            return 0.5
+    
+    # Additional technical indicator methods
+    def _calculate_stochastic_k(self, market_data: pd.DataFrame, period: int = 14) -> float:
+        """Calculate Stochastic %K."""
+        try:
+            if len(market_data) < period:
+                return 50.0
+            
+            low_min = market_data['low'].rolling(window=period).min()
+            high_max = market_data['high'].rolling(window=period).max()
+            k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
+            return k_percent.iloc[-1] if not k_percent.empty else 50.0
+        except Exception:
+            return 50.0
+    
+    def _calculate_williams_r(self, market_data: pd.DataFrame, period: int = 14) -> float:
+        """Calculate Williams %R."""
+        try:
+            if len(market_data) < period:
+                return -50.0
+            
+            high_max = market_data['high'].rolling(window=period).max()
+            low_min = market_data['low'].rolling(window=period).min()
+            williams_r = -100 * ((high_max - market_data['close']) / (high_max - low_min))
+            return williams_r.iloc[-1] if not williams_r.empty else -50.0
+        except Exception:
+            return -50.0
+    
+    def _calculate_cci(self, market_data: pd.DataFrame, period: int = 20) -> float:
+        """Calculate Commodity Channel Index."""
+        try:
+            if len(market_data) < period:
+                return 0.0
+            
+            typical_price = (market_data['high'] + market_data['low'] + market_data['close']) / 3
+            sma_tp = typical_price.rolling(window=period).mean()
+            mad = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
+            cci = (typical_price - sma_tp) / (0.015 * mad)
+            return cci.iloc[-1] if not cci.empty else 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_adx(self, market_data: pd.DataFrame, period: int = 14) -> float:
+        """Calculate Average Directional Index."""
+        try:
+            if len(market_data) < period + 1:
+                return 25.0
+            
+            high_diff = market_data['high'].diff()
+            low_diff = market_data['low'].diff()
+            
+            plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
+            minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
+            
+            plus_dm = pd.Series(plus_dm, index=market_data.index)
+            minus_dm = pd.Series(minus_dm, index=market_data.index)
+            
+            atr = self._calculate_atr(market_data, period)
+            plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+            minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+            
+            dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+            adx = dx.rolling(window=period).mean()
+            
+            return adx.iloc[-1] if not adx.empty else 25.0
+        except Exception:
+            return 25.0
+    
+    def _calculate_atr(self, market_data: pd.DataFrame, period: int = 14) -> float:
+        """Calculate Average True Range."""
+        try:
+            if len(market_data) < period:
+                return 0.0
+            
+            high_low = market_data['high'] - market_data['low']
+            high_close = np.abs(market_data['high'] - market_data['close'].shift())
+            low_close = np.abs(market_data['low'] - market_data['close'].shift())
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(window=period).mean()
+            return atr.iloc[-1] if not atr.empty else 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_volume_profile(self, market_data: pd.DataFrame, current_price: float) -> float:
+        """Calculate volume profile at current price level."""
+        try:
+            if len(market_data) < 20:
+                return 1.0
+            
+            # Simplified volume profile calculation
+            price_range = market_data['high'].max() - market_data['low'].min()
+            price_level = (current_price - market_data['low'].min()) / price_range
+            
+            # Calculate volume at this price level (simplified)
+            volume_at_level = market_data['volume'].mean() * (1 + price_level * 0.2)
+            avg_volume = market_data['volume'].mean()
+            
+            return volume_at_level / avg_volume if avg_volume > 0 else 1.0
+        except Exception:
+            return 1.0
+    
+    def _detect_price_action_pattern(self, market_data: pd.DataFrame) -> float:
+        """Detect price action patterns."""
+        try:
+            if len(market_data) < 3:
+                return 0.0
+            
+            # Detect doji pattern
+            current = market_data.iloc[-1]
+            body_size = abs(current['close'] - current['open'])
+            total_range = current['high'] - current['low']
+            
+            if body_size / total_range < 0.1:  # Doji
+                return 1.0
+            
+            # Detect hammer pattern
+            lower_shadow = min(current['open'], current['close']) - current['low']
+            upper_shadow = current['high'] - max(current['open'], current['close'])
+            
+            if lower_shadow > 2 * body_size and upper_shadow < body_size:
+                return 0.8  # Hammer
+            
+            return 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_sr_density(self, level_price: float, level: Dict[str, Any]) -> float:
+        """Calculate S/R level density around current level."""
+        try:
+            # Simplified density calculation
+            # In practice, this would need access to all S/R levels
+            return 1.0  # Default density
+        except Exception:
+            return 1.0
+    
+    def _calculate_trend_strength(self, market_data: pd.DataFrame) -> float:
+        """Calculate trend strength."""
+        try:
+            if len(market_data) < 20:
+                return 0.5
+            
+            # Calculate trend using moving averages
+            sma_20 = market_data['close'].rolling(window=20).mean()
+            sma_50 = market_data['close'].rolling(window=50).mean()
+            
+            if len(sma_20) < 1 or len(sma_50) < 1:
+                return 0.5
+            
+            # Trend strength based on MA separation
+            trend_ratio = abs(sma_20.iloc[-1] - sma_50.iloc[-1]) / sma_50.iloc[-1]
+            return min(trend_ratio * 10, 1.0)  # Normalize to [0, 1]
+        except Exception:
+            return 0.5
+    
+    def _determine_market_regime(self, market_data: pd.DataFrame) -> float:
+        """Determine market regime (0=trending, 0.5=ranging, 1=transitional)."""
+        try:
+            if len(market_data) < 50:
+                return 0.5
+            
+            # Use RSI and moving averages to determine regime
+            rsi = self._calculate_rsi(market_data['close'])
+            sma_20 = market_data['close'].rolling(window=20).mean()
+            sma_50 = market_data['close'].rolling(window=50).mean()
+            
+            if len(sma_20) < 1 or len(sma_50) < 1:
+                return 0.5
+            
+            sma_ratio = sma_20.iloc[-1] / sma_50.iloc[-1]
+            rsi_val = rsi
+            
+            # Regime classification
+            if abs(sma_ratio - 1.0) > 0.02 and 30 < rsi_val < 70:
+                return 0.0  # Trending
+            elif abs(sma_ratio - 1.0) <= 0.02:
+                return 0.5  # Ranging
+            else:
+                return 1.0  # Transitional
+        except Exception:
+            return 0.5
+    
+    def _determine_volatility_regime(self, market_data: pd.DataFrame) -> float:
+        """Determine volatility regime (0=low, 0.5=normal, 1=high)."""
+        try:
+            if len(market_data) < 20:
+                return 0.5
+            
+            # Calculate volatility
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.std()
+            
+            # Classify volatility regime
+            if volatility < 0.01:
+                return 0.0  # Low volatility
+            elif volatility > 0.03:
+                return 1.0  # High volatility
+            else:
+                return 0.5  # Normal volatility
+        except Exception:
+            return 0.5
+    
+    def _calculate_time_of_day_factor(self, market_data: pd.DataFrame) -> float:
+        """Calculate time of day factor."""
+        try:
+            if len(market_data) < 1:
+                return 0.5
+            
+            # Get timestamp from market data
+            timestamp = market_data.index[-1]
+            hour = timestamp.hour
+            
+            # Market session effects (simplified)
+            if 9 <= hour <= 16:  # Regular trading hours
+                return 1.0
+            elif 4 <= hour <= 8 or 17 <= hour <= 20:  # Extended hours
+                return 0.7
+            else:  # Off hours
+                return 0.3
+        except Exception:
+            return 0.5
+    
+    def _get_previous_breakout_rate(self, level: Dict[str, Any]) -> float:
+        """Get previous breakout rate for this level."""
+        try:
+            # Simplified - would need historical breakout data
+            touch_count = level.get('touch_count', 0)
+            failure_count = level.get('failure_count', 0)
+            
+            if touch_count == 0:
+                return 0.5
+            
+            # Calculate breakout rate
+            breakout_rate = failure_count / touch_count
+            return min(breakout_rate, 1.0)
         except Exception:
             return 0.5
     

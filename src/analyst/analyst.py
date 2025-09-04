@@ -76,6 +76,12 @@ class Analyst:
             False,
         )
 
+        # Triple Barrier Configuration
+        self.triple_barrier_config: dict[str, Any] = self.analyst_config.get("triple_barrier", {})
+        self.profit_take_multiplier: float = self.triple_barrier_config.get("profit_take_multiplier", 0.002)  # 0.2%
+        self.stop_loss_multiplier: float = self.triple_barrier_config.get("stop_loss_multiplier", 0.001)  # 0.1%
+        self.confidence_threshold: float = self.triple_barrier_config.get("confidence_threshold", 0.6)  # 60% threshold for green light
+
         # Dual Model System integration
         self.dual_model_system: DualModelSystem | None = None
         self.enable_dual_model_system: bool = self.analyst_config.get(
@@ -635,12 +641,13 @@ class Analyst:
     ) -> dict[str, Any]:
         """
         Extract and consolidate price target probabilities from ML predictions.
+        Implements triple barrier logic and ensures all probabilities sum to 1.
         
         Args:
             ml_predictions: ML prediction results from confidence predictor
             
         Returns:
-            dict: Consolidated probability outputs
+            dict: Consolidated probability outputs with triple barrier analysis
         """
         try:
             if not ml_predictions:
@@ -648,6 +655,7 @@ class Analyst:
                     "price_target_probabilities": {},
                     "adversarial_risk_probabilities": {},
                     "directional_analysis": {},
+                    "triple_barrier_analysis": {},
                     "summary": {"status": "no_predictions"}
                 }
             
@@ -656,9 +664,15 @@ class Analyst:
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
             directional_analysis = ml_predictions.get("directional_analysis", {})
             
+            # Normalize probabilities to ensure they sum to 1
+            normalized_probabilities = self._normalize_probabilities(
+                price_target_confidences, 
+                adversarial_confidences
+            )
+            
             # Convert to probability format expected by the system
             price_target_probabilities = {}
-            for target, confidence in price_target_confidences.items():
+            for target, confidence in normalized_probabilities["upside"].items():
                 price_target_probabilities[target] = {
                     "probability": float(confidence),
                     "confidence_level": "high" if confidence > 0.7 else "medium" if confidence > 0.4 else "low"
@@ -666,13 +680,19 @@ class Analyst:
             
             # Convert adversarial confidences to risk probabilities
             adversarial_risk_probabilities = {}
-            for target, confidence in adversarial_confidences.items():
+            for target, confidence in normalized_probabilities["downside"].items():
                 adversarial_risk_probabilities[target] = {
                     "risk_probability": float(confidence),
                     "risk_level": "high" if confidence > 0.6 else "medium" if confidence > 0.3 else "low"
                 }
             
-            # Extract directional analysis
+            # Calculate triple barrier analysis
+            triple_barrier_analysis = self._calculate_triple_barrier_analysis(
+                normalized_probabilities["upside"],
+                normalized_probabilities["downside"]
+            )
+            
+            # Extract directional analysis with normalized probabilities
             directional_summary = {
                 "bullish_probability": directional_analysis.get("bullish", 0.0),
                 "bearish_probability": directional_analysis.get("bearish", 0.0),
@@ -682,14 +702,15 @@ class Analyst:
             }
             
             # Find best targets
-            best_upside = max(price_target_confidences.items(), key=lambda x: x[1]) if price_target_confidences else (None, 0.0)
-            best_downside = max(adversarial_confidences.items(), key=lambda x: x[1]) if adversarial_confidences else (None, 0.0)
+            best_upside = max(normalized_probabilities["upside"].items(), key=lambda x: x[1]) if normalized_probabilities["upside"] else (None, 0.0)
+            best_downside = max(normalized_probabilities["downside"].items(), key=lambda x: x[1]) if normalized_probabilities["downside"] else (None, 0.0)
             
             summary = {
                 "status": "success",
                 "model_status": ml_predictions.get("model_status", "unknown"),
-                "total_targets": len(price_target_confidences),
-                "total_risk_levels": len(adversarial_confidences),
+                "total_targets": len(normalized_probabilities["upside"]),
+                "total_risk_levels": len(normalized_probabilities["downside"]),
+                "probability_sum": sum(normalized_probabilities["upside"].values()) + sum(normalized_probabilities["downside"].values()),
                 "best_upside_target": {
                     "target": best_upside[0],
                     "probability": float(best_upside[1])
@@ -698,6 +719,8 @@ class Analyst:
                     "target": best_downside[0],
                     "probability": float(best_downside[1])
                 } if best_downside[0] else None,
+                "green_light_decision": triple_barrier_analysis.get("green_light", False),
+                "confidence_threshold_met": triple_barrier_analysis.get("threshold_met", False),
                 "timestamp": ml_predictions.get("timestamp", datetime.now().isoformat())
             }
             
@@ -705,6 +728,7 @@ class Analyst:
                 "price_target_probabilities": price_target_probabilities,
                 "adversarial_risk_probabilities": adversarial_risk_probabilities,
                 "directional_analysis": directional_summary,
+                "triple_barrier_analysis": triple_barrier_analysis,
                 "summary": summary
             }
             
@@ -714,8 +738,205 @@ class Analyst:
                 "price_target_probabilities": {},
                 "adversarial_risk_probabilities": {},
                 "directional_analysis": {},
+                "triple_barrier_analysis": {},
                 "summary": {"status": "error", "error": str(e)}
             }
+
+    def _normalize_probabilities(
+        self,
+        price_target_confidences: dict[str, float],
+        adversarial_confidences: dict[str, float]
+    ) -> dict[str, dict[str, float]]:
+        """
+        Normalize probabilities to ensure they sum to 1 across both directions.
+        
+        Args:
+            price_target_confidences: Upside price target confidences
+            adversarial_confidences: Downside risk confidences
+            
+        Returns:
+            dict: Normalized probabilities for upside and downside
+        """
+        try:
+            # Combine all probabilities
+            all_probabilities = {}
+            all_probabilities.update(price_target_confidences)
+            all_probabilities.update(adversarial_confidences)
+            
+            if not all_probabilities:
+                return {"upside": {}, "downside": {}}
+            
+            # Calculate total probability
+            total_prob = sum(all_probabilities.values())
+            
+            if total_prob <= 0:
+                # If no probabilities, distribute equally
+                n_targets = len(price_target_confidences)
+                n_risks = len(adversarial_confidences)
+                total_items = n_targets + n_risks
+                
+                if total_items > 0:
+                    equal_prob = 1.0 / total_items
+                    normalized_upside = {k: equal_prob for k in price_target_confidences.keys()}
+                    normalized_downside = {k: equal_prob for k in adversarial_confidences.keys()}
+                else:
+                    normalized_upside = {}
+                    normalized_downside = {}
+            else:
+                # Normalize to sum to 1
+                normalized_upside = {k: v / total_prob for k, v in price_target_confidences.items()}
+                normalized_downside = {k: v / total_prob for k, v in adversarial_confidences.items()}
+            
+            return {
+                "upside": normalized_upside,
+                "downside": normalized_downside
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error normalizing probabilities: {e}")
+            return {"upside": {}, "downside": {}}
+
+    def _calculate_triple_barrier_analysis(
+        self,
+        upside_probabilities: dict[str, float],
+        downside_probabilities: dict[str, float]
+    ) -> dict[str, Any]:
+        """
+        Calculate triple barrier analysis for green light decision.
+        
+        Args:
+            upside_probabilities: Normalized upside probabilities
+            downside_probabilities: Normalized downside probabilities
+            
+        Returns:
+            dict: Triple barrier analysis results
+        """
+        try:
+            # Convert upper barrier to percentage string for comparison
+            upper_barrier_pct = f"{self.profit_take_multiplier * 100:.1f}%"
+            lower_barrier_pct = f"{self.stop_loss_multiplier * 100:.1f}%"
+            
+            # Calculate cumulative confidence for upper barrier and above
+            cumulative_upper_confidence = 0.0
+            upper_barrier_targets = []
+            
+            for target, prob in upside_probabilities.items():
+                # Convert target string to float for comparison
+                target_value = float(target.replace("%", ""))
+                upper_barrier_value = self.profit_take_multiplier * 100
+                
+                if target_value >= upper_barrier_value:
+                    cumulative_upper_confidence += prob
+                    upper_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Calculate cumulative confidence for lower barrier and below (adversarial)
+            cumulative_lower_confidence = 0.0
+            lower_barrier_targets = []
+            
+            for target, prob in downside_probabilities.items():
+                # Convert target string to float for comparison
+                target_value = float(target.replace("%", ""))
+                lower_barrier_value = self.stop_loss_multiplier * 100
+                
+                if target_value >= lower_barrier_value:
+                    cumulative_lower_confidence += prob
+                    lower_barrier_targets.append({
+                        "target": target,
+                        "probability": prob,
+                        "contribution": prob
+                    })
+            
+            # Determine if confidence threshold is met
+            threshold_met = cumulative_upper_confidence >= self.confidence_threshold
+            
+            # Green light decision logic
+            green_light = (
+                threshold_met and 
+                cumulative_upper_confidence > cumulative_lower_confidence and
+                cumulative_upper_confidence > 0.5  # At least 50% confidence
+            )
+            
+            # Calculate risk-reward ratio
+            risk_reward_ratio = (
+                cumulative_upper_confidence / cumulative_lower_confidence 
+                if cumulative_lower_confidence > 0 else float('inf')
+            )
+            
+            return {
+                "upper_barrier_threshold": upper_barrier_pct,
+                "lower_barrier_threshold": lower_barrier_pct,
+                "confidence_threshold": self.confidence_threshold,
+                "cumulative_upper_confidence": float(cumulative_upper_confidence),
+                "cumulative_lower_confidence": float(cumulative_lower_confidence),
+                "threshold_met": threshold_met,
+                "green_light": green_light,
+                "risk_reward_ratio": float(risk_reward_ratio),
+                "upper_barrier_targets": upper_barrier_targets,
+                "lower_barrier_targets": lower_barrier_targets,
+                "decision_reasoning": self._get_decision_reasoning(
+                    cumulative_upper_confidence,
+                    cumulative_lower_confidence,
+                    threshold_met,
+                    green_light
+                )
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating triple barrier analysis: {e}")
+            return {
+                "upper_barrier_threshold": f"{self.profit_take_multiplier * 100:.1f}%",
+                "lower_barrier_threshold": f"{self.stop_loss_multiplier * 100:.1f}%",
+                "confidence_threshold": self.confidence_threshold,
+                "cumulative_upper_confidence": 0.0,
+                "cumulative_lower_confidence": 0.0,
+                "threshold_met": False,
+                "green_light": False,
+                "risk_reward_ratio": 0.0,
+                "upper_barrier_targets": [],
+                "lower_barrier_targets": [],
+                "decision_reasoning": f"Error in calculation: {str(e)}"
+            }
+
+    def _get_decision_reasoning(
+        self,
+        cumulative_upper_confidence: float,
+        cumulative_lower_confidence: float,
+        threshold_met: bool,
+        green_light: bool
+    ) -> str:
+        """
+        Generate human-readable decision reasoning.
+        
+        Args:
+            cumulative_upper_confidence: Cumulative confidence for upper barrier
+            cumulative_lower_confidence: Cumulative confidence for lower barrier
+            threshold_met: Whether confidence threshold is met
+            green_light: Whether green light decision is made
+            
+        Returns:
+            str: Decision reasoning
+        """
+        if green_light:
+            return (
+                f"GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"exceeds threshold ({self.confidence_threshold:.1%}) and is higher than "
+                f"lower barrier confidence ({cumulative_lower_confidence:.1%})"
+            )
+        elif threshold_met:
+            return (
+                f"THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence "
+                f"({cumulative_upper_confidence:.1%}) meets threshold but lower barrier "
+                f"confidence ({cumulative_lower_confidence:.1%}) is too high"
+            )
+        else:
+            return (
+                f"NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) "
+                f"below threshold ({self.confidence_threshold:.1%})"
+            )
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),

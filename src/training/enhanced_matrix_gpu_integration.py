@@ -1,5 +1,7 @@
 # src/training/enhanced_matrix_gpu_integration.py
 
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
     circuit_breaker,
@@ -15,7 +17,6 @@ from src.core.domain import quality_gate, secure_data_processing
 Enhanced Matrix Operations with M1 GPU Integration.
 Combines advanced matrix operations with Mac M1 GPU acceleration.
 """
-from __future__ import annotations
 
 import asyncio
 import time

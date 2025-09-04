@@ -51,6 +51,7 @@ class HMMRegimeABTestingFramework:
         self.hmm_config = config.get('hmm_regimes', {})
         self.regime_names = [f"regime_{i:02d}" for i in range(20)]  # regime_00 to regime_19
         self.traffic_split = 0.5  # 50/50 split
+        self.trading_fee = 0.0008  # 0.08% trading fee
         
         # A/B Test Storage
         self.active_tests: Dict[str, Dict[str, Any]] = {}
@@ -159,12 +160,12 @@ class HMMRegimeABTestingFramework:
         configs = {}
         
         for regime in self.regime_names:
-            # Conservative: Lower risk, higher confidence threshold
+            # Conservative: Lower risk, higher confidence threshold (accounting for 0.08% trading fee)
             configs[regime] = {
-                'profit_take_multiplier': 0.001,  # 0.1%
-                'stop_loss_multiplier': 0.0005,   # 0.05%
-                'confidence_threshold': 0.7,      # 70%
-                'leverage_multiplier': 5.0,       # Lower leverage
+                'profit_take_multiplier': 0.0018,  # 0.18% (0.1% + 0.08% fee)
+                'stop_loss_multiplier': 0.0013,    # 0.13% (0.05% + 0.08% fee)
+                'confidence_threshold': 0.7,       # 70%
+                'leverage_multiplier': 5.0,        # Lower leverage
                 'timeframe_weights': {
                     '5m': 0.2,
                     '15m': 0.3,
@@ -180,12 +181,12 @@ class HMMRegimeABTestingFramework:
         configs = {}
         
         for regime in self.regime_names:
-            # Aggressive: Higher risk, lower confidence threshold
+            # Aggressive: Higher risk, lower confidence threshold (accounting for 0.08% trading fee)
             configs[regime] = {
-                'profit_take_multiplier': 0.003,  # 0.3%
-                'stop_loss_multiplier': 0.002,    # 0.2%
-                'confidence_threshold': 0.5,      # 50%
-                'leverage_multiplier': 10.0,      # Higher leverage
+                'profit_take_multiplier': 0.0038,  # 0.38% (0.3% + 0.08% fee)
+                'stop_loss_multiplier': 0.0028,    # 0.28% (0.2% + 0.08% fee)
+                'confidence_threshold': 0.5,       # 50%
+                'leverage_multiplier': 10.0,       # Higher leverage
                 'timeframe_weights': {
                     '5m': 0.4,
                     '15m': 0.4,
@@ -205,23 +206,23 @@ class HMMRegimeABTestingFramework:
             configs[regime] = {
                 'timeframe_configs': {
                     '5m': {
-                        'profit_take_multiplier': 0.0008,
-                        'stop_loss_multiplier': 0.0004,
+                        'profit_take_multiplier': 0.0016,  # 0.16% (0.08% + 0.08% fee)
+                        'stop_loss_multiplier': 0.0012,    # 0.12% (0.04% + 0.08% fee)
                         'confidence_threshold': 0.55
                     },
                     '15m': {
-                        'profit_take_multiplier': 0.001,
-                        'stop_loss_multiplier': 0.0005,
+                        'profit_take_multiplier': 0.0018,  # 0.18% (0.1% + 0.08% fee)
+                        'stop_loss_multiplier': 0.0013,    # 0.13% (0.05% + 0.08% fee)
                         'confidence_threshold': 0.6
                     },
                     '30m': {
-                        'profit_take_multiplier': 0.002,
-                        'stop_loss_multiplier': 0.001,
+                        'profit_take_multiplier': 0.0028,  # 0.28% (0.2% + 0.08% fee)
+                        'stop_loss_multiplier': 0.0018,    # 0.18% (0.1% + 0.08% fee)
                         'confidence_threshold': 0.65
                     },
                     '1h': {
-                        'profit_take_multiplier': 0.003,
-                        'stop_loss_multiplier': 0.0015,
+                        'profit_take_multiplier': 0.0038,  # 0.38% (0.3% + 0.08% fee)
+                        'stop_loss_multiplier': 0.0023,    # 0.23% (0.15% + 0.08% fee)
                         'confidence_threshold': 0.7
                     }
                 },
@@ -235,11 +236,11 @@ class HMMRegimeABTestingFramework:
         configs = {}
         
         for regime in self.regime_names:
-            # Fixed: Same barriers across all timeframes
+            # Fixed: Same barriers across all timeframes (accounting for 0.08% trading fee)
             configs[regime] = {
-                'profit_take_multiplier': 0.002,  # 0.2%
-                'stop_loss_multiplier': 0.001,    # 0.1%
-                'confidence_threshold': 0.6,      # 60%
+                'profit_take_multiplier': 0.0028,  # 0.28% (0.2% + 0.08% fee)
+                'stop_loss_multiplier': 0.0018,    # 0.18% (0.1% + 0.08% fee)
+                'confidence_threshold': 0.6,       # 60%
                 'leverage_multiplier': 8.0,
                 'timeframe_weights': {
                     '5m': 0.3,
@@ -256,15 +257,18 @@ class HMMRegimeABTestingFramework:
         configs = {}
         
         for i, regime in enumerate(self.regime_names):
-            # Regime-specific: Optimized barriers per regime
+            # Regime-specific: Optimized barriers per regime (accounting for 0.08% trading fee)
             regime_index = i
             
-            # Vary parameters based on regime index
+            # Vary parameters based on regime index, adding trading fee
+            base_profit_take = 0.001 + (regime_index * 0.0001)  # 0.1% to 0.3%
+            base_stop_loss = 0.0005 + (regime_index * 0.00005)  # 0.05% to 0.15%
+            
             configs[regime] = {
-                'profit_take_multiplier': 0.001 + (regime_index * 0.0001),  # 0.1% to 0.3%
-                'stop_loss_multiplier': 0.0005 + (regime_index * 0.00005),  # 0.05% to 0.15%
-                'confidence_threshold': 0.5 + (regime_index * 0.01),        # 50% to 69%
-                'leverage_multiplier': 5.0 + (regime_index * 0.25),         # 5x to 9.75x
+                'profit_take_multiplier': base_profit_take + self.trading_fee,  # Add 0.08% fee
+                'stop_loss_multiplier': base_stop_loss + self.trading_fee,      # Add 0.08% fee
+                'confidence_threshold': 0.5 + (regime_index * 0.01),           # 50% to 69%
+                'leverage_multiplier': 5.0 + (regime_index * 0.25),            # 5x to 9.75x
                 'regime_specific_optimization': True
             }
             
@@ -273,9 +277,9 @@ class HMMRegimeABTestingFramework:
     def _create_universal_configs(self) -> Dict[str, Dict[str, Any]]:
         """Create universal configurations (same for all regimes)"""
         universal_config = {
-            'profit_take_multiplier': 0.002,  # 0.2%
-            'stop_loss_multiplier': 0.001,    # 0.1%
-            'confidence_threshold': 0.6,      # 60%
+            'profit_take_multiplier': 0.0028,  # 0.28% (0.2% + 0.08% fee)
+            'stop_loss_multiplier': 0.0018,    # 0.18% (0.1% + 0.08% fee)
+            'confidence_threshold': 0.6,       # 60%
             'leverage_multiplier': 8.0,
             'regime_specific_optimization': False
         }

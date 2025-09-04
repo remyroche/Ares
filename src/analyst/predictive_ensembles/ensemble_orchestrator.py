@@ -154,6 +154,20 @@ class RegimePredictiveEnsembles:
         current_ensemble_weights_snapshot = {regime: ens.ensemble_weights if hasattr(ens, 'ensemble_weights') else {} for regime, ens in self.regime_ensembles.items()}
         return {'prediction': final_prediction, 'confidence': final_confidence, 'regime': primary_regime, 'base_predictions': combined_base_predictions, 'ensemble_weights': current_ensemble_weights_snapshot}
 
+    def get_current_regime(self, current_features: pd.DataFrame) -> str:
+        """
+        Determines the current market regime from composite_cluster_id.
+        HMM composite clusters are paramount - no fallbacks allowed.
+        """
+        if current_features.empty:
+            return 'UNKNOWN'
+        if 'composite_cluster_id' in current_features.columns:
+            cluster_id = current_features['composite_cluster_id'].iloc[-1]
+            return self._map_cluster_to_regime(cluster_id)
+        self.logger.error('🚨 HMM composite_cluster_id column is missing from current features')
+        self.logger.error('   HMM composite clusters are paramount - no fallbacks allowed')
+        return 'UNKNOWN'
+
     def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]) -> None:
         """
         Trains the global meta-learner using outputs from individual ensembles
@@ -257,7 +271,7 @@ class RegimePredictiveEnsembles:
             dump(self.global_meta_label_encoder, self.global_meta_label_encoder_path)
             self.logger.info('Global meta-learner, scaler, and label encoder saved successfully.')
         except Exception as e:
-            self.logger.error(f'Error saving global meta-learner components: {e}', exc_info=True)
+            self.logger.error(f'Error saving global meta-learner components: {e}')
 
     def _load_global_meta_learner(self) -> None:
         """Loads the global meta-learner and its scaler/encoder."""
@@ -268,26 +282,13 @@ class RegimePredictiveEnsembles:
                 self.global_meta_label_encoder = load(self.global_meta_label_encoder_path)
                 self.logger.info('Global meta-learner, scaler, and label encoder loaded.')
             except Exception as e:
-                self.logger.error(f'Error loading global meta-learner components: {e}', exc_info=True)
+                self.logger.error(f'Error loading global meta-learner components: {e}')
                 self.global_meta_learner = None
                 self.global_meta_scaler = None
                 self.global_meta_label_encoder = None
         else:
             self.logger.info('Global meta-learner components not found. Will train on first run.')
 
-    def get_current_regime(self, current_features: pd.DataFrame) -> str:
-        """
-        Determines the current market regime from composite_cluster_id.
-        HMM composite clusters are paramount - no fallbacks allowed.
-        """
-        if current_features.empty:
-            return 'UNKNOWN'
-        if 'composite_cluster_id' in current_features.columns:
-            cluster_id = current_features['composite_cluster_id'].iloc[-1]
-            return self._map_cluster_to_regime(cluster_id)
-        self.logger.error('🚨 HMM composite_cluster_id column is missing from current features')
-        self.logger.error('   HMM composite clusters are paramount - no fallbacks allowed')
-        return 'UNKNOWN'
 
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str='1m') -> str:
         """
@@ -343,7 +344,7 @@ class RegimePredictiveEnsembles:
             dump(ensemble_instance, path)
             self.logger.info(f'Successfully saved trained ensemble to {path}')
         except Exception as e:
-            self.logger.error(f'Error saving ensemble model to {path}: {e}', exc_info=True)
+            self.logger.error(f'Error saving ensemble model to {path}: {e}')
 
     def load_model(self, ensemble_instance: Any, path: str) -> bool:
         """Loads a trained ensemble instance from a file."""
@@ -356,7 +357,7 @@ class RegimePredictiveEnsembles:
             self.logger.info(f'Successfully loaded pre-trained ensemble from {path}')
             return True
         except Exception as e:
-            self.logger.error(f'Error loading ensemble model from {path}: {e}', exc_info=True)
+            self.logger.error(f'Error loading ensemble model from {path}: {e}')
             return False
 
     def load_weights(self, weights: dict[str, Any]) -> Any:

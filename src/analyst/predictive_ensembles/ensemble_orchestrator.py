@@ -13,6 +13,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
+from typing import Dict, List, Optional, Union, Any, Tuple
+
 
 class RegimePredictiveEnsembles:
     """
@@ -20,6 +22,31 @@ class RegimePredictiveEnsembles:
     Now includes checkpointing for ensemble models and a sophisticated global meta-learner
     for final prediction combining outputs from all regime-specific ensembles and market context.
     """
+    
+    # Fallback mapping for HMM composite cluster IDs to regime names
+    REGIME_MAPPING = {
+        -1: 'RARE_MARKET_CONDITIONS',
+        0: 'STRONG_BULL_TREND',
+        1: 'MODERATE_BULL_TREND',
+        2: 'WEAK_BULL_TREND',
+        3: 'STRONG_BEAR_TREND',
+        4: 'MODERATE_BEAR_TREND',
+        5: 'TIGHT_SIDEWAYS_RANGE',
+        6: 'WIDE_SIDEWAYS_RANGE',
+        7: 'ASCENDING_SIDEWAYS',
+        8: 'DESCENDING_SIDEWAYS',
+        9: 'HIGH_VOLATILITY_BULL',
+        10: 'HIGH_VOLATILITY_BEAR',
+        11: 'LOW_VOLATILITY_RANGE',
+        12: 'EXTREME_VOLATILITY',
+        13: 'BULL_TO_BEAR_TRANSITION',
+        14: 'BEAR_TO_BULL_TRANSITION',
+        15: 'TREND_TO_SIDEWAYS',
+        16: 'SIDEWAYS_TO_TREND',
+        17: 'ACCUMULATION_PHASE',
+        18: 'DISTRIBUTION_PHASE',
+        19: 'BREAKOUT_PREPARATION'
+    }
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config.get('analyst', {})
@@ -35,7 +62,13 @@ class RegimePredictiveEnsembles:
         self.global_meta_scaler_path = os.path.join(self.model_storage_dir, 'global_meta_scaler.joblib')
         self.global_meta_label_encoder_path = os.path.join(self.model_storage_dir, 'global_meta_label_encoder.joblib')
         self._load_global_meta_learner()
-        self.global_meta_config = self.config.get('global_meta_learner', {'n_estimators': 100, 'learning_rate': 0.1, 'num_leaves': 31, 'verbose': -1})
+        default_meta_config = {
+            'n_estimators': 100,
+            'learning_rate': 0.1,
+            'num_leaves': 31,
+            'verbose': -1
+        }
+        self.global_meta_config = self.config.get('global_meta_learner', default_meta_config)
         self.overall_confidence_threshold = self.config.get('overall_confidence_threshold', 0.55)
 
     def train_all_models(self, asset: str, prepared_data: pd.DataFrame, model_path_prefix: str | None=None) -> Any:
@@ -97,7 +130,13 @@ class RegimePredictiveEnsembles:
                 ensemble_instance.save_model(full_model_path)
                 ensemble_predictions_on_full_data = ensemble_instance.get_prediction_on_historical_data(historical_features)
                 for idx, row in ensemble_predictions_on_full_data.iterrows():
-                    meta_learner_data.append({'timestamp': idx, 'regime': regime_key, 'prediction': row['prediction'], 'confidence': row['confidence'], 'true_target': prepared_data.loc[idx, 'target']})
+                    meta_learner_data.append({
+                        'timestamp': idx,
+                        'regime': regime_key,
+                        'prediction': row['prediction'],
+                        'confidence': row['confidence'],
+                        'true_target': prepared_data.loc[idx, 'target']
+                    })
             else:
                 self.logger.warning(f'Ensemble {regime_key} was not trained/loaded successfully. Skipping for meta-learner.')
         if meta_learner_data:
@@ -136,7 +175,10 @@ class RegimePredictiveEnsembles:
             if regime_key == primary_regime:
                 continue
             if not ensemble_instance.trained:
-                final_model_file_name = os.path.join(self.model_storage_dir, f'final_{regime_key.lower()}_ensemble.joblib')
+                final_model_file_name = os.path.join(
+                    self.model_storage_dir, 
+                    f'final_{regime_key.lower()}_ensemble.joblib'
+                )
                 if not ensemble_instance.load_model(final_model_file_name):
                     self.logger.warning(f'Could not load final model for {regime_key}. Skipping its prediction.')
                     continue
@@ -148,9 +190,23 @@ class RegimePredictiveEnsembles:
                 for model_name, pred_value in base_preds_dict.items():
                     unique_model_name = f'{regime_key}_{model_name}'
                     combined_base_predictions[unique_model_name] = pred_value
-        final_prediction, final_confidence = self._predict_with_global_meta_learner(primary_regime, ensemble_predictions_for_meta, ensemble_confidences_for_meta, current_features)
-        current_ensemble_weights_snapshot = {regime: ens.ensemble_weights if hasattr(ens, 'ensemble_weights') else {} for regime, ens in self.regime_ensembles.items()}
-        return {'prediction': final_prediction, 'confidence': final_confidence, 'regime': primary_regime, 'base_predictions': combined_base_predictions, 'ensemble_weights': current_ensemble_weights_snapshot}
+        final_prediction, final_confidence = self._predict_with_global_meta_learner(
+            primary_regime, 
+            ensemble_predictions_for_meta, 
+            ensemble_confidences_for_meta, 
+            current_features
+        )
+        current_ensemble_weights_snapshot = {
+            regime: ens.ensemble_weights if hasattr(ens, 'ensemble_weights') else {}
+            for regime, ens in self.regime_ensembles.items()
+        }
+        return {
+            'prediction': final_prediction,
+            'confidence': final_confidence,
+            'regime': primary_regime,
+            'base_predictions': combined_base_predictions,
+            'ensemble_weights': current_ensemble_weights_snapshot
+        }
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
         """
@@ -184,7 +240,14 @@ class RegimePredictiveEnsembles:
         prediction_cols = [f'{r}_prediction' for r in all_regimes]
         for col in prediction_cols:
             meta_df = pd.get_dummies(meta_df, columns=[col], prefix=col)
-        meta_features = [col for col in meta_df.columns if col.startswith(('regime_', 'BULL_TREND_confidence', 'BEAR_TREND_confidence', 'SIDEWAYS_RANGE_confidence', 'VOLATILE_REGIME_confidence')) or '_prediction_' in col]
+        confidence_prefixes = (
+            'regime_', 'BULL_TREND_confidence', 'BEAR_TREND_confidence', 
+            'SIDEWAYS_RANGE_confidence', 'VOLATILE_REGIME_confidence'
+        )
+        meta_features = [
+            col for col in meta_df.columns 
+            if col.startswith(confidence_prefixes) or '_prediction_' in col
+        ]
         X_meta = meta_df[meta_features].copy()
         y_meta = meta_df['true_target'].copy()
         for col in meta_features:
@@ -288,15 +351,14 @@ class RegimePredictiveEnsembles:
             self.logger.info('Global meta-learner components not found. Will train on first run.')
 
 
-    def _map_cluster_to_regime(self, cluster_id: int, timeframe: str='1m') -> str:
+    def _map_cluster_to_regime(self, cluster_id: int) -> str:
         """
         Maps HMM composite cluster IDs to regime ensemble names.
         Uses dynamic regime mapping based on Step 1.7 results.
         """
         if hasattr(self, 'dynamic_mapper') and self.dynamic_mapper:
-            return self.dynamic_mapper.map_cluster_to_regime(cluster_id, timeframe)
-        fallback_mapping = {-1: 'RARE_MARKET_CONDITIONS', 0: 'STRONG_BULL_TREND', 1: 'MODERATE_BULL_TREND', 2: 'WEAK_BULL_TREND', 3: 'STRONG_BEAR_TREND', 4: 'MODERATE_BEAR_TREND', 5: 'TIGHT_SIDEWAYS_RANGE', 6: 'WIDE_SIDEWAYS_RANGE', 7: 'ASCENDING_SIDEWAYS', 8: 'DESCENDING_SIDEWAYS', 9: 'HIGH_VOLATILITY_BULL', 10: 'HIGH_VOLATILITY_BEAR', 11: 'LOW_VOLATILITY_RANGE', 12: 'EXTREME_VOLATILITY', 13: 'BULL_TO_BEAR_TRANSITION', 14: 'BEAR_TO_BULL_TRANSITION', 15: 'TREND_TO_SIDEWAYS', 16: 'SIDEWAYS_TO_TREND', 17: 'ACCUMULATION_PHASE', 18: 'DISTRIBUTION_PHASE', 19: 'BREAKOUT_PREPARATION'}
-        regime = fallback_mapping.get(cluster_id, f'UNKNOWN_REGIME_{cluster_id}')
+            return self.dynamic_mapper.map_cluster_to_regime(cluster_id)
+        regime = self.REGIME_MAPPING.get(cluster_id, f'UNKNOWN_REGIME_{cluster_id}')
         self.logger.debug(f'Mapped cluster_id {cluster_id} to regime {regime}')
         return regime
 

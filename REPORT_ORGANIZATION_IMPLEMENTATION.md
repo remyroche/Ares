@@ -2,14 +2,16 @@
 
 ## Overview
 
-This implementation provides a comprehensive report management system for the Ares trading system that organizes all reports in a structured `reports/run_DATETIME/` folder with standardized naming conventions. **All reports are generated in human-readable TXT format** for easy reading and analysis.
+This implementation provides a comprehensive report management system for the Ares trading system that organizes **ALL reports** in a structured `reports/run_DATETIME/` folder with standardized naming conventions. **All reports are generated in human-readable TXT format** for easy reading and analysis. The system includes a **Report Collector** that ensures no reports are missed during pipeline execution, including detailed step reports like step03.
 
 ## Key Features
 
 ### 1. Centralized Report Management
 - **Report Manager**: `src/utils/report_manager.py` - Centralized class for managing all report generation and organization
+- **Report Collector**: `src/utils/report_collector.py` - Comprehensive collector that captures ALL reports from the pipeline
 - **Automatic Timestamp-based Folders**: Each run creates a unique `reports/run_YYYYMMDD_HHMMSS/` directory
 - **Standardized Naming**: All reports follow consistent naming patterns
+- **Complete Coverage**: Ensures no reports are missed, including detailed step reports like step03
 
 ### 2. Report Types and Naming Conventions
 
@@ -38,18 +40,22 @@ This implementation provides a comprehensive report management system for the Ar
 
 ```
 reports/
-└── run_20250904_154321/
+└── run_20250904_155103/
     ├── step_report_step1_data_collection_ETHUSDT_BINANCE.txt
     ├── step_report_step2_processing_labeling_feature_engineering_ETHUSDT_BINANCE.txt
-    ├── step_report_step3_market_analysis_ETHUSDT_BINANCE.txt
+    ├── step_report_step03_hmm_clustering_ETHUSDT_BINANCE.txt
     ├── step_report_step4_model_training_ETHUSDT_BINANCE.txt
     ├── step_report_step5_optimisation_ETHUSDT_BINANCE.txt
     ├── step_report_step6_backtesting_ETHUSDT_BINANCE.txt
     ├── ml_interpretability_hmm_ETHUSDT_BINANCE.txt
     ├── ml_interpretability_tactician_ETHUSDT_BINANCE.txt
     ├── ml_interpretability_analyst_ETHUSDT_BINANCE.txt
+    ├── data_quality_monitoring_ETHUSDT_BINANCE.txt
+    ├── sr_parameter_optimization_ETHUSDT_BINANCE.txt
+    ├── unified_regime_validation_ETHUSDT_BINANCE.txt
     ├── pipeline_summary_ETHUSDT_BINANCE.txt
-    └── run_summary_ETHUSDT_BINANCE.txt
+    ├── run_summary_ETHUSDT_BINANCE.txt
+    └── report_collection_summary_ETHUSDT_BINANCE.txt
 ```
 
 ## Implementation Details
@@ -64,7 +70,17 @@ The `ReportManager` class provides the following key methods:
 - `generate_run_summary()`: Generate comprehensive run summary
 - `copy_existing_report()`: Copy existing reports to the organized structure
 
-### 2. Integration Points
+### 2. Report Collector Class
+
+The `ReportCollector` class ensures comprehensive collection of ALL reports:
+
+- `collect_report()`: Collect and save any report content
+- `intercept_report_generation()`: Intercept existing report generation functions
+- `copy_existing_report()`: Copy existing reports to centralized location
+- `generate_collection_summary()`: Generate summary of all collected reports
+- `setup_pipeline_interception()`: Set up automatic interception of report functions
+
+### 3. Integration Points
 
 #### Enhanced MLflow Integration
 - Updated `src/utils/enhanced_mlflow_integration.py`
@@ -83,10 +99,11 @@ The `ReportManager` class provides the following key methods:
 
 #### Ares Launcher
 - Updated `ares_launcher.py`
-- Initializes report manager at the start of `all-pipelines` execution
+- Initializes both report manager and report collector at the start of `all-pipelines` execution
+- Sets up comprehensive report collection interception
 - Passes environment variables for report organization
 
-### 3. Human-Readable Report Format
+### 4. Human-Readable Report Format
 
 All reports are generated in human-readable TXT format with clear sections and formatting:
 
@@ -188,14 +205,16 @@ All reports are organized in the timestamp-based directory:
 
 ## Benefits
 
-1. **Organization**: All reports are organized by run timestamp for easy access
-2. **Consistency**: Standardized naming conventions across all report types
-3. **Human-Readable**: All reports are in TXT format with clear formatting and emojis for easy reading
-4. **Traceability**: Each report includes metadata for full traceability
-5. **Accessibility**: Reports are easily accessible in a single directory per run
-6. **Completeness**: All report types (step reports, ML interpretability, etc.) are included
-7. **Automation**: Automatic report organization without manual intervention
-8. **Professional Formatting**: Clean, structured layout with sections and visual separators
+1. **Complete Coverage**: ALL reports are captured, including detailed step reports like step03
+2. **Organization**: All reports are organized by run timestamp for easy access
+3. **Consistency**: Standardized naming conventions across all report types
+4. **Human-Readable**: All reports are in TXT format with clear formatting and emojis for easy reading
+5. **Traceability**: Each report includes metadata for full traceability
+6. **Accessibility**: Reports are easily accessible in a single directory per run
+7. **Completeness**: All report types (step reports, ML interpretability, optimization, validation, etc.) are included
+8. **Automation**: Automatic report organization and collection without manual intervention
+9. **Professional Formatting**: Clean, structured layout with sections and visual separators
+10. **No Reports Missed**: Report collector ensures comprehensive coverage of all pipeline reports
 
 ## Testing
 
@@ -224,4 +243,6 @@ This implementation successfully addresses the user's requirements:
 - ✅ All reports are accessible and organized by run timestamp
 - ✅ **All reports are generated in human-readable TXT format**
 - ✅ Reports include clear formatting, emojis, and professional structure
+- ✅ **ALL reports are captured, including detailed step reports like step03**
+- ✅ **Comprehensive report collection ensures no reports are missed**
 - ✅ The system is integrated with the existing pipeline infrastructure

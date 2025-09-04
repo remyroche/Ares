@@ -152,8 +152,8 @@ class SROptimizationStep:
             self.logger.info("🎯 Starting S/R detection optimization with detailed reporting...")
             self.start_time = time.time()
             
-            # Step 1: Perform comprehensive S/R optimization
-            optimization_result = await self._perform_sr_optimization()
+            # Step 1: Perform enhanced S/R optimization with ML and regime optimization
+            optimization_result = await self._perform_enhanced_sr_optimization()
             
             if not optimization_result:
                 self.logger.error("S/R optimization failed")
@@ -439,7 +439,57 @@ class SROptimizationStep:
             self.logger.error(f"Failed to perform S/R optimization: {e}")
             return None
     
-    # Enhanced S/R optimization methods removed - improvements integrated into existing components
+    # Enhanced S/R optimization method with ML and regime optimization
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="enhanced_sr_optimization"
+    )
+    async def _perform_enhanced_sr_optimization(self) -> Optional[Dict[str, Any]]:
+        """Perform enhanced S/R optimization with ML, regime optimization, and computational efficiency."""
+        try:
+            self.logger.info("🚀 Starting enhanced S/R optimization with ML and regime optimization...")
+            
+            # Get market data for optimization
+            market_data = await self._get_market_data_for_sr_calculation()
+            if market_data is None:
+                self.logger.error("No market data available for enhanced optimization")
+                return None
+            
+            # Use enhanced optimization method
+            if hasattr(self.optimizer, 'optimize_sr_detection_enhanced'):
+                optimization_result = await self.optimizer.optimize_sr_detection_enhanced(
+                    market_data=market_data,
+                    target_timeframe="15m"
+                )
+            else:
+                # Fallback to standard optimization
+                self.logger.warning("Enhanced optimization not available, using standard optimization")
+                optimization_result = await self.optimizer.optimize_sr_detection(
+                    market_data=market_data,
+                    target_timeframe="15m"
+                )
+            
+            if optimization_result:
+                self.logger.info(f"✅ Enhanced S/R optimization completed. Score: {optimization_result.optimization_score:.4f}")
+                
+                # Log enhancement metadata if available
+                if 'enhancement_metadata' in optimization_result.advanced_params:
+                    metadata = optimization_result.advanced_params['enhancement_metadata']
+                    self.logger.info(f"📊 Enhancement features enabled:")
+                    self.logger.info(f"   - Regime optimization: {metadata.get('regime_optimization_enabled', False)}")
+                    self.logger.info(f"   - ML enhancement: {metadata.get('ml_enhancement_enabled', False)}")
+                    self.logger.info(f"   - Computational optimization: {metadata.get('computational_optimization_enabled', False)}")
+                    self.logger.info(f"   - Enhanced breakout prediction: {metadata.get('enhanced_breakout_prediction_enabled', False)}")
+                
+                return optimization_result
+            else:
+                self.logger.error("Enhanced S/R optimization failed")
+                return None
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced S/R optimization failed: {e}")
+            return None
     
     @handles_errors(
         exceptions=(Exception,),

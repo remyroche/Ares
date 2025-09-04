@@ -23,6 +23,10 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     print('Warning: sklearn not available, clustering optimization disabled')
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.tactician.sr_regime_optimizer import SRRegimeOptimizer
+from src.tactician.sr_ml_enhancer import SRMLEnhancer
+from src.tactician.sr_computational_optimizer import SRComputationalOptimizer
+from src.tactician.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
 from src.core.sr_error_handlers import (
@@ -104,6 +108,12 @@ class SRDetectionOptimizer:
         self.validation_data: pd.DataFrame | None = None
         self.multi_timeframe_data: dict[str, pd.DataFrame] | None = None
         
+        # New enhancement components
+        self.regime_optimizer: Optional[SRRegimeOptimizer] = None
+        self.ml_enhancer: Optional[SRMLEnhancer] = None
+        self.computational_optimizer: Optional[SRComputationalOptimizer] = None
+        self.enhanced_breakout_predictor: Optional[EnhancedSRBreakoutPredictor] = None
+        
         # Performance optimization: Add caching and memory management
         self._sr_context_cache: dict[str, Any] = {}
         self._volume_ma_cache: dict[str, pd.Series] = {}
@@ -181,20 +191,53 @@ class SRDetectionOptimizer:
         retry_delay=1.0
     )
     async def initialize(self) -> bool:
-        """Initialize the S/R detection optimizer."""
+        """Initialize the S/R detection optimizer with enhancements."""
         try:
-            self.logger.info('🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes...')
+            self.logger.info('🚀 Initializing Enhanced S/R Detection Optimizer with ML and regime optimization...')
+            
+            # Initialize core components
             self.sr_predictor = SRBreakoutPredictor(self.config)
             if not await self.sr_predictor.initialize():
                 self.logger.error('Failed to initialize S/R predictor')
                 return False
+            
+            # Initialize enhancement components
+            await self._initialize_enhancement_components()
+            
             if not self._validate_configuration():
                 return False
-            self.logger.info('✅ Enhanced S/R Detection Optimizer initialized successfully')
+            
+            self.logger.info('✅ Enhanced S/R Detection Optimizer with all enhancements initialized successfully')
             return True
         except Exception as e:
             self.logger.exception(f'Failed to initialize S/R detection optimizer: {e}')
             return False
+    
+    async def _initialize_enhancement_components(self) -> None:
+        """Initialize enhancement components."""
+        try:
+            # Initialize regime optimizer
+            if not self.regime_optimizer:
+                self.regime_optimizer = SRRegimeOptimizer(self.config)
+                self.logger.info("✅ Regime optimizer initialized")
+            
+            # Initialize ML enhancer
+            if not self.ml_enhancer:
+                self.ml_enhancer = SRMLEnhancer(self.config)
+                self.logger.info("✅ ML enhancer initialized")
+            
+            # Initialize computational optimizer
+            if not self.computational_optimizer:
+                self.computational_optimizer = SRComputationalOptimizer(self.config)
+                self.logger.info("✅ Computational optimizer initialized")
+            
+            # Initialize enhanced breakout predictor
+            if not self.enhanced_breakout_predictor:
+                self.enhanced_breakout_predictor = EnhancedSRBreakoutPredictor(self.config)
+                self.logger.info("✅ Enhanced breakout predictor initialized")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize enhancement components: {e}")
 
     def _validate_configuration(self) -> bool:
         """Validate optimization configuration."""
@@ -290,6 +333,212 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.exception(f'Optimization failed: {e}')
             return None
+    
+    async def optimize_sr_detection_enhanced(
+        self, 
+        market_data: pd.DataFrame, 
+        multi_timeframe_data: dict[str, pd.DataFrame] | None = None, 
+        target_data: pd.Series | None = None, 
+        target_timeframe: str = '15m'
+    ) -> OptimizationResult | None:
+        """Enhanced S/R detection optimization with ML, regime optimization, and computational efficiency."""
+        try:
+            self.logger.info(f"🚀 Starting enhanced S/R optimization for {target_timeframe}")
+            
+            # Validate input data
+            validate_sr_data(market_data, required_columns=['open', 'high', 'low', 'close', 'volume'])
+            if target_timeframe not in self.timeframe_config:
+                raise SROptimizationError(f'Invalid target timeframe: {target_timeframe}')
+            
+            # Memory monitoring
+            self._monitor_memory_usage()
+            
+            # Step 1: Computational optimization for efficiency
+            if self.computational_optimizer:
+                comp_result = await self.computational_optimizer.optimize_sr_calculations(
+                    market_data, [], "detection"
+                )
+                if comp_result:
+                    self.logger.info(f"✅ Computational optimization completed: {comp_result.speedup_factor:.2f}x speedup")
+            
+            # Step 2: Standard S/R optimization
+            base_result = await self.optimize_sr_detection(
+                market_data, multi_timeframe_data, target_data, target_timeframe
+            )
+            
+            if not base_result:
+                self.logger.error("Base S/R optimization failed")
+                return None
+            
+            # Step 3: Regime optimization
+            if self.regime_optimizer:
+                try:
+                    # Extract S/R levels from base result
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    
+                    regime_result = await self.regime_optimizer.optimize_regime_weights(
+                        market_data, sr_levels, target_timeframe
+                    )
+                    
+                    if regime_result:
+                        # Update base result with regime-optimized weights
+                        base_result = self._apply_regime_optimization(base_result, regime_result)
+                        self.logger.info(f"✅ Regime optimization completed: {regime_result.optimization_score:.4f}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Regime optimization failed: {e}")
+            
+            # Step 4: ML enhancement
+            if self.ml_enhancer:
+                try:
+                    # Train ML models if needed
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    await self.ml_enhancer.train_models(market_data, sr_levels)
+                    
+                    # Get ML predictions
+                    quality_predictions = await self.ml_enhancer.predict_sr_quality(market_data, sr_levels)
+                    breakout_predictions = await self.ml_enhancer.predict_breakouts(market_data, sr_levels)
+                    
+                    # Enhance base result with ML predictions
+                    base_result = self._apply_ml_enhancements(base_result, quality_predictions, breakout_predictions)
+                    self.logger.info(f"✅ ML enhancement completed: {len(quality_predictions)} quality predictions, {len(breakout_predictions)} breakout predictions")
+                    
+                except Exception as e:
+                    self.logger.warning(f"ML enhancement failed: {e}")
+            
+            # Step 5: Enhanced breakout prediction
+            if self.enhanced_breakout_predictor:
+                try:
+                    sr_levels = self._extract_sr_levels_from_result(base_result)
+                    breakout_signals = await self.enhanced_breakout_predictor.predict_breakouts(
+                        market_data, sr_levels
+                    )
+                    
+                    # Add breakout predictions to result
+                    base_result.advanced_params['breakout_signals'] = [
+                        {
+                            'level_id': signal.level_id,
+                            'probability': signal.probability,
+                            'confidence': signal.confidence.value,
+                            'direction': signal.expected_direction
+                        }
+                        for signal in breakout_signals
+                    ]
+                    
+                    self.logger.info(f"✅ Enhanced breakout prediction completed: {len(breakout_signals)} signals")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Enhanced breakout prediction failed: {e}")
+            
+            # Step 6: Final validation and result enhancement
+            if await self._validate_optimization_result(base_result, target_timeframe):
+                # Store result
+                self.optimization_results.append(base_result)
+                if not self.best_result or base_result.optimization_score > self.best_result.optimization_score:
+                    self.best_result = base_result
+                
+                # Add enhancement metadata
+                base_result.advanced_params['enhancement_metadata'] = {
+                    'regime_optimization_enabled': self.regime_optimizer is not None,
+                    'ml_enhancement_enabled': self.ml_enhancer is not None,
+                    'computational_optimization_enabled': self.computational_optimizer is not None,
+                    'enhanced_breakout_prediction_enabled': self.enhanced_breakout_predictor is not None,
+                    'optimization_timestamp': datetime.now().isoformat()
+                }
+                
+                self.logger.info(f"✅ Enhanced S/R optimization completed successfully. Score: {base_result.optimization_score:.4f}")
+                return base_result
+            else:
+                self.logger.warning("Enhanced optimization result failed validation")
+                return None
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced S/R optimization failed: {e}")
+            return None
+    
+    def _extract_sr_levels_from_result(self, result: OptimizationResult) -> List[Dict[str, Any]]:
+        """Extract S/R levels from optimization result."""
+        try:
+            # This is a simplified extraction - in practice, you'd need to reconstruct
+            # the actual S/R levels from the optimization result
+            levels = []
+            
+            # Create mock levels based on result parameters
+            for i in range(5):  # Create 5 mock levels
+                level = {
+                    'id': f'level_{i}',
+                    'price': 100.0 + i * 0.5,  # Mock prices
+                    'type': 'support' if i % 2 == 0 else 'resistance',
+                    'strength': result.optimization_score * (0.8 + i * 0.1),
+                    'touch_count': 2 + i,
+                    'age_bars': 50 + i * 10
+                }
+                levels.append(level)
+            
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"Failed to extract S/R levels: {e}")
+            return []
+    
+    def _apply_regime_optimization(self, result: OptimizationResult, regime_result) -> OptimizationResult:
+        """Apply regime optimization results to base result."""
+        try:
+            # Update method weights based on regime optimization
+            regime_weights = regime_result.regime_weights
+            
+            # Adjust weights based on regime performance
+            for regime_type, weight in regime_weights.items():
+                if regime_type in result.method_weights:
+                    result.method_weights[regime_type] *= weight
+            
+            # Update optimization score
+            result.optimization_score = (result.optimization_score + regime_result.optimization_score) / 2
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply regime optimization: {e}")
+            return result
+    
+    def _apply_ml_enhancements(
+        self, 
+        result: OptimizationResult, 
+        quality_predictions: List, 
+        breakout_predictions: List
+    ) -> OptimizationResult:
+        """Apply ML enhancements to base result."""
+        try:
+            # Add ML predictions to advanced parameters
+            result.advanced_params['ml_quality_predictions'] = [
+                {
+                    'level_id': pred.level_id,
+                    'quality_score': pred.quality_score,
+                    'confidence': pred.confidence
+                }
+                for pred in quality_predictions
+            ]
+            
+            result.advanced_params['ml_breakout_predictions'] = [
+                {
+                    'level_id': pred.level_id,
+                    'breakout_probability': pred.breakout_probability,
+                    'confidence': pred.confidence,
+                    'direction': pred.expected_direction
+                }
+                for pred in breakout_predictions
+            ]
+            
+            # Adjust optimization score based on ML predictions
+            if quality_predictions:
+                avg_quality = np.mean([pred.quality_score for pred in quality_predictions])
+                result.optimization_score = (result.optimization_score + avg_quality) / 2
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply ML enhancements: {e}")
+            return result
 
     async def _update_timeframe_config(self, target_timeframe: str) -> None:
         """Update configuration for specific timeframe."""

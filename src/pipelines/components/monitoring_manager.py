@@ -6,6 +6,8 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.decorators import (
+import asyncio
+
     handles_errors,
     log_execution_time,
 )

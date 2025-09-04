@@ -8,6 +8,7 @@ Configuration for the Universal ML Profit Integration System
 """
 
 from typing import Any
+from copy import copy
 
 
 def get_enhanced_prediction_service_config() -> dict[str, Any]:

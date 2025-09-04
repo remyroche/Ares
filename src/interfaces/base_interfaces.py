@@ -1,19 +1,15 @@
 from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-
 import pandas as pd
-
-# src/interfaces/base_interfaces.py
-
+import asyncio
+from typing import Dict, List, Optional, Union, Any, Tuple
 
 @dataclass
 class MarketData:
     """Standardized market data structure"""
-
     symbol: str
     timestamp: datetime
     open: float
@@ -23,42 +19,36 @@ class MarketData:
     volume: float
     interval: str
 
-
 @dataclass
 class AnalysisResult:
     """Standardized analysis result structure"""
-
     timestamp: datetime
     symbol: str
     confidence: float
-    signal: str  # 'BUY', 'SELL', 'HOLD'
+    signal: str
     features: dict[str, float]
     technical_indicators: dict[str, float]
     market_regime: str
     support_resistance: dict[str, float]
     risk_metrics: dict[str, float]
 
-
 @dataclass
 class StrategyResult:
     """Standardized strategy result structure"""
-
     timestamp: datetime
     symbol: str
-    position_bias: str  # 'LONG', 'SHORT', 'NEUTRAL'
+    position_bias: str
     leverage_cap: float
     max_notional_size: float
     risk_parameters: dict[str, float]
     market_conditions: dict[str, Any]
 
-
 @dataclass
 class TradeDecision:
     """Standardized trade decision structure"""
-
     timestamp: datetime
     symbol: str
-    action: str  # 'OPEN_LONG', 'OPEN_SHORT', 'CLOSE_LONG', 'CLOSE_SHORT'
+    action: str
     quantity: float
     price: float
     leverage: float
@@ -67,17 +57,11 @@ class TradeDecision:
     confidence: float
     risk_score: float
 
-
 class IExchangeClient(ABC):
     """Interface for exchange client implementations"""
 
     @abstractmethod
-    async def get_klines(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int = 100,
-    ) -> list[MarketData]:
+    async def get_klines(self, symbol: str, interval: str, limit: int=100) -> list[MarketData]:
         """Get historical kline data"""
 
     @abstractmethod
@@ -85,20 +69,12 @@ class IExchangeClient(ABC):
         """Get account information"""
 
     @abstractmethod
-    async def create_order(
-        self,
-        symbol: str,
-        side: str,
-        quantity: float,
-        price: float | None = None,
-        order_type: str = "MARKET",
-    ) -> dict[str, Any]:
+    async def create_order(self, symbol: str, side: str, quantity: float, price: float | None=None, order_type: str='MARKET') -> dict[str, Any]:
         """Create a trading order"""
 
     @abstractmethod
     async def get_position_risk(self, symbol: str) -> dict[str, Any]:
         """Get position risk information"""
-
 
 class IStateManager(ABC):
     """Interface for state management"""
@@ -113,9 +89,7 @@ class IStateManager(ABC):
 
     @abstractmethod
     def get_state_if_not_exists(self, key: str, default_value: Any) -> Any:
-        # default_value parameter used in the method implementation
         """Get state value or set default if not exists"""
-
 
 class IPerformanceReporter(ABC):
     """Interface for performance reporting"""
@@ -132,7 +106,6 @@ class IPerformanceReporter(ABC):
     async def generate_report(self) -> str:
         """Generate performance report"""
 
-
 class IEventBus(ABC):
     """Interface for event bus"""
 
@@ -141,13 +114,12 @@ class IEventBus(ABC):
         """Publish an event"""
 
     @abstractmethod
-    def subscribe(self, event_type: str, callback) -> None:
+    def subscribe(self, event_type: str, callback: Callable) -> None:
         """Subscribe to an event type"""
 
     @abstractmethod
-    def unsubscribe(self, event_type: str, callback) -> None:
+    def unsubscribe(self, event_type: str, callback: Callable) -> None:
         """Unsubscribe from an event type"""
-
 
 class IAnalyst(ABC):
     """Interface for market analysis components"""
@@ -165,12 +137,7 @@ class IAnalyst(ABC):
         """Analyze market data and return analysis result"""
 
     @abstractmethod
-    async def get_historical_analysis(
-        self,
-        symbol: str,
-        start_date: datetime,
-        end_date: datetime,
-    ) -> list[AnalysisResult]:
+    async def get_historical_analysis(self, symbol: str, start_date: datetime, end_date: datetime) -> list[AnalysisResult]:
         """Get historical analysis results"""
 
     @abstractmethod
@@ -180,7 +147,6 @@ class IAnalyst(ABC):
     @abstractmethod
     async def load_models(self, model_path: str) -> bool:
         """Load trained models"""
-
 
 class IStrategist(ABC):
     """Interface for strategy formulation components"""
@@ -194,10 +160,7 @@ class IStrategist(ABC):
         """Stop the strategist"""
 
     @abstractmethod
-    async def formulate_strategy(
-        self,
-        analysis_result: AnalysisResult,
-    ) -> StrategyResult:
+    async def formulate_strategy(self, analysis_result: AnalysisResult) -> StrategyResult:
         """Formulate trading strategy based on analysis"""
 
     @abstractmethod
@@ -207,7 +170,6 @@ class IStrategist(ABC):
     @abstractmethod
     async def get_strategy_performance(self) -> dict[str, Any]:
         """Get strategy performance metrics"""
-
 
 class ITactician(ABC):
     """Interface for trade execution components"""
@@ -221,23 +183,16 @@ class ITactician(ABC):
         """Stop the tactician"""
 
     @abstractmethod
-    async def execute_trade_decision(
-        self, strategy_result: StrategyResult, analysis_result: AnalysisResult
-    ) -> TradeDecision | None:
+    async def execute_trade_decision(self, strategy_result: StrategyResult, analysis_result: AnalysisResult) -> TradeDecision | None:
         """Execute trade decision based on strategy and analysis"""
 
     @abstractmethod
-    async def calculate_position_size(
-        self, strategy_result: StrategyResult, account_balance: float
-    ) -> float:
+    async def calculate_position_size(self, strategy_result: StrategyResult, account_balance: float) -> float:
         """Calculate position size"""
 
     @abstractmethod
-    async def calculate_risk_parameters(
-        self, strategy_result: StrategyResult, market_data: MarketData
-    ) -> dict[str, float]:
+    async def calculate_risk_parameters(self, strategy_result: StrategyResult, market_data: MarketData) -> dict[str, float]:
         """Calculate risk parameters"""
-
 
 class ISupervisor(ABC):
     """Interface for supervision and coordination components"""
@@ -261,7 +216,6 @@ class ISupervisor(ABC):
     @abstractmethod
     async def coordinate_components(self) -> None:
         """Coordinate all trading components"""
-
 
 class IModelManager(ABC):
     """Interface for model management"""

@@ -13,6 +13,8 @@ from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.common_operations import (
+import asyncio
+
     safe_read_parquet, validate_dataframe_schema, validate_data_quality
 )
 

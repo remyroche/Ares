@@ -2,6 +2,9 @@
 
 import logging
 from datetime import datetime
+from copy import copy
+import asyncio
+import numpy as np
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -10,12 +13,17 @@ from typing import (
 import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
+from src.analyst.unified_regime_classifier_sr_optimized import UnifiedRegimeClassifierSROptimized as UnifiedRegimeClassifierFractal
 from src.core.decorators import (
     handles_errors,
 )
 from src.core.decorators import validates as validate_data_quality
+from src.core.decorators import traced
 from src.core.domain import handle_specific_errors
+try:
+    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+except Exception:  # pragma: no cover - optional at runtime
+    MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
 from src.utils.logger import system_logger
@@ -62,6 +70,10 @@ class Analyst:
         self.enable_technical_analysis: bool = self.analyst_config.get(
             "enable_technical_analysis",
             True,
+        )
+        self.enable_risk_analysis: bool = self.analyst_config.get(
+            "enable_risk_analysis",
+            False,
         )
 
         # Dual Model System integration
@@ -259,9 +271,9 @@ class Analyst:
             else:
                 self.logger.error(failed("❌ Failed to initialize Dual Model System"))
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(f"Error initializing Dual Model System: {e}"),
             )
 
     @handles_errors(
@@ -282,9 +294,11 @@ class Analyst:
             else:
                 self.logger.error(failed("❌ Failed to initialize Market Health Analyzer"))
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Market Health Analyzer: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(
+                    f"Error initializing Market Health Analyzer: {e}",
+                ),
             )
 
     @handles_errors(
@@ -344,8 +358,14 @@ class Analyst:
     async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor."""
         self.logger.info("Initializing ML Confidence Predictor...")
-        # ML confidence predictor initialization logic here
-        self.logger.info("ML Confidence Predictor initialized successfully")
+        try:
+            if MLConfidencePredictor is not None:
+                self.ml_confidence_predictor = MLConfidencePredictor(self.config)
+                self.logger.info("ML Confidence Predictor initialized successfully")
+            else:
+                self.logger.warning("MLConfidencePredictor not available; using fallback probabilities")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize MLConfidencePredictor: {e}")
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -353,14 +373,18 @@ class Analyst:
         context="regime classifier initialization",
     )
     async def _initialize_regime_classifier(self) -> None:
-        """Initialize Unified Regime Classifier."""
-        self.logger.info("Initializing Unified Regime Classifier...")
-        self.regime_classifier = UnifiedRegimeClassifier(
+        """Initialize Unified Regime Classifier (Fractal Location-based)."""
+        self.logger.info("Initializing Fractal Location Classifier...")
+        self.regime_classifier = UnifiedRegimeClassifierFractal(
             self.config,
-            "UNKNOWN",
-            "UNKNOWN",
+            self.analyst_config.get("exchange", "UNKNOWN"),
+            self.analyst_config.get("symbol", "UNKNOWN"),
         )
-        self.logger.info("Unified Regime Classifier initialized successfully")
+        # Initialize the classifier
+        if await self.regime_classifier.initialize():
+            self.logger.info("✅ Fractal Location Classifier initialized successfully")
+        else:
+            self.logger.error("❌ Failed to initialize Fractal Location Classifier")
 
     @handle_specific_errors(
         error_handlers={
@@ -423,6 +447,17 @@ class Analyst:
                     self.market_health_analyzer.get_analysis_results()
                 )
 
+            # 2b. Compute probabilities to hit price targets (upside and downside)
+            price_target_probabilities = {}
+            if self.enable_ml_predictions and features_df is not None:
+                try:
+                    price_target_probabilities = await self._get_price_target_probabilities(
+                        features_df,
+                        current_price,
+                    )
+                except Exception:
+                    price_target_probabilities = {}
+
             # 3. Perform liquidation risk analysis
             liquidation_risk_results = {}
             if self.liquidation_risk_model and self.ml_confidence_predictor:
@@ -459,13 +494,13 @@ class Analyst:
                 exchange = analysis_input.get("exchange", "UNKNOWN")
                 timeframe = analysis_input.get("timeframe", "1h")
                 
-                # Get regime info from regime classifier if available
+                # Get location info from fractal classifier if available
                 regime_info = {}
                 if self.regime_classifier and features_df is not None:
                     try:
-                        regime_info = await self.regime_classifier.analyze_regime(features_df)
+                        regime_info = await self.analyze_regime(features_df)
                     except Exception as e:
-                        self.logger.warning(f"Failed to get regime info: {e}")
+                        self.logger.warning(f"Failed to get location info: {e}")
                         regime_info = {"regime": "UNKNOWN", "confidence": 0.0}
                 
                 enhanced_predictions = await self.supervisor.get_analyst_predictions(
@@ -479,6 +514,7 @@ class Analyst:
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
                 "enhanced_predictions": enhanced_predictions,
+                "price_target_probabilities": price_target_probabilities,
                 "features_shape": features_df.shape
                 if features_df is not None
                 else None,
@@ -520,6 +556,74 @@ class Analyst:
             "confidence": 0.5,
             "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
             "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="price target probabilities",
+    )
+    async def _get_price_target_probabilities(
+        self,
+        features_df: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
+        """Compute probabilities to hit specific price targets up and down.
+
+        Returns structure:
+            {
+                "upside": {"0.1%": p, ...},
+                "downside": {"0.1%": p, ...},
+                "best_targets": {
+                    "upside": {"target": "x%", "probability": p},
+                    "downside": {"target": "y%", "probability": q}
+                }
+            }
+        """
+        # Prefer ML predictor if available
+        if self.ml_confidence_predictor:
+            table = await self.ml_confidence_predictor.predict_confidence_table(
+                features_df,
+                current_price,
+            )
+            if table:
+                upside = table.get("price_target_confidences", {}) or {}
+                downside = table.get("adversarial_confidences", {}) or {}
+                best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
+                best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
+                return {
+                    "upside": upside,
+                    "downside": downside,
+                    "best_targets": {
+                        "upside": {"target": best_up[0], "probability": best_up[1]},
+                        "downside": {"target": best_dn[0], "probability": best_dn[1]},
+                    },
+                }
+
+        # Fallback: derive naive probabilities from volatility
+        if "close" in features_df.columns and len(features_df) > 50:
+            returns = features_df["close"].pct_change().dropna()
+            vol = float(returns.rolling(window=20).std().iloc[-1] or 0.0)
+        else:
+            vol = 0.01
+        # Define default target ladder (percent values as strings)
+        targets = [f"{x/10:.1f}%" for x in range(1, 21)]  # 0.1% .. 2.0%
+        # Simple mapping: higher vol => higher chance to hit further targets, but cap at 1
+        def prob_for(level_str: str) -> float:
+            level = float(level_str.replace("%", "")) / 100.0
+            base = min(1.0, max(0.05, (vol * 5) / max(level, 1e-6)))
+            return float(np.clip(base, 0.0, 1.0))
+        upside = {t: prob_for(t) for t in targets}
+        downside = {t: prob_for(t) for t in targets}
+        best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
+        best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
+        return {
+            "upside": upside,
+            "downside": downside,
+            "best_targets": {
+                "upside": {"target": best_up[0], "probability": best_up[1]},
+                "downside": {"target": best_dn[0], "probability": best_dn[1]},
+            },
         }
 
     @handles_errors(
@@ -836,6 +940,36 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
+    async def analyze_regime(self, features_df: pd.DataFrame) -> dict[str, Any]:
+        """
+        Analyze location using fractal classification.
+        This method is called by supervisor for regime info.
+        """
+        if not self.regime_classifier:
+            return {"regime": "UNKNOWN", "confidence": 0.0}
+        
+        try:
+            # Get fractal location classification
+            location_result = await self.regime_classifier.classify_location(features_df)
+            
+            # Convert to regime info format expected by supervisor
+            # Note: Actual regime is determined by HMM in training pipeline
+            regime_info = {
+                "regime": "LOCATION_BASED",  # Placeholder - actual regime from HMM
+                "location": location_result.get("primary_location", "OPEN_RANGE"),
+                "confidence": location_result.get("location_strength", 0.5),
+                "action_bias": location_result.get("action_bias", "NEUTRAL"),
+                "location_details": location_result.get("location_details", {}),
+                "nearby_levels": location_result.get("nearby_levels", []),
+                "fractal_analysis": location_result.get("fractal_analysis", {})
+            }
+            
+            return regime_info
+            
+        except Exception as e:
+            self.logger.error(f"Error in fractal location analysis: {e}")
+            return {"regime": "UNKNOWN", "confidence": 0.0}
+
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -846,54 +980,57 @@ class Analyst:
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Perform regime and location classification.
+        Perform fractal location classification.
 
         Args:
             analysis_input: Input data for analysis
 
         Returns:
-            dict: Regime and location classification results
+            dict: Location classification results
         """
         try:
             market_data = analysis_input.get("market_data")
-            analysis_input.get("current_price")
 
-            if self.regime_classifier:
-                # Use the new unified regime classifier for both regime and location
-                regime, location, confidence, additional_info = (
-                    self.regime_classifier.predict_regime_and_location(market_data)
-                )
-
+            if self.regime_classifier and market_data is not None:
+                # Use fractal location classifier
+                location_result = await self.regime_classifier.classify_location(market_data)
+                
+                # Format results for compatibility
                 regime_results = {
-                    "regime": regime,
-                    "location": location,
-                    "confidence": confidence,
-                    "regime_confidence": additional_info.get(
-                        "regime_confidence",
-                        confidence,
-                    ),
-                    "location_confidence": additional_info.get(
-                        "location_confidence",
-                        confidence,
-                    ),
-                    "regime_duration": 0,  # Could be enhanced with duration tracking
+                    "regime": "LOCATION_BASED",  # Actual regime comes from HMM
+                    "location": location_result.get("primary_location", "OPEN_RANGE"),
+                    "confidence": location_result.get("location_strength", 0.5),
+                    "regime_confidence": 0.5,  # Regime confidence from HMM
+                    "location_confidence": location_result.get("location_strength", 0.5),
+                    "action_bias": location_result.get("action_bias", "NEUTRAL"),
+                    "regime_duration": 0,
                     "timestamp": datetime.now().isoformat(),
-                    "additional_info": additional_info,
+                    "additional_info": {
+                        "location_details": location_result.get("location_details", {}),
+                        "nearby_levels": location_result.get("nearby_levels", []),
+                        "fractal_locations": location_result.get("fractal_locations", {})
+                    }
                 }
+                
+                # Add location features for ML models
+                if hasattr(self.regime_classifier, 'get_location_features'):
+                    location_features = self.regime_classifier.get_location_features(location_result)
+                    regime_results["location_features"] = location_features.to_dict()
             else:
-                # Fallback regime results
+                # Fallback results
                 regime_results = {
-                    "regime": "SIDEWAYS",
+                    "regime": "UNKNOWN",
                     "location": "OPEN_RANGE",
                     "confidence": 0.5,
                     "regime_confidence": 0.5,
                     "location_confidence": 0.5,
+                    "action_bias": "NEUTRAL",
                     "regime_duration": 0,
                     "timestamp": datetime.now().isoformat(),
                 }
 
             self.logger.info(
-                f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
+                f"Fractal location classification completed: {regime_results['location']} with confidence {regime_results['location_confidence']:.2f}",
             )
             return regime_results
 

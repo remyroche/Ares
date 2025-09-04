@@ -21,6 +21,7 @@ from .component_monitor import ComponentMonitor
 from .health_monitor import HealthMonitor
 from .online_learning_manager import OnlineLearningManager
 from .recovery_manager import RecoveryManager
+from copy import copy
 
 
 class SystemCoordinator:

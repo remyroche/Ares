@@ -6,6 +6,7 @@ import optuna
 import pandas as pd
 
 # src/training/tpsl_optimizer.py
+from copy import copy
 
 
 try:

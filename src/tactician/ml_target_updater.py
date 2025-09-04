@@ -17,6 +17,8 @@ import pandas as pd
 from src.analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from copy import copy
+
     failed,
     warning,
 )

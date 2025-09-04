@@ -29,65 +29,70 @@ def calculate_correct_kelly_position_size(
         float: Calculated position size within bounds
     """
     try:
-        # Get average confidence for target levels (0.5% to 2.0%)
-        target_levels=[0.5, 1.0, 1.5, 2.0]
-        confidences=[]
+        # Get average confidence for target levels (0.25% to 1.0%)
+        target_levels = [0.25, 0.5, 0.75, 1.0]
+        confidences: list[float] = []
 
         for level in target_levels:
-            min(
-                price_target_confidences.keys(),
-                key=lambda x: abs(float(x.replace("%", "")) - level),
-            )
-            confidence=price_target_confidences.get(closest_level = 0.5)
+            if price_target_confidences:
+                closest_key = min(
+                    price_target_confidences.keys(),
+                    key=lambda x: abs(float(x.replace("%", "")) - level),
+                )
+                confidence = float(price_target_confidences.get(closest_key, 0.5))
+            else:
+                confidence = 0.5
             confidences.append(confidence)
 
         # Calculate average confidence (probability of win)
-        avg_confidence=sum(confidences) / len(confidences)
+        avg_confidence = sum(confidences) / len(confidences)
 
         # Get average adverse risk (probability of loss)
-        adverse_risks=[]
+        adverse_risks: list[float] = []
         for level in target_levels:
-            min(
-                adversarial_confidences.keys(),
-                key=lambda x: abs(float(x.replace("%", "")) - level),
-            )
-            risk=adversarial_confidences.get(closest_level = 0.3)
+            if adversarial_confidences:
+                closest_key = min(
+                    adversarial_confidences.keys(),
+                    key=lambda x: abs(float(x.replace("%", "")) - level),
+                )
+                risk = float(adversarial_confidences.get(closest_key, 0.3))
+            else:
+                risk = 0.3
             adverse_risks.append(risk)
 
-        avg_adverse_risk=sum(adverse_risks) / len(adverse_risks)
+        avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
 
-        # CORRECT Kelly criterion: f=(bp - q) / b
-        # For 1:1 odds, b=1, so f=p - q
-        # where p = avg_confidence (probability of win)
-        # and q=avg_adverse_risk (probability of loss)
+        # CORRECT Kelly criterion: f=(bp - q) / b, here b=1 => f=p - q
+        p = max(0.0, min(1.0, avg_confidence))
+        q = max(0.0, min(1.0, avg_adverse_risk))
 
-        # Ensure probabilities are valid (0 <= p=q <= 1 and p + q <= 1)
-        p=max(0.0, min(1.0, avg_confidence))
-        q=max(0.0, min(1.0, avg_adverse_risk))
-
-        # If p + q > 1, normalize them
+        # If p + q > 1, normalize to a valid simplex
         if p + q > 1.0:
-            total=p + q
+            total = p + q
             p = p / total
             q = q / total
 
-        # Calculate Kelly fraction
-        kelly_fraction = p - q
+        # Kelly fraction
+        kelly_fraction = max(0.0, p - q)
 
-        # Apply Kelly multiplier for conservative sizing
-        kelly_position_size = kelly_fraction * kelly_multiplier
+        # Neutralize tiny edges to avoid churn
+        if abs(p - q) < 0.02:
+            kelly_fraction = 0.0
+
+        # Apply conservative multiplier
+        kelly_position_size = kelly_fraction * float(kelly_multiplier)
 
         # Ensure within bounds
         return max(
-            min_position_size, min(max_position_size, kelly_position_size),
+            float(min_position_size), min(float(max_position_size), kelly_position_size),
         )
 
     except (ValueError, TypeError, KeyError) as e:
         print(f"Error calculating Kelly position size: {e}")
-        return min_position_size
+        return float(min_position_size)
     except ZeroDivisionError as e:
         print(f"Division by zero in Kelly calculation: {e}")
-        return min_position_size
+        return float(min_position_size)
 
 
 def calculate_enhanced_kelly_position_size(
@@ -115,10 +120,12 @@ def calculate_enhanced_kelly_position_size(
         dict: Enhanced position sizing analysis
     """
     try:
-        # Calculate base Kelly position size
-        base_kelly_size=calculate_correct_kelly_position_size(
-            price_target_confidences=adversarial_confidences,
+        # Calculate base Kelly position size (correct inputs)
+        base_kelly_size = calculate_correct_kelly_position_size(
+            price_target_confidences=price_target_confidences,
+            adversarial_confidences=adversarial_confidences,
             kelly_multiplier=kelly_multiplier,
+            min_position_size=min_position_size,
             max_position_size=max_position_size,
         )
 
@@ -131,11 +138,11 @@ def calculate_enhanced_kelly_position_size(
         balance_adjustment=min(1.2, max(0.8, (account_balance / 10000.0) ** 0.1))
 
         # Apply adjustments
-        adjusted_size=base_kelly_size * volatility_adjustment * balance_adjustment
+        adjusted_size = base_kelly_size * volatility_adjustment * balance_adjustment
 
         # Ensure within bounds
         final_size = max(
-            min_position_size, min(max_position_size, adjusted_size),
+            float(min_position_size), min(float(max_position_size), float(adjusted_size)),
         )
 
         return {
@@ -147,17 +154,17 @@ def calculate_enhanced_kelly_position_size(
     except (ValueError, TypeError, KeyError) as e:
         print(f"Error calculating enhanced Kelly position size: {e}")
         return {
-            "base_kelly_size": min_position_size, "volatility_adjustment": 1.0,
+            "base_kelly_size": float(min_position_size), "volatility_adjustment": 1.0,
             "balance_adjustment": 1.0,
-            "final_position_size": min_position_size, "market_volatility": market_volatility,
+            "final_position_size": float(min_position_size), "market_volatility": market_volatility,
             "account_balance": account_balance,
         }
     except ZeroDivisionError as e:
         print(f"Division by zero in enhanced Kelly calculation: {e}")
         return {
-            "base_kelly_size": min_position_size, "volatility_adjustment": 1.0,
+            "base_kelly_size": float(min_position_size), "volatility_adjustment": 1.0,
             "balance_adjustment": 1.0,
-            "final_position_size": min_position_size, "market_volatility": market_volatility,
+            "final_position_size": float(min_position_size), "market_volatility": market_volatility,
             "account_balance": account_balance,
         }
 
@@ -166,17 +173,17 @@ def calculate_enhanced_kelly_position_size(
 if __name__== "__main__":
     # Test data
     price_target_confidences = {
+        "0.25%": 0.75,
         "0.5%": 0.7,
-        "1.0%": 0.65,
-        "1.5%": 0.6,
-        "2.0%": 0.55,
+        "0.75%": 0.65,
+        "1.0%": 0.6,
     }
 
     adversarial_confidences={
+        "0.25%": 0.25,
         "0.5%": 0.3,
-        "1.0%": 0.35,
-        "1.5%": 0.4,
-        "2.0%": 0.45,
+        "0.75%": 0.35,
+        "1.0%": 0.4,
     }
 
     # Test basic Kelly calculation

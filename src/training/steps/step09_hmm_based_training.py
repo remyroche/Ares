@@ -22,6 +22,8 @@ import torch
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import asyncio
 from src.utils.common_operations import (
+from copy import copy
+
     get_current_datetime, format_datetime, ensure_directory,
     safe_read_parquet, safe_to_parquet, safe_copy
 )
@@ -1239,30 +1241,25 @@ async def run_enhanced_step(
         # Prepare enhanced data
         prepared_data = await enhanced_trainer.prepare_enhanced_data(data, "1m")
         
-        # If regime column present, run per-regime training as well
+        # If regime column present, run per-regime training as well (using shared accessor)
         per_regime_results: dict[str, Any] = {}
-        if "composite_cluster_id" in data.columns:
-            try:
-                logger.info("🔁 Running per-regime enhanced training based on 'composite_cluster_id'")
-                regimes = list(pd.Series(data["composite_cluster_id"]).dropna().unique())
-                regime_data: dict[str, Any] = {}
-                for regime_key in regimes:
-                    regime_df = data[data["composite_cluster_id"] == regime_key]
-                    if not regime_df.empty:
-                        # naive split for train/val/test reuse
-                        n = len(regime_df)
-                        train_idx = int(n * 0.7)
-                        val_idx = int(n * 0.85)
-                        regime_data[str(regime_key)] = {
-                            "description": f"Regime {regime_key}",
-                            "train": regime_df.iloc[:train_idx].copy(),
-                            "validation": regime_df.iloc[train_idx:val_idx].copy(),
-                            "test": regime_df.iloc[val_idx:].copy(),
-                        }
-                if regime_data:
-                    per_regime_results = await enhanced_trainer.train_enhanced_regime_specific_models("1m", regime_data)
-            except Exception as e:
-                logger.warning(f"⚠️ Per-regime enhanced training skipped due to error: {e}")
+        try:
+            from src.utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
+            regime_col = get_regime_column(data)
+            if regime_col is not None:
+                logger.info(f"🔁 Running per-regime enhanced training based on '{regime_col}'")
+                splits = split_train_val_test_by_regime(
+                    data.sort_values("timestamp"),
+                    regime_column=regime_col,
+                    train_ratio=0.7,
+                    val_ratio=0.15,
+                    test_ratio=0.15,
+                    min_samples_per_split=10,
+                )
+                if splits:
+                    per_regime_results = await enhanced_trainer.train_enhanced_regime_specific_models("1m", splits)
+        except Exception as e:
+            logger.warning(f"⚠️ Per-regime enhanced training skipped due to error: {e}")
         
         # Train enhanced model (global model)
         results = await enhanced_trainer.train_enhanced_model(

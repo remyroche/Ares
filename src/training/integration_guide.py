@@ -1,30 +1,17 @@
 from __future__ import annotations
-
-# src/training/integration_guide.py
-
-"""Integration guide showing how to integrate the optimized enhanced training manager"
-with the existing Ares training system.
-"""
+'Integration guide showing how to integrate the optimized enhanced training manager"\nwith the existing Ares training system.\n'
 import asyncio
 import sys
 from pathlib import Path
 from typing import Any
-
-# Add project root to path
+from copy import copy
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-
 from src.config.computational_optimization_config import get_optimization_config
-from src.training.enhanced_training_manager_optimized import (
-    EnhancedTrainingManagerOptimized,
-)
+from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    failed,
-)
-
+from src.utils.warning_symbols import failed
 
 class OptimizedTrainingIntegration:
     """Integration class that shows how to replace the existing training manager"
@@ -33,181 +20,86 @@ class OptimizedTrainingIntegration:
 
     def __init__(self, base_config: dict[str, Any]) -> None:
         self.base_config = base_config
-        self.logger = system_logger.getChild("OptimizedTrainingIntegration")
-
-        # Add optimization configuration
+        self.logger = system_logger.getChild('OptimizedTrainingIntegration')
         optimization_config = get_optimization_config()
         self.config = base_config.copy()
-        self.config["computational_optimization"] = optimization_config
-
-        # Create factory for optimized components
+        self.config['computational_optimization'] = optimization_config
         self.factory = OptimizedTrainingFactory(self.config)
 
-    async def replace_enhanced_training_manager(
-        self,
-    ) -> EnhancedTrainingManagerOptimized:
+    async def replace_enhanced_training_manager(self) -> EnhancedTrainingManagerOptimized:
         """Replace the existing enhanced training manager with the optimized version."
         This method shows how to maintain the same interface while adding optimizations.
         """
-        self.logger.info("Creating optimized enhanced training manager...")
-
-        # Create optimized training manager
+        self.logger.info('Creating optimized enhanced training manager...')
         optimized_manager = self.factory.create_enhanced_training_manager()
-
-        # Initialize (same interface as original)
         if not await optimized_manager.initialize():
-            msg = "Failed to initialize optimized training manager"
+            msg = 'Failed to initialize optimized training manager'
             raise RuntimeError(msg)
-
-        self.logger.info("✅ Optimized enhanced training manager ready")
+        self.logger.info('✅ Optimized enhanced training manager ready')
         return optimized_manager
 
-    async def execute_optimized_regime_training(
-        self,
-        symbol: str,
-        exchange: str,
-    ) -> dict[str, Any]:
+    async def execute_optimized_regime_training(self, symbol: str, exchange: str) -> dict[str, Any]:
         """Execute regime training with optimizations."
         Compatible with the existing regime training command.
         """
-        self.logger.info(
-            f"🎯 Starting optimized regime training for {symbol} on {exchange}",
-        )
-
-        # Create optimized training manager
+        self.logger.info(f'🎯 Starting optimized regime training for {symbol} on {exchange}')
         training_manager = await self.replace_enhanced_training_manager()
-
-        # Create memory profiler for monitoring
         memory_profiler = self.factory.create_memory_profiler()
-        memory_profiler.take_snapshot("regime_training_start")
-
+        memory_profiler.take_snapshot('regime_training_start')
         try:
-            # Execute optimized training (maintains same interface)
-            results = await training_manager.execute_optimized_training(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe="1h",  # Default timeframe
-            )
-
-            # Add optimization statistics to results
-            results["optimization_stats"] = training_manager.get_optimization_stats()
-            results["memory_profile"] = memory_profiler.get_memory_profile()
-
-            self.logger.info("✅ Optimized regime training completed")
+            results = await training_manager.execute_optimized_training(symbol=symbol, exchange=exchange, timeframe='1h')
+            results['optimization_stats'] = training_manager.get_optimization_stats()
+            results['memory_profile'] = memory_profiler.get_memory_profile()
+            self.logger.info('✅ Optimized regime training completed')
             return results
-
         except Exception:
-            self.print(failed("❌ Optimized regime training failed: {e}"))
+            self.print(failed('❌ Optimized regime training failed: {e}'))
             raise
         finally:
-            # Cleanup
             await training_manager.cleanup()
             memory_profiler.stop_continuous_monitoring()
 
     def get_compatibility_info(self) -> dict[str, Any]:
         """Get information about compatibility with existing system."""
-        return {
-            "interface_compatibility": {
-                "enhanced_training_manager": "✅ Fully compatible",
-                "training_steps": "✅ Enhanced with optimizations",
-                "configuration": "✅ Backward compatible with extensions",
-                "logging": "✅ Compatible with existing logger",
-                "error_handling": "✅ Compatible with existing error handlers",
-            },
-            "performance_improvements": {
-                "memory_usage": "35-45% reduction",
-                "execution_time": "60-70% reduction",
-                "cache_efficiency": "70-80% cache hit ratio expected",
-                "parallel_speedup": f"Up to {self.config['computational_optimization']['parallelization']['max_workers']}x",
-            },
-            "new_features": {
-                "memory_profiling": "Real-time memory monitoring and leak detection",
-                "adaptive_sampling": "Smart parameter exploration",
-                "progressive_evaluation": "Early stopping for poor trials",
-                "streaming_data": "Memory-efficient large dataset processing",
-                "cached_backtesting": "Avoid redundant computations",
-            },
-        }
+        return {'interface_compatibility': {'enhanced_training_manager': '✅ Fully compatible', 'training_steps': '✅ Enhanced with optimizations', 'configuration': '✅ Backward compatible with extensions', 'logging': '✅ Compatible with existing logger', 'error_handling': '✅ Compatible with existing error handlers'}, 'performance_improvements': {'memory_usage': '35-45% reduction', 'execution_time': '60-70% reduction', 'cache_efficiency': '70-80% cache hit ratio expected', 'parallel_speedup': f"Up to {self.config['computational_optimization']['parallelization']['max_workers']}x"}, 'new_features': {'memory_profiling': 'Real-time memory monitoring and leak detection', 'adaptive_sampling': 'Smart parameter exploration', 'progressive_evaluation': 'Early stopping for poor trials', 'streaming_data': 'Memory-efficient large dataset processing', 'cached_backtesting': 'Avoid redundant computations'}}
 
-
-def demonstrate_integration():
+def demonstrate_integration() -> None:
     """Demonstrate how to integrate optimized training with existing system."""
-    logger = system_logger.getChild("IntegrationDemo")
-
-    # Simulate existing Ares configuration
-    ares_config = {
-        "training_manager": {
-            "training_interval": 3600,
-            "max_training_history": 100,
-            "enable_model_training": True,
-            "enable_hyperparameter_optimization": True,
-        },
-        "enhanced_training_manager": {
-            "enhanced_training_interval": 3600,
-            "max_enhanced_training_history": 100,
-            "blank_training_mode": False,
-            "max_trials": 200,
-            "n_trials": 100,
-            "lookback_days": 30,
-            "enable_validators": True,
-        },
-        "database": {"type": "sqlite", "path": "data/ares.db"},
-        "model": {"max_depth": 6, "learning_rate": 0.1, "n_estimators": 100},
-    }
-
-    # Create integration instance
+    logger = system_logger.getChild('IntegrationDemo')
+    ares_config = {'training_manager': {'training_interval': 3600, 'max_training_history': 100, 'enable_model_training': True, 'enable_hyperparameter_optimization': True}, 'enhanced_training_manager': {'enhanced_training_interval': 3600, 'max_enhanced_training_history': 100, 'blank_training_mode': False, 'max_trials': 200, 'n_trials': 100, 'lookback_days': 30, 'enable_validators': True}, 'database': {'type': 'sqlite', 'path': 'data/ares.db'}, 'model': {'max_depth': 6, 'learning_rate': 0.1, 'n_estimators': 100}}
     integration = OptimizedTrainingIntegration(ares_config)
-
-    # Show compatibility information
     compatibility_info = integration.get_compatibility_info()
-    logger.info("🔗 Integration Compatibility Report:")
-
+    logger.info('🔗 Integration Compatibility Report:')
     for category, items in compatibility_info.items():
         logger.info(f"\n{category.replace('_', ' ').title()}:")
         for item, status in items.items():
-            logger.info(f"  {item}: {status}")
-
+            logger.info(f'  {item}: {status}')
     return integration
-
 
 async def run_integration_example() -> None:
     """Run a complete integration example."""
-    logger = system_logger.getChild("IntegrationExample")
-    logger.info("🚀 Running Optimized Training Integration Example")
-
-    # Create integration
+    logger = system_logger.getChild('IntegrationExample')
+    logger.info('🚀 Running Optimized Training Integration Example')
     integration = demonstrate_integration()
-
-    # Example: Execute optimized regime training
-    symbol = "ETHUSDT"
-    exchange = "BINANCE"
-
+    symbol = 'ETHUSDT'
+    exchange = 'BINANCE'
     try:
         results = await integration.execute_optimized_regime_training(symbol, exchange)
-
-        logger.info("📊 Training Results Summary:")
+        logger.info('📊 Training Results Summary:')
         logger.info(f"Status: {results.get('status', 'unknown')}")
-
-        if "optimization_stats" in results:
-            stats = results["optimization_stats"]
-            logger.info(f"Optimizations enabled: {list(stats.keys())}")
-
-        if "memory_profile" in results:
-            profile = results["memory_profile"]
+        if 'optimization_stats' in results:
+            stats = results['optimization_stats']
+            logger.info(f'Optimizations enabled: {list(stats.keys())}')
+        if 'memory_profile' in results:
+            profile = results['memory_profile']
             logger.info(f"Final memory usage: {profile.get('percentage', 0):.1f}%")
-
-        if "execution_stats" in results:
-            exec_stats = results["execution_stats"]
-            logger.info(
-                f"Total execution time: {exec_stats.get('total_time_seconds', 0):.2f}s",
-            )
+        if 'execution_stats' in results:
+            exec_stats = results['execution_stats']
+            logger.info(f"Total execution time: {exec_stats.get('total_time_seconds', 0):.2f}s")
             logger.info(f"Cache hit ratio: {exec_stats.get('cache_hit_ratio', 0):.2%}")
-
-        logger.info("✅ Integration example completed successfully")
-
+        logger.info('✅ Integration example completed successfully')
     except Exception:
         pass
-
 
 def show_migration_steps() -> None:
     """Show step-by-step migration from existing to optimized system."""
@@ -226,7 +118,7 @@ def show_migration_steps() -> None:
         "   - Configure memory_management.memory_threshold",
         "",
         "3. Replace training manager import:",
-        "   OLD: from src.training.core.training_manager import create_training_manager
+        "   OLD: from src.training.core.training_manager import create_training_manager",
         "   NEW: from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized",
         "",
         "4. Use factory for easier component creation:",
@@ -257,15 +149,10 @@ def show_migration_steps() -> None:
     ]
 
     for step in steps:
-        if step.startswith(("OLD:", "NEW:")):
-            logger.info(f"     {step}")
+        if step.startswith(('OLD:', 'NEW:')):
+            logger.info(f'     {step}')
         else:
             logger.info(step)
-
-
-if __name__ == "__main__":
-    # Show migration steps
+if __name__ == '__main__':
     show_migration_steps()
-
-    # Run integration example
     asyncio.run(run_integration_example())

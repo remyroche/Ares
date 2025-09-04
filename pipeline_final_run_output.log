@@ -1,0 +1,301 @@
+
+================================================================================
+UNIFIED CODE QUALITY PIPELINE - ENHANCED
+================================================================================
+Project root: /workspace/src
+Timestamp: 20250903_162911
+
+============================================================
+Running Advanced Syntax Fixes
+============================================================
+Checking 608 Python files for syntax errors...
+Found 105 files with syntax errors
+
+Fixed 0 files
+Failed to fix 105 files
+
+Common unfixed error patterns:
+  invalid syntax: 98 files
+  unmatched ')': 5 files
+  unterminated string literal (detected at line 230): 1 files
+  unexpected indent: 1 files
+
+============================================================
+Running Import Fixes
+============================================================
+Found 608 Python files to analyze
+Progress: 0/608 files processed
+Progress: 50/608 files processed
+Progress: 100/608 files processed
+Progress: 150/608 files processed
+Progress: 200/608 files processed
+Progress: 250/608 files processed
+Progress: 300/608 files processed
+Progress: 350/608 files processed
+Progress: 400/608 files processed
+Progress: 450/608 files processed
+Progress: 500/608 files processed
+Progress: 550/608 files processed
+Progress: 600/608 files processed
+
+Fixed 0 files
+Failed to fix 509 files
+
+============================================================
+Detecting Circular Imports
+============================================================
+Building import graph...
+Error analyzing /workspace/src/config.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/paper_trader.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/components/modular_analyst.py: invalid syntax (<unknown>, line 8)
+Error analyzing /workspace/src/components/modular_supervisor.py: invalid syntax (<unknown>, line 8)
+Error analyzing /workspace/src/interfaces/event_bus.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/interfaces/enhanced_event_bus.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/supervisor/exchange_volume_adapter.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/pipelines/live_trading_pipeline.py: invalid syntax (<unknown>, line 8)
+Error analyzing /workspace/src/sentinel/sentinel.py: invalid syntax (<unknown>, line 9)
+Error analyzing /workspace/src/tactician/sr_weight_optimizer.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/tactician/position_closing.py: invalid syntax (<unknown>, line 15)
+Error analyzing /workspace/src/tactician/ml_target_updater.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/tactician/position_division_strategy.py: invalid syntax (<unknown>, line 13)
+Error analyzing /workspace/src/tactician/position_monitor.py: invalid syntax (<unknown>, line 23)
+Error analyzing /workspace/src/tactician/enhanced_order_manager.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/tactician/step17_optimized_tactician.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/tactician/ml_target_validator.py: invalid syntax (<unknown>, line 15)
+Error analyzing /workspace/src/tactician/async_order_executor.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/training/model_trainer.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/simplified_training_manager.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/training/regularization.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/training/feature_engineering.py: invalid syntax (<unknown>, line 6)
+Error analyzing /workspace/src/training/enhanced_matrix_operations.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/enhanced_lm_optimizer.py: invalid syntax (<unknown>, line 29)
+Error analyzing /workspace/src/training/step_orchestrator.py: unmatched ')' (<unknown>, line 89)
+Error analyzing /workspace/src/training/data_sharing_manager.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/integration_guide.py: unterminated string literal (detected at line 230) (<unknown>, line 230)
+Error analyzing /workspace/src/training/unified_data_orchestrator.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/comprehensive_sr_training_pipeline.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/training/dual_model_system.py: invalid syntax (<unknown>, line 13)
+Error analyzing /workspace/src/training/performance_comparison.py: invalid syntax (<unknown>, line 24)
+Error analyzing /workspace/src/training/wavelet_feature_selection_demo.py: invalid syntax (<unknown>, line 24)
+Error analyzing /workspace/src/training/multi_output_model_trainer.py: invalid syntax (<unknown>, line 9)
+Error analyzing /workspace/src/training/calibration_manager.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/training_orchestrator.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/enhanced_matrix_gpu_integration.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/ensemble_manager.py: invalid syntax (<unknown>, line 7)
+Error analyzing /workspace/src/training/model_training_integrator.py: invalid syntax (<unknown>, line 26)
+Error analyzing /workspace/src/training/wavelet_feature_selection_workflow.py: invalid syntax (<unknown>, line 34)
+Error analyzing /workspace/src/training/data_efficiency_optimizer.py: invalid syntax (<unknown>, line 21)
+Error analyzing /workspace/src/training/optimization_manager.py: invalid syntax (<unknown>, line 9)
+Error analyzing /workspace/src/training/validator.py: invalid syntax (<unknown>, line 7)
+Error analyzing /workspace/src/training/vectorized_training_pipeline.py: invalid syntax (<unknown>, line 19)
+Error analyzing /workspace/src/training/enhanced_optimization_orchestrator.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/training/data_manager.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/wavelet_caching_workflow.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/exchange/binance.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/core/di_integration.py: invalid syntax (<unknown>, line 19)
+Error analyzing /workspace/src/core/enhanced_factories.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/core/generic_base.py: invalid syntax (<unknown>, line 10)
+Error analyzing /workspace/src/core/dependency_injection.py: invalid syntax (<unknown>, line 7)
+Error analyzing /workspace/src/config/config_manager.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/utils/vif_calculator.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/utils/enhanced_mlflow_integration.py: invalid syntax (<unknown>, line 32)
+Error analyzing /workspace/src/utils/model_manager.py: invalid syntax (<unknown>, line 234)
+Error analyzing /workspace/src/strategist/strategist_backup.py: invalid syntax (<unknown>, line 21)
+Error analyzing /workspace/src/strategist/strategist.py: invalid syntax (<unknown>, line 22)
+Error analyzing /workspace/src/validation/critical_path_validators.py: invalid syntax (<unknown>, line 15)
+Error analyzing /workspace/src/analyst/enhanced_prediction_integrator.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/analyst/predictive_ensembles.py: invalid syntax (<unknown>, line 10)
+Error analyzing /workspace/src/analyst/liquidation_risk_model.py: invalid syntax (<unknown>, line 3)
+Error analyzing /workspace/src/analyst/data_utils.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/analyst/ml_confidence_predictor.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/analyst/di_analyst.py: invalid syntax (<unknown>, line 22)
+Error analyzing /workspace/src/analyst/unified_regime_classifier.py: invalid syntax (<unknown>, line 26)
+Error analyzing /workspace/src/analyst/analyst.py: invalid syntax (<unknown>, line 6)
+Error analyzing /workspace/src/database/efficient_features_database.py: invalid syntax (<unknown>, line 13)2025-09-03 16:29:26,526 - INFO - Starting function validation for project: /workspace/src
+2025-09-03 16:29:26,533 - INFO - Found 608 Python files to analyze
+2025-09-03 16:29:28,759 - INFO - Starting enhanced validation for project: /workspace/src
+2025-09-03 16:29:28,764 - INFO - Found 608 Python files to analyze
+2025-09-03 16:29:28,771 - WARNING - Syntax error in /workspace/src/config.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:28,774 - WARNING - Syntax error in /workspace/src/paper_trader.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:28,802 - WARNING - Syntax error in /workspace/src/components/modular_analyst.py: invalid syntax (<unknown>, line 8)
+2025-09-03 16:29:28,807 - WARNING - Syntax error in /workspace/src/components/modular_supervisor.py: invalid syntax (<unknown>, line 8)
+2025-09-03 16:29:28,813 - WARNING - Syntax error in /workspace/src/interfaces/event_bus.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:28,814 - WARNING - Syntax error in /workspace/src/interfaces/enhanced_event_bus.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:28,865 - WARNING - Syntax error in /workspace/src/supervisor/exchange_volume_adapter.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:28,908 - WARNING - Syntax error in /workspace/src/pipelines/live_trading_pipeline.py: invalid syntax (<unknown>, line 8)
+2025-09-03 16:29:28,913 - WARNING - Syntax error in /workspace/src/pipelines/components/monitoring_manager.py: invalid syntax (<unknown>, line 9)
+2025-09-03 16:29:28,913 - WARNING - Syntax error in /workspace/src/pipelines/components/lifecycle_manager.py: invalid syntax (<unknown>, line 7)
+2025-09-03 16:29:28,913 - WARNING - Syntax error in /workspace/src/pipelines/components/data_manager.py: invalid syntax (<unknown>, line 7)
+2025-09-03 16:29:28,913 - WARNING - Syntax error in /workspace/src/sentinel/sentinel.py: invalid syntax (<unknown>, line 9)
+2025-09-03 16:29:28,950 - WARNING - Syntax error in /workspace/src/tactician/sr_weight_optimizer.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:28,950 - WARNING - Syntax error in /workspace/src/tactician/position_closing.py: invalid syntax (<unknown>, line 15)
+2025-09-03 16:29:28,951 - WARNING - Syntax error in /workspace/src/tactician/ml_target_updater.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:28,951 - WARNING - Syntax error in /workspace/src/tactician/position_division_strategy.py: invalid syntax (<unknown>, line 13)
+2025-09-03 16:29:28,972 - WARNING - Syntax error in /workspace/src/tactician/position_monitor.py: invalid syntax (<unknown>, line 23)
+2025-09-03 16:29:28,972 - WARNING - Syntax error in /workspace/src/tactician/enhanced_order_manager.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:28,990 - WARNING - Syntax error in /workspace/src/tactician/step17_optimized_tactician.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:29,006 - WARNING - Syntax error in /workspace/src/tactician/ml_target_validator.py: invalid syntax (<unknown>, line 15)
+2025-09-03 16:29:29,006 - WARNING - Syntax error in /workspace/src/tactician/async_order_executor.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:29,033 - WARNING - Syntax error in /workspace/src/training/model_trainer.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,078 - WARNING - Syntax error in /workspace/src/training/simplified_training_manager.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:29,086 - WARNING - Syntax error in /workspace/src/training/regularization.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:29,098 - WARNING - Syntax error in /workspace/src/training/feature_engineering.py: invalid syntax (<unknown>, line 6)
+2025-09-03 16:29:29,114 - WARNING - Syntax error in /workspace/src/training/enhanced_matrix_operations.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,121 - WARNING - Syntax error in /workspace/src/training/enhanced_lm_optimizer.py: invalid syntax (<unknown>, line 29)
+2025-09-03 16:29:29,121 - WARNING - Syntax error in /workspace/src/training/step_orchestrator.py: unmatched ')' (<unknown>, line 89)
+2025-09-03 16:29:29,138 - WARNING - Syntax error in /workspace/src/training/data_sharing_manager.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,147 - WARNING - Syntax error in /workspace/src/training/integration_guide.py: unterminated string literal (detected at line 230) (<unknown>, line 230)
+2025-09-03 16:29:29,161 - WARNING - Syntax error in /workspace/src/training/unified_data_orchestrator.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,167 - WARNING - Syntax error in /workspace/src/training/comprehensive_sr_training_pipeline.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:29,167 - WARNING - Syntax error in /workspace/src/training/dual_model_system.py: invalid syntax (<unknown>, line 13)
+2025-09-03 16:29:29,167 - WARNING - Syntax error in /workspace/src/training/performance_comparison.py: invalid syntax (<unknown>, line 24)
+2025-09-03 16:29:29,196 - WARNING - Syntax error in /workspace/src/training/wavelet_feature_selection_demo.py: invalid syntax (<unknown>, line 24)
+2025-09-03 16:29:29,197 - WARNING - Syntax error in /workspace/src/training/multi_output_model_trainer.py: invalid syntax (<unknown>, line 9)
+2025-09-03 16:29:29,197 - WARNING - Syntax error in /workspace/src/training/calibration_manager.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,199 - WARNING - Syntax error in /workspace/src/training/training_orchestrator.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,226 - WARNING - Syntax error in /workspace/src/training/enhanced_matrix_gpu_integration.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,236 - WARNING - Syntax error in /workspace/src/training/ensemble_manager.py: invalid syntax (<unknown>, line 7)
+2025-09-03 16:29:29,243 - WARNING - Syntax error in /workspace/src/training/model_training_integrator.py: invalid syntax (<unknown>, line 26)
+2025-09-03 16:29:29,250 - WARNING - Syntax error in /workspace/src/training/wavelet_feature_selection_workflow.py: invalid syntax (<unknown>, line 34)
+2025-09-03 16:29:29,251 - WARNING - Syntax error in /workspace/src/training/data_efficiency_optimizer.py: invalid syntax (<unknown>, line 21)
+2025-09-03 16:29:29,251 - WARNING - Syntax error in /workspace/src/training/optimization_manager.py: invalid syntax (<unknown>, line 9)
+2025-09-03 16:29:29,251 - WARNING - Syntax error in /workspace/src/training/validator.py: invalid syntax (<unknown>, line 7)
+2025-09-03 16:29:29,255 - WARNING - Syntax error in /workspace/src/training/vectorized_training_pipeline.py: invalid syntax (<unknown>, line 19)
+2025-09-03 16:29:29,255 - WARNING - Syntax error in /workspace/src/training/enhanced_optimization_orchestrator.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:29,260 - WARNING - Syntax error in /workspace/src/training/data_manager.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,269 - WARNING - Syntax error in /workspace/src/training/wavelet_caching_workflow.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:29,269 - WARNING - Syntax error in /workspace/src/training/optimization/cached_optimizer.py: invalid syntax (<unknown>, line 20)
+2025-09-03 16:29:29,274 - WARNING - Syntax error in /workspace/src/training/optimization/progressive_optimizer.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:29,297 - WARNING - Syntax error in /workspace/src/training/optimization/advanced_surrogate_models.py: invalid syntax (<unknown>, line 23)
+2025-09-03 16:29:29,297 - WARNING - Syntax error in /workspace/src/training/optimization/adaptive_trial_allocator.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:29,311 - WARNING - Syntax error in /workspace/src/training/steps/fractional_feature_selector.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:29,317 - WARNING - Syntax error in /workspace/src/training/steps/step10_unified_regime_intelligence.py: invalid syntax (<unknown>, line 8)
+2025-09-03 16:29:29,318 - WARNING - Syntax error in /workspace/src/training/steps/step18_walk_forward_validation_validator.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,346 - WARNING - Syntax error in /workspace/src/training/steps/step17_final_parameters_optimization_new.py: invalid syntax (<unknown>, line 12)
+2025-09-03 16:29:29,349 - WARNING - Syntax error in /workspace/src/training/steps/step19_monte_carlo_validation_validator.py: invalid syntax (<unknown>, line 120)
+2025-09-03 16:29:29,356 - WARNING - Syntax error in /workspace/src/training/steps/step21_saving.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,362 - WARNING - Syntax error in /workspace/src/training/steps/combined_fractional_system.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,375 - WARNING - Syntax error in /workspace/src/training/steps/precompute_wavelet_features.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:29,454 - WARNING - Syntax error in /workspace/src/training/steps/step11_analyst_creation.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,458 - WARNING - Syntax error in /workspace/src/training/steps/step09_hmm_based_training.py: invalid syntax (<unknown>, line 25)
+2025-09-03 16:29:29,510 - WARNING - Syntax error in /workspace/src/training/steps/step16_confidence_calibration_validator.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,558 - WARNING - Syntax error in /workspace/src/training/steps/step15_tactician_specialist_training.py: invalid syntax (<unknown>, line 6)
+2025-09-03 16:29:29,565 - WARNING - Syntax error in /workspace/src/training/steps/step13_analyst_ensemble_creation.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:29,731 - WARNING - Syntax error in /workspace/src/training/steps/feature_engineering/step06_feature_engineering.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,734 - WARNING - Syntax error in /workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py: invalid syntax (<unknown>, line 11)
+2025-09-03 16:29:29,779 - WARNING - Syntax error in /workspace/src/training/steps/data_preparation/step02_data_reading.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:29,814 - WARNING - Syntax error in /workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,822 - WARNING - Syntax error in /workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py: unexpected indent (<unknown>, line 881)
+2025-09-03 16:29:29,845 - WARNING - Syntax error in /workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,851 - WARNING - Syntax error in /workspace/src/training/steps/model_training/step09_hmm_based_training.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,861 - WARNING - Syntax error in /workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py: unmatched ')' (<unknown>, line 340)
+2025-09-03 16:29:29,861 - WARNING - Syntax error in /workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py: invalid syntax (<unknown>, line 12)
+2025-09-03 16:29:29,862 - WARNING - Syntax error in /workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py: invalid syntax (<unknown>, line 12)
+2025-09-03 16:29:29,862 - WARNING - Syntax error in /workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py: invalid syntax (<unknown>, line 12)
+2025-09-03 16:29:29,877 - WARNING - Syntax error in /workspace/src/training/steps/validation/step19_monte_carlo_validation.py: unmatched ')' (<unknown>, line 243)
+2025-09-03 16:29:29,880 - WARNING - Syntax error in /workspace/src/training/steps/validation/step17_final_parameters_optimization.py: unmatched ')' (<unknown>, line 1686)
+2025-09-03 16:29:29,880 - WARNING - Syntax error in /workspace/src/training/steps/validation/step18_walk_forward_validation.py: unmatched ')' (<unknown>, line 196)
+2025-09-03 16:29:29,883 - WARNING - Syntax error in /workspace/src/training/core/checkpoint_manager.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:29,926 - WARNING - Syntax error in /workspace/src/exchange/binance.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:29,926 - WARNING - Syntax error in /workspace/src/core/di_integration.py: invalid syntax (<unknown>, line 19)
+2025-09-03 16:29:29,928 - WARNING - Syntax error in /workspace/src/core/enhanced_factories.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:29,928 - WARNING - Syntax error in /workspace/src/core/generic_base.py: invalid syntax (<unknown>, line 10)
+2025-09-03 16:29:29,930 - WARNING - Syntax error in /workspace/src/core/dependency_injection.py: invalid syntax (<unknown>, line 7)
+2025-09-03 16:29:29,964 - WARNING - Syntax error in /workspace/src/core/examples/decorator_usage.py: invalid syntax (<unknown>, line 14)
+2025-09-03 16:29:29,984 - WARNING - Syntax error in /workspace/src/config/config_manager.py: invalid syntax (<unknown>, line 17)
+2025-09-03 16:29:30,020 - WARNING - Syntax error in /workspace/src/utils/vif_calculator.py: invalid syntax (<unknown>, line 18)
+2025-09-03 16:29:30,070 - WARNING - Syntax error in /workspace/src/utils/enhanced_mlflow_integration.py: invalid syntax (<unknown>, line 32)
+2025-09-03 16:29:30,137 - WARNING - Syntax error in /workspace/src/utils/model_manager.py: invalid syntax (<unknown>, line 234)
+2025-09-03 16:29:30,161 - WARNING - Syntax error in /workspace/src/strategist/strategist_backup.py: invalid syntax (<unknown>, line 21)
+2025-09-03 16:29:30,162 - WARNING - Syntax error in /workspace/src/strategist/strategist.py: invalid syntax (<unknown>, line 22)
+2025-09-03 16:29:30,164 - WARNING - Syntax error in /workspace/src/validation/critical_path_validators.py: invalid syntax (<unknown>, line 15)
+2025-09-03 16:29:30,222 - WARNING - Syntax error in /workspace/src/analyst/enhanced_prediction_integrator.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:30,223 - WARNING - Syntax error in /workspace/src/analyst/predictive_ensembles.py: invalid syntax (<unknown>, line 10)
+2025-09-03 16:29:30,225 - WARNING - Syntax error in /workspace/src/analyst/liquidation_risk_model.py: invalid syntax (<unknown>, line 3)
+2025-09-03 16:29:30,239 - WARNING - Syntax error in /workspace/src/analyst/data_utils.py: invalid syntax (<unknown>, line 16)
+2025-09-03 16:29:30,246 - WARNING - Syntax error in /workspace/src/analyst/ml_confidence_predictor.py: invalid syntax (<unknown>, line 4)
+2025-09-03 16:29:30,246 - WARNING - Syntax error in /workspace/src/analyst/di_analyst.py: invalid syntax (<unknown>, line 22)
+2025-09-03 16:29:30,247 - WARNING - Syntax error in /workspace/src/analyst/unified_regime_classifier.py: invalid syntax (<unknown>, line 26)
+2025-09-03 16:29:30,248 - WARNING - Syntax error in /workspace/src/analyst/analyst.py: invalid syntax (<unknown>, line 6)
+2025-09-03 16:29:30,248 - WARNING - Syntax error in /workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py: invalid syntax (<unknown>, line 27)
+2025-09-03 16:29:30,265 - WARNING - Syntax error in /workspace/src/database/efficient_features_database.py: invalid syntax (<unknown>, line 13)
+2025-09-03 16:29:30,265 - WARNING - Syntax error in /workspace/src/database/influxdb_manager.py: invalid syntax (<unknown>, line 9)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 753, in <module>
+    main()
+    ~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 749, in main
+    pipeline.run_all()
+    ~~~~~~~~~~~~~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 602, in run_all
+    "comprehensive_review": self.run_comprehensive_review(),
+                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 351, in run_comprehensive_review
+    reviewer.review_directory(str(self.project_root))
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CodeQualityReviewer' object has no attribute 'review_directory'
+
+Error analyzing /workspace/src/database/influxdb_manager.py: invalid syntax (<unknown>, line 9)
+Error analyzing /workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py: invalid syntax (<unknown>, line 27)
+Error analyzing /workspace/src/core/examples/decorator_usage.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/training/optimization/cached_optimizer.py: invalid syntax (<unknown>, line 20)
+Error analyzing /workspace/src/training/optimization/progressive_optimizer.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/training/optimization/advanced_surrogate_models.py: invalid syntax (<unknown>, line 23)
+Error analyzing /workspace/src/training/optimization/adaptive_trial_allocator.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/training/steps/fractional_feature_selector.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/training/steps/step10_unified_regime_intelligence.py: invalid syntax (<unknown>, line 8)
+Error analyzing /workspace/src/training/steps/step18_walk_forward_validation_validator.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/steps/step17_final_parameters_optimization_new.py: invalid syntax (<unknown>, line 12)
+Error analyzing /workspace/src/training/steps/step19_monte_carlo_validation_validator.py: invalid syntax (<unknown>, line 120)
+Error analyzing /workspace/src/training/steps/step21_saving.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/steps/combined_fractional_system.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/training/steps/precompute_wavelet_features.py: invalid syntax (<unknown>, line 17)
+Error analyzing /workspace/src/training/steps/step11_analyst_creation.py: invalid syntax (<unknown>, line 4)
+Error analyzing /workspace/src/training/steps/step09_hmm_based_training.py: invalid syntax (<unknown>, line 25)
+Error analyzing /workspace/src/training/steps/step16_confidence_calibration_validator.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/steps/step15_tactician_specialist_training.py: invalid syntax (<unknown>, line 6)
+Error analyzing /workspace/src/training/steps/step13_analyst_ensemble_creation.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/training/core/checkpoint_manager.py: invalid syntax (<unknown>, line 14)
+Error analyzing /workspace/src/training/steps/feature_engineering/step06_feature_engineering.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py: invalid syntax (<unknown>, line 11)
+Error analyzing /workspace/src/training/steps/data_preparation/step02_data_reading.py: invalid syntax (<unknown>, line 16)
+Error analyzing /workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py: unexpected indent (<unknown>, line 881)
+Error analyzing /workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/training/steps/model_training/step09_hmm_based_training.py: invalid syntax (<unknown>, line 18)
+Error analyzing /workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py: unmatched ')' (<unknown>, line 340)
+Error analyzing /workspace/src/training/steps/validation/step19_monte_carlo_validation.py: unmatched ')' (<unknown>, line 243)
+Error analyzing /workspace/src/training/steps/validation/step17_final_parameters_optimization.py: unmatched ')' (<unknown>, line 1686)
+Error analyzing /workspace/src/training/steps/validation/step18_walk_forward_validation.py: unmatched ')' (<unknown>, line 196)
+Error analyzing /workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py: invalid syntax (<unknown>, line 12)
+Error analyzing /workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py: invalid syntax (<unknown>, line 12)
+Error analyzing /workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py: invalid syntax (<unknown>, line 12)
+Error analyzing /workspace/src/pipelines/components/monitoring_manager.py: invalid syntax (<unknown>, line 9)
+Error analyzing /workspace/src/pipelines/components/lifecycle_manager.py: invalid syntax (<unknown>, line 7)
+Error analyzing /workspace/src/pipelines/components/data_manager.py: invalid syntax (<unknown>, line 7)
+
+============================================================
+Running Async/Await Fixes
+============================================================
+Checking 608 files for async/await issues...
+
+Fixed 0 files
+Failed to fix 608 files
+
+============================================================
+Running Type Hint Enhancements
+============================================================
+
+============================================================
+Running Function Validation
+============================================================
+
+============================================================
+Running Enhanced Validation (Arguments & Data Access)
+============================================================
+
+============================================================
+Running Comprehensive Code Review
+============================================================

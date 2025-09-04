@@ -10,6 +10,9 @@ import pandas as pd
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from copy import copy
+import asyncio
+
     error,
     missing,
     warning,

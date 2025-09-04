@@ -4,6 +4,7 @@ import warnings
 from datetime import datetime
 from typing import Any, Number
 import asyncio
+from copy import copy
 
 warnings.filterwarnings("ignore")
 
@@ -23,7 +24,7 @@ class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training manager with enhanced type safety."
+        """Initialize training manager with enhanced type safety."""
 
         Args:
             config: Configuration dictionary
@@ -66,7 +67,7 @@ class TrainingManager:
         context="training manager initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training manager with enhanced error handling."
+        """Initialize training manager with enhanced error handling."""
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -124,7 +125,7 @@ class TrainingManager:
 
     @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
-        """Validate training configuration."
+        """Validate training configuration."""
 
         Returns:
             bool: True if configuration is valid, False otherwise

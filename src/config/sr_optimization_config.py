@@ -66,8 +66,6 @@ class SROptimizationConfig:
     # Timeframe weight optimization ranges
     timeframe_weight_ranges: dict[str, dict[str, float]] = field(
         default_factory=lambda: {
-            "tf_1m_weight": {"min": 0.05, "max": 0.2},
-            "tf_5m_weight": {"min": 0.1, "max": 0.25},
             "tf_15m_weight": {"min": 0.15, "max": 0.3},
             "tf_1h_weight": {"min": 0.2, "max": 0.35},
             "tf_4h_weight": {"min": 0.15, "max": 0.3},

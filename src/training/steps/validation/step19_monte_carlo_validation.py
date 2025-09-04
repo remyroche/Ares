@@ -13,7 +13,11 @@ from typing import Any, Dict
 from src.core.domain import ParquetDatasetManager
 from src.utils.logger import system_logger
 from src.utils.enhanced_mlflow_integration import (
+    log_step_metrics,
+    log_step_report,
+)
 from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
@@ -135,8 +139,10 @@ class MonteCarloValidationStep:
             # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
             try:
                 import pandas as pd  # local optional import
-from src.training.enhanced_training_manager_optimized import (
-
+                from src.training.enhanced_training_manager_optimized import (
+                    EnhancedTrainingManagerOptimized
+                )
+                
                 pdm = ParquetDatasetManager(logger=self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
                 os.makedirs(mc_base, exist_ok=True)
@@ -191,6 +197,7 @@ from src.training.enhanced_training_manager_optimized import (
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -209,8 +216,7 @@ from src.training.enhanced_training_manager_optimized import (
 )
 import os
 
-
-
+from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -237,11 +243,10 @@ import os
         "required_columns": ["timestamp", "features", "targets"],
     },
     context="Monte Carlo Validation",
-)
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
-# @prevent_data_leakage - removed, handled by validates
+    backup_before=True, 
+    integrity_checks=True, 
+    memory_cleanup=True, 
+    data_validation=True,
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
@@ -277,8 +282,6 @@ import os
     },
     performance_thresholds={"mc_time_minutes": 180.0, "memory_usage_gb": 8.0},
     format_validation=True,
-)
-# @quality_gate - removed, handled by validates
     model_performance_thresholds={"mc_accuracy": 0.6, "mc_sharpe": 1.0},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"mc_score": 0.6},

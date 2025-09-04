@@ -1,5 +1,8 @@
 # src/training/model_trainer.py
 
+from copy import copy
+import numpy as np
+
 from src.core.decorators import (
     cached,
     circuit_breaker,
@@ -514,11 +517,8 @@ class RayModelTrainer:
             data_dir = training_input.get("data_dir", "data/training")
             labeled_path = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
 
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-
-if os.path.exists(labeled_path):
-    try:
+            if os.path.exists(labeled_path):
+                try:
                     feat_cols = training_input.get(
                         "model_feature_columns",
                     ) or training_input.get("feature_columns")
@@ -543,12 +543,13 @@ if os.path.exists(labeled_path):
                         f"Labeled/enhanced data file not found: {labeled_path} or {labeled_csv}",
                     )
                     return None
+            
             data = handle_missing_data(data)
             
             # Check if we have multi-output targets (direction and profit)
             has_direction = "direction" in data.columns
             has_profit = "potential_profit_pct" in data.columns
-        
+            
             # Use all columns except labels as features
             exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
             feature_cols = [col for col in data.columns if col not in exclude_cols]
@@ -608,6 +609,7 @@ if os.path.exists(labeled_path):
                         "has_multi_output": True,
                     }
                 }
+            
                 self.logger.info(
                     "✅ Training data prepared successfully from labeled/enhanced pipeline output",
                 )

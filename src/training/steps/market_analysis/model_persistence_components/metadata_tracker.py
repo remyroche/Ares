@@ -134,6 +134,7 @@ class MetadataTracker:
         environment = {'python_version': sys.version, 'platform': platform.platform(), 'machine': platform.machine(), 'processor': platform.processor()}
         try:
             import pkg_resources
+from src.core.decorators.errors import handles_errors
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
             environment['packages'] = {}
             for package in key_packages:

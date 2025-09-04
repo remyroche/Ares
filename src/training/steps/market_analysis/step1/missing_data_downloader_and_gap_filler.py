@@ -73,6 +73,7 @@ except ImportError as e:
     BinanceExchange = None
     import logging
 from src.core.decorators import handles_errors, traced
+from src.core.decorators.errors import handles_errors
 logging.basicConfig(level=logging.INFO)
 system_logger = logging.getLogger('MissingDataDownloaderFallback')
 logger = system_logger.getChild('MissingDataDownloader')

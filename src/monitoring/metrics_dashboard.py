@@ -16,6 +16,7 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
+from src.core.decorators.errors import handles_errors
 
 
 class MetricType(Enum):

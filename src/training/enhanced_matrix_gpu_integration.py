@@ -30,6 +30,7 @@ from src.training.steps.step07_enhanced_matrix_operations import (
     EnhancedMatrixOperations,
 )
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 
 class EnhancedMatrixGPUIntegration:

@@ -49,6 +49,10 @@ from .enhanced_market_analysis_orchestrator import (
     run_enhanced_market_analysis_pipeline,
 )
 
+# Import enhanced logging system
+from .enhanced_logging_metrics import EnhancedPipelineLogger, enhanced_logger
+from .progress_monitor import ProgressMonitor, progress_monitor, ProgressContext
+
 # Main pipeline function - now uses enhanced orchestrator
 async def run_market_analysis_pipeline(symbol, exchange, timeframe, data_dir, **config):
     """Run the complete market analysis pipeline with enhanced validation and error handling."""
@@ -97,5 +101,10 @@ __all__ = [
     'IntegrateRegimeProcessing',
     'MarketAnalysisPipelineOrchestrator',
     'run_enhanced_market_analysis_pipeline',
-    'run_market_analysis_pipeline'
+    'run_market_analysis_pipeline',
+    'EnhancedPipelineLogger',
+    'enhanced_logger',
+    'ProgressMonitor',
+    'progress_monitor',
+    'ProgressContext'
 ]

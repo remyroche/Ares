@@ -38,6 +38,7 @@ from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.safe_import_fixer import SafeImportFixer
 from scripts.simple_interaction_mapper import extract_interactions, generate_interaction_summary
 from utils.report_aggregator import ReportAggregator
+from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 
 
 class UnifiedEnhancedPipeline:
@@ -624,6 +625,7 @@ class UnifiedEnhancedPipeline:
         with open(report_path, "w") as f:
             json.dump(result, f, indent=2)
 
+
         return result
 
     def run_all(self) -> dict[str, Any]:
@@ -651,6 +653,7 @@ class UnifiedEnhancedPipeline:
 
         # Analysis
         self.results["analysis"] = {
+            "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
             "comprehensive_review": self.run_comprehensive_review(),
@@ -756,6 +759,29 @@ class UnifiedEnhancedPipeline:
         print(f"Total Directories: {summary['total_directories']}")
         print(f"Total Issues Found: {summary['total_issues']}")
         print(f"Issues Fixed: {summary['fixed_issues']}")
+
+        # Print enhanced dependency analysis results if available
+        if "enhanced_dependency_analysis" in self.results.get("analysis", {}):
+            eda = self.results["analysis"]["enhanced_dependency_analysis"]
+            print("\nEnhanced Dependency Analysis Results:")
+            print(f"  - Tools Used: {', '.join(eda.get('tools_used', []))}")
+            print(f"  - Undeclared Dependencies: {len(eda.get('undeclared_deps', []))}")
+            print(f"  - Unused Dependencies: {len(eda.get('unused_deps', []))}")
+            print(f"  - Total Issues: {eda.get('total_issues', 0)}")
+            
+            if eda.get('undeclared_deps'):
+                print("  - Undeclared Dependencies:")
+                for dep in eda['undeclared_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['undeclared_deps']) > 5:
+                    print(f"    ... and {len(eda['undeclared_deps']) - 5} more")
+            
+            if eda.get('unused_deps'):
+                print("  - Unused Dependencies:")
+                for dep in eda['unused_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['unused_deps']) > 5:
+                    print(f"    ... and {len(eda['unused_deps']) - 5} more")
 
         # Print enhanced validation specific stats if available
         if "enhanced_validation" in self.results.get("analysis", {}):

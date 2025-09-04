@@ -229,9 +229,18 @@ class RegimeSpecificTripleBarrierOptimizer:
         return objective
 
     def _suggest_triple_barrier_params(self, trial: optuna.Trial, regime_constraints: Dict[str, List[float]]) -> RegimeTripleBarrierParams:
-        """Suggest triple barrier parameters for a regime."""
-        profit_take_multiplier = trial.suggest_float('profit_take_multiplier', 0.01, 0.05, log=True)
-        stop_loss_multiplier = trial.suggest_float('stop_loss_multiplier', 0.005, 0.03, log=True)
+        """Suggest triple barrier parameters for a regime with log scaling and overall multiplier."""
+        # Base parameters with log scaling (0-1 range)
+        base_profit_take = trial.suggest_float('base_profit_take_multiplier', 0.01, 0.05, log=True)
+        base_stop_loss = trial.suggest_float('base_stop_loss_multiplier', 0.005, 0.03, log=True)
+        
+        # Overall multiplier to scale the entire range (log scaled for multiplicative effect)
+        overall_multiplier = trial.suggest_float('overall_barrier_multiplier', 0.5, 5.0, log=True)
+        
+        # Apply overall multiplier to get final values
+        profit_take_multiplier = base_profit_take * overall_multiplier
+        stop_loss_multiplier = base_stop_loss * overall_multiplier
+        
         time_barrier_minutes = trial.suggest_int('time_barrier_minutes', 15, 120)
         max_lookahead = trial.suggest_int('max_lookahead', 50, 200)
         regime_volatility_multiplier = trial.suggest_float('regime_volatility_multiplier', 0.5, 2.0)

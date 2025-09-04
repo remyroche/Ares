@@ -117,6 +117,7 @@ class HMMRegimeDiscovery1H:
         """Fit HMM model to features."""
         try:
             from hmmlearn import hmm
+from src.core.decorators.errors import handles_errors
         except ImportError:
             self.logger.error('hmmlearn not installed. Please install with: pip install hmmlearn')
             raise

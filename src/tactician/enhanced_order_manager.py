@@ -30,6 +30,7 @@ from src.core.decorators import handles_errors
 # Optional Prometheus metrics integration with safe fallback
 try:  # pragma: no cover - optional dependency
     from src.utils.prometheus_metrics import metrics  # type: ignore
+from src.core.decorators.errors import handles_errors
 except Exception:  # pragma: no cover - metrics not available
     class _MetricsStub:
         def increment_counter(self, *_args, **_kwargs) -> None:

@@ -30,6 +30,7 @@ class ABTestingStep(BaseValidationStep):
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         from src.training.steps.validation.step20_ab_testing import ABTestingStep as Impl
+from src.core.decorators.errors import handles_errors
 
         impl = Impl(self.config)
         await impl.initialize()

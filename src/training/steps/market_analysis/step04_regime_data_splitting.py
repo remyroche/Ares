@@ -199,6 +199,7 @@ class RegimeDataSplittingStep:
             regime_stats = self._calculate_regime_statistics(data, regime_ids)
             stats_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
             import json
+from src.core.decorators.errors import handles_errors
             with open(stats_file, 'w') as f:
                 json.dump(regime_stats, f, indent=2)
             self.logger.info(f'✅ Saved regime statistics: {stats_file}')

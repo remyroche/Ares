@@ -264,6 +264,7 @@ class PnLLossFunctions:
 
 # Import asyncio for the async methods
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 # Export the main components
 __all__ = [

@@ -1,0 +1,44 @@
+2025-09-04 14:54:42,531 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 14:54:42
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_145442.log
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 14:54:42,531 - AresTradingSystem - INFO - 🚀 Launcher started: optimisation
+2025-09-04 14:54:42,531 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - 📊 Running enhanced optimisation pipeline for ETHUSDT on BINANCE
+2025-09-04 14:54:42,531 - AresComponent.AresLauncher - INFO - 🔍 Validating optimisation prerequisites...
+2025-09-04 14:54:42,548 - AresComponent.AresLauncher - ERROR - ❌ Prerequisites validation failed: cannot import name 'handles_errors' from partially initialized module 'src.core.decorators.errors' (most likely due to a circular import) (/workspace/src/core/decorators/errors.py)
+Traceback (most recent call last):
+  File "/workspace/ares_launcher.py", line 2018, in _validate_optimisation_prerequisites
+    from src.utils.data_quality_framework import DataQualityFramework
+  File "/workspace/src/utils/data_quality_framework.py", line 8, in <module>
+    from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
+  File "/workspace/src/utils/enhanced_outlier_handler.py", line 9, in <module>
+    from src.core.decorators.errors import handles_errors
+  File "/workspace/src/core/__init__.py", line 3, in <module>
+    from .dependency_injection import (
+    ...<4 lines>...
+    )
+  File "/workspace/src/core/dependency_injection.py", line 8, in <module>
+    from src.interfaces import (
+    ...<4 lines>...
+    )
+  File "/workspace/src/interfaces/__init__.py", line 14, in <module>
+    from .event_bus import Event, EventBus, EventType
+  File "/workspace/src/interfaces/event_bus.py", line 18, in <module>
+    from src.core.decorators.errors import handles_errors
+  File "/workspace/src/core/decorators/__init__.py", line 48, in <module>
+    from .errors import (
+    ...<3 lines>...
+    )
+  File "/workspace/src/core/decorators/errors.py", line 17, in <module>
+    from src.core.decorators.errors import handles_errors
+ImportError: cannot import name 'handles_errors' from partially initialized module 'src.core.decorators.errors' (most likely due to a circular import) (/workspace/src/core/decorators/errors.py)
+2025-09-04 14:54:42,551 - AresComponent.AresLauncher - ERROR - ❌ Pre-flight validation failed
+2025-09-04 14:54:42,551 - AresTradingSystem - INFO - 🏁 Launcher ended: FAILED (exit code: 1)
+2025-09-04 14:54:42,551 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 14:54:42,551 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

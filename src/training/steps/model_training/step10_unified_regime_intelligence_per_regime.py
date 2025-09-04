@@ -23,6 +23,7 @@ from src.training.steps.regime_continuity_decorator import per_regime_step
 from src.utils.logger import getChild as get_logger
 from src.utils.pipeline_standards import pipeline_standards
 from src.core.decorators import traced, validates, handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step10UnifiedRegimeIntelligencePerRegime')

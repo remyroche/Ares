@@ -8,6 +8,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 # src/supervisor/risk_allocator.py
 

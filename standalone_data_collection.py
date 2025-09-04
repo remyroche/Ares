@@ -9,11 +9,12 @@ that doesn't depend on any existing infrastructure.
 import asyncio
 import logging
 import time
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 # Simple logging setup
 logging.basicConfig(
@@ -21,6 +22,126 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Pipeline standards constants (matching src/utils/pipeline_standards.py)
+class PipelineStandards:
+    """Simplified pipeline standards for standalone execution."""
+    
+    FILE_NAMING = {
+        'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet',
+        'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet',
+        'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet',
+    }
+    
+    SCHEMAS = {
+        'klines': {
+            'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
+            'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'],
+            'data_types': {
+                'timestamp': 'int64',
+                'open': 'float64',
+                'high': 'float64',
+                'low': 'float64',
+                'close': 'float64',
+                'volume': 'float64'
+            }
+        }
+    }
+    
+    @staticmethod
+    def generate_file_name(file_type: str, exchange: str, asset: str, timeframe: str = None, **kwargs) -> str:
+        """Generate standardized file name."""
+        if file_type not in PipelineStandards.FILE_NAMING:
+            raise ValueError(f'Unknown file type: {file_type}')
+        template = PipelineStandards.FILE_NAMING[file_type]
+        params = {
+            'exchange': exchange.upper(),
+            'asset': asset.upper(),
+            'timeframe': timeframe or '1m',
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+            **kwargs
+        }
+        return template.format(**params)
+    
+    @staticmethod
+    def create_metadata(schema_name: str, exchange: str, asset: str, timeframe: str, **kwargs) -> dict:
+        """Create standardized metadata for files."""
+        return {
+            'schema_name': schema_name,
+            'exchange': exchange.upper(),
+            'asset': asset.upper(),
+            'timeframe': timeframe,
+            'created_at': datetime.now(UTC).isoformat(),
+            'pipeline_version': '1.0.0',
+            'data_format': 'parquet',
+            'compression': 'snappy',
+            **kwargs
+        }
+    
+    @staticmethod
+    def standardize_timestamp(df: pd.DataFrame, column: str = 'timestamp', target_format: str = 'int64') -> pd.DataFrame:
+        """Standardize timestamp column to consistent format."""
+        if column not in df.columns:
+            return df
+        df = df.copy()
+        try:
+            if target_format == 'int64':
+                if pd.api.types.is_datetime64_any_dtype(df[column]):
+                    df[column] = (pd.to_datetime(df[column], utc=True).astype('int64') // 10 ** 6).astype('int64')
+                else:
+                    ts_numeric = pd.to_numeric(df[column], errors='coerce')
+                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
+                        df[column] = (ts_numeric // 10 ** 6).astype('int64')
+                    else:
+                        df[column] = ts_numeric.astype('int64')
+            elif target_format == 'datetime64[ns]':
+                if pd.api.types.is_datetime64_any_dtype(df[column]):
+                    df[column] = pd.to_datetime(df[column], utc=True)
+                else:
+                    ts_numeric = pd.to_numeric(df[column], errors='coerce')
+                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
+                        df[column] = pd.to_datetime(ts_numeric, unit='ns', utc=True)
+                    else:
+                        df[column] = pd.to_datetime(ts_numeric, unit='ms', utc=True)
+        except Exception as e:
+            logger.warning(f"Warning: Could not standardize timestamp column '{column}': {e}")
+        return df
+    
+    @staticmethod
+    def enforce_schema(df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
+        """Enforce schema by converting data types and adding missing columns."""
+        if schema_name not in PipelineStandards.SCHEMAS:
+            raise ValueError(f'Unknown schema: {schema_name}')
+        schema = PipelineStandards.SCHEMAS[schema_name]
+        df = df.copy()
+        
+        # Add missing optional columns
+        for column in schema['optional_columns']:
+            if column not in df.columns:
+                if schema['data_types'].get(column, 'float64') == 'float64':
+                    df[column] = 0.0
+                elif schema['data_types'].get(column, 'int64') == 'int64':
+                    df[column] = 0
+                elif schema['data_types'].get(column, 'string') == 'string':
+                    df[column] = ''
+                elif schema['data_types'].get(column, 'bool') == 'bool':
+                    df[column] = False
+        
+        # Convert data types
+        for column, expected_type in schema['data_types'].items():
+            if column in df.columns:
+                try:
+                    if expected_type == 'int64':
+                        df[column] = pd.to_numeric(df[column], errors='coerce').fillna(0).astype('int64')
+                    elif expected_type == 'float64':
+                        df[column] = pd.to_numeric(df[column], errors='coerce').fillna(0.0).astype('float64')
+                    elif expected_type == 'string':
+                        df[column] = df[column].astype('string')
+                    elif expected_type == 'bool':
+                        df[column] = df[column].astype('boolean')
+                except Exception as e:
+                    logger.warning(f"Warning: Could not convert column '{column}' to {expected_type}: {e}")
+        return df
 
 
 class StandaloneDataCollectionPipeline:
@@ -267,26 +388,60 @@ class StandaloneDataCollectionPipeline:
         }
     
     async def _format_and_store_data(self) -> pd.DataFrame:
-        """Format and store data."""
+        """Format and store data using pipeline standards."""
         # Get the collected data (in a real implementation, this would come from step 1)
         raw_data = await self._collect_raw_data()
         
-        # Format the data
+        # Apply pipeline standards formatting
         formatted_data = raw_data.copy()
-        formatted_data['symbol'] = self.symbol
-        formatted_data['exchange'] = self.exchange
-        formatted_data['pipeline_id'] = self.pipeline_id
-        formatted_data['created_at'] = datetime.now()
+        
+        # Standardize timestamp to int64 (milliseconds since epoch)
+        formatted_data = PipelineStandards.standardize_timestamp(formatted_data, 'timestamp', 'int64')
+        
+        # Enforce klines schema
+        formatted_data = PipelineStandards.enforce_schema(formatted_data, 'klines')
         
         # Ensure data directory exists
         data_path = Path(self.data_dir)
         data_path.mkdir(parents=True, exist_ok=True)
         
-        # Store the data
-        output_file = data_path / f"formatted_{self.exchange}_{self.symbol}_klines.parquet"
-        formatted_data.to_parquet(output_file, index=False)
+        # Generate standardized filename
+        filename = PipelineStandards.generate_file_name(
+            'klines', 
+            self.exchange, 
+            self.symbol, 
+            '1m'  # timeframe
+        )
+        output_file = data_path / filename
+        
+        # Create metadata following pipeline standards
+        metadata = PipelineStandards.create_metadata(
+            'klines',
+            self.exchange,
+            self.symbol,
+            '1m',
+            pipeline_id=self.pipeline_id,
+            data_rows=len(formatted_data),
+            data_columns=list(formatted_data.columns),
+            quality_score=1.0,  # Simulated quality score
+            processing_notes="Enhanced data collection pipeline with validators and decorators"
+        )
+        
+        # Store the data with compression
+        formatted_data.to_parquet(
+            output_file, 
+            index=False,
+            compression='snappy'
+        )
+        
+        # Store metadata as a separate JSON file (following pipeline standards)
+        metadata_file = output_file.with_suffix('.metadata.json')
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2, default=str)
         
         self.logger.info(f"Data formatted and stored successfully: {output_file}")
+        self.logger.info(f"Metadata stored: {metadata_file}")
+        self.logger.info(f"Metadata: {metadata}")
         return formatted_data
     
     async def _handle_pipeline_failure(self, error_message: str) -> None:

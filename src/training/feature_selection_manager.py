@@ -522,220 +522,69 @@ class FeatureSelectionManager:
 
     def _categorize_features(self, feature_names: list[str]) -> dict[str, list[str]]:
         """Categorize features by type."""
-        categories = {
-            "momentum": [],
-            "volatility": [],
-            "liquidity": [],
-            "microstructure": [],
-            "wavelet": [],
-            "sr_distance": [],
-            "statistical": [],
-            "candlestick": [],
-            "interaction": [],
-            "transform": [],
-            "other": [],
+        # Define feature category keywords
+        category_keywords = {
+            "momentum": [
+                "momentum", "mom", "rsi", "macd", "cci", "roc", "willr", "stoch",
+                "adx", "dmi", "kama", "tema", "dema", "hma", "wma", "vwma",
+                "zlema", "ichimoku", "psar", "trix", "cmo", "tsi", "ppo", "pmo",
+                "uo", "linreg", "lin_reg", "sma", "ema", "ma_", "moving_avg", "trend"
+            ],
+            "volatility": [
+                "volatility", "atr", "true_range", "truerange", "natr", "parkinson",
+                "garman", "gk_vol", "garman_klass", "roll", "rvol", "realized_vol",
+                "hv", "hist_vol", "historical_vol", "variance", "std", "bbands",
+                "boll", "bollinger", "donch", "donchian", "keltner", "chop",
+                "choppiness", "park_vol"
+            ],
+            "liquidity": [
+                "liquidity", "volume", "tick_volume", "obv", "cmf", "mfi", "vwap",
+                "pvi", "nvi", "efi", "delta_volume"
+            ],
+            "microstructure": [
+                "microstructure", "order_flow", "orderflow", "ofi", "imbalance",
+                "quote_imbalance", "spread", "bid_ask", "depth", "orderbook",
+                "book", "microprice", "trade_count", "trade_frequency"
+            ],
+            "wavelet": ["wavelet", "dwt", "cwt", "wt_"],
+            "sr_distance": [
+                "sr_", "sr_distance", "support", "resistance", "proximity",
+                "breakout_probability", "rebounce_probability", "consolidation_probability",
+                "sr_confidence", "multi_timeframe_sr_score"
+            ],
+            "candlestick": [
+                "cdl", "candlestick", "doji", "hammer", "engulf", "harami",
+                "marubozu", "piercing", "shooting_star", "hanging_man",
+                "three_black_crows", "three_white_soldiers", "morning_star",
+                "evening_star", "dark_cloud"
+            ],
+            "statistical": [
+                "autocorr", "autocorrelation", "correl", "correlation", "entropy",
+                "fractal", "hurst", "hjorth", "hj_", "kurtosis", "kurt", "skew",
+                "skewness", "zscore", "z_score"
+            ],
+            "interaction": [
+                "_x_", "_div_", "_ratio_", "_over_", "_cross_", "interaction"
+            ],
+            "transform": [
+                "fft", "fourier", "dct", "cosine", "sine", "transform_"
+            ]
         }
 
+        # Initialize categories
+        categories = {category: [] for category in category_keywords.keys()}
+        categories["other"] = []
+
+        # Categorize features
         for feature in feature_names:
             feature_lower = feature.lower()
             categorized = False
 
-            if any(
-                keyword in feature_lower
-                for keyword in [
-                    "momentum",
-                    "mom",
-                    "rsi",
-                    "macd",
-                    "cci",
-                    "roc",
-                    "willr",
-                    "stoch",
-                    "adx",
-                    "dmi",
-                    "kama",
-                    "tema",
-                    "dema",
-                    "hma",
-                    "wma",
-                    "vwma",
-                    "zlema",
-                    "ichimoku",
-                    "psar",
-                    "trix",
-                    "cmo",
-                    "tsi",
-                    "ppo",
-                    "pmo",
-                    "uo",
-                    "linreg",
-                    "lin_reg",
-                    "sma",
-                    "ema",
-                    "ma_",
-                    "moving_avg",
-                    "trend",
-                ]
-            ):
-                categories["momentum"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "volatility",
-                    "atr",
-                    "true_range",
-                    "truerange",
-                    "natr",
-                    "parkinson",
-                    "garman",
-                    "gk_vol",
-                    "garman_klass",
-                    "roll",
-                    "rvol",
-                    "realized_vol",
-                    "hv",
-                    "hist_vol",
-                    "historical_vol",
-                    "variance",
-                    "std",
-                    "bbands",
-                    "boll",
-                    "bollinger",
-                    "donch",
-                    "donchian",
-                    "keltner",
-                    "chop",
-                    "choppiness",
-                    "park_vol",
-                ]
-            ):
-                categories["volatility"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "liquidity",
-                    "volume",
-                    "tick_volume",
-                    "obv",
-                    "cmf",
-                    "mfi",
-                    "vwap",
-                    "pvi",
-                    "nvi",
-                    "efi",
-                    "delta_volume",
-                ]
-            ):
-                categories["liquidity"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "microstructure",
-                    "order_flow",
-                    "orderflow",
-                    "ofi",
-                    "imbalance",
-                    "quote_imbalance",
-                    "spread",
-                    "bid_ask",
-                    "depth",
-                    "orderbook",
-                    "book",
-                    "microprice",
-                    "trade_count",
-                    "trade_frequency",
-                ]
-            ):
-                categories["microstructure"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower for keyword in ["wavelet", "dwt", "cwt", "wt_"]
-            ):
-                categories["wavelet"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "sr_",
-                    "sr_distance",
-                    "support",
-                    "resistance",
-                    "proximity",
-                    "breakout_probability",
-                    "rebounce_probability",
-                    "consolidation_probability",
-                    "sr_confidence",
-                    "multi_timeframe_sr_score",
-                ]
-            ):
-                categories["sr_distance"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "cdl",
-                    "candlestick",
-                    "doji",
-                    "hammer",
-                    "engulf",
-                    "harami",
-                    "marubozu",
-                    "piercing",
-                    "shooting_star",
-                    "hanging_man",
-                    "three_black_crows",
-                    "three_white_soldiers",
-                    "morning_star",
-                    "evening_star",
-                    "dark_cloud",
-                ]
-            ):
-                categories["candlestick"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "autocorr",
-                    "autocorrelation",
-                    "correl",
-                    "correlation",
-                    "entropy",
-                    "fractal",
-                    "hurst",
-                    "hjorth",
-                    "hj_",
-                    "kurtosis",
-                    "kurt",
-                    "skew",
-                    "skewness",
-                    "zscore",
-                    "z_score",
-                ]
-            ):
-                categories["statistical"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in [
-                    "_x_",
-                    "_div_",
-                    "_ratio_",
-                    "_over_",
-                    "_cross_",
-                    "interaction",
-                ]
-            ):
-                categories["interaction"].append(feature)
-                categorized = True
-            elif any(
-                keyword in feature_lower
-                for keyword in ["fft", "fourier", "dct", "cosine", "sine", "transform_"]
-            ):
-                categories["transform"].append(feature)
-                categorized = True
+            for category, keywords in category_keywords.items():
+                if any(keyword in feature_lower for keyword in keywords):
+                    categories[category].append(feature)
+                    categorized = True
+                    break
 
             if not categorized:
                 categories["other"].append(feature)
@@ -883,7 +732,6 @@ class FeatureSelectionManager:
         try:
             from sklearn.linear_model import LogisticRegression
             from sklearn.model_selection import cross_val_score
-from src.core.decorators.errors import handles_errors
 
             for feature in features_df.columns:
                 try:

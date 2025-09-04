@@ -5,6 +5,7 @@ This module implements a real-time streaming pipeline for processing live market
 with an agnostic approach that can work with different exchanges (Binance, Gate.io, etc.).
 """
 
+import ast
 import asyncio
 import numpy as np
 import pandas as pd

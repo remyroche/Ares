@@ -20,6 +20,15 @@ except ImportError:
         def __init__(self, name):
             self.name = name
             self.complexity = 1
+            self.functions = []
+            self.classes = []
+            
+        @classmethod
+        def from_ast(cls, tree):
+            """Create a ComplexityVisitor from an AST tree."""
+            visitor = cls("root")
+            # Simple implementation - just return empty visitor for now
+            return visitor
             
     class HalsteadVisitor:
         def __init__(self):

@@ -28,6 +28,7 @@ import asyncio
 from src.core.decorators import handles_errors
 from src.database.sqlite_manager import SQLiteManager
 import pickle
+import ast
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."
@@ -774,27 +775,21 @@ class DataEfficiencyOptimizer:
                     feature_data_str = row[2]
 
                     # Parse the feature data (stored as string representation)
-                    try:
-                        # Simple parsing - in production you might want to use JSON
-                        import ast
-from src.core.decorators.errors import handles_errors
-
-                        feature_dict = ast.literal_eval(feature_data_str)
-
-                        # Extract features, excluding timestamp and feature_type
-                        features = {
-                            k: v
-                            for k, v in feature_dict.items()
-                            if k.startswith("feature_")
-                            and k not in ["timestamp", "feature_type"]
-                        }
-
-                        if features:
-                            features["timestamp"] = timestamp
-                            features_list.append(features)
-                    except Exception:
-                        self.print(failed("Failed to parse feature data: {e}"))
+                    feature_dict = self._parse_feature_data(feature_data_str)
+                    if feature_dict is None:
                         continue
+
+                    # Extract features, excluding timestamp and feature_type
+                    features = {
+                        k: v
+                        for k, v in feature_dict.items()
+                        if k.startswith("feature_")
+                        and k not in ["timestamp", "feature_type"]
+                    }
+
+                    if features:
+                        features["timestamp"] = timestamp
+                        features_list.append(features)
 
                 if features_list:
                     features_df = pd.DataFrame(features_list)
@@ -1101,3 +1096,18 @@ from src.core.decorators.errors import handles_errors
             conn.execute(text("VACUUM"))
 
         self.logger.info("Database vacuumed to reclaim space")
+
+    def _parse_feature_data(self, feature_data_str: str) -> dict | None:
+        """Parse feature data string safely.
+        
+        Args:
+            feature_data_str: String representation of feature data
+            
+        Returns:
+            Parsed feature dictionary or None if parsing fails
+        """
+        try:
+            return ast.literal_eval(feature_data_str)
+        except (ValueError, SyntaxError) as e:
+            self.logger.warning(f"Failed to parse feature data: {e}")
+            return None

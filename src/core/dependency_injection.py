@@ -3,15 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeVar
 
-from src.interfaces import (
 import asyncio
 
+from src.interfaces import (
     IAnalyst,
     IStrategist,
     ISupervisor,
     ITactician,
 )
-import asyncio
 from src.utils.logger import system_logger
 
 # src/core/dependency_injection.py

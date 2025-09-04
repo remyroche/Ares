@@ -102,7 +102,8 @@ class CodeAnalyzer:
         return issues
 
     def _find_potentially_unused_imports(
-        self=tree: ast.AST,
+        self,
+        tree: ast.AST,
         lines: list[str],
     ) -> list[tuple[int, str]]:
         """Find potentially unused imports using AST analysis."""

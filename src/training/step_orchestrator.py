@@ -41,7 +41,7 @@ class StepOrchestrator:
             "step01_5_data_converter",
             "step02_feature_engineering",
             "step02_5_sr_optimization",
-            "step03_hmm_regime_discovery",
+            "step03_hmm_clustering",
             "step04_processing_labeling",
             "step05_regime_data_splitting",
             "step06_hmm_based_training",

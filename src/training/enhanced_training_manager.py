@@ -123,7 +123,7 @@ class TrainingManager:
             "step01_data_collection",           # Download and prepare market data
             "step01_5_data_converter",          # Convert data to unified format
             "step2_feature_engineering",       # Feature engineering
-            "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step03_hmm_clustering",            # Enhanced HMM regime discovery with all improvements
             "step04_regime_data_splitting",     # Regime data splitting
             "step5_triple_barrier_method",     # Apply triple barrier method
             "step6_feature_generation",        # Feature generation
@@ -163,7 +163,7 @@ class TrainingManager:
                 "data/optimization/sr_optimization_results.json",
                 "optimization_results.json",
             ],
-            "step03_hmm_regime_discovery": [
+            "step03_hmm_clustering": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
             ],
             "step4_processing_labeling": [
@@ -255,7 +255,7 @@ class TrainingManager:
                 "data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
                 "data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json",
             ],
-            "step03_hmm_regime_discovery": [
+            "step03_hmm_clustering": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*",
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json",
@@ -658,7 +658,7 @@ class TrainingManager:
                 "step01_data_collection": 5,
                 "step01_5_data_converter": 3,
                 "step2_feature_engineering": 15,
-                "step03_hmm_regime_discovery": 3,
+                "step03_hmm_clustering": 3,
                 "step4_processing_labeling": 8,
                 "step5_regime_data_splitting": 2,
                 "step6_hmm_based_training": 10,
@@ -684,7 +684,7 @@ class TrainingManager:
             "step01_data_collection": 15,
             "step01_5_data_converter": 10,
             "step2_feature_engineering": 60,
-            "step03_hmm_regime_discovery": 8,
+            "step03_hmm_clustering": 8,
             "step4_processing_labeling": 20,
             "step5_regime_data_splitting": 5,
             "step6_hmm_based_training": 30,
@@ -1202,10 +1202,10 @@ class TrainingManager:
                     self._save_checkpoint('step02_5_sr_optimization', pipeline_state)
                 if not step2_5_success:
                     return False
-                self.logger.info('➡️ Proceeding to Step 3: HMM Regime Discovery')
-                from src.training.steps import step3_hmm_regime_discovery as _step3
+                self.logger.info('➡️ Proceeding to Step 3: Enhanced HMM Clustering')
+                from src.training.steps import step03_hmm_clustering as _step3
                 step3_args = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'lookback_days': self.lookback_days, 'force_rerun': self.force_rerun}
-                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_regime_discovery', step_function=_step3.run_step_enhanced, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: HMM Regime Discovery')
+                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=_step3.run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
                 if not step3_success:
                     return False
                 self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
@@ -1240,7 +1240,7 @@ class TrainingManager:
                         step4_validation = await self._run_step_validator('step04_regime_data_splitting', training_input, pipeline_state)
                         if step4_validation and step4_validation.get('validation_passed', False):
                             self.logger.info('🎉 Step 4: Regime Data Splitting completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state=pipeline_state, previous_step_name='step03_hmm_regime_discovery', training_input=training_input)
+                            enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state=pipeline_state, previous_step_name='step03_hmm_clustering', training_input=training_input)
                             if enhanced_validation.get('validation_passed', False):
                                 self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                             else:
@@ -2083,7 +2083,7 @@ class TrainingManager:
         Returns:
             Validation level string (defaults to CRITICAL)
         """
-        critical_steps = ['step01_data_collection', 'step2_feature_engineering', 'step03_hmm_regime_discovery', 'step6_hmm_based_training', 'step7_analyst_enhancement', 'step9_tactician_specialist_training', 'step12_walk_forward_validation', 'step13_monte_carlo_validation']
+        critical_steps = ['step01_data_collection', 'step2_feature_engineering', 'step03_hmm_clustering', 'step6_hmm_based_training', 'step7_analyst_enhancement', 'step9_tactician_specialist_training', 'step12_walk_forward_validation', 'step13_monte_carlo_validation']
         comprehensive_steps = ['step01_5_data_converter', 'step4_processing_labeling', 'step5_regime_data_splitting', 'step6_5_unified_regime_intelligence', 'step8_tactician_labeling', 'step10_confidence_calibration', 'step11_final_parameters_optimization', 'step14_ab_testing', 'step15_saving']
         return 'CRITICAL'
 

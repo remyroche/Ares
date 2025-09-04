@@ -15,8 +15,8 @@ from src.training.steps.data_preparation.step01_data_collection import DataColle
 from src.training.steps.step01_data_collection_validator import run_validator as validate_step1
 from src.training.steps.data_preparation.step02_data_reading import DataReadingStep
 from src.training.steps.step02_data_reading_validator import run_validator as validate_step2
-from src.training.steps.market_analysis.step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
-from src.training.steps.step03_hmm_regime_discovery_validator import run_validator as validate_step3
+from src.training.steps.hmm_clustering.step03_enhanced_hmm_regime_discovery import EnhancedHMMRegimeDiscoveryStep
+from src.training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator as validate_step3
 from src.training.steps.market_analysis.step04_regime_data_splitting import RegimeDataSplittingStep
 from src.training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
 from src.training.steps.model_training.step05_labeling import LabelingStep
@@ -49,7 +49,7 @@ class Steps1To7ComprehensiveExecutor:
         self.execution_timings = {}
         self.data_quality_scores = {}
         self.errors_encountered = []
-        self.steps = {'step01': DataCollectionStep(config), 'step1_5': DataConverterStep(config), 'step02': DataReadingStep(config), 'step03': HMMRegimeDiscoveryStep(config), 'step04': RegimeDataSplittingStep(config), 'step05': LabelingStep(config), 'step06': FeatureEngineeringStep(config), 'step07': EnhancedMatrixOperationsStep(config)}
+        self.steps = {'step01': DataCollectionStep(config), 'step1_5': DataConverterStep(config), 'step02': DataReadingStep(config), 'step03': EnhancedHMMRegimeDiscoveryStep(config), 'step04': RegimeDataSplittingStep(config), 'step05': LabelingStep(config), 'step06': FeatureEngineeringStep(config), 'step07': EnhancedMatrixOperationsStep(config)}
         self.validators = {'step01': validate_step1, 'step1_5': validate_step1_5, 'step02': validate_step2, 'step03': validate_step3, 'step04': validate_step4, 'step05': validate_step5, 'step06': validate_step6, 'step07': validate_step7}
         self.logger.info('🚀 Steps 1-7 Comprehensive Executor initialized')
 

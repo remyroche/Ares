@@ -22,7 +22,7 @@ from copy import copy
 import datetime
 
 # Import fractional components
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
+from src.training.steps.step06_labeling_components.fractional_triple_barrier_labeling import (
     FractionalTripleBarrierLabeling
 )
 from src.training.steps.fractional_differentiation import FractionalFeatureGenerator

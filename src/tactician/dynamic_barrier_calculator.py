@@ -35,7 +35,7 @@ class DynamicBarrierCalculator:
         """Load Analyst triple barrier configuration."""
         try:
             # Try to load from Analyst triple barrier labeling component
-            analyst_config_path = Path("src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py")
+            analyst_config_path = Path("src/training/steps/step06_labeling_components/optimized_triple_barrier_labeling.py")
             
             # Default Analyst values (from the optimized_triple_barrier_labeling.py)
             analyst_config = {

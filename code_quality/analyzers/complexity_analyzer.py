@@ -9,8 +9,21 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-import radon.metrics as radon_metrics
-from radon.visitors import ComplexityVisitor, HalsteadVisitor
+try:
+    import radon.metrics as radon_metrics
+    from radon.visitors import ComplexityVisitor, HalsteadVisitor
+    RADON_AVAILABLE = True
+except ImportError:
+    RADON_AVAILABLE = False
+    # Provide stub classes for when radon is not available
+    class ComplexityVisitor:
+        def __init__(self, name):
+            self.name = name
+            self.complexity = 1
+            
+    class HalsteadVisitor:
+        def __init__(self):
+            pass
 
 from core.config import AnalysisConfig
 from utils.file_utils import find_python_files
@@ -199,46 +212,50 @@ class ComplexityAnalyzer:
 
     def _get_basic_metrics(self, source: str) -> ComplexityMetrics:
         """Extract basic code metrics using Radon."""
-        try:
-            # Get raw metrics
-            raw_metrics = radon_metrics.raw_metrics(source)
+        if RADON_AVAILABLE:
+            try:
+                # Get raw metrics
+                raw_metrics = radon_metrics.raw_metrics(source)
 
-            # Get Halstead metrics
-            halstead = HalsteadVisitor.from_ast(ast.parse(source))
+                # Get Halstead metrics
+                halstead = HalsteadVisitor.from_ast(ast.parse(source))
 
-            return ComplexityMetrics(
-                cyclomatic_complexity=0,  # Will be calculated per function
-                maintainability_index=0,  # Will be calculated overall
-                halstead_volume=halstead.volume,
-                halstead_difficulty=halstead.difficulty,
-                halstead_effort=halstead.effort,
-                halstead_time=halstead.time,
-                halstead_bugs=halstead.bugs,
-                loc=raw_metrics["loc"],
-                lloc=raw_metrics["lloc"],
-                sloc=raw_metrics["sloc"],
-                comments=raw_metrics["comments"],
-                multi=raw_metrics["multi"],
-                blank=raw_metrics["blank"],
-            )
-        except Exception:
-            # Fallback to basic metrics
-            lines = source.split("\n")
-            return ComplexityMetrics(
-                cyclomatic_complexity=0,
-                maintainability_index=0,
-                halstead_volume=0,
-                halstead_difficulty=0,
-                halstead_effort=0,
-                halstead_time=0,
-                halstead_bugs=0,
-                loc=len(lines),
-                lloc=len([l for l in lines if l.strip() and not l.strip().startswith("#")]),
-                sloc=len([l for l in lines if l.strip()]),
-                comments=len([l for l in lines if l.strip().startswith("#")]),
-                multi=0,
-                blank=len([l for l in lines if not l.strip()]),
-            )
+                return ComplexityMetrics(
+                    cyclomatic_complexity=0,  # Will be calculated per function
+                    maintainability_index=0,  # Will be calculated overall
+                    halstead_volume=halstead.volume,
+                    halstead_difficulty=halstead.difficulty,
+                    halstead_effort=halstead.effort,
+                    halstead_time=halstead.time,
+                    halstead_bugs=halstead.bugs,
+                    loc=raw_metrics["loc"],
+                    lloc=raw_metrics["lloc"],
+                    sloc=raw_metrics["sloc"],
+                    comments=raw_metrics["comments"],
+                    multi=raw_metrics["multi"],
+                    blank=raw_metrics["blank"],
+                )
+            except Exception:
+                # Fallback to basic metrics
+                pass
+        
+        # Fallback to basic metrics when radon is not available or fails
+        lines = source.split("\n")
+        return ComplexityMetrics(
+            cyclomatic_complexity=0,
+            maintainability_index=0,
+            halstead_volume=0,
+            halstead_difficulty=0,
+            halstead_effort=0,
+            halstead_time=0,
+            halstead_bugs=0,
+            loc=len(lines),
+            lloc=len([l for l in lines if l.strip() and not l.strip().startswith("#")]),
+            sloc=len([l for l in lines if l.strip()]),
+            comments=len([l for l in lines if l.strip().startswith("#")]),
+            multi=0,
+            blank=len([l for l in lines if not l.strip()]),
+        )
 
     def _analyze_functions(self, source: str, file_path: str) -> list[FunctionComplexity]:
         """Analyze function complexity."""
@@ -324,41 +341,46 @@ class ComplexityAnalyzer:
         lines = source.split("\n")[start_line-1:end_line]
         func_source = "\n".join(lines)
 
-        try:
-            raw_metrics = radon_metrics.raw_metrics(func_source)
-            halstead = HalsteadVisitor.from_ast(ast.parse(func_source))
+        if RADON_AVAILABLE:
+            try:
+                raw_metrics = radon_metrics.raw_metrics(func_source)
+                halstead = HalsteadVisitor.from_ast(ast.parse(func_source))
 
-            return ComplexityMetrics(
-                cyclomatic_complexity=0,  # Already calculated by visitor
-                maintainability_index=0,  # Will be calculated overall
-                halstead_volume=halstead.volume,
-                halstead_difficulty=halstead.difficulty,
-                halstead_effort=halstead.effort,
-                halstead_time=halstead.time,
-                halstead_bugs=halstead.bugs,
+                return ComplexityMetrics(
+                    cyclomatic_complexity=0,  # Already calculated by visitor
+                    maintainability_index=0,  # Will be calculated overall
+                    halstead_volume=halstead.volume,
+                    halstead_difficulty=halstead.difficulty,
+                    halstead_effort=halstead.effort,
+                    halstead_time=halstead.time,
+                    halstead_bugs=halstead.bugs,
                 loc=raw_metrics["loc"],
                 lloc=raw_metrics["lloc"],
                 sloc=raw_metrics["sloc"],
                 comments=raw_metrics["comments"],
                 multi=raw_metrics["multi"],
                 blank=raw_metrics["blank"],
-            )
-        except Exception:
-            return ComplexityMetrics(
-                cyclomatic_complexity=0,
-                maintainability_index=0,
-                halstead_volume=0,
-                halstead_difficulty=0,
-                halstead_effort=0,
-                halstead_time=0,
-                halstead_bugs=0,
-                loc=end_line - start_line + 1,
-                lloc=end_line - start_line + 1,
-                sloc=end_line - start_line + 1,
-                comments=0,
-                multi=0,
-                blank=0,
-            )
+                )
+            except Exception:
+                # Fall through to fallback
+                pass
+        
+        # Fallback when radon is not available
+        return ComplexityMetrics(
+            cyclomatic_complexity=0,
+            maintainability_index=0,
+            halstead_volume=0,
+            halstead_difficulty=0,
+            halstead_effort=0,
+            halstead_time=0,
+            halstead_bugs=0,
+            loc=end_line - start_line + 1,
+            lloc=end_line - start_line + 1,
+            sloc=end_line - start_line + 1,
+            comments=0,
+            multi=0,
+            blank=0,
+        )
 
     def _calculate_class_metrics(self, source: str, start_line: int, end_line: int) -> ComplexityMetrics:
         """Calculate metrics for a specific class."""

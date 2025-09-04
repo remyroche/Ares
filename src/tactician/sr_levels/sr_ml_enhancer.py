@@ -194,8 +194,9 @@ class SRMLEnhancer:
             feature_names = await self._get_combined_feature_names()
             
             self.logger.info(f"📊 Training data prepared: {len(features)} samples, {len(feature_names)} features")
-            self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())}")
-            self.logger.info(f"   - Step06 features: {len(step06_features)}")
+            self.logger.info(f"   - S/R specific features: {len(await self._get_feature_names())} (45 features)")
+            self.logger.info(f"   - Step06 features: {len(step06_features)} (200+ features)")
+            self.logger.info(f"   - S/R feature breakdown: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
             
             return MLFeatureSet(
                 features=features_array,
@@ -347,10 +348,12 @@ class SRMLEnhancer:
         market_data: pd.DataFrame,
         level: Dict[str, Any]
     ) -> Optional[List[float]]:
-        """Extract features for a specific S/R level."""
+        """Extract S/R specific features for a specific S/R level."""
         try:
             features = []
+            level_price = level.get('price', 0)
             
+            # === CORE S/R FEATURES (15 features) ===
             # Basic level features
             features.extend([
                 level.get('touch_count', 0),
@@ -364,7 +367,6 @@ class SRMLEnhancer:
             ])
             
             # Market context features
-            level_price = level.get('price', 0)
             if level_price > 0:
                 current_price = market_data['close'].iloc[-1]
                 proximity = abs(current_price - level_price) / level_price
@@ -372,18 +374,38 @@ class SRMLEnhancer:
             else:
                 features.append(1.0)  # Default high proximity
             
-            # Technical indicator features
-            tech_features = await self._extract_technical_features(market_data, level)
-            features.extend(tech_features)
-            
-            # Advanced features
-            advanced_features = await self._extract_advanced_features(market_data, level)
+            # Advanced S/R features
+            advanced_features = await self._extract_advanced_sr_features(market_data, level)
             features.extend(advanced_features)
+            
+            # === HVN (HIGH VOLUME NODE) FEATURES (5 features) ===
+            hvn_features = await self._extract_hvn_features(market_data, level)
+            features.extend(hvn_features)
+            
+            # === FIBONACCI RETRACEMENT FEATURES (6 features) ===
+            fibonacci_features = await self._extract_fibonacci_features(market_data, level)
+            features.extend(fibonacci_features)
+            
+            # === PSYCHOLOGICAL LEVEL FEATURES (5 features) ===
+            psychological_features = await self._extract_psychological_features(market_data, level)
+            features.extend(psychological_features)
+            
+            # === PIVOT POINT FEATURES (4 features) ===
+            pivot_features = await self._extract_pivot_features(market_data, level)
+            features.extend(pivot_features)
+            
+            # === TREND LINE FEATURES (4 features) ===
+            trendline_features = await self._extract_trendline_features(market_data, level)
+            features.extend(trendline_features)
+            
+            # === SUPPORT/RESISTANCE SPECIFIC FEATURES (6 features) ===
+            sr_specific_features = await self._extract_sr_specific_features(market_data, level)
+            features.extend(sr_specific_features)
             
             return features
             
         except Exception as e:
-            self.logger.error(f"Feature extraction failed for level: {e}")
+            self.logger.error(f"S/R feature extraction failed for level: {e}")
             return None
     
     async def _extract_technical_features(
@@ -465,12 +487,12 @@ class SRMLEnhancer:
             self.logger.error(f"Technical feature extraction failed: {e}")
             return [0.0] * 15  # Return default features
     
-    async def _extract_advanced_features(
+    async def _extract_advanced_sr_features(
         self,
         market_data: pd.DataFrame,
         level: Dict[str, Any]
     ) -> List[float]:
-        """Extract advanced features."""
+        """Extract advanced S/R features (6 features)."""
         try:
             features = []
             
@@ -503,7 +525,227 @@ class SRMLEnhancer:
             return features
             
         except Exception as e:
-            self.logger.error(f"Advanced feature extraction failed: {e}")
+            self.logger.error(f"Advanced S/R feature extraction failed: {e}")
+            return [0.5] * 6  # Return default features
+    
+    async def _extract_hvn_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract HVN (High Volume Node) features (5 features)."""
+        try:
+            features = []
+            level_price = level.get('price', 0)
+            
+            # HVN strength (based on volume profile)
+            hvn_strength = level.get('hvn_strength', 0.5)
+            features.append(hvn_strength)
+            
+            # HVN volume ratio (volume at level vs average)
+            hvn_volume_ratio = level.get('hvn_volume_ratio', 1.0)
+            features.append(hvn_volume_ratio)
+            
+            # HVN touch count (how many times price touched HVN)
+            hvn_touch_count = level.get('hvn_touch_count', 0)
+            features.append(hvn_touch_count)
+            
+            # HVN time weight (how long HVN was active)
+            hvn_time_weight = level.get('hvn_time_weight', 0.5)
+            features.append(hvn_time_weight)
+            
+            # HVN price accuracy (how precise the HVN level is)
+            hvn_price_accuracy = level.get('hvn_price_accuracy', 0.5)
+            features.append(hvn_price_accuracy)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"HVN feature extraction failed: {e}")
+            return [0.5] * 5  # Return default features
+    
+    async def _extract_fibonacci_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract Fibonacci retracement features (6 features)."""
+        try:
+            features = []
+            
+            # Fibonacci level type (0.236, 0.382, 0.5, 0.618, 0.786)
+            fib_level_type = level.get('fib_level_type', 0.0)
+            features.append(fib_level_type)
+            
+            # Fibonacci strength (how strong the fib level is)
+            fib_strength = level.get('fib_strength', 0.5)
+            features.append(fib_strength)
+            
+            # Fibonacci confluence count (how many fib levels at same price)
+            fib_confluence_count = level.get('fib_confluence_count', 0)
+            features.append(fib_confluence_count)
+            
+            # Fibonacci timeframe alignment (multiple timeframes)
+            fib_timeframe_alignment = level.get('fib_timeframe_alignment', 0.5)
+            features.append(fib_timeframe_alignment)
+            
+            # Fibonacci volume confirmation
+            fib_volume_confirmation = level.get('fib_volume_confirmation', 0.5)
+            features.append(fib_volume_confirmation)
+            
+            # Fibonacci bounce quality
+            fib_bounce_quality = level.get('fib_bounce_quality', 0.5)
+            features.append(fib_bounce_quality)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Fibonacci feature extraction failed: {e}")
+            return [0.0] * 6  # Return default features
+    
+    async def _extract_psychological_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract psychological level features (5 features)."""
+        try:
+            features = []
+            level_price = level.get('price', 0)
+            
+            # Psychological level type (round numbers, key levels)
+            psychological_level_type = level.get('psychological_level_type', 0.0)
+            if level_price > 0:
+                # Check if it's a round number (100, 1000, etc.)
+                if level_price % 100 == 0:
+                    psychological_level_type = 1.0
+                elif level_price % 50 == 0:
+                    psychological_level_type = 0.8
+                elif level_price % 10 == 0:
+                    psychological_level_type = 0.6
+            features.append(psychological_level_type)
+            
+            # Round number strength
+            round_number_strength = level.get('round_number_strength', 0.5)
+            features.append(round_number_strength)
+            
+            # Psychological touch count
+            psychological_touch_count = level.get('psychological_touch_count', 0)
+            features.append(psychological_touch_count)
+            
+            # Psychological volume spike
+            psychological_volume_spike = level.get('psychological_volume_spike', 1.0)
+            features.append(psychological_volume_spike)
+            
+            # Psychological bounce ratio
+            psychological_bounce_ratio = level.get('psychological_bounce_ratio', 0.5)
+            features.append(psychological_bounce_ratio)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Psychological feature extraction failed: {e}")
+            return [0.0] * 5  # Return default features
+    
+    async def _extract_pivot_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract pivot point features (4 features)."""
+        try:
+            features = []
+            
+            # Pivot type (daily, weekly, monthly)
+            pivot_type = level.get('pivot_type', 0.0)
+            features.append(pivot_type)
+            
+            # Pivot strength
+            pivot_strength = level.get('pivot_strength', 0.5)
+            features.append(pivot_strength)
+            
+            # Pivot timeframe
+            pivot_timeframe = level.get('pivot_timeframe', 0.5)
+            features.append(pivot_timeframe)
+            
+            # Pivot confluence
+            pivot_confluence = level.get('pivot_confluence', 0.5)
+            features.append(pivot_confluence)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Pivot feature extraction failed: {e}")
+            return [0.0] * 4  # Return default features
+    
+    async def _extract_trendline_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract trend line features (4 features)."""
+        try:
+            features = []
+            
+            # Trend line type (support, resistance, channel)
+            trendline_type = level.get('trendline_type', 0.0)
+            features.append(trendline_type)
+            
+            # Trend line strength
+            trendline_strength = level.get('trendline_strength', 0.5)
+            features.append(trendline_strength)
+            
+            # Trend line touch count
+            trendline_touch_count = level.get('trendline_touch_count', 0)
+            features.append(trendline_touch_count)
+            
+            # Trend line angle
+            trendline_angle = level.get('trendline_angle', 0.0)
+            features.append(trendline_angle)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Trend line feature extraction failed: {e}")
+            return [0.0] * 4  # Return default features
+    
+    async def _extract_sr_specific_features(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any]
+    ) -> List[float]:
+        """Extract S/R specific features (6 features)."""
+        try:
+            features = []
+            
+            # S/R type (support, resistance, both)
+            sr_type = level.get('sr_type', 0.5)
+            features.append(sr_type)
+            
+            # S/R timeframe confluence
+            sr_timeframe_confluence = level.get('sr_timeframe_confluence', 0.5)
+            features.append(sr_timeframe_confluence)
+            
+            # S/R breakout history
+            sr_breakout_history = level.get('sr_breakout_history', 0.5)
+            features.append(sr_breakout_history)
+            
+            # S/R retest success rate
+            sr_retest_success_rate = level.get('sr_retest_success_rate', 0.5)
+            features.append(sr_retest_success_rate)
+            
+            # S/R volume profile strength
+            sr_volume_profile_strength = level.get('sr_volume_profile_strength', 0.5)
+            features.append(sr_volume_profile_strength)
+            
+            # S/R market structure alignment
+            sr_market_structure_alignment = level.get('sr_market_structure_alignment', 0.5)
+            features.append(sr_market_structure_alignment)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"S/R specific feature extraction failed: {e}")
             return [0.5] * 6  # Return default features
     
     async def _create_target_for_level(
@@ -511,37 +753,82 @@ class SRMLEnhancer:
         level: Dict[str, Any],
         historical_performance: Optional[Dict[str, Any]]
     ) -> float:
-        """Create target variable for level quality."""
+        """Create comprehensive target variable for level quality."""
         try:
             # Use historical performance if available
             if historical_performance and level.get('id') in historical_performance:
                 perf = historical_performance[level['id']]
                 return perf.get('quality_score', 0.5)
             
-            # Create target based on level characteristics
+            # Create comprehensive target based on multiple aspects
             target = 0.0
             
-            # Strength component
+            # === CORE S/R ASPECTS (50% weight) ===
+            # Strength component (15%)
             strength = level.get('strength', 0.5)
-            target += strength * 0.3
+            target += strength * 0.15
             
-            # Touch count component
+            # Touch count component (10%)
             touch_count = level.get('touch_count', 0)
             touch_score = min(touch_count / 10.0, 1.0)
-            target += touch_score * 0.2
+            target += touch_score * 0.10
             
-            # Bounce quality component
+            # Bounce quality component (10%)
             bounce_ratio = level.get('avg_bounce_ratio', 0)
             bounce_score = min(bounce_ratio / 0.01, 1.0)  # Normalize to 1% bounce
-            target += bounce_score * 0.2
+            target += bounce_score * 0.10
             
-            # Volume confirmation component
+            # Volume confirmation component (8%)
             volume_score = level.get('volume_confirmation_score', 0.5)
-            target += volume_score * 0.15
+            target += volume_score * 0.08
             
-            # Consistency component
+            # Consistency component (7%)
             consistency_score = level.get('consistency_score', 0.5)
-            target += consistency_score * 0.15
+            target += consistency_score * 0.07
+            
+            # === ADVANCED S/R ASPECTS (30% weight) ===
+            # HVN strength (8%)
+            hvn_strength = level.get('hvn_strength', 0.5)
+            target += hvn_strength * 0.08
+            
+            # Fibonacci confluence (6%)
+            fib_confluence = level.get('fib_confluence_count', 0)
+            fib_score = min(fib_confluence / 3.0, 1.0)  # Normalize to 3 fib levels
+            target += fib_score * 0.06
+            
+            # Psychological level strength (6%)
+            psychological_strength = level.get('psychological_level_type', 0.0)
+            target += psychological_strength * 0.06
+            
+            # Pivot strength (5%)
+            pivot_strength = level.get('pivot_strength', 0.5)
+            target += pivot_strength * 0.05
+            
+            # Trend line strength (5%)
+            trendline_strength = level.get('trendline_strength', 0.5)
+            target += trendline_strength * 0.05
+            
+            # === MARKET STRUCTURE ASPECTS (20% weight) ===
+            # Timeframe confluence (6%)
+            timeframe_confluence = level.get('sr_timeframe_confluence', 0.5)
+            target += timeframe_confluence * 0.06
+            
+            # Retest success rate (5%)
+            retest_success = level.get('sr_retest_success_rate', 0.5)
+            target += retest_success * 0.05
+            
+            # Volume profile strength (4%)
+            volume_profile_strength = level.get('sr_volume_profile_strength', 0.5)
+            target += volume_profile_strength * 0.04
+            
+            # Market structure alignment (3%)
+            market_structure_alignment = level.get('sr_market_structure_alignment', 0.5)
+            target += market_structure_alignment * 0.03
+            
+            # Failure rate penalty (2%)
+            failure_count = level.get('failure_count', 0)
+            failure_penalty = min(failure_count / 5.0, 1.0)  # Normalize to 5 failures
+            target -= failure_penalty * 0.02
             
             return min(max(target, 0.0), 1.0)  # Clamp to [0, 1]
             
@@ -550,25 +837,52 @@ class SRMLEnhancer:
             return 0.5
     
     async def _get_feature_names(self) -> List[str]:
-        """Get feature names for ML models (30+ features)."""
-        basic_features = [
+        """Get feature names for ML models (S/R specific features only)."""
+        # Core S/R features (15 features)
+        core_features = [
             "touch_count", "strength", "age_bars", "avg_bounce_ratio",
             "max_bounce_ratio", "volume_confirmation_score", "consistency_score",
-            "failure_count", "proximity_to_level"
+            "failure_count", "proximity_to_level", "level_density", 
+            "confluence_score", "time_since_touch", "volume_at_touch", 
+            "price_action_score", "microstructure_score"
         ]
         
-        technical_features = [
-            "rsi_14", "macd_line", "macd_signal", "bollinger_position",
-            "atr_14", "volume_ratio", "price_momentum", "stoch_k", "stoch_d",
-            "williams_r", "cci", "adx", "obv", "doji_pattern", "hammer_pattern", "volatility_proxy"
+        # HVN (High Volume Node) features (5 features)
+        hvn_features = [
+            "hvn_strength", "hvn_volume_ratio", "hvn_touch_count",
+            "hvn_time_weight", "hvn_price_accuracy"
         ]
         
-        advanced_features = [
-            "level_density", "confluence_score", "time_since_touch",
-            "volume_at_touch", "price_action_score", "microstructure_score"
+        # Fibonacci retracement features (6 features)
+        fibonacci_features = [
+            "fib_level_type", "fib_strength", "fib_confluence_count",
+            "fib_timeframe_alignment", "fib_volume_confirmation", "fib_bounce_quality"
         ]
         
-        return basic_features + technical_features + advanced_features
+        # Psychological level features (5 features)
+        psychological_features = [
+            "psychological_level_type", "round_number_strength", "psychological_touch_count",
+            "psychological_volume_spike", "psychological_bounce_ratio"
+        ]
+        
+        # Pivot point features (4 features)
+        pivot_features = [
+            "pivot_type", "pivot_strength", "pivot_timeframe", "pivot_confluence"
+        ]
+        
+        # Trend line features (4 features)
+        trendline_features = [
+            "trendline_type", "trendline_strength", "trendline_touch_count", "trendline_angle"
+        ]
+        
+        # Support/Resistance specific features (6 features)
+        sr_specific_features = [
+            "sr_type", "sr_timeframe_confluence", "sr_breakout_history",
+            "sr_retest_success_rate", "sr_volume_profile_strength", "sr_market_structure_alignment"
+        ]
+        
+        return (core_features + hvn_features + fibonacci_features + 
+                psychological_features + pivot_features + trendline_features + sr_specific_features)
     
     async def _train_sr_quality_model(self, training_data: MLFeatureSet) -> None:
         """Train S/R quality prediction model with proper regularization."""
@@ -1232,15 +1546,36 @@ class SRMLEnhancer:
     def _select_top_features_with_sr_priority(self, scores: np.ndarray, feature_names: List[str], top_k: int = 50) -> List[str]:
         """Select top K features with S/R feature prioritization."""
         try:
-            # Define S/R specific feature patterns
+            # Define S/R specific feature patterns (45 features total)
             sr_feature_patterns = [
-                'proximity_to_level', 'level_strength', 'touch_count', 'age_bars',
-                'bounce_ratio', 'volume_confirmation', 'consistency_score', 'failure_count',
-                'level_density', 'confluence_score', 'time_since_touch', 'volume_at_touch',
-                'price_action_score', 'microstructure_score', 'rsi_14', 'macd_line',
-                'macd_signal', 'bollinger_position', 'atr_14', 'volume_ratio',
-                'price_momentum', 'stoch_k', 'stoch_d', 'williams_r', 'cci', 'adx',
-                'obv', 'doji_pattern', 'hammer_pattern', 'volatility_proxy'
+                # Core S/R features (15)
+                'touch_count', 'strength', 'age_bars', 'avg_bounce_ratio',
+                'max_bounce_ratio', 'volume_confirmation_score', 'consistency_score',
+                'failure_count', 'proximity_to_level', 'level_density', 
+                'confluence_score', 'time_since_touch', 'volume_at_touch', 
+                'price_action_score', 'microstructure_score',
+                
+                # HVN features (5)
+                'hvn_strength', 'hvn_volume_ratio', 'hvn_touch_count',
+                'hvn_time_weight', 'hvn_price_accuracy',
+                
+                # Fibonacci features (6)
+                'fib_level_type', 'fib_strength', 'fib_confluence_count',
+                'fib_timeframe_alignment', 'fib_volume_confirmation', 'fib_bounce_quality',
+                
+                # Psychological features (5)
+                'psychological_level_type', 'round_number_strength', 'psychological_touch_count',
+                'psychological_volume_spike', 'psychological_bounce_ratio',
+                
+                # Pivot features (4)
+                'pivot_type', 'pivot_strength', 'pivot_timeframe', 'pivot_confluence',
+                
+                # Trend line features (4)
+                'trendline_type', 'trendline_strength', 'trendline_touch_count', 'trendline_angle',
+                
+                # S/R specific features (6)
+                'sr_type', 'sr_timeframe_confluence', 'sr_breakout_history',
+                'sr_retest_success_rate', 'sr_volume_profile_strength', 'sr_market_structure_alignment'
             ]
             
             # Identify S/R features
@@ -1261,12 +1596,12 @@ class SRMLEnhancer:
             # Select features with S/R prioritization
             selected_features = []
             
-            # First, select top S/R features (up to 60% of total)
-            sr_count = min(len(sr_features), int(top_k * 0.6))
+            # First, select top S/R features (up to 70% of total - more S/R features now)
+            sr_count = min(len(sr_features), int(top_k * 0.7))
             for i in range(sr_count):
                 selected_features.append(sr_features[i][1])
             
-            # Then, select top non-S/R features (remaining 40%)
+            # Then, select top non-S/R features (remaining 30%)
             remaining_count = top_k - len(selected_features)
             for i in range(min(remaining_count, len(non_sr_features))):
                 selected_features.append(non_sr_features[i][1])
@@ -1281,9 +1616,10 @@ class SRMLEnhancer:
                         selected_features.append(feature_name)
             
             self.logger.info(f"🎯 Feature selection with S/R prioritization:")
-            self.logger.info(f"   - S/R features selected: {sr_count}")
-            self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count}")
+            self.logger.info(f"   - S/R features selected: {sr_count} (70% of total)")
+            self.logger.info(f"   - Non-S/R features selected: {len(selected_features) - sr_count} (30% of total)")
             self.logger.info(f"   - Total features selected: {len(selected_features)}")
+            self.logger.info(f"   - S/R feature categories: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(6)")
             
             return selected_features
             

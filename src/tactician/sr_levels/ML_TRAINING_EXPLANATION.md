@@ -53,9 +53,9 @@ async def _prepare_training_data(
 
 #### **Feature Extraction Process:**
 
-1. **S/R Specific Features (31 features)**:
+1. **S/R Specific Features (45 features)**:
    ```python
-   # Basic S/R features (9)
+   # Core S/R features (15)
    - touch_count: Number of times level was tested
    - strength: Calculated level strength score
    - age_bars: Age of level in bars
@@ -65,30 +65,54 @@ async def _prepare_training_data(
    - consistency_score: Level consistency over time
    - failure_count: Number of times level failed
    - proximity_to_level: Current proximity to level
-   
-   # Technical indicators (15)
-   - rsi_14: Relative Strength Index
-   - macd_line: MACD line value
-   - macd_signal: MACD signal line
-   - bollinger_position: Position within Bollinger Bands
-   - atr_14: Average True Range
-   - volume_ratio: Current vs average volume
-   - price_momentum: Price momentum over periods
-   - stoch_k, stoch_d: Stochastic oscillators
-   - williams_r: Williams %R oscillator
-   - cci: Commodity Channel Index
-   - adx: Average Directional Index
-   - obv: On-Balance Volume
-   - doji_pattern, hammer_pattern: Candlestick patterns
-   - volatility_proxy: Volatility proxy (simplified VIX)
-   
-   # Advanced features (6)
    - level_density: Density of nearby S/R levels
    - confluence_score: Confluence with other levels
    - time_since_touch: Time since last touch
    - volume_at_touch: Volume during last touch
    - price_action_score: Price action pattern score
    - microstructure_score: Market microstructure score
+   
+   # HVN (High Volume Node) features (5)
+   - hvn_strength: HVN strength based on volume profile
+   - hvn_volume_ratio: Volume at level vs average
+   - hvn_touch_count: How many times price touched HVN
+   - hvn_time_weight: How long HVN was active
+   - hvn_price_accuracy: How precise the HVN level is
+   
+   # Fibonacci retracement features (6)
+   - fib_level_type: Fibonacci level type (0.236, 0.382, 0.5, 0.618, 0.786)
+   - fib_strength: How strong the fib level is
+   - fib_confluence_count: How many fib levels at same price
+   - fib_timeframe_alignment: Multiple timeframes alignment
+   - fib_volume_confirmation: Volume confirmation at fib level
+   - fib_bounce_quality: Bounce quality at fib level
+   
+   # Psychological level features (5)
+   - psychological_level_type: Round numbers, key levels
+   - round_number_strength: Strength of round number level
+   - psychological_touch_count: Touch count at psychological level
+   - psychological_volume_spike: Volume spike at psychological level
+   - psychological_bounce_ratio: Bounce ratio at psychological level
+   
+   # Pivot point features (4)
+   - pivot_type: Daily, weekly, monthly pivot type
+   - pivot_strength: Pivot point strength
+   - pivot_timeframe: Pivot timeframe
+   - pivot_confluence: Pivot confluence with other levels
+   
+   # Trend line features (4)
+   - trendline_type: Support, resistance, channel type
+   - trendline_strength: Trend line strength
+   - trendline_touch_count: Touch count on trend line
+   - trendline_angle: Trend line angle
+   
+   # S/R specific features (6)
+   - sr_type: Support, resistance, both
+   - sr_timeframe_confluence: Timeframe confluence
+   - sr_breakout_history: Breakout history
+   - sr_retest_success_rate: Retest success rate
+   - sr_volume_profile_strength: Volume profile strength
+   - sr_market_structure_alignment: Market structure alignment
    ```
 
 2. **Step06 Features (200+ features)**:
@@ -123,19 +147,35 @@ async def _create_target_for_level(
 ) -> float:
 ```
 
-**Target Calculation Logic**:
+**Comprehensive Target Calculation Logic**:
 ```python
 # Use historical performance if available
 if historical_performance and level.get('id') in historical_performance:
     return historical_performance[level['id']]['quality_score']
 
-# Create target based on level characteristics
+# Create comprehensive target based on multiple aspects
 target = 0.0
-target += strength * 0.3                    # 30% weight
-target += touch_score * 0.2                 # 20% weight  
-target += bounce_score * 0.2                # 20% weight
-target += volume_score * 0.15               # 15% weight
-target += consistency_score * 0.15          # 15% weight
+
+# === CORE S/R ASPECTS (50% weight) ===
+target += strength * 0.15                    # 15% - Level strength
+target += touch_score * 0.10                 # 10% - Touch count
+target += bounce_score * 0.10                # 10% - Bounce quality
+target += volume_score * 0.08                # 8% - Volume confirmation
+target += consistency_score * 0.07           # 7% - Consistency
+
+# === ADVANCED S/R ASPECTS (30% weight) ===
+target += hvn_strength * 0.08                # 8% - HVN strength
+target += fib_score * 0.06                   # 6% - Fibonacci confluence
+target += psychological_strength * 0.06      # 6% - Psychological levels
+target += pivot_strength * 0.05              # 5% - Pivot strength
+target += trendline_strength * 0.05          # 5% - Trend line strength
+
+# === MARKET STRUCTURE ASPECTS (20% weight) ===
+target += timeframe_confluence * 0.06        # 6% - Timeframe confluence
+target += retest_success * 0.05              # 5% - Retest success rate
+target += volume_profile_strength * 0.04     # 4% - Volume profile
+target += market_structure_alignment * 0.03  # 3% - Market structure
+target -= failure_penalty * 0.02             # 2% - Failure penalty
 
 return min(max(target, 0.0), 1.0)  # Clamp to [0, 1]
 ```
@@ -169,7 +209,7 @@ if len(X) > 50:  # Need sufficient samples
     top_features = self._select_top_features_with_sr_priority(
         combined_scores, feature_names, top_k=50
     )
-    # 60% S/R features, 40% step06 features
+    # 70% S/R features (45 features), 30% step06 features
 ```
 
 ### **Step 3: Model Training**

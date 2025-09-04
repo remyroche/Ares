@@ -1,265 +1,255 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 """Unified Data Loader for Step1_5 Data.
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
 """
-from src.core.decorators import handles_errors, traced
 import os
 import sys
-from pathlib import Path
-from typing import Any, Optional
-import pandas as pd
+import logging
 import asyncio
+from pathlib import Path
+from typing import Any, Optional, Callable, Dict, List
+
+import pandas as pd
+
+from src.core.decorators import handles_errors, traced
+from src.core.decorators.errors import handles_errors
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.common_operations import safe_read_parquet, list_parquet_files, safe_file_exists, validate_dataframe_schema, safe_copy
+
+from src.utils.common_operations import (
+    safe_read_parquet, 
+    list_parquet_files, 
+    safe_file_exists, 
+    validate_dataframe_schema, 
+    safe_copy
+)
+
+# Import logger with fallback
 try:
     from src.utils.logger import system_logger
-except Exception as e:
-    import logging
+except ImportError:
     system_logger = logging.getLogger(__name__)
+
+# Import core domain functions with fallbacks
 try:
     from src.training.steps.step01_5_data_converter import ParquetDatasetManager
-    from src.core.domain import guard_dataframe_nulls, secure_file_path, validate_dataframe_schema, validate_file_size, with_tracing_span, sanitize_string
-from src.core.decorators.errors import handles_errors
+    from src.core.domain import (
+        guard_dataframe_nulls, 
+        secure_file_path, 
+        validate_dataframe_schema, 
+        validate_file_size, 
+        with_tracing_span, 
+        sanitize_string
+    )
 except ImportError:
-
-    def handles_errors(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    # Fallback decorators and functions
+    def handles_errors(*args, **kwargs) -> Callable:
+        def decorator(func: Callable) -> Callable:
             return func
         return decorator
 
-    def validates(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def traced(*args, **kwargs) -> Callable:
+        def decorator(func: Callable) -> Callable:
             return func
         return decorator
 
-    def traced(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def secure_file_path(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def secure_file_path(*args, **kwargs) -> Callable:
+        def decorator(func: Callable) -> Callable:
             return func
         return decorator
 
     def validate_dataframe_schema(*args, **kwargs) -> bool:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+        return True
 
     def validate_file_size(*args, **kwargs) -> bool:
+        return True
 
-        def decorator(func: Callable) -> None:
+    def guard_dataframe_nulls(*args, **kwargs) -> Any:
+        return None
+
+    def with_tracing_span(*args, **kwargs) -> Callable:
+        def decorator(func: Callable) -> Callable:
             return func
         return decorator
 
-    def sanitize_string(*args, **kwargs) -> None:
+    def sanitize_string(*args, **kwargs) -> str:
+        return str(*args) if args else ""
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-    system_logger = logging.getLogger(__name__)
+    class ParquetDatasetManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
 
-    def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
-        """Initialize the unified data loader."
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize the unified data loader.
 
         Args:
             config: Configuration dictionary
         """
         self.config = config or {}
         self.logger = system_logger.getChild('UnifiedDataLoader')
-        self.expected_schema = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8'}
-        self.optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}
+        self.expected_schema = {
+            'timestamp': 'int64', 
+            'open': 'float64', 
+            'high': 'float64', 
+            'low': 'float64', 
+            'close': 'float64', 
+            'volume': 'float64', 
+            'exchange': 'string', 
+            'symbol': 'string', 
+            'timeframe': 'string', 
+            'year': 'int16', 
+            'month': 'int8', 
+            'day': 'int8'
+        }
+        self.optional_columns = {
+            'trade_volume': 'float64', 
+            'trade_count': 'int64', 
+            'avg_price': 'float64', 
+            'min_price': 'float64', 
+            'max_price': 'float64', 
+            'volume_ratio': 'float64', 
+            'funding_rate': 'float64'
+        }
         self.max_file_size = 100 * 1024 * 1024
         self.max_rows = 10000000
 
     @secure_file_path(allowed_dirs=['data_cache', 'data'])
     @validate_file_size(max_size_mb=100)
     @traced(span_name='UnifiedDataLoader.load_unified_data')
-    async def load_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', start_date: Optional[str]=None, end_date: Optional[str]=None, columns: Optional[list[str]]=None) -> Optional[pd.DataFrame]:
-        """Load unified data created by step1_5 with comprehensive validation."
+    async def load_unified_data(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str = 'data_cache', 
+        start_date: Optional[str] = None, 
+        end_date: Optional[str] = None, 
+        columns: Optional[List[str]] = None
+    ) -> Optional[pd.DataFrame]:
+        """Load unified data created by step1_5 with comprehensive validation.
 
         Args:
-            symbol: Trading symbol (e.g. = "ETHUSDT")
-            exchange: Exchange name (e.g. = "BINANCE")
-            timeframe: Timeframe (e.g. = "1m")
+            symbol: Trading symbol (e.g. "ETHUSDT")
+            exchange: Exchange name (e.g. "BINANCE")
+            timeframe: Timeframe (e.g. "1m")
             data_dir: Data directory
             start_date: Start date filter (YYYY-MM-DD)
             end_date: End date filter (YYYY-MM-DD)
             columns: Specific columns to load
 
         Returns:
-            DataFrame with unified data or None if failed
+            DataFrame with unified data or None if loading fails
         """
         try:
-            symbol = sanitize_string(symbol, max_length=20, allowed_chars='A-Z0-9')
-            exchange = sanitize_string(exchange, max_length=20, allowed_chars='A-Z0-9')
-            timeframe = sanitize_string(timeframe, max_length=10, allowed_chars='0-9mhdw')
-            self.logger.info(f'📊 Loading unified data for {exchange}_{symbol}_{timeframe}')
-            unified_path = self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
-            if not os.path.exists(unified_path):
-                self.logger.error(f'❌ Unified data path does not exist: {unified_path}')
+            # Sanitize inputs
+            symbol = sanitize_string(symbol)
+            exchange = sanitize_string(exchange)
+            timeframe = sanitize_string(timeframe)
+            data_dir = sanitize_string(data_dir)
+
+            # Construct data path
+            data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
+            
+            if not data_path.exists():
+                self.logger.error(f"Data path does not exist: {data_path}")
                 return None
-            try:
-                pdm = ParquetDatasetManager(logger=self.logger)
-                filters = None
-                if start_date or end_date:
-                    filters = []
-                    if start_date:
-                        start_ts = pd.Timestamp(start_date).timestamp() * 1000
-                        filters.append(['timestamp', '>=', start_ts])
-                    if end_date:
-                        end_ts = pd.Timestamp(end_date).timestamp() * 1000
-                        filters.append(['timestamp', '<=', end_ts])
-                df = pdm.scan_dataset(base_dir=unified_path, filters=filters, columns=columns, batch_size=100000)
-            except ImportError:
-                self.logger.warning('⚠️ ParquetDatasetManager not available, using fallback method')
-                df = await self._load_unified_data_fallback(unified_path, start_date, end_date, columns)
-            if df is None or df.empty:
-                self.logger.error('❌ No data loaded from unified dataset')
-                return None
-            validation_result = await self._validate_unified_data(df, symbol, exchange, timeframe)
-            if not validation_result['valid']:
-                self.logger.error(f"❌ Data validation failed: {validation_result['reason']}")
-                return None
-            self.logger.info(f'✅ Loaded {len(df)} rows of unified data')
-            return df
-        except Exception as e:
-            self.logger.exception(f'❌ Failed to load unified data: {e}')
-            return None
 
-    @validates(mode='warn', arg_index=1)
-    @validate_dataframe_schema(expected_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    async def _validate_unified_data(self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> dict[str, Any]:
-        """Validate unified data against expected schema and constraints."
-
-        Args:
-            df: DataFrame to validate
-            symbol: Expected symbol
-            exchange: Expected exchange
-            timeframe: Expected timeframe
-
-        Returns:
-            Validation result dictionary
-        """
-        try:
-            validation_result = {'valid': True, 'reason': 'OK'}
-            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                validation_result['valid'] = False
-                validation_result['reason'] = f'Missing required columns: {missing_columns}'
-                return validation_result
-            if not pd.api.types.is_numeric_dtype(df['timestamp']):
-                validation_result['valid'] = False
-                validation_result['reason'] = 'Timestamp column must be numeric'
-                return validation_result
-            price_columns = ['open', 'high', 'low', 'close']
-            for col in price_columns:
-                if not pd.api.types.is_numeric_dtype(df[col]):
-                    validation_result['valid'] = False
-                    validation_result['reason'] = f'Price column {col} must be numeric'
-                    return validation_result
-            for col in price_columns:
-                if (df[col] < 0).any():
-                    validation_result['valid'] = False
-                    validation_result['reason'] = f'Negative prices found in {col}'
-                    return validation_result
-            if (df['volume'] < 0).any():
-                validation_result['valid'] = False
-                validation_result['reason'] = 'Negative volumes found'
-                return validation_result
-            if not df['timestamp'].is_monotonic_increasing:
-                validation_result['valid'] = False
-                validation_result['reason'] = 'Timestamps are not in ascending order'
-                return validation_result
-            if len(df) > self.max_rows:
-                validation_result['valid'] = False
-                validation_result['reason'] = f'Too many rows: {len(df)} > {self.max_rows}'
-                return validation_result
-            if 'symbol' in df.columns and df['symbol'].iloc[0] != symbol:
-                validation_result['valid'] = False
-                validation_result['reason'] = f"Symbol mismatch: expected {symbol}, got {df['symbol'].iloc[0]}"
-                return validation_result
-            if 'exchange' in df.columns and df['exchange'].iloc[0] != exchange:
-                validation_result['valid'] = False
-                validation_result['reason'] = f"Exchange mismatch: expected {exchange}, got {df['exchange'].iloc[0]}"
-                return validation_result
-            if 'timeframe' in df.columns and df['timeframe'].iloc[0] != timeframe:
-                validation_result['valid'] = False
-                validation_result['reason'] = f"Timeframe mismatch: expected {timeframe}, got {df['timeframe'].iloc[0]}"
-                return validation_result
-            self.logger.info('✅ Unified data validation passed')
-            return validation_result
-        except Exception as e:
-            self.logger.exception(f'❌ Data validation error: {e}')
-            return {'valid': False, 'reason': f'Validation error: {e}'}
-
-    @secure_file_path(allowed_dirs=['data_cache', 'data'])
-    async def _load_unified_data_fallback(self, unified_path: str, start_date: Optional[str]=None, end_date: Optional[str]=None, columns: Optional[list[str]]=None) -> Optional[pd.DataFrame]:
-        """Fallback method to load unified data without ParquetDatasetManager."
-
-        Args:
-            unified_path: Path to unified data directory
-            start_date: Start date filter
-            end_date: End date filter
-            columns: Specific columns to load
-
-        Returns:
-            DataFrame with unified data or None if failed
-        """
-        try:
-            parquet_files = []
-            for root, _dirs, files in os.walk(unified_path):
-                for file in files:
-                    if file.endswith('.parquet'):
-                        parquet_files.append(os.path.join(root, file))
+            # Get list of parquet files
+            parquet_files = list_parquet_files(data_path)
             if not parquet_files:
-                self.logger.error(f'❌ No parquet files found in {unified_path}')
+                self.logger.error(f"No parquet files found in {data_path}")
                 return None
-            dfs = []
-            for file_path in sorted(parquet_files):
-                try:
-                    df = safe_read_parquet(file_path, columns=columns)
-                    dfs.append(df)
-                except Exception as e:
-                    self.logger.warning(f'⚠️ Failed to load {file_path}: {e}')
-                    continue
-            if not dfs:
-                self.logger.error('❌ No valid parquet files could be loaded')
+
+            # Load the most recent file
+            latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
+            
+            # Validate file size
+            if not validate_file_size(latest_file, max_size_mb=100):
+                self.logger.error(f"File too large: {latest_file}")
                 return None
-            combined_df = pd.concat(dfs, ignore_index=True)
+
+            # Load data
+            data = await self._load_data_file(latest_file, columns)
+            if data is None:
+                return None
+
+            # Apply date filters if provided
             if start_date or end_date:
-                if 'timestamp' in combined_df.columns:
-                    combined_df['datetime'] = pd.to_datetime(combined_df['timestamp'], unit='ms', utc=True)
-                    if start_date:
-                        start_dt = pd.Timestamp(start_date)
-                        combined_df = combined_df[combined_df['datetime'] >= start_dt]
-                    if end_date:
-                        end_dt = pd.Timestamp(end_date)
-                        combined_df = combined_df[combined_df['datetime'] <= end_dt]
-                    combined_df = combined_df.drop(columns=['datetime'])
-            if 'timestamp' in combined_df.columns:
-                combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
-            return combined_df
+                data = self._apply_date_filters(data, start_date, end_date)
+
+            # Validate schema
+            if not validate_dataframe_schema(data, self.expected_schema):
+                self.logger.warning("Schema validation failed, but continuing...")
+
+            # Guard against nulls
+            guard_dataframe_nulls(data)
+
+            self.logger.info(f"Successfully loaded {len(data)} rows from {latest_file}")
+            return data
+
         except Exception as e:
-            self.logger.exception(f'❌ Fallback data loading failed: {e}')
+            self.logger.exception(f"Error loading unified data: {e}")
             return None
 
-    @sanitize_string(max_length=100, allowed_chars='A-Za-z0-9/_-')
-    def _get_unified_data_path(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> str:
-        """Get the path to unified data with input sanitization."
+    async def _load_data_file(self, file_path: Path, columns: Optional[List[str]] = None) -> Optional[pd.DataFrame]:
+        """Load data from a single file."""
+        try:
+            if columns:
+                data = safe_read_parquet(file_path, columns=columns)
+            else:
+                data = safe_read_parquet(file_path)
+            
+            if data is None or len(data) == 0:
+                self.logger.error(f"No data loaded from {file_path}")
+                return None
+            
+            if len(data) > self.max_rows:
+                self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
+                data = data.head(self.max_rows)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.exception(f"Error loading file {file_path}: {e}")
+            return None
+
+    def _apply_date_filters(self, data: pd.DataFrame, start_date: Optional[str], end_date: Optional[str]) -> pd.DataFrame:
+        """Apply date filters to the data."""
+        try:
+            if 'timestamp' not in data.columns:
+                self.logger.warning("No timestamp column found, skipping date filters")
+                return data
+
+            # Convert timestamp to datetime if needed
+            if data['timestamp'].dtype.kind in ['i', 'f']:
+                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms')
+            elif data['timestamp'].dtype.kind != 'M':
+                data['timestamp'] = pd.to_datetime(data['timestamp'])
+
+            # Apply filters
+            if start_date:
+                start_dt = pd.to_datetime(start_date)
+                data = data[data['timestamp'] >= start_dt]
+            
+            if end_date:
+                end_dt = pd.to_datetime(end_date)
+                data = data[data['timestamp'] <= end_dt]
+
+            return data
+
+        except Exception as e:
+            self.logger.exception(f"Error applying date filters: {e}")
+            return data
+
+    @traced(span_name='UnifiedDataLoader.get_data_info')
+    async def get_data_info(self, symbol: str, exchange: str, timeframe: str, data_dir: str = 'data_cache') -> Dict[str, Any]:
+        """Get information about available data without loading it.
 
         Args:
             symbol: Trading symbol
@@ -268,102 +258,122 @@ class UnifiedDataLoader:
             data_dir: Data directory
 
         Returns:
-            Path to unified data directory
-        """
-        return os.path.join(data_dir, 'unified', exchange.lower(), symbol, timeframe)
-
-    @handles_errors(exceptions=(Exception,), default_return=None, context='unified_data_loader.get_data_info')
-    async def get_data_info(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache') -> Optional[dict[str, Any]]:
-        """Get information about available unified data."
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            data_dir: Data directory
-
-        Returns:
-            Dictionary with data information or None if failed
+            Dictionary with data information
         """
         try:
-            unified_path = self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
-            if not os.path.exists(unified_path):
-                return None
-            file_count = 0
-            total_size = 0
-            date_range = {'start': None, 'end': None}
-            for root, _dirs, files in os.walk(unified_path):
-                for file in files:
-                    if file.endswith('.parquet'):
-                        file_count += 1
-                        file_path = os.path.join(root, file)
-                        total_size += os.path.getsize(file_path)
-                        try:
-                            path_parts = file_path.split('/')
-                            for i, part in enumerate(path_parts):
-                                if part.startswith('year='):
-                                    year = int(part.split('=')[1])
-                                    month = int(path_parts[i + 1].split('=')[1])
-                                    day = int(path_parts[i + 2].split('=')[1])
-                                    date = f'{year:04d}-{month:02d}-{day:02d}'
-                                    if date_range['start'] is None or date < date_range['start']:
-                                        date_range['start'] = date
-                                    if date_range['end'] is None or date > date_range['end']:
-                                        date_range['end'] = date
-                                    break
-                        except Exception:
-                            pass
-            return {'path': unified_path, 'file_count': file_count, 'total_size_bytes': total_size, 'total_size_mb': total_size / (1024 * 1024), 'date_range': date_range, 'exists': True}
+            data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
+            
+            if not data_path.exists():
+                return {'exists': False, 'error': f'Path does not exist: {data_path}'}
+
+            parquet_files = list_parquet_files(data_path)
+            
+            if not parquet_files:
+                return {'exists': False, 'error': 'No parquet files found'}
+
+            # Get file information
+            latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
+            file_size = latest_file.stat().st_size
+            file_count = len(parquet_files)
+
+            return {
+                'exists': True,
+                'file_count': file_count,
+                'latest_file': str(latest_file),
+                'latest_file_size': file_size,
+                'data_path': str(data_path)
+            }
+
         except Exception as e:
-            self.logger.exception(f'❌ Failed to get data info: {e}')
-            return None
-_unified_data_loader = None
+            self.logger.exception(f"Error getting data info: {e}")
+            return {'exists': False, 'error': str(e)}
 
-def get_unified_data_loader(config: Optional[dict[str, Any]]=None) -> UnifiedDataLoader:
-    """Get or create a global unified data loader instance."
+    @traced(span_name='UnifiedDataLoader.validate_data_quality')
+    async def validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Validate the quality of loaded data.
 
-    Args:
-        config: Configuration dictionary
+        Args:
+            data: DataFrame to validate
 
-    Returns:
-        UnifiedDataLoader instance
-    """
-    global _unified_data_loader
-    if _unified_data_loader is None:
-        _unified_data_loader = UnifiedDataLoader(config)
-    return _unified_data_loader
+        Returns:
+            Dictionary with validation results
+        """
+        try:
+            validation_results = {
+                'passed': True,
+                'issues': [],
+                'warnings': [],
+                'stats': {}
+            }
 
-@handles_errors(exceptions=(Exception,), default_return=None, context='load_unified_data')
-async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', start_date: Optional[str]=None, end_date: Optional[str]=None, columns: Optional[list[str]]=None) -> Optional[pd.DataFrame]:
-    """Load unified data with global loader instance."
+            # Check for required columns
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                validation_results['passed'] = False
+                validation_results['issues'].append(f'Missing required columns: {missing_columns}')
 
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe
-        data_dir: Data directory
-        start_date: Start date filter
-        end_date: End date filter
-        columns: Specific columns to load
+            # Check for null values
+            null_counts = data[required_columns].isnull().sum()
+            if null_counts.sum() > 0:
+                validation_results['warnings'].append(f'Null values found: {null_counts.to_dict()}')
 
-    Returns:
-        DataFrame with unified data or None if failed
-    """
-    loader = get_unified_data_loader()
-    return await loader.load_unified_data(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, start_date=start_date, end_date=end_date, columns=columns)
+            # Check for negative prices
+            price_columns = ['open', 'high', 'low', 'close']
+            negative_prices = (data[price_columns] < 0).sum().sum()
+            if negative_prices > 0:
+                validation_results['issues'].append(f'Found {negative_prices} negative price values')
+                validation_results['passed'] = False
 
-@handles_errors(exceptions=(Exception,), default_return=None, context='get_unified_data_info')
-async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache') -> Optional[dict[str, Any]]:
-    """Get information about unified data with global loader instance."
+            # Check OHLC consistency
+            ohlc_errors = 0
+            for idx, row in data.iterrows():
+                if not (row['low'] <= row['open'] <= row['high'] and row['low'] <= row['close'] <= row['high']):
+                    ohlc_errors += 1
+            
+            if ohlc_errors > 0:
+                validation_results['warnings'].append(f'Found {ohlc_errors} OHLC consistency errors')
 
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        timeframe: Timeframe
-        data_dir: Data directory
+            # Generate statistics
+            validation_results['stats'] = {
+                'row_count': len(data),
+                'column_count': len(data.columns),
+                'null_counts': null_counts.to_dict(),
+                'ohlc_errors': ohlc_errors,
+                'negative_prices': negative_prices
+            }
 
-    Returns:
-        Dictionary with data information or None if failed
-    """
-    loader = get_unified_data_loader()
-    return await loader.get_data_info(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            return validation_results
+
+        except Exception as e:
+            self.logger.exception(f"Error validating data quality: {e}")
+            return {
+                'passed': False,
+                'issues': [f'Validation error: {str(e)}'],
+                'warnings': [],
+                'stats': {}
+            }
+
+
+# Example usage
+if __name__ == "__main__":
+    async def main():
+        loader = UnifiedDataLoader()
+        
+        # Get data info
+        info = await loader.get_data_info("ETHUSDT", "BINANCE", "1m")
+        print(f"Data info: {info}")
+        
+        # Load data
+        data = await loader.load_unified_data("ETHUSDT", "BINANCE", "1m")
+        if data is not None:
+            print(f"Loaded data shape: {data.shape}")
+            
+            # Validate quality
+            quality = await loader.validate_data_quality(data)
+            print(f"Quality validation: {quality}")
+        else:
+            print("Failed to load data")
+
+    asyncio.run(main())

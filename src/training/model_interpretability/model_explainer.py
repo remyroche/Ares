@@ -299,13 +299,17 @@ class ModelExplainer:
             "feature_insights": [],
             "model_insights": [],
             "recommendations": [],
-            "risk_assessment": []
+            "risk_assessment": [],
+            "model_type_insights": []
         }
         
         try:
+            # Get model type from config
+            model_type = self.config.get("interpretability", {}).get("model_type", "unknown")
+            
             # Summary insights
             model_info = results.get("model_info", {})
-            insights["summary"].append(f"Analyzed {model_info.get('feature_count', 0)} features for {model_info.get('model_name', 'unknown')} model")
+            insights["summary"].append(f"Analyzed {model_info.get('feature_count', 0)} features for {model_info.get('model_name', 'unknown')} {model_type} model")
             insights["summary"].append(f"Training samples: {model_info.get('training_samples', 0)}, Test samples: {model_info.get('test_samples', 0)}")
             
             # Feature insights
@@ -315,6 +319,12 @@ class ModelExplainer:
             if top_features:
                 insights["feature_insights"].append(f"Top 5 most important features: {', '.join(top_features[:5])}")
                 
+                # Model-type specific feature analysis
+                model_type_insights = await self._generate_model_type_specific_insights(
+                    model_type, top_features, feature_importance
+                )
+                insights["model_type_insights"] = model_type_insights
+                
                 # Analyze feature types
                 technical_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['rsi', 'macd', 'bollinger', 'sma', 'ema'])]
                 if technical_features:
@@ -323,6 +333,10 @@ class ModelExplainer:
                 price_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['price', 'close', 'open', 'high', 'low'])]
                 if price_features:
                     insights["feature_insights"].append(f"Price-based features are important: {', '.join(price_features[:3])}")
+                
+                volume_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['volume', 'vol'])]
+                if volume_features:
+                    insights["feature_insights"].append(f"Volume-based features are significant: {', '.join(volume_features[:3])}")
             
             # Model insights
             shap_results = results.get("shap_results", {})
@@ -333,7 +347,11 @@ class ModelExplainer:
             if lime_results:
                 insights["model_insights"].append("LIME analysis completed successfully - local explanations available")
             
-            # Recommendations
+            # Model-type specific recommendations
+            model_type_recommendations = await self._generate_model_type_recommendations(model_type, top_features)
+            insights["recommendations"].extend(model_type_recommendations)
+            
+            # General recommendations
             if len(top_features) > 0:
                 insights["recommendations"].append("Focus on the top 5 features for model optimization")
                 insights["recommendations"].append("Consider feature engineering for the most important features")
@@ -342,6 +360,9 @@ class ModelExplainer:
                 insights["recommendations"].append("Consider adding more features to improve model performance")
             
             # Risk assessment
+            model_type_risks = await self._generate_model_type_risk_assessment(model_type, top_features)
+            insights["risk_assessment"].extend(model_type_risks)
+            
             if len(top_features) > 0:
                 insights["risk_assessment"].append("Model has clear feature dependencies - monitor top features for stability")
             
@@ -354,6 +375,158 @@ class ModelExplainer:
             self.logger.error(f"❌ Insight generation failed: {e}")
             print(f"❌ Insight generation failed: {e}")
             return insights
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _generate_model_type_specific_insights(
+        self,
+        model_type: str,
+        top_features: List[str],
+        feature_importance: Dict[str, Any]
+    ) -> List[str]:
+        """Generate model-type specific insights."""
+        insights = []
+        
+        try:
+            if model_type == "tactician":
+                insights.append("Tactician models focus on execution strategy and risk management")
+                execution_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['execution', 'risk', 'position', 'size'])]
+                if execution_features:
+                    insights.append(f"Execution-focused features are prominent: {', '.join(execution_features[:3])}")
+            
+            elif model_type == "analyst":
+                insights.append("Analyst models focus on market analysis and prediction")
+                analysis_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['trend', 'momentum', 'volatility', 'pattern'])]
+                if analysis_features:
+                    insights.append(f"Analysis-focused features are prominent: {', '.join(analysis_features[:3])}")
+            
+            elif model_type == "ensemble":
+                insights.append("Ensemble models combine multiple model predictions")
+                diversity_score = len(set(top_features[:10])) / min(10, len(top_features))
+                insights.append(f"Feature diversity score: {diversity_score:.2f} (higher is better for ensemble)")
+            
+            elif model_type == "intelligence":
+                insights.append("Intelligence models focus on market intelligence and insights")
+                intelligence_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['sentiment', 'news', 'social', 'macro'])]
+                if intelligence_features:
+                    insights.append(f"Intelligence-focused features are prominent: {', '.join(intelligence_features[:3])}")
+            
+            elif model_type == "market_regime":
+                insights.append("Market regime models identify different market states")
+                regime_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['regime', 'state', 'volatility', 'trend'])]
+                if regime_features:
+                    insights.append(f"Regime-identifying features are prominent: {', '.join(regime_features[:3])}")
+            
+            elif model_type == "market_cluster":
+                insights.append("Market cluster models group similar market conditions")
+                cluster_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['cluster', 'similarity', 'distance', 'pattern'])]
+                if cluster_features:
+                    insights.append(f"Clustering features are prominent: {', '.join(cluster_features[:3])}")
+            
+            elif model_type == "support_resistance":
+                insights.append("Support/Resistance models identify key price levels")
+                sr_features = [f for f in top_features if any(keyword in f.lower() for keyword in ['support', 'resistance', 'level', 'breakout'])]
+                if sr_features:
+                    insights.append(f"Support/Resistance features are prominent: {', '.join(sr_features[:3])}")
+            
+            return insights
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model type specific insights generation failed: {e}")
+            return []
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _generate_model_type_recommendations(
+        self,
+        model_type: str,
+        top_features: List[str]
+    ) -> List[str]:
+        """Generate model-type specific recommendations."""
+        recommendations = []
+        
+        try:
+            if model_type == "tactician":
+                recommendations.append("Monitor execution features for real-time risk management")
+                recommendations.append("Consider position sizing based on top feature values")
+            
+            elif model_type == "analyst":
+                recommendations.append("Focus on trend and momentum features for market analysis")
+                recommendations.append("Consider feature engineering for pattern recognition")
+            
+            elif model_type == "ensemble":
+                recommendations.append("Ensure diversity in base models for better ensemble performance")
+                recommendations.append("Monitor feature importance consistency across ensemble members")
+            
+            elif model_type == "intelligence":
+                recommendations.append("Integrate external data sources for enhanced intelligence")
+                recommendations.append("Monitor sentiment and news features for market insights")
+            
+            elif model_type == "market_regime":
+                recommendations.append("Use regime identification for adaptive trading strategies")
+                recommendations.append("Monitor regime transitions for strategy adjustments")
+            
+            elif model_type == "market_cluster":
+                recommendations.append("Use clustering for market condition classification")
+                recommendations.append("Monitor cluster stability for reliable classifications")
+            
+            elif model_type == "support_resistance":
+                recommendations.append("Use S/R levels for entry/exit point identification")
+                recommendations.append("Monitor level breaks for trend confirmation")
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model type recommendations generation failed: {e}")
+            return []
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _generate_model_type_risk_assessment(
+        self,
+        model_type: str,
+        top_features: List[str]
+    ) -> List[str]:
+        """Generate model-type specific risk assessment."""
+        risks = []
+        
+        try:
+            if model_type == "tactician":
+                risks.append("Monitor execution risk - tactician models directly affect trading decisions")
+                risks.append("Ensure position sizing features are stable and reliable")
+            
+            elif model_type == "analyst":
+                risks.append("Monitor analysis accuracy - incorrect analysis can lead to poor decisions")
+                risks.append("Ensure trend and momentum features are not overfitted")
+            
+            elif model_type == "ensemble":
+                risks.append("Monitor ensemble diversity - low diversity can lead to correlated failures")
+                risks.append("Ensure base model independence for robust ensemble performance")
+            
+            elif model_type == "intelligence":
+                risks.append("Monitor external data quality - poor intelligence data affects all decisions")
+                risks.append("Ensure sentiment features are not biased or manipulated")
+            
+            elif model_type == "market_regime":
+                risks.append("Monitor regime identification accuracy - wrong regime leads to wrong strategy")
+                risks.append("Ensure regime transitions are detected promptly")
+            
+            elif model_type == "market_cluster":
+                risks.append("Monitor cluster stability - unstable clusters lead to inconsistent classifications")
+                risks.append("Ensure clustering features are representative of market conditions")
+            
+            elif model_type == "support_resistance":
+                risks.append("Monitor S/R level accuracy - wrong levels lead to poor entry/exit points")
+                risks.append("Ensure level breaks are detected reliably")
+            
+            return risks
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model type risk assessment generation failed: {e}")
+            return []
     
     @handles_errors(Exception, fallback=False, log_level="ERROR")
     @log_call

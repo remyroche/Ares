@@ -445,8 +445,8 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
                 logger.info(f"✅ {step_name} completed successfully")
                 print(f"   ✅ {step_name} completed successfully")
                 
-                # Run model interpretability analysis if this is a model training step
-                if "training" in step_name.lower() or "model" in step_name.lower():
+                # Run model interpretability analysis for all model training steps
+                if _is_model_training_step(step_name):
                     print(f"   🧠 Running model interpretability analysis for {step_name}...")
                     logger.info(f"🧠 Running model interpretability analysis for {step_name}...")
                     
@@ -477,6 +477,409 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
     @handles_errors(Exception, fallback=False, log_level="ERROR")
     @log_call
     @traced
+    def _is_model_training_step(step_name: str) -> bool:
+        """Determine if a step involves model training that should have interpretability analysis."""
+        step_lower = step_name.lower()
+        
+        # Model training steps
+        model_training_keywords = [
+            "training", "model", "train", "build", "create", "enhance",
+            "tactician", "analyst", "ensemble", "intelligence", "regime",
+            "cluster", "support", "resistance", "sr", "market_regime",
+            "market_cluster", "hmm", "gmm", "kmeans", "dbscan"
+        ]
+        
+        # Check if step name contains any model training keywords
+        for keyword in model_training_keywords:
+            if keyword in step_lower:
+                return True
+        
+        # Specific step patterns
+        model_step_patterns = [
+            "step09", "step10", "step11", "step12", "step13", "step14", "step15",
+            "model_training", "build_intelligence", "create_analysts", 
+            "enhance_analysts", "create_ensembles", "train_tacticians"
+        ]
+        
+        for pattern in model_step_patterns:
+            if pattern in step_lower:
+                return True
+        
+        return False
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _determine_model_type(step_name: str) -> str:
+        """Determine the type of model being trained based on step name."""
+        step_lower = step_name.lower()
+        
+        if "tactician" in step_lower or "step15" in step_lower:
+            return "tactician"
+        elif "analyst" in step_lower or "step11" in step_lower or "step12" in step_lower:
+            return "analyst"
+        elif "ensemble" in step_lower or "step13" in step_lower:
+            return "ensemble"
+        elif "intelligence" in step_lower or "step10" in step_lower:
+            return "intelligence"
+        elif "regime" in step_lower or "hmm" in step_lower or "gmm" in step_lower:
+            return "market_regime"
+        elif "cluster" in step_lower or "kmeans" in step_lower or "dbscan" in step_lower:
+            return "market_cluster"
+        elif "support" in step_lower or "resistance" in step_lower or "sr" in step_lower:
+            return "support_resistance"
+        elif "training" in step_lower or "model" in step_lower or "step09" in step_lower:
+            return "main_model"
+        else:
+            return "unknown"
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _extract_models_and_data(
+        step_instance: Any,
+        step_name: str,
+        model_type: str,
+        data_dir: str,
+        symbol: str,
+        exchange: str
+    ) -> tuple:
+        """Extract models and data from step instance based on model type."""
+        trained_models = None
+        feature_names = None
+        X_train = None
+        X_test = None
+        y_train = None
+        y_test = None
+        
+        try:
+            # Generic model extraction
+            if hasattr(step_instance, 'trained_models'):
+                trained_models = step_instance.trained_models
+            elif hasattr(step_instance, 'models'):
+                trained_models = step_instance.models
+            elif hasattr(step_instance, 'model'):
+                trained_models = {"main_model": step_instance.model}
+            elif hasattr(step_instance, 'tacticians'):
+                trained_models = step_instance.tacticians
+            elif hasattr(step_instance, 'analysts'):
+                trained_models = step_instance.analysts
+            elif hasattr(step_instance, 'ensembles'):
+                trained_models = step_instance.ensembles
+            elif hasattr(step_instance, 'intelligence_models'):
+                trained_models = step_instance.intelligence_models
+            elif hasattr(step_instance, 'regime_models'):
+                trained_models = step_instance.regime_models
+            elif hasattr(step_instance, 'cluster_models'):
+                trained_models = step_instance.cluster_models
+            elif hasattr(step_instance, 'sr_models'):
+                trained_models = step_instance.sr_models
+            
+            # Generic feature extraction
+            if hasattr(step_instance, 'feature_names'):
+                feature_names = step_instance.feature_names
+            elif hasattr(step_instance, 'features'):
+                feature_names = step_instance.features
+            elif hasattr(step_instance, 'input_features'):
+                feature_names = step_instance.input_features
+            elif hasattr(step_instance, 'selected_features'):
+                feature_names = step_instance.selected_features
+            
+            # Generic data extraction
+            if hasattr(step_instance, 'X_train'):
+                X_train = step_instance.X_train
+            if hasattr(step_instance, 'X_test'):
+                X_test = step_instance.X_test
+            if hasattr(step_instance, 'y_train'):
+                y_train = step_instance.y_train
+            if hasattr(step_instance, 'y_test'):
+                y_test = step_instance.y_test
+            elif hasattr(step_instance, 'train_data'):
+                X_train = step_instance.train_data
+            elif hasattr(step_instance, 'test_data'):
+                X_test = step_instance.test_data
+            
+            # Model-type specific extraction
+            if model_type == "tactician":
+                trained_models, feature_names = _extract_tactician_models(step_instance)
+            elif model_type == "analyst":
+                trained_models, feature_names = _extract_analyst_models(step_instance)
+            elif model_type == "ensemble":
+                trained_models, feature_names = _extract_ensemble_models(step_instance)
+            elif model_type == "intelligence":
+                trained_models, feature_names = _extract_intelligence_models(step_instance)
+            elif model_type == "market_regime":
+                trained_models, feature_names = _extract_regime_models(step_instance)
+            elif model_type == "market_cluster":
+                trained_models, feature_names = _extract_cluster_models(step_instance)
+            elif model_type == "support_resistance":
+                trained_models, feature_names = _extract_sr_models(step_instance)
+            
+            return trained_models, feature_names, X_train, X_test, y_train, y_test
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting models and data for {model_type}: {e}")
+            return None, None, None, None, None, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_tactician_models(step_instance: Any) -> tuple:
+        """Extract tactician models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'tacticians'):
+                tacticians = step_instance.tacticians
+                if isinstance(tacticians, dict):
+                    for name, tactician in tacticians.items():
+                        if hasattr(tactician, 'model'):
+                            models[f"tactician_{name}"] = tactician.model
+                        elif hasattr(tactician, 'trained_model'):
+                            models[f"tactician_{name}"] = tactician.trained_model
+            
+            if hasattr(step_instance, 'tactician_features'):
+                features = step_instance.tactician_features
+            elif hasattr(step_instance, 'tactician_input_features'):
+                features = step_instance.tactician_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting tactician models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_analyst_models(step_instance: Any) -> tuple:
+        """Extract analyst models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'analysts'):
+                analysts = step_instance.analysts
+                if isinstance(analysts, dict):
+                    for name, analyst in analysts.items():
+                        if hasattr(analyst, 'model'):
+                            models[f"analyst_{name}"] = analyst.model
+                        elif hasattr(analyst, 'trained_model'):
+                            models[f"analyst_{name}"] = analyst.trained_model
+            
+            if hasattr(step_instance, 'analyst_features'):
+                features = step_instance.analyst_features
+            elif hasattr(step_instance, 'analyst_input_features'):
+                features = step_instance.analyst_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting analyst models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_ensemble_models(step_instance: Any) -> tuple:
+        """Extract ensemble models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'ensembles'):
+                ensembles = step_instance.ensembles
+                if isinstance(ensembles, dict):
+                    for name, ensemble in ensembles.items():
+                        if hasattr(ensemble, 'model'):
+                            models[f"ensemble_{name}"] = ensemble.model
+                        elif hasattr(ensemble, 'trained_model'):
+                            models[f"ensemble_{name}"] = ensemble.trained_model
+            
+            if hasattr(step_instance, 'ensemble_features'):
+                features = step_instance.ensemble_features
+            elif hasattr(step_instance, 'ensemble_input_features'):
+                features = step_instance.ensemble_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting ensemble models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_intelligence_models(step_instance: Any) -> tuple:
+        """Extract intelligence models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'intelligence_models'):
+                intel_models = step_instance.intelligence_models
+                if isinstance(intel_models, dict):
+                    for name, model in intel_models.items():
+                        models[f"intelligence_{name}"] = model
+            
+            if hasattr(step_instance, 'intelligence_features'):
+                features = step_instance.intelligence_features
+            elif hasattr(step_instance, 'intelligence_input_features'):
+                features = step_instance.intelligence_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting intelligence models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_regime_models(step_instance: Any) -> tuple:
+        """Extract market regime models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'regime_models'):
+                regime_models = step_instance.regime_models
+                if isinstance(regime_models, dict):
+                    for name, model in regime_models.items():
+                        models[f"regime_{name}"] = model
+            
+            if hasattr(step_instance, 'regime_features'):
+                features = step_instance.regime_features
+            elif hasattr(step_instance, 'regime_input_features'):
+                features = step_instance.regime_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting regime models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_cluster_models(step_instance: Any) -> tuple:
+        """Extract market cluster models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'cluster_models'):
+                cluster_models = step_instance.cluster_models
+                if isinstance(cluster_models, dict):
+                    for name, model in cluster_models.items():
+                        models[f"cluster_{name}"] = model
+            
+            if hasattr(step_instance, 'cluster_features'):
+                features = step_instance.cluster_features
+            elif hasattr(step_instance, 'cluster_input_features'):
+                features = step_instance.cluster_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting cluster models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    def _extract_sr_models(step_instance: Any) -> tuple:
+        """Extract support/resistance models and features."""
+        models = {}
+        features = None
+        
+        try:
+            if hasattr(step_instance, 'sr_models'):
+                sr_models = step_instance.sr_models
+                if isinstance(sr_models, dict):
+                    for name, model in sr_models.items():
+                        models[f"sr_{name}"] = model
+            
+            if hasattr(step_instance, 'sr_features'):
+                features = step_instance.sr_features
+            elif hasattr(step_instance, 'sr_input_features'):
+                features = step_instance.sr_input_features
+            
+            return models, features
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error extracting SR models: {e}")
+            return {}, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
+    async def _load_model_specific_data(
+        model_type: str,
+        data_dir: str,
+        symbol: str,
+        exchange: str,
+        feature_names: List[str]
+    ) -> tuple:
+        """Load model-specific data for interpretability analysis."""
+        try:
+            import pandas as pd
+            from src.utils.common_operations import safe_read_parquet, safe_file_exists
+            
+            X_train = None
+            X_test = None
+            y_train = None
+            y_test = None
+            
+            # Load features data
+            features_file = f"{data_dir}/features_{exchange}_{symbol}_consolidated.parquet"
+            if safe_file_exists(features_file):
+                features_df = safe_read_parquet(features_file)
+                
+                # Filter features based on model type
+                if feature_names:
+                    available_features = [col for col in feature_names if col in features_df.columns]
+                    if available_features:
+                        features_df = features_df[available_features + ['timestamp']]
+                    else:
+                        # Use all numeric columns except timestamp
+                        numeric_cols = features_df.select_dtypes(include=[np.number]).columns.tolist()
+                        if 'timestamp' in numeric_cols:
+                            numeric_cols.remove('timestamp')
+                        features_df = features_df[numeric_cols + ['timestamp']]
+                else:
+                    # Use all numeric columns except timestamp
+                    numeric_cols = features_df.select_dtypes(include=[np.number]).columns.tolist()
+                    if 'timestamp' in numeric_cols:
+                        numeric_cols.remove('timestamp')
+                    features_df = features_df[numeric_cols + ['timestamp']]
+                
+                # Split into train/test (simple split for interpretability)
+                split_idx = int(len(features_df) * 0.8)
+                X_train = features_df.iloc[:split_idx].drop('timestamp', axis=1, errors='ignore')
+                X_test = features_df.iloc[split_idx:].drop('timestamp', axis=1, errors='ignore')
+                
+                # Load labels if available
+                labels_file = f"{data_dir}/labels_{exchange}_{symbol}_consolidated.parquet"
+                if safe_file_exists(labels_file):
+                    labels_df = safe_read_parquet(labels_file)
+                    if 'target' in labels_df.columns:
+                        y_train = labels_df.iloc[:split_idx]['target']
+                        y_test = labels_df.iloc[split_idx:]['target']
+                
+                print(f"   📊 Loaded {len(X_train)} training samples and {len(X_test)} test samples for {model_type} analysis")
+                logger.info(f"📊 Loaded {len(X_train)} training samples and {len(X_test)} test samples for {model_type} analysis")
+            
+            return X_train, X_test, y_train, y_test
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error loading model-specific data for {model_type}: {e}")
+            return None, None, None, None
+    
+    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @log_call
+    @traced
     async def _run_model_interpretability_analysis(
         step_instance: Any,
         symbol: str,
@@ -490,6 +893,11 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
             # Import model interpretability components
             from src.training.model_interpretability import ModelExplainer
             
+            # Determine model type for specialized analysis
+            model_type = _determine_model_type(step_name)
+            print(f"   🔍 Detected model type: {model_type}")
+            logger.info(f"🔍 Detected model type: {model_type}")
+            
             # Check if step instance has trained models
             trained_models = None
             feature_names = None
@@ -498,29 +906,10 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
             y_train = None
             y_test = None
             
-            # Try to extract models and data from step instance
-            if hasattr(step_instance, 'trained_models'):
-                trained_models = step_instance.trained_models
-            elif hasattr(step_instance, 'models'):
-                trained_models = step_instance.models
-            elif hasattr(step_instance, 'model'):
-                trained_models = {"main_model": step_instance.model}
-            
-            # Try to extract feature names
-            if hasattr(step_instance, 'feature_names'):
-                feature_names = step_instance.feature_names
-            elif hasattr(step_instance, 'features'):
-                feature_names = step_instance.features
-            
-            # Try to extract training data
-            if hasattr(step_instance, 'X_train'):
-                X_train = step_instance.X_train
-            if hasattr(step_instance, 'X_test'):
-                X_test = step_instance.X_test
-            if hasattr(step_instance, 'y_train'):
-                y_train = step_instance.y_train
-            if hasattr(step_instance, 'y_test'):
-                y_test = step_instance.y_test
+            # Try to extract models and data from step instance with model-type specific logic
+            trained_models, feature_names, X_train, X_test, y_train, y_test = await _extract_models_and_data(
+                step_instance, step_name, model_type, data_dir, symbol, exchange
+            )
             
             # If we don't have the data, try to load it
             if X_train is None or X_test is None:
@@ -557,24 +946,33 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
                 logger.warning(f"⚠️ Insufficient data for interpretability analysis in {step_name}")
                 return False
             
-            # Initialize model explainer
+            # Initialize model explainer with model-type specific configuration
             explainer_config = {
                 "interpretability": {
                     "enabled": True,
                     "shap_enabled": True,
                     "lime_enabled": True,
                     "visualization_enabled": True,
-                    "reporting_enabled": True
+                    "reporting_enabled": True,
+                    "model_type": model_type
                 }
             }
             
             model_explainer = ModelExplainer(explainer_config)
             
-            # Run interpretability analysis
-            output_dir = f"{data_dir}/interpretability/{step_name}"
+            # Run interpretability analysis with model-type specific handling
+            output_dir = f"{data_dir}/interpretability/{step_name}_{model_type}"
+            
+            # Load appropriate data for different model types
+            X_train, X_test, y_train, y_test = await _load_model_specific_data(
+                model_type, data_dir, symbol, exchange, feature_names
+            )
             
             if isinstance(trained_models, dict) and len(trained_models) > 1:
                 # Multiple models - run multi-model analysis
+                print(f"   🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...")
+                logger.info(f"🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...")
+                
                 results = await model_explainer.explain_multiple_models(
                     models=trained_models,
                     X_train=X_train,
@@ -589,7 +987,10 @@ async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **c
             else:
                 # Single model - run single model analysis
                 model = list(trained_models.values())[0] if isinstance(trained_models, dict) else trained_models
-                model_name = list(trained_models.keys())[0] if isinstance(trained_models, dict) else step_name
+                model_name = list(trained_models.keys())[0] if isinstance(trained_models, dict) else f"{step_name}_{model_type}"
+                
+                print(f"   🔍 Running single-model interpretability analysis for {model_type} model: {model_name}")
+                logger.info(f"🔍 Running single-model interpretability analysis for {model_type} model: {model_name}")
                 
                 results = await model_explainer.explain_model(
                     model=model,

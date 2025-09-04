@@ -1404,10 +1404,10 @@ class AresLauncher:
         print("=" * 80)
         print("🚀 ENHANCED DATA COLLECTION PIPELINE")
         print("=" * 80)
-        print(f"🎯 Symbol: {symbol}")
-        print(f"🏢 Exchange: {exchange}")
-        print(f"🖥️ GUI Mode: {with_gui}")
-        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print(f"ℹ️ Symbol: {symbol}")
+        print(f"ℹ️ Exchange: {exchange}")
+        print(f"ℹ️ GUI Mode: {with_gui}")
+        print(f"ℹ️ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
 
         # Pre-flight validation
@@ -1488,11 +1488,11 @@ class AresLauncher:
             print("=" * 80)
             print("📊 DATA COLLECTION PIPELINE RESULTS")
             print("=" * 80)
-            print(f"📈 Total lines processed: {line_count}")
+            print(f"ℹ️ Total lines processed: {line_count}")
             print(f"✅ Total successes: {success_count}")
             print(f"⚠️ Total warnings: {warning_count}")
             print(f"❌ Total errors: {error_count}")
-            print(f"🔢 Return code: {return_code}")
+            print(f"ℹ️ Return code: {return_code}")
             print("=" * 80)
 
             if return_code== 0:

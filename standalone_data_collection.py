@@ -49,20 +49,11 @@ class EmojiLogger:
     STORING = "💾"
     CLEANING = "🧹"
     
-    # Data emojis
-    DATA = "📈"
-    KLINES = "📊"
-    AGGTRADES = "💰"
-    FUTURES = "📋"
-    QUALITY = "🔬"
-    METADATA = "📝"
-    
-    # System emojis
-    CONFIG = "⚙️"
-    MEMORY = "🧠"
-    DISK = "💿"
-    NETWORK = "🌐"
-    TIME = "⏰"
+    # File operations
+    FILE_CREATED = "📄"
+    FILE_UPDATED = "📝"
+    FILE_DELETED = "🗑️"
+    DIRECTORY_CREATED = "📁"
     
     @staticmethod
     def log_with_emoji(level: str, emoji: str, message: str, **kwargs):
@@ -308,13 +299,13 @@ class StandaloneDataCollectionPipeline:
     def _log_pipeline_initialization(self):
         """Log pipeline initialization with comprehensive details."""
         self.emoji_logger.print_with_emoji(EmojiLogger.START, "INITIALIZING ENHANCED DATA COLLECTION PIPELINE")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Pipeline ID: {self.pipeline_id}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Timeframes: {self.timeframes}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Collect Klines: {self.collect_klines}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Collect AggTrades: {self.collect_aggtrades}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Collect Futures: {self.collect_futures}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Progressive Append: {self.progressive_append}")
-        self.emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"Quality Check Samples: {self.quality_check_samples}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Pipeline ID: {self.pipeline_id}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Timeframes: {self.timeframes}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Collect Klines: {self.collect_klines}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Collect AggTrades: {self.collect_aggtrades}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Collect Futures: {self.collect_futures}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Progressive Append: {self.progressive_append}")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Quality Check Samples: {self.quality_check_samples}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, "Pipeline initialization completed successfully")
     
     def _update_progress(self, step_name: str, step_number: int = None):
@@ -348,7 +339,7 @@ class StandaloneDataCollectionPipeline:
         self.step_start_time = time.time()
         self.emoji_logger.print_with_emoji(EmojiLogger.START, f"Starting {step_name}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Description: {step_description}")
-        self.emoji_logger.log_with_emoji("info", EmojiLogger.TIME, f"Step started at: {datetime.now().strftime('%H:%M:%S')}")
+        self.emoji_logger.log_with_emoji("info", EmojiLogger.INFO, f"Step started at: {datetime.now().strftime('%H:%M:%S')}")
     
     def _log_step_completion(self, step_name: str, success: bool = True, details: str = ""):
         """Log the completion of a pipeline step."""
@@ -383,10 +374,10 @@ class StandaloneDataCollectionPipeline:
             
             # Enhanced pipeline startup logging
             self.emoji_logger.print_with_emoji(EmojiLogger.START, "ENHANCED DATA COLLECTION PIPELINE START")
-            self.emoji_logger.print_with_emoji(EmojiLogger.DATA, f"Symbol: {symbol}")
-            self.emoji_logger.print_with_emoji(EmojiLogger.DATA, f"Exchange: {exchange}")
-            self.emoji_logger.print_with_emoji(EmojiLogger.DATA, f"Data Directory: {data_dir}")
-            self.emoji_logger.print_with_emoji(EmojiLogger.TIME, f"Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Symbol: {symbol}")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Exchange: {exchange}")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Data Directory: {data_dir}")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("="*80)
             
             # Step 1: Data Collection
@@ -448,7 +439,7 @@ class StandaloneDataCollectionPipeline:
             
             # Collect klines data
             if self.collect_klines:
-                self.emoji_logger.print_with_emoji(EmojiLogger.KLINES, "Collecting klines data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Collecting klines data...")
                 for timeframe in self.timeframes:
                     self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, f"Collecting {timeframe} klines data")
                     klines_data = await self._collect_klines_data()
@@ -460,7 +451,7 @@ class StandaloneDataCollectionPipeline:
             
             # Collect aggtrades data
             if self.collect_aggtrades:
-                self.emoji_logger.print_with_emoji(EmojiLogger.AGGTRADES, "Collecting aggtrades data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Collecting aggtrades data...")
                 aggtrades_data = await self._collect_aggtrades_data()
                 collected_data['aggtrades'] = aggtrades_data
                 total_rows += len(aggtrades_data)
@@ -470,7 +461,7 @@ class StandaloneDataCollectionPipeline:
             
             # Collect futures data
             if self.collect_futures:
-                self.emoji_logger.print_with_emoji(EmojiLogger.FUTURES, "Collecting futures data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Collecting futures data...")
                 futures_data = await self._collect_futures_data()
                 collected_data['futures'] = futures_data
                 total_rows += len(futures_data)
@@ -491,14 +482,14 @@ class StandaloneDataCollectionPipeline:
                         all_quality_issues.extend([f"{data_type}: {issue}" for issue in quality_issues])
                         self.emoji_logger.print_with_emoji(EmojiLogger.WARNING, f"Quality issues found in {data_type}: {len(quality_issues)} issues")
                     else:
-                        self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, f"Data quality check passed for {data_type}")
+                        self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, f"Data quality check passed for {data_type}")
             
             if all_quality_issues:
                 self.warnings.extend(all_quality_issues)
                 self.emoji_logger.print_with_emoji(EmojiLogger.WARNING, f"Total quality issues found: {len(all_quality_issues)}")
             
             # Log collection summary
-            self.emoji_logger.print_with_emoji(EmojiLogger.DATA, f"Data collection summary:")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Data collection summary:")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Total records collected: {total_rows:,}")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Klines records: {self.data_collected['klines']['rows']:,}")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  AggTrades records: {self.data_collected['aggtrades']['rows']:,}")
@@ -540,7 +531,7 @@ class StandaloneDataCollectionPipeline:
             all_checks_passed = True
             
             # Check 1: Data completeness validation
-            self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, "Checking data completeness...")
+            self.emoji_logger.print_with_emoji(EmojiLogger.VALIDATING, "Checking data completeness...")
             completeness_check = await self._validate_data_completeness()
             validation_results['completeness'] = completeness_check
             if not completeness_check.get('passed', False):
@@ -550,7 +541,7 @@ class StandaloneDataCollectionPipeline:
                 self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, "Data completeness validation passed")
             
             # Check 2: Data integrity validation
-            self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, "Checking data integrity...")
+            self.emoji_logger.print_with_emoji(EmojiLogger.VALIDATING, "Checking data integrity...")
             integrity_check = await self._validate_data_integrity()
             validation_results['integrity'] = integrity_check
             if not integrity_check.get('passed', False):
@@ -560,7 +551,7 @@ class StandaloneDataCollectionPipeline:
                 self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, "Data integrity validation passed")
             
             # Check 3: Schema validation
-            self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, "Checking schema compliance...")
+            self.emoji_logger.print_with_emoji(EmojiLogger.VALIDATING, "Checking schema compliance...")
             schema_check = await self._validate_schema_compliance()
             validation_results['schema'] = schema_check
             if not schema_check.get('passed', False):
@@ -570,7 +561,7 @@ class StandaloneDataCollectionPipeline:
                 self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, "Schema compliance validation passed")
             
             # Check 4: Timestamp validation
-            self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, "Checking timestamp continuity...")
+            self.emoji_logger.print_with_emoji(EmojiLogger.VALIDATING, "Checking timestamp continuity...")
             timestamp_check = await self._validate_timestamp_continuity()
             validation_results['timestamp'] = timestamp_check
             if not timestamp_check.get('passed', False):
@@ -585,7 +576,7 @@ class StandaloneDataCollectionPipeline:
                 raise ValueError(f"Data validation failed. Failed checks: {failed_checks}")
             
             # Log validation summary
-            self.emoji_logger.print_with_emoji(EmojiLogger.QUALITY, "Data validation summary:")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, "Data validation summary:")
             for check_name, result in validation_results.items():
                 status_emoji = EmojiLogger.SUCCESS if result.get('passed', False) else EmojiLogger.ERROR
                 self.emoji_logger.print_with_emoji(status_emoji, f"  {check_name}: {'PASSED' if result.get('passed', False) else 'FAILED'}")
@@ -621,7 +612,8 @@ class StandaloneDataCollectionPipeline:
             if not data_path.exists():
                 self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Creating data directory: {self.data_dir}")
                 data_path.mkdir(parents=True, exist_ok=True)
-                self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, f"Data directory created: {self.data_dir}")
+                self.emoji_logger.print_with_emoji(EmojiLogger.DIRECTORY_CREATED, f"Data directory created: {self.data_dir}")
+                self.emoji_logger.log_with_emoji("info", EmojiLogger.DIRECTORY_CREATED, f"Directory created: {self.data_dir}")
             
             # Format and store all data types
             results = {}
@@ -630,7 +622,7 @@ class StandaloneDataCollectionPipeline:
             
             # Process klines data
             if self.collect_klines:
-                self.emoji_logger.print_with_emoji(EmojiLogger.KLINES, "Processing klines data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Processing klines data...")
                 for timeframe in self.timeframes:
                     self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, f"Formatting {timeframe} klines data")
                     
@@ -663,6 +655,8 @@ class StandaloneDataCollectionPipeline:
                         file_size_mb = file_path.stat().st_size / (1024 * 1024)
                         total_size_mb += file_size_mb
                         total_files_created += 1
+                        self.emoji_logger.print_with_emoji(EmojiLogger.FILE_CREATED, f"File created: {filename} ({file_size_mb:.2f} MB)")
+                        self.emoji_logger.log_with_emoji("info", EmojiLogger.FILE_CREATED, f"File created: {file_path} - {len(klines_data):,} records, {file_size_mb:.2f} MB")
                         self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, f"Stored {len(klines_data):,} {timeframe} klines records ({file_size_mb:.2f} MB)")
                     
                     results[f'klines_{timeframe}'] = {
@@ -674,7 +668,7 @@ class StandaloneDataCollectionPipeline:
             
             # Process aggtrades data
             if self.collect_aggtrades:
-                self.emoji_logger.print_with_emoji(EmojiLogger.AGGTRADES, "Processing aggtrades data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Processing aggtrades data...")
                 self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Formatting aggtrades data")
                 
                 # Get aggtrades data
@@ -701,6 +695,8 @@ class StandaloneDataCollectionPipeline:
                     file_size_mb = file_path.stat().st_size / (1024 * 1024)
                     total_size_mb += file_size_mb
                     total_files_created += 1
+                    self.emoji_logger.print_with_emoji(EmojiLogger.FILE_CREATED, f"File created: {filename} ({file_size_mb:.2f} MB)")
+                    self.emoji_logger.log_with_emoji("info", EmojiLogger.FILE_CREATED, f"File created: {file_path} - {len(aggtrades_data):,} records, {file_size_mb:.2f} MB")
                     self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, f"Stored {len(aggtrades_data):,} aggtrades records ({file_size_mb:.2f} MB)")
                 
                 results['aggtrades'] = {
@@ -712,7 +708,7 @@ class StandaloneDataCollectionPipeline:
             
             # Process futures data
             if self.collect_futures:
-                self.emoji_logger.print_with_emoji(EmojiLogger.FUTURES, "Processing futures data...")
+                self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Processing futures data...")
                 self.emoji_logger.print_with_emoji(EmojiLogger.PROCESSING, "Formatting futures data")
                 
                 # Get futures data
@@ -739,6 +735,8 @@ class StandaloneDataCollectionPipeline:
                     file_size_mb = file_path.stat().st_size / (1024 * 1024)
                     total_size_mb += file_size_mb
                     total_files_created += 1
+                    self.emoji_logger.print_with_emoji(EmojiLogger.FILE_CREATED, f"File created: {filename} ({file_size_mb:.2f} MB)")
+                    self.emoji_logger.log_with_emoji("info", EmojiLogger.FILE_CREATED, f"File created: {file_path} - {len(futures_data):,} records, {file_size_mb:.2f} MB")
                     self.emoji_logger.print_with_emoji(EmojiLogger.SUCCESS, f"Stored {len(futures_data):,} futures records ({file_size_mb:.2f} MB)")
                 
                 results['futures'] = {
@@ -749,7 +747,7 @@ class StandaloneDataCollectionPipeline:
                 }
             
             # Log formatting summary
-            self.emoji_logger.print_with_emoji(EmojiLogger.DATA, "Data formatting and storage summary:")
+            self.emoji_logger.print_with_emoji(EmojiLogger.INFO, "Data formatting and storage summary:")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Files created: {total_files_created}")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Total size: {total_size_mb:.2f} MB")
             self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Data directory: {self.data_dir}")
@@ -977,6 +975,7 @@ class StandaloneDataCollectionPipeline:
             
             # Save updated data
             combined_data.to_parquet(file_path, index=False, compression='snappy')
+            self.emoji_logger.log_with_emoji("info", EmojiLogger.FILE_UPDATED, f"File updated: {file_path} - {len(combined_data):,} total rows")
             
             # Update metadata
             metadata_file = file_path.with_suffix('.metadata.json')
@@ -995,6 +994,7 @@ class StandaloneDataCollectionPipeline:
             
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2, default=str)
+            self.emoji_logger.log_with_emoji("info", EmojiLogger.FILE_UPDATED, f"Metadata file updated: {metadata_file}")
             
             self.logger.info(f"Progressive append completed: {len(combined_data)} total rows")
             return True
@@ -1234,7 +1234,7 @@ class StandaloneDataCollectionPipeline:
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Success rate: {(self.steps_completed/self.total_steps)*100:.1f}%")
         
         # Log data collection summary
-        self.emoji_logger.print_with_emoji(EmojiLogger.DATA, "Final data collection summary:")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, "Final data collection summary:")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Klines records: {self.data_collected['klines']['rows']:,}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  AggTrades records: {self.data_collected['aggtrades']['rows']:,}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Futures records: {self.data_collected['futures']['rows']:,}")
@@ -1296,7 +1296,7 @@ class StandaloneDataCollectionPipeline:
         }
         
         # Log final report summary
-        self.emoji_logger.print_with_emoji(EmojiLogger.METADATA, "Final pipeline report generated")
+        self.emoji_logger.print_with_emoji(EmojiLogger.INFO, "Final pipeline report generated")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Pipeline ID: {self.pipeline_id}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Total records processed: {total_records:,}")
         self.emoji_logger.print_with_emoji(EmojiLogger.INFO, f"Total files created: {total_files}")
@@ -1356,18 +1356,18 @@ async def main():
     }
     
     # Enhanced configuration logging
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, "Pipeline Configuration:")
-    emoji_logger.print_with_emoji(EmojiLogger.DATA, f"  Symbol: {symbol}")
-    emoji_logger.print_with_emoji(EmojiLogger.DATA, f"  Exchange: {exchange}")
-    emoji_logger.print_with_emoji(EmojiLogger.DATA, f"  Timeframes: {config['timeframes']}")
-    emoji_logger.print_with_emoji(EmojiLogger.DATA, f"  Data directory: {data_dir}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Force rerun: {config['force_rerun']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Quality checks: {config['quality_checks']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Progressive append: {config['progressive_append']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Collect klines: {config['collect_klines']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Collect aggtrades: {config['collect_aggtrades']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Collect futures: {config['collect_futures']}")
-    emoji_logger.print_with_emoji(EmojiLogger.CONFIG, f"  Quality check samples: {config['quality_check_samples']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, "Pipeline Configuration:")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Symbol: {symbol}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Exchange: {exchange}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Timeframes: {config['timeframes']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Data directory: {data_dir}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Force rerun: {config['force_rerun']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Quality checks: {config['quality_checks']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Progressive append: {config['progressive_append']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Collect klines: {config['collect_klines']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Collect aggtrades: {config['collect_aggtrades']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Collect futures: {config['collect_futures']}")
+    emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Quality check samples: {config['quality_check_samples']}")
     print("=" * 80)
     
     # Run data collection pipeline
@@ -1400,7 +1400,7 @@ async def main():
             # Log data collection summary
             if 'data_collection_summary' in result:
                 summary = result['data_collection_summary']
-                emoji_logger.print_with_emoji(EmojiLogger.DATA, "Data collection summary:")
+                emoji_logger.print_with_emoji(EmojiLogger.INFO, "Data collection summary:")
                 emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Total records: {summary.get('total_records', 0):,}")
                 emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Total files: {summary.get('total_files', 0)}")
                 emoji_logger.print_with_emoji(EmojiLogger.INFO, f"  Klines records: {summary.get('klines', {}).get('rows', 0):,}")

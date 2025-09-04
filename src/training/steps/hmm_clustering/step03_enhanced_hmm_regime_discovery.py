@@ -42,7 +42,7 @@ from src.core.decorators import validates
 from src.utils.logger import system_logger
 
 # Import our new modules
-from .step03_bayesian_parameter_optimization import BayesianParameterOptimizationStep
+from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOptimization
 from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
@@ -67,7 +67,7 @@ class EnhancedHMMRegimeDiscoveryStep:
         self.logger.info('🔧 Initializing enhanced HMM regime discovery components...')
         
         # 1. Bayesian parameter optimization
-        self.bayesian_optimizer = BayesianParameterOptimizationStep(self.config)
+        self.bayesian_optimizer = OptimizedBayesianParameterOptimization(self.config)
         
         # 2. Regime discovery feature engineer
         self.feature_engineer = RegimeDiscoveryFeatureEngineer(self.config)
@@ -385,7 +385,8 @@ class EnhancedHMMRegimeDiscoveryStep:
             })
             
             # Run optimization
-            success = await self.bayesian_optimizer.execute()
+            optimization_results = await self.bayesian_optimizer.optimize_parameters(data_loaded['data'], data_loaded['features'])
+            success = optimization_results.get('success', False)
             
             if success:
                 self.logger.info('✅ Bayesian parameter optimization completed successfully')

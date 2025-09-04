@@ -308,10 +308,10 @@ class EconomicSignificanceValidator:
             'momentum_significant': False
         }
         
-        # Calculate multi-timeframe momentum
-        momentum_5 = data['close'].pct_change(5)
-        momentum_10 = data['close'].pct_change(10)
-        momentum_20 = data['close'].pct_change(20)
+        # Calculate multi-timeframe momentum (max 2h equivalent)
+        momentum_5 = data['close'].pct_change(5)   # 5 periods
+        momentum_10 = data['close'].pct_change(10)  # 10 periods  
+        momentum_20 = data['close'].pct_change(20)  # 20 periods (max ~2h for 1m data)
         
         unique_regimes = np.unique(regimes)
         momentum_data_5 = []
@@ -379,8 +379,8 @@ class EconomicSignificanceValidator:
         """Test momentum autocorrelation patterns across regimes."""
         results = {}
         
-        momentum_5 = data['close'].pct_change(5)
-        momentum_10 = data['close'].pct_change(10)
+        momentum_5 = data['close'].pct_change(5)   # 5 periods
+        momentum_10 = data['close'].pct_change(10)  # 10 periods
         
         unique_regimes = np.unique(regimes)
         
@@ -403,7 +403,7 @@ class EconomicSignificanceValidator:
         """Test momentum persistence patterns across regimes."""
         results = {}
         
-        momentum_5 = data['close'].pct_change(5)
+        momentum_5 = data['close'].pct_change(5)   # 5 periods
         
         unique_regimes = np.unique(regimes)
         
@@ -424,8 +424,8 @@ class EconomicSignificanceValidator:
         """Test momentum reversal patterns across regimes."""
         results = {}
         
-        momentum_5 = data['close'].pct_change(5)
-        momentum_10 = data['close'].pct_change(10)
+        momentum_5 = data['close'].pct_change(5)   # 5 periods
+        momentum_10 = data['close'].pct_change(10)  # 10 periods
         
         unique_regimes = np.unique(regimes)
         

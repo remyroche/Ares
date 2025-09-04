@@ -153,9 +153,9 @@ class EnsembleClusteringRegimeDetector:
         best_model = None
         best_params = None
         
-        # Reduced parameter space for efficiency
-        n_components_range = [3, 4, 5]  # Reduced from [2, 8]
-        covariance_types = ['full', 'tied']  # Reduced from 4 types
+        # Optimized parameter space for efficiency (sufficient coverage)
+        n_components_range = [3, 4, 5, 6]  # 4 values covering main regime counts
+        covariance_types = ['full', 'tied', 'diag']  # 3 types covering main covariance patterns
         
         for n_components in n_components_range:
             for covariance_type in covariance_types:
@@ -208,8 +208,8 @@ class EnsembleClusteringRegimeDetector:
         best_model = None
         best_params = None
         
-        # Reduced parameter space
-        n_clusters_range = [15, 20, 25]  # Reduced from [10, 30]
+        # Optimized parameter space (sufficient coverage)
+        n_clusters_range = [15, 20, 25, 30]  # 4 values covering main cluster counts
         
         for n_clusters in n_clusters_range:
             try:
@@ -250,9 +250,9 @@ class EnsembleClusteringRegimeDetector:
         best_model = None
         best_params = None
         
-        # Reduced parameter space
-        eps_values = [0.3, 0.5, 0.7]  # Reduced from 10 values
-        min_samples_values = [5, 10, 15]  # Reduced from range
+        # Optimized parameter space (sufficient coverage)
+        eps_values = [0.2, 0.3, 0.5, 0.7, 0.9]  # 5 values covering main density ranges
+        min_samples_values = [5, 8, 10, 15, 20]  # 5 values covering main sample requirements
         
         for eps in eps_values:
             for min_samples in min_samples_values:

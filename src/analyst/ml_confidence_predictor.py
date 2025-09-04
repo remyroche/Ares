@@ -1026,8 +1026,7 @@ class MLConfidencePredictor:
             from src.training.core.training_manager import create_training_manager
 
             # Initialize enhanced training manager
-            self.enhanced_training_manager = TrainingManager(self.config)
-            await self.enhanced_training_manager.initialize()
+            self.enhanced_training_manager = await create_training_manager(self.config)
 
             # Load trained models from enhanced training manager
             await self._load_trained_models_from_enhanced_training()
@@ -2298,6 +2297,7 @@ class MLConfidencePredictor:
                 EnhancedOrderManager,
                 setup_enhanced_order_manager,
             )
+            from src.tactician.async_order_executor import AsyncOrderExecutor
 
             # Get configuration for order management
             order_config = self.config.get(
@@ -2338,10 +2338,12 @@ class MLConfidencePredictor:
 
 
             # Initialize async order executor
-            self.async_order_executor = await setup_async_order_executor(order_config)
-            if self.async_order_executor:
+            # Initialize async order executor
+            try:
+                self.async_order_executor = AsyncOrderExecutor(order_config)
+                await self.async_order_executor.initialize()
                 self.logger.info("✅ Async order executor initialized successfully")
-            else:
+            except Exception as _e:
                 self.logger.error(failed("Failed to initialize async order executor"))
 
 

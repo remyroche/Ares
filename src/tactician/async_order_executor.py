@@ -29,7 +29,9 @@ from src.tactician.enhanced_order_manager import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
+    missing,
 )
+from src.core.decorators import handles_errors
 
 
 class ExecutionStrategy(Enum):
@@ -88,6 +90,7 @@ class ExecutionResult:
     orders_placed: list[str]
     fills: list[dict[str, Any]]
     metadata: dict[str, Any] = field(default_factory=dict)
+    performance_metrics: dict[str, Any] = field(default_factory=dict)
 
 
 class AsyncOrderExecutor:
@@ -286,6 +289,11 @@ class AsyncOrderExecutor:
         except Exception as e:
             self.logger.exception(failed(f"❌ Order execution failed: {e}"))
             return None
+
+    async def execute_order_async(self, request: ExecutionRequest) -> str:
+        """Compatibility helper that executes the order and returns its execution_id."""
+        result = await self.execute_order(request)
+        return result.execution_id if result else ""
 
     async def _execute_immediate(
         self, request: ExecutionRequest, result: ExecutionResult
@@ -652,3 +660,12 @@ class AsyncOrderExecutor:
             self.logger.exception(
                 failed(f"❌ Async Order Executor cleanup failed: {e}")
             )
+
+    def get_execution_status(self, execution_id: str) -> ExecutionResult | None:
+        """Return execution status by id from active set or history."""
+        if execution_id in self.active_executions:
+            return self.active_executions[execution_id]
+        for res in reversed(self.execution_history):
+            if res.execution_id == execution_id:
+                return res
+        return None

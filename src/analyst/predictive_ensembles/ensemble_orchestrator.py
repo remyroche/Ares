@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 import os
 import os.path
-from typing import Any
+from typing import Any, Dict
 import numpy as np
 import pandas as pd
 from joblib import dump, load
@@ -13,8 +13,6 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
-from copy import copy
-from typing import Dict, List, Optional, Union, Any, Tuple
 
 class RegimePredictiveEnsembles:
     """
@@ -24,7 +22,6 @@ class RegimePredictiveEnsembles:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config.get('analyst', {})
         self.logger = system_logger.getChild('PredictiveEnsembles.Orchestrator')
         self.regime_ensembles = {'VOLATILE_REGIME': VolatileRegimeEnsemble(config, 'VolatileRegimeEnsemble')}
@@ -33,6 +30,7 @@ class RegimePredictiveEnsembles:
         self.global_meta_learner: LGBMClassifier | None = None
         self.global_meta_scaler: StandardScaler | None = None
         self.global_meta_label_encoder: LabelEncoder | None = None
+        self.global_meta_pca: PCA | None = None
         self.global_meta_learner_path = os.path.join(self.model_storage_dir, 'global_meta_learner.joblib')
         self.global_meta_scaler_path = os.path.join(self.model_storage_dir, 'global_meta_scaler.joblib')
         self.global_meta_label_encoder_path = os.path.join(self.model_storage_dir, 'global_meta_label_encoder.joblib')

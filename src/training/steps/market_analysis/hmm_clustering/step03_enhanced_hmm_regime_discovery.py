@@ -94,12 +94,12 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         self.logger.info('✅ Enhanced HMM Regime Discovery Step initialized successfully')
 
-    @validates(step_name='enhanced_hmm_regime_discovery', validation_level='CRITICAL', enable_rollback=True, max_retries=2)
+    @validates()
     @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
     @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
-    @secure_step_execution(error_handling=True, rollback_on_failure=True, data_validation=True, resource_cleanup=True)
+    @secure_step_execution(audit_trail=True)
     @traced(span_name='execute_enhanced_hmm_regime_discovery')
-    @handles_errors(default_return={'success': False, 'regimes': [], 'error': 'Enhanced HMM discovery failed'}, context='enhanced_hmm_regime_discovery.execute')
+    @handles_errors(fallback={'success': False, 'regimes': [], 'error': 'Enhanced HMM discovery failed'})
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute enhanced HMM regime discovery with all improvements."""
         step_start = time.time()
@@ -240,7 +240,7 @@ class EnhancedHMMRegimeDiscoveryStep:
         return pipeline_state
 
     @traced(span_name='load_and_prepare_data')
-    @handles_errors(default_return={'success': False, 'error': 'Data loading failed'}, context='load_and_prepare_data')
+    @handles_errors(fallback={'success': False, 'error': 'Data loading failed'})
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Load and prepare data for enhanced HMM regime discovery."""
         try:
@@ -427,7 +427,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error creating enhanced features: {e}')
             return None
 
-    @handles_errors(default_return={'success': False, 'error': 'Ensemble clustering failed'}, context='ensemble_clustering')
+    @handles_errors(fallback={'success': False, 'error': 'Ensemble clustering failed'})
     async def _run_ensemble_clustering(self, features: pd.DataFrame) -> dict[str, Any]:
         """Run ensemble clustering with HMM + K-means + DBSCAN."""
         try:
@@ -455,7 +455,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in ensemble clustering: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(default_return={'overall_significant': False, 'error': 'Economic validation failed'}, context='economic_validation')
+    @handles_errors(fallback={'overall_significant': False, 'error': 'Economic validation failed'})
     async def _run_economic_validation(self, data: pd.DataFrame, regimes: np.ndarray) -> dict[str, Any]:
         """Run economic significance validation."""
         try:
@@ -475,7 +475,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in economic validation: {e}')
             return {'overall_significant': False, 'error': str(e)}
 
-    @handles_errors(default_return={'success': False, 'error': 'Enhanced ML transition detection failed'}, context='enhanced_ml_transition_detection')
+    @handles_errors(fallback={'success': False, 'error': 'Enhanced ML transition detection failed'})
     async def _run_ml_transition_detection(self, data: pd.DataFrame, regimes: np.ndarray) -> dict[str, Any]:
         """Run enhanced ML-based transition detection with Random Forest + LGBM."""
         try:
@@ -508,7 +508,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in enhanced ML transition detection: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(default_return={}, context='compile_final_results')
+    @handles_errors(fallback={})
     async def _compile_final_results(self, ensemble_results: dict[str, Any], 
                                    economic_validation: dict[str, Any],
                                    transition_results: dict[str, Any],

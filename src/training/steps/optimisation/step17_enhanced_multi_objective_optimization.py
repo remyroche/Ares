@@ -106,32 +106,32 @@ class EnhancedStep17Optimizer:
         
         return [
             OptimizationObjective(
+                name="profit_factor",
+                weight=objectives_config.get("profit_factor_weight", 0.5),
+                direction="maximize",
+                target_value=objectives_config.get("target_profit_factor", 1.5)
+            ),
+            OptimizationObjective(
                 name="sharpe_ratio",
-                weight=objectives_config.get("sharpe_weight", 0.3),
+                weight=objectives_config.get("sharpe_weight", 0.125),
                 direction="maximize",
                 target_value=objectives_config.get("target_sharpe", 2.0)
             ),
             OptimizationObjective(
                 name="win_rate",
-                weight=objectives_config.get("win_rate_weight", 0.25),
+                weight=objectives_config.get("win_rate_weight", 0.125),
                 direction="maximize",
                 target_value=objectives_config.get("target_win_rate", 0.6)
             ),
             OptimizationObjective(
-                name="profit_factor",
-                weight=objectives_config.get("profit_factor_weight", 0.2),
-                direction="maximize",
-                target_value=objectives_config.get("target_profit_factor", 1.5)
-            ),
-            OptimizationObjective(
                 name="max_drawdown",
-                weight=objectives_config.get("drawdown_weight", 0.15),
+                weight=objectives_config.get("drawdown_weight", 0.125),
                 direction="minimize",
                 target_value=objectives_config.get("target_drawdown", 0.1)
             ),
             OptimizationObjective(
                 name="total_return",
-                weight=objectives_config.get("return_weight", 0.1),
+                weight=objectives_config.get("return_weight", 0.125),
                 direction="maximize",
                 target_value=objectives_config.get("target_return", 0.3)
             )
@@ -144,16 +144,36 @@ class EnhancedStep17Optimizer:
             # Block 1: Core confidence parameters (highest impact, independent)
             OptimizationBlock.CORE_CONFIDENCE: {
                 "categories": ["confidence"],
+                "parameters": [
+                    "base_entry_threshold", "analyst_confidence_threshold", "tactician_confidence_threshold",
+                    "position_scale_up_threshold", "position_scale_down_threshold", "position_close_threshold",
+                    "ensemble_agreement_threshold", "neutral_signal_threshold", "tactician_close_threshold",
+                    "model_performance_threshold", "model_degradation_threshold", "model_retrain_threshold",
+                    "min_sr_confidence", "high_confidence_threshold", "confidence_decay_rate",
+                    "ensemble_confidence_threshold", "breakout_confidence_threshold", "false_breakout_filter",
+                    "confidence_min_threshold", "confidence_max_threshold", "confidence_min_multiplier",
+                    "confidence_max_multiplier", "entry_risk_threshold", "profit_confidence_threshold",
+                    "confidence_scaling_factor", "risk_scaling_factor", "profit_scaling_factor"
+                ],
                 "n_trials": 100,
                 "timeout": 600,  # 10 minutes
                 "sampler": "tpe",
                 "pruner": "median",
-                "description": "Core confidence thresholds and scaling parameters"
+                "description": "Core confidence thresholds and linear scaling parameters"
             },
             
             # Block 2: Core intensity parameters (high impact, depends on confidence)
             OptimizationBlock.CORE_INTENSITY: {
                 "categories": ["intensity"],
+                "parameters": [
+                    "transition_intensity_threshold", "min_combined_intensity", "signal_intensity_threshold",
+                    "intensity_reliability_weight", "intensity_decay_rate", "intensity_boost_factor",
+                    "regime_transition_intensity", "regime_stability_threshold", "regime_change_boost",
+                    "breakout_intensity_threshold", "volume_intensity_threshold", "momentum_intensity_threshold",
+                    "intensity_position_multiplier", "high_intensity_boost", "low_intensity_reduction",
+                    "intensity_nms_threshold", "intensity_overlap_threshold", "intensity_time_decay",
+                    "intensity_persistence"
+                ],
                 "n_trials": 80,
                 "timeout": 480,  # 8 minutes
                 "sampler": "tpe",
@@ -164,6 +184,16 @@ class EnhancedStep17Optimizer:
             # Block 3: Position management (depends on core parameters)
             OptimizationBlock.POSITION_MANAGEMENT: {
                 "categories": ["position_sizing", "leverage"],
+                "parameters": [
+                    # Position sizing parameters
+                    "kelly_multiplier", "max_position_size", "min_position_size", "confidence_threshold",
+                    "positionsize_combined_threshold", "ml_weight", "base_position_size",
+                    "confidence_based_scaling", "low_confidence_multiplier", "medium_confidence_multiplier",
+                    "high_confidence_multiplier", "very_high_confidence_multiplier",
+                    # Leverage parameters
+                    "min_leverage", "max_leverage", "leverage_combined_threshold", "liquidation_buffer",
+                    "leverage_multiplier", "max_risk_leverage", "liquidation_weight"
+                ],
                 "n_trials": 120,
                 "timeout": 900,  # 15 minutes
                 "sampler": "nsga2",
@@ -174,6 +204,14 @@ class EnhancedStep17Optimizer:
             # Block 4: Risk management (depends on position management)
             OptimizationBlock.RISK_MANAGEMENT: {
                 "categories": ["tpsl"],
+                "parameters": [
+                    "stop_loss_atr_multiplier", "trailing_stop_atr_multiplier", "stop_loss_confidence_threshold",
+                    "enable_dynamic_stop_loss", "volatility_based_sl", "regime_based_sl",
+                    "sl_tightening_threshold", "sl_loosening_threshold", "max_drawdown_threshold",
+                    "max_daily_loss", "atr_multiplier", "confidence_threshold", "min_hold_time",
+                    "stop_loss_multiplier", "take_profit_multiplier", "trailing_stop_enabled",
+                    "trailing_stop_distance", "max_hold_time"
+                ],
                 "n_trials": 60,
                 "timeout": 360,  # 6 minutes
                 "sampler": "tpe",
@@ -184,16 +222,41 @@ class EnhancedStep17Optimizer:
             # Block 5: Market analysis (depends on core parameters)
             OptimizationBlock.MARKET_ANALYSIS: {
                 "categories": ["sr", "technical_indicators", "regime_transitions"],
+                "parameters": [
+                    # Support/Resistance parameters
+                    "breakout_threshold", "confirmation_period", "volume_threshold", "price_threshold",
+                    "min_touch_count", "min_level_age_hours", "price_tolerance_pct", "volume_threshold",
+                    "strength_threshold", "volume_confirmation", "momentum_threshold", "false_breakout_filter",
+                    "support_zone_multiplier", "resistance_zone_multiplier", "sr_zone_threshold",
+                    "zone_expansion_factor", "zone_contraction_factor",
+                    # Technical indicators parameters
+                    "rsi_period", "macd_fast", "macd_slow", "macd_signal", "bollinger_period", "bollinger_std",
+                    "bb_width_volatility_threshold", "transition_intensity_threshold", "min_combined_intensity",
+                    "max_regimes_to_consider",
+                    # Regime transitions parameters
+                    "transition_confidence_threshold", "step9_5_weight", "step10_weight", "regime_expert_weight",
+                    "transition_lookback_periods", "transition_risk_multiplier"
+                ],
                 "n_trials": 150,
                 "timeout": 1200,  # 20 minutes
                 "sampler": "nsga2",
                 "pruner": "successive_halving",
-                "description": "Support/resistance and technical analysis optimization"
+                "description": "Support/resistance, technical analysis, and regime transitions optimization"
             },
             
             # Block 6: Signal processing (depends on market analysis)
             OptimizationBlock.SIGNAL_PROCESSING: {
                 "categories": ["ensemble", "signal_aggregation"],
+                "parameters": [
+                    # Ensemble parameters
+                    "ensemble_method", "base_models", "meta_model", "weights", "cross_validation_folds",
+                    "sharpe_ratio", "max_drawdown", "win_rate", "profit_factor", "total_return",
+                    "barrier_hit_rate", "online_learning", "regime_awareness", "uncertainty_weighting",
+                    "learning_rate", "performance_window", "weight_combination",
+                    # Signal aggregation parameters
+                    "analyst_weight", "tactician_weight", "scenario_weight", "sr_breakout_weight",
+                    "use_multiplicative", "conflict_penalty", "signal_quality_threshold"
+                ],
                 "n_trials": 100,
                 "timeout": 600,  # 10 minutes
                 "sampler": "tpe",
@@ -204,6 +267,17 @@ class EnhancedStep17Optimizer:
             # Block 7: System optimization (depends on all above)
             OptimizationBlock.SYSTEM_OPTIMIZATION: {
                 "categories": ["two_tier", "system_monitoring"],
+                "parameters": [
+                    # Two-tier system parameters
+                    "tier1_threshold", "tier2_threshold", "tier1_multiplier", "tier2_multiplier",
+                    "tier1_confidence_boost", "tier2_confidence_boost", "tier_selection_criteria",
+                    # System monitoring parameters
+                    "health_check_interval", "performance_threshold", "alert_threshold",
+                    "monitoring_interval", "max_history", "enable_real_time_tracking",
+                    "performance_window", "retraining_threshold", "drift_detection",
+                    "detection_window", "drift_threshold", "accuracy_threshold", "f1_threshold",
+                    "recent_accuracy_weight", "overall_accuracy_weight", "f1_score_weight"
+                ],
                 "n_trials": 80,
                 "timeout": 480,  # 8 minutes
                 "sampler": "tpe",
@@ -214,6 +288,12 @@ class EnhancedStep17Optimizer:
             # Block 8: Performance tuning (final fine-tuning)
             OptimizationBlock.PERFORMANCE_TUNING: {
                 "categories": ["training_optimization"],
+                "parameters": [
+                    "batch_size", "learning_rate", "epochs", "validation_split", "model_type",
+                    "n_estimators", "max_depth", "subsample", "colsample_bytree", "reg_alpha",
+                    "reg_lambda", "ensemble_size", "stacking_enabled", "meta_learner",
+                    "primary_method", "estimation_method", "confidence_level", "calibration_cv_folds"
+                ],
                 "n_trials": 60,
                 "timeout": 360,  # 6 minutes
                 "sampler": "tpe",

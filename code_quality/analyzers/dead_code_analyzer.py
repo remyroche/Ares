@@ -34,13 +34,14 @@ class DeadCodeIssue:
     """Container for dead code analysis results."""
     file_path: str
     line_number: int
-    issue_type: str
+    issue_type: str  # "dead_code" or "unreachable_code"
     description: str
     confidence: float
     code_snippet: str
     severity: str
     removal_impact: str = "low"  # low, medium, high
     dependencies: list[str] = None  # List of dependencies that would be affected
+    is_bug: bool = False  # True if this is unreachable code (a bug), False if dead code
 
 
 @dataclass
@@ -210,6 +211,7 @@ class DeadCodeAnalyzer:
         print("Building global call graph...")
         global_call_graph = self._build_global_call_graph(python_files)
         print(f"Found {len(global_call_graph['definitions'])} function definitions and {len(global_call_graph['calls'])} function calls")
+        print(f"Successfully processed {len(global_call_graph['files'])} files")
 
         for file_path in python_files:
             try:
@@ -294,8 +296,8 @@ class DeadCodeAnalyzer:
                 # Get code snippet
                 code_snippet = self._extract_code_snippet(lines, line_number)
 
-                # Determine issue type
-                issue_type = self._classify_issue(description)
+                # Determine issue type and whether it's a bug
+                issue_type, is_bug = self._classify_issue(description)
 
                 # Determine severity
                 severity = self._determine_severity(confidence, issue_type)
@@ -308,6 +310,7 @@ class DeadCodeAnalyzer:
                     confidence=confidence,
                     code_snippet=code_snippet,
                     severity=severity,
+                    is_bug=is_bug,
                 ))
 
         except SyntaxError as e:
@@ -344,31 +347,43 @@ class DeadCodeAnalyzer:
 
         return "\n".join(snippet_lines)
 
-    def _classify_issue(self, description: str) -> str:
-        """Classify the type of dead code issue."""
+    def _classify_issue(self, description: str) -> tuple[str, bool]:
+        """Classify the type of issue and whether it's a bug (unreachable) or dead code."""
         description_lower = description.lower()
-
+        
+        # Check if this is unreachable code (a bug)
+        unreachable_patterns = [
+            "unreachable", "after return", "after raise", "after break", "after continue",
+            "code after", "terminating statement", "never executed"
+        ]
+        
+        is_bug = any(pattern in description_lower for pattern in unreachable_patterns)
+        
+        if is_bug:
+            return "unreachable_code", True
+        
+        # Classify as dead code (unused)
         if "import" in description_lower:
-            return "unused_import"
+            return "unused_import", False
         if "variable" in description_lower:
-            return "unused_variable"
+            return "unused_variable", False
         if "function" in description_lower:
-            return "unused_function"
+            return "unused_function", False
         if "class" in description_lower:
-            return "unused_class"
+            return "unused_class", False
         if "method" in description_lower:
-            return "unused_method"
+            return "unused_method", False
         if "attribute" in description_lower:
-            return "unused_attribute"
+            return "unused_attribute", False
         if "argument" in description_lower or "parameter" in description_lower:
-            return "unused_parameter"
+            return "unused_parameter", False
         if "assignment" in description_lower:
-            return "unused_assignment"
+            return "unused_assignment", False
         if "expression" in description_lower:
-            return "unused_expression"
+            return "unused_expression", False
         if "statement" in description_lower:
-            return "unused_statement"
-        return "unknown"
+            return "unused_statement", False
+        return "unknown", False
 
     def _determine_severity(self, confidence: float, issue_type: str) -> str:
         """Determine the severity of an issue."""
@@ -619,9 +634,24 @@ class DeadCodeAnalyzer:
         lines.append(f"Files Affected: {len(report.issues_by_file)}")
         lines.append("")
 
-        # Issues by type
-        lines.append("Issues by Type:")
-        for issue_type, count in report.issues_by_type.items():
+        # Separate unreachable code (bugs) from dead code
+        unreachable_issues = [issue for issue in report.issues_by_file.get(file_path, []) if issue.is_bug]
+        dead_code_issues = [issue for issue in report.issues_by_file.get(file_path, []) if not issue.is_bug]
+        
+        # Issues by type - separate bugs from dead code
+        lines.append("UNREACHABLE CODE (BUGS - Should be fixed, not removed):")
+        unreachable_by_type = {}
+        for issue in unreachable_issues:
+            unreachable_by_type[issue.issue_type] = unreachable_by_type.get(issue.issue_type, 0) + 1
+        for issue_type, count in unreachable_by_type.items():
+            lines.append(f"  {issue_type}: {count}")
+        lines.append("")
+        
+        lines.append("DEAD CODE (Unused - Can be removed):")
+        dead_code_by_type = {}
+        for issue in dead_code_issues:
+            dead_code_by_type[issue.issue_type] = dead_code_by_type.get(issue.issue_type, 0) + 1
+        for issue_type, count in dead_code_by_type.items():
             lines.append(f"  {issue_type}: {count}")
         lines.append("")
 
@@ -742,10 +772,11 @@ class DeadCodeAnalyzer:
         Build a global call graph across all Python files.
         
         Returns:
-            Dictionary with 'definitions' and 'calls' keys
+            Dictionary with 'definitions', 'calls', and 'files' keys
         """
         global_definitions = {}  # {function_name: {file_path, line_number, node}}
         global_calls = set()     # Set of all function names that are called
+        processed_files = []     # List of successfully processed files
         
         for file_path in python_files:
             try:
@@ -765,6 +796,7 @@ class DeadCodeAnalyzer:
                 
                 # Add calls to global registry
                 global_calls.update(called_functions)
+                processed_files.append(str(file_path))
                 
             except Exception as e:
                 print(f"Warning: Could not analyze {file_path} for call graph: {e}")
@@ -772,7 +804,8 @@ class DeadCodeAnalyzer:
         
         return {
             'definitions': global_definitions,
-            'calls': global_calls
+            'calls': global_calls,
+            'files': processed_files
         }
 
     def detect_deprecated_code_with_graph(self, file_path: str | Path, global_call_graph: dict) -> list[DeprecatedCodeIssue]:
@@ -818,8 +851,18 @@ class DeadCodeAnalyzer:
                 is_entry_point = self._is_entry_point(func_name, func_node, lines)
                 is_test_function = self._is_test_function(func_name, lines)
                 
+                # Check for dynamic usage patterns
+                is_dynamically_used = self._check_dynamic_usage(func_name, file_path, global_call_graph)
+                
+                # Check for configuration file usage
+                is_config_used = self._check_config_usage(func_name, file_path)
+                
+                # Check for string-based references
+                is_string_referenced = self._check_string_references(func_name, file_path)
+                
                 if (not is_called_locally and not is_called_globally and 
-                    not is_framework_callback and not is_entry_point and not is_test_function):
+                    not is_framework_callback and not is_entry_point and not is_test_function and
+                    not is_dynamically_used and not is_config_used and not is_string_referenced):
                     # Function is defined but never called anywhere
                     issue = self._create_unused_function_issue(
                         func_node, lines, str(file_path)
@@ -860,6 +903,99 @@ class DeadCodeAnalyzer:
                     if any(keyword in decorator_name for keyword in ['app', 'route', 'handler', 'callback', 'listener']):
                         return True
                         
+        return False
+
+    def _check_dynamic_usage(self, func_name: str, file_path: Path, global_call_graph: dict) -> bool:
+        """Check if a function is used dynamically (importlib, getattr, etc.)."""
+        try:
+            # Search for dynamic usage patterns in the entire codebase
+            for other_file in global_call_graph.get('files', []):
+                if other_file == str(file_path):
+                    continue
+                    
+                try:
+                    with open(other_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Check for dynamic import patterns
+                    dynamic_patterns = [
+                        f'importlib.import_module.*{func_name}',
+                        f'getattr.*{func_name}',
+                        f'hasattr.*{func_name}',
+                        f'"{func_name}"',
+                        f"'{func_name}'",
+                        f'globals()["{func_name}"]',
+                        f'locals()["{func_name}"]',
+                        f'__import__.*{func_name}',
+                        f'eval.*{func_name}',
+                        f'exec.*{func_name}'
+                    ]
+                    
+                    for pattern in dynamic_patterns:
+                        if re.search(pattern, content, re.IGNORECASE):
+                            return True
+                            
+                except Exception:
+                    continue
+                    
+        except Exception:
+            pass
+            
+        return False
+
+    def _check_config_usage(self, func_name: str, file_path: Path) -> bool:
+        """Check if a function is referenced in configuration files."""
+        try:
+            # Look for configuration files in the same directory and parent directories
+            config_patterns = ['*.yaml', '*.yml', '*.json', '*.toml', '*.ini', '*.cfg', '*.conf']
+            
+            for config_pattern in config_patterns:
+                for config_file in file_path.parent.rglob(config_pattern):
+                    try:
+                        with open(config_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        if func_name in content:
+                            return True
+                            
+                    except Exception:
+                        continue
+                        
+        except Exception:
+            pass
+            
+        return False
+
+    def _check_string_references(self, func_name: str, file_path: Path) -> bool:
+        """Check if a function is referenced as a string in the codebase."""
+        try:
+            # Search for string references in Python files
+            for py_file in file_path.parent.rglob('*.py'):
+                if py_file == file_path:
+                    continue
+                    
+                try:
+                    with open(py_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Look for string references
+                    string_patterns = [
+                        f'"{func_name}"',
+                        f"'{func_name}'",
+                        f'f"{{.*{func_name}.*}}"',
+                        f"f'{{.*{func_name}.*}}'"
+                    ]
+                    
+                    for pattern in string_patterns:
+                        if re.search(pattern, content):
+                            return True
+                            
+                except Exception:
+                    continue
+                    
+        except Exception:
+            pass
+            
         return False
 
     def _is_framework_callback(self, func_node: ast.AST, lines: list[str]) -> bool:
@@ -1130,8 +1266,9 @@ class DeadCodeAnalyzer:
                                 description="Code immediately after terminating statement may be unreachable",
                                 confidence=80.0,  # Higher confidence for immediate cases
                                 code_snippet=self._extract_code_snippet(lines, node.lineno),
-                                severity="low",  # Lower severity to reduce noise
-                                removal_impact="low"
+                                severity="medium",  # Higher severity for bugs
+                                removal_impact="low",
+                                is_bug=True  # Mark as a bug, not dead code
                             )
                             unreachable.append(issue)
                 else:

@@ -154,6 +154,23 @@ class CSVExportManager:
                 'execution_time_ms': round(decision.execution_time_ms, 2),
             }
             
+            # HMM Regime Information
+            if decision.context.hmm_regime_info:
+                hmm_info = decision.context.hmm_regime_info
+                row.update({
+                    'hmm_regime_id': hmm_info.regime_id,
+                    'hmm_regime_name': hmm_info.regime_name,
+                    'hmm_regime_probability': round(hmm_info.regime_probability, self.export_config.decimal_precision),
+                    'hmm_regime_transition_probability': round(hmm_info.regime_transition_probability, self.export_config.decimal_precision),
+                    'hmm_regime_duration': hmm_info.regime_duration,
+                    'hmm_regime_stability_score': round(hmm_info.regime_stability_score, self.export_config.decimal_precision),
+                })
+                
+                # Next regime probabilities
+                if hmm_info.next_regime_probabilities:
+                    for regime_id, prob in hmm_info.next_regime_probabilities.items():
+                        row[f'hmm_next_regime_{regime_id}_probability'] = round(prob, self.export_config.decimal_precision)
+            
             # Market conditions
             if decision.context.market_conditions:
                 for key, value in decision.context.market_conditions.items():
@@ -451,6 +468,177 @@ class CSVExportManager:
             
         except Exception as e:
             self.logger.error(f"Error exporting trade decisions summary: {e}")
+    
+    @handles_errors(default_return=False, context="csv_export_manager.export_daily_summaries")
+    async def export_daily_summaries(self, daily_summaries: List[Any], 
+                                   export_id: Optional[str] = None) -> bool:
+        """Export daily summary data to CSV."""
+        try:
+            start_time = time.time()
+            export_id = export_id or f"daily_summaries_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            if not daily_summaries:
+                self.logger.warning("No daily summaries to export")
+                return False
+            
+            # Create DataFrame
+            data = []
+            for summary in daily_summaries:
+                row = {
+                    'date': summary.date.strftime(self.export_config.date_format),
+                    'total_trades': summary.total_trades,
+                    'long_trades': summary.long_trades,
+                    'short_trades': summary.short_trades,
+                    'hold_trades': summary.hold_trades,
+                    'dominant_regime': summary.dominant_regime,
+                    'regime_stability_avg': round(summary.regime_stability_avg, self.export_config.decimal_precision),
+                    'total_pnl': round(summary.total_pnl, self.export_config.decimal_precision),
+                    'realized_pnl': round(summary.realized_pnl, self.export_config.decimal_precision),
+                    'unrealized_pnl': round(summary.unrealized_pnl, self.export_config.decimal_precision),
+                    'win_rate': round(summary.win_rate, self.export_config.decimal_precision),
+                    'profit_factor': round(summary.profit_factor, self.export_config.decimal_precision),
+                    'sharpe_ratio': round(summary.sharpe_ratio, self.export_config.decimal_precision),
+                    'max_drawdown': round(summary.max_drawdown, self.export_config.decimal_precision),
+                    'avg_position_size': round(summary.avg_position_size, self.export_config.decimal_precision),
+                    'avg_confidence': round(summary.avg_confidence, self.export_config.decimal_precision),
+                    'avg_risk_score': round(summary.avg_risk_score, self.export_config.decimal_precision),
+                    'total_volume': round(summary.total_volume, self.export_config.decimal_precision),
+                    'model_accuracy_avg': round(summary.model_accuracy_avg, self.export_config.decimal_precision),
+                    'ensemble_consensus_avg': round(summary.ensemble_consensus_avg, self.export_config.decimal_precision),
+                    'model_disagreement_avg': round(summary.model_disagreement_avg, self.export_config.decimal_precision),
+                    'var_95': round(summary.var_95, self.export_config.decimal_precision),
+                    'max_loss': round(summary.max_loss, self.export_config.decimal_precision),
+                    'max_gain': round(summary.max_gain, self.export_config.decimal_precision),
+                    'execution_time_avg_ms': round(summary.execution_time_avg_ms, 2),
+                    'successful_trades': summary.successful_trades,
+                    'failed_trades': summary.failed_trades,
+                    'first_trade_time': summary.first_trade_time.strftime(self.export_config.date_format) if summary.first_trade_time else None,
+                    'last_trade_time': summary.last_trade_time.strftime(self.export_config.date_format) if summary.last_trade_time else None,
+                    'summary_generated_at': summary.summary_generated_at.strftime(self.export_config.date_format) if summary.summary_generated_at else None,
+                }
+                
+                # Add regime distribution
+                for regime_id, count in summary.regime_distribution.items():
+                    row[f'regime_{regime_id}_count'] = count
+                
+                data.append(row)
+            
+            df = pd.DataFrame(data)
+            
+            # Export main file
+            main_file = await self._export_dataframe_to_csv(
+                df, f"{export_id}_main.csv", "Daily Summaries"
+            )
+            
+            # Export summary statistics
+            if self.export_config.include_summary_stats:
+                await self._export_daily_summary_statistics(df, export_id)
+            
+            # Record export metadata
+            export_duration = (time.time() - start_time) * 1000
+            metadata = ExportMetadata(
+                export_id=export_id,
+                timestamp=datetime.now(),
+                file_type="daily_summaries",
+                record_count=len(df),
+                file_size_bytes=main_file.stat().st_size if main_file else 0,
+                export_duration_ms=export_duration
+            )
+            self.export_history.append(metadata)
+            
+            self.logger.info(
+                f"Exported {len(df)} daily summaries to {export_id} "
+                f"in {export_duration:.1f}ms"
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting daily summaries: {e}")
+            return False
+    
+    async def _export_daily_summary_statistics(self, df: pd.DataFrame, export_id: str):
+        """Export daily summary statistics."""
+        try:
+            summary_data = []
+            
+            # Overall statistics
+            summary_data.append({
+                'metric': 'total_days',
+                'value': len(df),
+                'description': 'Total number of days tracked'
+            })
+            
+            summary_data.append({
+                'metric': 'total_trades',
+                'value': df['total_trades'].sum(),
+                'description': 'Total trades across all days'
+            })
+            
+            summary_data.append({
+                'metric': 'avg_trades_per_day',
+                'value': round(df['total_trades'].mean(), self.export_config.decimal_precision),
+                'description': 'Average trades per day'
+            })
+            
+            # Performance metrics
+            if 'total_pnl' in df.columns:
+                summary_data.extend([
+                    {
+                        'metric': 'total_pnl',
+                        'value': round(df['total_pnl'].sum(), self.export_config.decimal_precision),
+                        'description': 'Total PnL across all days'
+                    },
+                    {
+                        'metric': 'avg_daily_pnl',
+                        'value': round(df['total_pnl'].mean(), self.export_config.decimal_precision),
+                        'description': 'Average daily PnL'
+                    },
+                    {
+                        'metric': 'best_day_pnl',
+                        'value': round(df['total_pnl'].max(), self.export_config.decimal_precision),
+                        'description': 'Best day PnL'
+                    },
+                    {
+                        'metric': 'worst_day_pnl',
+                        'value': round(df['total_pnl'].min(), self.export_config.decimal_precision),
+                        'description': 'Worst day PnL'
+                    }
+                ])
+            
+            # Win rate statistics
+            if 'win_rate' in df.columns:
+                summary_data.extend([
+                    {
+                        'metric': 'avg_win_rate',
+                        'value': round(df['win_rate'].mean(), self.export_config.decimal_precision),
+                        'description': 'Average win rate'
+                    },
+                    {
+                        'metric': 'best_win_rate',
+                        'value': round(df['win_rate'].max(), self.export_config.decimal_precision),
+                        'description': 'Best day win rate'
+                    }
+                ])
+            
+            # Regime statistics
+            regime_columns = [col for col in df.columns if col.startswith('regime_') and col.endswith('_count')]
+            for col in regime_columns:
+                regime_name = col.replace('regime_', '').replace('_count', '')
+                summary_data.append({
+                    'metric': f'regime_{regime_name}_total_trades',
+                    'value': df[col].sum(),
+                    'description': f'Total trades in {regime_name} regime'
+                })
+            
+            # Export summary
+            summary_df = pd.DataFrame(summary_data)
+            await self._export_dataframe_to_csv(
+                summary_df, f"{export_id}_summary.csv", "Daily Summary Statistics"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting daily summary statistics: {e}")
     
     @handles_errors(default_return=False, context="csv_export_manager.export_model_performances")
     async def export_model_performances(self, model_performances: List[Any], 

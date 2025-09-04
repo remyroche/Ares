@@ -47,6 +47,18 @@ class ModelType(Enum):
 
 
 @dataclass
+class HMMRegimeInfo:
+    """HMM regime information for trade decisions."""
+    regime_id: str
+    regime_name: str
+    regime_probability: float
+    regime_transition_probability: float
+    regime_duration: int  # Number of periods in current regime
+    regime_stability_score: float
+    next_regime_probabilities: Dict[str, float] = None
+
+
+@dataclass
 class TradeContext:
     """Context information for each trade decision."""
     exchange: str
@@ -56,6 +68,7 @@ class TradeContext:
     volume: float
     timeframe: str
     regime: Optional[str] = None
+    hmm_regime_info: Optional[HMMRegimeInfo] = None
     market_conditions: Optional[Dict[str, Any]] = None
 
 

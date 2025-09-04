@@ -28,6 +28,14 @@ from .ensemble_monitor import EnsembleMonitor, ModelContribution
 from .csv_export_manager import CSVExportManager
 from .trading_integration import TradingSystemIntegrator
 from .monitoring_orchestrator import MonitoringOrchestrator, create_monitoring_orchestrator
+from .daily_summary_tracker import DailySummaryTracker, DailyTradeSummary, RegimePerformance
+
+# GUI components
+from .gui import (
+    MonitoringDashboard, EnhancedMonitoringDashboard,
+    MonitoringVisualization, VisualizationControlPanel,
+    launch_dashboard
+)
 
 __all__ = [
     # Original monitoring components
@@ -57,4 +65,14 @@ __all__ = [
     "TradingSystemIntegrator",
     "MonitoringOrchestrator",
     "create_monitoring_orchestrator",
+    "DailySummaryTracker",
+    "DailyTradeSummary",
+    "RegimePerformance",
+    
+    # GUI components
+    "MonitoringDashboard",
+    "EnhancedMonitoringDashboard",
+    "MonitoringVisualization",
+    "VisualizationControlPanel",
+    "launch_dashboard",
 ]

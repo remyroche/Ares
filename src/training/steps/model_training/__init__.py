@@ -51,44 +51,41 @@ from .per_regime_pipeline_config import PerRegimePipelineConfig
 from .per_regime_pipeline_integration import PerRegimePipelineIntegration
 from .per_regime_pipeline_orchestrator import PerRegimePipelineOrchestrator
 
+# Import enhanced pipeline
+from .enhanced_model_training_pipeline import (
+    EnhancedModelTrainingPipeline,
+    run_enhanced_model_training_pipeline,
+)
+
 # Main pipeline function
 async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **config):
-    """Run the complete model training pipeline."""
+    """Run the complete model training pipeline with enhanced validation."""
     try:
-        # Step 1: HMM-based Training (if enabled)
-        if config.get('hmm_training', True):
-            hmm_trainer = HMMBasedTrainingStep()
-            await hmm_trainer.train_models(symbol, exchange, timeframe, data_dir)
+        # Use enhanced pipeline with comprehensive validation
+        pipeline_config = {
+            'data_dir': data_dir,
+            'hmm_training': config.get('hmm_training', True),
+            'regime_intelligence': config.get('regime_intelligence', True),
+            'analyst_creation': config.get('analyst_creation', True),
+            'analyst_enhancement': config.get('analyst_enhancement', True),
+            'ensemble_creation': config.get('ensemble_creation', True),
+            'tactician_training': config.get('tactician_training', True),
+            'force_rerun': config.get('force_rerun', False),
+            'random_state': config.get('random_state', 42),
+        }
         
-        # Step 2: Unified Regime Intelligence (if enabled)
-        if config.get('regime_intelligence', True):
-            regime_intelligence = UnifiedRegimeIntelligenceStep()
-            await regime_intelligence.build_intelligence(symbol, exchange, timeframe, data_dir)
+        # Run enhanced pipeline
+        result = await run_enhanced_model_training_pipeline(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            config=pipeline_config
+        )
         
-        # Step 3: Analyst Creation (if enabled)
-        if config.get('analyst_creation', True):
-            analyst_creator = AnalystCreationStep()
-            await analyst_creator.create_analysts(symbol, exchange, timeframe, data_dir)
-        
-        # Step 4: Analyst Enhancement (if enabled)
-        if config.get('analyst_enhancement', True):
-            analyst_enhancer = AnalystEnhancementStep()
-            await analyst_enhancer.enhance_analysts(symbol, exchange, timeframe, data_dir)
-        
-        # Step 5: Ensemble Creation (if enabled)
-        if config.get('ensemble_creation', True):
-            ensemble_creator = AnalystEnsembleCreationStep()
-            await ensemble_creator.create_ensembles(symbol, exchange, timeframe, data_dir)
-        
-        # Step 6: Tactician Training (if enabled)
-        if config.get('tactician_training', True):
-            tactician_trainer = TacticianSpecialistTrainingStep()
-            await tactician_trainer.train_tacticians(symbol, exchange, timeframe, data_dir)
-        
-        return True
+        return result.get('success', False)
         
     except Exception as e:
-        print(f"Model training pipeline failed: {e}")
+        print(f"Enhanced model training pipeline failed: {e}")
         return False
 
 __all__ = [
@@ -124,5 +121,7 @@ __all__ = [
     'PerRegimePipelineConfig',
     'PerRegimePipelineIntegration',
     'PerRegimePipelineOrchestrator',
+    'EnhancedModelTrainingPipeline',
+    'run_enhanced_model_training_pipeline',
     'run_model_training_pipeline'
 ]

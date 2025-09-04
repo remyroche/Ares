@@ -39,7 +39,7 @@ from src.utils.logger import setup_logging
 from pathlib import Path
 import copy
 from src.config.config_optuna import SROptimizationParameters, HyperparameterOptimizationConfig, get_parameter_search_space
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 setup_logging()
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)

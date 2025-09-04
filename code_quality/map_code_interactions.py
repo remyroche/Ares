@@ -53,14 +53,54 @@ from reporters.html_reporter import HTMLReporter
 
 from core.config import get_default_config
 
+# Enhanced complexity analysis imports
+try:
+    from code_complexity.complexity_pipeline import ComplexityPipeline, ComplexityMetrics, DirectoryMetrics
+    from code_complexity.config.complexity_config import ComplexityConfig
+    from code_complexity.analyzers.pyexamine_analyzer import PyExamineAnalyzer
+    from code_complexity.analyzers.radon_analyzer import RadonAnalyzer
+    from code_complexity.analyzers.xenon_analyzer import XenonAnalyzer
+    from code_complexity.utils.report_generator import ReportGenerator
+    from code_complexity.utils.file_utils import FileUtils
+    ENHANCED_COMPLEXITY_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Enhanced complexity analysis not available: {e}")
+    ENHANCED_COMPLEXITY_AVAILABLE = False
+
+# Additional utility imports for enhanced analysis
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import pandas as pd
+    import numpy as np
+    from collections import defaultdict
+    VISUALIZATION_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Visualization libraries not available: {e}")
+    VISUALIZATION_AVAILABLE = False
+
 
 class CodeInteractionMapper:
     """Maps all interactions within a codebase."""
 
-    def __init__(self, project_root: str):
+    def __init__(self, project_root: str, enable_enhanced_complexity: bool = False):
         self.project_root = Path(project_root)
         self.config = get_default_config()
         self.results = {}
+        self.enable_enhanced_complexity = enable_enhanced_complexity
+        
+        # Initialize enhanced complexity pipeline if available
+        if enable_enhanced_complexity and ENHANCED_COMPLEXITY_AVAILABLE:
+            try:
+                self.complexity_pipeline = ComplexityPipeline()
+                self.complexity_config = ComplexityConfig()
+                print("✓ Enhanced complexity analysis enabled")
+            except Exception as e:
+                print(f"Warning: Failed to initialize enhanced complexity pipeline: {e}")
+                self.enable_enhanced_complexity = False
+        else:
+            self.complexity_pipeline = None
+            self.complexity_config = None
 
     def analyze_dependencies(self):
         """Analyze module dependencies."""
@@ -108,14 +148,74 @@ class CodeInteractionMapper:
 
     def analyze_complexity(self):
         """Analyze code complexity for context."""
-        print("\n[5/6] Analyzing code complexity...")
-        analyzer = ComplexityAnalyzer(self.config)
-        self.results["complexity"] = analyzer.analyze_directory(str(self.project_root))
+        if self.enable_enhanced_complexity and ENHANCED_COMPLEXITY_AVAILABLE:
+            self.analyze_enhanced_complexity()
+        else:
+            print("\n[5/6] Analyzing code complexity...")
+            analyzer = ComplexityAnalyzer(self.config)
+            self.results["complexity"] = analyzer.analyze_directory(str(self.project_root))
 
-        # Print summary
-        comp = self.results["complexity"]
-        print(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
-        print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
+            # Print summary
+            comp = self.results["complexity"]
+            print(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
+            print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
+
+    def analyze_enhanced_complexity(self):
+        """Enhanced complexity analysis using the new pipeline."""
+        print("\n[5/7] Running enhanced complexity analysis...")
+        
+        if not self.complexity_pipeline:
+            print("  ❌ Enhanced complexity pipeline not available, falling back to standard analysis")
+            self.analyze_complexity()
+            return
+            
+        try:
+            # Run comprehensive complexity analysis
+            complexity_results = self.complexity_pipeline.run_full_analysis(str(self.project_root))
+            
+            # Store results
+            self.results["enhanced_complexity"] = complexity_results
+            
+            # Print enhanced summary
+            self._print_enhanced_complexity_summary(complexity_results)
+            
+        except Exception as e:
+            print(f"  ❌ Enhanced complexity analysis failed: {e}")
+            print("  Falling back to standard complexity analysis...")
+            self.analyze_complexity()
+
+    def analyze_complexity_correlations(self):
+        """Analyze correlations between complexity and other metrics."""
+        if not self.enable_enhanced_complexity or not ENHANCED_COMPLEXITY_AVAILABLE:
+            return
+            
+        print("\n[6/7] Analyzing complexity correlations...")
+        
+        try:
+            correlations = self._calculate_complexity_correlations()
+            self.results["complexity_correlations"] = correlations
+            
+            # Print correlation summary
+            self._print_correlation_summary(correlations)
+            
+        except Exception as e:
+            print(f"  ❌ Complexity correlation analysis failed: {e}")
+
+    def generate_complexity_visualizations(self):
+        """Generate visualizations for complexity analysis."""
+        if not self.enable_enhanced_complexity or not VISUALIZATION_AVAILABLE:
+            return
+            
+        print("\n[7/7] Generating complexity visualizations...")
+        
+        try:
+            visualizations = self._create_complexity_visualizations()
+            self.results["complexity_visualizations"] = visualizations
+            
+            print(f"  - Generated {len(visualizations)} visualization files")
+            
+        except Exception as e:
+            print(f"  ❌ Visualization generation failed: {e}")
 
     def analyze_dead_code(self):
         """Analyze dead code with enhanced cross-file dependency checking."""
@@ -183,13 +283,13 @@ class CodeInteractionMapper:
             print(f"  - Estimated time savings: {removal_plan.get('estimated_time_savings', {}).get('estimated_hours_saved', 0):.1f} hours")
             print(f"  - Removal phases: {len(removal_plan.get('removal_phases', []))}")
 
-    def generate_interaction_report(self):
+    def generate_interaction_report(self, output_prefix: str = "code_interaction_map"):
         """Generate comprehensive interaction report."""
         print("\n[7/7] Generating interaction reports...")
 
         # Create reports directory with datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        reports_dir = Path("code_quality/visualizers/reports") / f"report_{timestamp}"
+        reports_dir = Path("code_quality/visualizers/reports") / f"{output_prefix}_{timestamp}"
         reports_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"  - Output directory: {reports_dir}")
@@ -1813,9 +1913,11 @@ class CodeInteractionMapper:
                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7),
                verticalalignment='top')
 
-    def run(self):
-        """Run the complete interaction mapping."""
+    def run(self, generate_visualizations: bool = False, output_prefix: str = "code_interaction_map"):
+        """Run the complete interaction mapping with optional enhancements."""
         print(f"Starting code interaction mapping for: {self.project_root}")
+        if self.enable_enhanced_complexity:
+            print("✓ Enhanced complexity analysis enabled")
         print("=" * 80)
 
         # Run all analyses
@@ -1824,10 +1926,17 @@ class CodeInteractionMapper:
         self.analyze_architecture()
         self.analyze_imports()
         self.analyze_complexity()
+        
+        # Enhanced complexity analysis steps
+        if self.enable_enhanced_complexity and ENHANCED_COMPLEXITY_AVAILABLE:
+            self.analyze_complexity_correlations()
+            if generate_visualizations:
+                self.generate_complexity_visualizations()
+        
         self.analyze_dead_code()
 
         # Generate reports
-        report_files = self.generate_interaction_report()
+        report_files = self.generate_interaction_report(output_prefix)
 
         print("\n" + "=" * 80)
         print("CODE INTERACTION MAPPING COMPLETE!")
@@ -1837,8 +1946,231 @@ class CodeInteractionMapper:
         for report_type, file_path in report_files.items():
             if report_type not in ['report_dir', 'timestamp']:
                 print(f"  - {report_type.upper()}: {Path(file_path).name}")
+                
+        # Print enhanced complexity summary if available
+        if self.enable_enhanced_complexity and "enhanced_complexity" in self.results:
+            print("\n" + "=" * 50)
+            print("ENHANCED COMPLEXITY ANALYSIS SUMMARY")
+            print("=" * 50)
+            enhanced_complexity = self.results["enhanced_complexity"]
+            file_analysis = enhanced_complexity.get('file_analysis', {})
+            
+            if file_analysis:
+                scores = [m.get('combined_score', 0) for m in file_analysis.values() 
+                         if m.get('combined_score') is not None]
+                
+                if scores:
+                    print(f"Files analyzed: {len(scores)}")
+                    print(f"Average complexity: {sum(scores)/len(scores):.3f}")
+                    print(f"Highest complexity: {max(scores):.3f}")
+                    print(f"Lowest complexity: {min(scores):.3f}")
+                    
+                    # Complexity distribution
+                    low_count = len([s for s in scores if s >= 0.7])
+                    medium_count = len([s for s in scores if 0.4 <= s < 0.7])
+                    high_count = len([s for s in scores if s < 0.4])
+                    
+                    print(f"\nComplexity distribution:")
+                    print(f"  Low (≥0.7):    {low_count:3d} files ({low_count/len(scores)*100:5.1f}%)")
+                    print(f"  Medium (0.4-0.7): {medium_count:3d} files ({medium_count/len(scores)*100:5.1f}%)")
+                    print(f"  High (<0.4):   {high_count:3d} files ({high_count/len(scores)*100:5.1f}%)")
 
         return report_files
+
+    def _print_enhanced_complexity_summary(self, results):
+        """Print comprehensive complexity summary."""
+        file_analysis = results.get('file_analysis', {})
+        directory_analysis = results.get('directory_analysis', {})
+        
+        if file_analysis:
+            scores = [m.get('combined_score', 0) for m in file_analysis.values() 
+                     if m.get('combined_score') is not None]
+            
+            if scores:
+                print(f"  - Files analyzed: {len(scores)}")
+                print(f"  - Average complexity score: {sum(scores)/len(scores):.3f}")
+                print(f"  - Highest complexity: {max(scores):.3f}")
+                print(f"  - Lowest complexity: {min(scores):.3f}")
+                
+                # Tool-specific metrics
+                pyexamine_scores = [m.get('pyexamine_score') for m in file_analysis.values() 
+                                  if m.get('pyexamine_score') is not None]
+                radon_cc_scores = [m.get('radon_cc') for m in file_analysis.values() 
+                                 if m.get('radon_cc') is not None]
+                xenon_scores = [m.get('xenon_score') for m in file_analysis.values() 
+                              if m.get('xenon_score') is not None]
+                
+                if pyexamine_scores:
+                    print(f"  - PyExamine average: {sum(pyexamine_scores)/len(pyexamine_scores):.3f}")
+                if radon_cc_scores:
+                    print(f"  - Radon CC average: {sum(radon_cc_scores)/len(radon_cc_scores):.2f}")
+                if xenon_scores:
+                    print(f"  - Xenon average: {sum(xenon_scores)/len(xenon_scores):.2f}")
+                    
+                # Complexity distribution
+                low_count = len([s for s in scores if s >= 0.7])
+                medium_count = len([s for s in scores if 0.4 <= s < 0.7])
+                high_count = len([s for s in scores if s < 0.4])
+                
+                print(f"  - Complexity distribution:")
+                print(f"    * Low (≥0.7): {low_count} files ({low_count/len(scores)*100:.1f}%)")
+                print(f"    * Medium (0.4-0.7): {medium_count} files ({medium_count/len(scores)*100:.1f}%)")
+                print(f"    * High (<0.4): {high_count} files ({high_count/len(scores)*100:.1f}%)")
+                
+    def _calculate_complexity_correlations(self):
+        """Calculate correlations between complexity and other metrics."""
+        correlations = {}
+        
+        # Get complexity data
+        enhanced_complexity = self.results.get("enhanced_complexity", {})
+        file_analysis = enhanced_complexity.get('file_analysis', {})
+        
+        # Get other metrics
+        dependencies = self.results.get("dependencies", {})
+        call_graph = self.results.get("call_graph", {})
+        
+        # Calculate correlations
+        for file_path, complexity_metrics in file_analysis.items():
+            file_correlations = {}
+            
+            # Dependency correlation
+            if file_path in dependencies.get('modules', {}):
+                dep_count = len(dependencies['modules'][file_path].get('dependencies', []))
+                complexity_score = complexity_metrics.get('combined_score', 0)
+                file_correlations['dependency_count'] = dep_count
+                file_correlations['complexity_score'] = complexity_score
+                
+            # Call graph correlation
+            if file_path in call_graph.get('functions', {}):
+                function_count = len(call_graph['functions'][file_path])
+                file_correlations['function_count'] = function_count
+                
+            correlations[file_path] = file_correlations
+            
+        return correlations
+        
+    def _print_correlation_summary(self, correlations):
+        """Print correlation analysis summary."""
+        if not correlations:
+            print("  - No correlation data available")
+            return
+            
+        # Calculate average correlations
+        dep_complexity_pairs = [(c.get('dependency_count', 0), c.get('complexity_score', 0)) 
+                               for c in correlations.values() 
+                               if c.get('dependency_count') is not None and c.get('complexity_score') is not None]
+        
+        if dep_complexity_pairs:
+            avg_deps = sum(pair[0] for pair in dep_complexity_pairs) / len(dep_complexity_pairs)
+            avg_complexity = sum(pair[1] for pair in dep_complexity_pairs) / len(dep_complexity_pairs)
+            print(f"  - Average dependencies per file: {avg_deps:.1f}")
+            print(f"  - Average complexity for files with dependencies: {avg_complexity:.3f}")
+            
+    def _create_complexity_visualizations(self):
+        """Create complexity visualization files."""
+        visualizations = []
+        
+        if not VISUALIZATION_AVAILABLE:
+            print("  - Visualization libraries not available, skipping visualizations")
+            return visualizations
+            
+        try:
+            # Complexity distribution histogram
+            self._create_complexity_distribution_plot()
+            visualizations.append("complexity_distribution.png")
+            
+            # Complexity vs dependencies scatter plot
+            self._create_complexity_dependencies_plot()
+            visualizations.append("complexity_dependencies.png")
+            
+            # Tool comparison heatmap
+            self._create_tool_comparison_heatmap()
+            visualizations.append("tool_comparison_heatmap.png")
+            
+        except Exception as e:
+            print(f"  - Error creating visualizations: {e}")
+            
+        return visualizations
+        
+    def _create_complexity_distribution_plot(self):
+        """Create complexity distribution histogram."""
+        enhanced_complexity = self.results.get("enhanced_complexity", {})
+        file_analysis = enhanced_complexity.get('file_analysis', {})
+        
+        scores = [m.get('combined_score', 0) for m in file_analysis.values() 
+                 if m.get('combined_score') is not None]
+        
+        if scores:
+            plt.figure(figsize=(10, 6))
+            plt.hist(scores, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+            plt.xlabel('Complexity Score')
+            plt.ylabel('Number of Files')
+            plt.title('Distribution of Code Complexity Scores')
+            plt.grid(True, alpha=0.3)
+            plt.savefig('complexity_distribution.png', dpi=300, bbox_inches='tight')
+            plt.close()
+            
+    def _create_complexity_dependencies_plot(self):
+        """Create complexity vs dependencies scatter plot."""
+        correlations = self.results.get("complexity_correlations", {})
+        
+        dep_complexity_pairs = [(c.get('dependency_count', 0), c.get('complexity_score', 0)) 
+                               for c in correlations.values() 
+                               if c.get('dependency_count') is not None and c.get('complexity_score') is not None]
+        
+        if dep_complexity_pairs:
+            deps, complexities = zip(*dep_complexity_pairs)
+            
+            plt.figure(figsize=(10, 6))
+            plt.scatter(deps, complexities, alpha=0.6, color='coral')
+            plt.xlabel('Number of Dependencies')
+            plt.ylabel('Complexity Score')
+            plt.title('Complexity vs Dependencies')
+            plt.grid(True, alpha=0.3)
+            plt.savefig('complexity_dependencies.png', dpi=300, bbox_inches='tight')
+            plt.close()
+            
+    def _create_tool_comparison_heatmap(self):
+        """Create tool comparison heatmap."""
+        enhanced_complexity = self.results.get("enhanced_complexity", {})
+        file_analysis = enhanced_complexity.get('file_analysis', {})
+        
+        # Prepare data for heatmap
+        tool_data = []
+        file_names = []
+        
+        for file_path, metrics in file_analysis.items():
+            file_name = Path(file_path).name
+            file_names.append(file_name)
+            
+            tool_scores = [
+                metrics.get('pyexamine_score', 0) or 0,
+                metrics.get('radon_cc', 0) or 0,
+                metrics.get('radon_mi', 0) or 0,
+                metrics.get('xenon_score', 0) or 0
+            ]
+            tool_data.append(tool_scores)
+        
+        if tool_data and file_names:
+            # Limit to top 20 files for readability
+            if len(file_names) > 20:
+                tool_data = tool_data[:20]
+                file_names = file_names[:20]
+                
+            df = pd.DataFrame(tool_data, 
+                            index=file_names,
+                            columns=['PyExamine', 'Radon CC', 'Radon MI', 'Xenon'])
+            
+            plt.figure(figsize=(12, 8))
+            sns.heatmap(df, annot=True, cmap='YlOrRd', fmt='.2f')
+            plt.title('Tool Comparison Heatmap')
+            plt.xlabel('Analysis Tools')
+            plt.ylabel('Files')
+            plt.xticks(rotation=45)
+            plt.yticks(rotation=0)
+            plt.tight_layout()
+            plt.savefig('tool_comparison_heatmap.png', dpi=300, bbox_inches='tight')
+            plt.close()
 
     def _build_comprehensive_dependency_map(self):
         """Build a comprehensive map of all dependencies across the codebase."""
@@ -2290,17 +2622,60 @@ class CodeInteractionMapper:
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Map code interactions within a Python project")
+    """Enhanced main entry point with complexity analysis options."""
+    parser = argparse.ArgumentParser(
+        description="Enhanced Code Interaction Mapping with Complexity Analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Standard analysis
+  python map_code_interactions.py --project-root /path/to/project
+  
+  # Enhanced complexity analysis
+  python map_code_interactions.py --project-root /path/to/project --enable-enhanced-complexity
+  
+  # Enhanced analysis with visualizations
+  python map_code_interactions.py --project-root /path/to/project --enable-enhanced-complexity --generate-visualizations
+  
+  # Enhanced analysis with specific tools
+  python map_code_interactions.py --project-root /path/to/project --enable-enhanced-complexity --complexity-tools radon xenon
+        """
+    )
+    
     parser.add_argument("--project-root", default="/workspace",
                        help="Root directory of the project to analyze")
     parser.add_argument("--exclude", nargs="*", default=["venv", "__pycache__", ".git"],
                        help="Directories to exclude from analysis")
+    parser.add_argument("--enable-enhanced-complexity", action="store_true",
+                       help="Enable enhanced complexity analysis with PyExamine, Radon, and Xenon")
+    parser.add_argument("--complexity-tools", nargs="+", 
+                       choices=["pyexamine", "radon", "xenon"],
+                       default=["pyexamine", "radon", "xenon"],
+                       help="Complexity analysis tools to use (default: all)")
+    parser.add_argument("--generate-visualizations", action="store_true",
+                       help="Generate complexity visualization plots")
+    parser.add_argument("--output", "-o", default="code_interaction_map",
+                       help="Output file prefix for reports")
 
     args = parser.parse_args()
 
-    mapper = CodeInteractionMapper(args.project_root)
-    mapper.run()
+    # Initialize mapper with enhanced complexity if requested
+    mapper = CodeInteractionMapper(
+        args.project_root, 
+        enable_enhanced_complexity=args.enable_enhanced_complexity
+    )
+    
+    # Configure complexity tools if enhanced analysis is enabled
+    if args.enable_enhanced_complexity and mapper.complexity_config:
+        mapper.complexity_config.enable_pyexamine = "pyexamine" in args.complexity_tools
+        mapper.complexity_config.enable_radon = "radon" in args.complexity_tools
+        mapper.complexity_config.enable_xenon = "xenon" in args.complexity_tools
+    
+    # Run analysis
+    mapper.run(
+        generate_visualizations=args.generate_visualizations,
+        output_prefix=args.output
+    )
 
 
 if __name__ == "__main__":

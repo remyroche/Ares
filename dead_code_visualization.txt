@@ -1,0 +1,92 @@
+DEAD CODE ANALYSIS VISUALIZATION
+================================
+
+📊 OVERALL STATISTICS
+┌─────────────────────────────────────────────────────────────┐
+│ Total Issues: 5,110                                         │
+│ Deprecated Functions: 1,081                                 │
+│ Files with Issues: 428                                      │
+│ Files with Deprecated Code: 321                             │
+└─────────────────────────────────────────────────────────────┘
+
+🏆 TOP PROBLEM FILES (by issue count)
+┌─────────────────────────────────────────────────────────────┐
+│ 1. probabilistic_bayesian_optimizer.py    [153 issues]     │
+│    ├─ create_tactician_model (line 250)                    │
+│    ├─ create_analyst_model (line 255)                      │
+│    └─ get_recommended_hyperparameters (line 260)           │
+│                                                             │
+│ 2. step03_hmm_regime_discovery.py         [116 issues]     │
+│    └─ 116 instances of unreachable code                     │
+│                                                             │
+│ 3. data_quality_framework.py              [116 issues]     │
+│    ├─ DataQualityLevel enum (line 12)                      │
+│    └─ format_data function (line 413)                      │
+│                                                             │
+│ 4. ensemble_orchestrator.py               [90 issues]      │
+│    ├─ train_all_models (line 43)                           │
+│    ├─ get_all_predictions (line 110)                       │
+│    └─ get_current_regime (line 157)                        │
+│                                                             │
+│ 5. cross_timeframe_interaction_features.py [89 issues]     │
+│    ├─ TimeframeType enum (line 10)                         │
+│    ├─ CrossTimeframeFeatureGenerator (line 66)             │
+│    └─ InteractionFeatureGenerator (line 376)               │
+└─────────────────────────────────────────────────────────────┘
+
+📁 DIRECTORY DISTRIBUTION
+┌─────────────────────────────────────────────────────────────┐
+│ /workspace/src/training/          ████████████████████ 40%  │
+│ /workspace/src/utils/             ████████████████ 32%      │
+│ /workspace/src/analyst/           ████████████ 24%          │
+│ /workspace/code_quality/          ████████ 16%              │
+│ /workspace/scripts/               ██████ 12%                │
+│ /workspace/src/supervisor/        ████ 8%                   │
+│ /workspace/src/strategist/        ███ 6%                    │
+│ /workspace/src/tracking/          ██ 4%                     │
+└─────────────────────────────────────────────────────────────┘
+
+⚠️  RISK ASSESSMENT
+┌─────────────────────────────────────────────────────────────┐
+│ 🔴 HIGH RISK (Requires careful review)                     │
+│ ├─ Factory Functions (create_tactician_model, etc.)        │
+│ ├─ Enum Classes (DataQualityLevel, TimeframeType)          │
+│ └─ Training Orchestrators (train_all_models, etc.)         │
+│                                                             │
+│ 🟡 MEDIUM RISK (Moderate review needed)                    │
+│ ├─ Utility Functions (format_data, cache functions)        │
+│ ├─ Data Processors (parallel_rolling_operations)           │
+│ └─ Feature Generators (CrossTimeframeFeatureGenerator)     │
+│                                                             │
+│ 🟢 LOW RISK (Safe to remove)                               │
+│ ├─ Test Utilities (MockProgress, MockConsole)              │
+│ ├─ Mock Functions (create_dummy_files)                     │
+│ └─ Fallback Code (create_fallback_correlation_filter)      │
+└─────────────────────────────────────────────────────────────┘
+
+🎯 CLEANUP STRATEGY
+┌─────────────────────────────────────────────────────────────┐
+│ Phase 1: Remove Test Code        ████████████ ~300 funcs   │
+│ Phase 2: Remove Fallbacks        ████████ ~200 funcs       │
+│ Phase 3: Review Factories        ████████████ ~300 funcs   │
+│ Phase 4: Audit Enums             ████████ ~200 funcs       │
+│ Phase 5: Final Cleanup           ██████ ~81 funcs          │
+└─────────────────────────────────────────────────────────────┘
+
+💡 KEY INSIGHTS
+┌─────────────────────────────────────────────────────────────┐
+│ • Most dead code is in training pipeline components         │
+│ • Factory functions are common but risky to remove          │
+│ • Test utilities are safe targets for immediate cleanup     │
+│ • Enum classes may be used in serialization/APIs            │
+│ • Training orchestrators might be called dynamically        │
+└─────────────────────────────────────────────────────────────┘
+
+🔧 IMMEDIATE ACTIONS
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Remove MockProgress, MockConsole, MockLive              │
+│ 2. Remove create_dummy_files and test helpers              │
+│ 3. Remove fallback correlation filters                     │
+│ 4. Remove platform-specific optimizations                  │
+│ 5. Review and potentially remove wrapper functions         │
+└─────────────────────────────────────────────────────────────┘

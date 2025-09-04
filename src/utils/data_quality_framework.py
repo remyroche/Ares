@@ -1,7 +1,5 @@
 '\nComprehensive Data Quality Framework\n\nThis module provides a comprehensive data quality framework that includes:\n- Data validation and schema enforcement\n- Data quality scoring and metrics\n- Data cleaning and preprocessing\n- Data profiling and analysis\n- Quality policy management\n- Cross-step quality consistency\n'
-from copy import copy
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -11,22 +9,6 @@ from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
 from .logger import system_logger
 
 
-class DataQualityLevel(Enum):
-    """Data quality issue severity levels."""
-    CRITICAL = 'critical'
-    HIGH = 'high'
-    MEDIUM = 'medium'
-    LOW = 'low'
-
-class DataFormat(Enum):
-    """Standard data formats."""
-    KLINES = 'klines'
-    FEATURES = 'features'
-    LABELS = 'labels'
-    PREDICTIONS = 'predictions'
-    METADATA = 'metadata'
-    CONFIG = 'config'
-
 class DataQualityFramework:
     """Comprehensive data quality framework with validation, cleaning, and profiling."""
 
@@ -34,9 +16,62 @@ class DataQualityFramework:
         """Initialize data quality framework."""
         self.logger = system_logger.getChild('DataQualityFramework')
         self.outlier_handler = enhanced_outlier_handler
-        self.quality_policies = {'strict_validation': True, 'auto_clean': True, 'profiling_enabled': True, 'max_issues_critical': 0, 'max_issues_high': 5, 'max_issues_medium': 20, 'max_issues_low': 100}
-        self.validation_rules = {'klines_schema': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}, 'constraints': {'timestamp': {'min': 0, 'max': None}, 'open': {'min': 0, 'max': None}, 'high': {'min': 0, 'max': None}, 'low': {'min': 0, 'max': None}, 'close': {'min': 0, 'max': None}, 'volume': {'min': 0, 'max': None}}}, 'features_schema': {'required_columns': ['timestamp'], 'data_types': {'timestamp': 'int64'}, 'constraints': {'timestamp': {'min': 0, 'max': None}}}, 'labels_schema': {'required_columns': ['timestamp', 'label'], 'data_types': {'timestamp': 'int64', 'label': 'int64'}, 'constraints': {'timestamp': {'min': 0, 'max': None}, 'label': {'min': 0, 'max': None}}}}
-        self.default_cleaning_rules = {'outlier_handling': 'detect_only', 'outlier_config': {'method': 'iqr', 'threshold': 1.5, 'severity_threshold': 'medium', 'raise_errors': False}, 'null_handling': 'drop', 'duplicate_handling': 'drop_first', 'data_type_validation': True, 'schema_validation': True}
+        self.quality_policies = {
+            'strict_validation': True,
+            'auto_clean': True,
+            'profiling_enabled': True,
+            'max_issues_critical': 0,
+            'max_issues_high': 5,
+            'max_issues_medium': 20,
+            'max_issues_low': 100
+        }
+        self.validation_rules = {
+            'klines_schema': {
+                'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
+                'data_types': {
+                    'timestamp': 'int64',
+                    'open': 'float64',
+                    'high': 'float64',
+                    'low': 'float64',
+                    'close': 'float64',
+                    'volume': 'float64'
+                },
+                'constraints': {
+                    'timestamp': {'min': 0, 'max': None},
+                    'open': {'min': 0, 'max': None},
+                    'high': {'min': 0, 'max': None},
+                    'low': {'min': 0, 'max': None},
+                    'close': {'min': 0, 'max': None},
+                    'volume': {'min': 0, 'max': None}
+                }
+            },
+            'features_schema': {
+                'required_columns': ['timestamp'],
+                'data_types': {'timestamp': 'int64'},
+                'constraints': {'timestamp': {'min': 0, 'max': None}}
+            },
+            'labels_schema': {
+                'required_columns': ['timestamp', 'label'],
+                'data_types': {'timestamp': 'int64', 'label': 'int64'},
+                'constraints': {
+                    'timestamp': {'min': 0, 'max': None},
+                    'label': {'min': 0, 'max': None}
+                }
+            }
+        }
+        self.default_cleaning_rules = {
+            'outlier_handling': 'detect_only',
+            'outlier_config': {
+                'method': 'iqr',
+                'threshold': 1.5,
+                'severity_threshold': 'medium',
+                'raise_errors': False
+            },
+            'null_handling': 'drop',
+            'duplicate_handling': 'drop_first',
+            'data_type_validation': True,
+            'schema_validation': True
+        }
         self.logger.info('🔧 Comprehensive Data Quality Framework initialized')
 
     def clean_data(self, data: pd.DataFrame, cleaning_rules: dict[str, Any]=None) -> pd.DataFrame:
@@ -55,9 +90,9 @@ class DataQualityFramework:
         original_shape = data.shape
         cleaned_data = data.copy()
         if cleaning_rules.get('schema_validation', True):
-            cleaned_data = self._validate_schema(cleaned_data, cleaning_rules)
+            cleaned_data = self._validate_schema(cleaned_data)
         if cleaning_rules.get('data_type_validation', True):
-            cleaned_data = self._validate_data_types(cleaned_data, cleaning_rules)
+            cleaned_data = self._validate_data_types(cleaned_data)
         cleaned_data = self._handle_nulls(cleaned_data, cleaning_rules)
         cleaned_data = self._handle_duplicates(cleaned_data, cleaning_rules)
         cleaned_data = self._handle_outliers(cleaned_data, cleaning_rules)
@@ -171,7 +206,7 @@ class DataQualityFramework:
             self.logger.error(f"Data validation failed: {results['failed_rules']}/{results['total_rules']} rules failed")
             self.logger.error(f"Issues: Critical={results['critical_issues']}, High={results['high_issues']}, Medium={results['medium_issues']}, Low={results['low_issues']}")
 
-    def _validate_schema(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
+    def _validate_schema(self, data: pd.DataFrame) -> pd.DataFrame:
         """Validate data schema."""
         try:
             validation_result = self.outlier_handler.validate_data_schema(data, 'klines')
@@ -185,7 +220,7 @@ class DataQualityFramework:
             self.logger.exception(f'Schema validation error: {e}')
             return data
 
-    def _validate_data_types(self, data: pd.DataFrame, rules: dict[str, Any]) -> pd.DataFrame:
+    def _validate_data_types(self, data: pd.DataFrame) -> pd.DataFrame:
         """Validate and fix data types."""
         try:
             for col in data.columns:
@@ -193,15 +228,15 @@ class DataQualityFramework:
                     try:
                         data[col] = pd.to_numeric(data[col], errors='coerce').astype('Int64')
                         self.logger.info(f'Converted {col} to int64')
-                    except:
-                        self.logger.warning(f'Could not convert {col} to int64')
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f'Could not convert {col} to int64: {e}')
                 elif col in ['open', 'high', 'low', 'close', 'volume']:
                     if data[col].dtype not in ['float64', 'float32']:
                         try:
                             data[col] = pd.to_numeric(data[col], errors='coerce')
                             self.logger.info(f'Converted {col} to numeric')
-                        except:
-                            self.logger.warning(f'Could not convert {col} to numeric')
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f'Could not convert {col} to numeric: {e}')
             return data
         except Exception as e:
             self.logger.exception(f'Data type validation error: {e}')
@@ -241,7 +276,7 @@ class DataQualityFramework:
                     self.logger.info(f'Removed {rows_removed} duplicate rows')
             elif duplicate_handling == 'drop_last':
                 original_rows = len(data)
-                data = data.drop_duplicates(keep='first')
+                data = data.drop_duplicates(keep='last')
                 rows_removed = original_rows - len(data)
                 if rows_removed > 0:
                     self.logger.info(f'Removed {rows_removed} duplicate rows')
@@ -316,7 +351,16 @@ class DataQualityFramework:
             Quality report
         """
         try:
-            return {'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'data_types': data.dtypes.to_dict(), 'null_analysis': self._analyze_nulls(data), 'duplicate_analysis': self._analyze_duplicates(data), 'outlier_analysis': self._analyze_outliers(data), 'data_quality_score': self._calculate_quality_score(data), 'recommendations': self._generate_recommendations(data)}
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'data_shape': data.shape,
+                'data_types': data.dtypes.to_dict(),
+                'null_analysis': self._analyze_nulls(data),
+                'duplicate_analysis': self._analyze_duplicates(data),
+                'outlier_analysis': self._analyze_outliers(data),
+                'data_quality_score': self._calculate_quality_score_percentage(data),
+                'recommendations': self._generate_recommendations(data)
+            }
         except Exception as e:
             self.logger.exception(f'Error generating quality report: {e}')
             return {'error': str(e)}
@@ -362,8 +406,8 @@ class DataQualityFramework:
             self.logger.exception(f'Error analyzing outliers: {e}')
             return {'error': str(e)}
 
-    def _calculate_quality_score(self, data: pd.DataFrame) -> float:
-        """Calculate overall data quality score (0-100)."""
+    def _calculate_quality_score_percentage(self, data: pd.DataFrame) -> float:
+        """Calculate overall data quality score as percentage (0-100)."""
         try:
             score = 100.0
             null_percentage = data.isnull().sum().sum() / (len(data) * len(data.columns)) * 100
@@ -473,15 +517,48 @@ class DataQualityFramework:
         """
         if not self.quality_policies['profiling_enabled']:
             return {'profiling_disabled': True}
-        profile = {'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'memory_usage': data.memory_usage(deep=True).sum(), 'columns': {}, 'summary': {'total_rows': len(data), 'total_columns': len(data.columns), 'missing_values': data.isnull().sum().sum(), 'duplicate_rows': data.duplicated().sum(), 'numeric_columns': len(data.select_dtypes(include=[np.number]).columns), 'categorical_columns': len(data.select_dtypes(include=['object']).columns), 'datetime_columns': len(data.select_dtypes(include=['datetime']).columns)}}
+        profile = {
+            'timestamp': datetime.now().isoformat(),
+            'data_shape': data.shape,
+            'memory_usage': data.memory_usage(deep=True).sum(),
+            'columns': {},
+            'summary': {
+                'total_rows': len(data),
+                'total_columns': len(data.columns),
+                'missing_values': data.isnull().sum().sum(),
+                'duplicate_rows': data.duplicated().sum(),
+                'numeric_columns': len(data.select_dtypes(include=[np.number]).columns),
+                'categorical_columns': len(data.select_dtypes(include=['object']).columns),
+                'datetime_columns': len(data.select_dtypes(include=['datetime']).columns)
+            }
+        }
         for column in data.columns:
             col_data = data[column]
-            col_profile = {'dtype': str(col_data.dtype), 'missing_count': col_data.isnull().sum(), 'missing_ratio': col_data.isnull().sum() / len(col_data), 'unique_count': col_data.nunique(), 'unique_ratio': col_data.nunique() / len(col_data)}
+            col_profile = {
+                'dtype': str(col_data.dtype),
+                'missing_count': col_data.isnull().sum(),
+                'missing_ratio': col_data.isnull().sum() / len(col_data),
+                'unique_count': col_data.nunique(),
+                'unique_ratio': col_data.nunique() / len(col_data)
+            }
             if pd.api.types.is_numeric_dtype(col_data):
-                col_profile.update({'min': float(col_data.min()) if not col_data.isna().all() else None, 'max': float(col_data.max()) if not col_data.isna().all() else None, 'mean': float(col_data.mean()) if not col_data.isna().all() else None, 'median': float(col_data.median()) if not col_data.isna().all() else None, 'std': float(col_data.std()) if not col_data.isna().all() else None, 'zero_count': (col_data == 0).sum(), 'negative_count': (col_data < 0).sum(), 'infinite_count': np.isinf(col_data).sum()})
+                col_profile.update({
+                    'min': float(col_data.min()) if not col_data.isna().all() else None,
+                    'max': float(col_data.max()) if not col_data.isna().all() else None,
+                    'mean': float(col_data.mean()) if not col_data.isna().all() else None,
+                    'median': float(col_data.median()) if not col_data.isna().all() else None,
+                    'std': float(col_data.std()) if not col_data.isna().all() else None,
+                    'zero_count': (col_data == 0).sum(),
+                    'negative_count': (col_data < 0).sum(),
+                    'infinite_count': np.isinf(col_data).sum()
+                })
             elif pd.api.types.is_object_dtype(col_data):
                 value_counts = col_data.value_counts()
-                col_profile.update({'top_values': value_counts.head(5).to_dict(), 'empty_string_count': (col_data == '').sum(), 'whitespace_only_count': col_data.astype(str).str.strip().eq('').sum()})
+                col_profile.update({
+                    'top_values': value_counts.head(5).to_dict(),
+                    'empty_string_count': (col_data == '').sum(),
+                    'whitespace_only_count': col_data.astype(str).str.strip().eq('').sum()
+                })
             profile['columns'][column] = col_profile
         return profile
 
@@ -495,10 +572,20 @@ class DataQualityFramework:
         Returns:
             Quality report
         """
-        report = {'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'validation_results': self.validate_data(data), 'quality_score': self.calculate_quality_score(data)}
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'data_shape': data.shape,
+            'validation_results': self.validate_data(data),
+            'quality_score': self.calculate_quality_score(data)
+        }
         if include_profile:
             report['data_profile'] = self.profile_data(data)
-        report['quality_metrics'] = {'completeness': self._calculate_completeness_score(data), 'consistency': self._calculate_consistency_score(data), 'accuracy': self._calculate_accuracy_score(data), 'timeliness': self._calculate_timeliness_score(data)}
+        report['quality_metrics'] = {
+            'completeness': self._calculate_completeness_score(data),
+            'consistency': self._calculate_consistency_score(data),
+            'accuracy': self._calculate_accuracy_score(data),
+            'timeliness': self._calculate_timeliness_score(data)
+        }
         return report
 
     def calculate_quality_score(self, data: pd.DataFrame) -> float:
@@ -561,6 +648,7 @@ class DataQualityFramework:
             now = pd.Timestamp.now()
             time_diff = abs((timestamps - now).dt.total_seconds())
             return 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)
-        except:
+        except (ValueError, TypeError, pd.errors.ParserError) as e:
+            self.logger.warning(f'Error calculating timeliness score: {e}')
             return 0.5
 data_quality_framework = DataQualityFramework()

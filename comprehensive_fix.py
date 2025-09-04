@@ -55,7 +55,7 @@ def fix_exception_handling(content):
 def fix_decorator_parameters(content):
     """Fix broken decorator parameters"""
     # Fix decorator parameter assignments
-    content = re.sub(r'(\w+') = (\w+) = (\w+)', r'\1=\2, \3', content)
+    content = re.sub(r'(\w+) = (\w+) = (\w+)', r'\1=\2, \3', content)
     
     return content
 

@@ -215,30 +215,11 @@ class SRWeightOptimizer:
         """
         try:
             # Define weight ranges for different SR methods
-            weight_ranges = {
-                "fractal_weight": np.arange(0.1, 1.0, 0.1),
-                "volume_weight": np.arange(0.1, 1.0, 0.1),
-                "pivot_weight": np.arange(0.1, 1.0, 0.1),
-                "atr_weight": np.arange(0.1, 1.0, 0.1),
-            }
-
-            # Generate all combinations
-            combinations = []
-            for fractal_w in weight_ranges["fractal_weight"]:
-                for volume_w in weight_ranges["volume_weight"]:
-                    for pivot_w in weight_ranges["pivot_weight"]:
-                        for atr_w in weight_ranges["atr_weight"]:
-                            # Normalize weights to sum to 1
-                            total_weight = fractal_w + volume_w + pivot_w + atr_w
-                            if total_weight > 0:
-                                weights = {
-                                    "fractal_weight": fractal_w / total_weight,
-                                    "volume_weight": volume_w / total_weight,
-                                    "pivot_weight": pivot_w / total_weight,
-                                    "atr_weight": atr_w / total_weight,
-                                }
-                                combinations.append(weights)
-
+            weight_ranges = self._get_weight_ranges()
+            
+            # Generate combinations using itertools
+            combinations = self._create_weight_combinations(weight_ranges)
+            
             return combinations
 
         except Exception as e:
@@ -246,6 +227,43 @@ class SRWeightOptimizer:
                 failed(f"❌ Error generating weight combinations: {e}")
             )
             return []
+
+    def _get_weight_ranges(self) -> dict[str, np.ndarray]:
+        """Get weight ranges for different SR methods."""
+        return {
+            "fractal_weight": np.arange(0.1, 1.0, 0.1),
+            "volume_weight": np.arange(0.1, 1.0, 0.1),
+            "pivot_weight": np.arange(0.1, 1.0, 0.1),
+            "atr_weight": np.arange(0.1, 1.0, 0.1),
+        }
+
+    def _create_weight_combinations(self, weight_ranges: dict[str, np.ndarray]) -> list[dict[str, float]]:
+        """Create weight combinations using itertools to avoid deep nesting."""
+        import itertools
+        
+        combinations = []
+        range_values = list(weight_ranges.values())
+        
+        # Generate all combinations using itertools.product
+        for combination in itertools.product(*range_values):
+            fractal_w, volume_w, pivot_w, atr_w = combination
+            
+            # Normalize weights to sum to 1
+            total_weight = fractal_w + volume_w + pivot_w + atr_w
+            if total_weight > 0:
+                weights = self._normalize_weights(fractal_w, volume_w, pivot_w, atr_w, total_weight)
+                combinations.append(weights)
+        
+        return combinations
+
+    def _normalize_weights(self, fractal_w: float, volume_w: float, pivot_w: float, atr_w: float, total_weight: float) -> dict[str, float]:
+        """Normalize weights to sum to 1."""
+        return {
+            "fractal_weight": fractal_w / total_weight,
+            "volume_weight": volume_w / total_weight,
+            "pivot_weight": pivot_w / total_weight,
+            "atr_weight": atr_w / total_weight,
+        }
 
     async def _test_weights(
         self,

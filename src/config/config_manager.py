@@ -12,6 +12,7 @@ from typing import Any
 
 from .config_confidence import get_confidence_config, get_confidence_search_space
 from .config_ensemble import get_ensemble_config, get_ensemble_search_space
+from .config_intensity import get_intensity_config, get_intensity_search_space
 from .config_leverage import get_leverage_config, get_leverage_search_space
 from .config_position_sizing import (
     get_position_sizing_config,
@@ -57,6 +58,7 @@ class ConfigManager:
         # Load optimizable configurations
         self._optimizable_configs = {
             "confidence": get_confidence_config(),
+            "intensity": get_intensity_config(),
             "position_sizing": get_position_sizing_config(),
             "leverage": get_leverage_config(),
             "tpsl": get_tpsl_config(),
@@ -72,6 +74,7 @@ class ConfigManager:
         # Load search spaces for optimization
         self._search_spaces = {
             "confidence": get_confidence_search_space(),
+            "intensity": get_intensity_search_space(),
             "position_sizing": get_position_sizing_search_space(),
             "leverage": get_leverage_search_space(),
             "tpsl": get_tpsl_search_space(),

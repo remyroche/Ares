@@ -309,13 +309,32 @@ class ConfidenceBasedEntryLogic:
         # But entry decision considers both 25% and 50% confidence
         selected_barriers = (0.001, 0.0005)  # 50% of analyst barriers
         
-        # Calculate position size multiplier based on confidence
-        if combined_confidence >= 0.8:
-            size_multiplier = self.high_confidence_size_boost
-        elif combined_confidence >= 0.7:
-            size_multiplier = 1.0
-        else:
-            size_multiplier = self.low_confidence_size_reduction
+        # Calculate position size multiplier using linear confidence scaling
+        from src.utils.linear_confidence_scaling import LinearConfidenceScaler
+        
+        # Create linear scaler with current config
+        linear_scaler = LinearConfidenceScaler({
+            "confidence": {
+                "confidence_min_threshold": 0.6,
+                "confidence_max_threshold": 0.95,
+                "confidence_min_multiplier": self.low_confidence_size_reduction,
+                "confidence_max_multiplier": self.high_confidence_size_boost,
+                "confidence_scaling_factor": 1.0
+            }
+        })
+        
+        # Extract intensity and reliability from market context
+        intensity = market_context.get("intensity", 1.0)
+        reliability = market_context.get("reliability", 1.0)
+        risk_score = market_context.get("risk_score", 0.0)
+        
+        # Calculate linear confidence multiplier
+        size_multiplier = linear_scaler.calculate_position_size_multiplier(
+            confidence=combined_confidence,
+            intensity=intensity,
+            reliability=reliability,
+            risk_score=risk_score
+        )
         
         # Adjust for market conditions
         if market_context.get("high_volatility", False):

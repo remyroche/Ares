@@ -6,6 +6,7 @@ and feature importance ranking.
 """
 
 from src.core.decorators import handles_errors
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -232,26 +233,13 @@ class FractionalFeatureSelector:
             importance_scores = {}
             
             # 1. F-regression scores
-            try:
-                f_scores, _ = f_regression(features, labels)
-                importance_scores['f_regression'] = pd.Series(f_scores, index=features.columns)
-            except:
-                importance_scores['f_regression'] = pd.Series(0.0, index=features.columns)
+            importance_scores['f_regression'] = self._calculate_f_regression_scores(features, labels)
             
             # 2. Mutual information scores
-            try:
-                mi_scores = mutual_info_regression(features, labels, random_state=42)
-                importance_scores['mutual_info'] = pd.Series(mi_scores, index=features.columns)
-            except:
-                importance_scores['mutual_info'] = pd.Series(0.0, index=features.columns)
+            importance_scores['mutual_info'] = self._calculate_mutual_info_scores(features, labels)
             
             # 3. Random Forest importance
-            try:
-                rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
-                rf.fit(features, labels)
-                importance_scores['random_forest'] = pd.Series(rf.feature_importances_, index=features.columns)
-            except:
-                importance_scores['random_forest'] = pd.Series(0.0, index=features.columns)
+            importance_scores['random_forest'] = self._calculate_random_forest_scores(features, labels)
             
             # Combine importance scores
             combined_importance = pd.Series(0.0, index=features.columns)
@@ -681,9 +669,6 @@ class FractionalFeatureSelector:
             
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
-            import json
-from src.core.decorators.errors import handles_errors
-            
             with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)
             
@@ -751,3 +736,52 @@ def get_fractional_feature_selector_config(
         'alignment_window': alignment_window,
         'alignment_threshold': alignment_threshold
     }
+
+    def _calculate_f_regression_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
+        """Calculate F-regression scores safely.
+        
+        Args:
+            features: Features DataFrame
+            labels: Labels Series
+            
+        Returns:
+            F-regression scores Series
+        """
+        try:
+            f_scores, _ = f_regression(features, labels)
+            return pd.Series(f_scores, index=features.columns)
+        except Exception:
+            return pd.Series(0.0, index=features.columns)
+
+    def _calculate_mutual_info_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
+        """Calculate mutual information scores safely.
+        
+        Args:
+            features: Features DataFrame
+            labels: Labels Series
+            
+        Returns:
+            Mutual information scores Series
+        """
+        try:
+            mi_scores = mutual_info_regression(features, labels, random_state=42)
+            return pd.Series(mi_scores, index=features.columns)
+        except Exception:
+            return pd.Series(0.0, index=features.columns)
+
+    def _calculate_random_forest_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
+        """Calculate Random Forest importance scores safely.
+        
+        Args:
+            features: Features DataFrame
+            labels: Labels Series
+            
+        Returns:
+            Random Forest importance scores Series
+        """
+        try:
+            rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
+            rf.fit(features, labels)
+            return pd.Series(rf.feature_importances_, index=features.columns)
+        except Exception:
+            return pd.Series(0.0, index=features.columns)

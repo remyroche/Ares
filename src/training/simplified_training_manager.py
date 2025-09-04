@@ -313,7 +313,6 @@ class SimplifiedTrainingManager:
         try:
             # Import the module
             import importlib
-from src.core.decorators.errors import handles_errors
             module = importlib.import_module(step_config.module_path)
             
             # Get the class

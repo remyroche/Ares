@@ -48,7 +48,7 @@ def fix_import_statements(content):
 def fix_exception_handling(content):
     """Fix broken exception handling"""
     # Fix except clauses
-    content = re.sub(r'except \((\w+') = (\w+)\):', r'except (\1, \2):', content)
+    content = re.sub(r'except \((\w+), (\w+)\):', r'except (\1, \2):', content)
     
     return content
 

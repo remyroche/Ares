@@ -343,7 +343,7 @@ class TrainingManager:
 
     @handles_errors(fallback=False)
     def _validate_training_inputs(self, training_input: dict[str, Any]) -> bool:
-        """Validate training inputs."
+        """Validate training inputs."""
 
         Args:
             training_input: Training input dictionary

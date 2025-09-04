@@ -870,7 +870,7 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handles_errors(Exception,, fallback=None,
+    @handles_errors(Exception, fallback=None,
         context="Binance exchange cleanup",
     )
 
@@ -892,11 +892,10 @@ class BinanceExchange:
 # Global Binance exchange instance
 binance_exchange: BinanceExchange | None = None
 
-@handles_errors(Exception,, fallback=None,
+@handles_errors(Exception, fallback=None,
     context="Binance exchange setup",
     )
-
-    async def setup_binance_exchange(
+async def setup_binance_exchange(
     config: dict[str, Any] | None = None,
 ) -> BinanceExchange | None:
     """

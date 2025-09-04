@@ -28,7 +28,7 @@ class PipelineStandards:
     """Simplified pipeline standards for standalone execution."""
     
     FILE_NAMING = {
-        'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet',
+        'klines': 'klines_{exchange}_{asset}_{timeframe}_{year}_{month:02d}.parquet',
         'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet',
         'futures': 'futures_{exchange}_{asset}_consolidated.parquet',
         'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet',
@@ -81,13 +81,27 @@ class PipelineStandards:
         if file_type not in PipelineStandards.FILE_NAMING:
             raise ValueError(f'Unknown file type: {file_type}')
         template = PipelineStandards.FILE_NAMING[file_type]
-        params = {
-            'exchange': exchange.upper(),
-            'asset': asset.upper(),
-            'timeframe': timeframe or '1m',
-            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
-            **kwargs
-        }
+        
+        # For klines, add year and month for monthly storage
+        if file_type == 'klines':
+            now = datetime.now()
+            params = {
+                'exchange': exchange.upper(),
+                'asset': asset.upper(),
+                'timeframe': timeframe or '1m',
+                'year': now.year,
+                'month': now.month,
+                'timestamp': now.strftime('%Y%m%d_%H%M%S'),
+                **kwargs
+            }
+        else:
+            params = {
+                'exchange': exchange.upper(),
+                'asset': asset.upper(),
+                'timeframe': timeframe or '1m',
+                'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+                **kwargs
+            }
         return template.format(**params)
     
     @staticmethod
@@ -448,10 +462,10 @@ class StandaloneDataCollectionPipeline:
     
     async def _collect_klines_data(self) -> pd.DataFrame:
         """Collect klines data from exchange (simulated)."""
-        # Dynamic data collection - simulate realistic market hours
-        # Collect data for the last 24 hours (1440 minutes)
+        # Dynamic data collection - 27 days with no gaps for monthly storage
+        # Collect data for the last 27 days (38880 minutes)
         end_time = datetime.now()
-        start_time = end_time - timedelta(hours=24)
+        start_time = end_time - timedelta(days=27)
         dates = pd.date_range(start=start_time, end=end_time, freq='1min')
         
         # Generate realistic OHLCV data
@@ -480,7 +494,7 @@ class StandaloneDataCollectionPipeline:
         df['close'] = np.abs(df['close'])
         df['volume'] = np.abs(df['volume'])
         
-        self.logger.info(f"Collected {len(df)} rows of klines data for {self.symbol} on {self.exchange}")
+        self.logger.info(f"Collected {len(df)} rows of klines data for {self.symbol} on {self.exchange} (27 days, no gaps)")
         return df
     
     async def _collect_aggtrades_data(self) -> pd.DataFrame:
@@ -538,12 +552,12 @@ class StandaloneDataCollectionPipeline:
     
     async def _collect_futures_data(self) -> pd.DataFrame:
         """Collect futures data from exchange (simulated)."""
-        # Dynamic futures data collection - simulate realistic funding rate updates
+        # Dynamic futures data collection - 27 days with no gaps
         # Funding rates are typically updated every 8 hours
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=30)  # Last 30 days of funding data
+        start_time = end_time - timedelta(days=27)  # Exactly 27 days of funding data
         
-        # Generate funding rate timestamps (every 8 hours)
+        # Generate funding rate timestamps (every 8 hours) with no gaps
         funding_times = []
         current_time = start_time
         while current_time <= end_time:
@@ -570,7 +584,7 @@ class StandaloneDataCollectionPipeline:
         df['index_price'] = np.abs(df['index_price'])
         df['fundingRate'] = np.clip(df['fundingRate'], -0.01, 0.01)  # Clamp to realistic range
         
-        self.logger.info(f"Collected {len(df)} rows of futures data for {self.symbol} on {self.exchange}")
+        self.logger.info(f"Collected {len(df)} rows of futures data for {self.symbol} on {self.exchange} (27 days, no gaps)")
         return df
     
     def _resample_data(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:

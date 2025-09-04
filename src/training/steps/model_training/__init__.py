@@ -51,42 +51,202 @@ from .per_regime_pipeline_config import PerRegimePipelineConfig
 from .per_regime_pipeline_integration import PerRegimePipelineIntegration
 from .per_regime_pipeline_orchestrator import PerRegimePipelineOrchestrator
 
-# Import enhanced pipeline
-from .enhanced_model_training_pipeline import (
-    EnhancedModelTrainingPipeline,
-    run_enhanced_model_training_pipeline,
+# Import core decorators for enhanced pipeline
+from src.core.decorators import (
+    handles_errors,
+    retry,
+    timeout,
+    log_execution_time,
+    traced,
+    validates,
+    validate_dataframe,
+)
+from src.utils.compat import handle_errors
+from src.utils.logger import system_logger
+from src.utils.pipeline_validation_utils import (
+    pipeline_validator,
+    validate_pipeline_step,
+    get_pipeline_validation_summary,
+)
+from src.utils.common_operations import (
+    validate_dataframe_integrity,
+    validate_pipeline_step_output,
 )
 
-# Main pipeline function
-async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **config):
-    """Run the complete model training pipeline with enhanced validation."""
+# Main pipeline function with enhanced validation and error handling
+@handles_errors(
+    fallback=False,
+    log_level="ERROR",
+    include_traceback=True
+)
+@retry(
+    max_attempts=3,
+    backoff_factor=2.0,
+    exceptions=(ConnectionError, TimeoutError, ValueError)
+)
+@timeout(seconds=3600)  # 1 hour timeout
+@log_execution_time
+@traced
+@validates(strict=True)
+async def run_model_training_pipeline(
+    symbol: str, 
+    exchange: str, 
+    timeframe: str, 
+    data_dir: str, 
+    **config
+) -> bool:
+    """Run the complete model training pipeline with enhanced validation and error handling."""
+    logger = system_logger.getChild("ModelTrainingPipeline")
+    
+    logger.info(f"Starting model training pipeline for {symbol} on {exchange}")
+    logger.info(f"Configuration: {config}")
+    
     try:
-        # Use enhanced pipeline with comprehensive validation
-        pipeline_config = {
-            'data_dir': data_dir,
-            'hmm_training': config.get('hmm_training', True),
-            'regime_intelligence': config.get('regime_intelligence', True),
-            'analyst_creation': config.get('analyst_creation', True),
-            'analyst_enhancement': config.get('analyst_enhancement', True),
-            'ensemble_creation': config.get('ensemble_creation', True),
-            'tactician_training': config.get('tactician_training', True),
-            'force_rerun': config.get('force_rerun', False),
-            'random_state': config.get('random_state', 42),
-        }
-        
-        # Run enhanced pipeline
-        result = await run_enhanced_model_training_pipeline(
+        # Pre-pipeline validation
+        logger.info("Starting pre-pipeline validation")
+        data_loading_validation = await validate_pipeline_step(
+            "data_loading",
+            None,
+            "data_loading",
             symbol=symbol,
             exchange=exchange,
-            timeframe=timeframe,
-            config=pipeline_config
+            data_dir=data_dir
         )
         
-        return result.get('success', False)
+        if not data_loading_validation.get('is_valid', False):
+            logger.error("Pre-pipeline validation failed")
+            return False
+        
+        # Step 1: HMM-based Training (if enabled)
+        if config.get('hmm_training', True):
+            logger.info("Step 1: Starting HMM-based training")
+            hmm_trainer = HMMBasedTrainingStep()
+            hmm_result = await hmm_trainer.train_models(symbol, exchange, timeframe, data_dir)
+            
+            # Validate HMM training output
+            hmm_validation = await validate_pipeline_step(
+                "hmm_training",
+                hmm_result,
+                "model_training_output",
+                expected_metrics=['accuracy', 'loss', 'convergence_iterations']
+            )
+            
+            if not hmm_validation.get('is_valid', False):
+                logger.error("HMM training validation failed")
+                return False
+            
+            logger.info("Step 1: HMM-based training completed and validated")
+        
+        # Step 2: Unified Regime Intelligence (if enabled)
+        if config.get('regime_intelligence', True):
+            logger.info("Step 2: Starting unified regime intelligence")
+            regime_intelligence = UnifiedRegimeIntelligenceStep()
+            regime_result = await regime_intelligence.build_intelligence(symbol, exchange, timeframe, data_dir)
+            
+            # Validate regime intelligence output
+            regime_validation = await validate_pipeline_step(
+                "regime_intelligence",
+                regime_result,
+                "model_training_output",
+                expected_metrics=['regime_accuracy', 'transition_accuracy', 'confidence_score']
+            )
+            
+            if not regime_validation.get('is_valid', False):
+                logger.error("Regime intelligence validation failed")
+                return False
+            
+            logger.info("Step 2: Unified regime intelligence completed and validated")
+        
+        # Step 3: Analyst Creation (if enabled)
+        if config.get('analyst_creation', True):
+            logger.info("Step 3: Starting analyst creation")
+            analyst_creator = AnalystCreationStep()
+            analyst_result = await analyst_creator.create_analysts(symbol, exchange, timeframe, data_dir)
+            
+            # Validate analyst creation output
+            analyst_validation = await validate_pipeline_step(
+                "analyst_creation",
+                analyst_result,
+                "model_training_output",
+                expected_metrics=['creation_accuracy', 'model_count']
+            )
+            
+            if not analyst_validation.get('is_valid', False):
+                logger.error("Analyst creation validation failed")
+                return False
+            
+            logger.info("Step 3: Analyst creation completed and validated")
+        
+        # Step 4: Analyst Enhancement (if enabled)
+        if config.get('analyst_enhancement', True):
+            logger.info("Step 4: Starting analyst enhancement")
+            analyst_enhancer = AnalystEnhancementStep()
+            enhancement_result = await analyst_enhancer.enhance_analysts(symbol, exchange, timeframe, data_dir)
+            
+            # Validate analyst enhancement output
+            enhancement_validation = await validate_pipeline_step(
+                "analyst_enhancement",
+                enhancement_result,
+                "model_training_output",
+                expected_metrics=['enhancement_accuracy', 'improvement_scores']
+            )
+            
+            if not enhancement_validation.get('is_valid', False):
+                logger.error("Analyst enhancement validation failed")
+                return False
+            
+            logger.info("Step 4: Analyst enhancement completed and validated")
+        
+        # Step 5: Ensemble Creation (if enabled)
+        if config.get('ensemble_creation', True):
+            logger.info("Step 5: Starting ensemble creation")
+            ensemble_creator = AnalystEnsembleCreationStep()
+            ensemble_result = await ensemble_creator.create_ensembles(symbol, exchange, timeframe, data_dir)
+            
+            # Validate ensemble creation output
+            ensemble_validation = await validate_pipeline_step(
+                "ensemble_creation",
+                ensemble_result,
+                "model_training_output",
+                expected_metrics=['ensemble_accuracy', 'ensemble_count']
+            )
+            
+            if not ensemble_validation.get('is_valid', False):
+                logger.error("Ensemble creation validation failed")
+                return False
+            
+            logger.info("Step 5: Ensemble creation completed and validated")
+        
+        # Step 6: Tactician Training (if enabled)
+        if config.get('tactician_training', True):
+            logger.info("Step 6: Starting tactician training")
+            tactician_trainer = TacticianSpecialistTrainingStep()
+            tactician_result = await tactician_trainer.train_tacticians(symbol, exchange, timeframe, data_dir)
+            
+            # Validate tactician training output
+            tactician_validation = await validate_pipeline_step(
+                "tactician_training",
+                tactician_result,
+                "model_training_output",
+                expected_metrics=['accuracy', 'precision', 'recall', 'f1_score']
+            )
+            
+            if not tactician_validation.get('is_valid', False):
+                logger.error("Tactician training validation failed")
+                return False
+            
+            logger.info("Step 6: Tactician training completed and validated")
+        
+        # Get final validation summary
+        validation_summary = get_pipeline_validation_summary()
+        logger.info(f"Pipeline validation summary: {validation_summary['success_rate']:.2%} success rate")
+        
+        logger.info("Model training pipeline completed successfully with full validation")
+        return True
         
     except Exception as e:
-        print(f"Enhanced model training pipeline failed: {e}")
-        return False
+        logger.error(f"Model training pipeline failed: {e}")
+        raise
 
 __all__ = [
     'HMMBasedTrainingStep',
@@ -121,7 +281,5 @@ __all__ = [
     'PerRegimePipelineConfig',
     'PerRegimePipelineIntegration',
     'PerRegimePipelineOrchestrator',
-    'EnhancedModelTrainingPipeline',
-    'run_enhanced_model_training_pipeline',
     'run_model_training_pipeline'
 ]

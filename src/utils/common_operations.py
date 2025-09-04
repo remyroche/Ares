@@ -170,6 +170,90 @@ def safe_exception_handler(func: Callable) -> Callable:
             return None
     return wrapper
 
+def validate_dataframe_integrity(df: pd.DataFrame, required_columns: list[str] = None) -> dict[str, Any]:
+    """Validate DataFrame integrity with comprehensive checks."""
+    validation_results = {
+        'is_valid': True,
+        'errors': [],
+        'warnings': [],
+        'statistics': {}
+    }
+    
+    try:
+        # Check if DataFrame is empty
+        if df.empty:
+            validation_results['errors'].append("DataFrame is empty")
+            validation_results['is_valid'] = False
+            return validation_results
+        
+        # Check required columns
+        if required_columns:
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                validation_results['errors'].append(f"Missing required columns: {missing_columns}")
+                validation_results['is_valid'] = False
+        
+        # Check for duplicate rows
+        duplicate_count = df.duplicated().sum()
+        if duplicate_count > 0:
+            validation_results['warnings'].append(f"Found {duplicate_count} duplicate rows")
+        
+        # Check for missing values
+        missing_values = df.isnull().sum()
+        total_missing = missing_values.sum()
+        if total_missing > 0:
+            validation_results['warnings'].append(f"Found {total_missing} missing values")
+            validation_results['statistics']['missing_values'] = missing_values.to_dict()
+        
+        # Check for infinite values in numeric columns
+        numeric_columns = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_columns) > 0:
+            infinite_count = np.isinf(df[numeric_columns]).sum().sum()
+            if infinite_count > 0:
+                validation_results['errors'].append(f"Found {infinite_count} infinite values")
+                validation_results['is_valid'] = False
+        
+        # Calculate basic statistics
+        validation_results['statistics'].update({
+            'shape': df.shape,
+            'columns': list(df.columns),
+            'dtypes': df.dtypes.to_dict(),
+            'memory_usage': df.memory_usage(deep=True).sum(),
+            'numeric_columns': list(numeric_columns)
+        })
+        
+    except Exception as e:
+        validation_results['errors'].append(f"Validation error: {str(e)}")
+        validation_results['is_valid'] = False
+    
+    return validation_results
+
+def validate_pipeline_step_output(step_name: str, output_data: Any, expected_type: type = None) -> bool:
+    """Validate pipeline step output."""
+    try:
+        # Check if output is None
+        if output_data is None:
+            logging.getLogger(__name__).error(f"Pipeline step {step_name} returned None")
+            return False
+        
+        # Check expected type
+        if expected_type and not isinstance(output_data, expected_type):
+            logging.getLogger(__name__).error(f"Pipeline step {step_name} returned wrong type: {type(output_data)}, expected: {expected_type}")
+            return False
+        
+        # Additional validation for DataFrames
+        if isinstance(output_data, pd.DataFrame):
+            if output_data.empty:
+                logging.getLogger(__name__).warning(f"Pipeline step {step_name} returned empty DataFrame")
+                return False
+        
+        logging.getLogger(__name__).info(f"Pipeline step {step_name} output validation passed")
+        return True
+        
+    except Exception as e:
+        logging.getLogger(__name__).exception(f"Pipeline step {step_name} output validation failed: {e}")
+        return False
+
 def safe_float(value: Any, default: float=0.0) -> float:
     """Safely convert to float."""
     try:

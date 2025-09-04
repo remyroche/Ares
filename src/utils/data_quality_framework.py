@@ -9,6 +9,12 @@ from .enhanced_outlier_handler import OutlierSeverity, enhanced_outlier_handler
 from .logger import system_logger
 from copy import copy
 
+class DataQualityLevel(Enum):
+    """Data quality issue severity levels."""
+    CRITICAL = 'critical'
+    HIGH = 'high'
+    MEDIUM = 'medium'
+    LOW = 'low'
 
 class DataFormat(Enum):
     """Standard data formats."""
@@ -404,7 +410,55 @@ class DataQualityFramework:
             self.logger.exception(f'Error generating recommendations: {e}')
             return ['Error generating recommendations']
 
+    def format_data(self, data: pd.DataFrame, data_type: str='klines') -> pd.DataFrame:
+        """Format data according to standardized formats.
 
+        Args:
+            data: Data to format
+            data_type: Type of data (klines, features, etc.)
+
+        Returns:
+            Formatted data
+        """
+        formatted_data = data.copy()
+        if data_type == 'klines':
+            formatted_data = self._format_klines_data(formatted_data)
+        elif data_type == 'features':
+            formatted_data = self._format_features_data(formatted_data)
+        elif data_type == 'labels':
+            formatted_data = self._format_labels_data(formatted_data)
+        else:
+            self.logger.warning(f'Unknown data type for formatting: {data_type}')
+        return formatted_data
+
+    def _format_klines_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format klines data."""
+        formatted = data.copy()
+        if 'timestamp' in formatted.columns:
+            formatted['timestamp'] = pd.to_numeric(formatted['timestamp'], errors='coerce').astype('int64')
+        ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in ohlcv_columns:
+            if col in formatted.columns:
+                formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('float64')
+        if 'timestamp' in formatted.columns:
+            formatted = formatted.sort_values('timestamp').reset_index(drop=True)
+        return formatted
+
+    def _format_features_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format features data."""
+        formatted = data.copy()
+        numeric_columns = formatted.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('float64')
+        return formatted.replace([np.inf, -np.inf], np.nan)
+
+    def _format_labels_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format labels data."""
+        formatted = data.copy()
+        label_columns = [col for col in formatted.columns if 'label' in col.lower()]
+        for col in label_columns:
+            formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('int64')
+        return formatted
 
     def profile_data(self, data: pd.DataFrame) -> dict[str, Any]:
         """Generate comprehensive data profile.

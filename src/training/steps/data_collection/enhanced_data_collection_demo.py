@@ -32,12 +32,12 @@ from .enhanced_validation_framework_with_decorators import (
 )
 from .exchange_field_mappings import get_exchange_mapper, list_supported_exchanges
 from .enhanced_api_agnostic_data_collector import (
-from src.core.decorators.errors import handles_errors
     EnhancedAPIAgnosticDataCollector,
     collect_data_for_period,
     collect_incremental_data,
     detect_and_fill_gaps
 )
+from src.core.decorators.errors import handles_errors
 
 logger = system_logger.getChild("EnhancedDataCollectionDemo")
 

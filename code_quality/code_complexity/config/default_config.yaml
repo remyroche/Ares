@@ -1,0 +1,51 @@
+# Default Configuration for Code Complexity Analysis Pipeline
+
+tools:
+  pyexamine:
+    enabled: true
+    timeout: 30
+    options: []
+    
+  radon:
+    enabled: true
+    timeout: 30
+    options: ["--json"]
+    
+  xenon:
+    enabled: true
+    timeout: 30
+    options: ["--json"]
+
+analysis:
+  include_tests: false
+  include_docs: false
+  max_file_size_mb: 10
+  max_line_count: 10000
+  recursive: true
+
+thresholds:
+  complexity: 0.5
+  cyclomatic_complexity: 10
+  maintainability: 50
+  xenon_score: 5.0
+
+output:
+  json: true
+  html: true
+  markdown: true
+  summary: true
+  include_details: true
+
+ignore_patterns:
+  - __pycache__
+  - .git
+  - .pytest_cache
+  - venv
+  - env
+  - .venv
+  - .env
+  - node_modules
+  - .tox
+  - build
+  - dist
+  - "*.egg-info"

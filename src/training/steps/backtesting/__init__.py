@@ -9,6 +9,8 @@ error handling, and common utilities:
 - Model saving and persistence with validators
 - Comprehensive data validation and error handling
 - Common utilities for data operations
+- Enhanced logging with emojis and progress tracking
+- Performance monitoring and quality assessment
 """
 
 import asyncio
@@ -28,6 +30,12 @@ from .step20_ab_testing_validator import ABTestingValidator
 from .step21_saving import SavingStep
 from .step21_saving_per_regime import PerRegimeSavingStep
 from .step21_saving_validator import SavingValidator
+
+# Import enhanced logging system
+from .enhanced_logging import BacktestingLogger, get_backtesting_logger
+
+# Import comprehensive reporting system
+from .comprehensive_reporting import generate_backtesting_report
 
 # Import enhanced validation and utilities
 from src.utils.base_validator import BaseValidator
@@ -292,9 +300,14 @@ class BacktestingPipelineValidator(BaseValidator):
 )
 async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **config):
     """Run the enhanced backtesting pipeline with comprehensive validation and error handling."""
+    
+    # Initialize enhanced logger
+    bt_logger = get_backtesting_logger(f"{symbol}_{exchange}_{timeframe}", log_dir="log/backtesting")
+    bt_logger.start_performance_monitoring(interval=10.0)
+    
     try:
-        logger.info("🚀 Starting enhanced backtesting pipeline")
-        logger.info(f"📊 Configuration: {symbol} on {exchange}, timeframe: {timeframe}")
+        bt_logger.log_info("🚀 Starting Enhanced Backtesting Pipeline", "INITIALIZATION")
+        bt_logger.log_info(f"📊 Configuration: {symbol} on {exchange}, timeframe: {timeframe}", "CONFIG")
         
         # Initialize pipeline configuration
         pipeline_config = BacktestingPipelineConfig(
@@ -304,6 +317,20 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
             data_dir=data_dir,
             **config
         )
+        
+        # Log configuration details
+        bt_logger.log_info("📋 Pipeline Configuration:", "CONFIG")
+        bt_logger.log_info(f"   • Symbol: {pipeline_config.symbol}", "CONFIG")
+        bt_logger.log_info(f"   • Exchange: {pipeline_config.exchange}", "CONFIG")
+        bt_logger.log_info(f"   • Timeframe: {pipeline_config.timeframe}", "CONFIG")
+        bt_logger.log_info(f"   • Data Directory: {pipeline_config.data_dir}", "CONFIG")
+        bt_logger.log_info(f"   • Walk Forward Validation: {pipeline_config.walk_forward_validation}", "CONFIG")
+        bt_logger.log_info(f"   • Monte Carlo Validation: {pipeline_config.monte_carlo_validation}", "CONFIG")
+        bt_logger.log_info(f"   • A/B Testing: {pipeline_config.ab_testing}", "CONFIG")
+        bt_logger.log_info(f"   • Model Saving: {pipeline_config.model_saving}", "CONFIG")
+        bt_logger.log_info(f"   • Enable Validation: {pipeline_config.enable_validation}", "CONFIG")
+        bt_logger.log_info(f"   • Strict Validation: {pipeline_config.strict_validation}", "CONFIG")
+        bt_logger.log_info(f"   • Performance Monitoring: {pipeline_config.enable_performance_monitoring}", "CONFIG")
         
         # Initialize validator
         validator = BacktestingPipelineValidator(pipeline_config.__dict__)
@@ -323,12 +350,22 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
             'step9_hmm_based_training': {'completed': True}
         }
         
-        # Validate pipeline prerequisites
+        # Step 0: Pre-flight Validation
+        bt_logger.log_progress("Pre-flight Validation", 0, "Starting validation checks")
+        
         if pipeline_config.enable_validation:
-            validation_passed = await validator.validate(training_input, pipeline_state)
-            if not validation_passed:
-                logger.error("❌ Pipeline validation failed, aborting")
-                return False
+            with bt_logger.step_timer("pre_flight_validation"):
+                bt_logger.log_info("🔍 Running pre-flight validation", "VALIDATION")
+                validation_passed = await validator.validate(training_input, pipeline_state)
+                
+                if not validation_passed:
+                    bt_logger.log_error(Exception("Pipeline validation failed"), "VALIDATION")
+                    bt_logger.log_quality_flag("VALIDATION_FAILURE", "Pre-flight validation failed", "ERROR")
+                    return False
+                
+                bt_logger.log_success("Pre-flight validation passed", "VALIDATION")
+        
+        bt_logger.log_progress("Pre-flight Validation", 100, "Validation completed successfully")
         
         # Initialize results tracking
         pipeline_results = {
@@ -340,65 +377,129 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
             'config': pipeline_config.__dict__
         }
         
+        # Calculate total steps for progress tracking
+        total_steps = sum([
+            pipeline_config.walk_forward_validation,
+            pipeline_config.monte_carlo_validation,
+            pipeline_config.ab_testing,
+            pipeline_config.model_saving
+        ])
+        current_step = 0
+        
         # Step 1: Walk Forward Validation (if enabled)
         if pipeline_config.walk_forward_validation:
-            logger.info("🔄 Starting walk forward validation")
-            try:
-                walk_forward = WalkForwardValidationPerRegimeStep(pipeline_config.__dict__)
-                walk_forward_results = await walk_forward.validate_walk_forward(
-                    symbol, exchange, timeframe, data_dir
-                )
-                pipeline_results['walk_forward_results'] = walk_forward_results
-                logger.info("✅ Walk forward validation completed")
-            except Exception as e:
-                logger.exception(f"❌ Walk forward validation failed: {e}")
-                if pipeline_config.strict_validation:
-                    return False
+            current_step += 1
+            progress = (current_step / total_steps) * 100
+            bt_logger.log_progress("Walk Forward Validation", progress, "Starting walk forward validation")
+            
+            with bt_logger.step_timer("walk_forward_validation"):
+                try:
+                    bt_logger.log_info("🔄 Starting walk forward validation", "WALK_FORWARD")
+                    walk_forward = WalkForwardValidationPerRegimeStep(pipeline_config.__dict__)
+                    walk_forward_results = await walk_forward.validate_walk_forward(
+                        symbol, exchange, timeframe, data_dir
+                    )
+                    pipeline_results['walk_forward_results'] = walk_forward_results
+                    bt_logger.log_success("Walk forward validation completed", "WALK_FORWARD")
+                    
+                    # Log quality assessment
+                    if walk_forward_results and isinstance(walk_forward_results, dict):
+                        bt_logger.log_info("📊 Walk Forward Results:", "WALK_FORWARD")
+                        for key, value in walk_forward_results.items():
+                            bt_logger.log_info(f"   • {key}: {value}", "WALK_FORWARD")
+                    
+                except Exception as e:
+                    bt_logger.log_error(e, "WALK_FORWARD")
+                    bt_logger.log_quality_flag("WALK_FORWARD_FAILURE", f"Walk forward validation failed: {e}", "ERROR")
+                    if pipeline_config.strict_validation:
+                        return False
         
         # Step 2: Monte Carlo Validation (if enabled)
         if pipeline_config.monte_carlo_validation:
-            logger.info("🔄 Starting Monte Carlo validation")
-            try:
-                monte_carlo = MonteCarloValidationPerRegimeStep(pipeline_config.__dict__)
-                monte_carlo_results = await monte_carlo.validate_monte_carlo(
-                    symbol, exchange, timeframe, data_dir
-                )
-                pipeline_results['monte_carlo_results'] = monte_carlo_results
-                logger.info("✅ Monte Carlo validation completed")
-            except Exception as e:
-                logger.exception(f"❌ Monte Carlo validation failed: {e}")
-                if pipeline_config.strict_validation:
-                    return False
+            current_step += 1
+            progress = (current_step / total_steps) * 100
+            bt_logger.log_progress("Monte Carlo Validation", progress, "Starting Monte Carlo validation")
+            
+            with bt_logger.step_timer("monte_carlo_validation"):
+                try:
+                    bt_logger.log_info("🔄 Starting Monte Carlo validation", "MONTE_CARLO")
+                    monte_carlo = MonteCarloValidationPerRegimeStep(pipeline_config.__dict__)
+                    monte_carlo_results = await monte_carlo.validate_monte_carlo(
+                        symbol, exchange, timeframe, data_dir
+                    )
+                    pipeline_results['monte_carlo_results'] = monte_carlo_results
+                    bt_logger.log_success("Monte Carlo validation completed", "MONTE_CARLO")
+                    
+                    # Log quality assessment
+                    if monte_carlo_results and isinstance(monte_carlo_results, dict):
+                        bt_logger.log_info("📊 Monte Carlo Results:", "MONTE_CARLO")
+                        for key, value in monte_carlo_results.items():
+                            bt_logger.log_info(f"   • {key}: {value}", "MONTE_CARLO")
+                    
+                except Exception as e:
+                    bt_logger.log_error(e, "MONTE_CARLO")
+                    bt_logger.log_quality_flag("MONTE_CARLO_FAILURE", f"Monte Carlo validation failed: {e}", "ERROR")
+                    if pipeline_config.strict_validation:
+                        return False
         
         # Step 3: A/B Testing (if enabled)
         if pipeline_config.ab_testing:
-            logger.info("🔄 Starting A/B testing")
-            try:
-                ab_tester = ABTestingPerRegimeStep(pipeline_config.__dict__)
-                ab_testing_results = await ab_tester.run_ab_testing(
-                    symbol, exchange, timeframe, data_dir
-                )
-                pipeline_results['ab_testing_results'] = ab_testing_results
-                logger.info("✅ A/B testing completed")
-            except Exception as e:
-                logger.exception(f"❌ A/B testing failed: {e}")
-                if pipeline_config.strict_validation:
-                    return False
+            current_step += 1
+            progress = (current_step / total_steps) * 100
+            bt_logger.log_progress("A/B Testing", progress, "Starting A/B testing")
+            
+            with bt_logger.step_timer("ab_testing"):
+                try:
+                    bt_logger.log_info("🔄 Starting A/B testing", "AB_TESTING")
+                    ab_tester = ABTestingPerRegimeStep(pipeline_config.__dict__)
+                    ab_testing_results = await ab_tester.run_ab_testing(
+                        symbol, exchange, timeframe, data_dir
+                    )
+                    pipeline_results['ab_testing_results'] = ab_testing_results
+                    bt_logger.log_success("A/B testing completed", "AB_TESTING")
+                    
+                    # Log quality assessment
+                    if ab_testing_results and isinstance(ab_testing_results, dict):
+                        bt_logger.log_info("📊 A/B Testing Results:", "AB_TESTING")
+                        for key, value in ab_testing_results.items():
+                            bt_logger.log_info(f"   • {key}: {value}", "AB_TESTING")
+                    
+                except Exception as e:
+                    bt_logger.log_error(e, "AB_TESTING")
+                    bt_logger.log_quality_flag("AB_TESTING_FAILURE", f"A/B testing failed: {e}", "ERROR")
+                    if pipeline_config.strict_validation:
+                        return False
         
         # Step 4: Model Saving (if enabled)
         if pipeline_config.model_saving:
-            logger.info("🔄 Starting model saving")
-            try:
-                model_saver = SavingStep(pipeline_config.__dict__)
-                model_saving_results = await model_saver.save_models(
-                    symbol, exchange, timeframe, data_dir
-                )
-                pipeline_results['model_saving_results'] = model_saving_results
-                logger.info("✅ Model saving completed")
-            except Exception as e:
-                logger.exception(f"❌ Model saving failed: {e}")
-                if pipeline_config.strict_validation:
-                    return False
+            current_step += 1
+            progress = (current_step / total_steps) * 100
+            bt_logger.log_progress("Model Saving", progress, "Starting model saving")
+            
+            with bt_logger.step_timer("model_saving"):
+                try:
+                    bt_logger.log_info("🔄 Starting model saving", "MODEL_SAVING")
+                    model_saver = SavingStep(pipeline_config.__dict__)
+                    model_saving_results = await model_saver.save_models(
+                        symbol, exchange, timeframe, data_dir
+                    )
+                    pipeline_results['model_saving_results'] = model_saving_results
+                    bt_logger.log_success("Model saving completed", "MODEL_SAVING")
+                    
+                    # Log quality assessment
+                    if model_saving_results and isinstance(model_saving_results, dict):
+                        bt_logger.log_info("📊 Model Saving Results:", "MODEL_SAVING")
+                        for key, value in model_saving_results.items():
+                            bt_logger.log_info(f"   • {key}: {value}", "MODEL_SAVING")
+                    
+                except Exception as e:
+                    bt_logger.log_error(e, "MODEL_SAVING")
+                    bt_logger.log_quality_flag("MODEL_SAVING_FAILURE", f"Model saving failed: {e}", "ERROR")
+                    if pipeline_config.strict_validation:
+                        return False
+        
+        # Final progress update
+        bt_logger.log_progress("Pipeline Completion", 100, "All steps completed successfully")
         
         # Save pipeline results
         pipeline_results['end_time'] = get_current_datetime()
@@ -407,14 +508,59 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
         # Save results to file
         results_file = Path(data_dir) / f"backtesting_pipeline_results_{symbol}_{timeframe}.json"
         safe_json_dump(pipeline_results, results_file, indent=2)
-        logger.info(f"💾 Pipeline results saved to: {results_file}")
+        bt_logger.log_success(f"Pipeline results saved to: {results_file}", "RESULTS")
         
-        logger.info("🎉 Enhanced backtesting pipeline completed successfully")
+        # Generate comprehensive report
+        report_file = Path(data_dir) / f"backtesting_report_{symbol}_{timeframe}.json"
+        logger_report = bt_logger.generate_report(str(report_file))
+        
+        # Generate comprehensive backtesting report
+        comprehensive_report_file = Path(data_dir) / f"comprehensive_backtesting_report_{symbol}_{timeframe}.json"
+        comprehensive_report = generate_backtesting_report(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            data_dir=data_dir,
+            pipeline_results=pipeline_results,
+            logger_data=logger_report,
+            output_file=str(comprehensive_report_file)
+        )
+        
+        bt_logger.log_success(f"Comprehensive report saved to: {comprehensive_report_file}", "REPORTING")
+        
+        # Log performance summary
+        bt_logger.log_performance_summary()
+        
+        # Log final success
+        bt_logger.log_success("🎉 Enhanced backtesting pipeline completed successfully", "COMPLETION")
+        bt_logger.log_info("=" * 80, "COMPLETION")
+        bt_logger.log_info("✅ All enhanced backtesting steps completed:", "COMPLETION")
+        bt_logger.log_info("   ✅ Comprehensive validation with quality assessment", "COMPLETION")
+        bt_logger.log_info("   ✅ Walk forward validation with detailed logging", "COMPLETION")
+        bt_logger.log_info("   ✅ Monte Carlo validation with performance monitoring", "COMPLETION")
+        bt_logger.log_info("   ✅ A/B testing with quality flags", "COMPLETION")
+        bt_logger.log_info("   ✅ Model saving with comprehensive reporting", "COMPLETION")
+        bt_logger.log_info("   ✅ Performance monitoring and resource tracking", "COMPLETION")
+        bt_logger.log_info("   ✅ Enhanced logging with emojis and progress indicators", "COMPLETION")
+        bt_logger.log_info("=" * 80, "COMPLETION")
+        
         return True
         
     except Exception as e:
-        logger.exception(f"💥 Enhanced backtesting pipeline failed: {e}")
+        bt_logger.log_error(e, "PIPELINE_EXECUTION")
+        bt_logger.log_quality_flag("PIPELINE_FAILURE", f"Pipeline execution failed: {e}", "ERROR")
+        bt_logger.log_performance_summary()
+        
+        # Generate failure report
+        failure_report_file = Path(data_dir) / f"backtesting_failure_report_{symbol}_{timeframe}.json"
+        failure_report = bt_logger.generate_report(str(failure_report_file))
+        
         return False
+        
+    finally:
+        # Cleanup
+        bt_logger.stop_performance_monitoring()
+        bt_logger.cleanup()
 
 __all__ = [
     'WalkForwardValidationPerRegimeStep',

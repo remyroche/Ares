@@ -1115,13 +1115,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         if data_dir is None:
             data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
         from src.config.training import get_training_config
-from src.core.decorators.errors import handles_errors
+        from src.core.decorators.errors import handles_errors
         config = get_training_config()
         step = Step7EnhancedMatrixOperations(config)
-    except Exception as e:
-        system_logger.error(f'Failed to load training config: {e}')
-        return False
-        training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'asset': symbol, 'lookback_period': config.get('lookback_days', 1095), 'project_version': config.get('project_version', '1.0.0'), **kwargs}
+        
+        training_input = {
+            'symbol': symbol, 
+            'exchange': exchange, 
+            'timeframe': timeframe, 
+            'data_dir': data_dir, 
+            'force_rerun': force_rerun, 
+            'asset': symbol, 
+            'lookback_period': config.get('lookback_days', 1095), 
+            'project_version': config.get('project_version', '1.0.0'), 
+            **kwargs
+        }
         pipeline_state = {}
         result = await step.execute(training_input, pipeline_state)
         step_result = result.get('step07_enhanced_matrix_operations', {})

@@ -1,0 +1,90 @@
+2025-09-04 13:43:54,986 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 13:43:54
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_134354.log
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:54,986 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 13:43:54,986 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 13:43:54,986 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:43:55,245 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,245 - __main__ - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:43:55,246 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,245 - __main__ - INFO - 📊 Running step1_data_collection
+2025-09-04 13:43:55,247 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,247 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,248 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,248 - __main__ - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:43:55,348 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,348 - __main__ - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:43:55,350 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,349 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,378 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,378 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,379 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,379 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,380 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:522: FutureWarning: 'T' is deprecated and will be removed in a future version, please use 'min' instead.
+2025-09-04 13:43:55,380 - AresComponent.AresLauncher - INFO - resampled = df_resampled.resample(pandas_freq).agg({
+2025-09-04 13:43:55,383 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,383 - __main__ - INFO - Resampled data to 5m: 200 rows
+2025-09-04 13:43:55,385 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,384 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,385 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,385 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,386 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:522: FutureWarning: 'T' is deprecated and will be removed in a future version, please use 'min' instead.
+2025-09-04 13:43:55,386 - AresComponent.AresLauncher - INFO - resampled = df_resampled.resample(pandas_freq).agg({
+2025-09-04 13:43:55,388 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,388 - __main__ - INFO - Resampled data to 15m: 67 rows
+2025-09-04 13:43:55,390 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,390 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,391 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,391 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,392 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:522: FutureWarning: 'T' is deprecated and will be removed in a future version, please use 'min' instead.
+2025-09-04 13:43:55,392 - AresComponent.AresLauncher - INFO - resampled = df_resampled.resample(pandas_freq).agg({
+2025-09-04 13:43:55,393 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,393 - __main__ - INFO - Resampled data to 30m: 34 rows
+2025-09-04 13:43:55,395 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,395 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,396 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,396 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,397 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:522: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+2025-09-04 13:43:55,397 - AresComponent.AresLauncher - INFO - resampled = df_resampled.resample(pandas_freq).agg({
+2025-09-04 13:43:55,398 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,398 - __main__ - INFO - Resampled data to 1h: 17 rows
+2025-09-04 13:43:55,400 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,400 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,401 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,401 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,402 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:522: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+2025-09-04 13:43:55,402 - AresComponent.AresLauncher - INFO - resampled = df_resampled.resample(pandas_freq).agg({
+2025-09-04 13:43:55,403 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,403 - __main__ - INFO - Resampled data to 4h: 5 rows
+2025-09-04 13:43:55,405 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,405 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,406 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,406 - __main__ - INFO - Collected 1000 rows of klines data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,408 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,408 - __main__ - INFO - Resampled data to 1d: 1 rows
+2025-09-04 13:43:55,410 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,409 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,435 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,435 - __main__ - INFO - Collected 5000 rows of aggtrades data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,441 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,440 - __main__ - ERROR - Error in progressive append: StandaloneDataCollectionPipeline._check_data_quality() takes 2 positional arguments but 3 were given
+2025-09-04 13:43:55,441 - AresComponent.AresLauncher - INFO - /workspace/standalone_data_collection.py:494: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+2025-09-04 13:43:55,441 - AresComponent.AresLauncher - INFO - dates = pd.date_range(start='2024-01-01', periods=1000, freq='8H')  # Funding rate every 8 hours
+2025-09-04 13:43:55,446 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,446 - __main__ - INFO - Collected 1000 rows of futures data for ETHUSDT on BINANCE
+2025-09-04 13:43:55,448 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,448 - __main__ - ERROR - Error in step3_data_formatting: Unknown file type: futures
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 405, in _run_step3_data_formatting
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - filename = PipelineStandards.generate_file_name('futures', self.exchange, self.symbol)
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 81, in generate_file_name
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - raise ValueError(f'Unknown file type: {file_type}')
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ValueError: Unknown file type: futures
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 2025-09-04 13:43:55,448 - __main__ - ERROR - Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 🚀 Step 1: Enhanced Data Collection Pipeline
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 📊 Configuration:
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Symbol: ETHUSDT
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Exchange: BINANCE
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Data directory: data_cache
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Force rerun: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Quality checks: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Progressive append: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Collect klines: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Collect aggtrades: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - Collect futures: True
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 📊 Running step1_data_collection
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ❌ Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - 
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ❌ ENHANCED DATA COLLECTION FAILED!
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ❌ Please check the logs for error details
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ⏱️ Total execution time: 0.20 seconds
+2025-09-04 13:43:55,449 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:43:55,504 - AresComponent.AresLauncher - INFO - ✅ Data collection pipeline completed successfully
+2025-09-04 13:43:55,505 - AresTradingSystem - INFO - 🏁 Launcher ended: SUCCESS (exit code: 0)
+2025-09-04 13:43:55,505 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 13:43:55,505 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

@@ -1,0 +1,76 @@
+2025-09-04 13:19:40,343 - AresTradingSystem - INFO - 🚀 Launcher started: INITIALIZATION
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - 🚀 ARES COMPREHENSIVE LAUNCHER
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - Start time: 2025-09-04 13:19:40
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - Log directory: logs
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - Log level: INFO
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - Global log file: ares_global_20250904_131940.log
+2025-09-04 13:19:40,343 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,343 - AresTradingSystem - INFO - 🚀 Launcher started: data-collection
+2025-09-04 13:19:40,343 - AresTradingSystem - INFO - 📊 Symbol: ETHUSDT, Exchange: BINANCE
+2025-09-04 13:19:40,344 - AresComponent.AresLauncher - INFO - 📊 Running data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:40,565 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,565 - __main__ - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:40,565 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,565 - __main__ - INFO - 📊 Running step1_data_collection
+2025-09-04 13:19:40,567 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,567 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:19:40,568 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,568 - __main__ - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:19:40,669 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,668 - __main__ - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:19:40,670 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,670 - __main__ - INFO - Collected 1000 rows of raw data for ETHUSDT on BINANCE
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,671 - __main__ - ERROR - Error in step3_data_formatting: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - Traceback (most recent call last):
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 182, in _run_step3_data_formatting
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - formatted_data = await self._format_and_store_data()
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - File "/workspace/standalone_data_collection.py", line 287, in _format_and_store_data
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - formatted_data.to_parquet(output_file, index=False)
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/util/_decorators.py", line 333, in wrapper
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - return func(*args, **kwargs)
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/core/frame.py", line 3118, in to_parquet
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - return to_parquet(
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - self,
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - ...<6 lines>...
+2025-09-04 13:19:40,674 - AresComponent.AresLauncher - INFO - **kwargs,
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/io/parquet.py", line 478, in to_parquet
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - impl = get_engine(engine)
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - File "/home/ubuntu/.local/lib/python3.13/site-packages/pandas/io/parquet.py", line 68, in get_engine
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - raise ImportError(
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ...<7 lines>...
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - )
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - A suitable version of pyarrow or fastparquet is required for parquet support.
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Trying to import the above resulted in these errors:
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'pyarrow'. pyarrow is required for parquet support. Use pip or conda to install pyarrow.
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - - Missing optional dependency 'fastparquet'. fastparquet is required for parquet support. Use pip or conda to install fastparquet.
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 2025-09-04 13:19:40,674 - __main__ - ERROR - Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 🚀 Step 1: Enhanced Data Collection Pipeline
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 📊 Configuration:
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Symbol: ETHUSDT
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Exchange: BINANCE
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Timeframe: 1m
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Data directory: data_cache
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Force rerun: True
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - Quality checks: True
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 🚀 Starting enhanced data collection pipeline for ETHUSDT on BINANCE
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 📊 Running step1_data_collection
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 🔍 Running step2_data_validation
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 🔄 Running step3_data_formatting
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ❌ Pipeline failure: Step 3: Data Formatting failed
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - 
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ❌ ENHANCED DATA COLLECTION FAILED!
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ❌ Please check the logs for error details
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ⏱️ Total execution time: 0.11 seconds
+2025-09-04 13:19:40,675 - AresComponent.AresLauncher - INFO - ================================================================================
+2025-09-04 13:19:40,719 - AresComponent.AresLauncher - INFO - ✅ Data collection pipeline completed successfully
+2025-09-04 13:19:40,719 - AresTradingSystem - INFO - 🏁 Launcher ended: SUCCESS (exit code: 0)
+2025-09-04 13:19:40,719 - AresComponent.AresLauncher - INFO - 🧹 Cleaning up processes...
+2025-09-04 13:19:40,719 - AresComponent.AresLauncher - INFO - ✅ Cleanup completed

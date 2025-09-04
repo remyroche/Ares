@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from .logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 class OutlierSeverity(Enum):
     """Outlier severity levels."""

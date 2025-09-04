@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 class ModelRegistry:
     """Handles model registration and cataloging."""

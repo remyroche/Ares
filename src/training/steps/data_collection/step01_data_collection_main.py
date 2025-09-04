@@ -18,7 +18,8 @@ import json
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.data_collection import run_data_collection_pipeline
+# Import the standalone enhanced pipeline
+from src.training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
 
 async def main():
     """Main function to run data collection pipeline."""
@@ -53,13 +54,13 @@ async def main():
     start_time = time.time()
     
     try:
-        success = await run_data_collection_pipeline(
+        result = await run_standalone_enhanced_data_collection_pipeline(
             symbol=symbol,
             exchange=exchange,
-            timeframe=timeframe,
             data_dir=data_dir,
-            **config
+            config=config
         )
+        success = result.get("success", False)
         
         total_time = time.time() - start_time
         

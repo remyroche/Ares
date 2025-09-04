@@ -14,6 +14,7 @@ from src.core.decorators import (
 import asyncio
 from src.core.domain import PerformanceLevel
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 
 class MonitoringManager:

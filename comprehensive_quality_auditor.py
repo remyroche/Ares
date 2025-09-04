@@ -19,7 +19,6 @@ Usage:
 import argparse
 import csv
 import json
-import logging
 import sys
 import time
 from collections import defaultdict
@@ -27,16 +26,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("quality_audit.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-logger = logging.getLogger("ComprehensiveQualityAuditor")
+from centralized_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class QualityLevel:

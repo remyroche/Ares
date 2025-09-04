@@ -15,6 +15,7 @@ from src.core.decorators import handles_errors, traced
 from src.utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 
 

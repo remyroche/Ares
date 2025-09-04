@@ -56,6 +56,7 @@ try:
     from sklearn.mixture import GaussianMixture
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from src.core.decorators.errors import handles_errors
     HMM_AVAILABLE = True
 except ImportError:
     HMM_AVAILABLE = False

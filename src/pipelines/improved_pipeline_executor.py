@@ -153,6 +153,7 @@ class ImprovedPipelineExecutor:
         """Generate mock market data for testing."""
         import numpy as np
         import copy
+from src.core.decorators.errors import handles_errors
         
         # Generate realistic mock data
         base_price = 100.0

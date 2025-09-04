@@ -51,6 +51,7 @@ class OptimizedSRMethod(BaseSRMethod):
         
         # Import the strength optimizer
         from src.tactician.sr_strength_optimizer import SRLevelIdentifier
+from src.core.decorators.errors import handles_errors
         self.identifier = SRLevelIdentifier(config)
     
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:

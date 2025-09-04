@@ -4,7 +4,6 @@ Cryptocurrency Data Downloader for Scalping/Swinging Analysis
 Downloads 15-minute klines from Binance for multiple assets over 2 years
 """
 
-import logging
 import time
 import warnings
 from datetime import datetime, timedelta
@@ -13,18 +12,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from centralized_logging import get_logger
+
 warnings.filterwarnings("ignore")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("data_download.log"),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class BinanceDataDownloader:
     def __init__(self):

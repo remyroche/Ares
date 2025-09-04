@@ -25,6 +25,8 @@ from analyzers.documentation_analyzer import DocumentationAnalyzer
 from analyzers.metrics_analyzer import MetricsAnalyzer
 from analyzers.performance_analyzer import PerformanceAnalyzer
 from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
+from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
+from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
 from comprehensive_code_review import CodeQualityReviewer
 from enhanced_validator import EnhancedValidator
 from function_validator import FunctionValidator
@@ -36,6 +38,7 @@ from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.safe_import_fixer import SafeImportFixer
 from scripts.simple_interaction_mapper import extract_interactions, generate_interaction_summary
 from utils.report_aggregator import ReportAggregator
+from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 
 
 class UnifiedEnhancedPipeline:
@@ -572,6 +575,59 @@ class UnifiedEnhancedPipeline:
 
         return result
 
+    def run_static_analysis(self) -> dict[str, Any]:
+        """Run comprehensive static analysis."""
+        print("\n" + "="*60)
+        print("Running Comprehensive Static Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        
+        # Create a mock config for the analyzer
+        from core.config import get_default_config
+        config = get_default_config()
+        
+        analyzer = StaticAnalysisAnalyzer(config)
+        result = analyzer.analyze_directory(str(self.project_root))
+        result["execution_time"] = time.time() - start_time
+
+        # Add to aggregator
+        self.report_aggregator.add_static_analysis_results(result)
+
+        # Save report
+        report_path = self.reports_dir / f"static_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+        return result
+
+    def run_ast_analysis(self) -> dict[str, Any]:
+        """Run advanced AST analysis."""
+        print("\n" + "="*60)
+        print("Running Advanced AST Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        
+        # Create a mock config for the analyzer
+        from core.config import get_default_config
+        config = get_default_config()
+        
+        analyzer = ASTAnalysisAnalyzer(config)
+        result = analyzer.analyze_directory(str(self.project_root))
+        result["execution_time"] = time.time() - start_time
+
+        # Add to aggregator
+        self.report_aggregator.add_ast_analysis_results(result)
+
+        # Save report
+        report_path = self.reports_dir / f"ast_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+
+        return result
+
     def run_all(self) -> dict[str, Any]:
         """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
@@ -597,6 +653,7 @@ class UnifiedEnhancedPipeline:
 
         # Analysis
         self.results["analysis"] = {
+            "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
             "comprehensive_review": self.run_comprehensive_review(),
@@ -608,6 +665,8 @@ class UnifiedEnhancedPipeline:
             "performance": self.run_performance_analysis(),
             "configuration": self.run_configuration_analysis(),
             "data_flow": self.run_data_flow_analysis(),
+            "static_analysis": self.run_static_analysis(),
+            "ast_analysis": self.run_ast_analysis(),
         }
 
         # Generate summary
@@ -700,6 +759,29 @@ class UnifiedEnhancedPipeline:
         print(f"Total Directories: {summary['total_directories']}")
         print(f"Total Issues Found: {summary['total_issues']}")
         print(f"Issues Fixed: {summary['fixed_issues']}")
+
+        # Print enhanced dependency analysis results if available
+        if "enhanced_dependency_analysis" in self.results.get("analysis", {}):
+            eda = self.results["analysis"]["enhanced_dependency_analysis"]
+            print("\nEnhanced Dependency Analysis Results:")
+            print(f"  - Tools Used: {', '.join(eda.get('tools_used', []))}")
+            print(f"  - Undeclared Dependencies: {len(eda.get('undeclared_deps', []))}")
+            print(f"  - Unused Dependencies: {len(eda.get('unused_deps', []))}")
+            print(f"  - Total Issues: {eda.get('total_issues', 0)}")
+            
+            if eda.get('undeclared_deps'):
+                print("  - Undeclared Dependencies:")
+                for dep in eda['undeclared_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['undeclared_deps']) > 5:
+                    print(f"    ... and {len(eda['undeclared_deps']) - 5} more")
+            
+            if eda.get('unused_deps'):
+                print("  - Unused Dependencies:")
+                for dep in eda['unused_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['unused_deps']) > 5:
+                    print(f"    ... and {len(eda['unused_deps']) - 5} more")
 
         # Print enhanced validation specific stats if available
         if "enhanced_validation" in self.results.get("analysis", {}):

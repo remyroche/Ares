@@ -135,6 +135,7 @@ class EnsembleManager:
         try:
             # Initialize ensemble creator
             from src.training.ensemble_creator import EnsembleCreator
+from src.core.decorators.errors import handles_errors
 
             self.ensemble_creator = EnsembleCreator(self.config)
             await self.ensemble_creator.initialize()

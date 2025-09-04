@@ -21,6 +21,7 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 warnings.filterwarnings('ignore')
 
 class SROutcomeModelTrainer:

@@ -27,6 +27,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, warning
 from src.core.decorators import handles_errors
 from src.tactician.ml_tactics_manager import MLTacticsManager
+from src.core.decorators.errors import handles_errors
 
 class DecisionPolicy:
     """

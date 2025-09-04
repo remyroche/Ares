@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import numpy as np
 
-from src.training.steps.step05_labeling import LabelingStep
+from src.training.steps.market_analysis.step05_labeling import LabelingStep
 from src.training.steps.regime_handler import regime_handler
 from src.training.steps.regime_processing_decorator import (
     per_regime_processing, 
@@ -20,6 +20,7 @@ from src.training.steps.regime_processing_decorator import (
 from src.utils.logger import getChild as get_logger
 from src.utils.pipeline_standards import pipeline_standards
 from src.core.decorators import traced, validates, handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step5LabelingPerRegime')

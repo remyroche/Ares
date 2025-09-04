@@ -1416,4 +1416,5 @@ if __name__ == '__main__':
         pass
     finally:
         import gc
+from src.core.decorators.errors import handles_errors
 gc.collect()

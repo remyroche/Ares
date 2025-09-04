@@ -1275,6 +1275,7 @@ class AdvancedFeatureEngineering:
             if self.enable_meta_labeling:
                 try:
                     from src.analyst.meta_labeling_system import MetaLabelingSystem
+from src.core.decorators.errors import handles_errors
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()
                 except Exception as e:

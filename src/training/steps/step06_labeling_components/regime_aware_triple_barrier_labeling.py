@@ -531,6 +531,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
     except Exception as e:
         import logging
         import copy
+from src.core.decorators.errors import handles_errors
         logger = logging.getLogger(__name__)
         logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')
         data_copy = data.copy()

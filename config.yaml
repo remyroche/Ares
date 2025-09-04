@@ -149,7 +149,7 @@ step17_optimization:
     ml_weight: 0.6                  # Range: [0.3, 0.8] - Weight of ML predictions in leverage
     liquidation_weight: 0.4         # Range: [0.2, 0.7] - Weight of liquidation risk in leverage
     leverage_multiplier: 1.0        # Range: [0.5, 2.0] - Multiplier for calculated leverage
-    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for leverage
+    # risk_adjustment_factor removed as requested
     max_risk_leverage: 50.0         # Range: [20.0, 100.0] - Maximum leverage in high risk conditions
 
   # Position Sizing Optimization (Step17 Optimizable)
@@ -158,19 +158,19 @@ step17_optimization:
     max_position_size: 0.3          # Range: [0.2, 0.3] - HARD CAP: Maximum position size (absolute limit)
     min_position_size: 0.01         # Range: [0.001, 0.1] - Minimum position size
     confidence_threshold: 0.6       # Range: [0.4, 0.8] - Minimum confidence for position sizing
-    ml_weight: 0.7                  # Range: [0.4, 0.9] - Weight of ML predictions in position sizing
-    kelly_weight: 0.3               # Range: [0.1, 0.6] - Weight of Kelly criterion in position sizing
-    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for position sizing
+    ml_weight: 0.7                  # Range: [0.4, 0.9] - Weight of ML predictions in position sizing (used in multiplication formula)
+    # kelly_weight removed as requested
+    # risk_adjustment_factor removed as requested
 
-  # Take Profit / Stop Loss (TPSL) Optimization (Step17 Optimizable)
-  tpsl:
-    atr_multiplier: 2.0             # Range: [1.0, 4.0] - ATR multiplier for dynamic barriers
-    confidence_threshold: 0.7       # Range: [0.5, 0.9] - Minimum confidence for TPSL
-    stop_loss_multiplier: 1.5       # Range: [1.0, 3.0] - Multiplier for stop loss distance
-    take_profit_multiplier: 2.0     # Range: [1.0, 4.0] - Multiplier for take profit distance
-    trailing_stop_enabled: true
-    trailing_stop_distance: 0.02
-    max_hold_time: 3600
+  # Take Profit / Stop Loss (TPSL) Optimization (Step17 Optimizable) - COMMENTED OUT FOR NOW
+  # tpsl:
+  #   atr_multiplier: 2.0             # Range: [1.0, 4.0] - ATR multiplier for dynamic barriers
+  #   confidence_threshold: 0.7       # Range: [0.5, 0.9] - Minimum confidence for TPSL
+  #   stop_loss_multiplier: 1.5       # Range: [1.0, 3.0] - Multiplier for stop loss distance
+  #   take_profit_multiplier: 2.0     # Range: [1.0, 4.0] - Multiplier for take profit distance
+  #   trailing_stop_enabled: true
+  #   trailing_stop_distance: 0.02
+  #   max_hold_time: 3600
 
   # ML Tactics Optimization (Step17 Optimizable)
   ml_tactics:
@@ -179,7 +179,7 @@ step17_optimization:
     regime_threshold: 0.6           # Range: [0.4, 0.8] - Minimum regime confidence for ML tactics
     ml_weight: 0.8                  # Range: [0.5, 0.95] - Weight of ML predictions in tactics
     regime_weight: 0.2              # Range: [0.05, 0.5] - Weight of regime analysis in tactics
-    risk_adjustment_factor: 1.0     # Range: [0.5, 2.0] - Risk adjustment factor for ML tactics
+    # risk_adjustment_factor removed as requested
 
   # Decision Policy Optimization (Step17 Optimizable)
   decision_policy:

@@ -65,7 +65,7 @@ class MLTacticsManager:
         # Load additional optimized parameters
         self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
         self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
-        self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
+        # risk_adjustment_factor removed as requested
 
         # NEW: Multi-output prediction models
         self.multi_output_models: dict[str, Any] = {}
@@ -273,8 +273,8 @@ class MLTacticsManager:
                 # Update additional parameters
                 self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
                 self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
-                self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
-                self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+                # confidence_boost_factor removed as requested
+                # risk_adjustment_factor removed as requested
 
                 # Update barrier and threshold configurations
                 self.barrier_config = {

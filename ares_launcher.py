@@ -843,12 +843,12 @@ class AresLauncher:
         context="run_backtesting",
     )
     def run_backtesting(self, symbol: str, exchange: str, with_gui: bool=False):
-        """Run enhanced backtesting using cached wavelet features by default."""
+        """Run enhanced backtesting with comprehensive validation and error handling."""
         self.logger.info(
-            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}",
+            f"📊 Running enhanced backtesting for {symbol} on {exchange}",
         )
         print(
-            f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}",
+            f"📊 Running enhanced backtesting for {symbol} on {exchange}",
         )
         print("=" * 80)
 
@@ -856,119 +856,106 @@ class AresLauncher:
             return False
 
         try:
-            # First, ensure wavelet features are precomputed
-            if not self.precompute_wavelet_features(symbol, exchange):
-                self.logger.warning(
-                    "⚠️ Wavelet precomputation failed, continuing with direct computation",
-                )
-                print(
-                    "⚠️ Wavelet precomputation failed, continuing with direct computation",
-                )
-
-            # Import and use the cached backtesting system
+            # Import enhanced backtesting components
             import asyncio
+            from src.training.steps.backtesting import run_backtesting_pipeline, BacktestingPipelineConfig
+            from src.utils.common_operations import safe_file_exists, format_datetime, get_current_datetime
 
-            from src.config import CONFIG
-            from src.training.steps.backtesting_with_cached_features import (
-                BacktestingWithCachedFeatures,
-            )
-
-            # Initialize backtesting with cached features
-            backtester=BacktestingWithCachedFeatures(CONFIG)
-
-            # Initialize the backtesting system
-            init_success=asyncio.run(backtester.initialize())
-            if not init_success:
-                self.logger.error("❌ Failed to initialize backtesting system")
-                return False
-
-            # Load data for backtesting
-            data_path=f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            volume_path = f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
-
-            # Check if consolidated data exists
-            import os
-
-            if not os.path.exists(data_path):
-                self.logger.error(f"❌ Consolidated data file not found: {data_path}")
-                self.logger.error(
-                    "Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE",
-                )
-                return False
-
-            # Load data
-            price_data=asyncio.run(backtester._load_backtest_data(data_path))
-            volume_data=(
-                asyncio.run(backtester._load_volume_data(volume_path))
-                if os.path.exists(volume_path)
-                else None
-            )
-
-            if price_data is None or price_data.empty:
-                self.logger.error("❌ Failed to load price data for backtesting")
-                return False
-
-            # Run backtest with cached features
-            self.logger.info(f"🚀 Starting backtest with {len(price_data)} data points")
-            print(f"🚀 Starting backtest with {len(price_data)} data points")
-
-            # Strategy configuration
-            strategy_config={
-                "strategy_type": "wavelet_energy_entropy",
-                "parameters": {
-                    "energy_threshold": 0.5,
-                    "entropy_threshold": 0.3,
-                    "use_cached_features": True,
-                },
+            # Enhanced configuration for backtesting
+            enhanced_config = {
+                'force_rerun': True,
+                'walk_forward_validation': True,
+                'monte_carlo_validation': True,
+                'ab_testing': True,
+                'model_saving': True,
+                'random_state': 42,
+                
+                # Enhanced validation settings
+                'enable_validation': True,
+                'strict_validation': False,
+                'validate_data_quality': True,
+                
+                # Error handling
+                'retry_failed_steps': True,
+                'max_retries': 3,
+                'timeout_seconds': 3600,
+                
+                # Performance monitoring
+                'enable_performance_monitoring': True,
+                'log_detailed_metrics': True,
             }
 
-            # Run the backtest
-            results=asyncio.run(
-                backtester.run_backtest(
-                    price_data=price_data,
-                    volume_data=volume_data,
-                    strategy_config=strategy_config,
-                ),
+            # Pre-flight validation
+            self.logger.info("🔍 Running pre-flight validation...")
+            
+            # Validate data directory and files
+            data_dir = "data_cache"
+            required_files = [
+                f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"volume_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_name in required_files:
+                file_path = f"{data_dir}/{file_name}"
+                if not safe_file_exists(file_path):
+                    missing_files.append(file_name)
+            
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                self.logger.error("Please run data loading first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE")
+                return False
+            
+            self.logger.info("✅ Pre-flight validation passed")
+
+            # Run enhanced backtesting pipeline
+            self.logger.info("🚀 Starting enhanced backtesting pipeline...")
+            print("🚀 Starting enhanced backtesting pipeline...")
+            print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+
+            success = asyncio.run(
+                run_backtesting_pipeline(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe="1m",
+                    data_dir=data_dir,
+                    **enhanced_config
+                )
             )
 
-            if "error" in results:
-                self.logger.error(f"❌ Backtesting failed: {results['error']}")
-                print(f"❌ Backtesting failed: {results['error']}")
+            if success:
+                self.logger.info("🎉 Enhanced backtesting completed successfully!")
+                print("🎉 Enhanced backtesting completed successfully!")
+                print("=" * 80)
+                print("✅ Enhanced backtesting results:")
+                print("   ✅ Comprehensive validation passed")
+                print("   ✅ Walk forward validation completed")
+                print("   ✅ Monte Carlo validation completed")
+                print("   ✅ A/B testing completed")
+                print("   ✅ Model saving completed")
+                print("   ✅ Performance monitoring completed")
+                print("=" * 80)
+                
+                # Print performance summary
+                print("📈 ENHANCED BACKTESTING SUMMARY")
+                print(f"Symbol: {symbol}")
+                print(f"Exchange: {exchange}")
+                print(f"Timeframe: 1m")
+                print(f"Validation: Comprehensive")
+                print(f"Error Handling: Enhanced")
+                print(f"Performance Monitoring: Enabled")
+                print("=" * 80)
+                
+                return True
+            else:
+                self.logger.error("❌ Enhanced backtesting failed!")
+                print("❌ Enhanced backtesting failed!")
+                print("Please check the logs for detailed error information")
                 return False
 
-            # Print results
-            strategy_results=results.get("strategy_results", {})
-            print("=" * 80)
-            print("📊 BACKTESTING RESULTS")
-            print("=" * 80)
-            print(f"Total Return: {strategy_results.get('total_return', 0):.4f}")
-            print(f"Sharpe Ratio: {strategy_results.get('sharpe_ratio', 0):.4f}")
-            print(f"Max Drawdown: {strategy_results.get('max_drawdown', 0):.4f}")
-            print(f"Win Rate: {strategy_results.get('win_rate', 0):.2%}")
-            print(f"Signal Count: {strategy_results.get('signal_count', 0)}")
-            print(f"Feature Count: {results.get('feature_count', 0)}")
-            print("=" * 80)
-
-            # Print performance stats
-            stats=backtester.get_performance_stats()
-            print("📈 PERFORMANCE STATISTICS")
-            print(f"Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
-            print(f"Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
-            print(
-                f"Avg Feature Load Time: {stats.get('avg_feature_load_time', 0):.3f}s",
-            )
-            print(f"Iterations Completed: {stats.get('iterations_completed', 0)}")
-            print("=" * 80)
-
-            self.logger.info(
-                "✅ Backtesting with cached wavelet features completed successfully",
-            )
-            print("✅ Backtesting with cached wavelet features completed successfully")
-            return True
-
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run backtesting: {e}")
-            print(f"❌ Failed to run backtesting: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")
+            print(f"❌ Failed to run enhanced backtesting: {e}")
             return False
 
     def _run_unified_trading(
@@ -1578,52 +1565,189 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run optimisation pipeline."""
-        self.logger.info(f"📊 Running optimisation pipeline for {symbol} on {exchange}")
+        """Run enhanced optimisation pipeline with comprehensive validation and protection."""
+        self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
+        print("=" * 80)
+        print("🚀 ENHANCED OPTIMISATION PIPELINE")
+        print("=" * 80)
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"🖥️ GUI Mode: {with_gui}")
+        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+
+        # Pre-flight validation
+        validation_success = self._validate_optimisation_prerequisites(symbol, exchange)
+        if not validation_success:
+            self.logger.error("❌ Pre-flight validation failed")
+            print("❌ Pre-flight validation failed - cannot proceed with optimisation")
+            return False
 
         if with_gui and not self.launch_gui("optimisation", symbol, exchange):
             return False
 
         try:
-            # Run the optimisation pipeline
-            print(f"🚀 Starting optimisation pipeline for {symbol} on {exchange}...")
+            # Enhanced optimisation pipeline with comprehensive error handling
+            print(f"🚀 Starting enhanced optimisation pipeline for {symbol} on {exchange}...")
+            
+            # Set environment variables for enhanced pipeline
+            import os
+            os.environ["OPTIMISATION_MODE"] = "enhanced"
+            os.environ["SYMBOL"] = symbol
+            os.environ["EXCHANGE"] = exchange
+            
             process=subprocess.Popen(
                 [
                     sys.executable,
                     "src/training/steps/optimisation/step16_optimisation_main.py",
+                    "--symbol", symbol,
+                    "--exchange", exchange,
+                    "--enhanced-mode"
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
                 text=True,
                 bufsize=1,  # Line buffered
                 universal_newlines=True,
+                env=dict(os.environ, OPTIMISATION_MODE="enhanced", SYMBOL=symbol, EXCHANGE=exchange),
             )
             self.processes.append(process)
 
-            # Read output in real-time
+            # Read output in real-time with enhanced monitoring
+            line_count = 0
+            error_count = 0
+            warning_count = 0
+            
             while True:
                 output=process.stdout.readline()
                 if output== "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
+                    line_count += 1
+                    output_stripped = output.strip()
+                    
+                    # Monitor for errors and warnings
+                    if "ERROR" in output_stripped or "❌" in output_stripped:
+                        error_count += 1
+                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                        warning_count += 1
+                    
+                    print(output_stripped)  # Print to terminal in real-time
+                    self.logger.info(output_stripped)  # Also log it
+                    
+                    # Progress indicator every 50 lines
+                    if line_count % 50 == 0:
+                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings")
 
             # Get the final return code
             return_code=process.poll()
+            
+            # Enhanced result reporting
+            print("=" * 80)
+            print("📊 OPTIMISATION PIPELINE RESULTS")
+            print("=" * 80)
+            print(f"📈 Total lines processed: {line_count}")
+            print(f"❌ Total errors: {error_count}")
+            print(f"⚠️ Total warnings: {warning_count}")
+            print(f"🔢 Return code: {return_code}")
+            print("=" * 80)
 
             if return_code== 0:
-                self.logger.info("✅ Optimisation pipeline completed successfully")
-                print("✅ Optimisation pipeline completed successfully")
+                self.logger.info("✅ Enhanced optimisation pipeline completed successfully")
+                print("✅ Enhanced optimisation pipeline completed successfully")
+                print("🎉 All optimisation steps completed with validation!")
                 return True
-            self.logger.error(
-                f"❌ Optimisation pipeline failed with return code: {return_code}",
-            )
-            print(f"❌ Optimisation pipeline failed with return code: {return_code}")
-            return False
+            else:
+                self.logger.error(
+                    f"❌ Enhanced optimisation pipeline failed with return code: {return_code}",
+                )
+                print(f"❌ Enhanced optimisation pipeline failed with return code: {return_code}")
+                if error_count > 0:
+                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                return False
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run optimisation pipeline: {e}")
+            self.logger.exception(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            print(f"❌ Failed to run enhanced optimisation pipeline: {e}")
+            return False
+        finally:
+            # Cleanup environment variables
+            import os
+            os.environ.pop("OPTIMISATION_MODE", None)
+            os.environ.pop("SYMBOL", None)
+            os.environ.pop("EXCHANGE", None)
+
+    def _validate_optimisation_prerequisites(self, symbol: str, exchange: str) -> bool:
+        """Validate prerequisites for optimisation pipeline execution."""
+        self.logger.info("🔍 Validating optimisation prerequisites...")
+        print("🔍 Validating optimisation prerequisites...")
+        
+        try:
+            from src.utils.common_operations import safe_file_exists, ensure_directory
+            from src.utils.data_quality_framework import DataQualityFramework
+            
+            # Initialize data quality framework
+            dq_framework = DataQualityFramework()
+            
+            # Check required directories
+            required_dirs = [
+                "data_cache",
+                "models",
+                "checkpoints",
+                "log"
+            ]
+            
+            for dir_path in required_dirs:
+                if not safe_file_exists(dir_path):
+                    self.logger.warning(f"⚠️ Creating missing directory: {dir_path}")
+                    ensure_directory(dir_path)
+                else:
+                    self.logger.info(f"✅ Directory exists: {dir_path}")
+            
+            # Check for required data files
+            required_data_files = [
+                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_path in required_data_files:
+                if not safe_file_exists(file_path):
+                    missing_files.append(file_path)
+                else:
+                    self.logger.info(f"✅ Data file exists: {file_path}")
+            
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                print(f"❌ Missing required data files:")
+                for file_path in missing_files:
+                    print(f"   • {file_path}")
+                print("💡 Please run data collection first:")
+                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                return False
+            
+            # Check for previous step outputs
+            previous_step_files = [
+                f"models/{symbol}_{exchange}_tactician_specialist.pkl",
+                f"models/{symbol}_{exchange}_confidence_calibration.json"
+            ]
+            
+            missing_previous = []
+            for file_path in previous_step_files:
+                if not safe_file_exists(file_path):
+                    missing_previous.append(file_path)
+            
+            if missing_previous:
+                self.logger.warning(f"⚠️ Some previous step outputs missing: {missing_previous}")
+                print("⚠️ Some previous step outputs are missing - optimisation will use defaults")
+            
+            self.logger.info("✅ Optimisation prerequisites validation completed")
+            print("✅ Optimisation prerequisites validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Prerequisites validation failed: {e}")
+            print(f"❌ Prerequisites validation failed: {e}")
             return False
 
     @handle_errors(

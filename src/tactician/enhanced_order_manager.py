@@ -25,6 +25,17 @@ from src.utils.warning_symbols import (
 )
 from copy import copy
 import asyncio
+from src.core.decorators import handles_errors
+
+# Optional Prometheus metrics integration with safe fallback
+try:  # pragma: no cover - optional dependency
+    from src.utils.prometheus_metrics import metrics  # type: ignore
+except Exception:  # pragma: no cover - metrics not available
+    class _MetricsStub:
+        def increment_counter(self, *_args, **_kwargs) -> None:
+            return None
+
+    metrics = _MetricsStub()  # type: ignore
 
 
 class OrderType(Enum):
@@ -139,7 +150,7 @@ class EnhancedOrderManager:
         self.max_history_size = config.get("max_history_size", 1000)
         self.default_timeout = config.get("order_timeout", 300)  # 5 minutes
 
-        # Metrics
+        # Metrics (falls back to no-op stub if Prometheus metrics are unavailable)
         self.metrics = metrics
 
     @handles_errors(
@@ -425,3 +436,103 @@ class EnhancedOrderManager:
 
         except Exception as e:
             self.logger.exception(failed(f"❌ Enhanced Order Manager cleanup failed: {e}"))
+
+    # ---- Lightweight helpers used by higher-level components ----
+
+    @handles_errors(exceptions=(Exception,), default_return=None, context="chase micro breakout placement")
+    async def place_chase_micro_breakout_order(
+        self,
+        *,
+        symbol: str,
+        side: "OrderSide",
+        quantity: float,
+        current_price: float | None = None,
+        breakout_price: float | None = None,
+        strategy_id: str | None = None,
+        **_kwargs: dict[str, Any],
+    ) -> "OrderState" | None:
+        """Place a minimal STOP_LIMIT order used by CHASE_MICRO_BREAKOUT strategy."""
+        stop_price = breakout_price or current_price or 0.0
+        price = stop_price
+        req = OrderRequest(
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.STOP_LIMIT,
+            quantity=quantity,
+            price=price,
+            stop_price=stop_price,
+            strategy_id=strategy_id,
+            strategy_type="CHASE_MICRO_BREAKOUT",
+        )
+        return await self.create_order(req)
+
+    @handles_errors(exceptions=(Exception,), default_return=None, context="limit order return placement")
+    async def place_limit_order_return(
+        self,
+        *,
+        symbol: str,
+        side: "OrderSide",
+        quantity: float,
+        price: float,
+        leverage: float | None = None,
+        strategy_id: str | None = None,
+        **_kwargs: dict[str, Any],
+    ) -> "OrderState" | None:
+        """Place a leveraged LIMIT order used by LIMIT_ORDER_RETURN strategy."""
+        req = OrderRequest(
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.LIMIT,
+            quantity=quantity,
+            price=price,
+            leverage=leverage,
+            strategy_id=strategy_id,
+            strategy_type="LIMIT_ORDER_RETURN",
+        )
+        return await self.create_order(req)
+
+    def get_order_status(self, order_id: str) -> "OrderState" | None:
+        """Return current status for an order by id from active set or history."""
+        if order_id in self.active_orders:
+            return self.active_orders[order_id]
+        for o in reversed(self.order_history):
+            if o.order_id == order_id:
+                return o
+        return None
+
+    def get_strategy_orders(self, strategy_id: str) -> list["OrderState"]:
+        """Return all orders associated with a given strategy id (active + history)."""
+        matches: list[OrderState] = []
+        for o in self.active_orders.values():
+            if o.strategy_id == strategy_id:
+                matches.append(o)
+        for o in self.order_history:
+            if o.strategy_id == strategy_id:
+                matches.append(o)
+        return matches
+
+    def get_performance_metrics(self) -> dict[str, Any]:
+        """Summarize basic order manager performance metrics."""
+        try:
+            filled = sum(1 for o in self.order_history if o.status == OrderStatus.FILLED)
+            cancelled = sum(1 for o in self.order_history if o.status == OrderStatus.CANCELLED)
+            rejected = sum(1 for o in self.order_history if o.status == OrderStatus.REJECTED)
+            return {
+                "active_orders": len(self.active_orders),
+                "history_orders": len(self.order_history),
+                "filled": filled,
+                "cancelled": cancelled,
+                "rejected": rejected,
+            }
+        except Exception:
+            return {}
+
+
+@handles_errors(exceptions=(Exception,), default_return=None, context="enhanced order manager setup")
+async def setup_enhanced_order_manager(
+    config: dict[str, Any] | None = None,
+) -> EnhancedOrderManager | None:
+    """Factory to create and initialize an EnhancedOrderManager instance."""
+    mgr = EnhancedOrderManager(config or {})
+    ok = await mgr.initialize()
+    return mgr if ok else None

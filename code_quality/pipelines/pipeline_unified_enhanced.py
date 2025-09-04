@@ -36,6 +36,7 @@ from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.safe_import_fixer import SafeImportFixer
 from scripts.simple_interaction_mapper import extract_interactions, generate_interaction_summary
 from utils.report_aggregator import ReportAggregator
+from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 
 
 class UnifiedEnhancedPipeline:
@@ -572,6 +573,77 @@ class UnifiedEnhancedPipeline:
 
         return result
 
+    def run_enhanced_dependency_analysis(self) -> dict[str, Any]:
+        """Run enhanced dependency analysis using FawltyDeps and Creosote."""
+        print("\n" + "="*60)
+        print("Running Enhanced Dependency Analysis (FawltyDeps + Creosote)")
+        print("="*60)
+
+        start_time = time.time()
+        
+        # Configuration for dependency analysis
+        config = {
+            "fawltydeps": {
+                "output_format": "json",
+                "ignore_unused": ["black", "isort", "mypy"],  # Common dev tools
+                "deps_files": ["pyproject.toml", "requirements.txt", "setup.py"],
+                "code_dirs": ["src", "."]
+            },
+            "creosote": {
+                "venv_path": ".venv",
+                "project_path": "src",
+                "deps_file": "pyproject.toml",
+                "section": "project.dependencies",
+                "exclude": ["black", "isort", "mypy"],
+                "output_format": "json"
+            }
+        }
+        
+        analyzer = EnhancedDependencyAnalyzer(str(self.project_root), config)
+        analysis_results = analyzer.analyze_project()
+        
+        # Save detailed reports
+        report_paths = analyzer.save_report(
+            self.reports_dir,
+            f"enhanced_dependency_analysis_{self.timestamp}"
+        )
+        
+        # Format result for pipeline compatibility
+        result = {
+            "analysis_results": analysis_results,
+            "undeclared_deps": analysis_results["combined"].get("undeclared_deps", []),
+            "unused_deps": analysis_results["combined"].get("unused_deps", []),
+            "total_issues": analysis_results["summary"]["total_issues"],
+            "tools_used": analysis_results["summary"]["tools_used"],
+            "recommendations": analysis_results["summary"]["recommendations"],
+            "execution_time": time.time() - start_time,
+            "report_paths": {k: str(v) for k, v in report_paths.items()}
+        }
+
+        # Add to aggregator (create a compatible format)
+        self.report_aggregator.add_dependency_results(result)
+
+        # Save individual report
+        report_path = self.reports_dir / f"enhanced_dependency_analysis_{self.timestamp}.json"
+        
+        # Convert PluginResult objects to dictionaries for JSON serialization
+        def convert_plugin_results(obj):
+            if hasattr(obj, 'to_dict'):
+                return obj.to_dict()
+            elif isinstance(obj, dict):
+                return {k: convert_plugin_results(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_plugin_results(item) for item in obj]
+            else:
+                return obj
+        
+        result_serializable = convert_plugin_results(result)
+        
+        with open(report_path, "w") as f:
+            json.dump(result_serializable, f, indent=2)
+
+        return result
+
     def run_all(self) -> dict[str, Any]:
         """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
@@ -597,6 +669,7 @@ class UnifiedEnhancedPipeline:
 
         # Analysis
         self.results["analysis"] = {
+            "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
             "comprehensive_review": self.run_comprehensive_review(),
@@ -700,6 +773,29 @@ class UnifiedEnhancedPipeline:
         print(f"Total Directories: {summary['total_directories']}")
         print(f"Total Issues Found: {summary['total_issues']}")
         print(f"Issues Fixed: {summary['fixed_issues']}")
+
+        # Print enhanced dependency analysis results if available
+        if "enhanced_dependency_analysis" in self.results.get("analysis", {}):
+            eda = self.results["analysis"]["enhanced_dependency_analysis"]
+            print("\nEnhanced Dependency Analysis Results:")
+            print(f"  - Tools Used: {', '.join(eda.get('tools_used', []))}")
+            print(f"  - Undeclared Dependencies: {len(eda.get('undeclared_deps', []))}")
+            print(f"  - Unused Dependencies: {len(eda.get('unused_deps', []))}")
+            print(f"  - Total Issues: {eda.get('total_issues', 0)}")
+            
+            if eda.get('undeclared_deps'):
+                print("  - Undeclared Dependencies:")
+                for dep in eda['undeclared_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['undeclared_deps']) > 5:
+                    print(f"    ... and {len(eda['undeclared_deps']) - 5} more")
+            
+            if eda.get('unused_deps'):
+                print("  - Unused Dependencies:")
+                for dep in eda['unused_deps'][:5]:  # Show first 5
+                    print(f"    * {dep}")
+                if len(eda['unused_deps']) > 5:
+                    print(f"    ... and {len(eda['unused_deps']) - 5} more")
 
         # Print enhanced validation specific stats if available
         if "enhanced_validation" in self.results.get("analysis", {}):

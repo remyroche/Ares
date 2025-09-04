@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, List
 import pandas as pd
 import numpy as np
 
-from src.training.steps.step06_feature_engineering import FeatureEngineeringStep
+from src.training.steps.step06_feature_engineering import FeatureInteractionEngine
 from src.training.steps.regime_handler import regime_handler
 from src.training.steps.regime_processing_decorator import (
     per_regime_processing,
@@ -25,7 +25,7 @@ from src.core.decorators import traced, validates, handles_errors
 logger = get_logger('Step6FeatureEngineeringPerRegime')
 
 
-class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
+class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
     """Enhanced feature engineering step that processes each regime separately."""
     
     def __init__(self, config: Dict[str, Any]):
@@ -33,6 +33,17 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
         self.per_regime_enabled = config.get('per_regime_feature_engineering', True)
         self.regime_specific_features = config.get('regime_specific_features', {})
         self.adaptive_lookback = config.get('adaptive_lookback_per_regime', True)
+        
+        # Force regime-specific optimization for per-regime processing
+        step6_config = config.get('step06_feature_engineering', {})
+        step6_config['force_regime_specific_periods'] = True
+        config['step06_feature_engineering'] = step6_config
+        
+        # Update the parent class configuration
+        self.config = config
+        self.force_regime_specific_periods = True
+        
+        self.logger.info("🎯 Per-regime feature engineering initialized with regime-specific optimization enabled")
         
     @traced(span_name='execute_per_regime_feature_engineering')
     async def execute_per_regime_feature_engineering(
@@ -188,16 +199,55 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                 
                 if len(optimization_data) > 100:  # Need sufficient data
                     target = optimization_data['label']
+                    
+                    # Create regime-specific series for optimization
+                    regime_series = pd.Series(regime_id, index=optimization_data.index)
+                    
+                    # Perform regime-specific optimization
                     optimization_results = await self.optimize_lookback_periods(
                         optimization_data,
                         target,
-                        regimes=pd.Series(regime_id, index=optimization_data.index)
+                        regimes=regime_series
                     )
                     
-                    # Update feature configuration with optimized lookbacks
-                    if optimization_results.get('selected_features'):
-                        regime_config['optimized_features'] = optimization_results['selected_features']
-                        self.logger.info(f"✅ Found {len(optimization_results['selected_features'])} optimized features")
+                    # Validate and process optimization results
+                    if optimization_results.get('status') == 'optimized':
+                        self.logger.info(f"✅ Regime {regime_id} optimization successful")
+                        
+                        # Extract regime-specific periods if available
+                        regime_specific_periods = optimization_results.get('optimization_results', {}).get('regime_specific_periods', {})
+                        regime_key = f'regime_{regime_id}'
+                        
+                        if regime_key in regime_specific_periods:
+                            regime_periods = regime_specific_periods[regime_key]
+                            regime_config['optimized_periods'] = regime_periods
+                            self.logger.info(f"📊 Regime {regime_id} specific periods: {list(regime_periods.keys())}")
+                        else:
+                            # Fall back to global optimized periods
+                            global_periods = optimization_results.get('periods', {})
+                            regime_config['optimized_periods'] = global_periods
+                            self.logger.info(f"📊 Using global optimized periods for regime {regime_id}")
+                        
+                        # Update interaction patterns with regime-specific periods
+                        self._update_regime_interaction_patterns(regime_config, regime_id)
+                        
+                        # Validate the optimization results
+                        validation_passed = self._validate_regime_optimization(
+                            regime_id, optimization_results, regime_config
+                        )
+                        
+                        if not validation_passed:
+                            self.logger.warning(f"⚠️ Regime {regime_id} optimization validation failed, but continuing")
+                        
+                    elif optimization_results.get('status') == 'fallback':
+                        self.logger.warning(f"⚠️ Regime {regime_id} using fallback periods")
+                        regime_config['optimized_periods'] = optimization_results.get('periods', {})
+                    else:
+                        self.logger.error(f"❌ Regime {regime_id} optimization failed")
+                        regime_config['optimized_periods'] = {}
+                else:
+                    self.logger.warning(f"⚠️ Insufficient data for regime {regime_id} optimization ({len(optimization_data)} rows)")
+                    regime_config['optimized_periods'] = {}
             
             # Apply feature engineering
             features_df = await self._apply_feature_engineering(regime_labeled, regime_config)
@@ -215,7 +265,13 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                 'feature_names': [c for c in features_df.columns if c not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']],
                 'regime_config': regime_config,
                 'data_shape': features_df.shape,
-                'context_rows': int(context_mask.sum()) if context_mask is not None else 0
+                'context_rows': int(context_mask.sum()) if context_mask is not None else 0,
+                'optimization_info': {
+                    'adaptive_lookback_enabled': self.adaptive_lookback,
+                    'optimized_periods': regime_config.get('optimized_periods', {}),
+                    'optimization_priority': regime_config.get('optimization_priority', 'unknown'),
+                    'emphasis': regime_config.get('emphasis', 'unknown')
+                }
             }
             
             return features_df, feature_info
@@ -228,6 +284,8 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
         """Get feature engineering configuration for a specific regime.
         
         Different regimes may benefit from different feature sets and parameters.
+        This method creates regime-specific configurations that will be used
+        to optimize lookback periods and feature interactions.
         
         Args:
             regime_id: Regime ID
@@ -237,22 +295,26 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
         """
         # Check if custom config exists for this regime
         if f'regime_{regime_id}' in self.regime_specific_features:
-            return self.regime_specific_features[f'regime_{regime_id}']
+            custom_config = self.regime_specific_features[f'regime_{regime_id}']
+            self.logger.info(f"📋 Using custom configuration for regime {regime_id}")
+            return custom_config
         
-        # Otherwise, create adaptive configuration based on regime characteristics
+        # Create adaptive configuration based on regime characteristics
         base_config = {
             'enable_technical_indicators': True,
             'enable_price_features': True,
             'enable_volume_features': True,
             'enable_volatility_features': True,
-            'enable_microstructure_features': True
+            'enable_microstructure_features': True,
+            'force_regime_specific_periods': True,  # Ensure per-regime optimization
+            'regime_id': regime_id
         }
         
-        # Adapt based on regime ID patterns
+        # Adapt based on regime ID patterns and market characteristics
         if regime_id <= 2:
             # Low regime IDs - often trending markets
-            # Emphasize trend-following indicators
-            return {
+            # Emphasize trend-following indicators with longer lookbacks
+            config = {
                 **base_config,
                 'lookback_periods': [10, 20, 50, 100, 200],
                 'emphasis': 'trend',
@@ -261,12 +323,27 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                     'EMA_ribbon',
                     'ADX_features',
                     'trend_strength'
-                ]
+                ],
+                'interaction_patterns': {
+                    'trend_momentum': {
+                        'features': ['SMA_20', 'SMA_100', 'EMA_21', 'ADX_14'],
+                        'weight': 2.0,
+                        'enabled': True
+                    },
+                    'trend_volume': {
+                        'features': ['OBV_20', 'Volume_Ratio', 'SMA_20', 'ATR_14'],
+                        'weight': 1.8,
+                        'enabled': True
+                    }
+                },
+                'optimization_priority': 'trend_strength'
             }
+            self.logger.info(f"📈 Configured regime {regime_id} for trending markets")
+            
         elif regime_id >= 5:
             # High regime IDs - often volatile/ranging markets
-            # Emphasize mean-reversion and volatility indicators
-            return {
+            # Emphasize mean-reversion and volatility indicators with shorter lookbacks
+            config = {
                 **base_config,
                 'lookback_periods': [5, 10, 20, 30],
                 'emphasis': 'mean_reversion',
@@ -275,11 +352,26 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                     'Bollinger_bands_features',
                     'ATR_bands',
                     'volatility_cones'
-                ]
+                ],
+                'interaction_patterns': {
+                    'mean_reversion': {
+                        'features': ['RSI_14', 'BB_Position_20', 'Williams_R_14', 'CCI_20'],
+                        'weight': 2.2,
+                        'enabled': True
+                    },
+                    'volatility_regime': {
+                        'features': ['ATR_14', 'BB_Squeeze_20', 'Volatility', 'Volume_Ratio'],
+                        'weight': 1.9,
+                        'enabled': True
+                    }
+                },
+                'optimization_priority': 'volatility_capture'
             }
+            self.logger.info(f"📊 Configured regime {regime_id} for volatile/ranging markets")
+            
         else:
             # Medium regime IDs - balanced approach
-            return {
+            config = {
                 **base_config,
                 'lookback_periods': [7, 14, 30, 60],
                 'emphasis': 'balanced',
@@ -287,8 +379,198 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                     'momentum_features',
                     'volume_profile',
                     'market_microstructure'
-                ]
+                ],
+                'interaction_patterns': {
+                    'momentum_volume': {
+                        'features': ['RSI_14', 'MACD_12_26', 'OBV_20', 'Volume_Ratio'],
+                        'weight': 1.6,
+                        'enabled': True
+                    },
+                    'oscillator_trend': {
+                        'features': ['RSI_14', 'Williams_R_14', 'CCI_20', 'EMA_21'],
+                        'weight': 1.4,
+                        'enabled': True
+                    }
+                },
+                'optimization_priority': 'balanced_performance'
             }
+            self.logger.info(f"⚖️ Configured regime {regime_id} for balanced approach")
+        
+        return config
+    
+    def _update_regime_interaction_patterns(self, regime_config: Dict[str, Any], regime_id: int) -> None:
+        """Update interaction patterns with regime-specific optimized periods.
+        
+        Args:
+            regime_config: Regime configuration dictionary
+            regime_id: Regime ID
+        """
+        try:
+            optimized_periods = regime_config.get('optimized_periods', {})
+            if not optimized_periods:
+                self.logger.warning(f"⚠️ No optimized periods available for regime {regime_id}")
+                return
+            
+            # Update interaction patterns with optimized periods
+            interaction_patterns = regime_config.get('interaction_patterns', {})
+            
+            for pattern_name, pattern_config in interaction_patterns.items():
+                updated_features = []
+                for feature in pattern_config.get('features', []):
+                    # Extract base indicator name
+                    base_indicator = feature.split('_')[0]
+                    
+                    # Check if we have optimized periods for this indicator
+                    if base_indicator in optimized_periods:
+                        # Use the first optimized period
+                        optimized_period = optimized_periods[base_indicator].get('selected_periods', [None])[0]
+                        if optimized_period:
+                            # Create feature name with optimized period
+                            if '_' in feature:
+                                parts = feature.split('_')
+                                parts[1] = str(optimized_period)
+                                updated_feature = '_'.join(parts)
+                            else:
+                                updated_feature = f"{base_indicator}_{optimized_period}"
+                            updated_features.append(updated_feature)
+                            self.logger.debug(f"🔄 Updated {feature} -> {updated_feature} for regime {regime_id}")
+                        else:
+                            updated_features.append(feature)
+                    else:
+                        updated_features.append(feature)
+                
+                # Update the pattern with optimized features
+                pattern_config['features'] = updated_features
+            
+            regime_config['interaction_patterns'] = interaction_patterns
+            self.logger.info(f"✅ Updated interaction patterns for regime {regime_id} with optimized periods")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating interaction patterns for regime {regime_id}: {e}")
+    
+    async def _apply_feature_engineering(
+        self,
+        regime_data: pd.DataFrame,
+        regime_config: Dict[str, Any]
+    ) -> Optional[pd.DataFrame]:
+        """Apply feature engineering to regime data.
+        
+        Args:
+            regime_data: Regime-specific data
+            regime_config: Regime configuration
+            
+        Returns:
+            Feature engineered DataFrame or None
+        """
+        try:
+            self.logger.info(f"🔧 Applying feature engineering for regime {regime_config.get('regime_id', 'unknown')}")
+            
+            # Extract technical indicators
+            technical_features = self.extract_optimal_technical_indicators(regime_data)
+            
+            if technical_features.empty:
+                self.logger.warning("⚠️ No technical features extracted")
+                return None
+            
+            # Merge with original data
+            features_df = pd.concat([regime_data, technical_features], axis=1)
+            
+            # Apply regime-specific interaction patterns if available
+            interaction_patterns = regime_config.get('interaction_patterns', {})
+            if interaction_patterns:
+                self.logger.info(f"🔄 Applying {len(interaction_patterns)} interaction patterns")
+                
+                # Get feature names for interactions
+                feature_names = [col for col in features_df.columns 
+                               if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'label']]
+                
+                # Create interaction features
+                interaction_features = self.extract_interaction_features(
+                    features_df[feature_names].values,
+                    feature_names,
+                    regime_data
+                )
+                
+                if interaction_features is not None and interaction_features.size > 0:
+                    # Create interaction feature names
+                    interaction_names = [f"interaction_{i}" for i in range(interaction_features.shape[1])]
+                    interaction_df = pd.DataFrame(
+                        interaction_features,
+                        index=features_df.index,
+                        columns=interaction_names
+                    )
+                    
+                    # Merge interaction features
+                    features_df = pd.concat([features_df, interaction_df], axis=1)
+                    self.logger.info(f"✅ Added {len(interaction_names)} interaction features")
+            
+            # Add regime-specific metadata
+            features_df['regime_emphasis'] = regime_config.get('emphasis', 'unknown')
+            features_df['optimization_priority'] = regime_config.get('optimization_priority', 'unknown')
+            
+            self.logger.info(f"✅ Feature engineering completed: {features_df.shape[1]} total features")
+            return features_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error applying feature engineering: {e}")
+            return None
+    
+    def _validate_regime_optimization(
+        self,
+        regime_id: int,
+        optimization_results: Dict[str, Any],
+        regime_config: Dict[str, Any]
+    ) -> bool:
+        """Validate that regime-specific optimization is working correctly.
+        
+        Args:
+            regime_id: Regime ID
+            optimization_results: Optimization results
+            regime_config: Regime configuration
+            
+        Returns:
+            True if validation passes, False otherwise
+        """
+        try:
+            validation_passed = True
+            validation_issues = []
+            
+            # Check if optimization was performed
+            if optimization_results.get('status') != 'optimized':
+                validation_issues.append(f"Optimization status: {optimization_results.get('status', 'unknown')}")
+                validation_passed = False
+            
+            # Check if regime-specific periods were found
+            regime_specific_periods = optimization_results.get('optimization_results', {}).get('regime_specific_periods', {})
+            regime_key = f'regime_{regime_id}'
+            
+            if regime_key not in regime_specific_periods:
+                validation_issues.append(f"No regime-specific periods found for {regime_key}")
+                # This might not be a failure if global optimization was used
+            
+            # Check if optimized periods are being used
+            optimized_periods = regime_config.get('optimized_periods', {})
+            if not optimized_periods:
+                validation_issues.append("No optimized periods in regime config")
+                validation_passed = False
+            
+            # Check if interaction patterns were updated
+            interaction_patterns = regime_config.get('interaction_patterns', {})
+            if not interaction_patterns:
+                validation_issues.append("No interaction patterns configured")
+                validation_passed = False
+            
+            # Log validation results
+            if validation_passed:
+                self.logger.info(f"✅ Regime {regime_id} optimization validation passed")
+            else:
+                self.logger.warning(f"⚠️ Regime {regime_id} optimization validation issues: {validation_issues}")
+            
+            return validation_passed
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating regime {regime_id} optimization: {e}")
+            return False
     
     async def _load_labeled_data(
         self,
@@ -444,10 +726,23 @@ class PerRegimeFeatureEngineeringStep(FeatureEngineeringStep):
                 self.logger.info(f"      Samples: {info.get('data_shape', [0])[0]}")
                 self.logger.info(f"      Context rows: {info.get('context_rows', 0)}")
                 
-                # Log regime emphasis if available
+                # Log regime emphasis and optimization info if available
                 config = info.get('regime_config', {})
+                optimization_info = info.get('optimization_info', {})
+                
                 if 'emphasis' in config:
                     self.logger.info(f"      Emphasis: {config['emphasis']}")
+                
+                if optimization_info:
+                    self.logger.info(f"      Optimization Priority: {optimization_info.get('optimization_priority', 'N/A')}")
+                    self.logger.info(f"      Adaptive Lookback: {optimization_info.get('adaptive_lookback_enabled', False)}")
+                    
+                    optimized_periods = optimization_info.get('optimized_periods', {})
+                    if optimized_periods:
+                        period_count = sum(len(periods.get('selected_periods', [])) for periods in optimized_periods.values())
+                        self.logger.info(f"      Optimized Indicators: {len(optimized_periods)} ({period_count} total periods)")
+                    else:
+                        self.logger.info(f"      Optimized Indicators: None (using fallback)")
                     
         except Exception as e:
             self.logger.error(f"❌ Error logging feature statistics: {e}")
@@ -481,11 +776,26 @@ async def run_per_regime_step(
     
     if config is None:
         config = {}
+    
+    # Load default per-regime configuration
+    try:
+        config_path = Path(__file__).parent / 'step06_per_regime_config.json'
+        if config_path.exists():
+            import json
+            with open(config_path, 'r') as f:
+                default_config = json.load(f)
+                # Merge with user config, user config takes precedence
+                config = {**default_config, **config}
+                logger.info("✅ Loaded per-regime feature engineering configuration")
+        else:
+            logger.warning("⚠️ Per-regime config file not found, using defaults")
+    except Exception as e:
+        logger.warning(f"⚠️ Error loading per-regime config: {e}, using defaults")
         
     if data_dir is None:
         data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
     
-    # Enable per-regime processing
+    # Ensure per-regime processing is enabled
     config['per_regime_feature_engineering'] = True
     
     # Initialize and run the per-regime feature engineering step

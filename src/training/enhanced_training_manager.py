@@ -976,6 +976,85 @@ class TrainingManager:
             self.logger.exception(f'❌ Computational optimization initialization failed: {e}')
             return False
 
+    async def _execute_pipeline_step_with_validation(
+        self,
+        step_name: str,
+        step_key: str,
+        step_description: str,
+        step_function,
+        step_args: dict,
+        pipeline_state: dict,
+        training_input: dict,
+        step_times: dict,
+        start_step_key: str,
+        _should_run,
+        is_fatal: bool = True
+    ) -> bool:
+        """Execute a pipeline step with validation and error handling.
+        
+        Args:
+            step_name: Name of the step for logging
+            step_key: Key for the step in pipeline state
+            step_description: Human-readable description
+            step_function: Function to execute the step
+            step_args: Arguments to pass to step function
+            pipeline_state: Current pipeline state
+            training_input: Training input parameters
+            step_times: Dictionary to store step execution times
+            start_step_key: Starting step key for skipping logic
+            _should_run: Function to determine if step should run
+            is_fatal: Whether step failure should stop the pipeline
+            
+        Returns:
+            bool: True if step successful, False otherwise
+        """
+        should_run = _should_run(step_key)
+        if not should_run:
+            self.logger.info(f"⏭️ Skipping {step_description} (starting from '{start_step_key}')")
+            pipeline_state[step_key] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
+            return True
+            
+        with self._timed_step(step_description, step_times):
+            self.logger.info(f'🔧 {step_description}...')
+            
+        # Validate dependencies
+        if not await self.validate_step_dependencies(step_key, pipeline_state, self.force_rerun):
+            self.logger.error(f'❌ {step_description} dependencies not met, skipping')
+            return False
+            
+        # Execute step
+        try:
+            step_success = await step_function(**step_args)
+        except Exception as e:
+            self.logger.exception(f'❌ Error in {step_description}: {e}')
+            step_success = False
+            
+        if not step_success:
+            if is_fatal:
+                self.logger.error(f'❌ {step_description} failed - stopping pipeline')
+                return False
+            else:
+                self.logger.warning(f'⚠️ {step_description} failed - continuing')
+                
+        # Update pipeline state
+        pipeline_state[step_key] = {'status': 'SUCCESS' if step_success else 'FAILED', 'success': bool(step_success), 'completed': bool(step_success)}
+        self._save_checkpoint(step_key, pipeline_state)
+        
+        # Run validation
+        try:
+            step_validation = await self._run_step_validator(step_key, training_input, pipeline_state)
+            if step_validation and step_validation.get('validation_passed', False):
+                self.logger.info(f'🎉 {step_description} completed successfully and validation passed')
+            else:
+                self.logger.warning(f"⚠️ {step_description} validation failed: {step_validation.get('error', 'Unknown error')}")
+                self.logger.warning('⚠️ Proceeding anyway (validation is non-blocking)')
+        except Exception as e:
+            self.logger.exception(f'❌ {step_description} validator failed: {e}')
+            if is_fatal:
+                return False
+                
+        return True
+
     @handles_errors(exceptions=(Exception,), default_return=False, context='comprehensive pipeline execution')
     @validate_pipeline_step(step_name='comprehensive_pipeline', validation_level='WARNING', enable_rollback=True, max_retries=2)
     @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
@@ -1678,71 +1757,69 @@ class TrainingManager:
                     self.logger.info(f'Persisted meta-label artifacts to {artifacts_dir}')
                 except Exception as _pe:
                     self.logger.warning(f'Threshold/reliability persistence skipped: {_pe}')
-                should_run_step11 = _should_run('step11_final_parameters_optimization')
-                if not should_run_step11:
-                    self.logger.info(f"⏭️ Skipping Step 11: Final Parameters Optimization (starting from '{start_step_key}')")
-                    pipeline_state['final_parameters_optimization'] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
-                else:
-                    with self._timed_step('Step 11: Final Parameters Optimization', step_times):
-                        self.logger.info('🔧 STEP 11: Final Parameters Optimization with Computational Optimization...')
-                    if not await self.validate_step_dependencies('step11_backtesting', pipeline_state, self.force_rerun):
-                        self.logger.error('❌ Step 11 dependencies not met, skipping')
-                        return False
+                # Step 11: Final Parameters Optimization
+                async def _execute_step11():
                     if self.computational_optimization_manager:
-                        step11_success = await self._run_optimized_parameters_optimization(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                        return await self._run_optimized_parameters_optimization(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
                     else:
                         from src.training.steps import step11_final_parameters_optimization
-from src.core.decorators.errors import handles_errors
-                        step11_success = await step11_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                    if not step11_success:
-                        return False
-                    step11_validation = await self._run_step_validator('step11_final_parameters_optimization', training_input, pipeline_state)
-                    if step11_validation and step11_validation.get('validation_passed', False):
-                        self.logger.info('🎉 Step 11: Final Parameters Optimization completed successfully and validation passed')
-                        self.logger.info('➡️ Proceeding to Step 12: Walk Forward Validation')
-                    else:
-                        self.logger.warning(f"⚠️ Step 11 validation failed: {step11_validation.get('error', 'Unknown error')}")
-                        self.logger.warning('⚠️ Proceeding anyway (validation is non-blocking)')
-                should_run_step12 = _should_run('step12_walk_forward_validation')
-                if not should_run_step12:
-                    self.logger.info(f"⏭️ Skipping Step 12: Walk Forward Validation (starting from '{start_step_key}')")
-                    pipeline_state['walk_forward_validation'] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
-                else:
-                    with self._timed_step('Step 12: Walk Forward Validation', step_times):
-                        self.logger.info('📈 STEP 12: Walk Forward Validation...')
-                    if not await self.validate_step_dependencies('step12_walk_forward_validation', pipeline_state, self.force_rerun):
-                        self.logger.error('❌ Step 12 dependencies not met, skipping')
-                        return False
-                    step12_success = await step12_walk_forward_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                    if not step12_success:
-                        return False
-                    step12_validation = await self._run_step_validator('step12_walk_forward_validation', training_input, pipeline_state)
-                    if step12_validation and step12_validation.get('validation_passed', False):
-                        self.logger.info('🎉 Step 12: Walk Forward Validation completed successfully and validation passed')
-                        self.logger.info('➡️ Proceeding to Step 13: Monte Carlo Validation')
-                    else:
-                        self.logger.warning(f"⚠️ Step 12 validation failed: {step12_validation.get('error', 'Unknown error')}")
-                        self.logger.warning('⚠️ Proceeding anyway (validation is non-blocking)')
-                should_run_step13 = _should_run('step13_monte_carlo_validation')
-                if not should_run_step13:
-                    self.logger.info(f"⏭️ Skipping Step 13: Monte Carlo Validation (starting from '{start_step_key}')")
-                    pipeline_state['monte_carlo_validation'] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
-                else:
-                    with self._timed_step('Step 13: Monte Carlo Validation', step_times):
-                        self.logger.info('🎲 STEP 13: Monte Carlo Validation...')
-                    if not await self._validate_step_dependencies('step13_monte_carlo_validation', pipeline_state):
-                        self.logger.error('❌ Step 13 dependencies not met, skipping')
-                        return False
-                    step13_success = await step13_monte_carlo_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                    if not step13_success:
-                        return False
-                    step13_validation = await self._run_step_validator('step13_monte_carlo_validation', training_input, pipeline_state)
-                    if step13_validation and step13_validation.get('validation_passed', False):
-                        self.logger.info('🎉 Step 13: Monte Carlo Validation completed successfully and validation passed')
-                        self.logger.info('➡️ Proceeding to Step 14: A/B Testing')
-                    else:
-                        self.logger.warning(f"⚠️ Step 13 validation failed: {step13_validation.get('error', 'Unknown error')}")
-                        self.logger.warning('⚠️ Proceeding anyway (validation is non-blocking)')
+                        return await step11_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                
+                step11_success = await self._execute_pipeline_step_with_validation(
+                    step_name='step11_final_parameters_optimization',
+                    step_key='step11_final_parameters_optimization',
+                    step_description='Step 11: Final Parameters Optimization',
+                    step_function=_execute_step11,
+                    step_args={},
+                    pipeline_state=pipeline_state,
+                    training_input=training_input,
+                    step_times=step_times,
+                    start_step_key=start_step_key,
+                    _should_run=_should_run,
+                    is_fatal=True
+                )
+                if not step11_success:
+                    return False
+                # Step 12: Walk Forward Validation
+                async def _execute_step12():
+                    from src.training.steps import step12_walk_forward_validation
+                    return await step12_walk_forward_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                
+                step12_success = await self._execute_pipeline_step_with_validation(
+                    step_name='step12_walk_forward_validation',
+                    step_key='step12_walk_forward_validation',
+                    step_description='Step 12: Walk Forward Validation',
+                    step_function=_execute_step12,
+                    step_args={},
+                    pipeline_state=pipeline_state,
+                    training_input=training_input,
+                    step_times=step_times,
+                    start_step_key=start_step_key,
+                    _should_run=_should_run,
+                    is_fatal=True
+                )
+                if not step12_success:
+                    return False
+                # Step 13: Monte Carlo Validation
+                async def _execute_step13():
+                    from src.training.steps import step13_monte_carlo_validation
+                    return await step13_monte_carlo_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                
+                step13_success = await self._execute_pipeline_step_with_validation(
+                    step_name='step13_monte_carlo_validation',
+                    step_key='step13_monte_carlo_validation',
+                    step_description='Step 13: Monte Carlo Validation',
+                    step_function=_execute_step13,
+                    step_args={},
+                    pipeline_state=pipeline_state,
+                    training_input=training_input,
+                    step_times=step_times,
+                    start_step_key=start_step_key,
+                    _should_run=_should_run,
+                    is_fatal=True
+                )
+                if not step13_success:
+                    return False
                 should_run_step14 = _should_run('step14_ab_testing')
                 if not should_run_step14:
                     self.logger.info(f"⏭️ Skipping Step 14: A/B Testing (starting from '{start_step_key}')")

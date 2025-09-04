@@ -9,8 +9,12 @@ model behavior tracking, and dynamic weighting of ensemble predictions.
 
 # src/supervisor/__init__.py
 # This file makes the 'supervisor' directory a Python package.
+# Import only available components; make ABTester optional to avoid hard dependency
+try:
+    from .ab_tester import ABTester  # type: ignore
+except Exception:  # pragma: no cover - optional component may be absent
+    ABTester = None  # type: ignore
 
-from .ab_tester import ABTester
 from .main import Supervisor
 from .optimizer import Optimizer
 from .performance_reporter import PerformanceReporter
@@ -18,6 +22,7 @@ from .risk_allocator import RiskAllocator
 
 # Define __all__ to explicitly export these modules/classes
 __all__ = [
+    # ABTester is optional and may be None if not available
     "ABTester",
     "Supervisor",
     "Optimizer",

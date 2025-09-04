@@ -436,6 +436,23 @@ class CombinedFractionalSystem:
             self.logger.warning(f"Error generating performance summary: {e}")
             return {'error': str(e)}
     
+    def _setup_output_directory(self, output_dir: str) -> Path:
+        """Setup and return the output directory path."""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        return output_path
+
+    def _export_json_file(self, data: dict, file_path: Path) -> bool:
+        """Export data to a JSON file."""
+        try:
+            import json
+            with open(file_path, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to export JSON file {file_path}: {e}")
+            return False
+
     def export_performance_report(self, output_dir: str = "data/fractional_performance/combined_system") -> str:
         """Export performance report to file."
         
@@ -446,24 +463,21 @@ class CombinedFractionalSystem:
             Path to the exported report
         """
         try:
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
+            # Setup output directory
+            output_path = self._setup_output_directory(output_dir)
             
             # Generate performance summary
             summary = self.get_performance_summary()
             
-            # Export to JSON
+            # Export performance summary
             report_file = output_path / "combined_system_performance.json"
-            import json
-from src.core.decorators.errors import handles_errors
-            
-            with open(report_file, 'w') as f:
-                json.dump(summary, f, indent=2, default=str)
+            if not self._export_json_file(summary, report_file):
+                return ""
             
             # Export detailed history
             history_file = output_path / "performance_history.json"
-            with open(history_file, 'w') as f:
-                json.dump(self.performance_history, f, indent=2, default=str)
+            if not self._export_json_file(self.performance_history, history_file):
+                return ""
             
             self.logger.info(f"📊 Performance report exported to: {output_path}")
             return str(output_path)

@@ -1,9 +1,6 @@
 # src/tactician/position_sizer.py
 
-
-
 """
-from src.core.domain import validate_data_quality as validate_data_quality_src_core_domain
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
 """
@@ -15,9 +12,17 @@ from typing import Any
 from kelly_criterion_fix import calculate_correct_kelly_position_size
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import initialization_error, missing
+from src.utils.warning_symbols import error, initialization_error, missing
 from copy import copy
 import asyncio
+from src.core.decorators import handles_errors as _handles_errors
+from src.core.domain.decorators import validate_data_quality
+
+
+# Backward-compatible wrapper to accept legacy arguments (error_handlers/context/default_return)
+def core_handles_errors(*_args, **kwargs):
+    fallback = kwargs.get("default_return", kwargs.get("fallback", None))
+    return _handles_errors(fallback=fallback)
 
 
 class PositionSizer:
@@ -70,15 +75,6 @@ class PositionSizer:
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
 
-    @core_handles_errors(
-        error_handlers={
-            ValueError: (False, "Invalid position sizer configuration"),
-            AttributeError: (False, "Missing required sizing parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="position sizer initialization",
-    )
     @core_handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the position sizer."""
@@ -161,14 +157,7 @@ class PositionSizer:
         check_timestamps=False,
         context="position sizing calculation input validation",
     )
-    @core_handles_errors(
-        error_handlers={
-            ValueError: (None, "Invalid input data for position sizing"),
-            AttributeError: (None, "Sizer not properly initialized"),
-        },
-        default_return=None,
-        context="position sizing calculation",
-    )
+    @core_handles_errors(fallback=None)
     async def calculate_position_size(
         self,
         ml_predictions: dict[str, Any],
@@ -312,8 +301,8 @@ class PositionSizer:
     ) -> float:
         """Calculate position size based on ML confidence scores."""
         try:
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
+            # Get average confidence for target levels (0.25% to 1.0%)
+            target_levels = [0.25, 0.5, 0.75, 1.0]
             confidences = []
 
             for level in target_levels:
@@ -474,7 +463,7 @@ class PositionSizer:
         """Generate reason for position sizing decision."""
         try:
             # Get average confidence and risk
-            key_levels = [0.5, 1.0, 1.5, 2.0]
+            key_levels = [0.25, 0.5, 0.75, 1.0]
             confidences = []
             risks = []
 

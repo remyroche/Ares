@@ -10,7 +10,12 @@ from src.utils.warning_symbols import failed, invalid, missing
 from copy import copy
 import asyncio
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as _handles_errors
+
+# Backward-compatible wrapper for legacy signature usage
+def handles_errors(*_args, **kwargs):
+    fallback = kwargs.get("default_return", kwargs.get("fallback", None))
+    return _handles_errors(fallback=fallback)
 
 class Tactician:
     """

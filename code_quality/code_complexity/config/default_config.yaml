@@ -5,16 +5,31 @@ tools:
     enabled: true
     timeout: 30
     options: []
+    description: "Advanced code examination and complexity assessment"
     
   radon:
     enabled: true
     timeout: 30
     options: ["--json"]
+    description: "Industry-standard complexity metrics (CC, MI, Halstead)"
     
   xenon:
     enabled: true
     timeout: 30
     options: ["--json"]
+    description: "Continuous complexity monitoring and trend tracking"
+    
+  wily:
+    enabled: true
+    timeout: 60
+    options: ["--format", "json"]
+    description: "Historical complexity tracking and evolution analysis"
+    
+  pandas:
+    enabled: true
+    timeout: 30
+    options: []
+    description: "Metrics data analysis and visualization"
 
 analysis:
   include_tests: false

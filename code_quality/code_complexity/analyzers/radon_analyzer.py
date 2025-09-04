@@ -1,5 +1,6 @@
 """
 Radon Analyzer for Code Complexity Analysis
+Industry-standard complexity metrics including cyclomatic complexity, maintainability index, and Halstead metrics
 """
 
 import os
@@ -13,7 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class RadonAnalyzer:
-    """Analyzer for Radon complexity metrics"""
+    """Analyzer for Radon industry-standard complexity metrics
+    
+    Radon provides:
+    - Cyclomatic Complexity (CC): Measures code complexity based on control flow
+    - Maintainability Index (MI): Assesses code maintainability (0-100 scale)
+    - Halstead Metrics: Volume, difficulty, effort, time, bugs
+    - Raw Metrics: Lines of code, comments, blank lines, etc.
+    """
     
     def __init__(self, config):
         """Initialize Radon analyzer"""
@@ -30,7 +38,7 @@ class RadonAnalyzer:
             return False
             
     def analyze_file(self, file_path: str) -> Dict[str, Any]:
-        """Analyze a single file with Radon"""
+        """Analyze a single file with comprehensive Radon metrics"""
         if not self.is_available():
             logger.warning("Radon is not available")
             return {}
@@ -38,20 +46,30 @@ class RadonAnalyzer:
         results = {}
         
         try:
-            # Cyclomatic Complexity
+            # Cyclomatic Complexity (CC)
             cc_result = self._get_cyclomatic_complexity(file_path)
             if cc_result:
                 results['cyclomatic_complexity'] = cc_result
                 
-            # Maintainability Index
+            # Maintainability Index (MI)
             mi_result = self._get_maintainability_index(file_path)
             if mi_result:
                 results['maintainability_index'] = mi_result
                 
-            # Raw metrics
+            # Halstead Metrics
+            halstead_result = self._get_halstead_metrics(file_path)
+            if halstead_result:
+                results['halstead_metrics'] = halstead_result
+                
+            # Raw Metrics
             raw_result = self._get_raw_metrics(file_path)
             if raw_result:
                 results['raw_metrics'] = raw_result
+                
+            # Function-level complexity
+            function_complexity = self.get_function_complexity(file_path)
+            if function_complexity:
+                results['function_complexity'] = function_complexity
                 
         except Exception as e:
             logger.error(f"Error running Radon on {file_path}: {e}")

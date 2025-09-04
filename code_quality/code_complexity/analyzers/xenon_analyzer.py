@@ -1,5 +1,6 @@
 """
 Xenon Analyzer for Code Complexity Analysis
+Continuous complexity monitoring with trend tracking and threshold management
 """
 
 import os
@@ -13,7 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 class XenonAnalyzer:
-    """Analyzer for Xenon complexity metrics"""
+    """Analyzer for Xenon continuous complexity monitoring
+    
+    Xenon provides:
+    - Continuous complexity monitoring
+    - Trend tracking over time
+    - Threshold management and alerts
+    - Module and function-level complexity scores
+    - Integration with CI/CD pipelines
+    """
     
     def __init__(self, config):
         """Initialize Xenon analyzer"""

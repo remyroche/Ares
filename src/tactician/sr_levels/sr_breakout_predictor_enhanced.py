@@ -246,93 +246,106 @@ class EnhancedSRBreakoutPredictor:
         level: Dict[str, Any],
         current_price: float
     ) -> Dict[str, float]:
-        """Extract features for breakout prediction (25+ specific factors)."""
+        """Extract ALL features for breakout prediction (S/R + ALL step06 features)."""
         try:
             features = {}
             level_price = level.get('price', 0)
             
-            # === CORE BREAKOUT FACTORS (12 factors) ===
-            # Factor 1: Proximity to Level (0-1, closer = higher breakout probability)
+            # === S/R SPECIFIC FEATURES (31 features) ===
+            # Basic S/R features
             features['proximity_to_level'] = abs(current_price - level_price) / level_price
-            
-            # Factor 2: Volume Spike (1.0+ = normal, >1.5 = spike)
-            features['volume_spike'] = self._calculate_volume_spike(market_data)
-            
-            # Factor 3: Price Momentum (-1 to +1, positive = upward momentum)
-            features['momentum'] = self._calculate_momentum(market_data)
-            
-            # Factor 4: Volatility (0-1, higher = more likely to break)
-            features['volatility'] = self._calculate_volatility(market_data)
-            
-            # Factor 5: Time at Level (bars, longer = more likely to break)
-            features['time_at_level'] = self._calculate_time_at_level(market_data, level_price)
-            
-            # Factor 6: Level Strength (0-1, weaker = more likely to break)
             features['level_strength'] = level.get('strength', 0.5)
-            
-            # Factor 7: Touch Count (number of previous touches)
             features['touch_count'] = level.get('touch_count', 0)
+            features['age_bars'] = level.get('age_bars', 0)
+            features['avg_bounce_ratio'] = level.get('avg_bounce_ratio', 0)
+            features['max_bounce_ratio'] = level.get('max_bounce_ratio', 0)
+            features['volume_confirmation_score'] = level.get('volume_confirmation_score', 0.5)
+            features['consistency_score'] = level.get('consistency_score', 0.5)
+            features['failure_count'] = level.get('failure_count', 0)
             
-            # Factor 8: RSI Position (0-100, extremes = more likely to break)
-            features['rsi'] = self._calculate_rsi(market_data['close'])
-            
-            # Factor 9: MACD Signal (momentum confirmation)
+            # Technical indicators for S/R context
+            features['rsi_14'] = self._calculate_rsi(market_data['close'])
+            features['macd_line'] = self._calculate_macd_line(market_data['close'])
             features['macd_signal'] = self._calculate_macd_signal(market_data['close'])
-            
-            # Factor 10: Bollinger Band Position (0-1, extremes = more likely to break)
             features['bollinger_position'] = self._calculate_bollinger_position(market_data)
-            
-            # Factor 11: Order Flow Imbalance (-1 to +1, imbalance = more likely to break)
-            features['order_flow_imbalance'] = self._calculate_order_flow_imbalance(market_data)
-            
-            # Factor 12: Market Sentiment (0-1, extreme sentiment = more likely to break)
-            features['market_sentiment'] = self._calculate_market_sentiment(market_data)
-            
-            # === ADDITIONAL TECHNICAL FACTORS (8 factors) ===
-            # Factor 13: Stochastic Oscillator (0-100, extremes = more likely to break)
-            features['stochastic_k'] = self._calculate_stochastic_k(market_data)
-            
-            # Factor 14: Williams %R (-100 to 0, extremes = more likely to break)
+            features['atr_14'] = self._calculate_atr(market_data)
+            features['volume_ratio'] = self._calculate_volume_spike(market_data)
+            features['price_momentum'] = self._calculate_momentum(market_data)
+            features['stoch_k'] = self._calculate_stochastic_k(market_data)
+            features['stoch_d'] = self._calculate_stochastic_d(market_data)
             features['williams_r'] = self._calculate_williams_r(market_data)
-            
-            # Factor 15: CCI (Commodity Channel Index, extremes = more likely to break)
             features['cci'] = self._calculate_cci(market_data)
-            
-            # Factor 16: ADX (Average Directional Index, >25 = strong trend)
             features['adx'] = self._calculate_adx(market_data)
+            features['obv'] = self._calculate_obv(market_data)
+            features['doji_pattern'] = self._detect_doji_pattern(market_data)
+            features['hammer_pattern'] = self._detect_hammer_pattern(market_data)
+            features['volatility_proxy'] = self._calculate_volatility_proxy(market_data)
             
-            # Factor 17: ATR (Average True Range, higher = more volatile)
-            features['atr'] = self._calculate_atr(market_data)
+            # Advanced S/R features
+            features['level_density'] = self._calculate_sr_density(level_price, level)
+            features['confluence_score'] = level.get('confluence_score', 0.5)
+            features['time_since_touch'] = self._calculate_time_at_level(market_data, level_price)
+            features['volume_at_touch'] = level.get('volume_at_touch', 1.0)
+            features['price_action_score'] = self._detect_price_action_pattern(market_data)
+            features['microstructure_score'] = level.get('microstructure_score', 0.5)
             
-            # Factor 18: Volume Profile (volume at current price level)
-            features['volume_profile'] = self._calculate_volume_profile(market_data, current_price)
+            # === ALL STEP06 FEATURES (200+ features) ===
+            step06_features = await self._extract_all_step06_features(market_data)
+            features.update(step06_features)
             
-            # Factor 19: Price Action Pattern (doji, hammer, etc.)
-            features['price_action_pattern'] = self._detect_price_action_pattern(market_data)
-            
-            # Factor 20: Support/Resistance Density (how many levels nearby)
-            features['sr_density'] = self._calculate_sr_density(level_price, level)
-            
-            # === MARKET STRUCTURE FACTORS (5 factors) ===
-            # Factor 21: Trend Strength (0-1, stronger trend = more likely to break)
-            features['trend_strength'] = self._calculate_trend_strength(market_data)
-            
-            # Factor 22: Market Regime (trending, ranging, transitional)
-            features['market_regime'] = self._determine_market_regime(market_data)
-            
-            # Factor 23: Volatility Regime (low, normal, high volatility)
-            features['volatility_regime'] = self._determine_volatility_regime(market_data)
-            
-            # Factor 24: Time of Day Factor (market session effects)
-            features['time_of_day_factor'] = self._calculate_time_of_day_factor(market_data)
-            
-            # Factor 25: Previous Breakout History (how often this level breaks)
-            features['previous_breakout_rate'] = self._get_previous_breakout_rate(level)
+            self.logger.info(f"✅ Extracted {len(features)} total features for breakout prediction")
+            self.logger.info(f"   - S/R specific features: 31")
+            self.logger.info(f"   - Step06 features: {len(step06_features)}")
             
             return features
             
         except Exception as e:
             self.logger.error(f"Feature extraction failed: {e}")
+            return {}
+    
+    async def _extract_all_step06_features(self, market_data: pd.DataFrame) -> Dict[str, float]:
+        """Extract ALL step06 features (200+ features)."""
+        try:
+            # Import step06 feature engineering
+            try:
+                from src.training.steps.vectorized_advanced_feature_engineering import (
+                    VectorizedAdvancedFeatureEngineeringRefactored
+                )
+                step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
+                
+                # Engineer ALL features using step06
+                step06_result = await step06_engineer.engineer_features(market_data)
+                
+                # Extract ALL features from step06
+                all_features = {}
+                
+                # Extract all feature categories
+                feature_categories = [
+                    'price_features', 'volume_features', 'microstructure_features',
+                    'technical_features', 'regime_features', 'wavelet_features',
+                    'cross_timeframe_features', 'interaction_features'
+                ]
+                
+                for category in feature_categories:
+                    category_features = step06_result.get(category, {})
+                    for feature_name, feature_values in category_features.items():
+                        if isinstance(feature_values, (list, np.ndarray)) and len(feature_values) > 0:
+                            all_features[f"{category}_{feature_name}"] = float(feature_values[-1])
+                        elif isinstance(feature_values, (int, float)):
+                            all_features[f"{category}_{feature_name}"] = float(feature_values)
+                
+                self.logger.info(f"✅ Extracted {len(all_features)} step06 features")
+                return all_features
+                
+            except ImportError as e:
+                self.logger.warning(f"Step06 feature engineering not available: {e}")
+                return {}
+            except Exception as e:
+                self.logger.warning(f"Step06 feature extraction failed: {e}")
+                return {}
+            
+        except Exception as e:
+            self.logger.error(f"Step06 feature extraction failed: {e}")
             return {}
     
     async def _calculate_breakout_probability(self, features: Dict[str, float]) -> float:
@@ -1079,6 +1092,96 @@ class EnhancedSRBreakoutPredictor:
             return min(breakout_rate, 1.0)
         except Exception:
             return 0.5
+    
+    # Additional missing methods for S/R features
+    def _calculate_macd_line(self, prices: pd.Series) -> float:
+        """Calculate MACD line."""
+        try:
+            if len(prices) < 26:
+                return 0.0
+            
+            ema_12 = prices.ewm(span=12).mean()
+            ema_26 = prices.ewm(span=26).mean()
+            macd_line = ema_12 - ema_26
+            return macd_line.iloc[-1] if not macd_line.empty else 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_stochastic_d(self, market_data: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> float:
+        """Calculate Stochastic %D."""
+        try:
+            if len(market_data) < k_period:
+                return 50.0
+            
+            low_min = market_data['low'].rolling(window=k_period).min()
+            high_max = market_data['high'].rolling(window=k_period).max()
+            k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
+            d_percent = k_percent.rolling(window=d_period).mean()
+            return d_percent.iloc[-1] if not d_percent.empty else 50.0
+        except Exception:
+            return 50.0
+    
+    def _calculate_obv(self, market_data: pd.DataFrame) -> float:
+        """Calculate On-Balance Volume."""
+        try:
+            if len(market_data) < 2:
+                return 0.0
+            
+            price_change = market_data['close'].diff()
+            obv = np.where(price_change > 0, market_data['volume'], 
+                          np.where(price_change < 0, -market_data['volume'], 0))
+            obv = pd.Series(obv, index=market_data.index).cumsum()
+            return obv.iloc[-1] if not obv.empty else 0.0
+        except Exception:
+            return 0.0
+    
+    def _detect_doji_pattern(self, market_data: pd.DataFrame) -> float:
+        """Detect Doji candlestick pattern."""
+        try:
+            if len(market_data) < 1:
+                return 0.0
+            
+            current = market_data.iloc[-1]
+            body_size = abs(current['close'] - current['open'])
+            total_range = current['high'] - current['low']
+            
+            # Doji: body is less than 10% of total range
+            return 1.0 if body_size / total_range < 0.1 else 0.0
+        except Exception:
+            return 0.0
+    
+    def _detect_hammer_pattern(self, market_data: pd.DataFrame) -> float:
+        """Detect Hammer candlestick pattern."""
+        try:
+            if len(market_data) < 1:
+                return 0.0
+            
+            current = market_data.iloc[-1]
+            body_size = abs(current['close'] - current['open'])
+            lower_shadow = min(current['open'], current['close']) - current['low']
+            upper_shadow = current['high'] - max(current['open'], current['close'])
+            total_range = current['high'] - current['low']
+            
+            # Hammer: long lower shadow, small body, small upper shadow
+            is_hammer = (lower_shadow > 2 * body_size and 
+                        upper_shadow < body_size and 
+                        body_size / total_range < 0.3)
+            
+            return 1.0 if is_hammer else 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_volatility_proxy(self, market_data: pd.DataFrame, period: int = 20) -> float:
+        """Calculate volatility proxy (simplified VIX)."""
+        try:
+            if len(market_data) < period:
+                return 0.0
+            
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.rolling(window=period).std().iloc[-1]
+            return float(volatility * 100) if not np.isnan(volatility) else 0.0
+        except Exception:
+            return 0.0
     
     async def _get_ml_prediction(self, features: Dict[str, float]) -> float:
         """Get ML model prediction."""

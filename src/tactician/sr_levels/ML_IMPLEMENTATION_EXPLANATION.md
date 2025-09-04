@@ -198,10 +198,15 @@ combined_scores = (
 )
 ```
 
-#### Step 6: Top Feature Selection
+#### Step 6: S/R Prioritized Feature Selection
 ```python
-# Select top 20 features based on combined scores
-top_features = self._select_top_features(combined_scores, feature_names, top_k=20)
+# Select top 50 features with S/R feature prioritization
+top_features = self._select_top_features_with_sr_priority(combined_scores, feature_names, top_k=50)
+
+# S/R prioritization logic:
+# - 60% of selected features are S/R specific features
+# - 40% of selected features are step06 features
+# - Ensures S/R features are not overlooked
 ```
 
 ### Comprehensive Feature Analysis Logging:
@@ -210,10 +215,11 @@ self.logger.info("🔍 Comprehensive Feature Analysis Results:")
 self.logger.info(f"📊 Total features analyzed: {len(combined_scores)}")
 self.logger.info(f"🎯 Selected features: {len(selected_features)}")
 
-self.logger.info("🏆 Top 15 Most Important Features:")
-for i, (feature, score) in enumerate(sorted_features[:15]):
+self.logger.info("🏆 Top 25 Most Important Features:")
+for i, (feature, score) in enumerate(sorted_features[:25]):
     status = "✅ SELECTED" if feature in selected_features else "❌ NOT SELECTED"
-    self.logger.info(f"  {i+1:2d}. {feature:<25} {score:.4f} {status}")
+    feature_type = "🎯 S/R" if any(pattern in feature.lower() for pattern in ['proximity', 'level', 'touch', 'bounce', 'strength', 'rsi', 'macd', 'bollinger', 'atr', 'stoch', 'williams', 'cci', 'adx', 'obv', 'doji', 'hammer', 'volatility']) else "📊 STEP06"
+    self.logger.info(f"  {i+1:2d}. {feature:<30} {score:.4f} {feature_type} {status}")
 ```
 
 ### Why This Advanced Approach?
@@ -221,44 +227,66 @@ for i, (feature, score) in enumerate(sorted_features[:15]):
 - **Robust Selection**: Permutation importance is more reliable than tree-based importance
 - **Model-Agnostic**: SHAP provides model-agnostic feature importance
 - **Correlation Awareness**: Considers linear relationships with target
+- **S/R Prioritization**: Ensures S/R features are not overlooked in selection
 - **Comprehensive Analysis**: Provides detailed logging and analysis
 - **Reduces Overfitting**: More sophisticated selection than simple statistical tests
 - **Handles High Dimensionality**: Works well with 230+ features
+- **Balanced Selection**: 60% S/R features, 40% step06 features for optimal balance
 
-## 4. Multi-Factor Analysis for Breakout Prediction: 25+ Factors
+## 4. Multi-Factor Analysis for Breakout Prediction: ALL Features (230+)
 
-### The 25+ Specific Factors:
+### Complete Feature Set for Breakout Prediction:
 
-#### Core Breakout Factors (12 factors):
+#### S/R Specific Features (31 features):
+**Basic S/R Features (9 features):**
 1. **Proximity to Level** (0-1): Closer = higher breakout probability
-2. **Volume Spike** (1.0+): >1.5 = significant volume spike
-3. **Price Momentum** (-1 to +1): Positive = upward momentum
-4. **Volatility** (0-1): Higher = more likely to break
-5. **Time at Level** (bars): Longer = more likely to break
-6. **Level Strength** (0-1): Weaker = more likely to break
-7. **Touch Count**: Number of previous touches
-8. **RSI Position** (0-100): Extremes = more likely to break
-9. **MACD Signal**: Momentum confirmation
-10. **Bollinger Band Position** (0-1): Extremes = more likely to break
-11. **Order Flow Imbalance** (-1 to +1): Imbalance = more likely to break
-12. **Market Sentiment** (0-1): Extreme sentiment = more likely to break
+2. **Level Strength** (0-1): Weaker = more likely to break
+3. **Touch Count**: Number of previous touches
+4. **Age Bars**: Age of level in bars
+5. **Average Bounce Ratio**: Average bounce strength
+6. **Max Bounce Ratio**: Maximum bounce strength
+7. **Volume Confirmation Score**: Volume confirmation strength
+8. **Consistency Score**: Level consistency over time
+9. **Failure Count**: Number of times level failed
 
-#### Additional Technical Factors (8 factors):
-13. **Stochastic Oscillator** (0-100): Extremes = more likely to break
-14. **Williams %R** (-100 to 0): Extremes = more likely to break
-15. **CCI** (Commodity Channel Index): Extremes = more likely to break
-16. **ADX** (Average Directional Index): >25 = strong trend
-17. **ATR** (Average True Range): Higher = more volatile
-18. **Volume Profile**: Volume at current price level
-19. **Price Action Pattern**: Doji, hammer, etc.
-20. **S/R Density**: How many levels nearby
+**Technical Indicators for S/R Context (15 features):**
+10. **RSI 14**: Relative Strength Index
+11. **MACD Line**: MACD line value
+12. **MACD Signal**: MACD signal line
+13. **Bollinger Position**: Position within Bollinger Bands
+14. **ATR 14**: Average True Range
+15. **Volume Ratio**: Current vs average volume
+16. **Price Momentum**: Price momentum over periods
+17. **Stochastic %K**: Stochastic oscillator K
+18. **Stochastic %D**: Stochastic oscillator D
+19. **Williams %R**: Williams %R oscillator
+20. **CCI**: Commodity Channel Index
+21. **ADX**: Average Directional Index
+22. **OBV**: On-Balance Volume
+23. **Doji Pattern**: Doji candlestick pattern
+24. **Hammer Pattern**: Hammer candlestick pattern
+25. **Volatility Proxy**: Volatility proxy (simplified VIX)
 
-#### Market Structure Factors (5 factors):
-21. **Trend Strength** (0-1): Stronger trend = more likely to break
-22. **Market Regime** (0-1): Trending, ranging, transitional
-23. **Volatility Regime** (0-1): Low, normal, high volatility
-24. **Time of Day Factor** (0-1): Market session effects
-25. **Previous Breakout Rate** (0-1): How often this level breaks
+**Advanced S/R Features (6 features):**
+26. **Level Density**: Density of nearby S/R levels
+27. **Confluence Score**: Confluence with other levels
+28. **Time Since Touch**: Time since last touch
+29. **Volume at Touch**: Volume during last touch
+30. **Price Action Score**: Price action pattern score
+31. **Microstructure Score**: Market microstructure score
+
+#### ALL Step06 Features (200+ features):
+**Complete step06 feature integration including:**
+- **Price Features** (25+): OHLCV transformations, returns, volatility measures
+- **Volume Features** (25+): Volume profiles, ratios, momentum, trends
+- **Microstructure Features** (25+): Order flow, bid-ask spreads, market depth
+- **Technical Features** (25+): Moving averages, oscillators, trend indicators
+- **Regime Features** (25+): Market regime classifications, trend strength
+- **Wavelet Features** (25+): Multi-resolution analysis, frequency domain
+- **Cross-Timeframe Features** (25+): Multi-timeframe analysis, confluence
+- **Interaction Features** (25+): Feature combinations, non-linear transformations
+
+**Total: 230+ features** (31 S/R + 200+ Step06)
 
 ### Enhanced Factor Weighting:
 ```python

@@ -255,31 +255,12 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
             
-            # Simple optimization based on data characteristics
+            # Get optimal parameters based on data characteristics
             data_size = len(data)
+            optimal_components = self._get_optimal_hmm_components(data_size)
             
-            # Recommend number of components based on data size
-            if data_size < 1000:
-                optimal_components = 3
-            elif data_size < 5000:
-                optimal_components = 4
-            elif data_size < 10000:
-                optimal_components = 5
-            else:
-                optimal_components = 6
-            
-            optimization_result["best_parameters"] = {
-                "n_components": optimal_components,
-                "covariance_type": "full",
-                "n_iter": 100,
-                "random_state": 42
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use {optimal_components} HMM components for data size {data_size:,}",
-                "Full covariance type recommended for comprehensive regime modeling",
-                "100 iterations sufficient for convergence"
-            ]
+            optimization_result["best_parameters"] = self._get_hmm_best_parameters(optimal_components)
+            optimization_result["recommendations"] = self._get_hmm_recommendations(optimal_components, data_size)
             
             self.logger.info(f"✅ HMM parameters optimized: {optimal_components} components")
             return optimization_result
@@ -287,6 +268,34 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize HMM parameters: {e}")
             return {}
+
+    def _get_optimal_hmm_components(self, data_size: int) -> int:
+        """Get optimal number of HMM components based on data size."""
+        if data_size < 1000:
+            return 3
+        elif data_size < 5000:
+            return 4
+        elif data_size < 10000:
+            return 5
+        else:
+            return 6
+
+    def _get_hmm_best_parameters(self, optimal_components: int) -> dict[str, Any]:
+        """Get best HMM parameters."""
+        return {
+            "n_components": optimal_components,
+            "covariance_type": "full",
+            "n_iter": 100,
+            "random_state": 42
+        }
+
+    def _get_hmm_recommendations(self, optimal_components: int, data_size: int) -> list[str]:
+        """Get HMM optimization recommendations."""
+        return [
+            f"Use {optimal_components} HMM components for data size {data_size:,}",
+            "Full covariance type recommended for comprehensive regime modeling",
+            "100 iterations sufficient for convergence"
+        ]
 
     @handles_errors
     # @resource_monitor - removed, use log_execution_time
@@ -304,31 +313,12 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
             
-            # Simple optimization based on data characteristics
+            # Get optimal parameters based on data characteristics
             data_size = len(data)
+            optimal_clusters = self._get_optimal_cluster_count(data_size)
             
-            # Recommend number of clusters based on data size
-            if data_size < 1000:
-                optimal_clusters = 10
-            elif data_size < 5000:
-                optimal_clusters = 15
-            elif data_size < 10000:
-                optimal_clusters = 20
-            else:
-                optimal_clusters = 25
-            
-            optimization_result["best_parameters"] = {
-                "n_clusters": optimal_clusters,
-                "method": "kmeans",
-                "random_state": 42,
-                "n_init": 10
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use {optimal_clusters} clusters for data size {data_size:,}",
-                "K-means clustering recommended for regime discovery",
-                "10 initializations for robust clustering"
-            ]
+            optimization_result["best_parameters"] = self._get_clustering_best_parameters(optimal_clusters)
+            optimization_result["recommendations"] = self._get_clustering_recommendations(optimal_clusters, data_size)
             
             self.logger.info(f"✅ Clustering parameters optimized: {optimal_clusters} clusters")
             return optimization_result
@@ -336,6 +326,34 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize clustering parameters: {e}")
             return {}
+
+    def _get_optimal_cluster_count(self, data_size: int) -> int:
+        """Get optimal number of clusters based on data size."""
+        if data_size < 1000:
+            return 10
+        elif data_size < 5000:
+            return 15
+        elif data_size < 10000:
+            return 20
+        else:
+            return 25
+
+    def _get_clustering_best_parameters(self, optimal_clusters: int) -> dict[str, Any]:
+        """Get best clustering parameters."""
+        return {
+            "n_clusters": optimal_clusters,
+            "method": "kmeans",
+            "random_state": 42,
+            "n_init": 10
+        }
+
+    def _get_clustering_recommendations(self, optimal_clusters: int, data_size: int) -> list[str]:
+        """Get clustering optimization recommendations."""
+        return [
+            f"Use {optimal_clusters} clusters for data size {data_size:,}",
+            "K-means clustering recommended for regime discovery",
+            "10 initializations for robust clustering"
+        ]
 
     @handles_errors
     # @resource_monitor - removed, use log_execution_time
@@ -354,40 +372,12 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
             
-            # Simple optimization based on data characteristics
+            # Get optimal parameters based on data characteristics
             data_size = len(data)
+            optimal_windows = self._get_optimal_feature_windows(data_size)
             
-            # Recommend feature windows based on data size
-            if data_size < 1000:
-                optimal_momentum = 10
-                optimal_volatility = 15
-                optimal_volume = 10
-            elif data_size < 5000:
-                optimal_momentum = 15
-                optimal_volatility = 20
-                optimal_volume = 15
-            else:
-                optimal_momentum = 20
-                optimal_volatility = 25
-                optimal_volume = 20
-            
-            optimization_result["best_parameters"] = {
-                "momentum_window": optimal_momentum,
-                "volatility_window": optimal_volatility,
-                "volume_window": optimal_volume,
-                "rsi_window": 14,
-                "macd_fast": 12,
-                "macd_slow": 26,
-                "macd_signal": 9,
-                "atr_window": 14
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use momentum window {optimal_momentum} for data size {data_size:,}",
-                f"Use volatility window {optimal_volatility} for data size {data_size:,}",
-                f"Use volume window {optimal_volume} for data size {data_size:,}",
-                "Standard technical indicator parameters recommended"
-            ]
+            optimization_result["best_parameters"] = self._get_feature_best_parameters(optimal_windows)
+            optimization_result["recommendations"] = self._get_feature_recommendations(optimal_windows, data_size)
             
             self.logger.info(f"✅ Feature parameters optimized")
             return optimization_result
@@ -395,6 +385,37 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize feature parameters: {e}")
             return {}
+
+    def _get_optimal_feature_windows(self, data_size: int) -> dict[str, int]:
+        """Get optimal feature windows based on data size."""
+        if data_size < 1000:
+            return {"momentum": 10, "volatility": 15, "volume": 10}
+        elif data_size < 5000:
+            return {"momentum": 15, "volatility": 20, "volume": 15}
+        else:
+            return {"momentum": 20, "volatility": 25, "volume": 20}
+
+    def _get_feature_best_parameters(self, optimal_windows: dict[str, int]) -> dict[str, Any]:
+        """Get best feature parameters."""
+        return {
+            "momentum_window": optimal_windows["momentum"],
+            "volatility_window": optimal_windows["volatility"],
+            "volume_window": optimal_windows["volume"],
+            "rsi_window": 14,
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "macd_signal": 9,
+            "atr_window": 14
+        }
+
+    def _get_feature_recommendations(self, optimal_windows: dict[str, int], data_size: int) -> list[str]:
+        """Get feature optimization recommendations."""
+        return [
+            f"Use momentum window {optimal_windows['momentum']} for data size {data_size:,}",
+            f"Use volatility window {optimal_windows['volatility']} for data size {data_size:,}",
+            f"Use volume window {optimal_windows['volume']} for data size {data_size:,}",
+            "Standard technical indicator parameters recommended"
+        ]
 
     @handles_errors
     # @secure_data_processing - removed, handled by validates
@@ -613,8 +634,6 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
-    from src.core.decorators import handles_errors
-from src.core.decorators.errors import handles_errors
     
     # Load test configuration
     test_config = {

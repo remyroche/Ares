@@ -111,43 +111,14 @@ class EnhancedDataQualityManager:
         }
 
         try:
-            # Step 1: Check for data gaps
-            if check_gaps and self.gap_detector:
-                gap_results = await self._check_data_gaps(symbol, exchange, timeframe)
-                results["gaps_detected"] = gap_results.get("gaps", [])
-                
-                if gap_results.get("gaps"):
-                    logger.warning(f"⚠️ Found {len(gap_results['gaps'])} data gaps")
-                    results["recommendations"].append("Data gaps detected - consider filling them")
-                    
-                    # Step 2: Fill gaps if requested
-                    if fill_gaps and self.gap_filler:
-                        fill_results = await self._fill_data_gaps(symbol, exchange, timeframe, gap_results["gaps"])
-                        results["gaps_filled"] = fill_results.get("filled_gaps", [])
-                        
-                        if fill_results.get("success"):
-                            logger.info(f"✅ Successfully filled {len(fill_results['filled_gaps'])} gaps")
-                        else:
-                            logger.error("❌ Failed to fill some data gaps")
-                            results["success"] = False
-
-            # Step 3: Validate data format
-            if validate_format and self.validator:
-                format_results = await self._validate_data_format(symbol, exchange, timeframe)
-                results["format_issues"] = format_results.get("issues", [])
-                results["quality_metrics"] = format_results.get("metrics", {})
-                
-                if format_results.get("issues"):
-                    logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
-                    results["recommendations"].append("Data format issues detected - consider fixing them")
-
-            # Step 4: Check data completeness for step03/step04 requirements
-            completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
-            results["step3_step4_ready"] = completeness_results.get("ready", False)
-            results["missing_for_steps"] = completeness_results.get("missing", [])
+            # Step 1: Check and fill data gaps
+            await self._process_data_gaps(results, symbol, exchange, timeframe, check_gaps, fill_gaps)
             
-            if not completeness_results.get("ready"):
-                results["recommendations"].append("Data not ready for step03/step04 - additional data needed")
+            # Step 2: Validate data format
+            await self._process_data_format_validation(results, symbol, exchange, timeframe, validate_format)
+            
+            # Step 3: Check data completeness for step03/step04 requirements
+            await self._process_data_completeness_check(results, symbol, exchange, timeframe)
 
             logger.info(f"✅ Comprehensive quality check completed for {exchange}_{symbol}_{timeframe}")
             return results
@@ -157,6 +128,57 @@ class EnhancedDataQualityManager:
             results["success"] = False
             results["issues"].append(f"Quality check failed: {str(e)}")
             return results
+
+    async def _process_data_gaps(self, results: dict, symbol: str, exchange: str, timeframe: str, 
+                               check_gaps: bool, fill_gaps: bool) -> None:
+        """Process data gap checking and filling."""
+        if not check_gaps or not self.gap_detector:
+            return
+            
+        gap_results = await self._check_data_gaps(symbol, exchange, timeframe)
+        results["gaps_detected"] = gap_results.get("gaps", [])
+        
+        if gap_results.get("gaps"):
+            logger.warning(f"⚠️ Found {len(gap_results['gaps'])} data gaps")
+            results["recommendations"].append("Data gaps detected - consider filling them")
+            
+            if fill_gaps and self.gap_filler:
+                await self._process_gap_filling(results, symbol, exchange, timeframe, gap_results["gaps"])
+
+    async def _process_gap_filling(self, results: dict, symbol: str, exchange: str, 
+                                 timeframe: str, gaps: list) -> None:
+        """Process gap filling."""
+        fill_results = await self._fill_data_gaps(symbol, exchange, timeframe, gaps)
+        results["gaps_filled"] = fill_results.get("filled_gaps", [])
+        
+        if fill_results.get("success"):
+            logger.info(f"✅ Successfully filled {len(fill_results['filled_gaps'])} gaps")
+        else:
+            logger.error("❌ Failed to fill some data gaps")
+            results["success"] = False
+
+    async def _process_data_format_validation(self, results: dict, symbol: str, exchange: str, 
+                                            timeframe: str, validate_format: bool) -> None:
+        """Process data format validation."""
+        if not validate_format or not self.validator:
+            return
+            
+        format_results = await self._validate_data_format(symbol, exchange, timeframe)
+        results["format_issues"] = format_results.get("issues", [])
+        results["quality_metrics"] = format_results.get("metrics", {})
+        
+        if format_results.get("issues"):
+            logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
+            results["recommendations"].append("Data format issues detected - consider fixing them")
+
+    async def _process_data_completeness_check(self, results: dict, symbol: str, exchange: str, timeframe: str) -> None:
+        """Process data completeness check for step03/step04."""
+        completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
+        results["step3_step4_ready"] = completeness_results.get("ready", False)
+        results["missing_for_steps"] = completeness_results.get("missing", [])
+        
+        if not completeness_results.get("ready"):
+            results["recommendations"].append("Data not ready for step03/step04 - additional data needed")
 
     @traced(span_name="check_data_gaps")
     # @memory_efficient - removed
@@ -215,33 +237,9 @@ class EnhancedDataQualityManager:
             filled_gaps = []
             
             for gap in gaps:
-                try:
-                    if gap["type"] == "aggtrades":
-                        # Fill aggtrades gap
-                        success = await self.gap_filler.fill_aggtrades_gap(
-                            symbol, exchange, gap["date"]
-                        )
-                        if success:
-                            filled_gaps.append(gap)
-                            
-                    elif gap["type"] == "klines":
-                        # Fill klines gap
-                        success = await self.gap_filler.fill_klines_gap(
-                            symbol, exchange, timeframe, gap["date"]
-                        )
-                        if success:
-                            filled_gaps.append(gap)
-                            
-                    elif gap["type"] == "futures":
-                        # Fill futures gap
-                        success = await self.gap_filler.fill_futures_gap(
-                            symbol, exchange, gap["date"]
-                        )
-                        if success:
-                            filled_gaps.append(gap)
-                            
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to fill gap {gap}: {e}")
+                success = await self._fill_single_gap(symbol, exchange, timeframe, gap)
+                if success:
+                    filled_gaps.append(gap)
             
             return {
                 "filled_gaps": filled_gaps,
@@ -252,6 +250,26 @@ class EnhancedDataQualityManager:
         except Exception as e:
             logger.exception(f"❌ Error filling data gaps: {e}")
             return {"filled_gaps": [], "error": str(e)}
+
+    async def _fill_single_gap(self, symbol: str, exchange: str, timeframe: str, gap: Dict) -> bool:
+        """Fill a single data gap."""
+        try:
+            gap_type = gap["type"]
+            gap_date = gap["date"]
+            
+            if gap_type == "aggtrades":
+                return await self.gap_filler.fill_aggtrades_gap(symbol, exchange, gap_date)
+            elif gap_type == "klines":
+                return await self.gap_filler.fill_klines_gap(symbol, exchange, timeframe, gap_date)
+            elif gap_type == "futures":
+                return await self.gap_filler.fill_futures_gap(symbol, exchange, gap_date)
+            else:
+                logger.warning(f"⚠️ Unknown gap type: {gap_type}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fill gap {gap}: {e}")
+            return False
 
     @traced(span_name="validate_data_format")
     @validates()
@@ -265,48 +283,60 @@ class EnhancedDataQualityManager:
             metrics = {}
             
             # Validate aggtrades files
-            aggtrades_files = self.validator.get_aggtrades_files(symbol, exchange)
-            for file_path in aggtrades_files:
-                validation_result = self.validator.validate_file_format(file_path)
-                if not validation_result.get("valid", False):
-                    issues.extend(validation_result.get("issues", []))
-                
-                # Collect metrics
-                metrics[f"aggtrades_{file_path.name}"] = {
-                    "file_size": validation_result.get("file_size", 0),
-                    "row_count": validation_result.get("row_count", 0),
-                    "valid": validation_result.get("valid", False)
-                }
+            await self._validate_aggtrades_files(symbol, exchange, issues, metrics)
             
             # Validate klines files
-            klines_pattern = f"klines_{exchange}_{symbol}_{timeframe}_*.parquet"
-            klines_files = list(self.data_cache_path.glob(klines_pattern))
-            
-            for file_path in klines_files:
-                try:
-                    df = pd.read_parquet(file_path)
-                    metrics[f"klines_{file_path.name}"] = {
-                        "file_size": file_path.stat().st_size,
-                        "row_count": len(df),
-                        "valid": True,
-                        "columns": list(df.columns),
-                        "date_range": {
-                            "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else None,
-                            "end": df["timestamp"].max().isoformat() if "timestamp" in df.columns else None
-                        }
-                    }
-                except Exception as e:
-                    issues.append(f"Invalid klines file {file_path.name}: {e}")
-                    metrics[f"klines_{file_path.name}"] = {
-                        "valid": False,
-                        "error": str(e)
-                    }
+            await self._validate_klines_files(symbol, exchange, timeframe, issues, metrics)
             
             return {"issues": issues, "metrics": metrics}
             
         except Exception as e:
             logger.exception(f"❌ Error validating data format: {e}")
             return {"issues": [f"Validation failed: {e}"], "metrics": {}}
+
+    async def _validate_aggtrades_files(self, symbol: str, exchange: str, issues: list, metrics: dict) -> None:
+        """Validate aggtrades files."""
+        aggtrades_files = self.validator.get_aggtrades_files(symbol, exchange)
+        for file_path in aggtrades_files:
+            validation_result = self.validator.validate_file_format(file_path)
+            if not validation_result.get("valid", False):
+                issues.extend(validation_result.get("issues", []))
+            
+            # Collect metrics
+            metrics[f"aggtrades_{file_path.name}"] = {
+                "file_size": validation_result.get("file_size", 0),
+                "row_count": validation_result.get("row_count", 0),
+                "valid": validation_result.get("valid", False)
+            }
+
+    async def _validate_klines_files(self, symbol: str, exchange: str, timeframe: str, issues: list, metrics: dict) -> None:
+        """Validate klines files."""
+        klines_pattern = f"klines_{exchange}_{symbol}_{timeframe}_*.parquet"
+        klines_files = list(self.data_cache_path.glob(klines_pattern))
+        
+        for file_path in klines_files:
+            try:
+                df = pd.read_parquet(file_path)
+                metrics[f"klines_{file_path.name}"] = self._get_klines_metrics(file_path, df)
+            except Exception as e:
+                issues.append(f"Invalid klines file {file_path.name}: {e}")
+                metrics[f"klines_{file_path.name}"] = {
+                    "valid": False,
+                    "error": str(e)
+                }
+
+    def _get_klines_metrics(self, file_path: Path, df: pd.DataFrame) -> dict:
+        """Get metrics for a klines file."""
+        return {
+            "file_size": file_path.stat().st_size,
+            "row_count": len(df),
+            "valid": True,
+            "columns": list(df.columns),
+            "date_range": {
+                "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else None,
+                "end": df["timestamp"].max().isoformat() if "timestamp" in df.columns else None
+            }
+        }
 
     @traced(span_name="check_step3_step4_completeness")
     @validates()
@@ -461,7 +491,6 @@ class EnhancedDataQualityManager:
             # Try to run step1_5 data conversion if needed
             try:
                 from ..step1_5_data_converter import run_step as run_step1_5
-from src.core.decorators.errors import handles_errors
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,

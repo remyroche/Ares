@@ -832,7 +832,6 @@ class EnhancedAPIAgnosticDataCollector:
         """Save collected data to files."""
         try:
             import os
-from src.core.decorators.errors import handles_errors
             
             # Create data directory
             os.makedirs(data_dir, exist_ok=True)

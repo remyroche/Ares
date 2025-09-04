@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 '\nCommon Operations Utility Module with Comprehensive Error Handling\n\nThis module provides commonly used operations that were identified as undefined\nin the codebase analysis. It serves as a central location for these utilities\nwith enhanced error handling and emoji-based logging.\n'

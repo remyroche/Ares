@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 '\nStatistical Distribution Validation Module\n\nThis module provides comprehensive statistical validation for time series data,\nincluding distribution checks, outlier detection, and stationarity tests.\n'
 import warnings
 from typing import Any

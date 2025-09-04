@@ -1,14 +1,17 @@
-from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
 data quality checks and automatic data preparation using step01/step1_5 components.
 """
 import asyncio
+import gc
+import json
+import logging
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union, Tuple, Callable
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -26,15 +29,23 @@ pandas = PipelineStandards.safe_import('pandas', None)
 PSUTIL_AVAILABLE = psutil is not None
 
 def create_fallback_logger() -> Any:
-    import logging
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
-
     def decorator(func: Callable) -> None:
         return func
     return decorator
+
+def ensure_directory(path: Path) -> Path:
+    """Ensure directory exists and return the path."""
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
+    """Safely dump data to JSON file."""
+    with open(file_path, 'w') as f:
+        json.dump(data, f, **kwargs)
 if system_logger is None:
     system_logger = create_fallback_logger()
 if centralized_decorators is None:
@@ -55,6 +66,7 @@ if centralized_decorators is None:
     cached = create_fallback_decorator()
     traced = create_fallback_decorator()
     handles_errors = create_fallback_decorator()
+    log_execution_time = create_fallback_decorator()
 else:
     comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
     handle_errors = centralized_decorators.handle_errors
@@ -73,6 +85,7 @@ else:
     cached = centralized_decorators.cached
     traced = centralized_decorators.traced
     handles_errors = centralized_decorators.handles_errors
+    log_execution_time = getattr(centralized_decorators, 'log_execution_time', create_fallback_decorator())
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
@@ -80,6 +93,8 @@ if enhanced_mlflow is None:
     log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
     log_step_report = lambda *args, **kwargs: 'fallback_report'
     log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+    log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
+    log_step_model = lambda *args, **kwargs: 'fallback_model'
 else:
     with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_artifact = enhanced_mlflow.log_step_artifact
@@ -87,6 +102,8 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_report = enhanced_mlflow.log_step_report
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_model = enhanced_mlflow.log_step_model
 logger = system_logger.getChild('Step3HMMRegimeDiscovery')
 
 class HMMRegimeDiscoveryStep:
@@ -1616,24 +1633,23 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         try:
             importance = {}
             for col in features.columns:
-                if col in features.columns:
-                    total_var = features[col].var()
-                    if total_var > 0:
-                        between_cluster_var = 0
-                        within_cluster_var = 0
-                        for cluster_id in np.unique(cluster_labels):
-                            cluster_mask = cluster_labels == cluster_id
-                            cluster_mean = features.loc[cluster_mask, col].mean()
-                            cluster_var = features.loc[cluster_mask, col].var()
-                            cluster_size = cluster_mask.sum()
-                            between_cluster_var += cluster_size * (cluster_mean - features[col].mean()) ** 2
-                            within_cluster_var += cluster_size * cluster_var
-                        if within_cluster_var > 0:
-                            importance[col] = between_cluster_var / within_cluster_var
-                        else:
-                            importance[col] = 0
+                total_var = features[col].var()
+                if total_var > 0:
+                    between_cluster_var = 0
+                    within_cluster_var = 0
+                    for cluster_id in np.unique(cluster_labels):
+                        cluster_mask = cluster_labels == cluster_id
+                        cluster_mean = features.loc[cluster_mask, col].mean()
+                        cluster_var = features.loc[cluster_mask, col].var()
+                        cluster_size = cluster_mask.sum()
+                        between_cluster_var += cluster_size * (cluster_mean - features[col].mean()) ** 2
+                        within_cluster_var += cluster_size * cluster_var
+                    if within_cluster_var > 0:
+                        importance[col] = between_cluster_var / within_cluster_var
                     else:
                         importance[col] = 0
+                else:
+                    importance[col] = 0
             return importance
         except Exception:
             return {}
@@ -1917,7 +1933,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         try:
             config_file = Path(__file__).parent / 'step3_optimization_config.json'
             if config_file.exists():
-                import json
                 with open(config_file, 'r') as f:
                     config = json.load(f)
                 self.logger.info('📋 Loaded optimization configuration from file')
@@ -1930,8 +1945,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
     async def _save_optimization_results(self, optimization_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
         """Save optimization results."""
         try:
-            from datetime import datetime
-            import json
             optimization_dir = ensure_directory(Path(data_dir) / 'optimization_results')
             results_file = optimization_dir / f'{exchange}_{symbol}_{timeframe}_optimization_results.json'
             optimization_results['timestamp'] = datetime.now().isoformat()
@@ -1986,7 +1999,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         except Exception as e:
             self.logger.exception(f'❌ Error applying optimized parameters: {e}')
 if __name__ == '__main__':
-    import asyncio
 
     async def main() -> None:
         if len(sys.argv) >= 4:
@@ -2017,7 +2029,6 @@ if __name__ == '__main__':
             print('❌ Step 3: HMM Regime Discovery failed')
         print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print('=' * 80)
-        import gc
         gc.collect()
     try:
         asyncio.run(main())
@@ -2026,11 +2037,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'❌ Error: {e}')
     finally:
-        import gc
-import copy
-import numpy as np
-import os.path
-import pandas as pd
-from src.core.decorators import handles_errors, traced
-from src.core.decorators.errors import handles_errors
-gc.collect()
+        gc.collect()

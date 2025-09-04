@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 'Standardized Configuration Management System.\n\nThis module provides centralized configuration management with validation,\nversioning, and standardized access patterns across all pipeline steps.\n'
 import json
 from copy import copy

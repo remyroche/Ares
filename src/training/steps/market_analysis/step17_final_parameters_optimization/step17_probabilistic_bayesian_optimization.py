@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, Any, List
 """
 Step 17: Probabilistic Bayesian Optimization for Final Parameters
 
@@ -11,13 +11,11 @@ to optimize all parameters for maximum performance across three key objectives:
 The optimization covers all configurable parameters from previous steps and provides
 comprehensive uncertainty quantification for the optimized models.
 """
-import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import warnings
 warnings.filterwarnings('ignore')
@@ -26,9 +24,6 @@ try:
     from ..probabilistic_model_integration import ProbabilisticModelIntegrator
 except ImportError:
     pass
-from .efficiency_optimizer import EfficiencyOptimizer
-from .evaluation_engine import AdvancedEvaluationEngine as EvaluationEngine
-from .hyperparameter_optimization_config import HyperparameterOptimizationConfig
 from .optimized_optuna_optimization import AdvancedOptunaManager
 try:
     import mlflow
@@ -68,9 +63,6 @@ class Step17ProbabilisticBayesianOptimization:
         self.analyst_optimizer = None
         self.integrator = None
         self.optimization_results = {}
-        self.parameter_importance = {}
-        self.uncertainty_estimates = {}
-        self.performance_history = []
         self.optimization_metadata = {}
 
     def _create_optimization_config(self) -> ProbabilisticOptimizationConfig:
@@ -237,7 +229,7 @@ class Step17ProbabilisticBayesianOptimization:
         y_sharpe = optimization_data['targets']['sharpe_ratio']
         y_combined = np.column_stack([y_profit, y_win_rate, y_sharpe])
 
-        def tactician_factory(params: Dict[str, Any]) -> None:
+        def tactician_factory(params: Dict[str, Any]) -> Any:
             from sklearn.ensemble import RandomForestRegressor
             model = RandomForestRegressor(n_estimators=params.get('n_estimators', 100), max_depth=params.get('max_depth', 10), random_state=42, n_jobs=1)
             return model
@@ -252,7 +244,7 @@ class Step17ProbabilisticBayesianOptimization:
         y_sharpe = optimization_data['targets']['sharpe_ratio']
         y_combined = np.column_stack([y_profit, y_win_rate, y_sharpe])
 
-        def analyst_factory(params: Dict[str, Any]) -> None:
+        def analyst_factory(params: Dict[str, Any]) -> Any:
             from sklearn.ensemble import RandomForestRegressor
             model = RandomForestRegressor(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
             return model
@@ -428,7 +420,7 @@ class Step17ProbabilisticBayesianOptimization:
 
     def get_optimization_status(self) -> Dict[str, Any]:
         """Get current optimization status."""
-        return {'step_name': self.step_name, 'optimization_completed': bool(self.optimization_results), 'total_parameters_optimized': len(self.parameter_importance), 'uncertainty_estimates_available': bool(self.uncertainty_estimates), 'performance_improvements': self.performance_history[-1] if self.performance_history else {}, 'last_optimization': self.optimization_metadata.get('last_optimization'), 'recommendations': self.optimization_results.get('summary', {}).get('recommendations', [])}
+        return {'step_name': self.step_name, 'optimization_completed': bool(self.optimization_results), 'total_parameters_optimized': 0, 'uncertainty_estimates_available': False, 'performance_improvements': {}, 'last_optimization': self.optimization_metadata.get('last_optimization'), 'recommendations': self.optimization_results.get('summary', {}).get('recommendations', [])}
 
 def create_step17_probabilistic_bayesian_optimization(config: Dict[str, Any], training_manager: Any=None) -> Any:
     """Create step17 probabilistic Bayesian optimization instance."""

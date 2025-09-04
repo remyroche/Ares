@@ -17,13 +17,8 @@ from src.core.decorators import handles_errors, validates, traced
 
 import pandas as pd
 
-from src.utils.logger import system_logger
 from copy import copy
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
-
+from src.utils.logger import system_logger
 from src.core.domain import (
     ValidationLevel,
     comprehensive_data_validation,
@@ -34,6 +29,10 @@ from src.core.domain import (
     validate_data_structure,
     with_tracing_span
 )
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("DataPreparation")
 

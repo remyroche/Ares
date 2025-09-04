@@ -10,11 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 from src.core.decorators import handles_errors, traced, validates
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
@@ -22,6 +17,10 @@ from src.core.domain import (
     with_tracing_span
 )
 from src.utils.logger import system_logger
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("DataGapDetector")
 

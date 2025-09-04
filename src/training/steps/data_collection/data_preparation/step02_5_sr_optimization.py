@@ -1695,48 +1695,89 @@ async def _log_to_mlflow(self, optimization_result: Any,
         try:
             import mlflow
             
-            # Log optimization metrics
-            if optimization_result:
-                mlflow.log_metric("sr_optimization_score", optimization_result.optimization_score)
-                mlflow.log_metric("sr_cv_score_mean", optimization_result.cv_scores['mean'])
-                mlflow.log_metric("sr_cv_score_std", optimization_result.cv_scores['std'])
-                
-                # Log best parameters
-                for param_name, param_value in optimization_result.best_params.items():
-                    mlflow.log_param(f"sr_{param_name}", param_value)
-                
-                # Log performance metrics
-                for metric_name, metric_value in optimization_result.performance_metrics.items():
-                    if isinstance(metric_value, (int, float)):
-                        mlflow.log_metric(f"sr_{metric_name}", metric_value)
-            
-            # Log S/R detection results
-            if sr_analysis_reports:
-                mlflow.log_metric("sr_support_levels_count", 
-                                len(sr_analysis_reports.get('support_levels', [])))
-                mlflow.log_metric("sr_resistance_levels_count", 
-                                len(sr_analysis_reports.get('resistance_levels', [])))
-                mlflow.log_metric("sr_confluence_zones_count", 
-                                len(sr_analysis_reports.get('confluence_zones', [])))
-            
-            # Log comprehensive integration results
-            if hasattr(self, 'sr_comprehensive_integration') and self.sr_comprehensive_integration:
-                component_status = self.sr_comprehensive_integration.get_component_status()
-                active_components = sum(1 for status in component_status.values() if status)
-                mlflow.log_metric("sr_active_components", active_components)
-                mlflow.log_metric("sr_total_components", len(component_status))
-            
-            # Log reports as artifacts
-            if detailed_reports and 'report_paths' in detailed_reports:
-                for report_name, report_path in detailed_reports['report_paths'].items():
-                    if Path(report_path).exists():
-                        mlflow.log_artifact(report_path, f"sr_reports/{report_name}")
+            # Log different types of results
+            self._log_optimization_metrics(optimization_result)
+            self._log_sr_analysis_metrics(sr_analysis_reports)
+            self._log_comprehensive_integration_metrics()
+            self._log_report_artifacts(detailed_reports)
             
             self.logger.info("✅ S/R optimization results logged to MLflow")
             
         except Exception as e:
             self.logger.warning(f"Failed to log S/R results to MLflow: {e}")
             # Don't fail the step if MLflow logging fails
+
+    def _log_optimization_metrics(self, optimization_result: Any) -> None:
+        """Log optimization metrics to MLflow."""
+        if not optimization_result:
+            return
+            
+        import mlflow
+        
+        # Log basic optimization metrics
+        mlflow.log_metric("sr_optimization_score", optimization_result.optimization_score)
+        mlflow.log_metric("sr_cv_score_mean", optimization_result.cv_scores['mean'])
+        mlflow.log_metric("sr_cv_score_std", optimization_result.cv_scores['std'])
+        
+        # Log best parameters
+        self._log_best_parameters(optimization_result.best_params)
+        
+        # Log performance metrics
+        self._log_performance_metrics(optimization_result.performance_metrics)
+
+    def _log_best_parameters(self, best_params: Dict[str, Any]) -> None:
+        """Log best parameters to MLflow."""
+        import mlflow
+        
+        for param_name, param_value in best_params.items():
+            mlflow.log_param(f"sr_{param_name}", param_value)
+
+    def _log_performance_metrics(self, performance_metrics: Dict[str, Any]) -> None:
+        """Log performance metrics to MLflow."""
+        import mlflow
+        
+        for metric_name, metric_value in performance_metrics.items():
+            if isinstance(metric_value, (int, float)):
+                mlflow.log_metric(f"sr_{metric_name}", metric_value)
+
+    def _log_sr_analysis_metrics(self, sr_analysis_reports: Dict[str, Any]) -> None:
+        """Log S/R analysis metrics to MLflow."""
+        if not sr_analysis_reports:
+            return
+            
+        import mlflow
+        
+        mlflow.log_metric("sr_support_levels_count", 
+                         len(sr_analysis_reports.get('support_levels', [])))
+        mlflow.log_metric("sr_resistance_levels_count", 
+                         len(sr_analysis_reports.get('resistance_levels', [])))
+        mlflow.log_metric("sr_confluence_zones_count", 
+                         len(sr_analysis_reports.get('confluence_zones', [])))
+
+    def _log_comprehensive_integration_metrics(self) -> None:
+        """Log comprehensive integration metrics to MLflow."""
+        if not (hasattr(self, 'sr_comprehensive_integration') and self.sr_comprehensive_integration):
+            return
+            
+        import mlflow
+        
+        component_status = self.sr_comprehensive_integration.get_component_status()
+        active_components = sum(1 for status in component_status.values() if status)
+        
+        mlflow.log_metric("sr_active_components", active_components)
+        mlflow.log_metric("sr_total_components", len(component_status))
+
+    def _log_report_artifacts(self, detailed_reports: Dict[str, Any]) -> None:
+        """Log report artifacts to MLflow."""
+        if not (detailed_reports and 'report_paths' in detailed_reports):
+            return
+            
+        import mlflow
+        from pathlib import Path
+        
+        for report_name, report_path in detailed_reports['report_paths'].items():
+            if Path(report_path).exists():
+                mlflow.log_artifact(report_path, f"sr_reports/{report_name}")
 
 
 async def run_step(config: dict[str, Any]) -> bool:

@@ -245,41 +245,13 @@ class ParameterOptimizationStep:
         try:
             self.logger.info("🧠 Optimizing HMM parameters...")
             
-            optimization_result = {
-                "n_components_range": [2, 3, 4, 5, 6, 8, 10],
-                "covariance_types": ["full", "tied", "diag", "spherical"],
-                "n_iter_range": [50, 100, 200],
-                "random_states": [42, 123, 456],
-                "best_parameters": {},
-                "optimization_scores": {},
-                "recommendations": []
-            }
-            
-            # Simple optimization based on data characteristics
+            optimization_result = self._initialize_hmm_optimization_result()
             data_size = len(data)
             
-            # Recommend number of components based on data size
-            if data_size < 1000:
-                optimal_components = 3
-            elif data_size < 5000:
-                optimal_components = 4
-            elif data_size < 10000:
-                optimal_components = 5
-            else:
-                optimal_components = 6
-            
-            optimization_result["best_parameters"] = {
-                "n_components": optimal_components,
-                "covariance_type": "full",
-                "n_iter": 100,
-                "random_state": 42
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use {optimal_components} HMM components for data size {data_size:,}",
-                "Full covariance type recommended for comprehensive regime modeling",
-                "100 iterations sufficient for convergence"
-            ]
+            # Get optimal parameters based on data characteristics
+            optimal_components = self._determine_optimal_hmm_components(data_size)
+            optimization_result["best_parameters"] = self._create_hmm_best_parameters(optimal_components)
+            optimization_result["recommendations"] = self._create_hmm_recommendations(optimal_components, data_size)
             
             self.logger.info(f"✅ HMM parameters optimized: {optimal_components} components")
             return optimization_result
@@ -287,6 +259,69 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize HMM parameters: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="initialize_hmm_optimization_result"
+    )
+    def _initialize_hmm_optimization_result(self) -> dict[str, Any]:
+        """Initialize HMM optimization result structure."""
+        return {
+            "n_components_range": [2, 3, 4, 5, 6, 8, 10],
+            "covariance_types": ["full", "tied", "diag", "spherical"],
+            "n_iter_range": [50, 100, 200],
+            "random_states": [42, 123, 456],
+            "best_parameters": {},
+            "optimization_scores": {},
+            "recommendations": []
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=4,
+        context="determine_optimal_hmm_components"
+    )
+    def _determine_optimal_hmm_components(self, data_size: int) -> int:
+        """Determine optimal number of HMM components based on data size."""
+        size_thresholds = [
+            (1000, 3),
+            (5000, 4),
+            (10000, 5)
+        ]
+        
+        for threshold, components in size_thresholds:
+            if data_size < threshold:
+                return components
+        
+        return 6  # Default for large datasets
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="create_hmm_best_parameters"
+    )
+    def _create_hmm_best_parameters(self, optimal_components: int) -> dict[str, Any]:
+        """Create best parameters for HMM optimization."""
+        return {
+            "n_components": optimal_components,
+            "covariance_type": "full",
+            "n_iter": 100,
+            "random_state": 42
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="create_hmm_recommendations"
+    )
+    def _create_hmm_recommendations(self, optimal_components: int, data_size: int) -> list[str]:
+        """Create recommendations for HMM optimization."""
+        return [
+            f"Use {optimal_components} HMM components for data size {data_size:,}",
+            "Full covariance type recommended for comprehensive regime modeling",
+            "100 iterations sufficient for convergence"
+        ]
 
     @handles_errors
     # @resource_monitor - removed, use log_execution_time
@@ -296,39 +331,13 @@ class ParameterOptimizationStep:
         try:
             self.logger.info("🎯 Optimizing clustering parameters...")
             
-            optimization_result = {
-                "n_clusters_range": [5, 10, 15, 20, 25, 30],
-                "clustering_methods": ["kmeans", "dbscan", "hierarchical"],
-                "best_parameters": {},
-                "optimization_scores": {},
-                "recommendations": []
-            }
-            
-            # Simple optimization based on data characteristics
+            optimization_result = self._initialize_clustering_optimization_result()
             data_size = len(data)
             
-            # Recommend number of clusters based on data size
-            if data_size < 1000:
-                optimal_clusters = 10
-            elif data_size < 5000:
-                optimal_clusters = 15
-            elif data_size < 10000:
-                optimal_clusters = 20
-            else:
-                optimal_clusters = 25
-            
-            optimization_result["best_parameters"] = {
-                "n_clusters": optimal_clusters,
-                "method": "kmeans",
-                "random_state": 42,
-                "n_init": 10
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use {optimal_clusters} clusters for data size {data_size:,}",
-                "K-means clustering recommended for regime discovery",
-                "10 initializations for robust clustering"
-            ]
+            # Get optimal parameters based on data characteristics
+            optimal_clusters = self._determine_optimal_clusters(data_size)
+            optimization_result["best_parameters"] = self._create_clustering_best_parameters(optimal_clusters)
+            optimization_result["recommendations"] = self._create_clustering_recommendations(optimal_clusters, data_size)
             
             self.logger.info(f"✅ Clustering parameters optimized: {optimal_clusters} clusters")
             return optimization_result
@@ -336,6 +345,67 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize clustering parameters: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="initialize_clustering_optimization_result"
+    )
+    def _initialize_clustering_optimization_result(self) -> dict[str, Any]:
+        """Initialize clustering optimization result structure."""
+        return {
+            "n_clusters_range": [5, 10, 15, 20, 25, 30],
+            "clustering_methods": ["kmeans", "dbscan", "hierarchical"],
+            "best_parameters": {},
+            "optimization_scores": {},
+            "recommendations": []
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=20,
+        context="determine_optimal_clusters"
+    )
+    def _determine_optimal_clusters(self, data_size: int) -> int:
+        """Determine optimal number of clusters based on data size."""
+        size_thresholds = [
+            (1000, 10),
+            (5000, 15),
+            (10000, 20)
+        ]
+        
+        for threshold, clusters in size_thresholds:
+            if data_size < threshold:
+                return clusters
+        
+        return 25  # Default for large datasets
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="create_clustering_best_parameters"
+    )
+    def _create_clustering_best_parameters(self, optimal_clusters: int) -> dict[str, Any]:
+        """Create best parameters for clustering optimization."""
+        return {
+            "n_clusters": optimal_clusters,
+            "method": "kmeans",
+            "random_state": 42,
+            "n_init": 10
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="create_clustering_recommendations"
+    )
+    def _create_clustering_recommendations(self, optimal_clusters: int, data_size: int) -> list[str]:
+        """Create recommendations for clustering optimization."""
+        return [
+            f"Use {optimal_clusters} clusters for data size {data_size:,}",
+            "K-means clustering recommended for regime discovery",
+            "10 initializations for robust clustering"
+        ]
 
     @handles_errors
     # @resource_monitor - removed, use log_execution_time
@@ -345,49 +415,13 @@ class ParameterOptimizationStep:
         try:
             self.logger.info("🔧 Optimizing feature engineering parameters...")
             
-            optimization_result = {
-                "momentum_windows": [5, 10, 15, 20, 25, 30],
-                "volatility_windows": [5, 10, 15, 20, 25, 30],
-                "volume_windows": [5, 10, 15, 20, 25, 30],
-                "best_parameters": {},
-                "optimization_scores": {},
-                "recommendations": []
-            }
-            
-            # Simple optimization based on data characteristics
+            optimization_result = self._initialize_feature_optimization_result()
             data_size = len(data)
             
-            # Recommend feature windows based on data size
-            if data_size < 1000:
-                optimal_momentum = 10
-                optimal_volatility = 15
-                optimal_volume = 10
-            elif data_size < 5000:
-                optimal_momentum = 15
-                optimal_volatility = 20
-                optimal_volume = 15
-            else:
-                optimal_momentum = 20
-                optimal_volatility = 25
-                optimal_volume = 20
-            
-            optimization_result["best_parameters"] = {
-                "momentum_window": optimal_momentum,
-                "volatility_window": optimal_volatility,
-                "volume_window": optimal_volume,
-                "rsi_window": 14,
-                "macd_fast": 12,
-                "macd_slow": 26,
-                "macd_signal": 9,
-                "atr_window": 14
-            }
-            
-            optimization_result["recommendations"] = [
-                f"Use momentum window {optimal_momentum} for data size {data_size:,}",
-                f"Use volatility window {optimal_volatility} for data size {data_size:,}",
-                f"Use volume window {optimal_volume} for data size {data_size:,}",
-                "Standard technical indicator parameters recommended"
-            ]
+            # Get optimal parameters based on data characteristics
+            optimal_windows = self._determine_optimal_feature_windows(data_size)
+            optimization_result["best_parameters"] = self._create_feature_best_parameters(optimal_windows)
+            optimization_result["recommendations"] = self._create_feature_recommendations(optimal_windows, data_size)
             
             self.logger.info(f"✅ Feature parameters optimized")
             return optimization_result
@@ -395,6 +429,76 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to optimize feature parameters: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="initialize_feature_optimization_result"
+    )
+    def _initialize_feature_optimization_result(self) -> dict[str, Any]:
+        """Initialize feature optimization result structure."""
+        return {
+            "momentum_windows": [5, 10, 15, 20, 25, 30],
+            "volatility_windows": [5, 10, 15, 20, 25, 30],
+            "volume_windows": [5, 10, 15, 20, 25, 30],
+            "best_parameters": {},
+            "optimization_scores": {},
+            "recommendations": []
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=(20, 25, 20),
+        context="determine_optimal_feature_windows"
+    )
+    def _determine_optimal_feature_windows(self, data_size: int) -> tuple[int, int, int]:
+        """Determine optimal feature windows based on data size."""
+        size_thresholds = [
+            (1000, (10, 15, 10)),
+            (5000, (15, 20, 15))
+        ]
+        
+        for threshold, windows in size_thresholds:
+            if data_size < threshold:
+                return windows
+        
+        return (20, 25, 20)  # Default for large datasets
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="create_feature_best_parameters"
+    )
+    def _create_feature_best_parameters(self, optimal_windows: tuple[int, int, int]) -> dict[str, Any]:
+        """Create best parameters for feature optimization."""
+        momentum_window, volatility_window, volume_window = optimal_windows
+        
+        return {
+            "momentum_window": momentum_window,
+            "volatility_window": volatility_window,
+            "volume_window": volume_window,
+            "rsi_window": 14,
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "macd_signal": 9,
+            "atr_window": 14
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=[],
+        context="create_feature_recommendations"
+    )
+    def _create_feature_recommendations(self, optimal_windows: tuple[int, int, int], data_size: int) -> list[str]:
+        """Create recommendations for feature optimization."""
+        momentum_window, volatility_window, volume_window = optimal_windows
+        
+        return [
+            f"Use momentum window {momentum_window} for data size {data_size:,}",
+            f"Use volatility window {volatility_window} for data size {data_size:,}",
+            f"Use volume window {volume_window} for data size {data_size:,}",
+            "Standard technical indicator parameters recommended"
+        ]
 
     @handles_errors
     # @secure_data_processing - removed, handled by validates
@@ -410,49 +514,10 @@ class ParameterOptimizationStep:
                 self.logger.warning("No valid optimization results to combine")
                 return {}
             
-            combined_result = {
-                "hmm_optimization": {},
-                "clustering_optimization": {},
-                "feature_optimization": {},
-                "combined_parameters": {},
-                "optimization_summary": {
-                    "total_optimizations": len(valid_results),
-                    "optimization_status": "completed",
-                    "timestamp": datetime.now().isoformat()
-                },
-                "recommendations": []
-            }
-            
-            # Extract results by type
-            for result in valid_results:
-                if "n_components_range" in result:
-                    combined_result["hmm_optimization"] = result
-                elif "n_clusters_range" in result:
-                    combined_result["clustering_optimization"] = result
-                elif "momentum_windows" in result:
-                    combined_result["feature_optimization"] = result
-            
-            # Create combined parameters
-            combined_params = {}
-            
-            if combined_result["hmm_optimization"]:
-                combined_params.update(combined_result["hmm_optimization"].get("best_parameters", {}))
-            
-            if combined_result["clustering_optimization"]:
-                combined_params.update(combined_result["clustering_optimization"].get("best_parameters", {}))
-            
-            if combined_result["feature_optimization"]:
-                combined_params.update(combined_result["feature_optimization"].get("best_parameters", {}))
-            
-            combined_result["combined_parameters"] = combined_params
-            
-            # Combine recommendations
-            all_recommendations = []
-            for result in valid_results:
-                if "recommendations" in result:
-                    all_recommendations.extend(result["recommendations"])
-            
-            combined_result["recommendations"] = all_recommendations
+            combined_result = self._initialize_combined_result(valid_results)
+            combined_result = self._categorize_optimization_results(combined_result, valid_results)
+            combined_result = self._merge_combined_parameters(combined_result)
+            combined_result = self._merge_recommendations(combined_result, valid_results)
             
             self.logger.info(f"✅ Combined {len(valid_results)} optimization results")
             return combined_result
@@ -460,6 +525,86 @@ class ParameterOptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to combine optimization results: {e}")
             return {}
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="initialize_combined_result"
+    )
+    def _initialize_combined_result(self, valid_results: List[dict[str, Any]]) -> dict[str, Any]:
+        """Initialize the combined result structure."""
+        return {
+            "hmm_optimization": {},
+            "clustering_optimization": {},
+            "feature_optimization": {},
+            "combined_parameters": {},
+            "optimization_summary": {
+                "total_optimizations": len(valid_results),
+                "optimization_status": "completed",
+                "timestamp": datetime.now().isoformat()
+            },
+            "recommendations": []
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="categorize_optimization_results"
+    )
+    def _categorize_optimization_results(
+        self, 
+        combined_result: dict[str, Any], 
+        valid_results: List[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Categorize optimization results by type."""
+        for result in valid_results:
+            if "n_components_range" in result:
+                combined_result["hmm_optimization"] = result
+            elif "n_clusters_range" in result:
+                combined_result["clustering_optimization"] = result
+            elif "momentum_windows" in result:
+                combined_result["feature_optimization"] = result
+        
+        return combined_result
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="merge_combined_parameters"
+    )
+    def _merge_combined_parameters(self, combined_result: dict[str, Any]) -> dict[str, Any]:
+        """Merge best parameters from all optimization types."""
+        combined_params = {}
+        
+        optimization_types = ["hmm_optimization", "clustering_optimization", "feature_optimization"]
+        
+        for opt_type in optimization_types:
+            if combined_result[opt_type]:
+                best_params = combined_result[opt_type].get("best_parameters", {})
+                combined_params.update(best_params)
+        
+        combined_result["combined_parameters"] = combined_params
+        return combined_result
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="merge_recommendations"
+    )
+    def _merge_recommendations(
+        self, 
+        combined_result: dict[str, Any], 
+        valid_results: List[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Merge recommendations from all optimization results."""
+        all_recommendations = []
+        
+        for result in valid_results:
+            if "recommendations" in result:
+                all_recommendations.extend(result["recommendations"])
+        
+        combined_result["recommendations"] = all_recommendations
+        return combined_result
 
     @handles_errors(fallback=False)
     # @secure_data_processing - removed, handled by validates

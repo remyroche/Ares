@@ -15,6 +15,8 @@ import os
 
 from src.core.decorators import handles_errors, traced
 from src.utils.logger import system_logger
+from src.tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
+from src.tactician.sr_strength_optimizer import SRLevelIdentifier
 
 
 @dataclass
@@ -410,35 +412,9 @@ class ContextAwareSRCalculator:
             )
             
             # Calculate S/R with adjusted parameters
-            from src.tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
-            
-            # Temporarily update config with adjusted parameters
-            original_params = self.config.get('sr_probability_calculation', {})
-            self.config['sr_probability_calculation'] = adjusted_params
-            
-            try:
-                calculator = SRProbabilityCalculator(self.config)
-                
-                # Get S/R levels
-                from src.tactician.sr_strength_optimizer import SRLevelIdentifier
-from src.core.decorators.errors import handles_errors
-                identifier = SRLevelIdentifier(self.config)
-                sr_levels = identifier.identify_strong_sr_levels(market_data)
-                
-                # Calculate probabilities for current price
-                current_price = market_data['close'].iloc[-1]
-                sr_context = {
-                    'support': [l for l in sr_levels if l.type == 'support'],
-                    'resistance': [l for l in sr_levels if l.type == 'resistance']
-                }
-                
-                probabilities = calculator.calculate_probabilities(
-                    market_data, current_price, sr_context
-                )
-                
-            finally:
-                # Restore original parameters
-                self.config['sr_probability_calculation'] = original_params
+            sr_levels, probabilities = self._calculate_sr_with_adjusted_params(
+                market_data, adjusted_params
+            )
             
             return {
                 'sr_levels': sr_levels,
@@ -451,6 +427,38 @@ from src.core.decorators.errors import handles_errors
         except Exception as e:
             self.logger.error(f"Error in context-aware S/R calculation: {e}")
             return {}
+    
+    def _calculate_sr_with_adjusted_params(
+        self, 
+        market_data: pd.DataFrame, 
+        adjusted_params: Dict[str, Any]
+    ) -> Tuple[List[Any], Dict[str, float]]:
+        """Calculate S/R levels and probabilities with adjusted parameters."""
+        # Temporarily update config with adjusted parameters
+        original_params = self.config.get('sr_probability_calculation', {})
+        self.config['sr_probability_calculation'] = adjusted_params
+        
+        try:
+            calculator = SRProbabilityCalculator(self.config)
+            identifier = SRLevelIdentifier(self.config)
+            sr_levels = identifier.identify_strong_sr_levels(market_data)
+            
+            # Calculate probabilities for current price
+            current_price = market_data['close'].iloc[-1]
+            sr_context = {
+                'support': [l for l in sr_levels if l.type == 'support'],
+                'resistance': [l for l in sr_levels if l.type == 'resistance']
+            }
+            
+            probabilities = calculator.calculate_probabilities(
+                market_data, current_price, sr_context
+            )
+            
+            return sr_levels, probabilities
+            
+        finally:
+            # Restore original parameters
+            self.config['sr_probability_calculation'] = original_params
     
     def _get_context_adjustments(self, context: MarketContext) -> ContextAdjustedParameters:
         """Get parameter adjustments based on context."""

@@ -1696,28 +1696,12 @@ class MultiOutputModelTrainer:
             y_train_target = y_train_prob[prob_type.replace('_probability', '')]
             y_val_target = y_val_prob[prob_type.replace('_probability', '')]
             
-            # Train model based on config using existing architectures
-            if self.config.model_type == "LightGBM":
-                model = self._train_lightgbm_probability_model(
-                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
-                )
-            elif self.config.model_type == "RandomForest":
-                model = self._train_randomforest_probability_model(
-                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
-                )
-            elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_cnn_probability_model(
-                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
-                )
-            elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_tcn_probability_model(
-                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
-                )
-            elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_transformer_probability_model(
-                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
-                )
-            else:
+            # Train model using dispatch pattern
+            model = self._train_probability_model_by_type(
+                X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
+            )
+            
+            if model is None:
                 self.logger.warning(f"Model type {self.config.model_type} not supported for probability training")
                 continue
             
@@ -1734,6 +1718,50 @@ class MultiOutputModelTrainer:
             "model_type": f"MultiOutput_{self.config.model_type}",
             "config": self.config.__dict__
         }
+    
+    def _train_probability_model_by_type(
+        self,
+        X_train: np.ndarray,
+        X_val: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        feature_names: List[str],
+        prob_type: str
+    ) -> Optional[Dict[str, Any]]:
+        """Train probability model using dispatch pattern to reduce nesting.
+        
+        Args:
+            X_train: Training features
+            X_val: Validation features
+            y_train: Training targets
+            y_val: Validation targets
+            feature_names: List of feature names
+            prob_type: Probability target type
+            
+        Returns:
+            Trained model dictionary or None if model type not supported
+        """
+        # Dispatch table for model training
+        model_trainers = {
+            "LightGBM": self._train_lightgbm_probability_model,
+            "RandomForest": self._train_randomforest_probability_model,
+        }
+        
+        # Add deep learning models if available
+        if EXISTING_MODELS_AVAILABLE:
+            model_trainers.update({
+                "CNN": self._train_cnn_probability_model,
+                "TCN": self._train_tcn_probability_model,
+                "Transformer": self._train_transformer_probability_model,
+            })
+        
+        # Get trainer function
+        trainer_func = model_trainers.get(self.config.model_type)
+        if trainer_func is None:
+            return None
+            
+        # Execute training
+        return trainer_func(X_train, X_val, y_train, y_val, feature_names, prob_type)
     
     def _train_lightgbm_probability_model(
         self,
@@ -1760,7 +1788,6 @@ class MultiOutputModelTrainer:
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
-from src.core.decorators.errors import handles_errors
             
             class_weights = compute_class_weight(
                 'balanced',

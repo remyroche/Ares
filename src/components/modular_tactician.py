@@ -9,6 +9,7 @@ from src.utils.warning_symbols import initialization_error, invalid, missing
 # src/components/modular_tactician.py
 from copy import copy
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class ModularTactician:

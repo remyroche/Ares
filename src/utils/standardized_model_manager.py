@@ -154,6 +154,7 @@ class StandardizedModelManager:
                 model = lgb.Booster(model_file=str(file_path))
             elif file_path.suffix == '.json':
                 import xgboost as xgb
+from src.core.decorators.errors import handles_errors
                 model = xgb.Booster()
                 model.load_model(str(file_path))
             else:

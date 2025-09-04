@@ -6,6 +6,7 @@ from src.config import ARES_VERSION
 from src.utils.common_operations import format_datetime, get_current_datetime
 from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.decorators.errors import handles_errors
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.

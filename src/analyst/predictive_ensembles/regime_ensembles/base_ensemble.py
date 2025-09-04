@@ -29,6 +29,7 @@ import os.path
 from lightgbm import LGBMClassifier
 from src.core.decorators import handles_errors
 from src.utils.purged_kfold import PurgedKFoldTime
+from src.core.decorators.errors import handles_errors
 warnings.filterwarnings('ignore', category=UserWarning, module='arch')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 

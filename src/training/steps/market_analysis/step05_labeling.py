@@ -422,6 +422,7 @@ class LabelingStep:
                 return None
             try:
                 from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+from src.core.decorators.errors import handles_errors
                 regime_labeler = RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
                 labels = regime_labeler.generate_labels(data, regime_column=self.regime_col, time_barrier_minutes=self.time_barrier_minutes, max_lookahead=self.max_lookahead)
                 if labels is not None:

@@ -162,6 +162,7 @@ class EnhancedTradingLauncher:
             if self.enable_backtesting:
                 try:
                     from src.backtesting.enhanced_backtester import (
+from src.core.decorators.errors import handles_errors
                         setup_enhanced_backtester as _setup_backtester,
                     )
                     self.enhanced_backtester = await _setup_backtester(self.config)

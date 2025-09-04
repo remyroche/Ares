@@ -113,6 +113,7 @@ class Strategist:
                 regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
                 try:
                     from .enhanced_regime_classifier import EnhancedRegimeClassifier as _EnhancedRegimeClassifier
+from src.core.decorators.errors import handles_errors
 
                     self.regime_classifier = _EnhancedRegimeClassifier(regime_config)
                     await self.regime_classifier.initialize()

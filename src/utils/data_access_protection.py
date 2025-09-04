@@ -23,6 +23,7 @@ import numpy as np
 from src.core.decorators import handles_errors, validates, log_call, traced, authenticated, requires_permission
 from .logger import system_logger
 from .common_operations import (
+from src.core.decorators.errors import handles_errors
     safe_file_exists, safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, generate_hash
 )

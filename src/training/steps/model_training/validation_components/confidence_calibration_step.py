@@ -187,6 +187,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             Optimal temperature value
         """
         from scipy.optimize import minimize
+from src.core.decorators.errors import handles_errors
 
         def temperature_loss(t: Any) -> None:
             scaled_probs = predictions / t

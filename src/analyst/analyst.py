@@ -316,6 +316,7 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
+from src.core.decorators.errors import handles_errors
             
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,

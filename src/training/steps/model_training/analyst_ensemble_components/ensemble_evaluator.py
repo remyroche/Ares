@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import cross_val_score, KFold
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 class EnsembleEvaluator:
     """Handles evaluation of ensemble models."""

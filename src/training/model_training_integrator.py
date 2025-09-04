@@ -28,6 +28,7 @@ from src.utils.warning_symbols import (
     initialization_error,
 )
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 class ModelTrainingIntegrator:

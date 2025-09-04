@@ -10,6 +10,7 @@ import shap
 from sklearn.ensemble import RandomForestRegressor
 from src.utils.logger import system_logger
 import asyncio
+from src.core.decorators.errors import handles_errors
 
 class DiverseLookbackOptimizer:
     """

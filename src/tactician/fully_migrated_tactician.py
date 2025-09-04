@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
 import asyncio
+from src.core.decorators.errors import handles_errors
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

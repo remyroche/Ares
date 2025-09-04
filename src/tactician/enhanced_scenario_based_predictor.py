@@ -11,6 +11,7 @@ import talib
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 import asyncio
+from src.core.decorators.errors import handles_errors
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

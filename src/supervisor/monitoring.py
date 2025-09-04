@@ -13,6 +13,7 @@ from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 # src/supervisor/monitoring.py
 

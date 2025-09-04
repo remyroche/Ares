@@ -10,6 +10,7 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 # src/training/model_specific_pruning.py
 

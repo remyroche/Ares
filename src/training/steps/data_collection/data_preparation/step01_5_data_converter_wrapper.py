@@ -34,6 +34,7 @@ class DataConverterStep(BaseStep):
     ) -> Dict[str, Any]:
         # Defer to the existing conversion entrypoint and then expose standard outputs
         from src.training.steps.data_preparation.step01_5_data_converter import (
+from src.core.decorators.errors import handles_errors
             run_step as run_step_15,
             UnifiedDataConverter,
         )

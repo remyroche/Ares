@@ -693,6 +693,7 @@ class FinalParametersOptimizationStep:
             return {'accuracy': 0.5, 'win_rate': 0.5, 'avg_win': 0.01, 'avg_loss': 0.01, 'max_drawdown': 0.1, 'sharpe_ratio': 1.0}
 from src.training.decorators import artifact_versioning, artifact_write_lock, circuit_breaker_protection, debug_training_step, deterministic_seed, idempotent_step, memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage, quality_gate, resource_monitor, secure_data_processing, time_budget_watchdog, validate_step_output, validate_step_prerequisites
 from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
+from src.core.decorators.errors import handles_errors
 
 
 @deterministic_seed(42)

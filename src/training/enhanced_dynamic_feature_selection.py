@@ -633,6 +633,7 @@ class EnhancedDynamicFeatureSelection:
 
                 try:
                     from scipy.cluster.hierarchy import fcluster
+from src.core.decorators.errors import handles_errors
 
                     clusters = fcluster(
                         sample_linkage, n_clusters, criterion="maxclust"

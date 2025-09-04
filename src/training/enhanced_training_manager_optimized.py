@@ -288,6 +288,7 @@ class StreamingDataProcessor:
         except Exception as e:
             pass
         import json
+from src.core.decorators.errors import handles_errors
         writer = None
         for df in chunks_iter:
             table = pa.Table.from_pandas(df)

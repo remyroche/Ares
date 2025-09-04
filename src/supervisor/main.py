@@ -12,6 +12,7 @@ from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 class Supervisor:
     """

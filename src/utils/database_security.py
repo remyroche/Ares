@@ -205,6 +205,7 @@ class DatabaseSecurityManager:
         """Create secure Redis connection."""
         try:
             import redis
+from src.core.decorators.errors import handles_errors
             connection_params = {'host': params['host'], 'port': params['port'], 'db': params.get('database', 0), 'password': params.get('password'), 'socket_timeout': self.security_policies['connection_timeout'], 'socket_connect_timeout': self.security_policies['connection_timeout']}
             if params.get('ssl', False):
                 connection_params['ssl'] = True

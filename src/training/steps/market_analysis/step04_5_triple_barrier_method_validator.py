@@ -42,6 +42,7 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
             return {'step_name': 'step04_5_triple_barrier_method', 'validation_passed': False, 'error': 'Triple barrier labels file is empty'}
         try:
             import pandas as pd
+from src.core.decorators.errors import handles_errors
             data = pd.read_parquet(triple_barrier_path)
             required_columns = ['triple_barrier_label']
             missing_columns = [col for col in required_columns if col not in data.columns]

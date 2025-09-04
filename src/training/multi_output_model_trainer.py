@@ -1760,6 +1760,7 @@ class MultiOutputModelTrainer:
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
+from src.core.decorators.errors import handles_errors
             
             class_weights = compute_class_weight(
                 'balanced',

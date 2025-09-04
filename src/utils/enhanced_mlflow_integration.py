@@ -1339,6 +1339,7 @@ def cleanup_local_artifacts(base_dir: str = "artifacts", days: int = 30, dry_run
     Returns list of paths affected. Deletion disabled by default (dry_run).
     """
     import time
+from src.core.decorators.errors import handles_errors
     affected: list[str] = []
     try:
         cutoff = time.time() - days * 86400

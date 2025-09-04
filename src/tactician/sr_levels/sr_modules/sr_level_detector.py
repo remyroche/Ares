@@ -11,6 +11,7 @@ from src.utils.logger import system_logger
 # DBSCAN clustering for S/R level analysis
 try:
     from sklearn.cluster import DBSCAN
+from src.core.decorators.errors import handles_errors
     DBSCAN_AVAILABLE = True
 except ImportError:
     DBSCAN_AVAILABLE = False

@@ -30,6 +30,7 @@ from src.utils.common_operations import (
 from src.utils.data_quality_framework import DataQualityFramework
 from src.utils.data_formatting_framework import DataFormattingFramework
 from src.core.decorators import traced, validates, handles_errors, log_execution_time
+from src.core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step16ConfidenceCalibrationPerRegime')

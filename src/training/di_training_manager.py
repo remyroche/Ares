@@ -106,6 +106,7 @@ class DITrainingManager(InjectableBase):
             else:
                 # Fallback to manual creation
                 from src.training.core.pipeline_base import TrainingPipeline
+from src.core.decorators.errors import handles_errors
         except Exception as e:
             pass  # TODO: Handle exception properly
         self.training_pipeline = TrainingPipeline(self.training_config)

@@ -112,6 +112,7 @@ class CSVExporter:
             meta_path = filepath.with_suffix(".json")
             try:
                 import json
+from src.core.decorators.errors import handles_errors
 
                 meta = {
                     "exported_at": datetime.now().isoformat(),

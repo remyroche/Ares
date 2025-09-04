@@ -39,6 +39,7 @@ from src.utils.warning_symbols import (
     invalid,
 )
 from src.core.decorators import handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 class ExecutionStrategy(Enum):

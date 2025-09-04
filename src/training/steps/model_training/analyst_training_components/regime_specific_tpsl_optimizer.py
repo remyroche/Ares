@@ -117,6 +117,7 @@ class RegimeSpecificTPSLOptimizer:
         try:
             results_file = os.path.join(self.model_dir, 'optimization_results.json')
             import json
+from src.core.decorators.errors import handles_errors
             with open(results_file, 'w') as f:
                 json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info('✅ Saved optimization results')

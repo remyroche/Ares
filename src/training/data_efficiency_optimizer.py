@@ -777,6 +777,7 @@ class DataEfficiencyOptimizer:
                     try:
                         # Simple parsing - in production you might want to use JSON
                         import ast
+from src.core.decorators.errors import handles_errors
 
                         feature_dict = ast.literal_eval(feature_data_str)
 

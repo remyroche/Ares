@@ -15,6 +15,7 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

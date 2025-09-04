@@ -41,6 +41,7 @@ class EnhancedExecutionManager:
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+from src.core.decorators.errors import handles_errors
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)

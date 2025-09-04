@@ -598,6 +598,7 @@ class PositionMonitor:
                     try:
                         with open(path, 'r') as f:
                             import yaml
+from src.core.decorators.errors import handles_errors
                     except Exception as e:
                         pass  # TODO: Handle exception
                     except Exception as e:

@@ -10,6 +10,7 @@ from typing import Any
 from src.config.constants import *
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import connection_error, error, failed, initialization_error, invalid, missing
+from src.core.decorators.errors import handles_errors
 
 class ConnectionPool:
     """Async connection pool for database operations."""

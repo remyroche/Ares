@@ -335,6 +335,7 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
             # Use shared regime accessor to robustly determine regimes present
             try:
                 from src.utils.regime_data_access import get_regime_column, get_regime_ids
+from src.core.decorators.errors import handles_errors
                 sample_tf = next(iter(regime_forecasting_data.keys())) if regime_forecasting_data else None
                 if sample_tf is not None:
                     sample_df = regime_forecasting_data[sample_tf]

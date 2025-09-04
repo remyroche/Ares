@@ -581,6 +581,7 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
             # Basic data quality check
             try:
                 import pandas as pd
+from src.core.decorators.errors import handles_errors
                 logger.info(f"📖 Reading parquet file: {file_path}")
                 print(f"📖 Reading parquet file: {file_path}")
                 

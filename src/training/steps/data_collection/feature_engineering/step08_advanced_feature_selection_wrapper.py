@@ -41,6 +41,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
     ) -> Dict[str, Any]:
         # Run the legacy-heavy step and surface its outputs in pipeline_state
         from src.training.steps.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+from src.core.decorators.errors import handles_errors
 
         step_impl = Step08AdvancedFeatureSelection(self.config)
         result_state = await step_impl.execute(training_input, pipeline_state)

@@ -15,6 +15,7 @@ from scipy import stats
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.core.decorators.errors import handles_errors
 
 
 @dataclass

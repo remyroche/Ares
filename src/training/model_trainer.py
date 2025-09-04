@@ -323,6 +323,7 @@ class RayModelTrainer:
                 if do_hpo:
                     try:
                         from src.training.steps.validation.step17_final_parameters_optimization.optimized_optuna_optimization import (
+from src.core.decorators.errors import handles_errors
                             AdvancedOptunaManager,
                         )
                     except Exception as e:  # ImportError or dependency issues

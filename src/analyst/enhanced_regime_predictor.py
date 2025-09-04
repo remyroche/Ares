@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from src.core.decorators import handles_errors
 from src.core.domain import with_tracing_span
 from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 
 class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""

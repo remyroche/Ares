@@ -82,6 +82,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
         return
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+from src.core.decorators.errors import handles_errors
         
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:

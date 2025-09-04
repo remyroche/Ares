@@ -461,6 +461,7 @@ class EnhancedDataQualityManager:
             # Try to run step1_5 data conversion if needed
             try:
                 from ..step1_5_data_converter import run_step as run_step1_5
+from src.core.decorators.errors import handles_errors
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,

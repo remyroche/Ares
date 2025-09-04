@@ -28,6 +28,7 @@ from src.core.decorators import (
     traced as with_tracing_span,
 )
 from copy import copy
+from src.core.decorators.errors import handles_errors
 
 
 class UnifiedRegimeClassifier:

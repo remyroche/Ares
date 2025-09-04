@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from src.utils.logger import get_logger
+from src.core.decorators.errors import handles_errors
 
 class FractionalSystemMonitor:
     """Monitor performance of combined fractional system in production."""

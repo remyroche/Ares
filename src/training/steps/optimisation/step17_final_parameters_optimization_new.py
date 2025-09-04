@@ -978,6 +978,7 @@ class FinalParametersOptimizationStepNew:
             ]
             
             import yaml
+from src.core.decorators.errors import handles_errors
             for path in step12_paths:
                 try:
                     # Ensure directory exists

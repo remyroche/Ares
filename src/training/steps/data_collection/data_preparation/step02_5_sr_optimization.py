@@ -298,103 +298,11 @@ class SROptimizationStep:
                 errors_encountered=[]
             )
             
-            # Log the main report
-            report_name = log_step_report(
-                config=self.config,
-                step_name="step02_5_sr_optimization",
-                report_data=report_data,
-                report_type="sr_optimization_report",
-                additional_metadata={
-                    "optimization_success": True,
-                    "optimization_methods": list(optimization_result.keys()) if optimization_result else [],
-                    "timeframe": training_input["timeframe"],
-                    "asset": symbol,
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
-                }
-            )
-            self.logger.info(f"✅ Logged SR optimization report: {report_name}")
-            
-            # Log optimization results
-            if optimization_result:
-                optimization_report_name = log_step_report(
-                    config=self.config,
-                    step_name="step02_5_sr_optimization",
-                    report_data=optimization_result,
-                    report_type="optimization_results",
-                    additional_metadata={
-                        "optimization_methods": list(optimization_result.keys()),
-                        "timeframe": training_input["timeframe"],
-                        "asset": symbol,
-                        "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
-                    }
-                )
-                self.logger.info(f"✅ Logged optimization results: {optimization_report_name}")
-            
-            # Log SR analysis reports
-            if sr_analysis_reports:
-                sr_analysis_report_name = log_step_report(
-                    config=self.config,
-                    step_name="step02_5_sr_optimization",
-                    report_data=sr_analysis_reports,
-                    report_type="sr_analysis_reports",
-                    additional_metadata={
-                        "analysis_reports_count": len(sr_analysis_reports),
-                        "timeframe": training_input["timeframe"],
-                        "asset": symbol,
-                        "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
-                    }
-                )
-                self.logger.info(f"✅ Logged SR analysis reports: {sr_analysis_report_name}")
-            
-            # Log SR integration analysis
-            if sr_integration_analysis:
-                integration_report_name = log_step_report(
-                    config=self.config,
-                    step_name="step02_5_sr_optimization",
-                    report_data=sr_integration_analysis,
-                    report_type="sr_integration_analysis",
-                    additional_metadata={
-                        "integration_analysis_count": len(sr_integration_analysis),
-                        "timeframe": training_input["timeframe"],
-                        "asset": symbol,
-                        "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
-                    }
-                )
-                self.logger.info(f"✅ Logged SR integration analysis: {integration_report_name}")
-            
-            # Log detailed reports
-            if detailed_reports:
-                detailed_reports_name = log_step_report(
-                    config=self.config,
-                    step_name="step02_5_sr_optimization",
-                    report_data=detailed_reports,
-                    report_type="detailed_optimization_reports",
-                    additional_metadata={
-                        "detailed_reports_count": len(detailed_reports),
-                        "timeframe": training_input["timeframe"],
-                        "asset": symbol,
-                        "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
-                    }
-                )
-                self.logger.info(f"✅ Logged detailed optimization reports: {detailed_reports_name}")
-            
-            # Log metrics
-            log_step_metrics(
-                config=self.config,
-                step_name="step02_5_sr_optimization",
-                metrics=metrics_calculated,
-                additional_metadata={
-                    "metrics_type": "sr_optimization_performance",
-                    "timeframe": training_input["timeframe"],
-                    "asset": symbol,
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
-                }
+            # Log all reports and metrics
+            await self._log_all_reports_and_metrics(
+                report_data, optimization_result, sr_analysis_reports, 
+                sr_integration_analysis, detailed_reports, metrics_calculated, 
+                training_input, symbol
             )
             
             self.logger.info("✅ Step 2.5 artifacts and reports logged successfully")
@@ -1738,6 +1646,124 @@ async def _log_to_mlflow(self, optimization_result: Any,
             self.logger.warning(f"Failed to log S/R results to MLflow: {e}")
             # Don't fail the step if MLflow logging fails
 
+    async def _log_all_reports_and_metrics(
+        self,
+        report_data: dict[str, Any],
+        optimization_result: Any,
+        sr_analysis_reports: dict[str, Any],
+        sr_integration_analysis: dict[str, Any],
+        detailed_reports: dict[str, Any],
+        metrics_calculated: dict[str, Any],
+        training_input: dict[str, Any],
+        symbol: str
+    ) -> None:
+        """Log all reports and metrics to MLflow."""
+        try:
+            # Log the main report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step02_5_sr_optimization",
+                report_data=report_data,
+                report_type="sr_optimization_report",
+                additional_metadata=self._create_base_metadata(training_input, symbol)
+            )
+            self.logger.info(f"✅ Logged SR optimization report: {report_name}")
+            
+            # Log optimization results
+            if optimization_result:
+                optimization_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step02_5_sr_optimization",
+                    report_data=optimization_result,
+                    report_type="optimization_results",
+                    additional_metadata=self._create_optimization_metadata(optimization_result, training_input, symbol)
+                )
+                self.logger.info(f"✅ Logged optimization results: {optimization_report_name}")
+            
+            # Log SR analysis reports
+            if sr_analysis_reports:
+                sr_analysis_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step02_5_sr_optimization",
+                    report_data=sr_analysis_reports,
+                    report_type="sr_analysis_reports",
+                    additional_metadata=self._create_analysis_metadata(sr_analysis_reports, training_input, symbol)
+                )
+                self.logger.info(f"✅ Logged SR analysis reports: {sr_analysis_report_name}")
+            
+            # Log SR integration analysis
+            if sr_integration_analysis:
+                integration_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step02_5_sr_optimization",
+                    report_data=sr_integration_analysis,
+                    report_type="sr_integration_analysis",
+                    additional_metadata=self._create_integration_metadata(sr_integration_analysis, training_input, symbol)
+                )
+                self.logger.info(f"✅ Logged SR integration analysis: {integration_report_name}")
+            
+            # Log detailed reports
+            if detailed_reports:
+                detailed_reports_name = log_step_report(
+                    config=self.config,
+                    step_name="step02_5_sr_optimization",
+                    report_data=detailed_reports,
+                    report_type="detailed_optimization_reports",
+                    additional_metadata=self._create_detailed_metadata(detailed_reports, training_input, symbol)
+                )
+                self.logger.info(f"✅ Logged detailed optimization reports: {detailed_reports_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step02_5_sr_optimization",
+                metrics=metrics_calculated,
+                additional_metadata=self._create_metrics_metadata(training_input, symbol)
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to log reports and metrics: {e}")
+
+    def _create_base_metadata(self, training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create base metadata for logging."""
+        return {
+            "optimization_success": True,
+            "timeframe": training_input["timeframe"],
+            "asset": symbol,
+            "lookback_period": self.config.get("lookback_days", 1095),
+            "project_version": self.config.get("project_version", "1.0.0"),
+        }
+
+    def _create_optimization_metadata(self, optimization_result: Any, training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create optimization-specific metadata."""
+        metadata = self._create_base_metadata(training_input, symbol)
+        metadata["optimization_methods"] = list(optimization_result.keys()) if optimization_result else []
+        return metadata
+
+    def _create_analysis_metadata(self, sr_analysis_reports: dict[str, Any], training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create analysis-specific metadata."""
+        metadata = self._create_base_metadata(training_input, symbol)
+        metadata["analysis_reports_count"] = len(sr_analysis_reports)
+        return metadata
+
+    def _create_integration_metadata(self, sr_integration_analysis: dict[str, Any], training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create integration-specific metadata."""
+        metadata = self._create_base_metadata(training_input, symbol)
+        metadata["integration_analysis_count"] = len(sr_integration_analysis)
+        return metadata
+
+    def _create_detailed_metadata(self, detailed_reports: dict[str, Any], training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create detailed reports metadata."""
+        metadata = self._create_base_metadata(training_input, symbol)
+        metadata["detailed_reports_count"] = len(detailed_reports)
+        return metadata
+
+    def _create_metrics_metadata(self, training_input: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Create metrics-specific metadata."""
+        metadata = self._create_base_metadata(training_input, symbol)
+        metadata["metrics_type"] = "sr_optimization_performance"
+        return metadata
+
 
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S/R optimization step."""
@@ -1774,7 +1800,6 @@ if __name__ == "__main__":
     # Test the step
     import asyncio
     import copy
-from src.core.decorators.errors import handles_errors
     
     # Load test configuration
     test_config = {

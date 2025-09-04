@@ -1,3 +1,7 @@
+# TPSL OPTIMIZER - TEMPORARILY DISABLED
+# This file is temporarily disabled as TPSL parameters are commented out in config.yaml
+# Uncomment when TPSL optimization is re-enabled
+
 from __future__ import annotations
 
 import numba

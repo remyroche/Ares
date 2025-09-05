@@ -11,8 +11,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score, classification_report
-import joblib
+from sklearn.metrics import accuracy_score
 import functools
 import traceback
 import inspect
@@ -37,7 +36,7 @@ def monitor_function_calls(func: Callable) -> Callable:
         module_name = func.__module__
         start_time = time.time()
         logger.info(f'🔵 FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}')
-        logger.info(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
+        logger.debug(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
         call_info = {'call_id': call_id, 'function_name': func_name, 'module_name': module_name, 'start_time': start_time, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'status': 'running'}
         function_call_tracker['call_history'].append(call_info)
         try:
@@ -46,7 +45,11 @@ def monitor_function_calls(func: Callable) -> Callable:
             else:
                 result = func(*args, **kwargs)
             execution_time = time.time() - start_time
-            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': len(str(result)) if hasattr(result, '__len__') else 1})
+            try:
+                result_size = len(result) if hasattr(result, '__len__') else 1
+            except Exception:
+                result_size = 1
+            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': result_size})
             if func_name not in function_call_tracker['performance_metrics']:
                 function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
             metrics = function_call_tracker['performance_metrics'][func_name]
@@ -59,7 +62,7 @@ def monitor_function_calls(func: Callable) -> Callable:
             function_call_tracker['success_count'] += 1
             logger.info(f'🟢 FUNCTION EXIT [{call_id}] - {module_name}.{func_name}')
             logger.info(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.info(f'📤 Result type: {type(result).__name__}')
+            logger.debug(f'📤 Result type: {type(result).__name__}')
             logger.info(f'✅ Status: SUCCESS')
             return result
         except Exception as e:
@@ -90,13 +93,17 @@ def monitor_function_calls(func: Callable) -> Callable:
         module_name = func.__module__
         start_time = time.time()
         logger.info(f'🔵 FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}')
-        logger.info(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
+        logger.debug(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
         call_info = {'call_id': call_id, 'function_name': func_name, 'module_name': module_name, 'start_time': start_time, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'status': 'running'}
         function_call_tracker['call_history'].append(call_info)
         try:
             result = func(*args, **kwargs)
             execution_time = time.time() - start_time
-            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': len(str(result)) if hasattr(result, '__len__') else 1})
+            try:
+                result_size = len(result) if hasattr(result, '__len__') else 1
+            except Exception:
+                result_size = 1
+            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': result_size})
             if func_name not in function_call_tracker['performance_metrics']:
                 function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
             metrics = function_call_tracker['performance_metrics'][func_name]
@@ -109,7 +116,7 @@ def monitor_function_calls(func: Callable) -> Callable:
             function_call_tracker['success_count'] += 1
             logger.info(f'🟢 FUNCTION EXIT [{call_id}] - {module_name}.{func_name}')
             logger.info(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.info(f'📤 Result type: {type(result).__name__}')
+            logger.debug(f'📤 Result type: {type(result).__name__}')
             logger.info(f'✅ Status: SUCCESS')
             return result
         except Exception as e:
@@ -372,12 +379,12 @@ class SROptimizationStep(BaseStep):
                 self._write_sr_artifacts(sr_levels, ml_results)
             except Exception as e:
                 self.logger.warning(f'⚠️ Artifact writing failed: {e}')
-            return {'success': True, 'step2_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'features_data': features_data, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step2_5_sr_optimization'}
+            return {'success': True, 'step2_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step02_5_sr_optimization'}
         except Exception as e:
             self.logger.error(f'❌ SR optimization failed: {e}')
             execution_time = time.time() - self.start_time
             internal_call_tracker['error'] = {'error_type': type(e).__name__, 'error_message': str(e), 'execution_time': execution_time, 'traceback': traceback.format_exc()}
-            return {'success': False, 'step2_5_sr_optimization_completed': False, 'error': str(e), 'execution_time': execution_time, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step2_5_sr_optimization'}
+            return {'success': False, 'step2_5_sr_optimization_completed': False, 'error': str(e), 'execution_time': execution_time, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step02_5_sr_optimization'}
 
     @monitor_function_calls
     @validate_function_inputs

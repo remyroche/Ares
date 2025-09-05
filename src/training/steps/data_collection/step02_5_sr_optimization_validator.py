@@ -637,6 +637,27 @@ async def run_validation(config: dict[str, Any], symbol: str, exchange: str, tim
         logger.error(f'📋 Traceback: {traceback.format_exc()}')
         return False
 
+@monitor_validator_function_calls
+@validate_validator_inputs
+@handles_errors(default_return={'step_name': 'step02_5_sr_optimization', 'validation_passed': False, 'error': 'Validation wrapper failed'})
+async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrapper to integrate with the validator orchestrator.
+
+    Expects the standard signature (training_input, pipeline_state), extracts
+    symbol/exchange/timeframe from training_input, loads configuration from
+    pipeline_state if available, and invokes run_validation.
+    """
+    # Extract parameters with safe defaults
+    symbol = training_input.get('symbol', 'ETHUSDT') if isinstance(training_input, dict) else 'ETHUSDT'
+    exchange = training_input.get('exchange', 'BINANCE') if isinstance(training_input, dict) else 'BINANCE'
+    timeframe = training_input.get('timeframe', '1m') if isinstance(training_input, dict) else '1m'
+    # Load config if available
+    config = {}
+    if isinstance(pipeline_state, dict):
+        config = pipeline_state.get('config', {}) or pipeline_state.get('training_config', {}) or {}
+    success = await run_validation(config, symbol, exchange, timeframe)
+    return {'step_name': 'step02_5_sr_optimization', 'validation_passed': bool(success)}
+
 def save_validator_report(report: Dict[str, Any], filename: str=None) -> str:
     """Save validator function call report to file."""
     if filename is None:

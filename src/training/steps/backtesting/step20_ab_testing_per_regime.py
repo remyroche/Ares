@@ -1,21 +1,41 @@
 """Step 20: AB Testing - Per-Regime Implementation."""
 
 import asyncio
-from pathlib import Path
+import sys
 import json
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from .training.steps.step20_ab_testing import Step20ABTesting
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from typing import Any
-from typing import Dict
-import numpy as np
-from typing import Optional
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+def _check_numpy_available():
+    """Check if numpy is available and raise informative error if not."""
+    if np is None:
+        raise ImportError("numpy is required for this operation but is not available. Please install numpy.")
+
+# Add project root to path for proper imports
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import ABTestingStep using direct path to avoid pandas dependency issues
+import sys
+validation_dir = '/workspace/src/training/steps/model_training/validation'
+if validation_dir not in sys.path:
+    sys.path.insert(0, validation_dir)
+import step20_ab_testing
+ABTestingStep = step20_ab_testing.ABTestingStep
+from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
+from src.utils.logger import get_logger
+
+# Import decorators
+from src.utils.decorators import traced, validates, handles_errors
 
 logger = get_logger('Step20ABTestingPerRegime')
 
-class PerRegimeABTestingStep(Step20ABTesting):
+class PerRegimeABTestingStep(ABTestingStep):
     """AB testing step that processes each regime separately."""
     
     def __init__(self, config: Dict[str, Any]):
@@ -144,6 +164,7 @@ class PerRegimeABTestingStep(Step20ABTesting):
     
     async def _run_ab_test_variant(self, variant_config: Dict[str, Any], regime_id: int) -> Dict[str, Any]:
         """Run AB test for a specific variant."""
+        _check_numpy_available()
         try:
             # Simulate test results
             base_performance = 0.7
@@ -189,6 +210,7 @@ class PerRegimeABTestingStep(Step20ABTesting):
     
     def _calculate_statistical_significance(self, ab_tests: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate statistical significance of AB test results."""
+        _check_numpy_available()
         try:
             significance_results = {}
             
@@ -265,7 +287,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = f"data/processed/{exchange.lower()}/{symbol.lower()}"
     
     config['per_regime_ab_testing'] = True
     step = PerRegimeABTestingStep(config)
@@ -283,4 +305,4 @@ if __name__ == '__main__':
     async def test():
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Per-regime AB testing result: {success}')
-    asyncio.run(await test())
+    asyncio.run(test())

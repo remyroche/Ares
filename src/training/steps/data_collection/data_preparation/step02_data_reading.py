@@ -6,7 +6,7 @@ data quality validation before proceeding to HMM regime discovery.
 
 from pathlib import Path
 
-from ....base_step import BaseStep
+from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.common_operations import (
     validate_dataframe_schema, validate_data_quality

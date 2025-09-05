@@ -4,6 +4,10 @@ This module applies the triple barrier method to create trading signals and labe
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
 
+# Import common types from main branch
+from src.training.steps.model_training.step04_common_types import (
+    StepResult, TripleBarrierResult, StepResultStatus, standardize_result
+)
 import asyncio
 import sys
 import time
@@ -148,7 +152,7 @@ class TripleBarrierMethodStep:
         timeframe: str,
         data_dir: str = 'data_cache',
         force_rerun: bool = False
-    ) -> bool:
+    ) -> TripleBarrierResult:
         """Execute the triple barrier method step."""
         step_start = time.time()
         self.logger.info(f'🚀 Executing Triple Barrier Method for {symbol} on {exchange}')
@@ -161,7 +165,11 @@ class TripleBarrierMethodStep:
             data = await self._load_data_with_streaming(symbol, exchange, timeframe, data_dir)
             if data is None or data.empty:
                 self.logger.error('❌ Failed to load data')
-                return False
+                return TripleBarrierResult.failure_result(
+                    error='Failed to load data',
+                    error_type='DataLoadError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir}
+                )
             
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
             
@@ -175,9 +183,14 @@ class TripleBarrierMethodStep:
                     labeled_data = await self._apply_optimized_triple_barrier(data)
                 else:
                     labeled_data = await self._apply_basic_triple_barrier(data)
+            
             if labeled_data is None or labeled_data.empty:
                 self.logger.error('❌ Failed to generate triple barrier labels')
-                return False
+                return TripleBarrierResult.failure_result(
+                    error='Failed to generate triple barrier labels',
+                    error_type='LabelingError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
             
             # Save results with optimized I/O
             success = await self._save_results_optimized(
@@ -185,21 +198,49 @@ class TripleBarrierMethodStep:
             )
             
             if success:
+                # Calculate label statistics
+                label_stats = self._calculate_label_statistics(labeled_data)
+                
                 self._log_step_timing('Triple Barrier Method', step_start)
                 self.memory_monitor.log_memory_status('after triple barrier execution')
-                return True
+                
+                # Create result data with proper column name
+                result_data = data.copy()
+                result_data['triple_barrier_label'] = labeled_data['label']
+                if 'potential_profit_pct' in labeled_data.columns:
+                    result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
+                
+                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+                
+                return TripleBarrierResult.success_result(
+                    data=result_data,
+                    metadata={
+                        'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
+                        'output_file': str(output_path),
+                        'data_shape': data.shape, 'label_stats': label_stats,
+                        'memory_stats': self.memory_monitor.get_memory_stats()
+                    },
+                    execution_time=time.time() - step_start
+                )
             else:
                 self.logger.error('❌ Failed to save results')
-                return False
+                return TripleBarrierResult.failure_result(
+                    error='Failed to save results',
+                    error_type='SaveError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+                
         except Exception as e:
             self.logger.exception(f'❌ Error in triple barrier method: {e}')
             # Trigger garbage collection on error
             self.memory_monitor.trigger_gc()
-            return False
+            return TripleBarrierResult.failure_result(
+                error=str(e),
+                error_type=type(e).__name__,
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
 
-    @with_enhanced_mlflow_logging('step04_5_triple_barrier_method')
-    @with_tracing_span('step04_5_triple_barrier_execute')
-    @handles_errors()
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
         labels = labeled_data.get('label')
         if labels is None:
@@ -631,9 +672,93 @@ async def run_step(
         data_dir=data_dir, 
         force_rerun=force_rerun
     )
-if __name__ == '__main__':
+    def _get_triple_barrier_config(self) -> Dict[str, float]:
+        """Extract triple barrier configuration parameters."""
+        triple_barrier_config = self.config.get('triple_barrier', {})
+        return {'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002), 'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001), 'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 30), 'max_lookahead': triple_barrier_config.get('max_lookahead', 100)}
 
+    def _create_triple_barrier_labeler(self, config: Dict[str, float]) -> Any:
+        """Create triple barrier labeler with optimized parameters."""
+        from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+        return OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=config['profit_take_multiplier'], 
+            stop_loss_multiplier=config['stop_loss_multiplier'], 
+            time_barrier_minutes=config['time_barrier_minutes'], 
+            max_lookahead=config['max_lookahead'], 
+            binary_classification=True
+        )
+
+    async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply optimized triple barrier labeling using the initialized labeler."""
+        config = self._get_triple_barrier_config()
+        labeler = self._create_triple_barrier_labeler(config)
+        labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
+        return labeled_data
+
+
+async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
+    """Run Step 4: Triple Barrier Method with standardized return types.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe
+        data_dir: Data directory
+        force_rerun: Force rerun flag
+        config: Configuration dictionary
+        
+    Returns:
+        StepResult: Standardized result with success status and details
+    """
+    if config is None:
+        config = {}
+    
+    step_config = {
+        'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, 
+        'triple_barrier': {
+            'profit_take_multiplier': 0.002, 
+            'stop_loss_multiplier': 0.001, 
+            'time_barrier_minutes': 30, 
+            'max_lookahead': 100
+        }, 
+        **config
+    }
+    
+    step_start = time.time()
+    try:
+        step = TripleBarrierMethodStep(step_config)
+        await step.initialize()
+        result = await step.execute_triple_barrier_method(
+            symbol=symbol, 
+            exchange=exchange, 
+            timeframe=timeframe, 
+            data_dir=data_dir, 
+            force_rerun=force_rerun
+        )
+        
+        # Standardize the result if it's not already a StepResult
+        standardized_result = standardize_result(result, "triple_barrier_method")
+        
+        if standardized_result.success:
+            logger.info('✅ Step 4: Triple Barrier Method completed successfully')
+        else:
+            logger.error('❌ Step 4: Triple Barrier Method failed')
+            logger.error(f'🔍 Error: {standardized_result.error}')
+        
+        return standardized_result
+        
+    except Exception as e:
+        logger.exception(f'❌ Error in triple barrier method step: {e}')
+        return StepResult.failure_result(
+            error=str(e),
+            error_type=type(e).__name__,
+            metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir},
+            execution_time=time.time() - step_start
+        )
+if __name__ == '__main__':
     async def test() -> None:
-        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Step 4 result: {success}')
+        result = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        print(f'Step 4 result: {result.success}')
+        if not result.success:
+            print(f'Error: {result.error}')
     asyncio.run(test())

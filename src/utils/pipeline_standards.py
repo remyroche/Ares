@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 import pandas as pd
+import numpy as np
 
 
 project_root = Path(__file__).parent.parent.parent

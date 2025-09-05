@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Callable
 import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))

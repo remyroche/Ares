@@ -33,6 +33,7 @@ except ImportError:
 from .database.sqlite_manager import SQLiteManager
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, failed, warning
+import pandas as pd
 
 class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"

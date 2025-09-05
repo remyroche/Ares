@@ -9,6 +9,7 @@ from src.utils.warning_symbols import critical, failed, initialization_error, in
 from .core.decorators.errors import handles_errors
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+import pandas as pd
 
 class DataUtils:
     """

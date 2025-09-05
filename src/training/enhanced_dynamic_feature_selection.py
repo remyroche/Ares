@@ -9,6 +9,7 @@ from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
 from .utils.logger import system_logger
 import numpy as np
+import pandas as pd
 
 # src/training/enhanced_dynamic_feature_selection.py
 

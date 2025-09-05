@@ -46,6 +46,8 @@ except ImportError:
             pass
 try:
     from src.utils.pipeline_standards import pipeline_standards
+import pandas as pd
+
 except ImportError:
 
     def pipeline_standards(*args, **kwargs) -> None:

@@ -21,6 +21,7 @@ import psutil
 if TYPE_CHECKING:
     from collections.abc import Iterable
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

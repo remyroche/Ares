@@ -6,6 +6,7 @@ including quality assessment, performance metrics, and actionable recommendation
 from pathlib import Path
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
 import numpy as np
+import pandas as pd
 
 class BacktestingReportGenerator:
     """Comprehensive report generator for backtesting pipeline."""

@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from .analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from .utils.logger import system_logger
 import numpy as np
+import pandas as pd
 
 
 @dataclass

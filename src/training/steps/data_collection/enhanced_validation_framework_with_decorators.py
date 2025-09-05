@@ -26,6 +26,7 @@ from typing import List
 from typing import Callable
 from datetime import datetime
 import numpy as np
+import pandas as pd
 
 logger = system_logger.getChild('EnhancedValidationWithDecorators')
 

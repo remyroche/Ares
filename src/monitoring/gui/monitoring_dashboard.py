@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from .utils.logger import system_logger
 import numpy as np
+import pandas as pd
 
 class MonitoringDashboard:
     """

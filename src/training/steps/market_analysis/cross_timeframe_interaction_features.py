@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
+import pandas as pd
 
 class TimeframeType(Enum):
     """Types of timeframes for analysis"""

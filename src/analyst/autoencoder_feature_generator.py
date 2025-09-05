@@ -27,6 +27,8 @@ setup_logging()
 logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
 import sys
+import pandas as pd
+
 sys.path.insert(0, str(project_root))
 
 class AutoencoderConfig:

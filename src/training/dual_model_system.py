@@ -21,6 +21,8 @@ from .core.domain import quality_gate, secure_data_processing
 from .utils.confidence import aggregate_directional_confidences
 from .utils.logger import system_logger
 from src.utils.warning_symbols import (
+import numpy as np
+
     error,
     execution_error,
     initialization_error,

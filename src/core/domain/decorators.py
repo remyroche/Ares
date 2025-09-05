@@ -5,6 +5,8 @@ from functools import wraps
 from typing import Callable, List, Optional, TypeVar, Any
 from .core.decorators import cached, compose, handles_errors, log_call, log_execution_time, timeout, traced, validates
 from .core.errors import BusinessRuleError, DataIntegrityError, ValidationError
+import numpy as np
+
 F = TypeVar('F', bound=Callable[..., Any])
 
 class ValidationLevel(str, Enum):

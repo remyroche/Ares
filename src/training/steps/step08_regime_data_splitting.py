@@ -25,6 +25,7 @@ else:
     def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
         raise ImportError('unified_data_loader module not available')
 import logging
+import pandas as pd
 
 def create_fallback_logger() -> Any:
     logging.basicConfig(level=logging.INFO)

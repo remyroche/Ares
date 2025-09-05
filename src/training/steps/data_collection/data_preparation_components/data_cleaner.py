@@ -4,6 +4,8 @@ Extracted from step01_5_data_converter.py
 """
 from typing import Any, Optional, Union
 from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 class DataCleaner:
     """Handles data cleaning operations for market data.

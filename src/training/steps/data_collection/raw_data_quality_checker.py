@@ -12,6 +12,7 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 from .utils.logger import system_logger
+import pandas as pd
 
 class RawDataQualityChecker:
     """Comprehensive raw data quality checker for early detection of issues."

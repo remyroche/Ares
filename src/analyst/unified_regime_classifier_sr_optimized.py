@@ -10,6 +10,7 @@ from .analyst.unified_regime_classifier_sr_focused import UnifiedRegimeClassifie
 from .analyst.sr_relevance_optimizer import SRRelevanceOptimizer
 import asyncio
 import numpy as np
+import pandas as pd
 
 class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
     """

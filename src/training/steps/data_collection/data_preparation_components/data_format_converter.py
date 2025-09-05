@@ -17,6 +17,7 @@ from .core.decorators import traced, validates
 from .utils.logger import system_logger
 from .utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
 import numpy as np
+import pandas as pd
 
 class DataFormatConverter:
     """Handles conversion between different data formats with focus on Parquet operations.

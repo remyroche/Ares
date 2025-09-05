@@ -14,6 +14,7 @@ from .core.decorators import handles_errors, traced
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
 import numpy as np
+import pandas as pd
 
 @dataclass
 class SRPrediction:

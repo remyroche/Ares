@@ -7,6 +7,7 @@ from typing import Any
 from .utils.logger import system_logger
 from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 import numpy as np
+import pandas as pd
 
 
 class CrossStepValidator:

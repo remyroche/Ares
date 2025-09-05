@@ -6,6 +6,7 @@ This module contains specialized components for feature engineering
 including technical indicators, interactions, and regime-aware features.
 """
 from .utils.logger import system_logger
+import numpy as np
 
 class TechnicalIndicatorEngine:
     """Engine for creating technical indicators."""

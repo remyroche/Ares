@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Any
 import pywt
+import numpy as np
+import pandas as pd
 from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from .analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from .analytics.limited_microstructure_features import LimitedMicrostructureFeatures
@@ -9,6 +11,7 @@ from .config import CONFIG
 from .core.decorators import handles_errors
 from .core.domain import handle_data_processing_errors, handle_file_operations
 from .utils.logger import system_logger
+from .config_optuna import get_parameter_value
 
 class FeatureEngineeringOrchestrator:
     """
@@ -33,10 +36,7 @@ class FeatureEngineeringOrchestrator:
         os.makedirs(self.model_storage_path, exist_ok=True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, 'der_scaler.joblib')
-        from .config_optuna import get_parameter_value
-import numpy as np
-import pandas as pd
-
+        
         self.orchestrator_config = config.get('feature_engineering_orchestrator', {})
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)
         self.enable_autoencoder_features = get_parameter_value('feature_engineering_parameters.enable_autoencoder_features', True)

@@ -24,11 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
 
-# Import auto-fixers (ONLY dead code-related)
-from fixers.auto_fixers.auto_fix_dead_code import AutoFixDeadCode
-
-# Import standalone dead code analysis
-from dead_code_analysis import DeadCodeAnalyzer
+# Note: AutoFixDeadCode and DeadCodeAnalyzer were removed as they were redundant
+# The enhanced_dead_code_analyzer provides all necessary functionality
 
 # Import core components
 from core.config import get_default_config

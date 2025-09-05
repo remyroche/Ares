@@ -3,7 +3,6 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable
-from typing import get_origin
 import time
 import json
 import os
@@ -11,199 +10,30 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
 import functools
 import traceback
 import inspect
-from collections import deque
 from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
+from src.utils.step02_5_utilities import (
+    monitor_function_calls, 
+    validate_function_inputs, 
+    function_tracker,
+    logging_patterns
+)
 import logging
 
 logger = system_logger.getChild('Step2_5SROptimization')
-function_call_tracker = {'call_count': 0, 'call_history': deque(maxlen=500), 'performance_metrics': {}, 'error_count': 0, 'success_count': 0}
-
-def monitor_function_calls(func: Callable) -> Callable:
-    """Comprehensive function call monitoring decorator."""
-
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs) -> None:
-        function_call_tracker['call_count'] += 1
-        call_id = function_call_tracker['call_count']
-        func_name = func.__name__
-        module_name = func.__module__
-        start_time = time.time()
-        logger.info(f'🔵 FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}')
-        logger.debug(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
-        call_info = {'call_id': call_id, 'function_name': func_name, 'module_name': module_name, 'start_time': start_time, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'status': 'running'}
-        function_call_tracker['call_history'].append(call_info)
-        try:
-            if asyncio.iscoroutinefunction(func):
-                result = await func(*args, **kwargs)
-            else:
-                result = func(*args, **kwargs)
-            execution_time = time.time() - start_time
-            try:
-                result_size = len(result) if hasattr(result, '__len__') else 1
-            except Exception:
-                result_size = 1
-            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': result_size})
-            if func_name not in function_call_tracker['performance_metrics']:
-                function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
-            metrics = function_call_tracker['performance_metrics'][func_name]
-            metrics['total_calls'] += 1
-            metrics['total_time'] += execution_time
-            metrics['avg_time'] = metrics['total_time'] / metrics['total_calls']
-            metrics['min_time'] = min(metrics['min_time'], execution_time)
-            metrics['max_time'] = max(metrics['max_time'], execution_time)
-            metrics['success_count'] += 1
-            function_call_tracker['success_count'] += 1
-            logger.info(f'🟢 FUNCTION EXIT [{call_id}] - {module_name}.{func_name}')
-            logger.info(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.debug(f'📤 Result type: {type(result).__name__}')
-            logger.info(f'✅ Status: SUCCESS')
-            return result
-        except Exception as e:
-            execution_time = time.time() - start_time
-            call_info.update({'status': 'error', 'execution_time': execution_time, 'error_type': type(e).__name__, 'error_message': str(e), 'traceback': traceback.format_exc()})
-            if func_name not in function_call_tracker['performance_metrics']:
-                function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
-            metrics = function_call_tracker['performance_metrics'][func_name]
-            metrics['total_calls'] += 1
-            metrics['total_time'] += execution_time
-            metrics['avg_time'] = metrics['total_time'] / metrics['total_calls']
-            metrics['min_time'] = min(metrics['min_time'], execution_time)
-            metrics['max_time'] = max(metrics['max_time'], execution_time)
-            metrics['error_count'] += 1
-            function_call_tracker['error_count'] += 1
-            logger.error(f'🔴 FUNCTION ERROR [{call_id}] - {module_name}.{func_name}')
-            logger.error(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.error(f'❌ Error type: {type(e).__name__}')
-            logger.error(f'💥 Error message: {str(e)}')
-            logger.error(f'📋 Traceback: {traceback.format_exc()}')
-            raise
-
-    @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs) -> None:
-        function_call_tracker['call_count'] += 1
-        call_id = function_call_tracker['call_count']
-        func_name = func.__name__
-        module_name = func.__module__
-        start_time = time.time()
-        logger.info(f'🔵 FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}')
-        logger.debug(f'📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}')
-        call_info = {'call_id': call_id, 'function_name': func_name, 'module_name': module_name, 'start_time': start_time, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'status': 'running'}
-        function_call_tracker['call_history'].append(call_info)
-        try:
-            result = func(*args, **kwargs)
-            execution_time = time.time() - start_time
-            try:
-                result_size = len(result) if hasattr(result, '__len__') else 1
-            except Exception:
-                result_size = 1
-            call_info.update({'status': 'success', 'execution_time': execution_time, 'result_type': type(result).__name__, 'result_size': result_size})
-            if func_name not in function_call_tracker['performance_metrics']:
-                function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
-            metrics = function_call_tracker['performance_metrics'][func_name]
-            metrics['total_calls'] += 1
-            metrics['total_time'] += execution_time
-            metrics['avg_time'] = metrics['total_time'] / metrics['total_calls']
-            metrics['min_time'] = min(metrics['min_time'], execution_time)
-            metrics['max_time'] = max(metrics['max_time'], execution_time)
-            metrics['success_count'] += 1
-            function_call_tracker['success_count'] += 1
-            logger.info(f'🟢 FUNCTION EXIT [{call_id}] - {module_name}.{func_name}')
-            logger.info(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.debug(f'📤 Result type: {type(result).__name__}')
-            logger.info(f'✅ Status: SUCCESS')
-            return result
-        except Exception as e:
-            execution_time = time.time() - start_time
-            call_info.update({'status': 'error', 'execution_time': execution_time, 'error_type': type(e).__name__, 'error_message': str(e), 'traceback': traceback.format_exc()})
-            if func_name not in function_call_tracker['performance_metrics']:
-                function_call_tracker['performance_metrics'][func_name] = {'total_calls': 0, 'total_time': 0, 'avg_time': 0, 'min_time': float('inf'), 'max_time': 0, 'success_count': 0, 'error_count': 0}
-            metrics = function_call_tracker['performance_metrics'][func_name]
-            metrics['total_calls'] += 1
-            metrics['total_time'] += execution_time
-            metrics['avg_time'] = metrics['total_time'] / metrics['total_calls']
-            metrics['min_time'] = min(metrics['min_time'], execution_time)
-            metrics['max_time'] = max(metrics['max_time'], execution_time)
-            metrics['error_count'] += 1
-            function_call_tracker['error_count'] += 1
-            logger.error(f'🔴 FUNCTION ERROR [{call_id}] - {module_name}.{func_name}')
-            logger.error(f'⏱️ Execution time: {execution_time:.4f}s')
-            logger.error(f'❌ Error type: {type(e).__name__}')
-            logger.error(f'💥 Error message: {str(e)}')
-            logger.error(f'📋 Traceback: {traceback.format_exc()}')
-            raise
-    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
-def validate_function_inputs(func: Callable) -> Callable:
-    """Validate function inputs and outputs with safe handling of typing generics."""
-
-    def _safe_type_check(expected_type: Any, value: Any) -> bool:
-        try:
-            if expected_type is inspect.Parameter.empty:
-                return True
-            origin = get_origin(expected_type)
-            if origin is not None:
-                return True
-            if str(expected_type).startswith('typing.'):
-                return True
-            return isinstance(value, expected_type)
-        except TypeError:
-            return True
-
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs) -> None:
-        sig = inspect.signature(func)
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        logger.info(f'🔍 INPUT VALIDATION - {func.__name__}')
-        for param_name, param_value in bound_args.arguments.items():
-            param_type = sig.parameters[param_name].annotation
-            logger.info(f'  📋 {param_name}: {type(param_value).__name__} = {str(param_value)[:100]}...')
-            if not _safe_type_check(param_type, param_value):
-                logger.warning(f'  ⚠️ Type mismatch for {param_name}: expected {param_type}, got {type(param_value)}')
-        result = await func(*args, **kwargs)
-        logger.info(f'🔍 OUTPUT VALIDATION - {func.__name__}')
-        logger.info(f'  📤 Result type: {type(result).__name__}')
-        try:
-            logger.info(f"  📊 Result size: {(len(str(result)) if hasattr(result, '__len__') else 1)}")
-        except Exception:
-            pass
-        return result
-
-    @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs) -> None:
-        sig = inspect.signature(func)
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        logger.info(f'🔍 INPUT VALIDATION - {func.__name__}')
-        for param_name, param_value in bound_args.arguments.items():
-            param_type = sig.parameters[param_name].annotation
-            logger.info(f'  📋 {param_name}: {type(param_value).__name__} = {str(param_value)[:100]}...')
-            if not _safe_type_check(param_type, param_value):
-                logger.warning(f'  ⚠️ Type mismatch for {param_name}: expected {param_type}, got {type(param_value)}')
-        result = func(*args, **kwargs)
-        logger.info(f'🔍 OUTPUT VALIDATION - {func.__name__}')
-        logger.info(f'  📤 Result type: {type(result).__name__}')
-        try:
-            logger.info(f"  📊 Result size: {(len(str(result)) if hasattr(result, '__len__') else 1)}")
-        except Exception:
-            pass
-        return result
-    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
 def generate_function_report() -> Dict[str, Any]:
-    """Generate comprehensive function call report."""
-    total_calls = function_call_tracker['call_count']
-    success_rate = function_call_tracker['success_count'] / total_calls * 100 if total_calls > 0 else 0
-    call_history_list = list(function_call_tracker['call_history'])
-    report = {'summary': {'total_function_calls': total_calls, 'successful_calls': function_call_tracker['success_count'], 'failed_calls': function_call_tracker['error_count'], 'success_rate_percent': round(success_rate, 2), 'report_generated_at': datetime.now().isoformat()}, 'performance_metrics': function_call_tracker['performance_metrics'], 'call_history': call_history_list[-50:], 'top_performing_functions': sorted(function_call_tracker['performance_metrics'].items(), key=lambda x: x[1]['avg_time'])[:10], 'most_called_functions': sorted(function_call_tracker['performance_metrics'].items(), key=lambda x: x[1]['total_calls'], reverse=True)[:10]}
-    return report
+    """Generate comprehensive function call report using utility module."""
+    return function_tracker.generate_report()
 
 class SROptimizationStep(BaseStep):
     """Step 2.5: S/R Detection Optimization with comprehensive parameter optimization and detailed reporting."""
@@ -249,7 +79,7 @@ class SROptimizationStep(BaseStep):
 
     @monitor_function_calls
     @validate_function_inputs
-    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> bool:
+    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs."""
         self.logger.info('🔍 Validating step inputs with detailed checks')
         errors = []
@@ -374,27 +204,68 @@ class SROptimizationStep(BaseStep):
             self.logger.info(f"🤖 ML accuracy: {optimization_results['confidence_score']:.3f}")
             self.logger.info(f"📊 Internal function calls: {internal_call_tracker['step_calls']}")
             execution_report = {'total_execution_time': execution_time, 'step_breakdown': internal_call_tracker['step_times'], 'step_results': internal_call_tracker['step_results'], 'performance_summary': {'features_per_second': len(features_data.columns) / execution_time, 'sr_levels_per_second': optimization_results['sr_levels_detected'] / execution_time, 'ml_accuracy': ml_results.get('direction_accuracy', 0)}}
-            # Write artifacts expected by validator
-            try:
-                self._write_sr_artifacts(sr_levels, ml_results)
-            except Exception as e:
-                self.logger.warning(f'⚠️ Artifact writing failed: {e}')
-            return {'success': True, 'step2_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step02_5_sr_optimization'}
+            return {'success': True, 'step2_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'features_data': features_data, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step2_5_sr_optimization'}
         except Exception as e:
             self.logger.error(f'❌ SR optimization failed: {e}')
             execution_time = time.time() - self.start_time
             internal_call_tracker['error'] = {'error_type': type(e).__name__, 'error_message': str(e), 'execution_time': execution_time, 'traceback': traceback.format_exc()}
-            return {'success': False, 'step2_5_sr_optimization_completed': False, 'error': str(e), 'execution_time': execution_time, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step02_5_sr_optimization'}
+            return {'success': False, 'step2_5_sr_optimization_completed': False, 'error': str(e), 'execution_time': execution_time, 'internal_call_tracker': internal_call_tracker, 'step_name': 'step2_5_sr_optimization'}
 
     @monitor_function_calls
     @validate_function_inputs
     async def _engineer_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Engineer comprehensive features for SR analysis."""
-        self.logger.info('🔧 Engineering technical features with detailed monitoring...')
+        """Engineer comprehensive features for SR analysis using advanced modules."""
+        self.logger.info('🔧 Engineering advanced features with enhanced modules...')
         feature_start_time = time.time()
-        self.logger.info(f'📊 Available columns: {list(data.columns)}')
-        self.logger.info(f'📊 Data shape: {data.shape}')
-        self.logger.info(f'📊 Data types: {data.dtypes.to_dict()}')
+        
+        try:
+            # Try to use advanced feature engineering module
+            from src.training.steps.data_collection.feature_engineering.step06_advanced_features import AdvancedFeatureEngineeringStep
+            
+            # Configure advanced feature engineering
+            feature_config = {
+                'feature_engineering': {
+                    'enable_wavelets': True,
+                    'enable_multi_timeframe': True,
+                    'timeframes': ['5m', '15m', '1h'],
+                    'chunk_size': 100000
+                }
+            }
+            
+            # Initialize advanced feature engineering
+            advanced_fe = AdvancedFeatureEngineeringStep(feature_config)
+            await advanced_fe.initialize()
+            
+            # Use the advanced microstructure features
+            microstructure_features = advanced_fe._calculate_microstructure_features(data)
+            
+            # Combine with basic features
+            features_data = data.copy()
+            
+            # Add microstructure features
+            for col in microstructure_features.columns:
+                features_data[f'microstructure_{col}'] = microstructure_features[col]
+            
+            self.logger.info('✅ Advanced microstructure features added')
+            
+        except ImportError:
+            self.logger.warning('Advanced feature engineering not available, using enhanced basic features')
+            features_data = await self._engineer_features_enhanced_basic(data)
+        except Exception as e:
+            self.logger.warning(f'Advanced feature engineering failed: {e}, using enhanced basic features')
+            features_data = await self._engineer_features_enhanced_basic(data)
+        
+        feature_time = time.time() - feature_start_time
+        self.logger.info(f'✅ Feature engineering completed in {feature_time:.4f}s')
+        self.logger.info(f'📈 Engineered {len(features_data.columns)} features')
+        self.logger.info(f'📊 Final data shape: {features_data.shape}')
+        return features_data
+    
+    async def _engineer_features_enhanced_basic(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Enhanced basic feature engineering with market microstructure features."""
+        self.logger.info('🔧 Engineering enhanced basic features...')
+        
+        # Standardize column names
         column_mapping = {}
         for col in data.columns:
             col_lower = col.lower()
@@ -408,118 +279,329 @@ class SROptimizationStep(BaseStep):
                 column_mapping['close'] = col
             elif 'volume' in col_lower and 'volume' not in column_mapping:
                 column_mapping['volume'] = col
-        self.logger.info(f'📊 Column mapping: {column_mapping}')
+        
         required_columns = ['open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in column_mapping]
         if missing_columns:
             raise ValueError(f'Missing required columns: {missing_columns}. Available columns: {list(data.columns)}')
+        
         features_data = data.copy()
-        self.logger.info(f'📊 Created data copy with {len(features_data)} rows')
         for standard_name, actual_name in column_mapping.items():
             features_data[standard_name] = features_data[actual_name]
-        self.logger.info('✅ Column mapping completed')
-        self.logger.info('🔧 Computing basic price features...')
+        
+        # Basic price features
         features_data['price_range'] = features_data['high'] - features_data['low']
         features_data['price_change'] = features_data['close'].pct_change()
         features_data['volume_change'] = features_data['volume'].pct_change()
-        self.logger.info('✅ Basic price features computed')
-        self.logger.info('🔧 Computing moving averages...')
+        
+        # Market microstructure features
+        features_data['spread'] = features_data['high'] - features_data['low']
+        features_data['spread_pct'] = features_data['spread'] / features_data['close']
+        features_data['typical_price'] = (features_data['high'] + features_data['low'] + features_data['close']) / 3
+        features_data['vwap'] = (features_data['typical_price'] * features_data['volume']).cumsum() / features_data['volume'].cumsum()
+        features_data['price_to_vwap'] = features_data['close'] / features_data['vwap']
+        features_data['dollar_volume'] = features_data['close'] * features_data['volume']
+        features_data['log_dollar_volume'] = np.log1p(features_data['dollar_volume'])
+        features_data['price_impact'] = features_data['price_change'].abs() / (features_data['volume'] + 1)
+        features_data['kyle_lambda'] = features_data['price_impact'].rolling(20).mean()
+        features_data['order_flow_imbalance'] = np.where(features_data['close'] > features_data['open'], features_data['volume'], -features_data['volume'])
+        features_data['ofi_cumsum'] = features_data['order_flow_imbalance'].cumsum()
+        
+        # Technical indicators
         for period in [5, 10, 20, 50]:
             features_data[f'sma_{period}'] = features_data['close'].rolling(period).mean()
             features_data[f'price_sma_{period}_ratio'] = features_data['close'] / features_data[f'sma_{period}']
-        self.logger.info('✅ Moving averages computed')
-        self.logger.info('🔧 Computing volatility features...')
+        
+        # Volatility features
         features_data['volatility_5'] = features_data['price_change'].rolling(5).std()
         features_data['volatility_20'] = features_data['price_change'].rolling(20).std()
-        self.logger.info('✅ Volatility features computed')
-        self.logger.info('🔧 Computing RSI momentum...')
+        
+        # RSI
         delta = features_data['close'].diff()
         gain = delta.where(delta > 0, 0).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         features_data['rsi'] = 100 - 100 / (1 + rs)
-        self.logger.info('✅ RSI momentum computed')
-        self.logger.info('🔧 Computing Bollinger Bands...')
+        
+        # Bollinger Bands
         features_data['bb_middle'] = features_data['close'].rolling(20).mean()
         bb_std = features_data['close'].rolling(20).std()
         features_data['bb_upper'] = features_data['bb_middle'] + bb_std * 2
         features_data['bb_lower'] = features_data['bb_middle'] - bb_std * 2
         features_data['bb_position'] = (features_data['close'] - features_data['bb_lower']) / (features_data['bb_upper'] - features_data['bb_lower'])
-        self.logger.info('✅ Bollinger Bands computed')
-        self.logger.info('🔧 Computing price position features...')
+        
+        # Price position features
         features_data['high_low_ratio'] = features_data['high'] / features_data['low']
         features_data['close_high_ratio'] = features_data['close'] / features_data['high']
         features_data['close_low_ratio'] = features_data['close'] / features_data['low']
-        self.logger.info('✅ Price position features computed')
-        self.logger.info('🔧 Computing volume features...')
+        
+        # Volume features
         features_data['volume_sma_20'] = features_data['volume'].rolling(20).mean()
         features_data['volume_ratio'] = features_data['volume'] / features_data['volume_sma_20']
-        self.logger.info('✅ Volume features computed')
-        self.logger.info('🔧 Filling NaN values...')
+        
+        # Fill NaN values
         features_data = features_data.fillna(method='ffill').fillna(0)
-        self.logger.info('✅ NaN values filled')
-        feature_time = time.time() - feature_start_time
-        self.logger.info(f'✅ Feature engineering completed in {feature_time:.4f}s')
-        self.logger.info(f'📈 Engineered {len(features_data.columns)} features')
-        self.logger.info(f'📊 Final data shape: {features_data.shape}')
+        
         return features_data
 
     @monitor_function_calls
     @validate_function_inputs
     async def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect support and resistance levels using vectorized local-extrema and touch counting."""
-        self.logger.info('🎯 Detecting support and resistance levels with detailed monitoring...')
+        """Detect support and resistance levels using existing dynamic SR modules."""
+        self.logger.info('🎯 Detecting support and resistance levels with existing dynamic SR modules...')
+        detection_start_time = time.time()
+        
+        try:
+            # Use existing SR Levels Manager with dynamic capabilities
+            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
+            
+            # Configure SR levels manager
+            sr_config = {
+                'sr_levels_manager': {
+                    'storage_path': 'data/sr_levels',
+                    'max_levels': 20,
+                    'min_strength': 0.4,
+                    'proximity_threshold': 0.003
+                }
+            }
+            
+            # Initialize SR levels manager
+            sr_manager = SRLevelsManager(sr_config)
+            await sr_manager.initialize()
+            
+            # Calculate SR levels from backtest data
+            sr_results = await sr_manager.calculate_sr_levels_from_backtest(data, '1m')
+            
+            # Extract levels and apply dynamic adjustments
+            support_levels = [level.price for level in sr_results.get('support_levels', [])]
+            resistance_levels = [level.price for level in sr_results.get('resistance_levels', [])]
+            
+            # Apply SR strength optimization if available
+            try:
+                from src.tactician.sr_levels.sr_strength_optimizer import SRStrengthOptimizer, SRLevelIdentifier
+                
+                # Configure SR strength optimizer
+                strength_config = {
+                    'sr_strength_optimization': {
+                        'n_trials': 50,  # Reduced for faster execution
+                        'n_jobs': 1,
+                        'chunk_size': 1000
+                    }
+                }
+                
+                # Use SR level identifier with optimized parameters
+                sr_identifier = SRLevelIdentifier(strength_config)
+                strong_levels = sr_identifier.identify_strong_sr_levels(data, min_strength=0.4)
+                
+                # Extract strong levels
+                strong_support = [level.price for level in strong_levels if level.type == 'support']
+                strong_resistance = [level.price for level in strong_levels if level.type == 'resistance']
+                
+                # Combine with manager levels, prioritizing strong levels
+                support_levels = list(set(support_levels + strong_support))
+                resistance_levels = list(set(resistance_levels + strong_resistance))
+                
+                self.logger.info(f'✅ Applied SR strength optimization: {len(strong_support)} strong support, {len(strong_resistance)} strong resistance')
+                
+            except ImportError:
+                self.logger.warning('SR strength optimizer not available, using manager levels only')
+            
+            # Apply dynamic SR management if available
+            try:
+                # Use existing dynamic barrier calculator for dynamic adjustments
+                from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+                
+                # Configure dynamic barrier calculator
+                barrier_config = {
+                    'tactician_triple_barrier': {
+                        'analyst_barrier_fractions': {
+                            'upper_barrier_50_fraction': 0.5,
+                            'lower_barrier_50_fraction': 0.5,
+                            'upper_barrier_25_fraction': 0.25,
+                            'lower_barrier_25_fraction': 0.25
+                        },
+                        'timeframes': ['1m', '5m'],
+                        'primary_timeframe': '1m',
+                        'secondary_timeframe': '5m'
+                    }
+                }
+                
+                # Initialize dynamic barrier calculator
+                barrier_calc = DynamicBarrierCalculator(barrier_config)
+                
+                # Calculate dynamic barriers for level adjustment
+                dynamic_barriers = barrier_calc.calculate_dynamic_barriers('1m')
+                
+                # Apply dynamic adjustments to levels based on market conditions
+                current_price = data['close'].iloc[-1]
+                price_volatility = data['close'].pct_change().rolling(20).std().iloc[-1]
+                
+                # Adjust levels based on volatility
+                volatility_factor = 1.0 + (price_volatility * 2)  # Scale adjustment with volatility
+                
+                adjusted_support = []
+                adjusted_resistance = []
+                
+                for level in support_levels:
+                    # Apply dynamic adjustment based on distance from current price
+                    distance_factor = abs(current_price - level) / current_price
+                    adjustment = 1.0 + (distance_factor * volatility_factor * 0.1)
+                    adjusted_support.append(level * adjustment)
+                
+                for level in resistance_levels:
+                    # Apply dynamic adjustment based on distance from current price
+                    distance_factor = abs(current_price - level) / current_price
+                    adjustment = 1.0 + (distance_factor * volatility_factor * 0.1)
+                    adjusted_resistance.append(level * adjustment)
+                
+                support_levels = adjusted_support
+                resistance_levels = adjusted_resistance
+                
+                self.logger.info('✅ Applied dynamic barrier-based SR level adaptation')
+                
+            except ImportError:
+                self.logger.warning('Dynamic SR manager not available, using static levels')
+            
+            # Filter to top levels
+            support_levels = sorted(support_levels)[-5:]
+            resistance_levels = sorted(resistance_levels)[-5:]
+            
+            detection_time = time.time() - detection_start_time
+            self.logger.info(f'✅ Dynamic SR detection completed in {detection_time:.4f}s')
+            self.logger.info(f'🎯 Final result: {len(support_levels)} support and {len(resistance_levels)} resistance levels')
+            
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels,
+                'detection_parameters': sr_config,
+                'detection_metrics': {
+                    'total_levels': len(support_levels) + len(resistance_levels),
+                    'detection_time': detection_time,
+                    'method': 'dynamic_sr_manager'
+                }
+            }
+            
+        except ImportError:
+            self.logger.warning('SR Levels Manager not available, trying enhanced SR detector')
+            return await self._detect_sr_levels_enhanced(data)
+        except Exception as e:
+            self.logger.error(f'Dynamic SR detection failed: {e}')
+            return await self._detect_sr_levels_enhanced(data)
+    
+    async def _detect_sr_levels_enhanced(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback to enhanced SR detector."""
+        self.logger.info('🎯 Using enhanced SR detector as fallback...')
+        detection_start_time = time.time()
+        
+        try:
+            # Import enhanced SR detector
+            from src.tactician.sr_levels.enhanced_sr_detection import EnhancedSRDetector
+            
+            # Configure enhanced detector
+            enhanced_config = {
+                'min_touches': self.sr_optimization_config.get('min_touches', 3),
+                'touch_proximity_threshold': self.sr_optimization_config.get('tolerance_pct', 0.5) / 100,
+                'min_strength': 0.6,
+                'volume_spike_threshold': 1.5,
+                'fractal_period': 5,
+                'pivot_period': 10,
+                'psychological_levels': True,
+                'fibonacci_levels': True
+            }
+            
+            detector = EnhancedSRDetector(enhanced_config)
+            sr_levels = detector.detect_sr_levels(data)
+            
+            # Convert to simple format for compatibility
+            support_levels = [level.price for level in sr_levels if level.type == 'support']
+            resistance_levels = [level.price for level in sr_levels if level.type == 'resistance']
+            
+            # Filter to top levels
+            support_levels = sorted(support_levels)[-5:]
+            resistance_levels = sorted(resistance_levels)[-5:]
+            
+            detection_time = time.time() - detection_start_time
+            self.logger.info(f'✅ Enhanced SR detection completed in {detection_time:.4f}s')
+            self.logger.info(f'🎯 Final result: {len(support_levels)} support and {len(resistance_levels)} resistance levels')
+            
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels,
+                'detection_parameters': enhanced_config,
+                'detection_metrics': {
+                    'total_levels': len(sr_levels),
+                    'detection_time': detection_time,
+                    'method': 'enhanced_multi_algorithm'
+                }
+            }
+            
+        except ImportError:
+            self.logger.warning('Enhanced SR detector not available, falling back to basic detection')
+            return await self._detect_sr_levels_basic(data)
+        except Exception as e:
+            self.logger.error(f'Enhanced SR detection failed: {e}')
+            return await self._detect_sr_levels_basic(data)
+    
+    async def _detect_sr_levels_basic(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback basic SR detection method."""
+        self.logger.info('🎯 Using basic SR detection method...')
         detection_start_time = time.time()
         prices = data['close'].values
         highs = data['high'].values
         lows = data['low'].values
-        self.logger.info(f'📊 Processing {len(prices)} price points')
-        self.logger.info(f'📊 Price range: {np.min(prices):.4f} - {np.max(prices):.4f}')
-        self.logger.info(f'📊 High range: {np.min(highs):.4f} - {np.max(highs):.4f}')
-        self.logger.info(f'📊 Low range: {np.min(lows):.4f} - {np.max(lows):.4f}')
+        
         min_touches = self.sr_optimization_config.get('min_touches', 2)
         tolerance_pct = self.sr_optimization_config.get('tolerance_pct', 0.5) / 100
         lookback_periods = self.sr_optimization_config.get('lookback_periods', 100)
-        self.logger.info('⚙️ Detection parameters:')
-        self.logger.info(f'  📋 Min touches: {min_touches}')
-        self.logger.info(f'  📋 Tolerance: {tolerance_pct * 100:.2f}%')
-        self.logger.info(f'  📋 Lookback periods: {lookback_periods}')
-
-        window = int(2 * lookback_periods + 1)
-        highs_s = pd.Series(highs)
-        lows_s = pd.Series(lows)
-        roll_max = highs_s.rolling(window=window, center=True).max()
-        roll_min = lows_s.rolling(window=window, center=True).min()
-        resistance_candidate_idx = np.where((highs_s.values == roll_max.values) & (~np.isnan(roll_max.values)))[0]
-        support_candidate_idx = np.where((lows_s.values == roll_min.values) & (~np.isnan(roll_min.values)))[0]
-        resistance_candidates = int(len(resistance_candidate_idx))
-        support_candidates = int(len(support_candidate_idx))
-
-        resistance_levels = []
-        if resistance_candidates > 0:
-            cand_levels_high = highs[resistance_candidate_idx]
-            diff_matrix_high = np.abs(highs[:, None] - cand_levels_high[None, :]) / np.maximum(cand_levels_high[None, :], 1e-12)
-            touches_high = (diff_matrix_high <= tolerance_pct).sum(axis=0)
-            resistance_levels = [float(level) for level, t in zip(cand_levels_high, touches_high) if t >= min_touches]
-
+        
         support_levels = []
-        if support_candidates > 0:
-            cand_levels_low = lows[support_candidate_idx]
-            diff_matrix_low = np.abs(lows[:, None] - cand_levels_low[None, :]) / np.maximum(cand_levels_low[None, :], 1e-12)
-            touches_low = (diff_matrix_low <= tolerance_pct).sum(axis=0)
-            support_levels = [float(level) for level, t in zip(cand_levels_low, touches_low) if t >= min_touches]
-
-        unique_support = sorted(list(set(support_levels)))
-        unique_resistance = sorted(list(set(resistance_levels)))
-        original_support_count = len(unique_support)
-        original_resistance_count = len(unique_resistance)
-        support_levels = unique_support[-5:]
-        resistance_levels = unique_resistance[-5:]
+        resistance_levels = []
+        
+        # Basic resistance detection
+        for i in range(lookback_periods, len(highs) - lookback_periods):
+            current_high = highs[i]
+            is_resistance = True
+            for j in range(i - lookback_periods, i + lookback_periods + 1):
+                if j != i and highs[j] > current_high:
+                    is_resistance = False
+                    break
+            if is_resistance:
+                touches = 0
+                for price in highs:
+                    if abs(price - current_high) / current_high <= tolerance_pct:
+                        touches += 1
+                if touches >= min_touches:
+                    resistance_levels.append(float(current_high))
+        
+        # Basic support detection
+        for i in range(lookback_periods, len(lows) - lookback_periods):
+            current_low = lows[i]
+            is_support = True
+            for j in range(i - lookback_periods, i + lookback_periods + 1):
+                if j != i and lows[j] < current_low:
+                    is_support = False
+                    break
+            if is_support:
+                touches = 0
+                for price in lows:
+                    if abs(price - current_low) / current_low <= tolerance_pct:
+                        touches += 1
+                if touches >= min_touches:
+                    support_levels.append(float(current_low))
+        
+        # Filter to top levels
+        support_levels = sorted(list(set(support_levels)))[-5:]
+        resistance_levels = sorted(list(set(resistance_levels)))[-5:]
+        
         detection_time = time.time() - detection_start_time
-        self.logger.info(f'✅ SR detection completed in {detection_time:.4f}s')
-        self.logger.info(f'🎯 Final result: {len(support_levels)} support and {len(resistance_levels)} resistance levels')
-        self.logger.info(f'📊 Level filtering: Support {original_support_count} -> {len(support_levels)}, Resistance {original_resistance_count} -> {len(resistance_levels)}')
-        return {'support_levels': support_levels, 'resistance_levels': resistance_levels, 'detection_parameters': {'min_touches': min_touches, 'tolerance_pct': tolerance_pct, 'lookback_periods': lookback_periods}, 'detection_metrics': {'total_candidates': resistance_candidates + support_candidates, 'resistance_candidates': resistance_candidates, 'support_candidates': support_candidates, 'detection_time': detection_time}}
+        self.logger.info(f'✅ Basic SR detection completed in {detection_time:.4f}s')
+        
+        return {
+            'support_levels': support_levels,
+            'resistance_levels': resistance_levels,
+            'detection_parameters': {'min_touches': min_touches, 'tolerance_pct': tolerance_pct, 'lookback_periods': lookback_periods},
+            'detection_metrics': {'detection_time': detection_time, 'method': 'basic'}
+        }
 
     @monitor_function_calls
     @validate_function_inputs
@@ -543,31 +625,55 @@ class SROptimizationStep(BaseStep):
         y_direction = y_direction[:-1]
         y_volatility = y_volatility[:-1]
         self.logger.info(f'📊 After removing last row: X={X.shape}, y_direction={len(y_direction)}, y_volatility={len(y_volatility)}')
-        self.logger.info('🔧 Splitting data chronologically for training and testing...')
+        self.logger.info('🔧 Performing walk-forward validation...')
         split_start = time.time()
-        n_samples = X.shape[0]
-        test_size = max(1, int(n_samples * 0.2))
-        split_index = n_samples - test_size
-        X_train, X_test = X.iloc[:split_index], X.iloc[split_index:]
-        y_dir_train, y_dir_test = y_direction.iloc[:split_index], y_direction.iloc[split_index:]
-        y_vol_train, y_vol_test = y_volatility.iloc[:split_index], y_volatility.iloc[split_index:]
+        # Walk-forward validation for time series data
+        train_size = int(len(X) * 0.7)
+        val_size = int(len(X) * 0.15)
+        test_size = len(X) - train_size - val_size
+        
+        X_train = X[:train_size]
+        X_val = X[train_size:train_size + val_size]
+        X_test = X[train_size + val_size:]
+        
+        y_dir_train = y_direction[:train_size]
+        y_dir_val = y_direction[train_size:train_size + val_size]
+        y_dir_test = y_direction[train_size + val_size:]
+        
+        y_vol_train = y_volatility[:train_size]
+        y_vol_val = y_volatility[train_size:train_size + val_size]
+        y_vol_test = y_volatility[train_size + val_size:]
+        
         split_time = time.time() - split_start
-        self.logger.info(f'✅ Chronological split completed in {split_time:.4f}s')
-        self.logger.info(f'📊 Training set: {X_train.shape[0]} samples, Test set: {X_test.shape[0]} samples')
+        self.logger.info(f'✅ Walk-forward splitting completed in {split_time:.4f}s')
+        self.logger.info(f'📊 Training set: {X_train.shape[0]} samples')
+        self.logger.info(f'📊 Validation set: {X_val.shape[0]} samples')
+        self.logger.info(f'📊 Test set: {X_test.shape[0]} samples')
+        self.logger.info('🔧 Scaling features...')
+        scale_start = time.time()
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
+        scale_time = time.time() - scale_start
+        self.logger.info(f'✅ Feature scaling completed in {scale_time:.4f}s')
+        self.logger.info(f'📊 Scaled training set shape: {X_train_scaled.shape}')
+        self.logger.info(f'📊 Scaled validation set shape: {X_val_scaled.shape}')
+        self.logger.info(f'📊 Scaled test set shape: {X_test_scaled.shape}')
         self.logger.info('🤖 Training direction classifier...')
         direction_start = time.time()
-        direction_model = RandomForestClassifier(n_estimators=100, random_state=42)
-        direction_model.fit(X_train, y_dir_train)
-        y_dir_pred = direction_model.predict(X_test)
+        direction_model = RandomForestClassifier(n_estimators=100, random_state=None)
+        direction_model.fit(X_train_scaled, y_dir_train)
+        y_dir_pred = direction_model.predict(X_test_scaled)
         direction_accuracy = accuracy_score(y_dir_test, y_dir_pred)
         direction_time = time.time() - direction_start
         self.logger.info(f'✅ Direction classifier training completed in {direction_time:.4f}s')
         self.logger.info(f'📊 Direction accuracy: {direction_accuracy:.3f}')
         self.logger.info('🤖 Training volatility regressor...')
         volatility_start = time.time()
-        volatility_model = RandomForestRegressor(n_estimators=100, random_state=42)
-        volatility_model.fit(X_train, y_vol_train)
-        y_vol_pred = volatility_model.predict(X_test)
+        volatility_model = RandomForestRegressor(n_estimators=100, random_state=None)
+        volatility_model.fit(X_train_scaled, y_vol_train)
+        y_vol_pred = volatility_model.predict(X_test_scaled)
         volatility_mae = np.mean(np.abs(y_vol_test - y_vol_pred))
         volatility_time = time.time() - volatility_start
         self.logger.info(f'✅ Volatility regressor training completed in {volatility_time:.4f}s')
@@ -582,40 +688,10 @@ class SROptimizationStep(BaseStep):
         self.logger.info(f'✅ ML training completed in {ml_time:.4f}s')
         self.logger.info(f'📊 Total training time breakdown:')
         self.logger.info(f'  📋 Data splitting: {split_time:.4f}s')
+        self.logger.info(f'  📋 Feature scaling: {scale_time:.4f}s')
         self.logger.info(f'  📋 Direction training: {direction_time:.4f}s')
         self.logger.info(f'  📋 Volatility training: {volatility_time:.4f}s')
-        return {'direction_accuracy': float(direction_accuracy), 'volatility_mae': float(volatility_mae), 'feature_importance': feature_importance, 'top_features': top_features, 'model_info': {'direction_model': 'RandomForestClassifier', 'volatility_model': 'RandomForestRegressor', 'features_used': len(feature_columns), 'training_samples': len(X_train), 'test_samples': len(X_test)}, 'training_metrics': {'total_training_time': ml_time, 'data_split_time': split_time, 'direction_training_time': direction_time, 'volatility_training_time': volatility_time, 'feature_matrix_size': X.shape, 'memory_usage_mb': X.memory_usage(deep=True).sum() / 1024 ** 2}}
-
-    def _write_sr_artifacts(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any]) -> None:
-        """Write artifacts expected by the validator and training manager."""
-        out_dir = Path('data/optimization')
-        out_dir.mkdir(parents=True, exist_ok=True)
-        results_payload = {
-            'method_weights': {},
-            'strength_weights': {},
-            'dbscan_params': {},
-            'timeframe_weights': {},
-            'advanced_params': {},
-            'performance_metrics': {
-                'optimization_score': float(ml_results.get('direction_accuracy', 0.0)),
-                'sharpe_ratio': 0.0,
-                'win_rate': float(ml_results.get('direction_accuracy', 0.0))
-            },
-            'validation_metrics': {
-                'cross_validation_score': 0.0
-            },
-            'metadata': {
-                'step': 'step02_5_sr_optimization',
-                'timestamp': datetime.now().isoformat(),
-                'optimization_time': 0,
-                'n_trials': 0
-            }
-        }
-        with open(out_dir / 'sr_optimization_results.json', 'w') as f:
-            json.dump(results_payload, f, indent=2)
-        with open('optimization_results.json', 'w') as f:
-            json.dump({'sr_levels_summary': {'support': len(sr_levels.get('support_levels', [])), 'resistance': len(sr_levels.get('resistance_levels', []))}}, f, indent=2)
-        logger.info('📄 Wrote SR optimization artifacts for validator compatibility')
+        return {'direction_accuracy': float(direction_accuracy), 'volatility_mae': float(volatility_mae), 'feature_importance': feature_importance, 'top_features': top_features, 'model_info': {'direction_model': 'RandomForestClassifier', 'volatility_model': 'RandomForestRegressor', 'features_used': len(feature_columns), 'training_samples': len(X_train), 'test_samples': len(X_test)}, 'training_metrics': {'total_training_time': ml_time, 'data_split_time': split_time, 'feature_scaling_time': scale_time, 'direction_training_time': direction_time, 'volatility_training_time': volatility_time, 'feature_matrix_size': X.shape, 'memory_usage_mb': X.memory_usage(deep=True).sum() / 1024 ** 2}}
 
 def save_function_report(report: Dict[str, Any], filename: str=None) -> str:
     """Save function call report to file."""

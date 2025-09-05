@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+# Import decorators from both locations for compatibility
+from src.utils.decorators.errors import handles_errors
+from src.core.decorators import traced, validates
 import numpy as np
 import pandas as pd
 
@@ -192,9 +195,41 @@ class TripleBarrierMethodStep:
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
             
-            # Save results with optimized I/O
+            # Save results with optimized I/O and enhanced features
             success = await self._save_results_optimized(
                 data, labeled_data, symbol, exchange, timeframe, data_dir
+            )
+            
+            if success:
+                # Calculate label statistics
+                label_stats = self._calculate_label_statistics(labeled_data)
+                
+                self._log_step_timing('Triple Barrier Method', step_start)
+                self.memory_monitor.log_memory_status('after triple barrier execution')
+                
+                # Create result data with proper column name and enhanced features
+                result_data = data.copy()
+                # Align indices explicitly and map to canonical column names
+                labels_aligned = labeled_data['label'].reindex(result_data.index)
+                result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
+                if 'potential_profit_pct' in labeled_data.columns:
+                    profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
+                    result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+                    fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+                    result_data['potential_profit_net_pct'] = (result_data['potential_profit_pct'] - (2.0 * fee_per_side)).astype(np.float64)
+                
+                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+                
+                return TripleBarrierResult.success_result(
+                    data=result_data,
+                    metadata={
+                        'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
+                        'output_file': str(output_path),
+                        'data_shape': data.shape, 'label_stats': label_stats,
+                        'memory_stats': self.memory_monitor.get_memory_stats()
+                    },
+                    execution_time=time.time() - step_start
+                )
             )
             
             if success:
@@ -242,7 +277,9 @@ class TripleBarrierMethodStep:
             )
 
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
-        labels = labeled_data.get('label')
+        labels = labeled_data.get('triple_barrier_label')
+        if labels is None:
+            labels = labeled_data.get('label')
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
         return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
@@ -441,16 +478,30 @@ class TripleBarrierMethodStep:
     ) -> Optional[pd.DataFrame]:
         """Legacy method for backward compatibility."""
         try:
+            # Prefer optimized vectorized labeler when available
             if (getattr(self, 'triple_barrier_labeler', None) is not None and 
-                hasattr(self.triple_barrier_labeler, 'label_data')):
-                labeled = await self.triple_barrier_labeler.label_data(
-                    data, profit_target, stop_loss, max_holding
-                )
+                hasattr(self.triple_barrier_labeler, 'apply_triple_barrier_labeling_vectorized')):
+                labeled = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(data)
                 return labeled
                 
             # Fallback to basic implementation
             return self._apply_basic_triple_barrier_sync(data)
-            
+            close_prices = data['close'].values
+            high_prices = data['high'].values
+            low_prices = data['low'].values
+            labels = np.zeros(len(close_prices), dtype=np.int8)
+            for i in range(len(close_prices) - 1):
+                entry_price = close_prices[i]
+                profit_barrier = entry_price * (1 + profit_target)
+                stop_barrier = entry_price * (1 - stop_loss)
+                for j in range(i + 1, min(i + max_holding, len(close_prices))):
+                    if high_prices[j] >= profit_barrier:
+                        labels[i] = 1
+                        break
+                    elif low_prices[j] <= stop_barrier:
+                        labels[i] = -1
+                        break
+            return pd.DataFrame({'label': labels})
         except Exception as e:
             self.logger.exception(f'❌ Error applying triple barrier: {e}')
             return None
@@ -460,6 +511,10 @@ class TripleBarrierMethodStep:
         try:
             ensure_directory(output_path.parent)
             return safe_to_parquet(labeled_data, output_path, compression='snappy')
+        try:
+            ensure_directory(output_path.parent)
+            labeled_data.to_parquet(output_path)
+            return True
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to save labeled data: {e}')
             return False
@@ -487,6 +542,16 @@ class TripleBarrierMethodStep:
             triple_barrier_config = self._get_triple_barrier_config()
             
             # Apply triple barrier labeling
+    @with_tracing_span('step04_5_triple_barrier_execute')
+    @handles_errors()
+    async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache') -> Dict[str, Any]:
+        try:
+            unified_data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
+            latest_file = max(list(unified_data_path.glob('*.parquet')), key=lambda x: x.stat().st_mtime)
+            data = await self._load_data(str(latest_file))
+            if data is None:
+                return {'success': False, 'error': 'data_load_failed'}
+            # Use the same logic as execute_triple_barrier_method for consistency
             if self.triple_barrier_labeler:
                 labeled = await self._apply_optimized_triple_barrier(data)
             else:
@@ -672,6 +737,29 @@ async def run_step(
         data_dir=data_dir, 
         force_rerun=force_rerun
     )
+            if labeled is None:
+                return {'success': False, 'error': 'labeling_failed'}
+            output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+            # Merge aligned columns and save canonical outputs
+            result_data = data.copy()
+            labels_aligned = labeled['label'].reindex(result_data.index)
+            result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
+            if 'potential_profit_pct' in labeled.columns:
+                profit_aligned = labeled['potential_profit_pct'].reindex(result_data.index)
+                result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+                fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+                result_data['potential_profit_net_pct'] = (result_data['potential_profit_pct'] - (2.0 * fee_per_side)).astype(np.float64)
+            ensure_directory(output_path.parent)
+            result_data.to_parquet(output_path)
+            saved = True
+            stats = self._calculate_label_statistics(result_data)
+            log_step_report(config=self.config, step_name='step04_5_triple_barrier_method', report_data={'stats': stats})
+            log_step_metrics(config=self.config, step_name='step04_5_triple_barrier_method', metrics={'total_labels': stats.get('total_labels', 0)})
+            return {'success': bool(saved), 'labeled_data': result_data, 'label_stats': stats}
+        except Exception as e:
+            self.logger.exception(f'❌ Execute failed: {e}')
+            return {'success': False, 'error': str(e)}
+
     def _get_triple_barrier_config(self) -> Dict[str, float]:
         """Extract triple barrier configuration parameters."""
         triple_barrier_config = self.config.get('triple_barrier', {})

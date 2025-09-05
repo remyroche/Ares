@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Core decorators for the Ares project."""
 
 def handles_errors(*args, **kwargs) -> None:

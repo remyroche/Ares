@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import json
 import time
+import datetime
 import numpy as np
 import pandas as pd
 try:
@@ -58,7 +59,7 @@ def ensure_directory(path: Path | str) -> Path:
     return p
 
 def _build_labeled_data_path(data_dir: str, symbol: str, exchange: str, timeframe: str) -> Path:
-    return Path(data_dir) / f'{exchange}_{symbol}_{timeframe}_labeled.parquet'
+    return Path(data_dir) / 'training' / 'labeled_data' / f'{exchange}_{symbol}_{timeframe}_labeled_data.parquet'
 
 class LabelingStep:
     """Minimal step implementation for unit tests.
@@ -150,11 +151,33 @@ class LabelingStep:
         return {'total_samples': total, 'buy_signals': buy, 'sell_signals': sell, 'no_action': flat, 'avg_confidence': avg_conf if not np.isnan(avg_conf) else 0.0, 'label_distribution': dist}
 
     async def _save_labeled_data(self, data: pd.DataFrame, data_dir: str, symbol: str, exchange: str, timeframe: str) -> str:
-        out_dir = ensure_directory(Path(data_dir))
-        out_path = out_dir / f'{exchange}_{symbol}_{timeframe}_labeled.parquet'
-        data.to_parquet(out_path)
+        out_dir = ensure_directory(Path(data_dir) / 'training' / 'labeled_data')
+        data_to_save = data.copy()
+        if 'label' not in data_to_save.columns:
+            if 'meta_label' in data_to_save.columns:
+                try:
+                    data_to_save['label'] = np.sign(data_to_save['meta_label']).astype(int)
+                except Exception:
+                    data_to_save['label'] = 0
+            else:
+                data_to_save['label'] = 0
+        out_path = out_dir / f'{exchange}_{symbol}_{timeframe}_labeled_data.parquet'
+        data_to_save.to_parquet(out_path)
         try:
-            meta = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'rows': int(len(data)), 'columns': list(map(str, data.columns))}
+            if 'label' in data_to_save.columns:
+                label_counts = data_to_save['label'].value_counts().to_dict()
+                label_dist = {int(k) if isinstance(k, (int, np.integer)) else k: int(v) for k, v in label_counts.items()}
+            else:
+                label_dist = {}
+            meta = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'total_samples': int(len(data_to_save)),
+                'label_distribution': label_dist,
+                'labeling_method': 'meta_labeling' if 'meta_label' in data_to_save.columns else 'unknown',
+                'labeling_timestamp': datetime.datetime.utcnow().isoformat()
+            }
             with open(out_dir / f'{exchange}_{symbol}_{timeframe}_labeling_metadata.json', 'w', encoding='utf-8') as f:
                 json.dump(meta, f, indent=2)
         except Exception:

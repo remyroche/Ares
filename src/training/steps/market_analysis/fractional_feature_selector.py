@@ -16,7 +16,7 @@ from sklearn.feature_selection import (
 from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
-from .utils.data_quality_framework import (
+from .utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

@@ -24,9 +24,9 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
-from .training.steps.hmm_clustering import run_enhanced_step
-from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+from src.utils.logger import system_logger
+from src.training.steps.market_analysis.hmm_clustering import run_enhanced_step
+from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
 
 logger = system_logger.getChild("Step3HMMClustering")
 
@@ -36,7 +36,8 @@ class HMMClusteringStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('HMMClusteringStep')
-        self.standards = pipeline_standards
+        from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+        self.standards = _pipeline_standards
         self.start_time = None
         self.step_timings = {}
 
@@ -197,7 +198,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
         logger = system_logger.getChild('Step3HMMClustering')
         
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+            data_dir = _pipeline_standards.build_path('processed_data', exchange, symbol)
         
         logger.info('=' * 80)
         logger.info('🚀 STEP 3: Enhanced HMM Clustering with Full Pipeline Integration')
@@ -329,5 +331,4 @@ async def main():
         print("=" * 80)
 
 if __name__ == "__main__":
-    # Run the enhanced step 3
-    asyncio.run(await main())
+    asyncio.run(main())

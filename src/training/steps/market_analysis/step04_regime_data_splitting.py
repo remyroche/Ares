@@ -385,11 +385,10 @@ class RegimeDataSplittingStep:
             if not unified_data_path.exists():
                 self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
                 return None
-            regime_primary = Path('data') / 'hmm_regimes' / f'{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'
-            regime_alternative = Path(data_dir) / 'hmm_regimes' / f'{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'
-            regime_file = regime_primary if regime_primary.exists() else regime_alternative
+            # Standardize to: data_dir/hmm_regimes/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet
+            regime_file = Path(data_dir) / 'hmm_regimes' / f'{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet'
             if not regime_file.exists():
-                self.logger.error(f'❌ Regime file not found: {regime_primary} or {regime_alternative}')
+                self.logger.error(f'❌ Regime file not found: {regime_file}')
                 return None
             unified_files = list(unified_data_path.glob('**/*.parquet'))
             if not unified_files:

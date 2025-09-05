@@ -14,17 +14,16 @@ from pathlib import Path
 import time
 import json
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+# Add project root to path (workspace root so `src.*` imports resolve)
+project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .training.steps.market_analysis.pipeline_orchestrator import (
-    run_market_analysis_pipeline,
+from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator import (
     run_enhanced_market_analysis_pipeline,
     MarketAnalysisPipelineOrchestrator,
 )
-from .training.steps.market_analysis.enhanced_logging_metrics import enhanced_logger
-from .training.steps.market_analysis.progress_monitor import progress_monitor
+from src.training.steps.market_analysis.enhanced_logging_metrics import enhanced_logger
+from src.training.steps.market_analysis.progress_monitor import progress_monitor
 import logging
 
 async def main():

@@ -14,11 +14,11 @@ from .training.steps.step06_labeling_components.optimized_triple_barrier_labelin
 
 logger = system_logger.getChild('RegimeParameterOptimizer')
 
+import numpy as np
+
 @dataclass
 class RegimeParameters:
     """Parameters specific to a market regime."""
-import numpy as np
-
     regime: str
     profit_target: float
     stop_loss: float

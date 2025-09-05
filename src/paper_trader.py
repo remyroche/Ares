@@ -37,9 +37,9 @@ class ExecutionMode(Enum):
     SIMULATION = "simulation"
 
 
-from src.utils.warning_symbols import (
 import numpy as np
 
+from src.utils.warning_symbols import (
     execution_error,
     initialization_error,
     invalid,

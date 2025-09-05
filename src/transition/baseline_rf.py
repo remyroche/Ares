@@ -9,10 +9,10 @@ from sklearn.metrics import classification_report
 
 from .utils.logger import system_logger
 
-try:
-    import shap  # type: ignore
 import numpy as np
 
+try:
+    import shap  # type: ignore
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
 

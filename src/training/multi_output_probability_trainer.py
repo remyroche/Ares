@@ -18,10 +18,11 @@ except ImportError:
     NEURAL_MODEL_CONFIGS = {}
     NeuralNetworkWrapper = None
     create_neural_model = None
-try:
-    from catboost import CatBoostClassifier
+
 import numpy as np
 
+try:
+    from catboost import CatBoostClassifier
     CATBOOST_AVAILABLE = True
 except ImportError:
     CatBoostClassifier = None

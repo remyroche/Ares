@@ -543,7 +543,7 @@ class TrainingManager:
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
-            cpu_percent = process.cpu_percent(interval=0.1)
+            cpu_percent = process.cpu_percent()
             system_memory = psutil.virtual_memory()
             system_memory_percent = system_memory.percent
             return {'memory_mb': float(memory_mb), 'cpu_percent': float(cpu_percent), 'system_memory_percent': float(system_memory_percent), 'available_memory_gb': float(system_memory.available / 1024 / 1024 / 1024)}
@@ -572,7 +572,7 @@ class TrainingManager:
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             timeframe = pipeline_state.get('timeframe', '1m')
             checkpoint_dir = f'checkpoints/{exchange}/{symbol}/{timeframe}'
-            validation_result = await self.step_dependency_validator.validate_step_prerequisites(step_name=step_name, pipeline_state=pipeline_state, checkpoint_dir=checkpoint_dir, force_rerun=force_rerun)
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(symbol=symbol, exchange=exchange, data_dir=checkpoint_dir)
             if validation_result['valid']:
                 self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
                 return True
@@ -1510,47 +1510,47 @@ class TrainingManager:
                 return False
             self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
             self._heartbeat('Step 4: Regime Data Splitting')
-                should_run_step4 = _should_run('step04_regime_data_splitting')
+            should_run_step4 = _should_run('step04_regime_data_splitting')
+            step_start_4 = time.time()
+            if not should_run_step4:
+                self.logger.info(f"⏭️ Skipping Step 4: Regime Data Splitting (starting from '{start_step_key}')")
+                pipeline_state['regime_data_splitting'] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
+            else:
+                if not await self.verify_previous_step_artifacts('step04_regime_data_splitting', symbol, exchange, timeframe):
+                    self.logger.error('❌ Previous step artifacts not found for step04, stopping pipeline')
+                    return False
+                if not await self.validate_step_dependencies('step04_regime_data_splitting', pipeline_state, self.force_rerun):
+                    self.logger.error('❌ Step 4 dependencies not met, stopping pipeline')
+                    return False
                 step_start_4 = time.time()
-                if not should_run_step4:
-                    self.logger.info(f"⏭️ Skipping Step 4: Regime Data Splitting (starting from '{start_step_key}')")
-                    pipeline_state['regime_data_splitting'] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
-                else:
-                    if not await self.verify_previous_step_artifacts('step04_regime_data_splitting', symbol, exchange, timeframe):
-                        self.logger.error('❌ Previous step artifacts not found for step04, stopping pipeline')
-                        return False
-                    if not await self.validate_step_dependencies('step04_regime_data_splitting', pipeline_state, self.force_rerun):
-                        self.logger.error('❌ Step 4 dependencies not met, stopping pipeline')
-                        return False
-                    step_start_4 = time.time()
-                    try:
-                        from .training.steps import step4_regime_data_splitting
-                        step4_success = await step4_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
-                    except Exception as e:
-                        self.logger.exception(f'❌ Error in Step 4: {e}')
-                        step4_success = False
-                    if not step4_success:
-                        self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=False)
-                        return False
-                    self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=True)
-                    pipeline_state['regime_data_splitting'] = {'status': 'SUCCESS' if step4_success else 'FAILED', 'success': bool(step4_success), 'completed': bool(step4_success)}
-                    self._save_checkpoint('step04_regime_data_splitting', pipeline_state)
-                    step_times['step04_regime_data_splitting'] = time.time() - step_start_4
-                    try:
-                        step4_validation = await self._run_step_validator('step04_regime_data_splitting', training_input, pipeline_state)
-                        if step4_validation and step4_validation.get('validation_passed', False):
-                            self.logger.info('🎉 Step 4: Regime Data Splitting completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state=pipeline_state, previous_step_name='step03_hmm_clustering', training_input=training_input)
-                            if enhanced_validation.get('validation_passed', False):
-                                self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
-                            else:
-                                self.logger.warning('⚠️ Enhanced validation found issues but continuing')
+                try:
+                    from .training.steps import step4_regime_data_splitting
+                    step4_success = await step4_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                except Exception as e:
+                    self.logger.exception(f'❌ Error in Step 4: {e}')
+                    step4_success = False
+                if not step4_success:
+                    self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=False)
+                    return False
+                self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=True)
+                pipeline_state['regime_data_splitting'] = {'status': 'SUCCESS' if step4_success else 'FAILED', 'success': bool(step4_success), 'completed': bool(step4_success)}
+                self._save_checkpoint('step04_regime_data_splitting', pipeline_state)
+                step_times['step04_regime_data_splitting'] = time.time() - step_start_4
+                try:
+                    step4_validation = await self._run_step_validator('step04_regime_data_splitting', training_input, pipeline_state)
+                    if step4_validation and step4_validation.get('validation_passed', False):
+                        self.logger.info('🎉 Step 4: Regime Data Splitting completed successfully and validation passed')
+                        enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state=pipeline_state, previous_step_name='step03_hmm_clustering', training_input=training_input)
+                        if enhanced_validation.get('validation_passed', False):
+                            self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                         else:
-                            self.logger.error('❌ Step 4 validation failed - stopping pipeline')
-                            return False
-                    except Exception as e:
-                        self.logger.exception(f'❌ Step 4 validator failed: {e} - stopping pipeline')
+                            self.logger.warning('⚠️ Enhanced validation found issues but continuing')
+                    else:
+                        self.logger.error('❌ Step 4 validation failed - stopping pipeline')
                         return False
+                except Exception as e:
+                    self.logger.exception(f'❌ Step 4 validator failed: {e} - stopping pipeline')
+                    return False
                 self._heartbeat('Step 5: Triple Barrier Method')
                 should_run_step5 = _should_run('step5_triple_barrier_method')
                 step_start_5 = time.time()

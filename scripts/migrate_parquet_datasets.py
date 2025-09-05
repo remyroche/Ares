@@ -10,21 +10,21 @@ This script provides comprehensive parquet dataset management including:
 
 Usage:
   # Migrate datasets
-  python scripts/migrate_parquet_datasets.py migrate \
+python scripts/migrate_parquet_datasets.py migrate \
     --exchange BINANCE --symbol ETHUSDT --timeframe 1m \
     [--src-base data/training/parquet] [--dst-base data_cache/parquet]
 
   # Analyze partitions
-  python scripts/migrate_parquet_datasets.py analyze \
+python scripts/migrate_parquet_datasets.py analyze \
     --data-cache data_cache [--output analysis_report.txt]
 
   # Optimize partitions
-  python scripts/migrate_parquet_datasets.py optimize \
+python scripts/migrate_parquet_datasets.py optimize \
     --data-cache data_cache [--dry-run]
 
 Notes:
-  - Static columns exchange/symbol/timeframe will be added if missing.
-  - Existing partitioned data will be appended/overwritten per dataset manager behavior.
+- Static columns exchange/symbol/timeframe will be added if missing.
+- Existing partitioned data will be appended/overwritten per dataset manager behavior.
 """
 
 
@@ -42,7 +42,6 @@ from src.training.enhanced_training_manager_optimized import (  # noqa: E402
 )
 from src.utils.common_operations import (  # noqa: E402
     format_datetime,
-    get_current_datetime,
 )
 from src.utils.logger import system_logger  # noqa: E402
 

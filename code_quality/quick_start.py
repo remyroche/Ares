@@ -10,6 +10,10 @@ import os
 import sys
 from pathlib import Path
 
+from function_validator import FunctionValidator
+import asyncio
+
+
 # Add the code_quality directory to the path
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
@@ -35,7 +39,6 @@ def quick_validate():
 
     try:
         # Import the function validator
-        from function_validator import FunctionValidator
 
         print("\n🔍 Running function validation...")
         validator = FunctionValidator(".")
@@ -77,7 +80,7 @@ def show_help():
 Code Quality Validation - Quick Start
 
 Usage:
-  python code_quality/quick_start.py
+python code_quality/quick_start.py
 
 This script will:
 1. Detect if you're in a Python project
@@ -86,9 +89,9 @@ This script will:
 4. Show a summary of findings
 
 For more options, see:
-  python code_quality/run_validation.py --help
-  python code_quality/function_validator.py --help
-  python code_quality/comprehensive_code_review.py --help
+python code_quality/run_validation.py --help
+python code_quality/function_validator.py --help
+python code_quality/comprehensive_code_review.py --help
 
 Documentation: code_quality/README.md
 """)
@@ -105,5 +108,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

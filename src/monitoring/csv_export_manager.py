@@ -11,9 +11,8 @@ from pathlib import Path
 import time
 import csv
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
 
@@ -66,8 +65,8 @@ class CSVExportManager:
     
     @handles_errors(default_return=False, context="csv_export_manager.export_trade_decisions")
     async def export_trade_decisions(self, trade_decisions: List[Any], 
-                                   export_id: Optional[str] = None,
-                                   separate_by_mode: bool = True) -> bool:
+                                export_id: Optional[str] = None,
+                                separate_by_mode: bool = True) -> bool:
         """Export trade decisions to CSV with comprehensive details."""
         try:
             start_time = time.time()
@@ -157,7 +156,7 @@ class CSVExportManager:
             return False
     
     async def _export_trade_decisions_combined(self, trade_decisions: List[Any], 
-                                             export_id: str, start_time: float) -> bool:
+                                            export_id: str, start_time: float) -> bool:
         """Export all trade decisions in a single file (legacy behavior)."""
         try:
             # Create comprehensive DataFrame
@@ -543,7 +542,7 @@ class CSVExportManager:
     
     @handles_errors(default_return=False, context="csv_export_manager.export_daily_summaries")
     async def export_daily_summaries(self, daily_summaries: List[Any], 
-                                   export_id: Optional[str] = None) -> bool:
+                                export_id: Optional[str] = None) -> bool:
         """Export daily summary data to CSV."""
         try:
             start_time = time.time()
@@ -715,7 +714,7 @@ class CSVExportManager:
     
     @handles_errors(default_return=False, context="csv_export_manager.export_model_performances")
     async def export_model_performances(self, model_performances: List[Any], 
-                                      export_id: Optional[str] = None) -> bool:
+                                    export_id: Optional[str] = None) -> bool:
         """Export model performance metrics to CSV."""
         try:
             start_time = time.time()
@@ -848,7 +847,7 @@ class CSVExportManager:
     
     @handles_errors(default_return=None, context="csv_export_manager._export_dataframe_to_csv")
     async def _export_dataframe_to_csv(self, df: pd.DataFrame, filename: str, 
-                                     description: str) -> Optional[Path]:
+                                    description: str) -> Optional[Path]:
         """Export DataFrame to CSV file with proper formatting."""
         try:
             file_path = self.export_dir / filename

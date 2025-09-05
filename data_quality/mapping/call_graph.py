@@ -13,12 +13,14 @@ from typing import Any
 from code_quality.analyzers.call_graph_analyzer import CallGraphAnalyzer
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
+import csv
+
+
 
 def _load_cq_config(config_path: str | None) -> CodeQualityConfig:
     """Load code quality configuration."""
     if config_path:
         return load_config(config_path)
-    return get_default_config()
 
 
 def map_call_graph(
@@ -126,7 +128,6 @@ def export_call_graph_mapping(
 
 def _export_call_graph_to_csv(mapping_data: dict[str, Any], output_path: Path) -> None:
     """Export call graph mapping data to CSV format."""
-    import csv
     
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -238,7 +239,7 @@ def get_function_usage_analysis(
     unused_functions = [name for name, stats in usage_stats.items() if not stats["is_used"]]
     highly_used_functions = [name for name, stats in usage_stats.items() if stats["times_called"] > 5]
     complex_unused_functions = [name for name, stats in usage_stats.items() 
-                              if not stats["is_used"] and stats["complexity"] > 5]
+                            if not stats["is_used"] and stats["complexity"] > 5]
     
     return {
         "usage_statistics": usage_stats,
@@ -326,7 +327,7 @@ def analyze_call_complexity(
     for func_name, func_info in functions.items():
         # Count direct calls made by this function
         direct_calls = sum(1 for call in call_relationships 
-                          if call.get("caller", {}).get("name") == func_name)
+                        if call.get("caller", {}).get("name") == func_name)
         
         # Count total calls in the call chain (recursive)
         total_calls = _calculate_total_calls(func_name, call_relationships, set())
@@ -342,7 +343,7 @@ def analyze_call_complexity(
     
     # Identify high complexity functions
     high_complexity = [name for name, stats in call_complexity.items() 
-                      if stats["is_high_complexity"]]
+                    if stats["is_high_complexity"]]
     
     return {
         "call_complexity": call_complexity,

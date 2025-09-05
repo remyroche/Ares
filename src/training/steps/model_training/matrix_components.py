@@ -12,6 +12,9 @@ GPU acceleration, and optimization.
 import torch
 from src.utils.logger import system_logger
 
+from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+
+
 class MatrixProcessor:
     """Handles matrix computations with GPU acceleration support."""
 
@@ -137,7 +140,6 @@ class DiverseLookbackIntegrator:
         self.logger = system_logger.getChild('DiverseLookbackIntegrator')
         self.optimizer = None
         try:
-            from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
             self.optimizer = DiverseLookbackOptimizer(config)
             self.logger.info('✅ Diverse lookback optimizer loaded')
         except ImportError:

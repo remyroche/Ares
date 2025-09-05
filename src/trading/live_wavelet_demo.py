@@ -195,4 +195,4 @@ async def main() -> None:
     except Exception as e:
         print(f'Error in demo: {e}')
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run( main())

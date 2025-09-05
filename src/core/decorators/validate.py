@@ -11,9 +11,11 @@ from typing import get_type_hints, Callable, Any
 
 from .compose import P, R, uniform_wrapper
 
+import pydantic
+
+
 # Try to import optional validation libraries
 try:
-    import pydantic
 
     PYDANTIC_AVAILABLE = True
 except ImportError:

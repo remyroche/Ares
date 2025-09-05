@@ -1,4 +1,8 @@
 """
+from .profit_based_feature_engineering import ProfitBasedFeatureEngineering
+from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
+from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 Step06 Labeling Components
 
 This package contains labeling components for step06 including:
@@ -9,25 +13,21 @@ This package contains labeling components for step06 including:
 """
 
 try:
-    from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
     OPTIMIZED_LABELING_AVAILABLE = True
 except ImportError:
     OPTIMIZED_LABELING_AVAILABLE = False
 
 try:
-    from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
     FRACTIONAL_LABELING_AVAILABLE = True
 except ImportError:
     FRACTIONAL_LABELING_AVAILABLE = False
 
 try:
-    from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
     REGIME_AWARE_LABELING_AVAILABLE = True
 except ImportError:
     REGIME_AWARE_LABELING_AVAILABLE = False
 
 try:
-    from .profit_based_feature_engineering import ProfitBasedFeatureEngineering
     PROFIT_BASED_FEATURES_AVAILABLE = True
 except ImportError:
     PROFIT_BASED_FEATURES_AVAILABLE = False

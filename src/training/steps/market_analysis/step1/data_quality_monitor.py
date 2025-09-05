@@ -17,6 +17,9 @@ from .core.decorators.errors import handles_errors
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .utils.logger import system_logger
+
+from .enhanced_data_quality_manager import EnhancedDataQualityManager
+
 logger = system_logger.getChild('DataQualityMonitor')
 
 class DataQualityAlert:
@@ -132,7 +135,6 @@ class DataQualityMonitor:
     async def _check_data_quality(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
             
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             quality_results = await manager.comprehensive_quality_check(

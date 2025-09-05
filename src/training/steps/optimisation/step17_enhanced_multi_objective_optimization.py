@@ -652,7 +652,7 @@ class EnhancedStep17Optimizer:
         # Evaluate global performance
         backtest_results = self._run_backtest(
             [cat for block in OptimizationBlock 
-             for cat in self.optimization_blocks[block]["categories"]], 
+            for cat in self.optimization_blocks[block]["categories"]],
             all_params, 
             calibration_results
         )

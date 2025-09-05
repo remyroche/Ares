@@ -19,6 +19,9 @@ sys.path.insert(0, str(project_root))
 from .config import CONFIG
 from .utils.common_operations import safe_json_load
 
+import asyncio
+
+
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
@@ -413,7 +416,6 @@ async def run_validator(
 
 
 if __name__ == "__main__":
-    import asyncio
 
     # Example usage
     async def test_validator() -> None:
@@ -429,4 +431,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    asyncio.run(await test_validator())
+    asyncio.run( test_validator())

@@ -8,6 +8,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+import joblib
+from sklearn.ensemble import RandomForestClassifier
+import torch
+from sklearn.preprocessing import StandardScaler
+import asyncio
+
+
 class IDataSource(ABC):
     """Interface for data sources."""
 
@@ -463,25 +470,11 @@ class ModelWrapper(IModel):
 
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        if self.model_type == 'neural_network':
-            import torch
-            import joblib
-            self.model.load_state_dict(torch.load(path.with_suffix('.pth')))
-            scaler_path = path.with_suffix('.scaler')
-            if scaler_path.exists():
-                self.scaler = joblib.load(scaler_path)
-        elif self.model_type == 'xgboost':
-            self.model.load_model(str(path))
-        else:
-            import joblib
-            self.model = joblib.load(path)
+        self.model = joblib.load(path)
 
-class ModelTrainer(BaseModelTrainer):
-    """Generic model trainer that supports multiple model types."""
+class LightGBMTrainer(BaseModelTrainer):
+    """LightGBM model trainer."""
 
-    def __init__(self, model_type: str, **hyperparameters) -> None:
-        self._model_type = model_type
-        super().__init__(**hyperparameters)
 
     @property
     def model_type(self) -> str:
@@ -540,21 +533,100 @@ class ModelTrainer(BaseModelTrainer):
             self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
         return ModelWrapper(self.model, 'xgboost')
 
-    def _train_random_forest(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+    def __init__(self, rf_model: Any) -> None:
+        self.model = rf_model
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        return self.model.predict(X)
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        return self.model.predict_proba(X)
+
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.model, path)
+
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        self.model = joblib.load(path)
+
+class RandomForestTrainer(BaseModelTrainer):
+    """Random Forest model trainer."""
+
+    @property
+    def model_type(self) -> str:
+        return 'random_forest'
+
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get Random Forest default hyperparameters."""
+        return {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1}
+
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
+
         """Train Random Forest model."""
-        from sklearn.ensemble import RandomForestClassifier
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
         self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
         return ModelWrapper(self.model, 'random_forest')
 
-    def _train_neural_network(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+class NeuralNetworkModel(IModel):
+    """Wrapper for Neural Network model with standard interface."""
+
+    def __init__(self, nn_model: Any, scaler: Any=None) -> None:
+        self.model = nn_model
+        self.scaler = scaler
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        X_scaled = self.scaler.transform(X) if self.scaler else X.values
+        X_tensor = torch.FloatTensor(X_scaled)
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            predictions = (outputs > 0.5).float().numpy().squeeze()
+        return predictions
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        X_scaled = self.scaler.transform(X) if self.scaler else X.values
+        X_tensor = torch.FloatTensor(X_scaled)
+        self.model.eval()
+        with torch.no_grad():
+            outputs = torch.sigmoid(self.model(X_tensor)).numpy()
+        proba = np.column_stack([1 - outputs, outputs])
+        return proba
+
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.model.state_dict(), path.with_suffix('.pth'))
+        if self.scaler:
+            joblib.dump(self.scaler, path.with_suffix('.scaler'))
+
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        self.model.load_state_dict(torch.load(path.with_suffix('.pth')))
+        scaler_path = path.with_suffix('.scaler')
+        if scaler_path.exists():
+            self.scaler = joblib.load(scaler_path)
+
+class NeuralNetworkTrainer(BaseModelTrainer):
+    """Neural Network model trainer using PyTorch."""
+
+    @property
+    def model_type(self) -> str:
+        return 'neural_network'
+
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get Neural Network default hyperparameters."""
+        return {'hidden_layers': [64, 32], 'activation': 'relu', 'dropout_rate': 0.2, 'learning_rate': 0.001, 'batch_size': 32, 'epochs': 100, 'early_stopping_patience': 10}
+
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train Neural Network model."""
-        import torch
-        import torch.nn as nn
-        import torch.optim as optim
-        from sklearn.preprocessing import StandardScaler
-        
+
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         input_size = X.shape[1]
@@ -685,5 +757,4 @@ async def example_usage() -> None:
     print(f"Features calculated: {results['features'].columns.tolist()}")
 
 if __name__ == '__main__':
-    import asyncio
     asyncio.run(example_usage())

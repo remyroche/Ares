@@ -109,7 +109,7 @@ class MonitoringDashboard:
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
         view_menu.add_checkbutton(label="Auto Refresh", variable=self.auto_refresh_var, 
-                                 command=self._toggle_auto_refresh)
+                                command=self._toggle_auto_refresh)
         view_menu.add_command(label="Refresh Now", command=self._refresh_data)
         
         # Help menu
@@ -187,7 +187,7 @@ class MonitoringDashboard:
         
         # Configure columns
         self.summary_tree['columns'] = ('date', 'total_trades', 'long_trades', 'short_trades', 
-                                       'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
+                                    'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
         self.summary_tree['show'] = 'headings'
         
         # Set column headings
@@ -225,7 +225,7 @@ class MonitoringDashboard:
         
         # Configure columns
         self.regime_tree['columns'] = ('regime_id', 'regime_name', 'probability', 'stability', 
-                                      'duration', 'trade_count', 'avg_pnl', 'win_rate')
+                                    'duration', 'trade_count', 'avg_pnl', 'win_rate')
         self.regime_tree['show'] = 'headings'
         
         # Set column headings
@@ -267,7 +267,7 @@ class MonitoringDashboard:
         
         # Auto refresh control
         ttk.Checkbutton(control_frame, text="Auto Refresh", variable=self.auto_refresh_var,
-                       command=self._toggle_auto_refresh).pack(side=tk.LEFT, padx=5)
+                    command=self._toggle_auto_refresh).pack(side=tk.LEFT, padx=5)
         
         # Refresh interval
         ttk.Label(control_frame, text="Refresh Interval (ms):").pack(side=tk.LEFT, padx=5)
@@ -282,8 +282,8 @@ class MonitoringDashboard:
         ttk.Label(control_frame, text="Trading Mode:").pack(side=tk.LEFT, padx=5)
         self.trading_mode_var = tk.StringVar(value="all")
         mode_combo = ttk.Combobox(control_frame, textvariable=self.trading_mode_var, 
-                                 values=["all", "backtest", "paper", "live"], 
-                                 state="readonly", width=10)
+                                values=["all", "backtest", "paper", "live"],
+                                state="readonly", width=10)
         mode_combo.pack(side=tk.LEFT, padx=5)
         mode_combo.bind("<<ComboboxSelected>>", self._on_mode_changed)
         

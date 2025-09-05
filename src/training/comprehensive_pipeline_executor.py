@@ -190,10 +190,12 @@ async def main() -> None:
         print(f"\nFinal Status: {('✅ SUCCESS' if status['overall_success'] else '❌ FAILED')}")
     except Exception as e:
         print(f'❌ Pipeline execution failed: {e}')
-        import traceback
 from typing import List
 import numpy as np
 
-        traceback.print_exc()
+import traceback
+
+
+traceback.print_exc()
 if __name__ == '__main__':
     asyncio.run(main())

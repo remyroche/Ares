@@ -5,6 +5,9 @@ Targeted script to fix specific syntax issues without breaking import statements
 
 import re
 
+import asyncio
+
+
 
 def fix_state_manager():
     """Fix src/utils/state_manager.py with targeted patterns"""
@@ -101,5 +104,4 @@ def main():
     print("✅ All files processed!")
 
 if __name__== "__main__":
-    import asyncio
     asyncio.run(main())

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
+from .exceptions import (
 Script to create the missing regime splits file from existing HMM composite data.
+)
 """
 
 import json

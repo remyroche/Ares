@@ -5,6 +5,10 @@ import sys
 from typing import Any, Optional, Dict
 from src.utils.logger import system_logger
 
+from src.utils import pipeline_standards
+from src.training.steps.data_collection.config import CONFIG
+
+
 
 class GracefulModuleHandler:
     """Handles missing modules gracefully with fallback implementations."""
@@ -102,7 +106,6 @@ class GracefulModuleHandler:
         # Handle pipeline_standards
         if 'pipeline_standards' not in sys.modules:
             try:
-                from src.utils import pipeline_standards
                 sys.modules['pipeline_standards'] = pipeline_standards
             except ImportError:
                 fallback = self.handle_missing_pipeline_standards()
@@ -112,7 +115,6 @@ class GracefulModuleHandler:
         # Handle CONFIG
         if 'CONFIG' not in globals():
             try:
-                from src.training.steps.data_collection.config import CONFIG
                 globals()['CONFIG'] = CONFIG
             except ImportError:
                 self.logger.warning("⚠️ CONFIG not found, using default configuration")

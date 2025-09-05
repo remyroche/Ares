@@ -17,6 +17,9 @@ from .utils.logger import system_logger
 from .tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
 from .tactician.sr_strength_optimizer import SRLevelIdentifier
 
+from .utils.sr_parameter_loader import SRParameterLoader
+
+
 
 @dataclass
 class MarketContext:
@@ -310,7 +313,6 @@ class ContextAwareSRCalculator:
     def _load_base_parameters(self) -> Dict[str, Any]:
         """Load base S/R parameters."""
         try:
-            from .utils.sr_parameter_loader import SRParameterLoader
             return SRParameterLoader.load_optimized_parameters(self.config)
         except Exception as e:
             self.logger.error(f"Error loading base parameters: {e}")

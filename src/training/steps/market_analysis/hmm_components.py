@@ -12,6 +12,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from .utils.logger import system_logger
 
+from hmmlearn import hmm
+
+
 class HMMRegimeAnalyzer:
     """Analyzes market regimes using Hidden Markov Models."""
 
@@ -37,7 +40,6 @@ class HMMRegimeAnalyzer:
             Analysis results dictionary
         """
         try:
-            from hmmlearn import hmm
             X = features.values
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)

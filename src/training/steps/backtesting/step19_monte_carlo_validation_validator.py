@@ -22,6 +22,11 @@ if str(project_root) not in sys.path:
 from .config import CONFIG
 from .utils.base_validator import BaseValidator
 
+import json
+import asyncio as _asyncio
+from .core.decorators.errors import handles_errors
+
+
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
 
@@ -261,7 +266,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load Monte Carlo performance results
         performance_file = (
@@ -382,7 +386,6 @@ class Step14MonteCarloValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load Monte Carlo metadata
         metadata_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
@@ -489,8 +492,6 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
-    from .core.decorators.errors import handles_errors
 
     # Example usage
     async def test_validator() -> None:

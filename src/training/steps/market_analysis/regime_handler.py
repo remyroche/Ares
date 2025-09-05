@@ -16,7 +16,6 @@ from .utils.pipeline_standards import pipeline_standards
 from .core.decorators.errors import handles_errors
 
 
-logger = get_logger('RegimeHandler')
 
 
 class RegimeHandler:
@@ -324,7 +323,6 @@ class RegimeHandler:
                 elif isinstance(result, dict):
                     filename = f"{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.json"
                     filepath = output_dir / filename
-                    safe_json_dump(result, filepath, indent=2)
                     self.logger.info(f"✅ Saved regime {regime_id} JSON: {filepath}")
                 else:
                     self.logger.warning(f"⚠️ Unsupported result type for regime {regime_id}: {type(result)}")
@@ -343,7 +341,6 @@ class RegimeHandler:
             }
             
             summary_file = output_dir / f"{exchange}_{symbol}_{timeframe}_regime_processing_summary.json"
-            safe_json_dump(summary, summary_file, indent=2)
             self.logger.info(f"✅ Saved regime processing summary: {summary_file}")
             
             return True

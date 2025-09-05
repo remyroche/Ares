@@ -200,7 +200,6 @@ class DataFormatConverter:
             auto_add_date_columns: Whether to automatically add year/month/day columns
         """
         self._ensure_pyarrow()
-        ensure_directory(base_dir)
 
         if min_rows_per_group >= max_rows_per_file:
             min_rows_per_group = max(1000, max_rows_per_file // 10)
@@ -474,7 +473,6 @@ class DataFormatConverter:
             metadata: Additional metadata
         """
         self._ensure_pyarrow()
-        ensure_directory(os.path.dirname(file_path))
         if schema_name:
             df = self.enforce_schema(df, schema_name)
         table = pa.Table.from_pandas(df, preserve_index=False)
@@ -538,7 +536,6 @@ class DataFormatConverter:
                                         )
             manifest["file_count"] = file_count
             manifest["latest_timestamp"] = latest_ts
-            safe_json_dump(manifest, manifest_path, indent=2, default=str)
             if self.logger:
                 self.logger.info(f"Updated manifest: {manifest_path}")
         except Exception as e:

@@ -12,12 +12,15 @@ This module provides comprehensive validation for the optimisation pipeline incl
 import asyncio
 from typing import Dict, Any, List, Optional, Tuple
 
+from .utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
-    ensure_directory, safe_json_dump, safe_json_load
 )
 from .utils.data_quality_framework import DataQualityFramework
 from .utils.logger import system_logger
 from .utils.base_validator import BaseValidator
+
+import pickle
+
 
 logger = system_logger.getChild('OptimisationPipelineValidator')
 
@@ -323,7 +326,6 @@ class OptimisationPipelineValidator(BaseValidator):
                     
                     elif output_file.endswith('.pkl'):
                         # Basic pickle file validation
-                        import pickle
                         with open(output_file, 'rb') as f:
                             data = pickle.load(f)
                         if data is None:

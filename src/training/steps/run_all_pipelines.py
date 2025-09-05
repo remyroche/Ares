@@ -2,7 +2,9 @@
 """Enhanced Main Orchestrator for All Training Pipelines.
 
 This module provides a comprehensive interface to run all training pipelines with:
+from .exceptions import (
 - Comprehensive error handling and validation
+)
 - Step-by-step data validation and quality checks
 - Decorators for data formatting, analysis, and access protection
 - Rollback and recovery mechanisms
@@ -32,7 +34,6 @@ sys.path.insert(0, str(project_root))
 from .core.domain import handle_errors, memory_efficient, validate_data_quality, monitor_pipeline_step
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, ensure_directory, 
-    safe_json_dump, safe_json_load, safe_file_exists
 )
 from .utils.validator_orchestrator import ValidatorOrchestrator
 from .utils.data_quality_framework import DataQualityFramework
@@ -46,6 +47,10 @@ from .training.steps.market_analysis import run_market_analysis_pipeline
 from .training.steps.model_training import run_model_training_pipeline
 from .training.steps.optimisation import run_optimisation_pipeline
 from .training.steps.backtesting import run_backtesting_pipeline
+
+from .utils.report_manager import get_report_manager
+from .utils.report_collector import get_report_collector
+
 
 
 class PipelineStatus(Enum):
@@ -99,7 +104,6 @@ class EnhancedPipelineOrchestrator:
         self.checkpoint_file = Path(config.data_dir) / f"pipeline_checkpoint_{config.symbol}_{config.timeframe}.json"
         
         # Ensure data directory exists
-        ensure_directory(config.data_dir)
         
         # Initialize monitoring
         if config.enable_monitoring:
@@ -185,7 +189,6 @@ class EnhancedPipelineOrchestrator:
                 }
             }
             
-            safe_json_dump(checkpoint_data, self.checkpoint_file)
             self.logger.debug(f"💾 Checkpoint saved for {pipeline_name}")
             
         except Exception as e:
@@ -550,7 +553,6 @@ class EnhancedPipelineOrchestrator:
         
         # Save enhanced results using the report manager
         try:
-            from .utils.report_manager import get_report_manager
             report_manager = get_report_manager()
             
             enhanced_results = {
@@ -601,7 +603,6 @@ class EnhancedPipelineOrchestrator:
             
             # Generate comprehensive report collection summary
             try:
-                from .utils.report_collector import get_report_collector
                 report_collector = get_report_collector()
                 collection_summary_file = report_collector.generate_collection_summary(
                     symbol=self.config.symbol,
@@ -620,9 +621,7 @@ class EnhancedPipelineOrchestrator:
             self.logger.warning(f"⚠️ Failed to save results using report manager: {e}")
             # Fallback to original method
             results_dir = PipelineStandards.build_path("reports", self.config.exchange, self.config.symbol)
-            ensure_directory(results_dir)
             results_file = Path(results_dir) / f"enhanced_pipeline_results_{self.config.symbol}_{self.config.timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-            safe_json_dump(enhanced_results, results_file)
             self.logger.info(f"💾 Enhanced results saved to: {results_file}")
         
         return failed_pipelines == 0

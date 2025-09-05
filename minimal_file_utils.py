@@ -6,6 +6,9 @@ import fnmatch
 import os
 from pathlib import Path
 
+import re
+
+
 
 def find_python_files(directory: str, exclude_patterns: list[str] = None) -> list[Path]:
     """
@@ -67,7 +70,6 @@ def get_file_dependencies(file_path: str) -> list[str]:
             content = f.read()
 
         # Simple regex-based import extraction
-        import re
 
         # Match import statements
         import_pattern = r"^\s*(?:from\s+(\S+)\s+)?import\s+([^#\n]+)"

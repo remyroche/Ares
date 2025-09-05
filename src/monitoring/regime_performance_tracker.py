@@ -23,7 +23,6 @@ class RegimePerformanceTracker:
         self.config = config
         self.logger = system_logger.getChild('RegimePerformanceTracker')
         self.db_path = Path(config.get('data_dir', 'data')) / 'regime_performance.db'
-        ensure_directory(self.db_path.parent)
         self._init_database()
         self.metrics_cache = defaultdict(lambda: defaultdict(list))
         self.regime_names = ['bull', 'bear', 'sideways', 'transition']
@@ -139,8 +138,6 @@ class RegimePerformanceTracker:
                 if regime_metrics['win_rate'] < 0.4:
                     report['recommendations'].append({'regime': regime, 'period': period, 'issue': 'low_win_rate', 'recommendation': f'Improve {regime} regime entry signals - win rate below 40%'})
         if output_path:
-            ensure_directory(output_path.parent)
-            safe_json_dump(report, output_path)
             self.logger.info(f'Saved regime report to {output_path}')
         return report
 
@@ -184,4 +181,4 @@ if __name__ == '__main__':
         await tracker.track_trade(trade)
         report = await tracker.generate_regime_report('BTCUSDT')
         print(json.dumps(report, indent=2))
-    asyncio.run(await main())
+    asyncio.run( main())

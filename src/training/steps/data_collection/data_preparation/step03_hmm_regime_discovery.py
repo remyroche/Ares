@@ -19,6 +19,10 @@ from src.utils.logger import system_logger
 from src.utils.graceful_module_handler import graceful_handler
 from src.utils.pipeline_standards import PipelineStandards
 
+from sklearn.mixture import GaussianMixture
+import json
+
+
 logger = system_logger.getChild("Step03HMMRegimeDiscovery")
 
 
@@ -50,7 +54,6 @@ class Step03HMMRegimeDiscovery(BaseStep):
     def _setup_hmm_model(self):
         """Setup HMM model with graceful fallback."""
         try:
-            from sklearn.mixture import GaussianMixture
             self.logger.info("✅ Using GaussianMixture for regime discovery")
             return GaussianMixture
         except ImportError:
@@ -268,7 +271,6 @@ class Step03HMMRegimeDiscovery(BaseStep):
         # Save results
         output_path = output_dir / f"regime_discovery_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
-        import json
         with open(output_path, 'w') as f:
             json.dump(regime_results, f, indent=2)
         

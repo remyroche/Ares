@@ -451,6 +451,23 @@ class EnhancedTypeHintAdder:
             "sample_files": [str(f) for f in self.processed_files[:10]],
         }
 
+    def enhance_type_hints(self, directory: str = None) -> dict:
+        """Main method called by the pipeline to enhance type hints."""
+        if directory is None:
+            directory = "/workspace/src"
+        
+        # Use the existing analyze_and_improve_coverage method
+        result = self.analyze_and_improve_coverage(target_coverage=0.9)
+        
+        return {
+            "status": "completed",
+            "total_files": result.get("files_processed", 0),
+            "files_processed": result.get("files_processed", 0),
+            "files_needing_hints": result.get("files_needing_hints", 0),
+            "changes_made": len(self.changes_made),
+            "imports_added": len(self.imports_needed)
+        }
+
 
 def main():
     import argparse

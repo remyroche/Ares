@@ -139,11 +139,11 @@ class Step03ExecutionReporter:
     """Comprehensive execution reporter for Step03."""
     
     def __init__(self,
-                 output_directory: str = "reports/step03",
-                 enable_html_reports: bool = True,
-                 enable_pdf_reports: bool = False,
-                 enable_csv_exports: bool = True,
-                 log_level: str = "INFO"):
+                output_directory: str = "reports/step03",
+                enable_html_reports: bool = True,
+                enable_pdf_reports: bool = False,
+                enable_csv_exports: bool = True,
+                log_level: str = "INFO"):
         """
         Initialize the Step03 execution reporter.
         
@@ -258,8 +258,8 @@ class Step03ExecutionReporter:
         return summaries
     
     def _calculate_performance_metrics(self, 
-                                     function_calls: List[FunctionCallSummary],
-                                     raw_calls: List[Dict[str, Any]]) -> PerformanceMetrics:
+                                    function_calls: List[FunctionCallSummary],
+                                    raw_calls: List[Dict[str, Any]]) -> PerformanceMetrics:
         """Calculate comprehensive performance metrics."""
         total_duration = sum(call.total_duration for call in function_calls)
         total_calls = sum(call.call_count for call in function_calls)
@@ -448,8 +448,8 @@ class Step03ExecutionReporter:
         return patterns
     
     def _generate_error_recommendations(self, 
-                                      errors_by_category: Dict[str, int],
-                                      error_patterns: List[Dict[str, Any]]) -> List[str]:
+                                    errors_by_category: Dict[str, int],
+                                    error_patterns: List[Dict[str, Any]]) -> List[str]:
         """Generate recommendations based on error analysis."""
         recommendations = []
         
@@ -474,9 +474,9 @@ class Step03ExecutionReporter:
         return recommendations
     
     def _calculate_quality_metrics(self, 
-                                 function_calls: List[FunctionCallSummary],
-                                 error_analysis: ErrorAnalysis,
-                                 performance_metrics: PerformanceMetrics) -> QualityMetrics:
+                                function_calls: List[FunctionCallSummary],
+                                error_analysis: ErrorAnalysis,
+                                performance_metrics: PerformanceMetrics) -> QualityMetrics:
         """Calculate comprehensive quality metrics."""
         # Data quality score (based on success rates)
         data_quality_score = np.mean([call.success_rate for call in function_calls]) * 100 if function_calls else 100.0
@@ -529,17 +529,17 @@ class Step03ExecutionReporter:
         )
     
     def _generate_insights(self, 
-                         function_calls: List[FunctionCallSummary],
-                         performance_metrics: PerformanceMetrics,
-                         error_analysis: ErrorAnalysis,
-                         quality_metrics: QualityMetrics) -> List[str]:
+                        function_calls: List[FunctionCallSummary],
+                        performance_metrics: PerformanceMetrics,
+                        error_analysis: ErrorAnalysis,
+                        quality_metrics: QualityMetrics) -> List[str]:
         """Generate insights from the execution data."""
         insights = []
         
         # Performance insights
         if performance_metrics.slowest_function != "N/A":
             insights.append(f"Slowest function: {performance_metrics.slowest_function} "
-                          f"({performance_metrics.avg_call_duration:.2f}s average)")
+                        f"({performance_metrics.avg_call_duration:.2f}s average)")
         
         if performance_metrics.memory_efficiency_score < 70:
             insights.append("Memory usage is high - consider optimizing memory-intensive functions")
@@ -600,8 +600,8 @@ class Step03ExecutionReporter:
         return recommendations
     
     def _generate_next_steps(self, 
-                           quality_metrics: QualityMetrics,
-                           error_analysis: ErrorAnalysis) -> List[str]:
+                        quality_metrics: QualityMetrics,
+                        error_analysis: ErrorAnalysis) -> List[str]:
         """Generate next steps based on analysis."""
         next_steps = []
         
@@ -683,8 +683,8 @@ class Step03ExecutionReporter:
         return report
     
     async def save_report(self, 
-                         report: Step03ExecutionReport,
-                         formats: List[ReportFormat] = None) -> Dict[str, str]:
+                        report: Step03ExecutionReport,
+                        formats: List[ReportFormat] = None) -> Dict[str, str]:
         """Save report in multiple formats."""
         if formats is None:
             formats = [ReportFormat.JSON, ReportFormat.HTML, ReportFormat.CSV]
@@ -999,12 +999,8 @@ class Step03ExecutionReporter:
 ## Quality Metrics
 - **Overall Quality Score:** {report.quality_metrics.overall_quality_score:.1f}/100
 - **Data Quality:** {report.quality_metrics.data_quality_score:.1f}/100
-- **Error Handling:** {report.quality_metrics.error_handling_score:.1f}/100
 
 ## Error Analysis
-- **Total Errors:** {report.error_analysis.total_errors}
-- **Error Recovery Rate:** {report.error_analysis.error_recovery_rate:.1f}%
-- **Critical Errors:** {len(report.error_analysis.critical_errors)}
 
 ## Insights
 {chr(10).join(f"- {insight}" for insight in report.insights)}

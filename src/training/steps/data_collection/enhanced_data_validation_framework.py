@@ -161,7 +161,7 @@ class EnhancedDataValidator:
         return validated_row
     
     def validate_batch(self, batch_data: List[Dict[str, Any]], 
-                      previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+                    previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Validate a batch of data with time gap detection.
         
@@ -233,7 +233,7 @@ class EnhancedDataValidator:
         return None
     
     def _validate_and_convert_field(self, value: Any, field_def: FieldDefinition, 
-                                   row_index: int) -> Any:
+                                row_index: int) -> Any:
         """Validate and convert a field value."""
         # Handle missing values
         if value is None or (isinstance(value, float) and np.isnan(value)):
@@ -286,7 +286,7 @@ class EnhancedDataValidator:
             return value
     
     def _validate_value(self, value: Any, field_def: FieldDefinition, 
-                       row_index: int) -> List[ValidationError]:
+                    row_index: int) -> List[ValidationError]:
         """Validate field value against constraints."""
         errors = []
         
@@ -778,7 +778,7 @@ def get_validator(data_type: DataType) -> EnhancedDataValidator:
 
 
 def validate_data_batch(data_type: DataType, batch_data: List[Dict[str, Any]], 
-                       previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+                    previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
     """Convenience function to validate a batch of data."""
     validator = get_validator(data_type)
     return validator.validate_batch(batch_data, previous_timestamp)
@@ -820,4 +820,4 @@ if __name__ == "__main__":
         # Print validation summary
         print("Validation Summary:", validator.get_validation_summary())
     
-    asyncio.run(await test_validation())
+    asyncio.run( test_validation())

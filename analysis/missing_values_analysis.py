@@ -375,9 +375,9 @@ class MissingValuesAnalyzer:
                 present_pct = 100 - missing_pct
 
                 axes[1, 1].pie([present_pct, missing_pct],
-                               labels=["Present", "Missing"],
-                               autopct="%1.1f%%",
-                               colors=[colors[3], colors[4]])
+                            labels=["Present", "Missing"],
+                            autopct="%1.1f%%",
+                            colors=[colors[3], colors[4]])
                 axes[1, 1].set_title("Overall Data Completeness")
 
             plt.tight_layout()

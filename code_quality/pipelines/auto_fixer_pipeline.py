@@ -33,6 +33,7 @@ from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import ImportFixer
 from scripts.detect_circular_imports import ImportAnalyzer
 from scripts.fix_async_await import AsyncAwaitFixer, AsyncPatternFixer
+from scripts.safe_indentation_fixer import SafeIndentationFixer
 
 # Import comprehensive fixers (ONLY auto-fixing related)
 # Note: Some comprehensive fixers may not be available
@@ -98,7 +99,26 @@ class AutoFixerPipeline:
         self.type_hint_adder = EnhancedTypeHintAdder(str(self.project_root))
         self.missing_import_fixer = ImportFixer(str(self.project_root))
         self.async_await_fixer = AsyncAwaitFixer(set())  # Empty set for now
+        self.safe_indentation_fixer = SafeIndentationFixer(str(self.project_root))
+        
+        # Initialize dead code fixer (placeholder for now)
+        self.auto_dead_code_fixer = self  # Use self as the dead code fixer
         self.async_pattern_fixer = AsyncPatternFixer(str(self.project_root))
+        
+        # Initialize reports directory
+        self.reports_dir = Path("/workspace/code_quality/reports/auto_fixer")
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        
+    def auto_fix_dead_code(self, directory: str) -> dict:
+        """Placeholder method for dead code fixing."""
+        return {
+            "status": "completed",
+            "total_files": 0,
+            "files_fixed": 0,
+            "files_failed": 0,
+            "dead_code_removed": 0,
+            "message": "Dead code fixing not yet implemented"
+        }
         
         # Initialize comprehensive fixers
         # Note: Some comprehensive fixers may not be available
@@ -209,17 +229,17 @@ class AutoFixerPipeline:
             syntax_results = self.syntax_fixer.fix_syntax_issues(str(self.project_root))
             results["advanced_syntax_fixes"] = syntax_results
             
-            # Bulk syntax cleanup
-            bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
-            results["bulk_syntax_cleanup"] = bulk_results
+            # Safe indentation fixes
+            indentation_results = self.safe_indentation_fixer.fix_indentation_errors(str(self.project_root))
+            results["safe_indentation_fixes"] = indentation_results
             
             # Generate syntax fixes report
             syntax_fixes_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "syntax_fixes",
                 "project_root": str(self.project_root),
-                "syntax_fixes": syntax_results.get("fixes_applied", 0),
-                "bulk_cleanup_fixes": bulk_results.get("fixes_applied", 0),
+                "syntax_fixes": syntax_results.get("fixed_files", []),
+                "indentation_fixes": indentation_results.get("fixed_files", []),
                 "results": results
             }
             
@@ -231,10 +251,49 @@ class AutoFixerPipeline:
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "total_syntax_fixes": (syntax_results.get("fixes_applied", 0) + 
-                                     bulk_results.get("fixes_applied", 0)),
+                "total_syntax_fixes": len(syntax_results.get("fixed_files", [])) + len(indentation_results.get("fixed_files", [])),
                 "results": results
             }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_safe_indentation_fixes(self) -> Dict[str, Any]:
+        """Run safe indentation fixes."""
+        print("\n" + "="*60)
+        print("Running Safe Indentation Fixes")
+        print("="*60)
+        
+        try:
+            results = self.safe_indentation_fixer.fix_indentation_errors(str(self.project_root))
+            
+            # Generate indentation fixes report
+            indentation_fixes_report = {
+                "timestamp": self.timestamp,
+                "analysis_type": "safe_indentation_fixes",
+                "project_root": str(self.project_root),
+                "total_files": results.get("total_files", 0),
+                "files_fixed": len(results.get("fixed_files", [])),
+                "files_failed": len(results.get("failed_files", [])),
+                "files_skipped": len(results.get("skipped_files", [])),
+                "changes_made": results.get("changes_made", 0)
+            }
+            
+            # Save report
+            report_path = self.reports_dir / f"safe_indentation_fixes_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(indentation_fixes_report, f, indent=2)
+            
+            return {
+                "status": "completed",
+                "report_path": str(report_path),
+                "total_files": results.get("total_files", 0),
+                "files_fixed": len(results.get("fixed_files", [])),
+                "files_failed": len(results.get("failed_files", [])),
+                "files_skipped": len(results.get("skipped_files", [])),
+                "changes_made": results.get("changes_made", 0),
+                "results": results
+            }
+            
         except Exception as e:
             return {"status": "error", "error": str(e)}
     
@@ -507,7 +566,7 @@ def main():
     parser.add_argument(
         "--fix-type",
         type=str,
-        choices=["imports", "syntax", "type_hints", "async", "dead_code", "all"],
+        choices=["imports", "syntax", "type_hints", "async", "dead_code", "indentation", "all"],
         default="imports",
         help="Type of fixes to apply (default: imports)"
     )
@@ -533,6 +592,8 @@ def main():
         results = pipeline.run_async_fixes()
     elif args.fix_type == "dead_code":
         results = pipeline.run_dead_code_fixes()
+    elif args.fix_type == "indentation":
+        results = pipeline.run_safe_indentation_fixes()
     elif args.fix_type == "plugins":
         results = pipeline.run_plugin_fixes()
     elif args.fix_type == "sequential":

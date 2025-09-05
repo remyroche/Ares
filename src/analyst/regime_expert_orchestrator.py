@@ -217,7 +217,6 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f'Error in continuous monitoring: {e}')
             return False
 
-async def get_regime_expert_decision(exchange: str, symbol: str, timeframe: str, config: dict[str, Any]) -> dict[str, Any] | None:
     """Get regime expert decision for the given parameters."""
     orchestrator = RegimeExpertOrchestrator(config)
     await orchestrator.initialize()

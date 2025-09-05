@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Simple syntax validation script for Python files.
-Uses Python's built-in ast module to check for syntax errors.
 """
 
 import ast

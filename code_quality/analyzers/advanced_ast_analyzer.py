@@ -16,7 +16,7 @@ class ASTPattern:
     """Container for AST pattern information."""
 
     def __init__(self, pattern_type: str, description: str, line: int,
-                 severity: str = "info", details: dict[str, Any] = None):
+                severity: str = "info", details: dict[str, Any] = None):
         self.pattern_type = pattern_type
         self.description = description
         self.line = line
@@ -38,8 +38,8 @@ class CodeStructure:
     """Container for code structure information."""
 
     def __init__(self, name: str, node_type: str, line: int,
-                 complexity: int = 0, children: list[str] = None,
-                 metrics: dict[str, Any] = None):
+                complexity: int = 0, children: list[str] = None,
+                metrics: dict[str, Any] = None):
         self.name = name
         self.node_type = node_type
         self.line = line

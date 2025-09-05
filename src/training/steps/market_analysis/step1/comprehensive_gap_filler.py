@@ -20,6 +20,9 @@ from typing import Any
 import aiohttp
 import certifi
 
+from .utils.logger import system_logger
+
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -927,7 +930,6 @@ class ComprehensiveGapFiller:
         self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
-        from .utils.logger import system_logger
 
         logger = system_logger.getChild("ComprehensiveGapFiller")
         
@@ -1102,4 +1104,4 @@ async def run_comprehensive_gap_filling_pipeline(
 
 
 if __name__ == "__main__":
-    asyncio.run(await run_comprehensive_gap_filling_pipeline())
+    asyncio.run( run_comprehensive_gap_filling_pipeline())

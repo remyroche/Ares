@@ -13,6 +13,10 @@ from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
 # Import modular components
 from .sr_modules import SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator
 
+from .sr_modules import SRReportGenerator
+from .sr_modules import SRAnalyzer
+
+
 
 class SRBreakoutPredictor:
     """
@@ -79,13 +83,11 @@ class SRBreakoutPredictor:
             
             # Initialize optional components
             try:
-                from .sr_modules import SRReportGenerator
                 self.report_generator = SRReportGenerator(self.config)
             except ImportError:
                 self.logger.warning("Report generator not available")
             
             try:
-                from .sr_modules import SRAnalyzer
                 self.analyzer = SRAnalyzer(self.config)
             except ImportError:
                 self.logger.warning("SR analyzer not available")

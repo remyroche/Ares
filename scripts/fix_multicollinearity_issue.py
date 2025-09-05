@@ -2,7 +2,6 @@
 """
 Fix Multicollinearity Issue in Feature Engineering
 
-This script fixes the critical bug where all multi-timeframe price_change and volume_change
 features are identical, causing perfect multicollinearity (VIF, inf).
 
 Usage:

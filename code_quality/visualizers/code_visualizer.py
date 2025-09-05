@@ -8,9 +8,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+
 try:
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Rectangle
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -71,7 +73,6 @@ class CodeVisualizer:
         if not values:
             return []
             
-        cmap = plt.get_cmap(cmap_name)
         norm = mcolors.Normalize(vmin=min(values), vmax=max(values))
         
         return [mcolors.to_hex(cmap(norm(v))) for v in values]

@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 import numpy as np
+import pandas as pd
 
 try:
     import psutil

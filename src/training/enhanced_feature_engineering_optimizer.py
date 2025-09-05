@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 '\nEnhanced Feature Engineering Optimizer\n\nThis module optimizes the period optimization process itself using:\n1. Random Forest + SHAP for meta-optimization\n2. Mutual Information for parameter space reduction\n3. Adaptive parameter sampling based on performance\n4. Multi-objective optimization considering multiple metrics\n'
 import json

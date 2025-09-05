@@ -22,8 +22,7 @@ python3 analyzers/intelligent_import_fixer.py --target . --interactive
 **Purpose:** Automatically fix import issues with intelligent confidence assessment
 **Features:**
 - 95% auto-fix for high-confidence issues
-- 4% confirm-fix for medium-confidence issues  
-- 1% flag-only for low-confidence issues
+- 5% flag-only for low-confidence issues
 - Comprehensive safety validation
 
 ### **3. Standalone Runner (Simple Entry Point)**

@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Enhanced Market Analysis Orchestrator
 
@@ -233,7 +236,6 @@ class MarketAnalysisPipelineOrchestrator:
                 self.logger.info('✅ HMM clustering completed successfully')
                 try:
                     try:
-                        import pandas as pd
                         from pathlib import Path
                         regime_path = Path(data_dir) / f'regimes_{exchange}_{symbol}_{timeframe}.parquet'
                         if regime_path.exists():
@@ -321,7 +323,6 @@ class MarketAnalysisPipelineOrchestrator:
                 self.logger.info('✅ Feature engineering completed successfully')
                 try:
                     try:
-                        import pandas as pd
                         from pathlib import Path
                         features_path = Path(data_dir) / f'features_{exchange}_{symbol}_{timeframe}.parquet'
                         if features_path.exists():
@@ -373,9 +374,7 @@ class MarketAnalysisPipelineOrchestrator:
     def _log_matrix_operations_metrics(self, data_dir: str, exchange: str, symbol: str, timeframe: str) -> None:
         """Log detailed matrix operations metrics."""
         try:
-            import pandas as pd
             from pathlib import Path
-import numpy as np
 
             matrix_path = Path(data_dir) / f'matrix_operations_{exchange}_{symbol}_{timeframe}.parquet'
             if not matrix_path.exists():

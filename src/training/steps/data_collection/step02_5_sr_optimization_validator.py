@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 """Step 2.5: S/R Detection Optimization Validator with Comprehensive Function Call Monitoring.
 
 This module validates the S/R detection optimization step to ensure:
@@ -67,7 +69,6 @@ try:
     from src.utils.logger import system_logger
 except ImportError:
     import logging
-import numpy as np
 
     system_logger = logging.getLogger(__name__)
 

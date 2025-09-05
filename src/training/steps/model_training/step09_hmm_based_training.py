@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic.
 
 This module extends the existing HMM-based training to support intelligent
@@ -1533,7 +1535,6 @@ async def run_enhanced_step(
         try:
             from .utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
             from .core.decorators.errors import handles_errors
-import numpy as np
 
             regime_col = get_regime_column(data)
             if regime_col is not None:

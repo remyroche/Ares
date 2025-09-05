@@ -1,5 +1,7 @@
 
 from typing import Union
+import numpy as np
+
 """Real-time Regime Monitoring Dashboard and Infrastructure."""
 import asyncio
 import json
@@ -232,7 +234,6 @@ class RegimeMonitoringWebSocket:
     async def start(self) -> None:
         """Start WebSocket server."""
         import websockets
-import numpy as np
 
         await websockets.serve(self.handler, 'localhost', self.port)
         logger.info(f'WebSocket server started on port {self.port}')

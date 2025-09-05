@@ -27,6 +27,7 @@ from .utils.base_validator import BaseValidator  # noqa: E402
 
 class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
+import numpy as np
 
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step8_tactician_labeling", config)
@@ -667,7 +668,6 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio as _asyncio
-import numpy as np
 
     # Example usage
     async def test_validator() -> None:

@@ -8,6 +8,7 @@ from src.config.config_manager import get_config_manager, get_optimizable_parame
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
@@ -579,7 +580,6 @@ class FinalParametersOptimizationStepNew:
             step12_results = {'timestamp': datetime.now().isoformat(), 'step12_version': '1.0', 'optimization_completed': True, 'ml_confidence_factors': tactician_results.get('ml_confidence_factors', {'price_deviation_prediction': 1.35, 'price_direction_prediction': 1.28, 'price_target_confidence': 1.42}), 'position_monitor': tactician_results.get('position_monitor', {'high_confidence_threshold': 0.65, 'low_confidence_threshold': 0.35, 'very_low_confidence_threshold': 0.25, 'confidence_threshold': 0.65}), 'position_opening': tactician_results.get('position_opening', {'require_both_barriers': True, 'min_barrier_confidence': 0.72, 'combined_confidence_threshold': 0.78}), 'optimization_results': {'objective': 'maximize_sharpe_ratio', 'best_sharpe_ratio': tactician_results.get('best_sharpe_ratio', 2.45), 'best_max_drawdown': tactician_results.get('best_max_drawdown', -0.08), 'best_win_rate': tactician_results.get('best_win_rate', 0.68), 'best_profit_factor': tactician_results.get('best_profit_factor', 1.85), 'best_total_return': tactician_results.get('best_total_return', 0.42), 'best_barrier_hit_rate': tactician_results.get('best_barrier_hit_rate', 0.12), 'best_thresholds': tactician_results.get('best_thresholds', {'high_confidence': 0.65, 'low_confidence': 0.35, 'very_low_confidence': 0.25}), 'best_ml_factors': tactician_results.get('best_ml_factors', {'price_deviation_prediction': 1.35, 'price_direction_prediction': 1.28, 'price_target_confidence': 1.42})}, 'backtest_summary': {'start_date': '2024-01-01', 'end_date': datetime.now().strftime('%Y-%m-%d'), 'symbols': ['BTCUSDT', 'ETHUSDT'], 'timeframes': ['1m', '5m'], 'total_trades': tactician_results.get('total_trades', 1247), 'winning_trades': tactician_results.get('winning_trades', 848), 'losing_trades': tactician_results.get('losing_trades', 399), 'average_trade_duration': '45m'}, 'validation': {'thresholds_ordered_correctly': True, 'threshold_spread_valid': True, 'ml_factors_positive': True, 'overall_valid': True}}
             step12_paths = ['step12_results.yaml', 'step12_ml_confidence_factors.yaml', 'src/config/step12_results.yaml', 'src/config/step12_ml_confidence_factors.yaml']
             import yaml
-import numpy as np
 
             for path in step12_paths:
                 try:

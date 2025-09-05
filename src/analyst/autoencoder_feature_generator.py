@@ -6,6 +6,8 @@ from typing import Any
 import yaml
 from .utils.logger import system_logger
 import time
+import numpy as np
+
 try:
     import optuna
     from optuna.integration import TFKerasPruningCallback
@@ -918,7 +920,6 @@ class AutoencoderFeatureAnalyzer:
                 from sklearn.model_selection import train_test_split
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y if len(np.unique(y)) <= 10 else None)
                 from sklearn.linear_model import LogisticRegression
-import numpy as np
 
                 perm_model = LogisticRegression(random_state=42, max_iter=1000)
                 perm_model.fit(X_train, y_train)

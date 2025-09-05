@@ -1,6 +1,8 @@
 
 from typing import Any
 import pandas as pd
+import numpy as np
+
 # TPSL OPTIMIZER - TEMPORARILY DISABLED
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
@@ -113,7 +115,6 @@ class RegimeSpecificTPSLOptimizer:
             results_file = os.path.join(self.model_dir, 'optimization_results.json')
             if os.path.exists(results_file):
                 import json
-import numpy as np
 
                 with open(results_file) as f:
                     self.optimization_results = json.load(f)

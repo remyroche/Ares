@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
 This module provides per-HMM regime feature engineering functionality, ensuring that
@@ -506,7 +508,6 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
         config_path = Path(__file__).parent / 'step06_per_regime_config.json'
         if config_path.exists():
             import json
-import numpy as np
 
             with open(config_path, 'r') as f:
                 default_config = json.load(f)

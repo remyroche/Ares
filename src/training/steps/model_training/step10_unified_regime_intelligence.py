@@ -3,6 +3,7 @@
 import logging
 import queue
 import threading
+import warnings
 
 from src.utils.decorators import (
     cached,
@@ -49,7 +50,6 @@ import os
 import pickle
 import re
 import time
-import warnings
 from datetime import datetime
 from pathlib import Path
 

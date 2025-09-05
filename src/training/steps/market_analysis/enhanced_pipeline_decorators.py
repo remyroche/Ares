@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Pipeline Decorators
 
@@ -130,7 +132,6 @@ class DataFormattingDecorator:
     async def _validate_and_format_data(self, data: Any) -> Any:
         """Validate and format data asynchronously."""
         try:
-            import pandas as pd
             
             if isinstance(data, pd.DataFrame):
                 # Validate required columns
@@ -163,7 +164,6 @@ class DataFormattingDecorator:
     def _validate_and_format_data_sync(self, data: Any) -> Any:
         """Validate and format data synchronously."""
         try:
-            import pandas as pd
             
             if isinstance(data, pd.DataFrame):
                 # Validate required columns
@@ -232,7 +232,6 @@ class DataFormattingDecorator:
     async def _format_dataframe(self, df: Any) -> Any:
         """Format DataFrame with standard operations."""
         try:
-            import pandas as pd
             
             # Ensure proper index
             if not isinstance(df.index, pd.DatetimeIndex):
@@ -256,7 +255,6 @@ class DataFormattingDecorator:
     def _format_dataframe_sync(self, df: Any) -> Any:
         """Format DataFrame with standard operations synchronously."""
         try:
-            import pandas as pd
             
             # Ensure proper index
             if not isinstance(df.index, pd.DatetimeIndex):

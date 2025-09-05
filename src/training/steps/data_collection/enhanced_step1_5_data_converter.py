@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import pandas as pd
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
@@ -311,7 +313,6 @@ async def run_enhanced_step1_5(training_input: Dict[str, Any], pipeline_state: D
     return await step1_5.execute(training_input, pipeline_state)
 if __name__ == '__main__':
     import asyncio
-import pandas as pd
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 

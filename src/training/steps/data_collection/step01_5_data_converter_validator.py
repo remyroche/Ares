@@ -66,8 +66,11 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Union
-import pandas as pd
 import psutil
+import numpy as np
+import pandas as pd
+import warnings
+
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -102,8 +105,6 @@ def validate_environment() -> bool:
         error_msg += '\n\nInstall with: pip install pandas psutil'
         raise ImportError(error_msg)
     if optional_deps:
-        import warnings
-import numpy as np
 
         warning_msg = 'Optional dependencies not available (functionality may be limited):\n'
         warning_msg += '\n'.join((f'  - {dep}' for dep in optional_deps))

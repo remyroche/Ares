@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .core.decorators import handles_errors, traced
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 
 @dataclass
@@ -308,7 +309,6 @@ class ConfidenceBasedEntryLogic:
         
         # Calculate position size multiplier using linear confidence scaling
         from .utils.linear_confidence_scaling import LinearConfidenceScaler
-import numpy as np
         
         # Create linear scaler with current config
         linear_scaler = LinearConfidenceScaler({

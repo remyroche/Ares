@@ -4,6 +4,8 @@ from typing import Dict
 import pandas as pd
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 'Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.\n\nThis step trains a multi-timeframe HMM cluster ensemble system that combines\npredictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)\nto improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.\n\nThe ensemble predicts REGIME TRANSITIONS only, not price direction.\nPrice direction predictions are made in other components.\n'
 import os
 import time
@@ -344,7 +346,6 @@ async def _train_per_regime_ensembles(config: Dict[str, Any], symbol: str, excha
     per_regime_status: dict[str, Any] = {}
     try:
         from .utils.regime_data_access import get_regime_column, get_regime_ids
-import numpy as np
 
         sample_tf = next(iter(regime_forecasting_data.keys())) if regime_forecasting_data else None
         if sample_tf is not None:

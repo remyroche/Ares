@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+
 'Context-Aware S/R Calculator Module.\n\nThis module adjusts S/R parameters and calculations based on market context,\nincluding time of day, volatility regime, news events, and correlations.\n'
 from datetime import datetime, time
 from typing import Any, Dict, List, Optional, Tuple
@@ -178,7 +180,6 @@ class ContextAwareSRCalculator:
         """Load base S/R parameters."""
         try:
             from .utils.sr_parameter_loader import SRParameterLoader
-import numpy as np
 
             return SRParameterLoader.load_optimized_parameters(self.config)
         except Exception as e:

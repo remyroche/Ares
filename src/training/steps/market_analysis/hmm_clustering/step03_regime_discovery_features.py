@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-'Enhanced Regime Discovery Feature Engineering for Step 3.\n\nThis module creates regime-aware features specifically designed for regime discovery,\nfocusing on features that help distinguish between different market regimes.\n'
 import warnings
+
+'Enhanced Regime Discovery Feature Engineering for Step 3.\n\nThis module creates regime-aware features specifically designed for regime discovery,\nfocusing on features that help distinguish between different market regimes.\n'
 warnings.filterwarnings('ignore')
 
 class RegimeDiscoveryFeatureEngineer:

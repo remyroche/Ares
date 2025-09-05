@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+
 'Tactician module for trading strategy execution.'
 from datetime import datetime
 from typing import Any, Dict
@@ -117,7 +119,6 @@ class Tactician:
             if self.enable_enhanced_predictions:
                 try:
                     from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
-import numpy as np
 
                     self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
                     success = await self.scenario_predictor.initialize()

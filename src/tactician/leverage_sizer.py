@@ -8,6 +8,7 @@ from typing import Any
 from .utils.logger import system_logger
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
 from .core.decorators import handles_errors as _handles_errors
+import numpy as np
 
 def handles_errors(*_args, **kwargs) -> None:
     fallback = kwargs.get('default_return', kwargs.get('fallback', None))
@@ -201,7 +202,6 @@ class LeverageSizer:
         """Adjust leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
             import math
-import numpy as np
 
             epsilon = 1e-08
             log_adjusted = math.log(base_leverage + epsilon)

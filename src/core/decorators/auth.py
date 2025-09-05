@@ -1,3 +1,5 @@
+import numpy as np
+
 '\nAuthentication and authorization decorators.\n\nProvides decorators for enforcing authentication and permission\npolicies in a framework-agnostic way.\n'
 from abc import ABC, abstractmethod
 from contextvars import ContextVar
@@ -343,7 +345,6 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
             from .core.errors.base import RateLimitError
-import numpy as np
 
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})

@@ -8,6 +8,8 @@ import os
 import warnings
 from datetime import datetime, timedelta
 from typing import Any
+import numpy as np
+
 warnings.filterwarnings('ignore')
 from .utils.logger import system_logger
 
@@ -1036,7 +1038,6 @@ class RawDataQualityChecker:
             self.logger.info(f'   Time range: {start_time} to {end_time}')
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
-import numpy as np
 
             success = asyncio.run(download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
             if success:

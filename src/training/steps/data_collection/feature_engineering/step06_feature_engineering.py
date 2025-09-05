@@ -4,6 +4,8 @@ from typing import Any
 import pandas as pd
 from typing import Tuple
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 'Step 6: Feature Engineering - Refactored to use BaseStep.\n\nThis module implements comprehensive feature engineering including technical indicators,\ninteraction terms, and regime-aware features.\n'
 from pathlib import Path
 import json
@@ -57,7 +59,6 @@ except ImportError as e:
 
     def step06_validation_context(*args, **kwargs) -> None:
         from contextlib import nullcontext
-import numpy as np
 
         return nullcontext()
 

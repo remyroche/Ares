@@ -1,3 +1,4 @@
+import numpy as np
 
 '\nEnhanced Outlier Handler\n\nThis module provides sophisticated outlier detection and handling including:\n- Outlier detection with detailed logging\n- Error raising instead of silent removal\n- Data schema validation for file operations\n- Root cause analysis and reporting\n- Data integrity preservation\n'
 from datetime import datetime
@@ -269,7 +270,6 @@ class EnhancedOutlierHandler:
         outliers = []
         try:
             from sklearn.neighbors import LocalOutlierFactor
-import numpy as np
 
             X = data[column].values.reshape(-1, 1)
             lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)

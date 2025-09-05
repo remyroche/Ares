@@ -10,6 +10,8 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.core.decorators import handles_errors
+import numpy as np
+
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -155,7 +157,6 @@ class AnalystEnsembleCreationStep:
             try:
                 import os
                 from src.training.optimized_feature_selection_manager import (
-import numpy as np
 
                     OptimizedFeatureSelectionManager,
                 )

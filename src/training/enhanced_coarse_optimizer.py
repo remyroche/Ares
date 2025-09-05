@@ -10,6 +10,8 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import TimeSeriesSplit
+import numpy as np
+
 try:
     from pytorch_tabnet.tab_model import TabNetClassifier
     TABNET_AVAILABLE = True
@@ -194,7 +196,6 @@ class EnhancedCoarseOptimizer:
                     from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
-import numpy as np
 
                 except Exception as e:
                     pass

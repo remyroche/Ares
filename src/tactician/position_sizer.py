@@ -11,6 +11,7 @@ from .utils.linear_confidence_scaling import LinearConfidenceScaler
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, initialization_error, missing
 from .core.domain.decorators import validate_data_quality
+import numpy as np
 
 def core_handles_errors(*_args, **kwargs) -> None:
     fallback = kwargs.get('default_return', kwargs.get('fallback', None))
@@ -199,7 +200,6 @@ class PositionSizer:
         """Adjust position size using logarithmic computations to prevent multiplicative compounding."""
         try:
             import math
-import numpy as np
 
             epsilon = 1e-08
             log_adjusted = math.log(base_size + epsilon)

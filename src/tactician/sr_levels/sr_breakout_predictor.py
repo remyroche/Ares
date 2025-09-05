@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 """Refactored SR Breakout Predictor using modular components."""
 
 from datetime import datetime
@@ -86,7 +88,6 @@ class SRBreakoutPredictor:
             
             try:
                 from .sr_modules import SRAnalyzer
-import numpy as np
 
                 self.analyzer = SRAnalyzer(self.config)
             except ImportError:

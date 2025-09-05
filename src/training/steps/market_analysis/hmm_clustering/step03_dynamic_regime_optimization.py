@@ -7,7 +7,9 @@ This module automatically determines the optimal number of regimes based on mult
 4. Economic significance testing
 5. Regime persistence analysis
 """
+import numpy as np
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class DynamicRegimeCountOptimizer:
@@ -339,7 +341,6 @@ class DynamicRegimeCountOptimizer:
     def _calculate_label_consistency(self, labels1: np.ndarray, labels2: np.ndarray) -> float:
         """Calculate consistency between two label assignments."""
         from sklearn.metrics import adjusted_rand_score
-import numpy as np
 
         if len(labels1) != len(labels2):
             return 0.0

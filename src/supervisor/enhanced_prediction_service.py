@@ -1,6 +1,8 @@
 
 import pandas as pd
 from src.utils.error_handler import handles_errors
+import numpy as np
+
 """
 Enhanced Prediction Service for ML Profit Integration System.
 
@@ -181,7 +183,6 @@ class EnhancedPredictionService:
                 for optimization_file in optimization_path.glob('*.json'):
                     try:
                         import json
-import numpy as np
 
                     except Exception as e:
                         pass

@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """Step 1: Data Collection.
 
 This module handles the data collection step of the training pipeline.
@@ -290,7 +293,6 @@ class DataCollectionStep:
                 if os.path.exists(file_path):
                     self.logger.info(f'✅ Found expected file: {file_name}')
                     try:
-                        import pandas as pd
                         df = pd.read_parquet(file_path)
                         df = self.standards.standardize_timestamp(df, 'timestamp')
                         if 'klines' in file_name:
@@ -332,7 +334,6 @@ class DataCollectionStep:
                 return False
             self.logger.info('📊 Creating mock data for fallback collection...')
             from datetime import datetime, timedelta
-            import pandas as pd
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
             timestamps = pd.date_range(start=start_date, end=end_date, freq='1min')
@@ -436,7 +437,6 @@ class DataCollectionStep:
         logger.info('📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING')
         logger.info('=' * 80)
         try:
-            import pandas as pd
             klines_file = f'{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet'
             aggtrades_file = f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet'
             files_to_check = [('Klines', klines_file), ('Aggtrades', aggtrades_file)]
@@ -603,7 +603,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                 for file_path in existing_files:
                     logger.info(f'      - {file_path}')
                 try:
-                    import pandas as pd
                     klines_path = os.path.join(data_dir, klines_file)
                     if Path(klines_path).exists():
                         df = pd.read_parquet(klines_path)
@@ -690,6 +689,5 @@ if __name__ == '__main__':
         print(f'❌ Error: {e}')
     finally:
         import gc
-import numpy as np
 
         gc.collect()

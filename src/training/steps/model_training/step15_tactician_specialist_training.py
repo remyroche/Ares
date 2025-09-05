@@ -63,7 +63,9 @@ except ImportError:
         def __getattr__(self, name: Any) -> None:
             return lambda *args, **kwargs: 0
     np = FallbackNumpy()
+
 try:
+    import pandas as pd
 except ImportError:
 
     class FallbackPandas:

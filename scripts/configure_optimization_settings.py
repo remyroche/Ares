@@ -20,9 +20,9 @@ from src.config import CONFIG  # noqa: E402
 from src.training.bayesian_optimizer import AdvancedBayesianOptimizer  # noqa: E402
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer  # noqa: E402
 from src.training.optimized_backtester import OptimizedBacktester  # noqa: E402
-from src.utils.warning_symbols import (  # noqa: E402
 import numpy as np
 
+from src.utils.warning_symbols import (  # noqa: E402
     error,
     failed,
     initialization_error,

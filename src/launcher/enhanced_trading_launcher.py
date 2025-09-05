@@ -8,7 +8,7 @@ Enhanced Trading Launcher
 Provides a comprehensive launcher for paper trading, live trading, and
 backtesting with integrated detailed reporting capabilities.
 """
-from .core.decorators import handles_errors
+from src.core.decorators import handles_errors
 
 from src.core.domain import (
     PerformanceLevel,
@@ -21,13 +21,14 @@ import json
 import os
 
 try:
+    import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
         pass
         DataFrame = Any  # type: ignore
     pd = _PD()  # type: ignore
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
        error,
    execution_error,

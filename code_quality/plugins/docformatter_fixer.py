@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 docformatter plugin for formatting docstrings.
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class DocformatterFixer(BaseCodeFixer):
+class DocformatterFixer(BasePlugin):
     """docformatter plugin to format Python docstrings consistently."""
 
     def __init__(self, config: dict[str, Any] = None):

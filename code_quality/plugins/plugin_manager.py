@@ -1,3 +1,5 @@
+from typing import Set, List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 """
 Plugin Manager
 
@@ -5,7 +7,9 @@ Manages plugin execution, lifecycle, and coordination.
 """
 
 import time
+from typing import Optional, List, Dict, Any
 from .plugin_registry import PluginRegistry
+from .base_plugin import PluginContext, PluginResult, PluginCategory, PluginPriority
 
 
 class PluginManager:

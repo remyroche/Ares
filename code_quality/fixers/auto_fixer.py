@@ -16,15 +16,15 @@ except Exception:  # pragma: no cover
     toml = None
     print("Warning: toml not available")
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..core.plugins import PluginManager
-from ..utils.file_utils import (
+from core.config import CodeQualityConfig, get_default_config
+from core.plugins import PluginManager
+from utils.file_utils import (
     backup_file,
     find_python_files,
     is_valid_python_file,
     restore_file,
 )
-from ..utils.progress import ProgressManager
+from utils.progress import ProgressManager
 
 
 class AutoFixer:
@@ -585,7 +585,7 @@ def main():
 
     # Load configuration
     if args.config:
-        from ..core.config import load_config
+        from core.config import load_config
         config = load_config(args.config)
     else:
         config = get_default_config()

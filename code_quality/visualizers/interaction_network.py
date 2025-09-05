@@ -4,6 +4,10 @@ Interaction Network Visualizer
 Creates network visualizations of code interactions and relationships.
 """
 
+from typing import Optional, Dict, List, Any, Tuple
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
 from matplotlib.patches import FancyBboxPatch
 from .code_visualizer import CodeVisualizer
 
@@ -15,7 +19,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
         super().__init__(output_dir)
         
     def create_function_call_network(self, call_graph: Dict[str, List[str]], 
-                                   title: str = "Function Call Network") -> Tuple[plt.Figure, Dict[str, Any]]:
+                                   title: str = "Function Call Network") -> Tuple[Any, Dict[str, Any]]:
         """
         Create a network visualization of function calls.
         
@@ -234,7 +238,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
         return str(html_file)
     
     def create_module_interaction_matrix(self, interactions: Dict[str, List[str]], 
-                                       title: str = "Module Interaction Matrix") -> plt.Figure:
+                                       title: str = "Module Interaction Matrix") -> Any:
         """
         Create a matrix visualization of module interactions.
         
@@ -295,7 +299,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
     
     def create_layered_architecture_view(self, layers: Dict[str, List[str]], 
                                        dependencies: Dict[str, List[str]],
-                                       title: str = "Layered Architecture") -> plt.Figure:
+                                       title: str = "Layered Architecture") -> Any:
         """
         Create a layered view of system architecture.
         

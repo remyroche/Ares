@@ -7,7 +7,14 @@ Provides base functionality for all visualization tools.
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from matplotlib.patches import Rectangle
+
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: matplotlib not available - visualization features will be limited")
 
 
 class CodeVisualizer:
@@ -24,9 +31,10 @@ class CodeVisualizer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Set default style
-        plt.style.use('seaborn-v0_8-darkgrid')
+        if MATPLOTLIB_AVAILABLE:
+            plt.style.use('seaborn-v0_8-darkgrid')
         
-    def save_figure(self, fig: plt.Figure, filename: str, formats: List[str] = None) -> List[str]:
+    def save_figure(self, fig, filename: str, formats: List[str] = None) -> List[str]:
         """
         Save a figure in multiple formats.
         
@@ -83,7 +91,7 @@ class CodeVisualizer:
             return text
         return text[:max_length-3] + '...'
     
-    def create_legend_entries(self, categories: Dict[str, str]) -> List[Tuple[Rectangle, str]]:
+    def create_legend_entries(self, categories: Dict[str, str]) -> List[Tuple[Any, str]]:
         """
         Create legend entries with colored rectangles.
         
@@ -94,9 +102,10 @@ class CodeVisualizer:
             List of (patch, label) tuples for legend
         """
         entries = []
-        for category, color in categories.items():
-            patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='black', linewidth=0.5)
-            entries.append((patch, category))
+        if MATPLOTLIB_AVAILABLE:
+            for category, color in categories.items():
+                patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='black', linewidth=0.5)
+                entries.append((patch, category))
         return entries
     
     def save_metadata(self, filename: str, metadata: Dict[str, Any]):

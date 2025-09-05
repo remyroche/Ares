@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Static Analysis Analyzer - Integrates Pylint, Flake8, MyPy, and Bandit for comprehensive static analysis.
 """
@@ -8,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ..core.config import CodeQualityConfig
+from core.config import CodeQualityConfig
 
 
 class StaticAnalysisAnalyzer:

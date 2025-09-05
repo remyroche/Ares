@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Yesqa fixer plugin to remove unnecessary noqa comments after lint fixes.
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class YesqaFixer(BaseCodeFixer):
+class YesqaFixer(BasePlugin):
     """Run yesqa to drop redundant noqa comments."""
 
     def __init__(self, config: dict[str, Any] | None = None):

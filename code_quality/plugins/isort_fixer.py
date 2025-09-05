@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 isort import sorter plugin for code quality tools.
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class IsortFixer(BaseCodeFixer):
+class IsortFixer(BasePlugin):
     """isort import sorter plugin."""
 
     def __init__(self, config: dict[str, Any] = None):

@@ -22,23 +22,20 @@ from typing import Any, Dict, List
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import complexity analyzers
+# Import complexity analyzers (ONLY complexity-related)
 from analyzers.complexity_analyzer import ComplexityAnalyzer
 from analyzers.metrics_analyzer import MetricsAnalyzer
 from analyzers.architecture_analyzer import ArchitectureAnalyzer
 from analyzers.call_graph_analyzer import CallGraphAnalyzer
 
-# Import visualizers
-from visualizers.complexity_heatmap import ComplexityHeatmap
+# Import visualizers (ONLY complexity-related)
+from visualizers.complexity_heatmap import ComplexityHeatmapVisualizer
 from visualizers.dashboard_generator import DashboardGenerator
-
-# Import plugin system
-from plugins.plugin_manager import PluginManager
-from plugins.plugin_registry import PluginRegistry
-from plugins.base_plugin import PluginCategory, PluginPriority
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class ComplexityPipeline:
@@ -53,12 +50,12 @@ class ComplexityPipeline:
         # Initialize analyzers
         self.config = get_default_config()
         self.complexity_analyzer = ComplexityAnalyzer(self.config)
-        self.metrics_analyzer = MetricsAnalyzer(self.config)
+        self.metrics_analyzer = MetricsAnalyzer(self.project_root)
         self.architecture_analyzer = ArchitectureAnalyzer(self.config)
         self.call_graph_analyzer = CallGraphAnalyzer(self.config)
         
         # Initialize visualizers
-        self.complexity_heatmap = ComplexityHeatmap()
+        self.complexity_heatmap = ComplexityHeatmapVisualizer()
         self.dashboard_generator = DashboardGenerator()
         
         # Initialize plugin system

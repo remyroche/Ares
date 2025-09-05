@@ -22,6 +22,22 @@ from collections import defaultdict, Counter
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Import analyzers (ONLY import-free analysis related)
+from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
+from analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
+from analyzers.syntax_validator import SyntaxValidator
+from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
+from analyzers.linter_analyzer import LinterAnalyzer
+from analyzers.type_checker import TypeChecker
+
+# Import scripts (ONLY import-free analysis related)
+from scripts.detect_circular_imports import ImportAnalyzer
+# from extract_non_pandas_tests import ExtractNonPandasTests  # Deleted during cleanup
+# from analyze_undefined_names import AnalyzeUndefinedNames  # Deleted during cleanup
+
+# Import core components
+from core.config import get_default_config
+
 
 class ImportFreeAnalyzer:
     """Base class for import-free analysis."""

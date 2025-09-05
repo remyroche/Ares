@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Ruff linter plugin for code quality tools.
 """

@@ -130,7 +130,6 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         all_features['microstructure'] = microstructure_features
         self.logger.info('🔗 Combining all features...')
         combined_features = self._combine_features(data, all_features)
-        combined_features = self._handle_missing_values(combined_features)
         train_features, val_features = self._split_features(combined_features, pipeline_state.get('train_end_idx', int(len(combined_features) * 0.8)))
         output_dir = Path(training_input.get('data_dir', 'data/training'))
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -188,14 +187,6 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                 features = features.add_prefix(f'{group_name}_')
             combined = pd.concat([combined, features], axis=1)
         return combined
-
-    def _handle_missing_values(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Handle missing values in features."""
-        features = features.fillna(method='ffill')
-        features = features.fillna(method='bfill')
-        features = features.fillna(0)
-        features = features.replace([np.inf, -np.inf], 0)
-        return features
 
     def _split_features(self, features: pd.DataFrame, train_end_idx: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Split features into train and validation sets."""

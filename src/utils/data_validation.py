@@ -76,7 +76,6 @@ def safe_log_returns(
     """
     try:
         if fill_method:
-            # Use modern pandas fillna syntax
             if fill_method == "ffill":
                 series = series.ffill(limit=limit)
             elif fill_method == "bfill":

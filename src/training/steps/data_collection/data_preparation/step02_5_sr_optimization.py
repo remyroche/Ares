@@ -17,7 +17,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
 
-from ....base_step import BaseStep
+from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
 
@@ -61,12 +61,12 @@ class SROptimizationStep(BaseStep):
     ) -> Tuple[bool, list]:
         """Validate step inputs."""
         errors = []
-        required_inputs = ["validated_data"]
-        
-        for key in required_inputs:
-            if key not in training_input:
-                errors.append(f"Missing required input: {key}")
-        
+        # Accept validated data from either training_input or pipeline_state (preferred)
+        has_validated_in_pipeline = "validated_data" in pipeline_state or "dataframe" in pipeline_state
+        has_validated_in_input = "validated_data" in training_input
+        if not (has_validated_in_pipeline or has_validated_in_input):
+            errors.append("Missing required input: validated_data (expected in pipeline_state or training_input)")
+
         return len(errors) == 0, errors
     
     @handles_errors(
@@ -83,12 +83,12 @@ class SROptimizationStep(BaseStep):
         self.start_time = time.time()
         
         try:
-            # Get data from pipeline state - step 2 stores the DataFrame in "dataframe" or "validated_data"
-            data = pipeline_state.get("dataframe")
+            # Get data from pipeline state (preferred), fallback to training_input
+            data = pipeline_state.get("dataframe") or pipeline_state.get("validated_data")
             if data is None:
-                data = pipeline_state.get("validated_data")
+                data = training_input.get("validated_data")
             if data is None:
-                raise ValueError("No DataFrame available from step 2. Checked 'dataframe' and 'validated_data' keys.")
+                raise ValueError("No DataFrame available from step 2. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input.")
             
             self.logger.info(f"📊 Processing {len(data)} rows of data")
             

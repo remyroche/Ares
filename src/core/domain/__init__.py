@@ -1,32 +1,39 @@
-'\nDomain-specific decorators for the trading system.\n\nThis module provides all domain-specific decorators built on top of\nthe core decorator system. It combines decorators from multiple modules\nfor easy importing.\n'
+from typing import Dict, List, Optional, Union, Any, Tuple
+"""
+Domain-specific decorators for the trading system.
+
+This module provides all domain-specific decorators built on top of
+the core decorator system. It combines decorators from multiple modules
+for easy importing.
+"""
 from ..decorators import compose, handles_errors, traced, validates
 
-# Backward-compatibility aliases for older code references
-def with_tracing_span(*args, **kwargs):
+def with_tracing_span(*args, **kwargs) -> None:
     """Alias for traced to preserve backward compatibility with older imports."""
     return traced(*args, **kwargs)
 
-def handle_errors(*args, **kwargs):
+def handle_errors(*args, **kwargs) -> None:
     """Alias for handles_errors to preserve backward compatibility with older imports."""
     return handles_errors(*args, **kwargs)
 
-# No-ops or thin wrappers for legacy names referenced in some modules
-def validate_data_structure(*args, **kwargs):
+def validate_data_structure(*args, **kwargs) -> bool:
     """Legacy alias retained for compatibility; use validate_data_quality instead."""
     return validate_data_quality(*args, **kwargs)
 
-def resource_monitor(*args, **kwargs):  # pragma: no cover - compatibility shim
+def resource_monitor(*args, **kwargs) -> None:
     """Lightweight compatibility shim; monitoring handled via traced/log decorators."""
-    def _decorator(func):
+
+    def _decorator(func: Callable) -> None:
         return func
     return _decorator
 
-def memory_efficient(*args, **kwargs):  # pragma: no cover - compatibility shim
+def memory_efficient(*args, **kwargs) -> None:
     """Prefer src.utils.enhanced_memory_management.memory_efficient; kept for imports."""
     try:
         return _mem(*args, **kwargs)
     except Exception:
-        def _decorator(func):
+
+        def _decorator(func: Callable) -> None:
             return func
         return _decorator
 
@@ -108,65 +115,69 @@ def validate_pipeline_input(stage: str=None, level: str=PipelineValidationLevel.
 def monitor_pipeline_step(stage: str, metrics_to_track: list=None, alert_on_anomaly: bool=True) -> callable:
     """Monitor a specific pipeline step."""
     return monitor_step_execution(step_name=f'pipeline.{stage}', performance_level=PerformanceLevel.HIGH, log_memory=True)
-# Create simple implementations for missing functions
-def validate_data_quality(**kwargs):
+
+def validate_data_quality(**kwargs) -> bool:
     """Simple data quality validation decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def validate_pipeline_step(**kwargs):
+def validate_pipeline_step(**kwargs) -> bool:
     """Simple pipeline step validation decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def monitor_step_execution(**kwargs):
+def monitor_step_execution(**kwargs) -> None:
     """Simple step execution monitoring decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def optimize_memory_usage(**kwargs):
+def optimize_memory_usage(**kwargs) -> Dict[str, Any]:
     """Simple memory optimization decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def validate_multi_timeframe_data_quality(**kwargs):
+def validate_multi_timeframe_data_quality(**kwargs) -> bool:
     """Simple multi-timeframe data quality validation decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def secure_data_processing(**kwargs):
+def secure_data_processing(**kwargs) -> None:
     """Simple secure data processing decorator."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-# Define missing enums/classes
 class PerformanceLevel:
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+    HIGH = 'high'
+    MEDIUM = 'medium'
+    LOW = 'low'
 
 class ValidationLevel:
-    STRICT = "strict"
-    MODERATE = "moderate"
-    LENIENT = "lenient"
+    STRICT = 'strict'
+    MODERATE = 'moderate'
+    LENIENT = 'lenient'
 
 class PipelineStage:
-    DATA_COLLECTION = "data_collection"
-    DATA_PROCESSING = "data_processing"
-    MODEL_TRAINING = "model_training"
-    VALIDATION = "validation"
+    DATA_COLLECTION = 'data_collection'
+    DATA_PROCESSING = 'data_processing'
+    MODEL_TRAINING = 'model_training'
+    VALIDATION = 'validation'
 
 class PipelineValidationLevel:
-    COMPREHENSIVE = "comprehensive"
-    STANDARD = "standard"
-    BASIC = "basic"
-
+    COMPREHENSIVE = 'comprehensive'
+    STANDARD = 'standard'
+    BASIC = 'basic'
 comprehensive_data_validation = validate_data_quality
 validate_constant_features = lambda: validate_data_quality(check_constant=True)
 validate_low_variance_features = lambda: validate_data_quality(check_constant=True, min_unique_values=3)

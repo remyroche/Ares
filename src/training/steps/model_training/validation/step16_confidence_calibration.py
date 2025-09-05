@@ -9,7 +9,6 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, f1_score
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
-
 try:
     import pandas as pd
 except ImportError:
@@ -211,10 +210,10 @@ class RegimeAwareConfidenceCalibrationStep:
             self.print(error(f'❌ Error in Confidence Calibration: {e}'))
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
 
-    def _load_validation_frame(self, data_dir: str, exchange: str, symbol: str):
+    def _load_validation_frame(self, data_dir: str, exchange: str, symbol: str) -> None:
         if pd is None:
             return None
-        """Load generic validation features frame saved by step 4."""
+        'Load generic validation features frame saved by step 4.'
         try:
             path = f'{data_dir}/{exchange}_{symbol}_features_validation.pkl'
             if os.path.exists(path):
@@ -555,4 +554,4 @@ if __name__ == '__main__':
 
     async def test() -> None:
         await run_step('ETHUSDT', 'BINANCE', 'data/training')
-    asyncio.run(await test())
+    asyncio.run(test())

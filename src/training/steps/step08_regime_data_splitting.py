@@ -1,61 +1,42 @@
-# src/training/steps/step08_regime_data_splitting.py
-
 import asyncio
 import json
 import os
 from datetime import datetime
 from typing import Any, Callable
 from pathlib import Path
-
-# Add project root to path
+from typing import Dict, List, Optional, Union, Any, Tuple
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
-
-# Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
-# Standardized import management
-REQUIRED_MODULES = [
-    "pandas", "src.utils.centralized_decorators",
-    "src.training.steps.data_collection.unified_data_loader",
-    "src.utils.logger",
-    "src.utils.enhanced_mlflow_integration"
-]
-
-# Validate environment dependencies
+REQUIRED_MODULES = ['pandas', 'src.utils.centralized_decorators', 'src.training.steps.data_collection.unified_data_loader', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-
-# Safe imports with fallbacks
-centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-unified_data_loader = PipelineStandards.safe_import("src.training.steps.data_collection.unified_data_loader", None)
-system_logger = PipelineStandards.safe_import("src.utils.logger", None)
-enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-pandas = PipelineStandards.safe_import("pandas", None)
-
-# Import get_unified_data_loader function
+centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
+unified_data_loader = PipelineStandards.safe_import('src.training.steps.data_collection.unified_data_loader', None)
+system_logger = PipelineStandards.safe_import('src.utils.logger', None)
+enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
+pandas = PipelineStandards.safe_import('pandas', None)
 if unified_data_loader is not None:
-    # Create factory function for UnifiedDataLoader
-    def get_unified_data_loader(config):
+
+    def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
         return unified_data_loader.UnifiedDataLoader(config)
 else:
-    def get_unified_data_loader(config):
-        raise ImportError("unified_data_loader module not available")
 
-# Fallback functions if imports fail
+    def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
+        raise ImportError('unified_data_loader module not available')
 import logging
-def create_fallback_logger(): 
-    logging.basicConfig(level = logging.INFO)
+
+def create_fallback_logger() -> Any:
+    logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator(func):
-    def decorator(*args, **kwargs):
+def create_fallback_decorator(func: Callable) -> Any:
+
+    def decorator(*args, **kwargs) -> None:
         return func(*args, **kwargs)
     return decorator
-
-# Initialize fallbacks
-if system_logger is None: system_logger = create_fallback_logger()
-
+if system_logger is None:
+    system_logger = create_fallback_logger()
 if centralized_decorators is None:
     auto_fix_data_quality_issues = create_fallback_decorator(lambda x: x)
     artifact_versioning = create_fallback_decorator(lambda x: x)
@@ -94,14 +75,13 @@ else:
     validate_step_output = centralized_decorators.validate_step_output
     validate_step_prerequisites = centralized_decorators.validate_step_prerequisites
     with_tracing_span = centralized_decorators.with_tracing_span
-
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator(lambda x: x)
-    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_report = lambda *args, **kwargs: 'fallback_report'
     create_detailed_step_report = lambda *args, **kwargs: {}
     log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
 else:
     with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report = enhanced_mlflow.log_step_report
@@ -115,146 +95,95 @@ class RegimeDataSplittingStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild("Step8.RegimeSplit")
-        
-        # Initialize pipeline standards for validation
+        self.logger = system_logger.getChild('Step8.RegimeSplit')
         self.standards = PipelineStandards(self.logger)
-
-        # Validate environment on initialization
         self._validate_environment()
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
-        self.logger.info("🔍 Validating environment dependencies...")
-
+        self.logger.info('🔍 Validating environment dependencies...')
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
-            self.logger.info("📝 Pipeline will continue with fallback implementations")
+            self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
+            self.logger.info('📝 Pipeline will continue with fallback implementations')
         else:
-            self.logger.info("✅ All required dependencies available")
+            self.logger.info('✅ All required dependencies available')
 
-    @with_tracing_span("step08_regime_splitting.initialize", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=None, context="step08_initialization")
+    @with_tracing_span('step08_regime_splitting.initialize', log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return=None, context='step08_initialization')
     async def initialize(self) -> None:
-        self.logger.info("📋 Step 8 Configuration:")
-        self.logger.info(f"   - Unified dataset approach: Enabled")
-        self.logger.info(f"   - Regime labels: composite_cluster_id")
-        self.logger.info(f"   - Maintains temporal continuity: Yes")
-        self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
+        self.logger.info('📋 Step 8 Configuration:')
+        self.logger.info(f'   - Unified dataset approach: Enabled')
+        self.logger.info(f'   - Regime labels: composite_cluster_id')
+        self.logger.info(f'   - Maintains temporal continuity: Yes')
+        self.logger.info('✅ Unified HMM Composite Regime Data Creation initialized successfully')
 
-    @with_enhanced_mlflow_logging("step8")
-    @with_tracing_span("step08_regime_splitting.execute", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step08_execution")
-    async def execute(self, training_input: dict[str, Any] = None, pipeline_state: dict[str, Any] = None) -> dict[str, Any]:
+    @with_enhanced_mlflow_logging('step8')
+    @with_tracing_span('step08_regime_splitting.execute', log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return={'success': False, 'error': 'Execution failed'}, context='step08_execution')
+    async def execute(self, training_input: dict[str, Any]=None, pipeline_state: dict[str, Any]=None) -> dict[str, Any]:
         """Execute the regime data splitting step with validation."""
         try:
-            self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
-            
-            # Validate input data if available
+            self.logger.info('🔄 Loading unified data for HMM composite regime data creation...')
             if pipeline_state and 'dataframe' in pipeline_state:
                 data = pipeline_state['dataframe']
                 if isinstance(data, pd.DataFrame):
                     data = self._validate_and_fix_input_data(data)
                     pipeline_state['dataframe'] = data
-            
             data_loader = get_unified_data_loader(self.config)
-            
-            # Validate data loader is available
             if data_loader is None:
-                self.logger.error("🚨 Unified data loader is not available")
-                self.logger.error("   This indicates a critical configuration issue")
-                return {"success": False, "error": "Unified data loader not available"}
-            
-            from src.config.constants import (
-                BLANK_TRAINING_LOOKBACK_DAYS, )
-
-            # Use lookback_days from config (should be passed from enhanced training manager)
-            config_lookback = self.config.get(
-                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS, )
-            
-            # Validate data loader has required method
+                self.logger.error('🚨 Unified data loader is not available')
+                self.logger.error('   This indicates a critical configuration issue')
+                return {'success': False, 'error': 'Unified data loader not available'}
+            from src.config.constants import BLANK_TRAINING_LOOKBACK_DAYS
+            config_lookback = self.config.get('lookback_days', BLANK_TRAINING_LOOKBACK_DAYS)
             if not hasattr(data_loader, 'load_unified_data'):
-                self.logger.error("🚨 Data loader missing load_unified_data method")
-                return {"success": False, "error": "Data loader missing required method"}
-                
-            unified_data = await data_loader.load_unified_data(
-                symbol=self.config.get("symbol", "ETHUSDT"),
-                exchange=self.config.get("exchange", "BINANCE"),
-                timeframe=self.config.get("timeframe", "1m"),
-                data_dir=self.config.get("data_dir", "data_cache")
-            )
-
-            # Validate unified_data is not None and has data
+                self.logger.error('🚨 Data loader missing load_unified_data method')
+                return {'success': False, 'error': 'Data loader missing required method'}
+            unified_data = await data_loader.load_unified_data(symbol=self.config.get('symbol', 'ETHUSDT'), exchange=self.config.get('exchange', 'BINANCE'), timeframe=self.config.get('timeframe', '1m'), data_dir=self.config.get('data_dir', 'data_cache'))
             if unified_data is None:
-                self.logger.error("🚨 Unified data loader returned None")
-                return {"success": False, "error": "Unified data loader returned None"}
-            
+                self.logger.error('🚨 Unified data loader returned None')
+                return {'success': False, 'error': 'Unified data loader returned None'}
             if len(unified_data) == 0:
-                self.logger.error("🚨 Unified data is empty")
-                return {"success": False, "error": "Unified data is empty"}
-            
-            # Validate data structure
+                self.logger.error('🚨 Unified data is empty')
+                return {'success': False, 'error': 'Unified data is empty'}
             if not hasattr(unified_data, 'columns'):
-                self.logger.error("🚨 Unified data is not a DataFrame")
-                return {"success": False, "error": "Unified data is not a DataFrame"}
-
-            self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
-            self.logger.info(f"   Columns: {list(unified_data.columns)}")
-            self.logger.info(
-                f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}", )
-
-            # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
-            self.logger.info("🎯 Using HMM composite clusters for regime labeling (PARAMOUNT)")
-
-            # Check for HMM composite cluster data
-            if "composite_cluster_id" not in unified_data.columns:
-                self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
-                self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
-                self.logger.error("   Please ensure step03_hmm_regime_discovery completed successfully")
-                return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
-
-            # Verify HMM composite clusters are not all null
-            composite_clusters = unified_data["composite_cluster_id"].dropna()
+                self.logger.error('🚨 Unified data is not a DataFrame')
+                return {'success': False, 'error': 'Unified data is not a DataFrame'}
+            self.logger.info(f'✅ Loaded unified data: {len(unified_data)} rows')
+            self.logger.info(f'   Columns: {list(unified_data.columns)}')
+            self.logger.info(f'   Date range: {unified_data.index.min()} to {unified_data.index.max()}')
+            self.logger.info('🎯 Using HMM composite clusters for regime labeling (PARAMOUNT)')
+            if 'composite_cluster_id' not in unified_data.columns:
+                self.logger.error('🚨 HMM composite_cluster_id column is missing from unified data')
+                self.logger.error('   This is a critical failure - HMM composite clusters are paramount')
+                self.logger.error('   Please ensure step03_hmm_regime_discovery completed successfully')
+                return {'success': False, 'error': 'Missing HMM composite_cluster_id - paramount requirement'}
+            composite_clusters = unified_data['composite_cluster_id'].dropna()
             if composite_clusters.empty:
-                self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
-                self.logger.error("   This indicates step03_hmm_regime_discovery failed to generate valid clusters")
-                return {"success": False, "error": "HMM composite_cluster_id contains only null values"}
-
-            # Get unique HMM composite clusters
+                self.logger.error('🚨 HMM composite_cluster_id column contains only null values')
+                self.logger.error('   This indicates step03_hmm_regime_discovery failed to generate valid clusters')
+                return {'success': False, 'error': 'HMM composite_cluster_id contains only null values'}
             unique_clusters = composite_clusters.unique()
-            self.logger.info(f"📊 Found {len(unique_clusters)} unique HMM composite clusters: {sorted(unique_clusters)}")
-
-            # Ensure data is sorted by timestamp for proper lookback periods
+            self.logger.info(f'📊 Found {len(unique_clusters)} unique HMM composite clusters: {sorted(unique_clusters)}')
             unified_data = unified_data.sort_index()
-
-            # Create unified dataset with regime labels (no splitting into separate files)
-            self.logger.info("🔀 Creating unified dataset with regime labels...")
-
-            # Save unified dataset with regime labels
+            self.logger.info('🔀 Creating unified dataset with regime labels...')
             success = self._save_unified_regime_dataset(unified_data, unique_clusters)
-
             if not success:
-                self.logger.error("🚨 Failed to save unified regime dataset")
-                return {"success": False, "error": "Failed to save unified regime dataset"}
-            self.logger.info(f"✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels")
-
-            # Create regime summary
+                self.logger.error('🚨 Failed to save unified regime dataset')
+                return {'success': False, 'error': 'Failed to save unified regime dataset'}
+            self.logger.info(f'✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels')
             summary = self._create_regime_summary(unified_data, unique_clusters)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"log/step08_regime_unified_{ts}.json", "w") as f:
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            with open(f'log/step08_regime_unified_{ts}.json', 'w') as f:
                 json.dump(summary, f, indent=2)
-            
-            self.logger.info("✅ Unified HMM composite regime data creation completed successfully")
-
-            # Log artifacts and create detailed report
+            self.logger.info('✅ Unified HMM composite regime data creation completed successfully')
             await self._log_step8_artifacts_and_report(unified_data, summary)
-
-            return {"success": True, "regime_summary": summary}
+            return {'success': True, 'regime_summary': summary}
         except Exception as e:
-            self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
-            return {"success": False, "error": str(e)}
-    
+            self.logger.exception(f'❌ Unified HMM composite regime data creation failed: {e}')
+            return {'success': False, 'error': str(e)}
+
     def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Validate and fix input data using pipeline standards.
@@ -265,400 +194,139 @@ class RegimeDataSplittingStep:
         Returns:
             Validated and fixed DataFrame
         """
-        self.logger.info("🔍 Validating input data for regime data splitting...")
-        
-        # Validate data quality using pipeline standards
+        self.logger.info('🔍 Validating input data for regime data splitting...')
         validation_result = self.standards.validate_data_quality(data, 'unified')
-        
         if not validation_result.passed:
-            self.logger.warning(f"⚠️ Data quality issues detected: {validation_result.quality_score:.2f}")
+            self.logger.warning(f'⚠️ Data quality issues detected: {validation_result.quality_score:.2f}')
             for issue in validation_result.issues:
-                self.logger.warning(f"   - {issue.message}")
-        
-        # Apply fixes for common issues
+                self.logger.warning(f'   - {issue.message}')
         fixed_data = data.copy()
-        
-        # Fix duplicate timestamps
         if 'timestamp' in fixed_data.columns:
             duplicate_count = fixed_data['timestamp'].duplicated().sum()
             if duplicate_count > 0:
-                self.logger.info(f"🗑️ Removing {duplicate_count} duplicate timestamps")
+                self.logger.info(f'🗑️ Removing {duplicate_count} duplicate timestamps')
                 fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
-        
-        # Fix non-monotonic index
         if 'timestamp' in fixed_data.columns:
             if not fixed_data['timestamp'].is_monotonic_increasing:
-                self.logger.info("📈 Sorting data by timestamp")
+                self.logger.info('📈 Sorting data by timestamp')
                 fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
-        
-        # Ensure proper data types using pipeline standards
         try:
             fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
-            self.logger.info("✅ Applied schema enforcement")
+            self.logger.info('✅ Applied schema enforcement')
         except Exception as e:
-            self.logger.warning(f"⚠️ Schema enforcement failed: {e}")
-        
-        # Set datetime index if timestamp column exists
-        if 'timestamp' in fixed_data.columns and not isinstance(fixed_data.index, pd.DatetimeIndex):
+            self.logger.warning(f'⚠️ Schema enforcement failed: {e}')
+        if 'timestamp' in fixed_data.columns and (not isinstance(fixed_data.index, pd.DatetimeIndex)):
             try:
                 fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
                 fixed_data = fixed_data.set_index('timestamp')
-                self.logger.info("📅 Set datetime index")
+                self.logger.info('📅 Set datetime index')
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not set datetime index: {e}")
-        
-        # Final validation
+                self.logger.warning(f'⚠️ Could not set datetime index: {e}')
         final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
-        self.logger.info(f"✅ Final data quality score: {final_validation.quality_score:.2f}")
-        
+        self.logger.info(f'✅ Final data quality score: {final_validation.quality_score:.2f}')
         return fixed_data
-    async def _log_step8_artifacts_and_report(self, unified_data, summary) -> None:
+
+    async def _log_step8_artifacts_and_report(self, unified_data: Any, summary: Any) -> None:
         """Log step 8 artifacts and create detailed report."""
         try:
-            symbol = self.config.get("symbol", "ETHUSDT")
-            exchange = self.config.get("exchange", "BINANCE")
-            timeframe = self.config.get("timeframe", "1m")
-
-            # Collect execution metadata
-            execution_metadata = {
-                "start_time": datetime.now().isoformat(),
-                "end_time": datetime.now().isoformat(),
-                "duration_seconds": 0.0,  # Will be calculated if available
-                "memory_usage_mb": 0.0,  # Will be calculated if available
-                "cpu_usage_percent": 0.0,  # Will be calculated if available
-                "data_quality_score": 1.0, 
-                "processing_efficiency": 1.0
-            }
-
-            # Collect artifacts generated
-            artifacts_generated = [
-                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
-                f"{exchange}_{symbol}_{timeframe}_regime_labels.json",
-                f"{exchange}_{symbol}_{timeframe}_regime_statistics.json"
-            ]
-
-            # Collect metrics
-            metrics_calculated = {
-                "regime_creation_success": 1.0, 
-                "total_regimes": summary.get("total_regimes", 0),
-                "total_samples": len(unified_data),
-                "regime_ids": summary.get("regime_ids", []),
-            }
-
-            # Create training input for report
-            training_input = {
-                "symbol": symbol, 
-                "exchange": exchange, 
-                "timeframe": timeframe, 
-                "lookback_days": self.config.get("lookback_days", 1095),
-                "asset": symbol,  # Use symbol as asset
-                "lookback_period": self.config.get("lookback_days", 1095),
-                "project_version": self.config.get("project_version", "1_2_3"),
-            }
-
-            # Create step data for report
-            step_data = {
-                "regime_summary": summary, 
-                "regime_count": summary.get("total_regimes", 0),
-                "regime_ids": summary.get("regime_ids", []),
-                "approach": "unified_dataset_with_labels",
-            }
-
-            # Create detailed report
-            report_data = create_detailed_step_report(
-                step_name="step08_regime_data_splitting",
-                step_data=step_data, 
-                training_input=training_input, 
-                execution_metadata=execution_metadata, 
-                artifacts_generated=artifacts_generated, 
-                metrics_calculated=metrics_calculated, 
-                errors_encountered=[]
-            )
-
-            # Log the report
-            report_name = log_step_report(
-                config=self.config, 
-                step_name="step08_regime_data_splitting",
-                report_data=report_data, 
-                report_type="unified_regime_data_creation_report", 
-                additional_metadata={
-                    "regime_creation_success": True,
-                    "total_regimes": summary.get("total_regimes", 0),
-                    "timeframe": timeframe, 
-                    "asset": symbol, 
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1_2_3"),
-                    "approach": "unified_dataset_with_labels",
-                }
-            )
-            self.logger.info(f"✅ Logged unified regime data creation report: {report_name}")
-
-            # Log regime summary
+            symbol = self.config.get('symbol', 'ETHUSDT')
+            exchange = self.config.get('exchange', 'BINANCE')
+            timeframe = self.config.get('timeframe', '1m')
+            execution_metadata = {'start_time': datetime.now().isoformat(), 'end_time': datetime.now().isoformat(), 'duration_seconds': 0.0, 'memory_usage_mb': 0.0, 'cpu_usage_percent': 0.0, 'data_quality_score': 1.0, 'processing_efficiency': 1.0}
+            artifacts_generated = [f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', f'{exchange}_{symbol}_{timeframe}_regime_labels.json', f'{exchange}_{symbol}_{timeframe}_regime_statistics.json']
+            metrics_calculated = {'regime_creation_success': 1.0, 'total_regimes': summary.get('total_regimes', 0), 'total_samples': len(unified_data), 'regime_ids': summary.get('regime_ids', [])}
+            training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'lookback_days': self.config.get('lookback_days', 1095), 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3')}
+            step_data = {'regime_summary': summary, 'regime_count': summary.get('total_regimes', 0), 'regime_ids': summary.get('regime_ids', []), 'approach': 'unified_dataset_with_labels'}
+            report_data = create_detailed_step_report(step_name='step08_regime_data_splitting', step_data=step_data, training_input=training_input, execution_metadata=execution_metadata, artifacts_generated=artifacts_generated, metrics_calculated=metrics_calculated, errors_encountered=[])
+            report_name = log_step_report(config=self.config, step_name='step08_regime_data_splitting', report_data=report_data, report_type='unified_regime_data_creation_report', additional_metadata={'regime_creation_success': True, 'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+            self.logger.info(f'✅ Logged unified regime data creation report: {report_name}')
             if summary:
-                summary_report_name = log_step_report(
-                    config=self.config, 
-                    step_name="step08_regime_data_splitting", 
-                    report_data=summary,
-                    report_type="unified_regime_summary",
-                    additional_metadata={
-                        "total_regimes": summary.get("total_regimes", 0),
-                        "timeframe": timeframe, 
-                        "asset": symbol, 
-                        "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1_2_3"),
-                        "approach": "unified_dataset_with_labels",
-                    }
-                )
-                self.logger.info(f"✅ Logged unified regime summary: {summary_report_name}")
-
-            # Log metrics
-            log_step_metrics(
-                config=self.config, 
-                step_name="step08_regime_data_splitting", 
-                metrics=metrics_calculated, 
-                additional_metadata={
-                    "metrics_type": "unified_regime_creation_performance",
-                    "timeframe": timeframe, 
-                    "asset": symbol, 
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1_2_3"),
-                    "approach": "unified_dataset_with_labels",
-                }
-            )
-
-            self.logger.info("✅ Step 8 artifacts and reports logged successfully")
-
+                summary_report_name = log_step_report(config=self.config, step_name='step08_regime_data_splitting', report_data=summary, report_type='unified_regime_summary', additional_metadata={'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+                self.logger.info(f'✅ Logged unified regime summary: {summary_report_name}')
+            log_step_metrics(config=self.config, step_name='step08_regime_data_splitting', metrics=metrics_calculated, additional_metadata={'metrics_type': 'unified_regime_creation_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+            self.logger.info('✅ Step 8 artifacts and reports logged successfully')
         except Exception as e:
-            self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            self.logger.error(f'❌ Failed to log step 8 artifacts and reports: {e}')
 
-    @with_tracing_span("step08_regime_splitting._save_unified_regime_dataset", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
-    def _save_unified_regime_dataset(self, unified_data, unique_clusters) -> bool:
+    @with_tracing_span('step08_regime_splitting._save_unified_regime_dataset', log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return=False, context='save_unified_regime_dataset')
+    def _save_unified_regime_dataset(self, unified_data: Any, unique_clusters: List[Any]) -> bool:
         """Save unified regime dataset with labels."""
         try:
-            data_dir = self.config.get("data_dir", "data/training")
+            data_dir = self.config.get('data_dir', 'data/training')
             os.makedirs(data_dir, exist_ok=True)
-
-            symbol = self.config.get("symbol", "ETHUSDT")
-            exchange = self.config.get("exchange", "BINANCE")
-            timeframe = self.config.get("timeframe", "1m")
-
-            # Save unified dataset with regime labels
-            unified_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
+            symbol = self.config.get('symbol', 'ETHUSDT')
+            exchange = self.config.get('exchange', 'BINANCE')
+            timeframe = self.config.get('timeframe', '1m')
+            unified_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet')
             unified_data.to_parquet(unified_file, index=True)
-            self.logger.info(f"✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}")
-
-            # Create regime labels mapping
-            regime_labels = {
-                "regime_column": "composite_cluster_id",
-                "regime_ids": sorted(unique_clusters),
-                "total_regimes": len(unique_clusters),
-                "data_shape": unified_data.shape, 
-                "timestamp_range": {
-                    "start": unified_data.index.min().isoformat(), 
-                    "end": unified_data.index.max().isoformat()
-                },
-                "usage_instructions": {
-                    "description": "Load the unified dataset and filter by composite_cluster_id for regime-specific processing",
-                    "example": "regime_data = data[data['composite_cluster_id'] == regime_id]", 
-                    "benefits": [
-                        "Maintains temporal continuity for trading indicators",
-                        "Preserves lookback periods",
-                        "Eliminates need for multiple file management",
-                        "Enables regime-aware processing with single dataset"
-                    ]
-                }
-            }
-
-            labels_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
-
+            self.logger.info(f'✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}')
+            regime_labels = {'regime_column': 'composite_cluster_id', 'regime_ids': sorted(unique_clusters), 'total_regimes': len(unique_clusters), 'data_shape': unified_data.shape, 'timestamp_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}, 'usage_instructions': {'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 'example': "regime_data = data[data['composite_cluster_id'] == regime_id]", 'benefits': ['Maintains temporal continuity for trading indicators', 'Preserves lookback periods', 'Eliminates need for multiple file management', 'Enables regime-aware processing with single dataset']}}
+            labels_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_regime_labels.json')
             with open(labels_file, 'w') as f:
                 json.dump(regime_labels, f, indent=2)
-            
-            self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
-
-            # Create regime statistics
+            self.logger.info(f'✅ Saved regime labels mapping: {labels_file}')
             regime_stats = self._create_regime_statistics(unified_data, unique_clusters)
-            stats_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_statistics.json")
+            stats_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_regime_statistics.json')
             with open(stats_file, 'w') as f:
                 json.dump(regime_stats, f, indent=2)
-            
-            self.logger.info(f"✅ Saved regime statistics: {stats_file}")
-
+            self.logger.info(f'✅ Saved regime statistics: {stats_file}')
             return True
-
         except Exception as e:
-            self.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
+            self.logger.exception(f'❌ Failed to save unified regime dataset: {e}')
             return False
 
-
-    def _create_regime_statistics(self, unified_data, unique_clusters) -> dict[str, Any]:
+    def _create_regime_statistics(self, unified_data: Any, unique_clusters: List[Any]) -> dict[str, Any]:
         """Create regime statistics."""
         try:
-            stats = {
-                "approach": "unified_dataset_with_labels",
-                "total_regimes": len(unique_clusters),
-                "total_data_points": len(unified_data),
-                "regime_details": {},
-                "overall_statistics": {
-                    "date_range": {
-                        "start": unified_data.index.min().isoformat(),
-                        "end": unified_data.index.max().isoformat()
-                    }
-                }
-            }
-
-            # Calculate statistics for each regime
-            for cluster_id in unique_clusters: 
-                regime_data = unified_data[unified_data["composite_cluster_id"] == cluster_id]
-
+            stats = {'approach': 'unified_dataset_with_labels', 'total_regimes': len(unique_clusters), 'total_data_points': len(unified_data), 'regime_details': {}, 'overall_statistics': {'date_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}}}
+            for cluster_id in unique_clusters:
+                regime_data = unified_data[unified_data['composite_cluster_id'] == cluster_id]
                 if len(regime_data) > 0:
-                    regime_stats = {
-                        "data_points": len(regime_data), 
-                        "percentage": len(regime_data) / len(unified_data) * 100, 
-                        "date_range": {
-                            "start": regime_data.index.min().isoformat(),
-                            "end": regime_data.index.max().isoformat()
-                        }
-                    }
-
-                    # Add price statistics if available
+                    regime_stats = {'data_points': len(regime_data), 'percentage': len(regime_data) / len(unified_data) * 100, 'date_range': {'start': regime_data.index.min().isoformat(), 'end': regime_data.index.max().isoformat()}}
                     if 'close' in regime_data.columns:
-                        regime_stats["price_stats"] = {
-                            "mean": float(regime_data['close'].mean()),
-                            "std": float(regime_data['close'].std()),
-                            "min": float(regime_data['close'].min()),
-                            "max": float(regime_data['close'].max())
-                        }
-
-                    stats["regime_details"][f"regime_{cluster_id}"] = regime_stats
-
+                        regime_stats['price_stats'] = {'mean': float(regime_data['close'].mean()), 'std': float(regime_data['close'].std()), 'min': float(regime_data['close'].min()), 'max': float(regime_data['close'].max())}
+                    stats['regime_details'][f'regime_{cluster_id}'] = regime_stats
             return stats
-
         except Exception as e:
-            self.logger.exception(f"❌ Error creating regime statistics: {e}")
+            self.logger.exception(f'❌ Error creating regime statistics: {e}')
             return {}
 
-    @with_tracing_span("step08_regime_splitting._create_regime_summary", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
-    def _create_regime_summary(self, unified_data, unique_clusters) -> dict[str, Any]:
-        summary = {
-            "timestamp": datetime.now().isoformat(),
-            "approach": "unified_dataset_with_labels",
-            "regime_basis": "hmm_composite_clusters_only",
-            "total_regimes": len(unique_clusters),
-            "regime_ids": sorted(unique_clusters),
-            "total_rows": len(unified_data),
-            "data_shape": unified_data.shape, 
-            "timestamp_range": {
-                "start": unified_data.index.min().isoformat(), 
-                "end": unified_data.index.max().isoformat()
-            },
-            "regime_column": "composite_cluster_id",
-            "usage_instructions": {
-                "description": "Load the unified dataset and filter by composite_cluster_id for regime-specific processing",
-                "example": "regime_data = data[data['composite_cluster_id'] == regime_id]", 
-                "benefits": [
-                    "Maintains temporal continuity for trading indicators",
-                    "Preserves lookback periods",
-                    "Eliminates need for multiple file management",
-                    "Enables regime-aware processing with single dataset"
-                ]
-            }
-        }
-
+    @with_tracing_span('step08_regime_splitting._create_regime_summary', log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return={}, context='create_regime_summary')
+    def _create_regime_summary(self, unified_data: Any, unique_clusters: List[Any]) -> dict[str, Any]:
+        summary = {'timestamp': datetime.now().isoformat(), 'approach': 'unified_dataset_with_labels', 'regime_basis': 'hmm_composite_clusters_only', 'total_regimes': len(unique_clusters), 'regime_ids': sorted(unique_clusters), 'total_rows': len(unified_data), 'data_shape': unified_data.shape, 'timestamp_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}, 'regime_column': 'composite_cluster_id', 'usage_instructions': {'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 'example': "regime_data = data[data['composite_cluster_id'] == regime_id]", 'benefits': ['Maintains temporal continuity for trading indicators', 'Preserves lookback periods', 'Eliminates need for multiple file management', 'Enables regime-aware processing with single dataset']}}
         return summary
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step08_regime_data_splitting")
+@idempotent_step(step_key='step08_regime_data_splitting')
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
+@artifact_versioning('1.0')
 @time_budget_watchdog(soft_timeout_seconds=1800.0)
-@validate_step_prerequisites(
-    required_directories=["data/training"],
-    min_memory_gb=4.0, 
-    min_disk_gb=3.0, 
-    required_packages=["pandas", "numpy"],
-    data_quality_checks={
-        "min_rows": 1000, 
-        "required_columns": ["timestamp", "composite_cluster_id"],
-    },
-    context="Unified Regime Data Creation",
-)
-@secure_data_processing(
-    backup_before=True, 
-    integrity_checks=True, 
-    memory_cleanup=True, 
-    data_validation=True
-)
-@prevent_data_leakage(
-    temporal_validation=True, 
-    feature_leakage_detection=False, 
-    lookahead_bias_prevention=True
-)
-@resource_monitor(
-    memory_threshold_gb=8.0, 
-    cpu_threshold_percent=70.0, 
-    disk_threshold_gb=5.0, 
-    monitor_interval=30.0, 
-    auto_cleanup=True
-)
-@memory_efficient(
-    chunk_size=20000, 
-    streaming_processing=True, 
-    memory_pool=True, 
-    cleanup_frequency=40
-)
-@debug_training_step(
-    log_intermediate_results=True, 
-    save_debug_artifacts=True, 
-    performance_profiling=True, 
-    error_context_preservation=True
-)
-@circuit_breaker_protection(
-    failure_threshold=3, 
-    recovery_timeout=90.0, 
-    expected_exception=Exception, 
-    monitor_interval=30.0
-)
-@validate_step_output(
-    required_files=["data/training/*_unified_regime_data.parquet"],
-    data_quality_checks={"min_rows": 100, "required_columns": ["timestamp", "composite_cluster_id"]},
-    performance_thresholds={"creation_time_minutes": 30.0},
-    format_validation=True
-)
-@quality_gate(
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"creation_accuracy": 0.8}
-)
+@validate_step_prerequisites(required_directories=['data/training'], min_memory_gb=4.0, min_disk_gb=3.0, required_packages=['pandas', 'numpy'], data_quality_checks={'min_rows': 1000, 'required_columns': ['timestamp', 'composite_cluster_id']}, context='Unified Regime Data Creation')
+@secure_data_processing(backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True)
+@prevent_data_leakage(temporal_validation=True, feature_leakage_detection=False, lookahead_bias_prevention=True)
+@resource_monitor(memory_threshold_gb=8.0, cpu_threshold_percent=70.0, disk_threshold_gb=5.0, monitor_interval=30.0, auto_cleanup=True)
+@memory_efficient(chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40)
+@debug_training_step(log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True)
+@circuit_breaker_protection(failure_threshold=3, recovery_timeout=90.0, expected_exception=Exception, monitor_interval=30.0)
+@validate_step_output(required_files=['data/training/*_unified_regime_data.parquet'], data_quality_checks={'min_rows': 100, 'required_columns': ['timestamp', 'composite_cluster_id']}, performance_thresholds={'creation_time_minutes': 30.0}, format_validation=True)
+@quality_gate(data_quality_metrics={'completeness': 0.9, 'consistency': 0.8}, validation_score_requirements={'creation_accuracy': 0.8})
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step08_regime_data_splitting")
-async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str = "1m", force_rerun: bool = False, **kwargs) -> bool:
-    config = {
-        "symbol": symbol, 
-        "exchange": exchange,
-        "data_dir": data_dir, 
-        "timeframe": timeframe, 
-        "force_rerun": force_rerun,
-        **kwargs
-    }
-
+@handle_errors(exceptions=(Exception,), default_return=False, context='step08_regime_data_splitting')
+async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1m', force_rerun: bool=False, **kwargs) -> bool:
+    config = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'force_rerun': force_rerun, **kwargs}
     step = RegimeDataSplittingStep(config)
     await step.initialize()
     result = await step.execute()
-    return result.get("success", False)
+    return result.get('success', False)
+if __name__ == '__main__':
 
-if __name__ == "__main__":
     async def _test() -> None:
-        await run_step("ETHUSDT", "BINANCE", "data/training")
-
-    # Safe event loop handling to prevent conflicts
+        await run_step('ETHUSDT', 'BINANCE', 'data/training')
     try:
         loop = asyncio.get_running_loop()
-        # If we're already in an event loop, create a task instead
         loop.create_task(_test())
     except RuntimeError:
-        # No event loop running, safe to use asyncio.run()
         asyncio.run(_test())

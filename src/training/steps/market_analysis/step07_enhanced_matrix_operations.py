@@ -1,3 +1,4 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
 
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
@@ -13,36 +14,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
-
-# Optional dependencies with fallback handling
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
-
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
-
 try:
     from sklearn.feature_selection import mutual_info_classif
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
     mutual_info_classif = None
-
 try:
     import lightgbm as lgb
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
     lgb = None
-
 try:
     from scipy.stats import rankdata
     SCIPY_AVAILABLE = True
@@ -55,13 +50,7 @@ sys.path.insert(0, str(project_root))
 from .utils.common_operations import ensure_directory, safe_json_dump
 from .core.decorators import CachePolicy, cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
 from .utils.pipeline_standards import PipelineStandards, pipeline_standards
-REQUIRED_MODULES = [
-    'pandas', 'numpy', 'psutil', 'sklearn', 'scipy', 'lightgbm',
-    'src.training.enhanced_matrix_operations', 'src.utils.error_handler', 
-    'src.utils.logger', 'src.training.feature_engineering_optimizer', 
-    'src.training.timeframe_relevance_analyzer', 'src.utils.training_pipeline_decorators', 
-    'src.utils.enhanced_mlflow_integration'
-]
+REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'sklearn', 'scipy', 'lightgbm', 'src.training.enhanced_matrix_operations', 'src.utils.error_handler', 'src.utils.logger', 'src.training.feature_engineering_optimizer', 'src.training.timeframe_relevance_analyzer', 'src.utils.training_pipeline_decorators', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 enhanced_matrix_operations = PipelineStandards.safe_import('src.training.enhanced_matrix_operations', None)
 error_handler = PipelineStandards.safe_import('src.utils.error_handler', None)
@@ -87,510 +76,336 @@ def create_fallback_decorator() -> Any:
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""
-    
-    def __init__(self, logger):
+
+    def __init__(self, logger: logging.Logger) -> None:
         self.logger = logger
         self.call_stack = []
         self.function_calls = {}
         self.function_to_function_calls = {}
         self.completion_reports = {}
         self.start_time = time.time()
-    
-    def track_function_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None):
+
+    def track_function_call(self, func_name: str, args: tuple, kwargs: dict, caller: str=None) -> None:
         """Track function call initiation."""
-        call_id = f"{func_name}_{len(self.call_stack)}_{int(time.time() * 1000)}"
-        call_info = {
-            'call_id': call_id,
-            'function_name': func_name,
-            'caller': caller,
-            'args_count': len(args),
-            'kwargs_count': len(kwargs),
-            'start_time': time.time(),
-            'args_types': [type(arg).__name__ for arg in args],
-            'kwargs_keys': list(kwargs.keys())
-        }
-        
+        call_id = f'{func_name}_{len(self.call_stack)}_{int(time.time() * 1000)}'
+        call_info = {'call_id': call_id, 'function_name': func_name, 'caller': caller, 'args_count': len(args), 'kwargs_count': len(kwargs), 'start_time': time.time(), 'args_types': [type(arg).__name__ for arg in args], 'kwargs_keys': list(kwargs.keys())}
         self.call_stack.append(call_id)
         self.function_calls[call_id] = call_info
-        
-        # Track function-to-function calls
         if caller:
             if caller not in self.function_to_function_calls:
                 self.function_to_function_calls[caller] = []
-            self.function_to_function_calls[caller].append({
-                'called_function': func_name,
-                'call_id': call_id,
-                'timestamp': time.time()
-            })
-        
-        self.logger.debug(f"🔍 Function call initiated: {func_name} (ID: {call_id})")
+            self.function_to_function_calls[caller].append({'called_function': func_name, 'call_id': call_id, 'timestamp': time.time()})
+        self.logger.debug(f'🔍 Function call initiated: {func_name} (ID: {call_id})')
         return call_id
-    
-    def track_function_completion(self, call_id: str, result: Any = None, error: Exception = None):
+
+    def track_function_completion(self, call_id: str, result: Any=None, error: Exception=None) -> None:
         """Track function call completion with detailed outcome."""
         if call_id not in self.function_calls:
-            self.logger.warning(f"⚠️ Unknown call ID: {call_id}")
+            self.logger.warning(f'⚠️ Unknown call ID: {call_id}')
             return
-        
         call_info = self.function_calls[call_id]
         end_time = time.time()
         duration = end_time - call_info['start_time']
-        
-        completion_report = {
-            'call_id': call_id,
-            'function_name': call_info['function_name'],
-            'caller': call_info['caller'],
-            'duration_seconds': duration,
-            'success': error is None,
-            'error': str(error) if error else None,
-            'error_type': type(error).__name__ if error else None,
-            'result_type': type(result).__name__ if result is not None else None,
-            'result_size': self._get_result_size(result),
-            'end_time': end_time,
-            'stack_depth': len(self.call_stack)
-        }
-        
+        completion_report = {'call_id': call_id, 'function_name': call_info['function_name'], 'caller': call_info['caller'], 'duration_seconds': duration, 'success': error is None, 'error': str(error) if error else None, 'error_type': type(error).__name__ if error else None, 'result_type': type(result).__name__ if result is not None else None, 'result_size': self._get_result_size(result), 'end_time': end_time, 'stack_depth': len(self.call_stack)}
         self.completion_reports[call_id] = completion_report
-        
-        # Remove from call stack
         if call_id in self.call_stack:
             self.call_stack.remove(call_id)
-        
-        # Log completion
-        status = "✅" if error is None else "❌"
-        self.logger.info(f"{status} Function completed: {call_info['function_name']} "
-                        f"(ID: {call_id}, Duration: {duration:.3f}s)")
-        
+        status = '✅' if error is None else '❌'
+        self.logger.info(f"{status} Function completed: {call_info['function_name']} (ID: {call_id}, Duration: {duration:.3f}s)")
         if error:
             self.logger.error(f"❌ Function error: {call_info['function_name']} - {error}")
-            self.logger.debug(f"Error traceback: {traceback.format_exc()}")
-        
+            self.logger.debug(f'Error traceback: {traceback.format_exc()}')
         return completion_report
-    
+
     def _get_result_size(self, result: Any) -> str:
         """Get human-readable size of result."""
         if result is None:
-            return "None"
+            return 'None'
         elif isinstance(result, (list, tuple)):
-            return f"len={len(result)}"
+            return f'len={len(result)}'
         elif isinstance(result, dict):
-            return f"keys={len(result)}"
+            return f'keys={len(result)}'
         elif isinstance(result, np.ndarray):
-            return f"shape={result.shape}"
+            return f'shape={result.shape}'
         elif isinstance(result, pd.DataFrame):
-            return f"shape={result.shape}"
+            return f'shape={result.shape}'
         else:
-            return f"type={type(result).__name__}"
-    
+            return f'type={type(result).__name__}'
+
     def get_call_summary(self) -> Dict[str, Any]:
         """Get comprehensive call summary."""
         total_calls = len(self.function_calls)
         successful_calls = len([r for r in self.completion_reports.values() if r['success']])
         failed_calls = total_calls - successful_calls
-        
-        total_duration = sum(r['duration_seconds'] for r in self.completion_reports.values())
-        
-        return {
-            'total_function_calls': total_calls,
-            'successful_calls': successful_calls,
-            'failed_calls': failed_calls,
-            'success_rate': successful_calls / total_calls if total_calls > 0 else 0,
-            'total_duration_seconds': total_duration,
-            'average_duration_seconds': total_duration / total_calls if total_calls > 0 else 0,
-            'function_to_function_calls': len(self.function_to_function_calls),
-            'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default=0),
-            'session_duration_seconds': time.time() - self.start_time
-        }
+        total_duration = sum((r['duration_seconds'] for r in self.completion_reports.values()))
+        return {'total_function_calls': total_calls, 'successful_calls': successful_calls, 'failed_calls': failed_calls, 'success_rate': successful_calls / total_calls if total_calls > 0 else 0, 'total_duration_seconds': total_duration, 'average_duration_seconds': total_duration / total_calls if total_calls > 0 else 0, 'function_to_function_calls': len(self.function_to_function_calls), 'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default=0), 'session_duration_seconds': time.time() - self.start_time}
 
-def comprehensive_function_tracker(logger):
+def comprehensive_function_tracker(logger: logging.Logger) -> None:
     """Decorator for comprehensive function call tracking."""
-    def decorator(func):
+
+    def decorator(func: Callable) -> None:
+
         @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            # Get caller information
+        async def async_wrapper(*args, **kwargs) -> None:
             frame = inspect.currentframe().f_back
-            caller_name = frame.f_code.co_name if frame else "unknown"
-            
-            # Get tracker from self if available
+            caller_name = frame.f_code.co_name if frame else 'unknown'
             tracker = None
             if args and hasattr(args[0], 'call_tracker'):
                 tracker = args[0].call_tracker
-            
             if tracker is None:
-                # Create temporary tracker
                 tracker = FunctionCallTracker(logger)
-            
-            call_id = tracker.track_function_call(
-                func.__name__, 
-                args, 
-                kwargs, 
-                caller_name
-            )
-            
+            call_id = tracker.track_function_call(func.__name__, args, kwargs, caller_name)
             try:
                 if inspect.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
-                
                 tracker.track_function_completion(call_id, result)
                 return result
-                
             except Exception as e:
                 tracker.track_function_completion(call_id, error=e)
                 raise
-        
+
         @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            # Get caller information
+        def sync_wrapper(*args, **kwargs) -> None:
             frame = inspect.currentframe().f_back
-            caller_name = frame.f_code.co_name if frame else "unknown"
-            
-            # Get tracker from self if available
+            caller_name = frame.f_code.co_name if frame else 'unknown'
             tracker = None
             if args and hasattr(args[0], 'call_tracker'):
                 tracker = args[0].call_tracker
-            
             if tracker is None:
-                # Create temporary tracker
                 tracker = FunctionCallTracker(logger)
-            
-            call_id = tracker.track_function_call(
-                func.__name__, 
-                args, 
-                kwargs, 
-                caller_name
-            )
-            
+            call_id = tracker.track_function_call(func.__name__, args, kwargs, caller_name)
             try:
                 result = func(*args, **kwargs)
                 tracker.track_function_completion(call_id, result)
                 return result
-                
             except Exception as e:
                 tracker.track_function_completion(call_id, error=e)
                 raise
-        
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
 class EnhancedErrorHandler:
     """Enhanced error handling with detailed context and recovery mechanisms."""
-    
-    def __init__(self, logger):
+
+    def __init__(self, logger: logging.Logger) -> None:
         self.logger = logger
         self.error_history = []
         self.recovery_attempts = {}
         self.error_patterns = {}
-    
-    def handle_error(self, error: Exception, context: Dict[str, Any], recovery_strategies: List[str] = None):
+
+    def handle_error(self, error: Exception, context: Dict[str, Any], recovery_strategies: List[str]=None) -> None:
         """Handle error with detailed context and recovery strategies."""
-        error_info = {
-            'timestamp': datetime.now().isoformat(),
-            'error_type': type(error).__name__,
-            'error_message': str(error),
-            'context': context,
-            'traceback': traceback.format_exc(),
-            'recovery_strategies': recovery_strategies or []
-        }
-        
+        error_info = {'timestamp': datetime.now().isoformat(), 'error_type': type(error).__name__, 'error_message': str(error), 'context': context, 'traceback': traceback.format_exc(), 'recovery_strategies': recovery_strategies or []}
         self.error_history.append(error_info)
-        
-        # Track error patterns
         error_key = f"{type(error).__name__}_{context.get('function_name', 'unknown')}"
         if error_key not in self.error_patterns:
             self.error_patterns[error_key] = 0
         self.error_patterns[error_key] += 1
-        
         self.logger.error(f"❌ Error in {context.get('function_name', 'unknown')}: {error}")
-        self.logger.debug(f"Error context: {context}")
-        self.logger.debug(f"Recovery strategies: {recovery_strategies}")
-        
+        self.logger.debug(f'Error context: {context}')
+        self.logger.debug(f'Recovery strategies: {recovery_strategies}')
         return error_info
-    
+
     def attempt_recovery(self, error_info: Dict[str, Any], strategy: str) -> bool:
         """Attempt error recovery using specified strategy."""
         if strategy not in self.recovery_attempts:
             self.recovery_attempts[strategy] = 0
         self.recovery_attempts[strategy] += 1
-        
-        self.logger.info(f"🔄 Attempting recovery with strategy: {strategy}")
-        
-        # Implement recovery strategies
-        if strategy == "retry_with_fallback":
+        self.logger.info(f'🔄 Attempting recovery with strategy: {strategy}')
+        if strategy == 'retry_with_fallback':
             return self._retry_with_fallback(error_info)
-        elif strategy == "skip_and_continue":
+        elif strategy == 'skip_and_continue':
             return self._skip_and_continue(error_info)
-        elif strategy == "use_default_values":
+        elif strategy == 'use_default_values':
             return self._use_default_values(error_info)
-        elif strategy == "reduce_complexity":
+        elif strategy == 'reduce_complexity':
             return self._reduce_complexity(error_info)
         else:
-            self.logger.warning(f"⚠️ Unknown recovery strategy: {strategy}")
+            self.logger.warning(f'⚠️ Unknown recovery strategy: {strategy}')
             return False
-    
+
     def _retry_with_fallback(self, error_info: Dict[str, Any]) -> bool:
         """Retry operation with fallback parameters."""
-        self.logger.info("🔄 Retrying with fallback parameters...")
+        self.logger.info('🔄 Retrying with fallback parameters...')
         return True
-    
+
     def _skip_and_continue(self, error_info: Dict[str, Any]) -> bool:
         """Skip failed operation and continue with next."""
-        self.logger.info("⏭️ Skipping failed operation and continuing...")
+        self.logger.info('⏭️ Skipping failed operation and continuing...')
         return True
-    
+
     def _use_default_values(self, error_info: Dict[str, Any]) -> bool:
         """Use default values instead of computed values."""
-        self.logger.info("🔧 Using default values...")
+        self.logger.info('🔧 Using default values...')
         return True
-    
+
     def _reduce_complexity(self, error_info: Dict[str, Any]) -> bool:
         """Reduce operation complexity and retry."""
-        self.logger.info("📉 Reducing operation complexity...")
+        self.logger.info('📉 Reducing operation complexity...')
         return True
-    
+
     def get_error_summary(self) -> Dict[str, Any]:
         """Get comprehensive error summary."""
-        return {
-            'total_errors': len(self.error_history),
-            'error_patterns': self.error_patterns,
-            'recovery_attempts': self.recovery_attempts,
-            'recent_errors': self.error_history[-5:] if self.error_history else []
-        }
+        return {'total_errors': len(self.error_history), 'error_patterns': self.error_patterns, 'recovery_attempts': self.recovery_attempts, 'recent_errors': self.error_history[-5:] if self.error_history else []}
 
 class ComprehensiveValidator:
     """Comprehensive validation framework for step07 operations."""
-    
-    def __init__(self, logger):
+
+    def __init__(self, logger: logging.Logger) -> None:
         self.logger = logger
         self.validation_results = {}
         self.validation_rules = {}
-    
+
     def validate_input_data(self, data: Any, data_type: str) -> Tuple[bool, List[str]]:
         """Validate input data based on type."""
         errors = []
-        
-        if data_type == "dataframe":
+        if data_type == 'dataframe':
             if not isinstance(data, pd.DataFrame):
-                errors.append("Data is not a pandas DataFrame")
+                errors.append('Data is not a pandas DataFrame')
             elif data.empty:
-                errors.append("DataFrame is empty")
+                errors.append('DataFrame is empty')
             elif data.isnull().all().any():
-                errors.append("DataFrame has columns with all null values")
-        
-        elif data_type == "numpy_array":
+                errors.append('DataFrame has columns with all null values')
+        elif data_type == 'numpy_array':
             if not isinstance(data, np.ndarray):
-                errors.append("Data is not a numpy array")
+                errors.append('Data is not a numpy array')
             elif data.size == 0:
-                errors.append("Array is empty")
+                errors.append('Array is empty')
             elif np.isnan(data).all():
-                errors.append("Array contains only NaN values")
-        
-        elif data_type == "dict":
+                errors.append('Array contains only NaN values')
+        elif data_type == 'dict':
             if not isinstance(data, dict):
-                errors.append("Data is not a dictionary")
+                errors.append('Data is not a dictionary')
             elif not data:
-                errors.append("Dictionary is empty")
-        
+                errors.append('Dictionary is empty')
         is_valid = len(errors) == 0
         if not is_valid:
-            self.logger.warning(f"⚠️ Input validation failed: {errors}")
+            self.logger.warning(f'⚠️ Input validation failed: {errors}')
         else:
-            self.logger.debug(f"✅ Input validation passed for {data_type}")
-        
-        return is_valid, errors
-    
+            self.logger.debug(f'✅ Input validation passed for {data_type}')
+        return (is_valid, errors)
+
     def validate_matrix_operations(self, matrix: np.ndarray, operation_type: str) -> Tuple[bool, List[str]]:
         """Validate matrix operations."""
         errors = []
-        
-        if operation_type == "correlation":
+        if operation_type == 'correlation':
             if not np.allclose(matrix, matrix.T, rtol=1e-10):
-                errors.append("Correlation matrix is not symmetric")
+                errors.append('Correlation matrix is not symmetric')
             if not np.all(np.diag(matrix) == 1.0):
-                errors.append("Correlation matrix diagonal is not 1.0")
+                errors.append('Correlation matrix diagonal is not 1.0')
             if np.any(np.abs(matrix) > 1.0):
-                errors.append("Correlation matrix has values outside [-1, 1]")
-        
-        elif operation_type == "covariance":
+                errors.append('Correlation matrix has values outside [-1, 1]')
+        elif operation_type == 'covariance':
             if not np.allclose(matrix, matrix.T, rtol=1e-10):
-                errors.append("Covariance matrix is not symmetric")
+                errors.append('Covariance matrix is not symmetric')
             if np.any(np.diag(matrix) < 0):
-                errors.append("Covariance matrix has negative diagonal values")
-        
-        elif operation_type == "eigenvalues":
+                errors.append('Covariance matrix has negative diagonal values')
+        elif operation_type == 'eigenvalues':
             if not np.allclose(matrix, matrix.T, rtol=1e-10):
-                errors.append("Matrix is not symmetric for eigenvalue computation")
+                errors.append('Matrix is not symmetric for eigenvalue computation')
             if np.any(np.iscomplex(matrix)):
-                errors.append("Matrix has complex eigenvalues")
-        
+                errors.append('Matrix has complex eigenvalues')
         is_valid = len(errors) == 0
         if not is_valid:
-            self.logger.warning(f"⚠️ Matrix validation failed for {operation_type}: {errors}")
+            self.logger.warning(f'⚠️ Matrix validation failed for {operation_type}: {errors}')
         else:
-            self.logger.debug(f"✅ Matrix validation passed for {operation_type}")
-        
-        return is_valid, errors
-    
+            self.logger.debug(f'✅ Matrix validation passed for {operation_type}')
+        return (is_valid, errors)
+
     def validate_feature_importance(self, importance_dict: Dict[str, float]) -> Tuple[bool, List[str]]:
         """Validate feature importance results."""
         errors = []
-        
         if not isinstance(importance_dict, dict):
-            errors.append("Feature importance is not a dictionary")
+            errors.append('Feature importance is not a dictionary')
         elif not importance_dict:
-            errors.append("Feature importance dictionary is empty")
+            errors.append('Feature importance dictionary is empty')
         else:
             values = list(importance_dict.values())
-            if any(np.isnan(v) for v in values):
-                errors.append("Feature importance contains NaN values")
-            if any(np.isinf(v) for v in values):
-                errors.append("Feature importance contains infinite values")
-            if any(v < 0 for v in values):
-                errors.append("Feature importance contains negative values")
-        
+            if any((np.isnan(v) for v in values)):
+                errors.append('Feature importance contains NaN values')
+            if any((np.isinf(v) for v in values)):
+                errors.append('Feature importance contains infinite values')
+            if any((v < 0 for v in values)):
+                errors.append('Feature importance contains negative values')
         is_valid = len(errors) == 0
         if not is_valid:
-            self.logger.warning(f"⚠️ Feature importance validation failed: {errors}")
+            self.logger.warning(f'⚠️ Feature importance validation failed: {errors}')
         else:
-            self.logger.debug("✅ Feature importance validation passed")
-        
-        return is_valid, errors
-    
+            self.logger.debug('✅ Feature importance validation passed')
+        return (is_valid, errors)
+
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get comprehensive validation summary."""
-        return {
-            'validation_results': self.validation_results,
-            'validation_rules': self.validation_rules,
-            'total_validations': len(self.validation_results)
-        }
+        return {'validation_results': self.validation_results, 'validation_rules': self.validation_rules, 'total_validations': len(self.validation_results)}
 
 class PerformanceMonitor:
     """Performance monitoring and resource usage tracking for all functions."""
-    
-    def __init__(self, logger):
+
+    def __init__(self, logger: logging.Logger) -> None:
         self.logger = logger
         self.performance_metrics = {}
         self.resource_usage = {}
         self.start_time = time.time()
-        
-        # Handle psutil availability
         if PSUTIL_AVAILABLE:
             self.process = psutil.Process()
             self.psutil_available = True
         else:
             self.process = None
             self.psutil_available = False
-            self.logger.warning("⚠️ psutil not available - limited performance monitoring")
-    
+            self.logger.warning('⚠️ psutil not available - limited performance monitoring')
+
     def start_monitoring(self, function_name: str) -> Dict[str, Any]:
         """Start monitoring performance for a function."""
         if self.psutil_available:
-            initial_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            initial_memory = self.process.memory_info().rss / 1024 / 1024
             initial_cpu = self.process.cpu_percent()
         else:
             initial_memory = 0.0
             initial_cpu = 0.0
-        
-        metrics = {
-            'function_name': function_name,
-            'start_time': time.time(),
-            'initial_memory_mb': initial_memory,
-            'initial_cpu_percent': initial_cpu,
-            'initial_gc_count': gc.get_count(),
-            'psutil_available': self.psutil_available
-        }
-        
+        metrics = {'function_name': function_name, 'start_time': time.time(), 'initial_memory_mb': initial_memory, 'initial_cpu_percent': initial_cpu, 'initial_gc_count': gc.get_count(), 'psutil_available': self.psutil_available}
         self.performance_metrics[function_name] = metrics
         return metrics
-    
+
     def stop_monitoring(self, function_name: str) -> Dict[str, Any]:
         """Stop monitoring and calculate performance metrics."""
         if function_name not in self.performance_metrics:
-            self.logger.warning(f"⚠️ No monitoring data found for {function_name}")
+            self.logger.warning(f'⚠️ No monitoring data found for {function_name}')
             return {}
-        
         metrics = self.performance_metrics[function_name]
         end_time = time.time()
-        
-        # Calculate performance metrics
         duration = end_time - metrics['start_time']
-        
         if self.psutil_available:
-            final_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            final_memory = self.process.memory_info().rss / 1024 / 1024
             final_cpu = self.process.cpu_percent()
         else:
             final_memory = 0.0
             final_cpu = 0.0
-        
         final_gc_count = gc.get_count()
-        
-        # Update metrics
-        metrics.update({
-            'end_time': end_time,
-            'duration_seconds': duration,
-            'final_memory_mb': final_memory,
-            'final_cpu_percent': final_cpu,
-            'final_gc_count': final_gc_count,
-            'memory_delta_mb': final_memory - metrics['initial_memory_mb'],
-            'cpu_delta_percent': final_cpu - metrics['initial_cpu_percent'],
-            'gc_delta': tuple(f - i for f, i in zip(final_gc_count, metrics['initial_gc_count']))
-        })
-        
-        # Log performance summary
-        self.logger.info(f"📊 Performance metrics for {function_name}:")
-        self.logger.info(f"   Duration: {duration:.3f}s")
+        metrics.update({'end_time': end_time, 'duration_seconds': duration, 'final_memory_mb': final_memory, 'final_cpu_percent': final_cpu, 'final_gc_count': final_gc_count, 'memory_delta_mb': final_memory - metrics['initial_memory_mb'], 'cpu_delta_percent': final_cpu - metrics['initial_cpu_percent'], 'gc_delta': tuple((f - i for f, i in zip(final_gc_count, metrics['initial_gc_count'])))})
+        self.logger.info(f'📊 Performance metrics for {function_name}:')
+        self.logger.info(f'   Duration: {duration:.3f}s')
         if self.psutil_available:
             self.logger.info(f"   Memory delta: {metrics['memory_delta_mb']:.1f} MB")
             self.logger.info(f"   CPU delta: {metrics['cpu_delta_percent']:.1f}%")
         else:
-            self.logger.info("   Memory/CPU monitoring: Not available (psutil missing)")
+            self.logger.info('   Memory/CPU monitoring: Not available (psutil missing)')
         self.logger.info(f"   GC delta: {metrics['gc_delta']}")
-        
         return metrics
-    
+
     def get_system_resources(self) -> Dict[str, Any]:
         """Get current system resource usage."""
         if self.psutil_available:
-            return {
-                'cpu_percent': psutil.cpu_percent(interval=1),
-                'memory_percent': psutil.virtual_memory().percent,
-                'memory_available_gb': psutil.virtual_memory().available / 1024 / 1024 / 1024,
-                'disk_usage_percent': psutil.disk_usage('/').percent,
-                'process_memory_mb': self.process.memory_info().rss / 1024 / 1024,
-                'process_cpu_percent': self.process.cpu_percent(),
-                'open_files': len(self.process.open_files()),
-                'threads': self.process.num_threads(),
-                'psutil_available': True
-            }
+            return {'cpu_percent': psutil.cpu_percent(interval=1), 'memory_percent': psutil.virtual_memory().percent, 'memory_available_gb': psutil.virtual_memory().available / 1024 / 1024 / 1024, 'disk_usage_percent': psutil.disk_usage('/').percent, 'process_memory_mb': self.process.memory_info().rss / 1024 / 1024, 'process_cpu_percent': self.process.cpu_percent(), 'open_files': len(self.process.open_files()), 'threads': self.process.num_threads(), 'psutil_available': True}
         else:
-            return {
-                'cpu_percent': 0.0,
-                'memory_percent': 0.0,
-                'memory_available_gb': 0.0,
-                'disk_usage_percent': 0.0,
-                'process_memory_mb': 0.0,
-                'process_cpu_percent': 0.0,
-                'open_files': 0,
-                'threads': 0,
-                'psutil_available': False
-            }
-    
+            return {'cpu_percent': 0.0, 'memory_percent': 0.0, 'memory_available_gb': 0.0, 'disk_usage_percent': 0.0, 'process_memory_mb': 0.0, 'process_cpu_percent': 0.0, 'open_files': 0, 'threads': 0, 'psutil_available': False}
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary."""
-        total_duration = sum(m.get('duration_seconds', 0) for m in self.performance_metrics.values())
-        total_memory_delta = sum(m.get('memory_delta_mb', 0) for m in self.performance_metrics.values())
-        
-        return {
-            'total_functions_monitored': len(self.performance_metrics),
-            'total_duration_seconds': total_duration,
-            'total_memory_delta_mb': total_memory_delta,
-            'average_duration_seconds': total_duration / len(self.performance_metrics) if self.performance_metrics else 0,
-            'average_memory_delta_mb': total_memory_delta / len(self.performance_metrics) if self.performance_metrics else 0,
-            'session_duration_seconds': time.time() - self.start_time,
-            'current_system_resources': self.get_system_resources(),
-            'function_metrics': self.performance_metrics
-        }
+        total_duration = sum((m.get('duration_seconds', 0) for m in self.performance_metrics.values()))
+        total_memory_delta = sum((m.get('memory_delta_mb', 0) for m in self.performance_metrics.values()))
+        return {'total_functions_monitored': len(self.performance_metrics), 'total_duration_seconds': total_duration, 'total_memory_delta_mb': total_memory_delta, 'average_duration_seconds': total_duration / len(self.performance_metrics) if self.performance_metrics else 0, 'average_memory_delta_mb': total_memory_delta / len(self.performance_metrics) if self.performance_metrics else 0, 'session_duration_seconds': time.time() - self.start_time, 'current_system_resources': self.get_system_resources(), 'function_metrics': self.performance_metrics}
 if system_logger is None:
     system_logger = create_fallback_logger()
 if training_pipeline_decorators is None:
@@ -638,36 +453,25 @@ class Step7EnhancedMatrixOperations:
         self.config = config
         self.logger = system_logger.getChild('Step7EnhancedMatrixOperations')
         self.standards = pipeline_standards
-        
-        # Initialize comprehensive function call tracker
         self.call_tracker = FunctionCallTracker(self.logger)
-        self.logger.info("🔍 Initialized comprehensive function call tracking system")
-        
-        # Initialize enhanced error handler and validator
+        self.logger.info('🔍 Initialized comprehensive function call tracking system')
         self.error_handler = EnhancedErrorHandler(self.logger)
         self.validator = ComprehensiveValidator(self.logger)
-        self.logger.info("🛡️ Initialized enhanced error handling and validation system")
-        
-        # Initialize performance monitor
+        self.logger.info('🛡️ Initialized enhanced error handling and validation system')
         self.performance_monitor = PerformanceMonitor(self.logger)
-        self.logger.info("📊 Initialized performance monitoring system")
-        
+        self.logger.info('📊 Initialized performance monitoring system')
         self._validate_environment()
         if enhanced_matrix_operations is not None:
             self.matrix_ops = enhanced_matrix_operations.EnhancedMatrixOperations(config)
         else:
             self.logger.warning('⚠️ EnhancedMatrixOperations not available')
             self.matrix_ops = None
-        
-        # Step-specific configuration
-        self.step_config = config.get("step07_enhanced_matrix_operations", {})
-        self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/matrix_operations"))
-        
-        # Feature selection configuration
-        self.target_features = self.step_config.get("target_features", 200)
-        self.removal_fraction = self.step_config.get("removal_fraction", 0.33)
-        self.enable_regime_selection = self.step_config.get("enable_regime_selection", True)
-        self.enable_shap_filtering = self.step_config.get("enable_shap_filtering", True)
+        self.step_config = config.get('step07_enhanced_matrix_operations', {})
+        self.output_dir = ensure_directory(self.step_config.get('output_dir', 'data/matrix_operations'))
+        self.target_features = self.step_config.get('target_features', 200)
+        self.removal_fraction = self.step_config.get('removal_fraction', 0.33)
+        self.enable_regime_selection = self.step_config.get('enable_regime_selection', True)
+        self.enable_shap_filtering = self.step_config.get('enable_shap_filtering', True)
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -677,15 +481,10 @@ class Step7EnhancedMatrixOperations:
             self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
             self.logger.info('📝 Pipeline will continue with fallback implementations')
         else:
-            self.logger.info("✅ All required dependencies available")
-    
+            self.logger.info('✅ All required dependencies available')
+
     @comprehensive_function_tracker(system_logger)
-    def regime_aware_initial_filtering(
-        self, 
-        features_df: pd.DataFrame, 
-        labels_df: pd.DataFrame,
-        regime_labels: pd.Series = None
-    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def regime_aware_initial_filtering(self, features_df: pd.DataFrame, labels_df: pd.DataFrame, regime_labels: pd.Series=None) -> tuple[pd.DataFrame, dict[str, Any]]:
         """
         Conservative feature filtering with per-regime awareness.
         Removes bottom 33% of features to arrive at ~200 features.
@@ -699,137 +498,76 @@ class Step7EnhancedMatrixOperations:
             Filtered features and metadata
         """
         try:
-            self.logger.info(f"🎯 Starting regime-aware feature filtering: {features_df.shape[1]} features")
-            
-            # Extract target variable
+            self.logger.info(f'🎯 Starting regime-aware feature filtering: {features_df.shape[1]} features')
             if 'target' in labels_df.columns:
                 y = labels_df['target']
             elif 'direction' in labels_df.columns:
                 y = labels_df['direction']
             else:
-                raise ValueError("No target or direction column found in labels")
-            
-            # Ensure binary target
+                raise ValueError('No target or direction column found in labels')
             if y.dtype != int:
                 y = (y > 0).astype(int)
-            
-            # 1. Per-regime feature importance
             regime_importances = {}
             if self.enable_regime_selection and regime_labels is not None:
-                self.logger.info("📊 Calculating per-regime feature importance...")
+                self.logger.info('📊 Calculating per-regime feature importance...')
                 for regime in np.unique(regime_labels):
                     regime_mask = regime_labels == regime
-                    if regime_mask.sum() < 100:  # Skip small regimes
+                    if regime_mask.sum() < 100:
                         continue
-                        
                     X_regime = features_df[regime_mask]
                     y_regime = y[regime_mask]
-                    
-                    # Fast MI calculation per regime
                     if SKLEARN_AVAILABLE:
                         mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
                     else:
-                        self.logger.warning("⚠️ sklearn not available, using variance-based importance")
+                        self.logger.warning('⚠️ sklearn not available, using variance-based importance')
                         mi_scores = X_regime.var().values
                     regime_importances[f'regime_{regime}'] = mi_scores
-                
-                # Aggregate importance across regimes (keep features important in ANY regime)
-                aggregated_importance = np.max(
-                    np.vstack(list(regime_importances.values())), 
-                    axis=0
-                )
+                aggregated_importance = np.max(np.vstack(list(regime_importances.values())), axis=0)
+            elif SKLEARN_AVAILABLE:
+                aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
             else:
-                # Calculate MI for all data
-                if SKLEARN_AVAILABLE:
-                    aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
-                else:
-                    self.logger.warning("⚠️ sklearn not available, using variance-based importance")
-                    aggregated_importance = features_df.var().values
-            
-            # 2. Quick SHAP sampling (subsample for speed)
+                self.logger.warning('⚠️ sklearn not available, using variance-based importance')
+                aggregated_importance = features_df.var().values
             shap_importance = None
             if self.enable_shap_filtering and LIGHTGBM_AVAILABLE:
-                self.logger.info("🔮 Calculating SHAP-based importance (sampled)...")
+                self.logger.info('🔮 Calculating SHAP-based importance (sampled)...')
                 try:
-                    # Subsample for efficiency
                     sample_size = min(5000, len(features_df))
                     if len(features_df) > sample_size:
                         sample_idx = np.random.choice(len(features_df), sample_size, replace=False)
                         X_sample = features_df.iloc[sample_idx]
                         y_sample = y.iloc[sample_idx]
                     else:
-                        X_sample, y_sample = features_df, y
-                    
-                    # Train lightweight model
-                    lgb_model = lgb.LGBMClassifier(
-                        n_estimators=100, 
-                        max_depth=5,
-                        n_jobs=-1,
-                        verbose=-1,
-                        random_state=42
-                    )
+                        X_sample, y_sample = (features_df, y)
+                    lgb_model = lgb.LGBMClassifier(n_estimators=100, max_depth=5, n_jobs=-1, verbose=-1, random_state=42)
                     lgb_model.fit(X_sample, y_sample)
-                    
-                    # Get feature importance
                     shap_importance = lgb_model.feature_importances_
-                    
                 except Exception as e:
-                    self.logger.warning(f"⚠️ SHAP calculation failed, using MI only: {e}")
-            
-            # 3. Combined scoring
+                    self.logger.warning(f'⚠️ SHAP calculation failed, using MI only: {e}')
             if SCIPY_AVAILABLE:
                 mi_rank = rankdata(aggregated_importance)
-                
                 if shap_importance is not None:
                     shap_rank = rankdata(shap_importance)
                     combined_rank = (mi_rank + shap_rank) / 2
                 else:
                     combined_rank = mi_rank
             else:
-                self.logger.warning("⚠️ scipy not available, using simple sorting")
-                # Simple ranking without scipy
+                self.logger.warning('⚠️ scipy not available, using simple sorting')
                 sorted_indices = np.argsort(aggregated_importance)
                 combined_rank = np.zeros_like(aggregated_importance)
                 combined_rank[sorted_indices] = np.arange(len(aggregated_importance))
-            
-            # 4. Remove bottom features, ensure minimum target
             n_features_to_keep = max(self.target_features, int(len(combined_rank) * (1 - self.removal_fraction)))
             top_features_idx = np.argsort(combined_rank)[-n_features_to_keep:]
-            
-            # Get feature names
             selected_features = features_df.columns[top_features_idx].tolist()
             removed_features = [f for f in features_df.columns if f not in selected_features]
-            
-            # Create filtered dataframe
             filtered_df = features_df[selected_features]
-            
-            # 5. Generate metadata
-            metadata = {
-                'original_features': len(features_df.columns),
-                'selected_features': len(selected_features),
-                'removed_features': len(removed_features),
-                'removal_fraction': len(removed_features) / len(features_df.columns),
-                'regime_importances': regime_importances if regime_importances else None,
-                'method': 'MI + SHAP ranking' if shap_importance is not None else 'MI ranking only',
-                'removed_feature_names': removed_features[:50],  # Store first 50 for reference
-                'top_features_by_mi': features_df.columns[np.argsort(aggregated_importance)[-20:]].tolist(),
-                'selection_timestamp': datetime.now().isoformat()
-            }
-            
-            self.logger.info(f"✅ Feature filtering complete: {len(features_df.columns)} → {len(selected_features)} features")
+            metadata = {'original_features': len(features_df.columns), 'selected_features': len(selected_features), 'removed_features': len(removed_features), 'removal_fraction': len(removed_features) / len(features_df.columns), 'regime_importances': regime_importances if regime_importances else None, 'method': 'MI + SHAP ranking' if shap_importance is not None else 'MI ranking only', 'removed_feature_names': removed_features[:50], 'top_features_by_mi': features_df.columns[np.argsort(aggregated_importance)[-20:]].tolist(), 'selection_timestamp': datetime.now().isoformat()}
+            self.logger.info(f'✅ Feature filtering complete: {len(features_df.columns)} → {len(selected_features)} features')
             self.logger.info(f"   Removed {len(removed_features)} features ({metadata['removal_fraction']:.1%})")
-            
-            return filtered_df, metadata
-            
+            return (filtered_df, metadata)
         except Exception as e:
-            self.logger.error(f"❌ Feature filtering failed: {e}")
-            # Return original features if filtering fails
-            return features_df, {
-                'error': str(e),
-                'original_features': len(features_df.columns),
-                'selected_features': len(features_df.columns),
-                'method': 'filtering_failed'
-            }
+            self.logger.error(f'❌ Feature filtering failed: {e}')
+            return (features_df, {'error': str(e), 'original_features': len(features_df.columns), 'selected_features': len(features_df.columns), 'method': 'filtering_failed'})
 
     @comprehensive_function_tracker(system_logger)
     @log_execution_time(threshold_ms=30000)
@@ -925,93 +663,34 @@ class Step7EnhancedMatrixOperations:
                 else:
                     self.logger.warning('⚠️ Skipping timeframe analysis - insufficient multi-timeframe data')
                 timeframe_analysis_results = {}
-            
-            # Apply regime-aware feature filtering
-            self.logger.info("🎯 Applying regime-aware feature filtering...")
-            
-            # Separate features from labels
-            label_columns = ['target', 'direction', 'profit', 'outcome', 'returns', 'timestamp', 
-                           'open', 'high', 'low', 'close', 'volume']
+            self.logger.info('🎯 Applying regime-aware feature filtering...')
+            label_columns = ['target', 'direction', 'profit', 'outcome', 'returns', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
             feature_columns = [col for col in df.columns if col not in label_columns]
-            
-            # Create features and labels dataframes
             features_df = df[feature_columns]
             labels_df = df[[col for col in label_columns if col in df.columns]]
-            
-            # Load regime labels if available
             regime_labels = hmm_regimes if hmm_regimes is not None else None
-            
-            # Apply feature filtering
-            filtered_features_df, filtering_metadata = self.regime_aware_initial_filtering(
-                features_df=features_df,
-                labels_df=labels_df,
-                regime_labels=regime_labels
-            )
-            
-            # Store filtering metadata
-            pipeline_state["feature_filtering_metadata"] = filtering_metadata
-            
-            # Reconstruct full dataframe with filtered features
+            filtered_features_df, filtering_metadata = self.regime_aware_initial_filtering(features_df=features_df, labels_df=labels_df, regime_labels=regime_labels)
+            pipeline_state['feature_filtering_metadata'] = filtering_metadata
             df_filtered = pd.concat([filtered_features_df, labels_df], axis=1)
-            
-            self.logger.info(f"✅ Feature filtering applied: {len(feature_columns)} → {len(filtered_features_df.columns)} features")
-            
-            # Save filtered features
-            filtered_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet"
-            filtered_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet"
-            
-            # Split back to train/val based on original sizes
+            self.logger.info(f'✅ Feature filtering applied: {len(feature_columns)} → {len(filtered_features_df.columns)} features')
+            filtered_train_path = f'data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet'
+            filtered_val_path = f'data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet'
             train_size = len(df_train)
             df_filtered_train = df_filtered.iloc[:train_size]
             df_filtered_val = df_filtered.iloc[train_size:]
-            
             df_filtered_train.to_parquet(filtered_train_path)
             df_filtered_val.to_parquet(filtered_val_path)
-            
-            self.logger.info(f"💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}")
-            
-            # Prepare matrix operations configuration
+            self.logger.info(f'💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}')
             matrix_config = self._prepare_matrix_operations_config(df_filtered, symbol, exchange, timeframe)
-            
-            # Execute matrix operations on filtered features
             matrix_results = await self._execute_matrix_operations(df_filtered, matrix_config)
-            
-            # Calculate quality metrics
             quality_metrics = self._calculate_quality_metrics(df, matrix_results)
-            
-            # Save results
-            output_files = await self._save_matrix_operations_results(
-                matrix_results, matrix_config, quality_metrics, symbol, exchange, timeframe
-            )
-            
-            # Add filtered features paths to output files
-            output_files["filtered_features_train"] = filtered_train_path
-            output_files["filtered_features_val"] = filtered_val_path
-            
-            # Update pipeline state
-            pipeline_state["step07_enhanced_matrix_operations"] = {
-                "status": "completed",
-                "start_time": start_time.isoformat(),
-                "end_time": datetime.now().isoformat(),
-                "output_files": output_files,
-                "matrix_config": matrix_config,
-                "matrix_results": matrix_results,
-                "quality_metrics": quality_metrics,
-                "data_shape": df.shape,
-                "filtered_data_shape": df_filtered.shape,
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": timeframe,
-                "feature_engineering_optimization": feature_optimization_results,
-                "timeframe_relevance_analysis": timeframe_analysis_results,
-                "feature_filtering_metadata": filtering_metadata
-            }
-            
-            self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")
-            
-            # Generate comprehensive function call summary
+            output_files = await self._save_matrix_operations_results(matrix_results, matrix_config, quality_metrics, symbol, exchange, timeframe)
+            output_files['filtered_features_train'] = filtered_train_path
+            output_files['filtered_features_val'] = filtered_val_path
+            pipeline_state['step07_enhanced_matrix_operations'] = {'status': 'completed', 'start_time': start_time.isoformat(), 'end_time': datetime.now().isoformat(), 'output_files': output_files, 'matrix_config': matrix_config, 'matrix_results': matrix_results, 'quality_metrics': quality_metrics, 'data_shape': df.shape, 'filtered_data_shape': df_filtered.shape, 'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'feature_engineering_optimization': feature_optimization_results, 'timeframe_relevance_analysis': timeframe_analysis_results, 'feature_filtering_metadata': filtering_metadata}
+            self.logger.info('✅ Step 7: Enhanced Matrix Operations completed successfully')
             call_summary = self.call_tracker.get_call_summary()
-            self.logger.info("📊 COMPREHENSIVE FUNCTION CALL SUMMARY:")
+            self.logger.info('📊 COMPREHENSIVE FUNCTION CALL SUMMARY:')
             self.logger.info(f"   Total function calls: {call_summary['total_function_calls']}")
             self.logger.info(f"   Successful calls: {call_summary['successful_calls']}")
             self.logger.info(f"   Failed calls: {call_summary['failed_calls']}")
@@ -1021,45 +700,31 @@ class Step7EnhancedMatrixOperations:
             self.logger.info(f"   Function-to-function calls: {call_summary['function_to_function_calls']}")
             self.logger.info(f"   Max stack depth: {call_summary['max_stack_depth']}")
             self.logger.info(f"   Session duration: {call_summary['session_duration_seconds']:.3f}s")
-            
-            # Add comprehensive monitoring summaries to pipeline state
-            pipeline_state["step07_enhanced_matrix_operations"]["function_call_summary"] = call_summary
-            pipeline_state["step07_enhanced_matrix_operations"]["function_completion_reports"] = self.call_tracker.completion_reports
-            pipeline_state["step07_enhanced_matrix_operations"]["function_to_function_calls"] = self.call_tracker.function_to_function_calls
-            
-            # Add performance monitoring summary
+            pipeline_state['step07_enhanced_matrix_operations']['function_call_summary'] = call_summary
+            pipeline_state['step07_enhanced_matrix_operations']['function_completion_reports'] = self.call_tracker.completion_reports
+            pipeline_state['step07_enhanced_matrix_operations']['function_to_function_calls'] = self.call_tracker.function_to_function_calls
             performance_summary = self.performance_monitor.get_performance_summary()
-            pipeline_state["step07_enhanced_matrix_operations"]["performance_summary"] = performance_summary
-            self.logger.info("📊 PERFORMANCE MONITORING SUMMARY:")
+            pipeline_state['step07_enhanced_matrix_operations']['performance_summary'] = performance_summary
+            self.logger.info('📊 PERFORMANCE MONITORING SUMMARY:')
             self.logger.info(f"   Functions monitored: {performance_summary['total_functions_monitored']}")
             self.logger.info(f"   Total duration: {performance_summary['total_duration_seconds']:.3f}s")
             self.logger.info(f"   Total memory delta: {performance_summary['total_memory_delta_mb']:.1f} MB")
             self.logger.info(f"   Average duration: {performance_summary['average_duration_seconds']:.3f}s")
             self.logger.info(f"   Current memory usage: {performance_summary['current_system_resources']['process_memory_mb']:.1f} MB")
-            
-            # Add error handling summary
             error_summary = self.error_handler.get_error_summary()
-            pipeline_state["step07_enhanced_matrix_operations"]["error_summary"] = error_summary
+            pipeline_state['step07_enhanced_matrix_operations']['error_summary'] = error_summary
             if error_summary['total_errors'] > 0:
-                self.logger.warning(f"⚠️ ERROR HANDLING SUMMARY:")
+                self.logger.warning(f'⚠️ ERROR HANDLING SUMMARY:')
                 self.logger.warning(f"   Total errors: {error_summary['total_errors']}")
                 self.logger.warning(f"   Error patterns: {error_summary['error_patterns']}")
                 self.logger.warning(f"   Recovery attempts: {error_summary['recovery_attempts']}")
             else:
-                self.logger.info("✅ No errors encountered during execution")
-            
-            # Add validation summary
+                self.logger.info('✅ No errors encountered during execution')
             validation_summary = self.validator.get_validation_summary()
-            pipeline_state["step07_enhanced_matrix_operations"]["validation_summary"] = validation_summary
-            self.logger.info(f"🔍 VALIDATION SUMMARY:")
+            pipeline_state['step07_enhanced_matrix_operations']['validation_summary'] = validation_summary
+            self.logger.info(f'🔍 VALIDATION SUMMARY:')
             self.logger.info(f"   Total validations: {validation_summary['total_validations']}")
-            
-            # Log artifacts and create detailed report
-            await self._log_step7_artifacts_and_report(
-            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
-                training_input, pipeline_state, matrix_results, output_files, quality_metrics
-            )
-            
+            await self._log_step7_artifacts_and_report(training_input, pipeline_state, matrix_results, output_files, quality_metrics)
             return pipeline_state
         except Exception as e:
             self.logger.error(f'❌ Step 7 failed: {str(e)}')
@@ -1746,18 +1411,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         from .core.decorators.errors import handles_errors
         config = get_training_config()
         step = Step7EnhancedMatrixOperations(config)
-        
-        training_input = {
-            'symbol': symbol, 
-            'exchange': exchange, 
-            'timeframe': timeframe, 
-            'data_dir': data_dir, 
-            'force_rerun': force_rerun, 
-            'asset': symbol, 
-            'lookback_period': config.get('lookback_days', 1095), 
-            'project_version': config.get('project_version', '1.0.0'), 
-            **kwargs
-        }
+        training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'asset': symbol, 'lookback_period': config.get('lookback_days', 1095), 'project_version': config.get('project_version', '1.0.0'), **kwargs}
         pipeline_state = {}
         result = await step.execute(training_input, pipeline_state)
         step_result = result.get('step07_enhanced_matrix_operations', {})

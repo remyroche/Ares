@@ -247,4 +247,4 @@ if __name__ == '__main__':
     async def main() -> None:
         config = {'symbols': ['BTCUSDT', 'ETHUSDT'], 'update_frequency': 60, 'alert_handlers': ['console', 'file'], 'enable_websocket': True, 'dashboard_dir': 'dashboard', 'data_dir': 'data'}
         await start_regime_monitoring(config)
-    asyncio.run(await main())
+    asyncio.run( main())

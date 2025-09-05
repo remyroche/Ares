@@ -5,7 +5,6 @@ Extracted from step01_5_data_converter.py
 from typing import Any, Optional, Union
 from .utils.logger import system_logger
 
-
 class DataCleaner:
     """Handles data cleaning operations for market data.
     
@@ -16,16 +15,11 @@ class DataCleaner:
     - Data normalization and standardization
     - Time series specific cleaning
     """
-    
-    def __init__(self, logger=None):
-        self.logger = logger or system_logger.getChild("DataCleaner")
-        
-    def remove_duplicates(
-        self, 
-        df: pd.DataFrame, 
-        subset: Optional[list[str]] = None,
-        keep: str = "first"
-    ) -> pd.DataFrame:
+
+    def __init__(self, logger: logging.Logger=None) -> None:
+        self.logger = logger or system_logger.getChild('DataCleaner')
+
+    def remove_duplicates(self, df: pd.DataFrame, subset: Optional[list[str]]=None, keep: str='first') -> pd.DataFrame:
         """
         Remove duplicate rows from DataFrame.
         
@@ -39,33 +33,21 @@ class DataCleaner:
         """
         try:
             initial_rows = len(df)
-            
             if subset:
                 df_cleaned = df.drop_duplicates(subset=subset, keep=keep)
             else:
                 df_cleaned = df.drop_duplicates(keep=keep)
-                
             removed_rows = initial_rows - len(df_cleaned)
-            
             if removed_rows > 0:
-                self.logger.info(f"✅ Removed {removed_rows} duplicate rows")
+                self.logger.info(f'✅ Removed {removed_rows} duplicate rows')
             else:
-                self.logger.info("✅ No duplicate rows found")
-                
+                self.logger.info('✅ No duplicate rows found')
             return df_cleaned
-            
         except Exception as e:
-            self.logger.error(f"❌ Error removing duplicates: {e}")
+            self.logger.error(f'❌ Error removing duplicates: {e}')
             return df
-            
-    def fill_missing_values(
-        self, 
-        df: pd.DataFrame,
-        method: str = "auto",
-        numeric_fill: Union[str, float] = 0,
-        string_fill: str = "",
-        custom_fills: Optional[dict[str, Any]] = None
-    ) -> pd.DataFrame:
+
+    def fill_missing_values(self, df: pd.DataFrame, method: str='auto', numeric_fill: Union[str, float]=0, string_fill: str='', custom_fills: Optional[dict[str, Any]]=None) -> pd.DataFrame:
         """
         Fill missing values in DataFrame.
         
@@ -82,69 +64,47 @@ class DataCleaner:
         try:
             filled_columns: list[str] = []
             df_cleaned = df.copy()
-            
-            # Handle custom fills first
             if custom_fills:
                 for col, fill_value in custom_fills.items():
                     if col in df_cleaned.columns:
                         missing_count = int(df_cleaned[col].isna().sum())
                         if missing_count > 0:
                             df_cleaned[col] = df_cleaned[col].fillna(fill_value)
-                            filled_columns.append(f"{col} ({missing_count} values)")
-            
-            if method == "auto":
-                # Fill numeric columns
+                            filled_columns.append(f'{col} ({missing_count} values)')
+            if method == 'auto':
                 numeric_columns = df_cleaned.select_dtypes(include=[np.number]).columns
                 for col in numeric_columns:
-                    if col in ("timestamp", "year", "month", "day"):
+                    if col in ('timestamp', 'year', 'month', 'day'):
                         continue
                     if custom_fills and col in custom_fills:
                         continue
-                        
                     missing_count = int(df_cleaned[col].isna().sum())
                     if missing_count > 0:
                         df_cleaned[col] = df_cleaned[col].fillna(numeric_fill)
-                        filled_columns.append(f"{col} ({missing_count} values)")
-                
-                # Fill string columns
-                string_columns = df_cleaned.select_dtypes(include=["object", "string"]).columns
+                        filled_columns.append(f'{col} ({missing_count} values)')
+                string_columns = df_cleaned.select_dtypes(include=['object', 'string']).columns
                 for col in string_columns:
                     if custom_fills and col in custom_fills:
                         continue
-                        
                     missing_count = int(df_cleaned[col].isna().sum())
                     if missing_count > 0:
                         df_cleaned[col] = df_cleaned[col].fillna(string_fill)
-                        filled_columns.append(f"{col} ({missing_count} values)")
-                        
-            elif method == "forward":
-                df_cleaned = df_cleaned.fillna(method="ffill")
-                
-            elif method == "backward":
-                df_cleaned = df_cleaned.fillna(method="bfill")
-                
-            elif method == "interpolate":
+                        filled_columns.append(f'{col} ({missing_count} values)')
+            elif method == 'forward':
+                df_cleaned = df_cleaned.fillna(method='ffill')
+            elif method == 'backward':
+                df_cleaned = df_cleaned.fillna(method='bfill')
+            elif method == 'interpolate':
                 numeric_columns = df_cleaned.select_dtypes(include=[np.number]).columns
-                df_cleaned[numeric_columns] = df_cleaned[numeric_columns].interpolate(method="linear")
-            
+                df_cleaned[numeric_columns] = df_cleaned[numeric_columns].interpolate(method='linear')
             if filled_columns:
-                self.logger.info(
-                    f"✅ Filled missing values in: {', '.join(filled_columns)}"
-                )
-                
+                self.logger.info(f"✅ Filled missing values in: {', '.join(filled_columns)}")
             return df_cleaned
-            
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to fill missing values: {e}")
+            self.logger.warning(f'⚠️ Failed to fill missing values: {e}')
             return df
-            
-    def detect_outliers(
-        self,
-        df: pd.DataFrame,
-        columns: Optional[list[str]] = None,
-        method: str = "zscore",
-        threshold: float = 3.0
-    ) -> tuple[pd.DataFrame, dict[str, list[int]]]:
+
+    def detect_outliers(self, df: pd.DataFrame, columns: Optional[list[str]]=None, method: str='zscore', threshold: float=3.0) -> tuple[pd.DataFrame, dict[str, list[int]]]:
         """
         Detect outliers in specified columns.
         
@@ -160,51 +120,36 @@ class DataCleaner:
         try:
             if columns is None:
                 columns = df.select_dtypes(include=[np.number]).columns.tolist()
-                columns = [col for col in columns if col not in ["timestamp", "year", "month", "day"]]
-            
+                columns = [col for col in columns if col not in ['timestamp', 'year', 'month', 'day']]
             outliers = {}
             df_with_flags = df.copy()
-            
             for col in columns:
                 if col not in df.columns:
                     continue
-                    
-                if method == "zscore":
+                if method == 'zscore':
                     z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
                     outlier_mask = z_scores > threshold
-                    
-                elif method == "iqr":
+                elif method == 'iqr':
                     Q1 = df[col].quantile(0.25)
                     Q3 = df[col].quantile(0.75)
                     IQR = Q3 - Q1
                     lower_bound = Q1 - threshold * IQR
                     upper_bound = Q3 + threshold * IQR
                     outlier_mask = (df[col] < lower_bound) | (df[col] > upper_bound)
-                    
                 else:
-                    self.logger.warning(f"Unknown outlier detection method: {method}")
+                    self.logger.warning(f'Unknown outlier detection method: {method}')
                     continue
-                
                 outlier_indices = df.index[outlier_mask].tolist()
                 if outlier_indices:
                     outliers[col] = outlier_indices
-                    df_with_flags[f"{col}_outlier"] = outlier_mask
-                    self.logger.info(
-                        f"📊 Found {len(outlier_indices)} outliers in column '{col}'"
-                    )
-                    
-            return df_with_flags, outliers
-            
+                    df_with_flags[f'{col}_outlier'] = outlier_mask
+                    self.logger.info(f"📊 Found {len(outlier_indices)} outliers in column '{col}'")
+            return (df_with_flags, outliers)
         except Exception as e:
-            self.logger.error(f"❌ Error detecting outliers: {e}")
-            return df, {}
-            
-    def remove_outliers(
-        self,
-        df: pd.DataFrame,
-        outliers: dict[str, list[int]],
-        method: str = "remove"
-    ) -> pd.DataFrame:
+            self.logger.error(f'❌ Error detecting outliers: {e}')
+            return (df, {})
+
+    def remove_outliers(self, df: pd.DataFrame, outliers: dict[str, list[int]], method: str='remove') -> pd.DataFrame:
         """
         Remove or handle outliers based on detection results.
         
@@ -218,49 +163,30 @@ class DataCleaner:
         """
         try:
             df_cleaned = df.copy()
-            
-            if method == "remove":
-                # Get all unique outlier indices
+            if method == 'remove':
                 all_outlier_indices = set()
                 for indices in outliers.values():
                     all_outlier_indices.update(indices)
-                    
                 df_cleaned = df_cleaned.drop(index=list(all_outlier_indices))
-                self.logger.info(
-                    f"✅ Removed {len(all_outlier_indices)} rows containing outliers"
-                )
-                
-            elif method == "cap":
+                self.logger.info(f'✅ Removed {len(all_outlier_indices)} rows containing outliers')
+            elif method == 'cap':
                 for col, indices in outliers.items():
                     if col in df_cleaned.columns:
-                        # Cap at 99th and 1st percentile
                         upper_cap = df_cleaned[col].quantile(0.99)
                         lower_cap = df_cleaned[col].quantile(0.01)
-                        df_cleaned.loc[indices, col] = df_cleaned.loc[indices, col].clip(
-                            lower=lower_cap, upper=upper_cap
-                        )
-                self.logger.info("✅ Capped outlier values to percentile bounds")
-                
-            elif method == "nan":
+                        df_cleaned.loc[indices, col] = df_cleaned.loc[indices, col].clip(lower=lower_cap, upper=upper_cap)
+                self.logger.info('✅ Capped outlier values to percentile bounds')
+            elif method == 'nan':
                 for col, indices in outliers.items():
                     if col in df_cleaned.columns:
                         df_cleaned.loc[indices, col] = np.nan
-                self.logger.info("✅ Replaced outlier values with NaN")
-                
+                self.logger.info('✅ Replaced outlier values with NaN')
             return df_cleaned
-            
         except Exception as e:
-            self.logger.error(f"❌ Error removing outliers: {e}")
+            self.logger.error(f'❌ Error removing outliers: {e}')
             return df
-            
-    def clean_time_series(
-        self,
-        df: pd.DataFrame,
-        timestamp_col: str = "timestamp",
-        remove_weekends: bool = False,
-        remove_holidays: bool = False,
-        ensure_regular_intervals: bool = True
-    ) -> pd.DataFrame:
+
+    def clean_time_series(self, df: pd.DataFrame, timestamp_col: str='timestamp', remove_weekends: bool=False, remove_holidays: bool=False, ensure_regular_intervals: bool=True) -> pd.DataFrame:
         """
         Perform time series specific cleaning operations.
         
@@ -276,52 +202,30 @@ class DataCleaner:
         """
         try:
             df_cleaned = df.copy()
-            
-            # Ensure timestamp is datetime
             if timestamp_col in df_cleaned.columns:
                 if not pd.api.types.is_datetime64_any_dtype(df_cleaned[timestamp_col]):
-                    df_cleaned[timestamp_col] = pd.to_datetime(
-                        df_cleaned[timestamp_col], unit="ms", utc=True
-                    )
-                
-                # Sort by timestamp
+                    df_cleaned[timestamp_col] = pd.to_datetime(df_cleaned[timestamp_col], unit='ms', utc=True)
                 df_cleaned = df_cleaned.sort_values(timestamp_col)
-                
-                # Remove weekends if requested
                 if remove_weekends:
                     weekday_mask = df_cleaned[timestamp_col].dt.dayofweek < 5
                     removed_count = len(df_cleaned) - weekday_mask.sum()
                     df_cleaned = df_cleaned[weekday_mask]
                     if removed_count > 0:
-                        self.logger.info(f"✅ Removed {removed_count} weekend rows")
-                
-                # Ensure regular intervals if requested
+                        self.logger.info(f'✅ Removed {removed_count} weekend rows')
                 if ensure_regular_intervals:
-                    # Detect the most common interval
                     time_diffs = df_cleaned[timestamp_col].diff().dropna()
                     mode_interval = time_diffs.mode()[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-                    
-                    # Find gaps larger than expected
                     gap_threshold = mode_interval * 2
                     gaps = time_diffs > gap_threshold
                     gap_count = gaps.sum()
-                    
                     if gap_count > 0:
-                        self.logger.warning(
-                            f"⚠️ Found {gap_count} time gaps larger than expected interval"
-                        )
-                        
+                        self.logger.warning(f'⚠️ Found {gap_count} time gaps larger than expected interval')
             return df_cleaned
-            
         except Exception as e:
-            self.logger.error(f"❌ Error cleaning time series: {e}")
+            self.logger.error(f'❌ Error cleaning time series: {e}')
             return df
-            
-    def validate_cleaned_data(
-        self,
-        df: pd.DataFrame,
-        original_df: pd.DataFrame
-    ) -> dict[str, Any]:
+
+    def validate_cleaned_data(self, df: pd.DataFrame, original_df: pd.DataFrame) -> dict[str, Any]:
         """
         Validate the cleaned data against the original.
         
@@ -333,47 +237,20 @@ class DataCleaner:
             Dictionary with validation results
         """
         try:
-            validation_results = {
-                "original_rows": len(original_df),
-                "cleaned_rows": len(df),
-                "rows_removed": len(original_df) - len(df),
-                "columns_unchanged": list(df.columns) == list(original_df.columns),
-                "missing_values_before": original_df.isna().sum().sum(),
-                "missing_values_after": df.isna().sum().sum(),
-                "data_types_preserved": True,
-                "warnings": []
-            }
-            
-            # Check data types
+            validation_results = {'original_rows': len(original_df), 'cleaned_rows': len(df), 'rows_removed': len(original_df) - len(df), 'columns_unchanged': list(df.columns) == list(original_df.columns), 'missing_values_before': original_df.isna().sum().sum(), 'missing_values_after': df.isna().sum().sum(), 'data_types_preserved': True, 'warnings': []}
             for col in df.columns:
                 if col in original_df.columns:
                     if df[col].dtype != original_df[col].dtype:
-                        validation_results["data_types_preserved"] = False
-                        validation_results["warnings"].append(
-                            f"Data type changed for column '{col}': "
-                            f"{original_df[col].dtype} -> {df[col].dtype}"
-                        )
-            
-            # Check for significant data loss
-            row_loss_pct = validation_results["rows_removed"] / validation_results["original_rows"] * 100
+                        validation_results['data_types_preserved'] = False
+                        validation_results['warnings'].append(f"Data type changed for column '{col}': {original_df[col].dtype} -> {df[col].dtype}")
+            row_loss_pct = validation_results['rows_removed'] / validation_results['original_rows'] * 100
             if row_loss_pct > 10:
-                validation_results["warnings"].append(
-                    f"Significant data loss: {row_loss_pct:.1f}% of rows removed"
-                )
-                
-            # Log validation results
-            self.logger.info(
-                f"📊 Validation complete: "
-                f"{validation_results['cleaned_rows']}/{validation_results['original_rows']} rows retained, "
-                f"{validation_results['missing_values_after']} missing values remaining"
-            )
-            
-            if validation_results["warnings"]:
-                for warning in validation_results["warnings"]:
-                    self.logger.warning(f"⚠️ {warning}")
-                    
+                validation_results['warnings'].append(f'Significant data loss: {row_loss_pct:.1f}% of rows removed')
+            self.logger.info(f"📊 Validation complete: {validation_results['cleaned_rows']}/{validation_results['original_rows']} rows retained, {validation_results['missing_values_after']} missing values remaining")
+            if validation_results['warnings']:
+                for warning in validation_results['warnings']:
+                    self.logger.warning(f'⚠️ {warning}')
             return validation_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error validating cleaned data: {e}")
-            return {"error": str(e)}
+            self.logger.error(f'❌ Error validating cleaned data: {e}')
+            return {'error': str(e)}

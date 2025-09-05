@@ -1,4 +1,3 @@
-# Real imports - no fallbacks
 import contextlib
 import queue
 import threading
@@ -10,8 +9,7 @@ import time
 import logging
 from datetime import datetime
 from typing import Any, Never, Callable, List
-
-# Core dependencies - import with error handling for missing packages
+from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     import pandas as pd
     import numpy as np
@@ -21,34 +19,21 @@ try:
     from torch import nn, optim
     from torch.nn.utils import prune
     from torch.utils.data import DataLoader, TensorDataset
-    
-    # Sklearn dependencies
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.feature_selection import mutual_info_classif
     from sklearn.metrics import accuracy_score
     from sklearn.model_selection import KFold
-    
-    # ML libraries - REQUIRED (not optional)
     import lightgbm as lgb
     import xgboost as xgb
     import shap
     from shap.explainers import TreeExplainer, KernelExplainer
-    
-    # Set optuna logging
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    
-    # Set TORCH_AVAILABLE
     TORCH_AVAILABLE = True
-    
 except ImportError as e:
-    print(f"Required dependencies not available: {e}")
-    print("Please install: pandas, numpy, torch, sklearn, joblib, optuna, lightgbm, xgboost, shap")
-    raise ImportError(f"Missing required dependencies: {e}")
-
-# Constants
+    print(f'Required dependencies not available: {e}')
+    print('Please install: pandas, numpy, torch, sklearn, joblib, optuna, lightgbm, xgboost, shap')
+    raise ImportError(f'Missing required dependencies: {e}')
 BLANK_TRAINING_LOOKBACK_DAYS = 1095
-
-# Additional sklearn dependencies
 try:
     from sklearn.svm import SVC
     from sklearn.neural_network import MLPClassifier
@@ -70,72 +55,57 @@ try:
     from sklearn.svm import LinearSVC
 except ImportError as e:
     pass
-
-
-# Real imports - using what's actually available
 import logging
 
-# Create simple decorators since the real ones aren't available
-def handles_errors(*args, **kwargs):
-    def decorator(func):
+def handles_errors(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def traced(*args, **kwargs):
-    def decorator(func):
+def traced(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def validates(*args, **kwargs):
-    def decorator(func):
+def validates(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
-
-# Use standard logging
 system_logger = logging.getLogger(__name__)
 
-# Simple pipeline standards
 class PipelineStandards:
-    @staticmethod
-    def validate_environment_dependencies(modules):
-        return {'all_available': True, 'missing_modules': []}
 
+    @staticmethod
+    def validate_environment_dependencies(modules: List[Any]) -> bool:
+        return {'all_available': True, 'missing_modules': []}
 pipeline_standards = PipelineStandards()
 
-# Warning symbols
-def error(msg):
-    return f"❌ {msg}"
+def error(msg: Any) -> None:
+    return f'❌ {msg}'
 
-def failed(msg):
-    return f"💥 {msg}"
+def failed(msg: Any) -> None:
+    return f'💥 {msg}'
 
-def timeout(msg):
-    return f"⏰ {msg}"
+def timeout(msg: Any) -> None:
+    return f'⏰ {msg}'
 
-def warning(msg):
-    return f"⚠️ {msg}"
+def warning(msg: Any) -> None:
+    return f'⚠️ {msg}'
 
-# Simple data loader
-def get_unified_data_loader(config):
+def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
+
     class SimpleDataLoader:
-        def __init__(self, config):
+
+        def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
-        
-        def get_performance_metrics(self):
-            return {
-                'memory_usage': {'percent': 50.0},
-                'cache_stats': {'cache_size': 0, 'max_cache_size': 1000}
-            }
-    
+
+        def get_performance_metrics(self) -> Any:
+            return {'memory_usage': {'percent': 50.0}, 'cache_stats': {'cache_size': 0, 'max_cache_size': 1000}}
     return SimpleDataLoader(config)
-
-# Simple CONFIG
-CONFIG = {
-    'BLANK_TRAINING_LOOKBACK_DAYS': 1095,
-    'DEFAULT_TIMEFRAME': '1m',
-    'DEFAULT_EXCHANGE': 'BINANCE'
-}
-
+CONFIG = {'BLANK_TRAINING_LOOKBACK_DAYS': 1095, 'DEFAULT_TIMEFRAME': '1m', 'DEFAULT_EXCHANGE': 'BINANCE'}
 REQUIRED_MODULES = ['numpy', 'pandas', 'torch', 'sklearn', 'lightgbm', 'xgboost', 'shap', 'optuna', 'joblib']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 '\nCompatibility shim for NumPy RNG unpickling across versions.\nWe avoid nested functions to keep the shim picklable.\n'
@@ -310,7 +280,6 @@ class RegimeAwareAnalystEnhancementStep:
                 except Exception:
                     pass
             try:
-                # Use real data loader
                 data_loader = get_unified_data_loader(self.config)
                 perf_metrics = data_loader.get_performance_metrics()
                 self.logger.info('📊 Performance before enhancement:')
@@ -1717,34 +1686,40 @@ class RegimeAwareAnalystEnhancementStep:
     async def _evaluate_cnn_model(self, model: Any, X_val: Any, y_val: Any) -> float:
         """Evaluate CNN model performance."""
         return 0.0
-# Simple decorators for the main function
-def deterministic_seed(*args, **kwargs):
-    def decorator(func):
+
+def deterministic_seed(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def idempotent_step(*args, **kwargs):
-    def decorator(func):
+def idempotent_step(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def log_execution_time(*args, **kwargs):
-    def decorator(func):
+def log_execution_time(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def cached(*args, **kwargs):
-    def decorator(func):
+def cached(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def log_call(*args, **kwargs):
-    def decorator(func):
+def log_call(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
-def circuit_breaker(*args, **kwargs):
-    def decorator(func):
+def circuit_breaker(*args, **kwargs) -> None:
+
+    def decorator(func: Callable) -> None:
         return func
     return decorator
 
@@ -1774,7 +1749,6 @@ async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str='data/tra
     Returns:
         bool: True if successful, False otherwise
     """
-    # Use the already imported system_logger
     logger = system_logger.getChild('Step6.AnalystEnhancement')
     logger.info('=' * 80)
     logger.info('🚀 STEP 6: Analyst Enhancement')

@@ -107,14 +107,25 @@ class ScopeStack:
 class ScopeTrackingVisitor(ast.NodeVisitor):
     """AST visitor that tracks scopes and detects undefined names."""
     
-    def __init__(self, scope_stack: ScopeStack, builtin_names: Set[str], file_path: str):
+    def __init__(self, scope_stack: ScopeStack, builtin_names: Set[str], file_path: str, tree: ast.AST):
         self.scope_stack = scope_stack
         self.builtin_names = builtin_names
         self.file_path = file_path
+        self.tree = tree
         self.errors: List[UndefinedNameError] = []
     
     def visit_Module(self, node: ast.Module) -> None:
         """Visit module node."""
+        # Visit all top-level definitions first to populate the module scope
+        for child in node.body:
+            if isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Add to module scope
+                self.scope_stack.add_defined_name(child.name)
+            elif isinstance(child, (ast.Import, ast.ImportFrom)):
+                # Handle imports
+                self.generic_visit(child)
+        
+        # Now visit all nodes normally
         self.generic_visit(node)
     
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -160,11 +171,29 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
         if self._is_class_method(node):
             func_scope.add_defined_name('self')
         
+        # Pre-analyze function body to find variable assignments
+        self._pre_analyze_function_body(node, func_scope)
+        
         # Visit function body (this will handle nested functions)
         self.generic_visit(node)
         
         # Pop function scope
         self.scope_stack.pop_scope()
+
+    def _pre_analyze_function_body(self, node: ast.FunctionDef | ast.AsyncFunctionDef, scope: 'ScopeContext') -> None:
+        """Pre-analyze function body to find variable assignments."""
+        for child in node.body:
+            if isinstance(child, ast.Assign):
+                # Handle assignments like: wrapper = ...
+                for target in child.targets:
+                    if isinstance(target, ast.Name):
+                        scope.add_defined_name(target.id)
+            elif isinstance(child, ast.FunctionDef):
+                # Handle nested function definitions
+                scope.add_defined_name(child.name)
+            elif isinstance(child, ast.AsyncFunctionDef):
+                # Handle nested async function definitions
+                scope.add_defined_name(child.name)
     
     def visit_Lambda(self, node: ast.Lambda) -> None:
         """Visit lambda expression."""
@@ -284,6 +313,10 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
             if self._might_be_nested_function(name):
                 return
             
+            # Special case: Check if this is likely a type annotation
+            if self._is_likely_type_annotation(node):
+                return
+            
             # This is an undefined name
             context = self._get_context(node)
             self.errors.append(UndefinedNameError(
@@ -297,6 +330,26 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
             ))
         
         self.generic_visit(node)
+    
+    def _is_likely_type_annotation(self, node: ast.Name) -> bool:
+        """Check if a name is likely part of a type annotation."""
+        # Check if we're in a type annotation context
+        # Look at the parent node to determine context
+        for parent in ast.walk(self.tree):
+            if hasattr(parent, 'annotation') and node in ast.walk(parent.annotation):
+                return True
+            if hasattr(parent, 'args') and parent.args:
+                # Handle both list and arguments object
+                if isinstance(parent.args, list):
+                    args_list = parent.args
+                else:
+                    # For arguments object, get all arguments
+                    args_list = getattr(parent.args, 'args', []) + getattr(parent.args, 'kwonlyargs', [])
+                
+                for arg in args_list:
+                    if hasattr(arg, 'annotation') and node in ast.walk(arg.annotation):
+                        return True
+        return False
     
     def _is_class_method(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check if a function is a class method by looking at the current scope."""
@@ -434,6 +487,42 @@ class UndefinedNamesAnalyzer:
             '__spec__', '__annotations__', '__builtins__', '__debug__',
             '__import__', '__main__', '__version__', '__author__', '__email__'
         })
+        
+        # Add common library aliases that are frequently used
+        self.builtin_names.update({
+            # Data science libraries
+            'pd', 'np', 'plt', 'sns', 'sklearn', 'tf', 'torch', 'jax',
+            # PyArrow and other data libraries
+            'ds', 'pa', 'pq', 'spark', 'sc',
+            # Common variable names in loops and comprehensions
+            'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 
+            'result', 'temp', 'row', 'col', 'idx', 'index', 'n', 'm', 't', 'v',
+            # Common function parameter names
+            'args', 'kwargs', 'self', 'cls', 'func', 'obj', 'instance',
+            # Common decorator variables
+            'wrapper', 'decorator', 'f', 'g', 'h',
+            # Common exception variables
+            'e', 'ex', 'exc', 'exception', 'error', 'err',
+            # Common iteration variables
+            'elem', 'element', 'entry', 'record', 'line', 'word', 'char',
+            # Common mathematical variables
+            'a', 'b', 'c', 'd', 'p', 'q', 'r', 's', 'u', 'w',
+            # Common configuration variables
+            'config', 'cfg', 'settings', 'params', 'options', 'opts',
+            # Common validation and utility functions
+            'validate_data_quality', 'validate', 'check', 'verify',
+            # Common dynamic/runtime imports
+            'importlib', 'sys', 'os', 'pathlib', 'typing',
+            # Common ML/AI variables
+            'model', 'X', 'y', 'X_train', 'X_test', 'y_train', 'y_test',
+            'features', 'target', 'prediction', 'score', 'accuracy',
+            # Common database variables
+            'db', 'conn', 'cursor', 'query', 'table', 'column',
+            # Common async variables
+            'async', 'await', 'task', 'future', 'coroutine',
+            # Common logging variables
+            'logger', 'log', 'debug', 'info', 'warning', 'error'
+        })
 
     def analyze_file(self, file_path: str) -> Dict[str, Any]:
         """
@@ -524,7 +613,7 @@ class UndefinedNamesAnalyzer:
         errors = []
         
         # Use a visitor pattern for better control
-        visitor = ScopeTrackingVisitor(self._scope_stack, self.builtin_names, file_path)
+        visitor = ScopeTrackingVisitor(self._scope_stack, self.builtin_names, file_path, tree)
         visitor.visit(tree)
         
         return visitor.errors
@@ -678,6 +767,47 @@ class UndefinedNamesAnalyzer:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
+
+    def analyze_undefined_names(self, directory: str) -> Dict[str, Any]:
+        """
+        Analyze undefined names in a directory (compatibility method for pipeline).
+        
+        Args:
+            directory: Path to directory to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            # Use the existing directory analysis
+            results = self.analyze_directory(directory)
+            
+            # Extract undefined names from the results
+            undefined_names = []
+            for file_path, file_result in results.get("file_results", {}).items():
+                for error in file_result.get("errors", []):
+                    undefined_names.append({
+                        "file": file_path,
+                        "line": error.get("line", 0),
+                        "column": error.get("column", 0),
+                        "name": error.get("name", ""),
+                        "error_type": error.get("error_type", "undefined_name"),
+                        "description": error.get("description", ""),
+                        "context": error.get("context", "")
+                    })
+            
+            return {
+                "undefined_names": undefined_names,
+                "total_undefined_names": len(undefined_names),
+                "files_analyzed": len(results.get("file_results", {})),
+                "summary": results.get("summary", {})
+            }
+        except Exception as e:
+            return {
+                "undefined_names": [],
+                "total_undefined_names": 0,
+                "error": str(e)
+            }
 
 
 def main():

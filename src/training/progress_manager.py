@@ -16,7 +16,7 @@ from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
 )
-from ..core.decorators.errors import handles_errors
+from src.utils.decorators.errors import handles_errors
 
 
 class ProgressManager:
@@ -84,7 +84,7 @@ class ProgressManager:
         except Exception as e:
             error_msg = f"Failed to save progress for {step_name}: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(f"{failed} {error_msg}")
             return False
 
     @handles_errors(fallback=None)
@@ -121,7 +121,7 @@ class ProgressManager:
         except Exception as e:
             error_msg = f"Failed to load progress for {step_name}: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(f"{failed} {error_msg}")
             return None
 
     def get_latest_step(self) -> str | None:
@@ -146,7 +146,7 @@ class ProgressManager:
         except Exception as e:
             error_msg = f"Failed to get latest step: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(f"{failed} {error_msg}")
             return None
 
     def get_all_progress(self) -> dict[str, dict[str, Any]]:
@@ -171,7 +171,7 @@ class ProgressManager:
         except Exception as e:
             error_msg = f"Failed to get all progress: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(f"{failed} {error_msg}")
             return {}
 
     def clear_progress(self, step_name: str | None = None) -> bool:
@@ -206,7 +206,7 @@ class ProgressManager:
         except Exception as e:
             error_msg = f"Failed to clear progress: {e}"
             self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+            self.logger.error(f"{failed} {error_msg}")
             return False
 
     def step_exists(self, step_name: str) -> bool:

@@ -4,6 +4,9 @@
 from .utils.logger import system_logger
 from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 
+import re
+
+
 
 class FeatureEngineeringValidator:
     """Validates engineered features for quality and correctness."""
@@ -264,7 +267,6 @@ class FeatureEngineeringValidator:
 
     def _extract_ma_period(self, ma_column_name: str) -> int:
         """Extract period from MA column name."""
-        import re
         numbers = re.findall('\\d+', ma_column_name)
         return int(numbers[0]) if numbers else 999
 

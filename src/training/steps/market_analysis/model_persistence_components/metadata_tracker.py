@@ -8,6 +8,11 @@ import json
 from datetime import datetime
 from .utils.logger import system_logger
 
+import platform
+import sys
+import pkg_resources
+
+
 class MetadataTracker:
     """Handles comprehensive metadata tracking for models."""
 
@@ -129,8 +134,6 @@ class MetadataTracker:
 
     async def _track_environment(self) -> Dict[str, Any]:
         """Track environment information."""
-        import platform
-        import sys
         
         environment = {
             'python_version': sys.version,
@@ -147,7 +150,6 @@ class MetadataTracker:
     def _get_package_versions(self) -> Dict[str, str]:
         """Get versions of key packages."""
         try:
-            import pkg_resources
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
             packages = {}
             

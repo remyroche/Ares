@@ -65,8 +65,6 @@ class HTMLReporter:
 
     def _generate_header(self, title: str) -> str:
         """Generate HTML header with CSS and JavaScript."""
-        css = self._get_css()
-        js = self._get_javascript()
 
         return f"""
 <!DOCTYPE html>
@@ -118,7 +116,9 @@ class HTMLReporter:
                 </div>
                 <div class="metric-card">
                     <h3>Critical Issues</h3>
-                    <div class="metric-value critical">{summary.get('critical_errors', 0)}</div>
+from .exceptions import (
+<div class="metric-value critical">{summary.get('critical_errors', 0)}</div>
+)
                 </div>
                 <div class="metric-card">
                     <h3>Quality Score</h3>
@@ -205,8 +205,8 @@ class HTMLReporter:
             html += f"""
                         <tr>
                             <td>{file_info.get('file_path', 'Unknown')}</td>
-                            <td>{file_info.get('total_errors', 0)}</td>
-                            <td>{file_info.get('total_warnings', 0)}</td>
+<td>{file_info.get('total_errors', 0)}</td>
+)
                             <td>{file_info.get('score', 'N/A')}</td>
                         </tr>
 """
@@ -264,7 +264,8 @@ class HTMLReporter:
             --primary-color: #007acc;
             --secondary-color: #6c757d;
             --success-color: #28a745;
-            --warning-color: #ffc107;
+--warning-color: #ffc107;
+)
             --danger-color: #dc3545;
             --light-color: #f8f9fa;
             --dark-color: #343a40;
@@ -355,7 +356,8 @@ class HTMLReporter:
             color: var(--primary-color);
         }
 
-        .metric-value.critical {
+.metric-value.critical {
+)
             color: var(--danger-color);
         }
 

@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 def optimize_dataframe_dtypes(
     df: pd.DataFrame,
-    target_memory_reduction: float = 0.5,
     preserve_categorical: bool = True,
 ) -> pd.DataFrame:
     """
@@ -22,7 +21,6 @@ def optimize_dataframe_dtypes(
 
     Args:
         df: Input DataFrame
-        target_memory_reduction: Target memory reduction ratio (0.0 to 1.0)
         preserve_categorical: Whether to preserve categorical columns
 
     Returns:
@@ -163,7 +161,6 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with optimized data types
     """
-    optimal_dtypes = get_optimal_dtypes_for_features()
     optimized_df = df.copy()
 
     for col in df.columns:
@@ -221,7 +218,6 @@ def optimize_feature_engineering_pipeline(
         # For input data, be conservative with optimizations
         return optimize_dataframe_dtypes(
             df,
-            target_memory_reduction=0.3,
             preserve_categorical=True,
         )
 
@@ -229,7 +225,6 @@ def optimize_feature_engineering_pipeline(
         # For intermediate calculations, be more aggressive
         return optimize_dataframe_dtypes(
             df,
-            target_memory_reduction=0.6,
             preserve_categorical=False,
         )
 

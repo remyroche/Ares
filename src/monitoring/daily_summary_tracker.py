@@ -12,9 +12,8 @@ from datetime import datetime, timedelta, date
 
 from pathlib import Path
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
 
@@ -389,7 +388,7 @@ class DailySummaryTracker:
                 if count > 0:
                     # Calculate regime-specific metrics
                     regime_trades = [t for t in self.current_day_trades 
-                                   if t.context.hmm_regime_info and t.context.hmm_regime_info.regime_id == regime_id]
+                                if t.context.hmm_regime_info and t.context.hmm_regime_info.regime_id == regime_id]
                     
                     if regime_trades:
                         regime_pnls = []
@@ -500,7 +499,7 @@ class DailySummaryTracker:
     
     @handles_errors(default_return=False, context="daily_summary_tracker.export_summary_csv")
     async def export_summary_csv(self, start_date: Optional[date] = None, 
-                               end_date: Optional[date] = None) -> bool:
+                            end_date: Optional[date] = None) -> bool:
         """Export daily summaries to a comprehensive CSV file."""
         try:
             if start_date is None:

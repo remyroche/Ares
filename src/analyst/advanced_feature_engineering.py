@@ -13,6 +13,9 @@ from typing import Any
 
 from .utils.logger import system_logger
 
+from .analyst.meta_labeling_system import MetaLabelingSystem
+
+
 
 class CandlestickPatternAnalyzer:
     """
@@ -1270,7 +1273,6 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 try:
-                    from .analyst.meta_labeling_system import MetaLabelingSystem
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()

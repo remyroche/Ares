@@ -7,7 +7,9 @@ This module provides step01 data collection with:
 - Detailed function entry, execution, and completion reporting
 - Inter-function call tracking and dependency monitoring
 - Performance monitoring with timing and resource usage
+from .exceptions import (
 - Enhanced error handling with detailed function-level tracking
+)
 - Structured logging with comprehensive reports
 """
 
@@ -18,8 +20,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 try:
-    import pandas as pd
-    import numpy as np
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -93,11 +93,16 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 
+import pandas as pd
+import numpy as np
+from src.training.steps.data_downloader import download_all_data_with_consolidation
+from datetime import datetime, timedelta
+
+
 # Initialize logger
 logger = system_logger.getChild('Step01EnhancedMonitoring')
 
 # Get function call monitor
-function_monitor = get_function_call_monitor()
 
 
 class EnhancedDataCollectionStepWithMonitoring:
@@ -264,7 +269,6 @@ class EnhancedDataCollectionStepWithMonitoring:
         try:
             # Try to import and use existing downloader
             try:
-                from src.training.steps.data_downloader import download_all_data_with_consolidation
                 
                 self.logger.info(f'🔄 Downloading data from {exchange} API...')
                 success = await download_all_data_with_consolidation(
@@ -447,7 +451,6 @@ class EnhancedDataCollectionStepWithMonitoring:
     async def _generate_monitored_mock_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Generate mock data with monitoring."""
         try:
-            from datetime import datetime, timedelta
             
             # Generate timestamps
             end_date = datetime.now()

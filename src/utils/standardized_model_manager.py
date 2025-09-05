@@ -7,6 +7,9 @@ import joblib
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
 
+import torch
+
+
 class ModelMetadata:
     """Model metadata container."""
 
@@ -96,7 +99,6 @@ class StandardizedModelManager:
             step_dir.mkdir(parents=True, exist_ok=True)
             if hasattr(model, 'save') and callable(getattr(model, 'save', None)):
                 file_path = step_dir / f'{model_id}.pth'
-                import torch
                 torch.save(model.state_dict(), file_path)
             elif hasattr(model, 'save_model'):
                 file_path = step_dir / f'{model_id}.txt'

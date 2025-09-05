@@ -14,6 +14,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+import joblib
+from sklearn.ensemble import RandomForestClassifier
+import torch
+from sklearn.preprocessing import StandardScaler
+import asyncio
+
+
 class IDataSource(ABC):
     """Interface for data sources."""
 
@@ -444,13 +451,11 @@ class LightGBMModel(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        import joblib
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.model, path)
 
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        import joblib
         self.model = joblib.load(path)
 
 class LightGBMTrainer(BaseModelTrainer):
@@ -538,13 +543,11 @@ class RandomForestModel(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        import joblib
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.model, path)
 
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        import joblib
         self.model = joblib.load(path)
 
 class RandomForestTrainer(BaseModelTrainer):
@@ -560,7 +563,6 @@ class RandomForestTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train Random Forest model."""
-        from sklearn.ensemble import RandomForestClassifier
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
         self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
@@ -575,7 +577,6 @@ class NeuralNetworkModel(IModel):
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
-        import torch
         X_scaled = self.scaler.transform(X) if self.scaler else X.values
         X_tensor = torch.FloatTensor(X_scaled)
         self.model.eval()
@@ -586,7 +587,6 @@ class NeuralNetworkModel(IModel):
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities."""
-        import torch
         X_scaled = self.scaler.transform(X) if self.scaler else X.values
         X_tensor = torch.FloatTensor(X_scaled)
         self.model.eval()
@@ -597,8 +597,6 @@ class NeuralNetworkModel(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        import joblib
-        import torch
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.model.state_dict(), path.with_suffix('.pth'))
         if self.scaler:
@@ -606,8 +604,6 @@ class NeuralNetworkModel(IModel):
 
     def load(self, path: Path) -> None:
         """Load model from disk."""
-        import joblib
-        import torch
         self.model.load_state_dict(torch.load(path.with_suffix('.pth')))
         scaler_path = path.with_suffix('.scaler')
         if scaler_path.exists():
@@ -626,8 +622,6 @@ class NeuralNetworkTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train Neural Network model."""
-        import torch
-        from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         input_size = X.shape[1]
@@ -724,5 +718,4 @@ async def example_usage() -> None:
     print('Pipeline completed successfully!')
     print(f"Features calculated: {results['features'].columns.tolist()}")
 if __name__ == '__main__':
-    import asyncio
     asyncio.run(example_usage())

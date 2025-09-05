@@ -124,7 +124,6 @@ def get_config():
 # Function that doesn't use return value
 def setup():
     """Setup function."""
-    config = get_config()  # Return value not used
     print("Setup complete")
 
 # Used function
@@ -136,7 +135,6 @@ def format_output(data):
 def main():
     """Main function."""
     setup()
-    result = format_output("test")
     return result
 ''')
 
@@ -150,14 +148,15 @@ Module demonstrating import patterns.
 from main import calculate_sum, old_calculate, helper_function
 from utils import format_output, OldProcessor
 
-    import importlib
+import importlib
+
+
 
 
 def example_usage():
     """Example of using imported functions."""
     result = calculate_sum(10, 20)
     old_calculate(5, 5)  # Using deprecated function
-    formatted = format_output(result)
     return formatted
 
 def create_processor():

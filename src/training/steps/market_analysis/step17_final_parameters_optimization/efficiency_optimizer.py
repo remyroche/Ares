@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 
+import psutil
+
+
 @dataclass
 class EfficiencyConfig:
     """Configuration for efficiency optimizations."""
@@ -416,7 +419,6 @@ class EfficiencyOptimizer:
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
-            import psutil
             process = psutil.Process()
             memory_info = process.memory_info()
             return memory_info.rss / 1024 / 1024

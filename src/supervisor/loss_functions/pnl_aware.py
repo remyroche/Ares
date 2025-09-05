@@ -9,7 +9,9 @@ def create_pnl_aware_loss(pnl_multiplier: Any=0.1, liquidation_penalty: Any=2.0,
     """
     This is a factory function that creates a custom Keras loss function.
     It combines standard classification loss (cross-entropy) with a financial
-    component that heavily penalizes high-risk errors and rewards high-profit
+from .exceptions import (
+component that heavily penalizes high-risk errors and rewards high-profit
+)
     correct predictions, teaching the model to prioritize capital preservation.
     """
 

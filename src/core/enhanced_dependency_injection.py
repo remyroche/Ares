@@ -33,7 +33,6 @@ def register_service(
     lifetime: str = ServiceLifetime.SINGLETON,
     config: dict[str, Any] | None = None,
 ) -> None:
-    container = get_container()
     # Use type as key to align with canonical container usage
     container.register(
         service_type,
@@ -45,5 +44,4 @@ def register_service(
 
 
 async def resolve_service(service_type: type[T]) -> T:
-    container = get_container()
     return container.resolve(service_type)

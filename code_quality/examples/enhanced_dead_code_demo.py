@@ -112,7 +112,9 @@ File demonstrating import patterns.
 from sample_dead_code import used_function, old_function
 import sys  # This import is unused
 
-    import importlib
+import importlib
+
+
 
 
 def example_usage():
@@ -135,7 +137,6 @@ def demonstrate_enhanced_dead_code_detection():
     print(f"Created sample code in: {sample_dir}")
     
     # Initialize analyzer
-    config = get_default_config()
     analyzer = DeadCodeAnalyzer(config)
     
     print(f"\nAnalyzing directory: {sample_dir}")

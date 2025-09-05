@@ -1,5 +1,5 @@
 """
-Undefined Names and Variables Analyzer - Detects undefined names, variables, and imports.
+Enhanced Undefined Names and Variables Analyzer - Detects undefined names, variables, and imports.
 """
 
 import ast
@@ -8,10 +8,351 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple, Optional
 
 from ..core.config import CodeQualityConfig, get_default_config
 from ..utils.file_utils import find_python_files
+
+
+class ScopeContext:
+    """Represents a scope context (function, class, module, etc.)."""
+    
+    def __init__(self, name: str, scope_type: str, node: ast.AST, parent: Optional['ScopeContext'] = None):
+        self.name = name
+        self.scope_type = scope_type  # 'module', 'class', 'function', 'lambda', 'comprehension'
+        self.node = node
+        self.parent = parent
+        self.defined_names: Set[str] = set()
+        self.imported_names: Set[str] = set()
+        self.children: List['ScopeContext'] = []
+        
+        if parent:
+            parent.children.append(self)
+    
+    def add_defined_name(self, name: str) -> None:
+        """Add a defined name to this scope."""
+        self.defined_names.add(name)
+    
+    def add_imported_name(self, name: str) -> None:
+        """Add an imported name to this scope."""
+        self.imported_names.add(name)
+    
+    def is_name_defined(self, name: str) -> bool:
+        """Check if a name is defined in this scope or any parent scope."""
+        if name in self.defined_names or name in self.imported_names:
+            return True
+        if self.parent:
+            return self.parent.is_name_defined(name)
+        return False
+    
+    def get_scope_path(self) -> str:
+        """Get the full path of this scope (e.g., 'module.class.function')."""
+        if self.parent:
+            return f"{self.parent.get_scope_path()}.{self.name}"
+        return self.name
+
+
+class ScopeStack:
+    """Manages a stack of scope contexts for proper scope tracking."""
+    
+    def __init__(self):
+        self.stack: List[ScopeContext] = []
+        self.root_scope: Optional[ScopeContext] = None
+    
+    def push_scope(self, name: str, scope_type: str, node: ast.AST) -> ScopeContext:
+        """Push a new scope onto the stack."""
+        parent = self.stack[-1] if self.stack else None
+        scope = ScopeContext(name, scope_type, node, parent)
+        self.stack.append(scope)
+        
+        if not self.root_scope:
+            self.root_scope = scope
+            
+        return scope
+    
+    def pop_scope(self) -> Optional[ScopeContext]:
+        """Pop the current scope from the stack."""
+        if self.stack:
+            return self.stack.pop()
+        return None
+    
+    def current_scope(self) -> Optional[ScopeContext]:
+        """Get the current scope."""
+        return self.stack[-1] if self.stack else None
+    
+    def is_name_defined(self, name: str) -> bool:
+        """Check if a name is defined in the current scope or any parent scope."""
+        if self.stack:
+            return self.stack[-1].is_name_defined(name)
+        return False
+    
+    def add_defined_name(self, name: str) -> None:
+        """Add a defined name to the current scope."""
+        if self.stack:
+            self.stack[-1].add_defined_name(name)
+    
+    def add_imported_name(self, name: str) -> None:
+        """Add an imported name to the current scope."""
+        if self.stack:
+            self.stack[-1].add_imported_name(name)
+    
+    def get_scope_path(self) -> str:
+        """Get the current scope path."""
+        if self.stack:
+            return self.stack[-1].get_scope_path()
+        return "module"
+
+
+class ScopeTrackingVisitor(ast.NodeVisitor):
+    """AST visitor that tracks scopes and detects undefined names."""
+    
+    def __init__(self, scope_stack: ScopeStack, builtin_names: Set[str], file_path: str):
+        self.scope_stack = scope_stack
+        self.builtin_names = builtin_names
+        self.file_path = file_path
+        self.errors: List[UndefinedNameError] = []
+    
+    def visit_Module(self, node: ast.Module) -> None:
+        """Visit module node."""
+        self.generic_visit(node)
+    
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Visit class definition."""
+        # Push class scope
+        class_scope = self.scope_stack.push_scope(node.name, "class", node)
+        class_scope.add_defined_name(node.name)
+        
+        # Add 'cls' as defined for class methods
+        class_scope.add_defined_name('cls')
+        
+        # Visit class body
+        self.generic_visit(node)
+        
+        # Pop class scope
+        self.scope_stack.pop_scope()
+    
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Visit function definition."""
+        self._visit_function(node, "function")
+    
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Visit async function definition."""
+        self._visit_function(node, "function")
+    
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, scope_type: str) -> None:
+        """Common logic for function and async function definitions."""
+        # Push function scope
+        func_scope = self.scope_stack.push_scope(node.name, scope_type, node)
+        func_scope.add_defined_name(node.name)
+        
+        # Add function parameters as defined names
+        for arg in node.args.args:
+            func_scope.add_defined_name(arg.arg)
+        
+        # Add *args and **kwargs if present
+        if node.args.vararg:
+            func_scope.add_defined_name(node.args.vararg.arg)
+        if node.args.kwarg:
+            func_scope.add_defined_name(node.args.kwarg.arg)
+        
+        # Add 'self' as defined for class methods
+        if self._is_class_method(node):
+            func_scope.add_defined_name('self')
+        
+        # Visit function body (this will handle nested functions)
+        self.generic_visit(node)
+        
+        # Pop function scope
+        self.scope_stack.pop_scope()
+    
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Visit lambda expression."""
+        # Push lambda scope
+        lambda_scope = self.scope_stack.push_scope("<lambda>", "lambda", node)
+        
+        # Add lambda parameters as defined names
+        for arg in node.args.args:
+            lambda_scope.add_defined_name(arg.arg)
+        
+        # Add *args and **kwargs if present
+        if node.args.vararg:
+            lambda_scope.add_defined_name(node.args.vararg.arg)
+        if node.args.kwarg:
+            lambda_scope.add_defined_name(node.args.kwarg.arg)
+        
+        # Visit lambda body
+        self.generic_visit(node)
+        
+        # Pop lambda scope
+        self.scope_stack.pop_scope()
+    
+    def visit_Import(self, node: ast.Import) -> None:
+        """Visit import statement."""
+        for alias in node.names:
+            name = alias.asname or alias.name
+            self.scope_stack.add_imported_name(name)
+            self.scope_stack.add_defined_name(name)
+        
+        self.generic_visit(node)
+    
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Visit from import statement."""
+        for alias in node.names:
+            name = alias.asname or alias.name
+            self.scope_stack.add_imported_name(name)
+            self.scope_stack.add_defined_name(name)
+        
+        self.generic_visit(node)
+    
+    def visit_Assign(self, node: ast.Assign) -> None:
+        """Visit assignment statement."""
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                self.scope_stack.add_defined_name(target.id)
+            elif isinstance(target, ast.Tuple):
+                for elt in target.elts:
+                    if isinstance(elt, ast.Name):
+                        self.scope_stack.add_defined_name(elt.id)
+        
+        self.generic_visit(node)
+    
+    def visit_For(self, node: ast.For) -> None:
+        """Visit for loop."""
+        if isinstance(node.target, ast.Name):
+            self.scope_stack.add_defined_name(node.target.id)
+        elif isinstance(node.target, ast.Tuple):
+            for elt in node.target.elts:
+                if isinstance(elt, ast.Name):
+                    self.scope_stack.add_defined_name(elt.id)
+        
+        self.generic_visit(node)
+    
+    def visit_With(self, node: ast.With) -> None:
+        """Visit with statement."""
+        for item in node.items:
+            if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+                self.scope_stack.add_defined_name(item.optional_vars.id)
+        
+        self.generic_visit(node)
+    
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        """Visit exception handler."""
+        if node.name:
+            self.scope_stack.add_defined_name(node.name)
+        
+        self.generic_visit(node)
+    
+    def visit_Global(self, node: ast.Global) -> None:
+        """Visit global statement."""
+        for name in node.names:
+            self.scope_stack.add_defined_name(name)
+        
+        self.generic_visit(node)
+    
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        """Visit nonlocal statement."""
+        for name in node.names:
+            self.scope_stack.add_defined_name(name)
+        
+        self.generic_visit(node)
+    
+    def visit_Name(self, node: ast.Name) -> None:
+        """Visit name node (variable reference)."""
+        if isinstance(node.ctx, ast.Load):
+            name = node.id
+            
+            # Skip if it's a builtin
+            if name in self.builtin_names:
+                return
+            
+            # Skip if it's defined in current or parent scope
+            if self.scope_stack.is_name_defined(name):
+                return
+            
+            # Check if it's a special name (like __name__, __file__, etc.)
+            if name.startswith('__') and name.endswith('__'):
+                return
+            
+            # Skip common variable names that are often used in loops/comprehensions
+            if name in {'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 'result', 'temp'}:
+                # Only flag if it's not in a loop or comprehension context
+                if not self._is_in_loop_context(node):
+                    return
+            
+            # Special case: Check if this might be a nested function that's defined later in the same scope
+            if self._might_be_nested_function(name):
+                return
+            
+            # This is an undefined name
+            context = self._get_context(node)
+            self.errors.append(UndefinedNameError(
+                file_path=self.file_path,
+                line=node.lineno or 0,
+                column=node.col_offset or 0,
+                name=name,
+                error_type="undefined_name",
+                context=context,
+                severity="error"
+            ))
+        
+        self.generic_visit(node)
+    
+    def _is_class_method(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """Check if a function is a class method by looking at the current scope."""
+        current_scope = self.scope_stack.current_scope()
+        if current_scope and current_scope.scope_type == "class":
+            return True
+        return False
+    
+    def _is_in_loop_context(self, name_node: ast.Name) -> bool:
+        """Check if a name is used in a loop context."""
+        # This is a simplified check - in a full implementation, we'd track loop contexts
+        # For now, we'll be more permissive with common loop variables
+        return name_node.id in {'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val'}
+    
+    def _might_be_nested_function(self, name: str) -> bool:
+        """Check if a name might be a nested function defined later in the same scope."""
+        # This is a heuristic to avoid false positives for nested functions
+        # that are defined later in the same function scope
+        
+        # Look for function definitions with this name in the current scope
+        current_scope = self.scope_stack.current_scope()
+        if not current_scope:
+            return False
+            
+        # Check if there's a function definition with this name in the current scope
+        # This is a simplified check - in a full implementation, we'd need to
+        # track all function definitions in the current scope
+        return False  # For now, we'll be conservative and not skip these
+    
+    def _get_context(self, node: ast.AST) -> str:
+        """Get context around a node for better error reporting."""
+        try:
+            # Find the parent node to understand context
+            for parent in ast.walk(self.scope_stack.root_scope.node if self.scope_stack.root_scope else None):
+                for child in ast.iter_child_nodes(parent):
+                    if child is node:
+                        if isinstance(parent, ast.Call):
+                            return f"function call to '{parent.func.id if isinstance(parent.func, ast.Name) else 'unknown'}'"
+                        elif isinstance(parent, ast.Attribute):
+                            return f"attribute access on '{parent.value.id if isinstance(parent.value, ast.Name) else 'unknown'}'"
+                        elif isinstance(parent, ast.Assign):
+                            return "assignment target"
+                        elif isinstance(parent, ast.Compare):
+                            return "comparison operation"
+                        elif isinstance(parent, ast.BinOp):
+                            return "binary operation"
+                        elif isinstance(parent, ast.UnaryOp):
+                            return "unary operation"
+                        elif isinstance(parent, ast.FormattedValue):
+                            return "in FormattedValue"
+                        elif isinstance(parent, ast.Dict):
+                            return "in Dict"
+                        else:
+                            return f"in {type(parent).__name__}"
+            return "unknown context"
+        except:
+            return "unknown context"
 
 
 class UndefinedNameError:
@@ -45,24 +386,32 @@ class UndefinedNameError:
 
 class UndefinedNamesAnalyzer:
     """
-    Analyzer for detecting undefined names, variables, and imports in Python code.
+    Enhanced analyzer for detecting undefined names, variables, and imports in Python code.
     
-    This analyzer uses AST parsing to identify:
+    This analyzer uses AST parsing with proper scope tracking to identify:
     - Undefined variables
     - Undefined function names
     - Undefined class names
     - Missing imports
     - Unused imports
     - Import conflicts
+    
+    Key improvements:
+    - Proper scope stack management
+    - File isolation for directory analysis
+    - Enhanced function parameter detection
+    - Context-aware error reporting
     """
 
     def __init__(self, config: CodeQualityConfig | None = None):
         self.config = config or get_default_config()
         self.errors: List[UndefinedNameError] = []
-        self.defined_names: Set[str] = set()
-        self.imported_names: Set[str] = set()
         self.builtin_names: Set[str] = set()
         self._init_builtin_names()
+        
+        # Per-file state to ensure proper isolation
+        self._current_file_path: Optional[str] = None
+        self._scope_stack: Optional[ScopeStack] = None
 
     def _init_builtin_names(self) -> None:
         """Initialize set of Python builtin names."""
@@ -87,7 +436,7 @@ class UndefinedNamesAnalyzer:
 
     def analyze_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Analyze a single Python file for undefined names and variables.
+        Analyze a single Python file for undefined names and variables using enhanced scope tracking.
         
         Args:
             file_path: Path to the Python file to analyze
@@ -96,6 +445,10 @@ class UndefinedNamesAnalyzer:
             Dictionary containing analysis results
         """
         print(f"Analyzing undefined names in: {file_path}")
+        
+        # Initialize file-specific state
+        self._current_file_path = file_path
+        self._scope_stack = ScopeStack()
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -109,18 +462,16 @@ class UndefinedNamesAnalyzer:
 
         # Reset state for this file
         file_errors = []
-        defined_names = set()
-        imported_names = set()
         
         try:
             # Parse the AST
             tree = ast.parse(content, filename=file_path)
             
-            # First pass: collect all defined names and imports
-            defined_names, imported_names = self._collect_definitions(tree, file_path)
+            # Create module scope
+            module_scope = self._scope_stack.push_scope("__main__", "module", tree)
             
-            # Second pass: check for undefined names
-            file_errors = self._check_undefined_names(tree, file_path, defined_names, imported_names)
+            # Analyze the AST with proper scope tracking
+            file_errors = self._analyze_with_scope_tracking(tree, file_path)
             
         except SyntaxError as e:
             file_errors.append(UndefinedNameError(
@@ -138,9 +489,19 @@ class UndefinedNamesAnalyzer:
                 "error": f"AST parsing failed: {e}",
                 "file_path": file_path
             }
+        finally:
+            # Clean up file-specific state
+            self._current_file_path = None
+            self._scope_stack = None
 
         # Convert errors to dictionaries
         errors_dict = [error.to_dict() for error in file_errors]
+        
+        # Collect defined and imported names from the scope
+        defined_names = set()
+        imported_names = set()
+        if self._scope_stack and self._scope_stack.root_scope:
+            self._collect_names_from_scope(self._scope_stack.root_scope, defined_names, imported_names)
         
         return {
             "status": "success",
@@ -157,240 +518,29 @@ class UndefinedNamesAnalyzer:
             }
         }
 
-    def _collect_definitions(self, tree: ast.AST, file_path: str) -> Tuple[Set[str], Set[str]]:
-        """Collect all defined names and imports from the AST."""
-        defined_names = set()
-        imported_names = set()
-        
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                defined_names.add(node.name)
-                # Add function parameters as defined names
-                for arg in node.args.args:
-                    defined_names.add(arg.arg)
-                # Add *args and **kwargs if present
-                if node.args.vararg:
-                    defined_names.add(node.args.vararg.arg)
-                if node.args.kwarg:
-                    defined_names.add(node.args.kwarg.arg)
-                # Add 'self' as defined for class methods
-                if self._is_class_method(node, tree):
-                    defined_names.add('self')
-            elif isinstance(node, ast.AsyncFunctionDef):
-                defined_names.add(node.name)
-                # Add function parameters as defined names
-                for arg in node.args.args:
-                    defined_names.add(arg.arg)
-                # Add *args and **kwargs if present
-                if node.args.vararg:
-                    defined_names.add(node.args.vararg.arg)
-                if node.args.kwarg:
-                    defined_names.add(node.args.kwarg.arg)
-                # Add 'self' as defined for class methods
-                if self._is_class_method(node, tree):
-                    defined_names.add('self')
-            elif isinstance(node, ast.ClassDef):
-                defined_names.add(node.name)
-                # Add 'cls' as defined for class methods
-                defined_names.add('cls')
-            elif isinstance(node, ast.Lambda):
-                # Add lambda parameters as defined names
-                for arg in node.args.args:
-                    defined_names.add(arg.arg)
-                # Add *args and **kwargs if present
-                if node.args.vararg:
-                    defined_names.add(node.args.vararg.arg)
-                if node.args.kwarg:
-                    defined_names.add(node.args.kwarg.arg)
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                # Variable assignment
-                defined_names.add(node.id)
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    imported_names.add(alias.asname or alias.name)
-                    # Also add the base name if it's a simple import
-                    if '.' not in alias.name:
-                        defined_names.add(alias.asname or alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    for alias in node.names:
-                        imported_names.add(alias.asname or alias.name)
-                        defined_names.add(alias.asname or alias.name)
-                else:
-                    # from . import something
-                    for alias in node.names:
-                        imported_names.add(alias.asname or alias.name)
-                        defined_names.add(alias.asname or alias.name)
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        defined_names.add(target.id)
-                    elif isinstance(target, ast.Tuple):
-                        for elt in target.elts:
-                            if isinstance(elt, ast.Name):
-                                defined_names.add(elt.id)
-            elif isinstance(node, ast.For):
-                if isinstance(node.target, ast.Name):
-                    defined_names.add(node.target.id)
-                elif isinstance(node.target, ast.Tuple):
-                    for elt in node.target.elts:
-                        if isinstance(elt, ast.Name):
-                            defined_names.add(elt.id)
-            elif isinstance(node, ast.With):
-                for item in node.items:
-                    if item.optional_vars and isinstance(item.optional_vars, ast.Name):
-                        defined_names.add(item.optional_vars.id)
-            elif isinstance(node, ast.ExceptHandler):
-                if node.name:
-                    defined_names.add(node.name)
-            elif isinstance(node, ast.Global):
-                for name in node.names:
-                    defined_names.add(name)
-            elif isinstance(node, ast.Nonlocal):
-                for name in node.names:
-                    defined_names.add(name)
-        
-        return defined_names, imported_names
-
-    def _is_class_method(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef, tree: ast.AST) -> bool:
-        """Check if a function is a class method."""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                for item in node.body:
-                    if item is func_node:
-                        return True
-        return False
-
-    def _check_undefined_names(self, tree: ast.AST, file_path: str, 
-                              defined_names: Set[str], imported_names: Set[str]) -> List[UndefinedNameError]:
-        """Check for undefined names in the AST."""
+    def _analyze_with_scope_tracking(self, tree: ast.AST, file_path: str) -> List[UndefinedNameError]:
+        """Analyze AST with proper scope tracking."""
         errors = []
         
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                name = node.id
-                
-                # Skip if it's a builtin
-                if name in self.builtin_names:
-                    continue
-                
-                # Skip if it's defined or imported
-                if name in defined_names or name in imported_names:
-                    continue
-                
-                # Check if it's a special name (like __name__, __file__, etc.)
-                if name.startswith('__') and name.endswith('__'):
-                    continue
-                
-                # Skip common variable names that are often used in loops/comprehensions
-                if name in {'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 'result', 'temp'}:
-                    # Only flag if it's not in a loop or comprehension context
-                    if not self._is_in_loop_context(node, tree):
-                        continue
-                
-                # Skip if it's in a function parameter or lambda
-                if self._is_in_function_context(node, tree):
-                    continue
-                
-                # This is an undefined name
-                context = self._get_context(node, tree)
-                errors.append(UndefinedNameError(
-                    file_path=file_path,
-                    line=node.lineno or 0,
-                    column=node.col_offset or 0,
-                    name=name,
-                    error_type="undefined_name",
-                    context=context,
-                    severity="error"
-                ))
+        # Use a visitor pattern for better control
+        visitor = ScopeTrackingVisitor(self._scope_stack, self.builtin_names, file_path)
+        visitor.visit(tree)
         
-        return errors
-
-    def _is_in_loop_context(self, name_node: ast.Name, tree: ast.AST) -> bool:
-        """Check if a name is used in a loop context (for, while, comprehension)."""
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.For, ast.While, ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp)):
-                if name_node in ast.walk(node):
-                    return True
-        return False
-
-    def _is_in_function_context(self, name_node: ast.Name, tree: ast.AST) -> bool:
-        """Check if a name is used as a function parameter or lambda parameter."""
-        # Find the function that contains this name node
-        containing_function = None
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                # Check if the name node is within this function's body
-                if self._is_node_in_function_body(name_node, node):
-                    containing_function = node
-                    break
-        
-        if containing_function is None:
-            return False
-            
-        # Check if the name is a parameter of the containing function
-        if isinstance(containing_function, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for arg in containing_function.args.args:
-                if arg.arg == name_node.id:
-                    return True
-            # Also check *args and **kwargs
-            if containing_function.args.vararg and containing_function.args.vararg.arg == name_node.id:
-                return True
-            if containing_function.args.kwarg and containing_function.args.kwarg.arg == name_node.id:
-                return True
-        elif isinstance(containing_function, ast.Lambda):
-            for arg in containing_function.args.args:
-                if arg.arg == name_node.id:
-                    return True
-            # Also check *args and **kwargs for lambda
-            if containing_function.args.vararg and containing_function.args.vararg.arg == name_node.id:
-                return True
-            if containing_function.args.kwarg and containing_function.args.kwarg.arg == name_node.id:
-                return True
-                
-        return False
+        return visitor.errors
     
-    def _is_node_in_function_body(self, target_node: ast.AST, function_node: ast.AST) -> bool:
-        """Check if a target node is within a function's body (not in parameters)."""
-        # Walk through the function body (excluding the function definition line)
-        for child in ast.iter_child_nodes(function_node):
-            # Skip the function name and parameters
-            if child is function_node.name or child is function_node.args:
-                continue
-            # Check if target node is in this child
-            for node in ast.walk(child):
-                if node is target_node:
-                    return True
-        return False
+    def _collect_names_from_scope(self, scope: ScopeContext, defined_names: Set[str], imported_names: Set[str]) -> None:
+        """Recursively collect all defined and imported names from scope hierarchy."""
+        defined_names.update(scope.defined_names)
+        imported_names.update(scope.imported_names)
+        
+        for child in scope.children:
+            self._collect_names_from_scope(child, defined_names, imported_names)
 
-    def _get_context(self, node: ast.AST, tree: ast.AST) -> str:
-        """Get context around a node for better error reporting."""
-        try:
-            # Find the parent node to understand context
-            for parent in ast.walk(tree):
-                for child in ast.iter_child_nodes(parent):
-                    if child is node:
-                        if isinstance(parent, ast.Call):
-                            return f"function call to '{parent.func.id if isinstance(parent.func, ast.Name) else 'unknown'}'"
-                        elif isinstance(parent, ast.Attribute):
-                            return f"attribute access on '{parent.value.id if isinstance(parent.value, ast.Name) else 'unknown'}'"
-                        elif isinstance(parent, ast.Assign):
-                            return "assignment target"
-                        elif isinstance(parent, ast.Compare):
-                            return "comparison operation"
-                        elif isinstance(parent, ast.BinOp):
-                            return "binary operation"
-                        elif isinstance(parent, ast.UnaryOp):
-                            return "unary operation"
-                        else:
-                            return f"in {type(parent).__name__}"
-            return "unknown context"
-        except:
-            return "unknown context"
 
     def analyze_directory(self, directory_path: str) -> Dict[str, Any]:
         """
         Analyze all Python files in a directory for undefined names and variables.
+        Each file is analyzed in complete isolation to prevent context bleeding.
         
         Args:
             directory_path: Path to the directory to analyze
@@ -420,7 +570,7 @@ class UndefinedNamesAnalyzer:
                 }
             }
 
-        # Analyze each file
+        # Analyze each file in complete isolation
         files_results = {}
         total_errors = 0
         files_with_errors = 0
@@ -432,7 +582,9 @@ class UndefinedNamesAnalyzer:
         }
 
         for file_path in python_files:
-            file_result = self.analyze_file(file_path)
+            # Each file gets its own fresh analyzer instance to ensure complete isolation
+            file_analyzer = UndefinedNamesAnalyzer(self.config)
+            file_result = file_analyzer.analyze_file(file_path)
             files_results[file_path] = file_result
             
             if file_result["status"] == "success":

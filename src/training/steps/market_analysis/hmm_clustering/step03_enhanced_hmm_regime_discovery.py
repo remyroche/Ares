@@ -21,104 +21,7 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    # Create a mock pandas
-    class MockDataFrame:
-        def __init__(self, data=None):
-            self.data = data or []
-        def __len__(self):
-            return len(self.data)
-        def __getitem__(self, key):
-            return self.data[key] if key < len(self.data) else None
-        def __setitem__(self, key, value):
-            if key < len(self.data):
-                self.data[key] = value
-        def fillna(self, value):
-            return self
-        def drop(self, *args, **kwargs):
-            return self
-        def concat(self, *args, **kwargs):
-            return self
-        def pct_change(self, *args, **kwargs):
-            return self
-        def rolling(self, *args, **kwargs):
-            return self
-        def ewm(self, *args, **kwargs):
-            return self
-        def std(self):
-            return 0.0
-        def mean(self):
-            return 0.0
-        def max(self):
-            return 0
-        def min(self):
-            return 0
-        def sort_values(self, *args, **kwargs):
-            return self
-        def reset_index(self, *args, **kwargs):
-            return self
-        def to_datetime(self, *args, **kwargs):
-            return self
-        def is_datetime64_any_dtype(self, *args, **kwargs):
-            return False
-    
-    class MockSeries:
-        def __init__(self, data=None):
-            self.data = data or []
-        def __len__(self):
-            return len(self.data)
-        def __getitem__(self, key):
-            return self.data[key] if key < len(self.data) else None
-        def __setitem__(self, key, value):
-            if key < len(self.data):
-                self.data[key] = value
-        def pct_change(self, *args, **kwargs):
-            return self
-        def rolling(self, *args, **kwargs):
-            return self
-        def ewm(self, *args, **kwargs):
-            return self
-        def std(self):
-            return 0.0
-        def mean(self):
-            return 0.0
-        def max(self):
-            return 0
-        def min(self):
-            return 0
-        def shift(self, *args, **kwargs):
-            return self
-        def fillna(self, value):
-            return self
-        def diff(self):
-            return self
-        def where(self, condition, other):
-            return self
-        def abs(self):
-            return self
-        def sum(self):
-            return 0
-        def count(self):
-            return len(self.data)
-        def iloc(self, *args, **kwargs):
-            return self
-        def loc(self, *args, **kwargs):
-            return self
-
-    class MockPandas:
-        DataFrame = MockDataFrame
-        Series = MockSeries
-        def read_parquet(self, *args, **kwargs):
-            return MockDataFrame()
-        def to_datetime(self, *args, **kwargs):
-            return MockDataFrame()
-        def api(self):
-            return type('MockAPI', (), {'types': type('MockTypes', (), {'is_datetime64_any_dtype': lambda x: False})})()
-        def concat(self, *args, **kwargs):
-            return MockDataFrame()
-        def date_range(self, *args, **kwargs):
-            return MockDataFrame()
-    
-    pd = MockPandas()
+    pd = None
 
 # Optional numpy import
 try:
@@ -126,69 +29,7 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Create a mock numpy
-    class MockNumpy:
-        def unique(self, data, return_counts=False):
-            unique_data = list(set(data))
-            if return_counts:
-                counts = [data.count(x) for x in unique_data]
-                return unique_data, counts
-            return unique_data
-        def diff(self, data):
-            return [data[i+1] - data[i] for i in range(len(data)-1)]
-        def sum(self, data):
-            return sum(data)
-        def mean(self, data):
-            return sum(data) / len(data) if data else 0
-        def std(self, data):
-            if not data:
-                return 0
-            mean_val = self.mean(data)
-            return (sum((x - mean_val) ** 2 for x in data) / len(data)) ** 0.5
-        def max(self, data):
-            return max(data) if data else 0
-        def min(self, data):
-            return min(data) if data else 0
-        def array(self, data):
-            return data
-        def zeros(self, shape):
-            if isinstance(shape, int):
-                return [0] * shape
-            return [[0] * shape[1] for _ in range(shape[0])]
-        def ones(self, shape):
-            if isinstance(shape, int):
-                return [1] * shape
-            return [[1] * shape[1] for _ in range(shape[0])]
-        def concatenate(self, arrays):
-            result = []
-            for arr in arrays:
-                result.extend(arr)
-            return result
-        def where(self, condition, x, y):
-            return [x[i] if condition[i] else y[i] for i in range(len(condition))]
-        def argmax(self, data):
-            return data.index(max(data)) if data else 0
-        def argmin(self, data):
-            return data.index(min(data)) if data else 0
-    
-    class MockNdarray:
-        def __init__(self, data):
-            self.data = data
-        def __len__(self):
-            return len(self.data)
-        def __getitem__(self, key):
-            return self.data[key]
-        def __setitem__(self, key, value):
-            self.data[key] = value
-        def tolist(self):
-            return self.data
-        def shape(self):
-            if isinstance(self.data, list) and self.data and isinstance(self.data[0], list):
-                return (len(self.data), len(self.data[0]))
-            return (len(self.data),)
-    
-    np = MockNumpy()
-    np.ndarray = MockNdarray
+    np = None
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -218,21 +59,9 @@ except ImportError:
 try:
     from .core.decorators import validates, handles_errors, traced
 except ImportError:
-    # Create mock decorators
-    def validates(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def traced(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+    validates = None
+    handles_errors = None
+    traced = None
 
 # Import logger (optional)
 try:
@@ -258,40 +87,28 @@ try:
     from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
     STEP03_MODULES_AVAILABLE = True
 except ImportError:
-    # Create mock classes
-    class OptimizedBayesianParameterOptimization:
-        def __init__(self, config): pass
-        async def initialize(self): pass
-        async def optimize_parameters(self, data, features): return {'success': False}
-    
-    class RegimeDiscoveryFeatureEngineer:
-        def __init__(self, config): pass
-        def create_regime_discovery_features(self, data): return type('MockDataFrame', (), {})()
-    
-    class EconomicSignificanceValidator:
-        def __init__(self, config): pass
-        def validate_regime_economics(self, data, regimes): return {'overall_significant': False}
-    
-    class EnsembleClusteringRegimeDetector:
-        def __init__(self, config): pass
-        def ensemble_regime_detection(self, features): return [0, 1, 2], {'n_regimes': 3, 'ensemble_quality': {}, 'quality_weights': {}}
-    
-    class EnhancedMLRegimeTransitionDetector:
-        def __init__(self, config): pass
-        def train_transition_models(self, data, regimes): return {'feature_selection_completed': False, 'lgb_training_completed': False}
-        def predict_transitions(self, data, regimes): return {}
-    
+    OptimizedBayesianParameterOptimization = None
+    RegimeDiscoveryFeatureEngineer = None
+    EconomicSignificanceValidator = None
+    EnsembleClusteringRegimeDetector = None
+    EnhancedMLRegimeTransitionDetector = None
     STEP03_MODULES_AVAILABLE = False
 
 try:
     from .core.decorators.errors import handles_errors
 except ImportError:
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+    handles_errors = None
 
 logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
+
+# Helper function to handle None decorators
+def safe_decorator(decorator, *args, **kwargs):
+    """Apply decorator if it exists, otherwise return identity decorator."""
+    if decorator is None:
+        def identity_decorator(func):
+            return func
+        return identity_decorator
+    return decorator(*args, **kwargs)
 
 class EnhancedHMMRegimeDiscoveryStep:
     """Enhanced Step 3: HMM Regime Discovery with all improvements integrated."""
@@ -330,7 +147,7 @@ class EnhancedHMMRegimeDiscoveryStep:
     @handle_step03_errors
     @enhanced_validates()
     @enhanced_traced(span_name='initialize_enhanced_hmm_regime_discovery')
-    @handles_errors(fallback=False)
+    @safe_decorator(handles_errors, fallback=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM regime discovery step."""
         self.start_time = time.time()
@@ -345,9 +162,9 @@ class EnhancedHMMRegimeDiscoveryStep:
     @handle_step03_errors
     @enhanced_validates()
     @enhanced_traced(span_name='execute_enhanced_hmm_regime_discovery')
-    @validates()
-    @traced(span_name='execute_enhanced_hmm_regime_discovery')
-    @handles_errors(fallback={'success': False, 'regimes': [], 'error': 'Enhanced HMM discovery failed'})
+    @safe_decorator(validates)
+    @safe_decorator(traced, span_name='execute_enhanced_hmm_regime_discovery')
+    @safe_decorator(handles_errors, fallback={'success': False, 'regimes': [], 'error': 'Enhanced HMM discovery failed'})
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute enhanced HMM regime discovery with all improvements."""
         step_start = time.time()
@@ -491,8 +308,8 @@ class EnhancedHMMRegimeDiscoveryStep:
     @handle_step03_errors
     @enhanced_validates()
     @enhanced_traced(span_name='load_and_prepare_data')
-    @traced(span_name='load_and_prepare_data')
-    @handles_errors(fallback={'success': False, 'error': 'Data loading failed'})
+    @safe_decorator(traced, span_name='load_and_prepare_data')
+    @safe_decorator(handles_errors, fallback={'success': False, 'error': 'Data loading failed'})
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Load and prepare data for enhanced HMM regime discovery."""
         try:
@@ -547,12 +364,16 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error loading and preparing data: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(fallback=pd.DataFrame())
-    @validates()
-    async def _prepare_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    @safe_decorator(handles_errors, fallback=None)
+    @safe_decorator(validates)
+    async def _prepare_basic_features(self, df) -> Any:
         """Prepare basic features for regime discovery."""
         try:
             self.logger.info('🔧 Preparing basic features...')
+            
+            if not PANDAS_AVAILABLE:
+                self.logger.warning('⚠️ Pandas not available, skipping feature preparation')
+                return None
             
             # Ensure timestamp is datetime
             if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
@@ -562,8 +383,12 @@ class EnhancedHMMRegimeDiscoveryStep:
             df = df.sort_values('timestamp').reset_index(drop=True)
             
             # Create basic feature set
-            features = pd.DataFrame()
-            features['timestamp'] = df['timestamp']
+            if PANDAS_AVAILABLE:
+                features = pd.DataFrame()
+                features['timestamp'] = df['timestamp']
+            else:
+                features = None
+                return None
             
             # Price-based features
             features['price_momentum_5'] = df['close'].pct_change(5)
@@ -618,10 +443,10 @@ class EnhancedHMMRegimeDiscoveryStep:
             
         except Exception as e:
             self.logger.exception(f'❌ Error preparing basic features: {e}')
-            return pd.DataFrame()
+            return pd.DataFrame() if PANDAS_AVAILABLE else None
 
-    @handles_errors(fallback=False)
-    async def _run_bayesian_optimization(self, data: pd.DataFrame, features: pd.DataFrame) -> bool:
+    @safe_decorator(handles_errors, fallback=False)
+    async def _run_bayesian_optimization(self, data, features) -> bool:
         """Run Bayesian parameter optimization."""
         try:
             self.logger.info('🔍 Running Bayesian parameter optimization...')
@@ -653,8 +478,8 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in Bayesian optimization: {e}')
             return False
 
-    @handles_errors(fallback=None)
-    async def _create_enhanced_features(self, data: pd.DataFrame, basic_features: pd.DataFrame) -> Optional[pd.DataFrame]:
+    @safe_decorator(handles_errors, fallback=None)
+    async def _create_enhanced_features(self, data, basic_features) -> Optional[Any]:
         """Create enhanced regime discovery features."""
         try:
             self.logger.info('🔧 Creating enhanced regime discovery features...')
@@ -678,8 +503,8 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error creating enhanced features: {e}')
             return None
 
-    @handles_errors(fallback={'success': False, 'error': 'Ensemble clustering failed'})
-    async def _run_ensemble_clustering(self, features: pd.DataFrame) -> dict[str, Any]:
+    @safe_decorator(handles_errors, fallback={'success': False, 'error': 'Ensemble clustering failed'})
+    async def _run_ensemble_clustering(self, features) -> dict[str, Any]:
         """Run ensemble clustering with HMM + K-means + DBSCAN."""
         try:
             self.logger.info('🔍 Running ensemble clustering...')
@@ -706,8 +531,8 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in ensemble clustering: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(fallback={'overall_significant': False, 'error': 'Economic validation failed'})
-    async def _run_economic_validation(self, data: pd.DataFrame, regimes: np.ndarray) -> dict[str, Any]:
+    @safe_decorator(handles_errors, fallback={'overall_significant': False, 'error': 'Economic validation failed'})
+    async def _run_economic_validation(self, data, regimes) -> dict[str, Any]:
         """Run economic significance validation."""
         try:
             self.logger.info('🔍 Running economic significance validation...')
@@ -726,8 +551,8 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in economic validation: {e}')
             return {'overall_significant': False, 'error': str(e)}
 
-    @handles_errors(fallback={'success': False, 'error': 'Enhanced ML transition detection failed'})
-    async def _run_ml_transition_detection(self, data: pd.DataFrame, regimes: np.ndarray) -> dict[str, Any]:
+    @safe_decorator(handles_errors, fallback={'success': False, 'error': 'Enhanced ML transition detection failed'})
+    async def _run_ml_transition_detection(self, data, regimes) -> dict[str, Any]:
         """Run enhanced ML-based transition detection with Random Forest + LGBM."""
         try:
             self.logger.info('🔍 Running enhanced ML transition detection...')
@@ -759,11 +584,11 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in enhanced ML transition detection: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(fallback={})
+    @safe_decorator(handles_errors, fallback={})
     async def _compile_final_results(self, ensemble_results: dict[str, Any], 
                                    economic_validation: dict[str, Any],
                                    transition_results: dict[str, Any],
-                                   enhanced_features: pd.DataFrame) -> dict[str, Any]:
+                                   enhanced_features) -> dict[str, Any]:
         """Compile final results from all components."""
         try:
             self.logger.info('📊 Compiling final results...')
@@ -810,16 +635,29 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error compiling final results: {e}')
             return {}
 
-    def _calculate_regime_distribution(self, regimes: np.ndarray) -> dict[str, int]:
+    def _calculate_regime_distribution(self, regimes) -> dict[str, int]:
         """Calculate regime distribution."""
+        if not NUMPY_AVAILABLE:
+            # Simple fallback without numpy
+            regime_counts = {}
+            for regime in regimes:
+                regime_counts[f'regime_{regime}'] = regime_counts.get(f'regime_{regime}', 0) + 1
+            return regime_counts
+        
         unique_regimes, counts = np.unique(regimes, return_counts=True)
         return {f'regime_{regime}': int(count) for regime, count in zip(unique_regimes, counts)}
 
-    def _calculate_regime_transitions(self, regimes: np.ndarray) -> dict[str, Any]:
+    def _calculate_regime_transitions(self, regimes) -> dict[str, Any]:
         """Calculate regime transition statistics."""
-        transitions = np.sum(np.diff(regimes) != 0)
-        total_periods = len(regimes)
-        transition_rate = transitions / total_periods if total_periods > 0 else 0
+        if not NUMPY_AVAILABLE:
+            # Simple fallback without numpy
+            transitions = sum(1 for i in range(1, len(regimes)) if regimes[i] != regimes[i-1])
+            total_periods = len(regimes)
+            transition_rate = transitions / total_periods if total_periods > 0 else 0
+        else:
+            transitions = np.sum(np.diff(regimes) != 0)
+            total_periods = len(regimes)
+            transition_rate = transitions / total_periods if total_periods > 0 else 0
         
         return {
             'total_transitions': int(transitions),
@@ -875,7 +713,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.info(f"🔄 Total transitions: {transitions.get('total_transitions', 0)}")
             self.logger.info(f"📈 Transition rate: {transitions.get('transition_rate', 0):.4f}")
 
-    @handles_errors(fallback=False)
+    @safe_decorator(handles_errors, fallback=False)
     async def _log_enhanced_artifacts_to_mlflow(self, final_results: dict[str, Any], training_input: dict[str, Any]) -> None:
         """Log enhanced artifacts to MLflow."""
         try:
@@ -886,13 +724,16 @@ class EnhancedHMMRegimeDiscoveryStep:
             # Log regime states
             regime_states = final_results.get('regime_states', [])
             if regime_states:
-                regime_df = pd.DataFrame({
+                if PANDAS_AVAILABLE:
+                    regime_df = pd.DataFrame({
                     'timestamp': pd.date_range(start='2024-01-01', periods=len(regime_states), freq='1min'),
                     'regime_state': regime_states
                 })
                 
                 # Log to MLflow (placeholder - would use actual MLflow logging)
                 self.logger.info(f'✅ Logged regime states: {len(regime_states)} periods')
+            else:
+                self.logger.info(f'✅ Logged regime states: {len(regime_states)} periods (pandas not available)')
             
             # Log ensemble results
             ensemble_quality = final_results.get('ensemble_quality', {})
@@ -915,8 +756,11 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.error(f'❌ Failed to log enhanced artifacts to MLflow: {e}')
 
     # Technical indicator calculation methods
-    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+    def _calculate_rsi(self, prices, window: int = 14):
         """Calculate Relative Strength Index."""
+        if not PANDAS_AVAILABLE:
+            return None
+        
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window=window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -924,15 +768,21 @@ class EnhancedHMMRegimeDiscoveryStep:
         rsi = 100 - 100 / (1 + rs)
         return rsi
 
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
+    def _calculate_macd(self, prices, fast: int = 12, slow: int = 26):
         """Calculate MACD."""
+        if not PANDAS_AVAILABLE:
+            return None
+        
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
-    def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+    def _calculate_atr(self, df, window: int = 14):
         """Calculate Average True Range."""
+        if not PANDAS_AVAILABLE:
+            return None
+        
         high = df['high']
         low = df['low']
         close = df['close']
@@ -943,8 +793,11 @@ class EnhancedHMMRegimeDiscoveryStep:
         atr = tr.rolling(window=window).mean()
         return atr
 
-    def _calculate_adx(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+    def _calculate_adx(self, df, window: int = 14):
         """Calculate Average Directional Index."""
+        if not PANDAS_AVAILABLE:
+            return None
+        
         high = df['high']
         low = df['low']
         close = df['close']
@@ -970,7 +823,7 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         return adx
 
-    def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
+    def _calculate_bollinger_bands(self, prices, window: int = 20, num_std: float = 2):
         """Calculate Bollinger Bands."""
         sma = prices.rolling(window=window).mean()
         std = prices.rolling(window=window).std()
@@ -979,13 +832,16 @@ class EnhancedHMMRegimeDiscoveryStep:
         bb_width = (bb_upper - bb_lower) / sma
         bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
         
-        bb_features = pd.DataFrame({
+        if PANDAS_AVAILABLE:
+            bb_features = pd.DataFrame({
             'bb_upper': bb_upper,
             'bb_middle': sma,
             'bb_lower': bb_lower,
             'bb_width': bb_width,
             'bb_position': bb_position
         })
+        else:
+            bb_features = None
         
         return bb_features
 
@@ -994,8 +850,8 @@ class EnhancedHMMRegimeDiscoveryStep:
 @handle_step03_errors
 @enhanced_validates()
 @enhanced_traced(span_name='run_enhanced_step')
-@validates()
-@handles_errors(fallback=False)
+@safe_decorator(validates)
+@safe_decorator(handles_errors, fallback=False)
 async def run_enhanced_step(symbol: str, exchange: str, timeframe: str = "1m", 
                           data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the enhanced HMM regime discovery step.

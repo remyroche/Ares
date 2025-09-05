@@ -182,7 +182,7 @@ class InteractionMappingPipeline:
         print("="*60)
         
         try:
-            results = self.call_graph_analyzer.analyze_call_graph(str(self.project_root))
+            results = self.call_graph_analyzer.analyze_directory(str(self.project_root))
             
             # Generate call graph report
             call_graph_report = {

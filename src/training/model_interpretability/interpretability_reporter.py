@@ -80,9 +80,6 @@ class InterpretabilityReporter:
                         model_type, symbol, exchange, "summary.json"
                     )
                     import shutil
-from typing import Any
-from typing import Dict
-from typing import Optional
 
                     shutil.copy2(summary_report_path, target_summary_path)
                     reports_created.append(str(target_summary_path))

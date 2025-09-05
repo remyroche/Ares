@@ -6,14 +6,14 @@ in the trading system and enables traceability of trade decisions back to
 individual factors.
 """
 
-from .base_explainer import (
+from .explainability.base_explainer import (
     BaseExplainer,
     ExplanationResult,
     TradeDecisionTrace,
     TradeDecisionTracer
 )
 
-from .integration import (
+from .explainability.integration import (
     ExplainabilityIntegration,
     get_explainability_integration,
     explainable_tactician_prediction,
@@ -21,10 +21,7 @@ from .integration import (
     explainable_sr_prediction,
     explainable_analyst_prediction,
     explainable_trading_decision,
-    FeatureExtractor
-)
-
-from .visualization import (
+    FeatureExtractor,
     ExplanationVisualizer,
     DecisionTraceVisualizer
 )

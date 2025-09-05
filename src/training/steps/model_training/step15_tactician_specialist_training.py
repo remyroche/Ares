@@ -46,6 +46,7 @@ def handles_errors(exceptions: List[Any]=(Exception,), default_return: Any=None,
         return wrapper
     return decorator
 try:
+    import numpy as np
 except ImportError:
 
     class FallbackNumpy:
@@ -58,6 +59,7 @@ except ImportError:
             return lambda *args, **kwargs: 0
     np = FallbackNumpy()
 try:
+    import pandas as pd
 except ImportError:
 
     class FallbackPandas:
@@ -597,7 +599,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 subsample = 0.9
             model = xgb.XGBClassifier(n_estimators=best_params.get('n_estimators', 200), max_depth=best_params.get('max_depth', 6), learning_rate=best_params.get('learning_rate', 0.05), reg_alpha=reg_alpha, reg_lambda=reg_lambda, min_child_weight=min_child_weight, subsample=best_params.get('subsample', subsample), colsample_bytree=best_params.get('colsample_bytree', 0.8), random_state=42, eval_metric='logloss', verbosity=0)
             eval_set = [(X_test, y_test)]
-            model.fit(X_train, y_train, eval_set=eval_set)
+            model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             model.predict_proba(X_test)
             accuracy = float(accuracy_score(y_test, y_pred))

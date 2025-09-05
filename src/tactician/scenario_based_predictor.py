@@ -17,7 +17,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 if TYPE_CHECKING:
-    pass
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

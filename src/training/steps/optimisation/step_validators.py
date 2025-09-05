@@ -15,6 +15,7 @@ from .utils.logger import system_logger
 from .utils.base_validator import BaseValidator
 
 import psutil
+import pandas as pd
 
 
 logger = system_logger.getChild('OptimisationStepValidators')

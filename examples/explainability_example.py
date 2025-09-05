@@ -15,6 +15,9 @@ from pathlib import Path
 
 # Import explainability components
 from src.explainability import (
+import numpy as np
+import pandas as pd
+
     ExplainabilityOrchestrator,
     TacticianExplainer,
     HMMExplainer,

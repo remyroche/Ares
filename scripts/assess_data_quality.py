@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Data Quality Assessment Script
 
@@ -27,6 +29,7 @@ src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+import numpy as np
 
 
 class EnhancedDataQualityAnalyzer:
@@ -408,7 +411,6 @@ async def main():
         return obj
 
 import json
-import pandas as pd
 
 with open(output_file, "w") as f:
     json.dump(results, f, indent=2, default=convert_numpy_types)

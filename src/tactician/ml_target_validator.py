@@ -9,6 +9,8 @@ from typing import Any
 
 from .utils.logger import system_logger
 from src.utils.warning_symbols import (
+import numpy as np
+
     error,
     failed,
     initialization_error,

@@ -5,6 +5,7 @@ Script to verify the fixes applied to import conflicts and signature issues.
 
 import os
 import json
+import numpy as np
 
 
 def count_python_files(exclude_dirs=None):

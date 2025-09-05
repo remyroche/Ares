@@ -33,6 +33,8 @@ from .core.decorators import (
     validate_pipeline_step
 )
 from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 logger = system_logger.getChild("Step3ParameterOptimization")
 

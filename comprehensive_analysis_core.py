@@ -34,6 +34,8 @@ from centralized_logging import get_logger
 try:
     from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
     from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
+import numpy as np
+
     ANALYZERS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Some analyzers not available: {e}")

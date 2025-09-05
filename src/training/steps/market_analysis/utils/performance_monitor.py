@@ -10,6 +10,8 @@ from typing import Any, Dict
 # Optional dependencies with fallback handling
 try:
     import psutil
+import numpy as np
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False

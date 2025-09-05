@@ -11,6 +11,7 @@ This script will:
 
 import re
 from pathlib import Path
+import numpy as np
 
 # Define the steps that need to be updated
 STEPS_TO_UPDATE=[

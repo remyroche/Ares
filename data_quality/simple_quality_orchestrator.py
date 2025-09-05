@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from centralized_logging import get_logger
+import numpy as np
 
 logger = get_logger(__name__)
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Step07 Import Verification Script
 
@@ -99,7 +102,6 @@ def main():
     
     # Test pandas fallback
     try:
-        import pandas as pd
         pandas_available = True
         print("✅ pandas: Available - full DataFrame support")
     except ImportError:
@@ -108,7 +110,6 @@ def main():
     
     # Test numpy fallback
     try:
-        import numpy as np
         numpy_available = True
         print("✅ numpy: Available - full array support")
     except ImportError:

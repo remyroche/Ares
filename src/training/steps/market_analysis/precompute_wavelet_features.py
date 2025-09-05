@@ -19,6 +19,9 @@ from .utils.data_optimizer import ohlcv_columns
 from .core.domain import validate_wavelet_data_quality
 from .utils.logger import system_logger
 from .core.decorators import (
+import numpy as np
+import pandas as pd
+
     error,
     failed,
     initialization_error,

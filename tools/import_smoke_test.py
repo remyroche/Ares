@@ -27,6 +27,8 @@ def _maybe_stub_heavy_deps() -> None:
 
     # numpy
     import math
+import numpy as np
+
     stub(
         "numpy",
         SimpleNamespace(

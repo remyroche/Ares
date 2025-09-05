@@ -4,17 +4,17 @@ This module provides validation capabilities for input data, matrix operations,
 and feature importance results.
 """
 from typing import Any, Dict, List, Tuple
+import numpy as np
+import pandas as pd
 
 # Optional dependencies with fallback handling
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False

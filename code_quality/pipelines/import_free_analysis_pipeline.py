@@ -37,6 +37,7 @@ from scripts.detect_circular_imports import ImportAnalyzer
 
 # Import core components
 from core.config import get_default_config
+import numpy as np
 
 
 class ImportFreeAnalyzer:

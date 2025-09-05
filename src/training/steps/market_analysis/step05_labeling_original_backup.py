@@ -18,6 +18,8 @@ The original complex implementation has been refactored into:
 - step05_labeling_simplified.py - Simplified main implementation
 """
 import logging
+import warnings
+
 try:
     from src.utils.decorators import handles_errors as _handles_errors
     from src.utils.decorators import traced as _traced
@@ -58,7 +60,6 @@ from collections import defaultdict, Counter
 import threading
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import warnings
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump

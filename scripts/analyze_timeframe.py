@@ -24,6 +24,8 @@ from pathlib import Path
 
 
 from src.utils.logger import ensure_logging_setup, get_logger
+import numpy as np
+import pandas as pd
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent

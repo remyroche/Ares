@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Import standalone enhanced analyzer
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 from core.config import AnalysisConfig
+import numpy as np
 
 # Note: Enhanced complexity analysis is available as a separate pipeline
 # Use: python code_complexity/cli.py for comprehensive complexity analysis

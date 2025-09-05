@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import shutil
 from datetime import datetime
+import numpy as np
 
 
 class ConfidenceLevel(Enum):

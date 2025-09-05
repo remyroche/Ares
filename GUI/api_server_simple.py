@@ -26,6 +26,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List
+import numpy as np
 
 # Setup logger
 logger = logging.getLogger(__name__)

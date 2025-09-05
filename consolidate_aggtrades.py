@@ -2,6 +2,7 @@
 """Consolidate aggtrades files into a single parquet file."""
 
 import glob
+import pandas as pd
 
 
 

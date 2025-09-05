@@ -12,6 +12,7 @@ from pathlib import Path
 import aiohttp
 import certifi
 import pandas as pd
+import numpy as np
 
 # Add project root to path
 project_root=Path(__file__).parent

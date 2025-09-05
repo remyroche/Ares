@@ -9,6 +9,9 @@ based on various market characteristics including volatility, volume, price move
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import warnings
+import numpy as np
+import pandas as pd
+
 warnings.filterwarnings('ignore')
 
 def load_and_prepare_data():

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from src.utils.logger import setup_logging, system_logger
 from src.utils.warning_symbols import error as error_src_utils_warning_symbols, invalid, missing, warning
+import pandas as pd
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent

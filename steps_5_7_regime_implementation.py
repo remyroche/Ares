@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """Implementation of per-regime processing for Steps 5-7."""
 
 from pathlib import Path
@@ -462,10 +465,8 @@ class RegimeAwareMatrixOperations:
         """Apply PCA with regime-specific variance threshold."""
         
         from sklearn.decomposition import PCA
-import pandas as pd
 from typing import Any
 from typing import Dict
-import numpy as np
 
 # Fit PCA
 pca = PCA(n_components=config['pca_variance_threshold'])

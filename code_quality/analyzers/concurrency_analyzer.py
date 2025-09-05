@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config import CodeQualityConfig, get_default_config
+import numpy as np
 
 
 class ConcurrencyIssue:

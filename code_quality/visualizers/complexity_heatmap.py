@@ -9,6 +9,9 @@ from .code_visualizer import CodeVisualizer
 
 try:
     import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False

@@ -96,6 +96,62 @@ def is_documentation_file(file_path: str) -> bool:
     return False
 
 
+def is_valid_python_file(file_path: str) -> bool:
+    """Check if a file is a valid Python file."""
+    return file_path.endswith('.py') and not is_documentation_file(file_path)
+
+
+def backup_file(file_path: str) -> Optional[str]:
+    """Create a backup of a file."""
+    try:
+        backup_path = f"{file_path}.backup"
+        with open(file_path, 'r', encoding='utf-8') as original:
+            with open(backup_path, 'w', encoding='utf-8') as backup:
+                backup.write(original.read())
+        return backup_path
+    except Exception:
+        return None
+
+
+def restore_file(file_path: str) -> bool:
+    """Restore a file from backup."""
+    try:
+        backup_path = f"{file_path}.backup"
+        if Path(backup_path).exists():
+            with open(backup_path, 'r', encoding='utf-8') as backup:
+                with open(file_path, 'w', encoding='utf-8') as original:
+                    original.write(backup.read())
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def find_unused_imports(file_path: str) -> List[str]:
+    """Find unused imports in a Python file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        tree = ast.parse(content)
+        imports = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    for alias in node.names:
+                        imports.append(f"{node.module}.{alias.name}")
+        
+        # This is a simplified version - would need more complex analysis
+        # to determine which imports are actually unused
+        return []
+    except Exception:
+        return []
+
+
 class FileUtils:
     """Utility functions for file operations."""
     

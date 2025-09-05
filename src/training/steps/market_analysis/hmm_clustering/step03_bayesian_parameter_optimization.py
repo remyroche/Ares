@@ -16,6 +16,7 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from .core.decorators import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,

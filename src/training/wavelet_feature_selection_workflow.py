@@ -1101,7 +1101,7 @@ class WaveletFeatureSelectionWorkflow:
         except ImportError:
             # Fallback to old import path
             from shap import TreeExplainer
-import pandas as pd
-import numpy as np
+        import pandas as pd
+        import numpy as np
 
 return TreeExplainer(model)

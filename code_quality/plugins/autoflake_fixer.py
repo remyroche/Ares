@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Autoflake fixer plugin to remove unused imports and variables.
 """

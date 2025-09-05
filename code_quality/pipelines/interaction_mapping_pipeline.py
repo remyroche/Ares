@@ -31,8 +31,8 @@ from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 from analyzers.data_flow_analyzer import DataFlowAnalyzer
 
 # Import visualizers (ONLY interaction mapping related)
-from visualizers.interaction_network import InteractionNetwork
-from visualizers.dependency_graph import DependencyGraph
+from visualizers.interaction_network import InteractionNetworkVisualizer
+from visualizers.dependency_graph import DependencyGraphVisualizer
 
 # Import scripts (ONLY interaction mapping related)
 from scripts.extract_interactions import ExtractInteractions

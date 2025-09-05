@@ -34,6 +34,8 @@ from visualizers.dashboard_generator import DashboardGenerator
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class ComplexityPipeline:
@@ -48,12 +50,12 @@ class ComplexityPipeline:
         # Initialize analyzers
         self.config = get_default_config()
         self.complexity_analyzer = ComplexityAnalyzer(self.config)
-        self.metrics_analyzer = MetricsAnalyzer(self.config)
+        self.metrics_analyzer = MetricsAnalyzer(self.project_root)
         self.architecture_analyzer = ArchitectureAnalyzer(self.config)
         self.call_graph_analyzer = CallGraphAnalyzer(self.config)
         
         # Initialize visualizers
-        self.complexity_heatmap = ComplexityHeatmap()
+        self.complexity_heatmap = ComplexityHeatmapVisualizer()
         self.dashboard_generator = DashboardGenerator()
         
         # Initialize plugin system

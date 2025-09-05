@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Import hygiene fixer: normalize aliases, move type-only imports under TYPE_CHECKING.
 Note: conservative edits based on simple heuristics.

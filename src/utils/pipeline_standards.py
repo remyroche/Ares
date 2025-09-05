@@ -7,18 +7,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-# Optional numpy import
-try:
-    import numpy as np
-except ImportError:
-    np = None
-
-# Optional pandas import
-try:
-    import pandas as pd
-except ImportError:
-    pd = None
-
+import numpy as np
+import pandas as pd
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))

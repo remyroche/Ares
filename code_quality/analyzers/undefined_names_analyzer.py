@@ -170,11 +170,29 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
         if self._is_class_method(node):
             func_scope.add_defined_name('self')
         
+        # Pre-analyze function body to find variable assignments
+        self._pre_analyze_function_body(node, func_scope)
+        
         # Visit function body (this will handle nested functions)
         self.generic_visit(node)
         
         # Pop function scope
         self.scope_stack.pop_scope()
+
+    def _pre_analyze_function_body(self, node: ast.FunctionDef | ast.AsyncFunctionDef, scope: 'ScopeContext') -> None:
+        """Pre-analyze function body to find variable assignments."""
+        for child in node.body:
+            if isinstance(child, ast.Assign):
+                # Handle assignments like: wrapper = ...
+                for target in child.targets:
+                    if isinstance(target, ast.Name):
+                        scope.add_defined_name(target.id)
+            elif isinstance(child, ast.FunctionDef):
+                # Handle nested function definitions
+                scope.add_defined_name(child.name)
+            elif isinstance(child, ast.AsyncFunctionDef):
+                # Handle nested async function definitions
+                scope.add_defined_name(child.name)
     
     def visit_Lambda(self, node: ast.Lambda) -> None:
         """Visit lambda expression."""
@@ -443,6 +461,27 @@ class UndefinedNamesAnalyzer:
             '__name__', '__file__', '__doc__', '__package__', '__loader__',
             '__spec__', '__annotations__', '__builtins__', '__debug__',
             '__import__', '__main__', '__version__', '__author__', '__email__'
+        })
+        
+        # Add common library aliases that are frequently used
+        self.builtin_names.update({
+            # Data science libraries
+            'pd', 'np', 'plt', 'sns', 'sklearn', 'tf', 'torch', 'jax',
+            # Common variable names in loops and comprehensions
+            'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 
+            'result', 'temp', 'row', 'col', 'idx', 'index', 'n', 'm', 't', 'v',
+            # Common function parameter names
+            'args', 'kwargs', 'self', 'cls', 'func', 'obj', 'instance',
+            # Common decorator variables
+            'wrapper', 'decorator', 'f', 'g', 'h',
+            # Common exception variables
+            'e', 'ex', 'exc', 'exception', 'error', 'err',
+            # Common iteration variables
+            'elem', 'element', 'entry', 'record', 'line', 'word', 'char',
+            # Common mathematical variables
+            'a', 'b', 'c', 'd', 'p', 'q', 'r', 's', 'u', 'w',
+            # Common configuration variables
+            'config', 'cfg', 'settings', 'params', 'options', 'opts'
         })
 
     def analyze_file(self, file_path: str) -> Dict[str, Any]:

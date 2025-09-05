@@ -274,14 +274,14 @@ class EnhancedImportAnalyzer:
             Dictionary with analysis results
         """
         try:
-            # Use the existing comprehensive analysis
-            results = self.run_comprehensive_analysis(directory)
+            # Use the directory analysis method
+            results = self.analyze_directory(directory)
             
             # Extract unused imports from the results
             unused_imports = []
-            for file_path, file_results in results.get("file_results", {}).items():
-                if "import_analysis" in file_results:
-                    import_issues = file_results["import_analysis"].get("issues", [])
+            for file_path, file_result in results.get("file_results", {}).items():
+                if "import_analysis" in file_result:
+                    import_issues = file_result["import_analysis"].get("issues", [])
                     for issue in import_issues:
                         if issue.get("type") == "unused_import":
                             unused_imports.append({

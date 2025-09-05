@@ -1088,4 +1088,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime saving result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run( test())

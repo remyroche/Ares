@@ -88,6 +88,10 @@ class SequentialFixer(BasePipeline):
 
         # Print dependency status
         dependency_manager.print_dependency_status()
+        
+        # Add missing attributes for pipeline compatibility
+        self.project_root = Path("/workspace/src")
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def _create_fallback_config(self):
         """Create a fallback configuration when core config is not available."""
@@ -818,6 +822,28 @@ def main():
         if results["summary"]["overall_status"] == "partial":
             return 1
         return 2
+
+    def fix_all_issues(self, directory: str = None) -> dict:
+        """Main method called by the pipeline to fix all issues sequentially."""
+        if directory is None:
+            directory = str(self.project_root)
+        
+        # Use the existing run_pipeline method
+        results = self.run_pipeline(
+            target=directory,
+            output_dir=f"/workspace/code_quality/reports/sequential_fixes_{self.timestamp}",
+            create_backups=True,
+            run_pre_commit=False
+        )
+        
+        return {
+            "status": "completed",
+            "overall_status": results.get("summary", {}).get("overall_status", "unknown"),
+            "total_files": results.get("summary", {}).get("total_files", 0),
+            "files_fixed": results.get("summary", {}).get("files_fixed", 0),
+            "files_failed": results.get("summary", {}).get("files_failed", 0),
+            "steps_completed": len([s for s in results.get("steps", []) if s.get("status") == "success"])
+        }
 
 
 if __name__ == "__main__":

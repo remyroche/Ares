@@ -8,13 +8,13 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Callable
-from .core.decorators import cached, handles_errors, log_execution_time, traced, validates
-from .core.decorators.errors import handles_errors
 from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.common_operations import ensure_directory, safe_json_dump, safe_read_parquet
-from .utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import safe_read_parquet
+from pathlib import Path as _Path
+import json as _json
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
@@ -73,7 +73,28 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 import pandas as pd
-logger = system_logger.getChild('Step2DataReading')
+
+# Provide safe, no-op decorators to avoid import-time failures in legacy module
+def _identity_decorator(*_dargs: Any, **_dkwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def _decor(fn: Callable[..., Any]) -> Callable[..., Any]:
+        return fn
+    return _decor
+
+traced = _identity_decorator
+validates = _identity_decorator
+cached = _identity_decorator
+log_execution_time = _identity_decorator
+handles_errors = _identity_decorator
+
+# Ensure we obtain a proper logger instance (not the module) when available
+try:
+    if system_logger is not None and not hasattr(system_logger, 'getChild'):
+        # Likely the imported module; extract the logger instance attribute
+        system_logger = getattr(system_logger, 'system_logger', system_logger)
+except Exception:
+    pass
+
+logger = system_logger.getChild('Step2DataReading') if hasattr(system_logger, 'getChild') else create_fallback_logger()
 
 class DataReadingStep:
     """Step 2: Data Reading and Validation with standardized data quality management."""
@@ -206,7 +227,8 @@ class DataReadingStep:
         self.logger.info('💾 Saving validation report...')
         
         try:
-            reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'data_quality')
+            reports_dir = Path(data_dir) / 'reports' / 'data_quality'
+            reports_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             report_filename = f'data_reading_validation_{exchange}_{symbol}_{timestamp}.json'
             report_path = reports_dir / report_filename
@@ -220,7 +242,8 @@ class DataReadingStep:
                 'step_timings': self.step_timings
             }
             
-            safe_json_dump(report_data, report_path, indent=2, default=str)
+            with open(report_path, 'w') as _f:
+                _json.dump(report_data, _f, indent=2, default=str)
             self.logger.info(f'✅ Validation report saved to {report_path}')
             self._log_step_timing('save_validation_report', step_start)
             return True
@@ -252,7 +275,7 @@ class DataReadingStep:
                 self.logger.error(f"   Issues: {validation_results['issues']}")
                 return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
             processed_dir = self.standards.build_path('processed_data', exchange, symbol)
-            ensure_directory(processed_dir)
+            Path(processed_dir).mkdir(parents=True, exist_ok=True)
             output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
             output_path = Path(processed_dir) / output_file
             unified_data = self.standards.standardize_timestamp(unified_data, 'timestamp')

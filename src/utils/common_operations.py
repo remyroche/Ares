@@ -23,10 +23,14 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
+
 try:
+    import numpy as np
 except Exception:
     np = None
+
 try:
+    import pandas as pd
 except Exception:
 
     class _PDStub:

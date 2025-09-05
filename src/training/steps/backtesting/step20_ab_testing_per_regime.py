@@ -1,21 +1,43 @@
 """Step 20: AB Testing - Per-Regime Implementation."""
 
 import asyncio
-from pathlib import Path
+import sys
 import json
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from .training.steps.step20_ab_testing import Step20ABTesting
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from typing import Any
-from typing import Dict
 import numpy as np
-from typing import Optional
+
+# Add project root to path for proper imports
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.training.steps.model_training.validation.step20_ab_testing import ABTestingStep
+from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
+from src.utils.pipeline_standards import pipeline_standards
+from src.utils.logger import get_logger
+
+# Import decorators (with fallback implementations)
+try:
+    from src.core.decorators import traced, validates, handles_errors
+except ImportError:
+    # Fallback decorators
+    def traced(span_name=None):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def validates():
+        def decorator(func):
+            return func
+        return decorator
+    
+    def handles_errors(func):
+        return func
 
 logger = get_logger('Step20ABTestingPerRegime')
 
-class PerRegimeABTestingStep(Step20ABTesting):
+class PerRegimeABTestingStep(ABTestingStep):
     """AB testing step that processes each regime separately."""
     
     def __init__(self, config: Dict[str, Any]):
@@ -283,4 +305,4 @@ if __name__ == '__main__':
     async def test():
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Per-regime AB testing result: {success}')
-    asyncio.run(await test())
+    asyncio.run(test())

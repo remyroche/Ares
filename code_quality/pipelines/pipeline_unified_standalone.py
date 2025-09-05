@@ -67,6 +67,11 @@ class UnifiedStandalonePipeline:
                 "description": "Comprehensive Import and Undefined Checker",
                 "args": ["--project-root", str(self.project_root)],
             },
+            "enhanced_undefined_names_analysis": {
+                "script": "../analyzers/undefined_names_analyzer.py",
+                "description": "Enhanced Undefined Names Analyzer",
+                "args": ["--target", str(self.project_root)],
+            },
         }
 
         self.results = {}
@@ -140,6 +145,7 @@ class UnifiedStandalonePipeline:
             "function_validator": "function_validation_*.json",
             "comprehensive_review": "comprehensive_review_*.json",
             "comprehensive_import_undefined_check": "import_undefined_check_report_*.json",
+            "enhanced_undefined_names_analysis": "enhanced_undefined_names_analysis_*.json",
         }
 
         pattern = report_patterns.get(tool_name)
@@ -163,7 +169,7 @@ class UnifiedStandalonePipeline:
     def run_category(self, category: str) -> dict[str, Any]:
         """Run all tools in a specific category."""
         categories = {
-            "syntax_imports": ["syntax_fixer", "import_fixer", "circular_imports", "comprehensive_import_undefined_check"],
+            "syntax_imports": ["syntax_fixer", "import_fixer", "circular_imports", "comprehensive_import_undefined_check", "enhanced_undefined_names_analysis"],
             "async_types": ["async_fixer", "type_hints"],
             "analysis": ["function_validator", "comprehensive_review"],
         }

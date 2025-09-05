@@ -8,8 +8,12 @@ from collections import defaultdict
 from pathlib import Path
 
 # Load the JSON report
-with open("/workspace/code_quality/interaction_analysis.json") as f:
-    data = json.load(f)
+try:
+    with open("/workspace/code_quality/interaction_analysis.json") as f:
+        data = json.load(f)
+except FileNotFoundError:
+    print("No interaction analysis data found. Please run the interaction analysis first.")
+    data = {}
 
 print("CODE INTERACTION MAPPING SUMMARY")
 print("=" * 60)
@@ -18,10 +22,13 @@ print()
 # Overall statistics
 print("OVERALL STATISTICS")
 print("-" * 30)
-print(f"Files analyzed: {data['summary']['files_processed']}")
-print(f"Total issues: {data['summary']['total_issues']}")
-print(f"Undefined functions: {data['summary']['undefined_functions']}")
-print(f"Missing await calls: {data['summary']['missing_await']}")
+if data and 'summary' in data:
+    print(f"Files analyzed: {data['summary']['files_processed']}")
+    print(f"Total issues: {data['summary']['total_issues']}")
+    print(f"Undefined functions: {data['summary']['undefined_functions']}")
+    print(f"Missing await calls: {data['summary']['missing_await']}")
+else:
+    print("No data available")
 print()
 
 # Analyze undefined functions
@@ -112,3 +119,25 @@ print("2. Ensure all async functions are properly awaited")
 print("3. Review module dependencies and circular imports")
 print("4. Add type hints to clarify expected interfaces")
 print("5. Consider creating utility modules for common undefined functions")
+
+
+class InteractionSummary:
+    """Class wrapper for interaction summary functionality."""
+    
+    def __init__(self, project_root: str = None):
+        self.project_root = Path(project_root) if project_root else Path.cwd()
+    
+    def generate_summary(self, data_file: str = None):
+        """Generate interaction summary from data file."""
+        if data_file:
+            try:
+                with open(data_file) as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                print("No interaction analysis data found. Please run the interaction analysis first.")
+                data = {}
+        else:
+            data = {}
+        
+        # This would contain the summary generation logic
+        return data

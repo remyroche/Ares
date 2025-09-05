@@ -29,10 +29,13 @@ from mappers.enhanced_map_code_interactions import EnhancedCodeInteractionMapper
 from analyzers.dependency_analyzer import DependencyAnalyzer
 from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 from analyzers.data_flow_analyzer import DataFlowAnalyzer
+from analyzers.call_graph_analyzer import CallGraphAnalyzer
+from analyzers.architecture_analyzer import ArchitectureAnalyzer
 
 # Import visualizers (ONLY interaction mapping related)
 from visualizers.interaction_network import InteractionNetworkVisualizer
 from visualizers.dependency_graph import DependencyGraphVisualizer
+from visualizers.dashboard_generator import DashboardGenerator
 
 # Import scripts (ONLY interaction mapping related)
 from scripts.extract_interactions import ExtractInteractions
@@ -42,6 +45,8 @@ from scripts.interaction_summary import InteractionSummary
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class InteractionMappingPipeline:
@@ -54,20 +59,19 @@ class InteractionMappingPipeline:
         self.enable_plugins = enable_plugins
         
         # Initialize interaction mappers
-        self.code_interaction_mapper = CodeInteractionMapper()
-        self.enhanced_interaction_mapper = EnhancedCodeInteractionMapper()
+        self.code_interaction_mapper = CodeInteractionMapper(str(self.project_root))
+        self.enhanced_interaction_mapper = EnhancedCodeInteractionMapper(str(self.project_root))
         
         # Initialize analyzers
         self.config = get_default_config()
         self.call_graph_analyzer = CallGraphAnalyzer(self.config)
         self.dependency_analyzer = DependencyAnalyzer(self.config)
-        self.data_flow_analyzer = DataFlowAnalyzer(self.config)
+        self.data_flow_analyzer = DataFlowAnalyzer(str(self.project_root))
         self.architecture_analyzer = ArchitectureAnalyzer(self.config)
         
         # Initialize visualizers
-        self.interaction_visualizer = InteractionVisualizer()
-        self.interaction_network = InteractionNetwork()
-        self.dependency_graph = DependencyGraph()
+        self.interaction_network_visualizer = InteractionNetworkVisualizer()
+        self.dependency_graph_visualizer = DependencyGraphVisualizer()
         self.dashboard_generator = DashboardGenerator()
         
         # Initialize plugin system
@@ -85,10 +89,10 @@ class InteractionMappingPipeline:
         try:
             # Register analysis plugins that can help with interaction mapping
             from plugins.creosote_analyzer import CreosoteAnalyzer
-            from plugins.fawltydeps_analyzer import FawltydepsAnalyzer
+            from plugins.fawltydeps_analyzer import FawltyDepsAnalyzer
             
             self.plugin_registry.register_plugin(CreosoteAnalyzer)
-            self.plugin_registry.register_plugin(FawltydepsAnalyzer)
+            self.plugin_registry.register_plugin(FawltyDepsAnalyzer)
             
             print(f"✅ Registered {len(self.plugin_registry.list_plugins())} interaction mapping plugins")
         except ImportError as e:

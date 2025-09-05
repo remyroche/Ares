@@ -14,10 +14,10 @@ class BlackFixer(BasePlugin):
     """Black code formatter plugin."""
 
     def __init__(self, config: dict[str, Any] = None):
-        super().__init__(config)
         self.name = "Black"
         self.description = "Uncompromising Python code formatter"
         self.version = "1.0.0"
+        super().__init__(config)
 
     def get_name(self) -> str:
         return self.name
@@ -27,6 +27,45 @@ class BlackFixer(BasePlugin):
 
     def get_version(self) -> str:
         return self.version
+    
+    def get_metadata(self):
+        """Return plugin metadata."""
+        from plugins.base_plugin import PluginMetadata, PluginCategory, PluginPriority
+        return PluginMetadata(
+            name=self.name,
+            version=self.version,
+            description=self.description,
+            author="Code Quality Pipeline",
+            category=PluginCategory.FORMATTING,
+            priority=PluginPriority.HIGH,
+            dependencies=["black"],
+            tags={"formatting", "black", "code-style"},
+            required_packages=["black"]
+        )
+    
+    def is_available(self) -> bool:
+        """Check if black is available."""
+        try:
+            subprocess.run([sys.executable, "-m", "black", "--version"], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+    
+    def execute(self, context):
+        """Execute the black formatter."""
+        from plugins.base_plugin import PluginResult
+        if not self.is_available():
+            return PluginResult(
+                success=False,
+                message="black not available",
+                data={"skipped": True}
+            )
+        
+        return PluginResult(
+            success=True,
+            message="Black formatter ready",
+            data={"tool": "black"}
+        )
 
     def can_fix(self, file_path: str) -> bool:
         """Check if Black can fix this file."""

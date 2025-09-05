@@ -74,6 +74,7 @@ class UnifiedEnhancedPipeline:
         self.reports_dir = Path("/workspace/code_quality/reports")
         self.reports_dir.mkdir(exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.config = get_default_config()
         self.results = {
             "syntax_imports": {},
             "async_types": {},
@@ -315,7 +316,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
 
         start_time = time.time()
-        detector = CircularImportDetector(str(self.project_root))
+        from scripts.detect_circular_imports import ImportAnalyzer
+        detector = ImportAnalyzer(str(self.project_root))
         report = detector.generate_report()
         
         cycles = report.get("circular_imports", {}).get("cycles", [])
@@ -917,7 +919,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
 
         start_time = time.time()
-        checker = SimpleImportAndUndefinedChecker(str(self.project_root))
+        from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+        checker = UndefinedNamesAnalyzer(self.config)
         result = checker.run_comprehensive_check(str(self.project_root))
         result["execution_time"] = time.time() - start_time
 

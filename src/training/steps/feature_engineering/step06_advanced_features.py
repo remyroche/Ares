@@ -2,19 +2,17 @@ from __future__ import annotations
 
 """Step 06: Advanced Feature Engineering (standard path for orchestrator).
 
-This module provides a minimal-yet-functional implementation of the advanced
-feature engineering step with proper async usage, BaseStep interface, logging,
-and safe error handling. It consumes labeled data from step 05 and produces
-engineered feature parquet files and summary metadata, matching step_config.
+Mandatory components: wavelet features and multi-timeframe/resampling are required.
+If a required component is unavailable or fails, the step must fail (no fallbacks).
 """
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import asyncio
 
 from src.training.base_step import BaseStep
-from src.utils.decorators.errors import handles_errors
 
 
 class AdvancedFeatureEngineeringStep(BaseStep):
@@ -26,8 +24,8 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         self.feature_config: Dict[str, Any] = config.get(
             "feature_engineering",
             {
-                "enable_wavelets": False,
-                "enable_multi_timeframe": False,
+                "enable_wavelets": True,
+                "enable_multi_timeframe": True,
                 "timeframes": ["5m", "15m", "1h"],
                 "chunk_size": 300_000,
             },
@@ -51,7 +49,6 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                 errors.append(f"Missing required OHLCV columns: {missing}")
         return (len(errors) == 0, errors)
 
-    @handles_errors(exceptions=(Exception,), default_return={"success": False}, context="advanced_feature_engineering")
     async def execute_logic(
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -62,7 +59,13 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                 f"🔧 Engineering features for labeled dataset: rows={len(labeled)} cols={len(labeled.columns)}"
             )
 
-        features = self._build_basic_features(labeled)
+        # Core feature sets (must succeed)
+        base_features = self._build_basic_features(labeled)
+        wavelet_features = self._build_wavelet_features_required(labeled)
+        mtf_features = await self._build_mtf_features_required(labeled)
+
+        # Combine all features and retain labels (no internal NaN/inf filling here)
+        features = pd.concat([base_features, wavelet_features, mtf_features], axis=1)
         features = self._finalize_features(features, labeled)
 
         # Split features train/val by simple ratio if no index provided
@@ -168,6 +171,53 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         features.fillna(0, inplace=True)
 
         return features
+
+    def _build_wavelet_features_required(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Build wavelet features; raise if unavailable or fails."""
+        if not self.feature_config.get("enable_wavelets", True):
+            raise RuntimeError("Wavelet features are required (enable_wavelets=True)")
+        try:
+            # Prefer precomputed or vectorized implementation paths
+            from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer  # type: ignore
+        except Exception as e:
+            raise ImportError(f"Wavelet component missing: {e}")
+
+        # Minimal invocation contract; real implementation should extract series
+        pre = WaveletFeaturePrecomputer()
+        try:
+            wv = pre.precompute_features(data)
+        except Exception as e:
+            raise RuntimeError(f"Wavelet feature generation failed: {e}")
+
+        if wv is None or (hasattr(wv, "empty") and getattr(wv, "empty")):
+            raise RuntimeError("Wavelet features returned empty result")
+        if isinstance(wv, pd.DataFrame):
+            wv = wv.add_prefix("wavelet_")
+        return wv if isinstance(wv, pd.DataFrame) else pd.DataFrame(index=data.index)
+
+    async def _build_mtf_features_required(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Build multi-timeframe features via resampling; raise if unavailable or fails."""
+        if not self.feature_config.get("enable_multi_timeframe", True):
+            raise RuntimeError("Multi-timeframe features are required (enable_multi_timeframe=True)")
+        try:
+            from src.training.enhanced_multi_timeframe_optimizer import EnhancedMultiTimeframeOptimizer, OptimizedTimeframeConfig  # type: ignore
+        except Exception as e:
+            raise ImportError(f"Multi-timeframe optimizer missing: {e}")
+
+        cfg = OptimizedTimeframeConfig(base_timeframes=self.feature_config.get("timeframes", ["5m", "15m", "1h"]))
+        optimizer = EnhancedMultiTimeframeOptimizer(cfg)
+        # Use a dummy zero target if none exists; we only need features computed
+        target = data["close"].pct_change().fillna(0)
+        try:
+            mtf_dict = await optimizer.generate_optimized_multi_timeframe_features(data, target)
+        except Exception as e:
+            raise RuntimeError(f"Multi-timeframe feature generation failed: {e}")
+
+        if not mtf_dict:
+            raise RuntimeError("Multi-timeframe features returned empty result")
+
+        mtf_df = pd.DataFrame(mtf_dict, index=data.index)
+        return mtf_df.add_prefix("mtf_")
 
     def _finalize_features(self, features: pd.DataFrame, labeled: pd.DataFrame) -> pd.DataFrame:
         # Retain label columns if present to keep alignment

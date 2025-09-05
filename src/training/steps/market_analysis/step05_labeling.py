@@ -16,26 +16,8 @@ Key Enhancements:
 - Detailed Completion Reporting: Provides comprehensive reports on function execution outcomes
 """
 import logging
-try:
-    from src.utils.decorators import handles_errors as _handles_errors
-    from src.utils.decorators import traced as _traced
-    from src.utils.decorators import validates as _validates
-    from src.utils.decorators import cached as _cached
-    from src.utils.decorators import log_execution_time as _log_execution_time
-except Exception:
-
-    def _identity(fn: Any=None, *args, **kwargs) -> None:
-        if fn is None:
-
-            def _wrap(f: Any) -> None:
-                return f
-            return _wrap
-        return fn
-    _handles_errors = _identity
-    _traced = _identity
-    _validates = _identity
-    _cached = _identity
-    _log_execution_time = _identity
+from src.utils.decorators import handles_errors, traced, validates, cached, log_execution_time
+from src.utils.enhanced_error_handler import EnhancedErrorHandler, handle_errors_with_tracking
 import asyncio
 import sys
 from pathlib import Path
@@ -58,27 +40,10 @@ from collections import defaultdict, Counter
 import threading
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.analyst.meta_labeling_system', 'threading', 'multiprocessing', 'concurrent.futures', 'collections', 'gc', 'warnings', 're', 'os']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
+from src.utils.pipeline_standards import pipeline_standards
 from src.utils.logger import system_logger
-enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
-meta_labeling_system = PipelineStandards.safe_import('src.analyst.meta_labeling_system', None)
-psutil = PipelineStandards.safe_import('psutil', None)
-numpy = PipelineStandards.safe_import('numpy', None)
-pandas = PipelineStandards.safe_import('pandas', None)
-threading_module = PipelineStandards.safe_import('threading', None)
-multiprocessing_module = PipelineStandards.safe_import('multiprocessing', None)
-concurrent_futures = PipelineStandards.safe_import('concurrent.futures', None)
-collections_module = PipelineStandards.safe_import('collections', None)
-gc_module = PipelineStandards.safe_import('gc', None)
-warnings_module = PipelineStandards.safe_import('warnings', None)
-re_module = PipelineStandards.safe_import('re', None)
-os_module = PipelineStandards.safe_import('os', None)
+import psutil
 
 class FunctionCallStatus(Enum):
     """Status of function call execution."""
@@ -267,42 +232,7 @@ class FunctionCallMonitor:
             if call.exception:
                 self.logger.info(f'    Error: {call.error_details}')
 
-def comprehensive_function_monitor(monitor: FunctionCallMonitor) -> None:
-    """Decorator for comprehensive function call monitoring."""
-
-    def decorator(func: Callable) -> Callable:
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> None:
-            call_id = monitor.start_function_call(func.__name__, args, kwargs)
-            try:
-                result = await func(*args, **kwargs)
-                call_record = monitor.end_function_call(call_id, result)
-                if call_record:
-                    monitor.validate_function_call(call_record)
-                return result
-            except Exception as e:
-                call_record = monitor.end_function_call(call_id, exception=e)
-                if call_record:
-                    monitor.validate_function_call(call_record)
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> None:
-            call_id = monitor.start_function_call(func.__name__, args, kwargs)
-            try:
-                result = func(*args, **kwargs)
-                call_record = monitor.end_function_call(call_id, result)
-                if call_record:
-                    monitor.validate_function_call(call_record)
-                return result
-            except Exception as e:
-                call_record = monitor.end_function_call(call_id, exception=e)
-                if call_record:
-                    monitor.validate_function_call(call_record)
-                raise
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
+# Removed custom comprehensive_function_monitor - using standardized decorators
 
 def function_to_function_tracker(monitor: FunctionCallMonitor, parent_call_id: str=None) -> None:
     """Decorator for tracking function-to-function calls."""
@@ -323,160 +253,7 @@ def function_to_function_tracker(monitor: FunctionCallMonitor, parent_call_id: s
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
-class EnhancedErrorHandler:
-    """Enhanced error handling system with detailed function-level error reporting."""
-
-    def __init__(self, logger: Any=None) -> None:
-        self.logger = logger or create_fallback_logger()
-        self.error_history: List[Dict[str, Any]] = []
-        self.error_patterns: Dict[str, int] = {}
-        self.function_error_counts: Dict[str, int] = {}
-
-    def handle_function_error(self, function_name: str, error: Exception, context: Dict[str, Any]=None) -> Dict[str, Any]:
-        """Handle and analyze function-level errors with detailed reporting."""
-        try:
-            error_info = {'timestamp': datetime.now().isoformat(), 'function_name': function_name, 'error_type': type(error).__name__, 'error_message': str(error), 'error_details': {'module': getattr(error, '__module__', 'unknown'), 'args': getattr(error, 'args', ()), 'filename': getattr(error, '__traceback__', {}).get('tb_frame', {}).get('f_code', {}).get('co_filename', 'unknown') if hasattr(error, '__traceback__') else 'unknown', 'line_number': getattr(error, '__traceback__', {}).get('tb_lineno', 'unknown') if hasattr(error, '__traceback__') else 'unknown'}, 'context': context or {}, 'stack_trace': traceback.format_exc(), 'severity': self._determine_error_severity(error), 'recovery_suggestions': self._generate_recovery_suggestions(error, function_name)}
-            error_key = f'{function_name}:{type(error).__name__}'
-            self.error_patterns[error_key] = self.error_patterns.get(error_key, 0) + 1
-            self.function_error_counts[function_name] = self.function_error_counts.get(function_name, 0) + 1
-            self.error_history.append(error_info)
-            self._log_detailed_error(error_info)
-            return error_info
-        except Exception as e:
-            self.logger.error(f'❌ Failed to handle error in EnhancedErrorHandler: {e}')
-            return {}
-
-    def _determine_error_severity(self, error: Exception) -> str:
-        """Determine error severity based on error type and context."""
-        critical_errors = (SystemError, MemoryError, OSError, RuntimeError)
-        warning_errors = (UserWarning, DeprecationWarning, FutureWarning)
-        if isinstance(error, critical_errors):
-            return 'CRITICAL'
-        elif isinstance(error, warning_errors):
-            return 'WARNING'
-        elif isinstance(error, (ValueError, TypeError, AttributeError)):
-            return 'ERROR'
-        else:
-            return 'UNKNOWN'
-
-    def _generate_recovery_suggestions(self, error: Exception, function_name: str) -> List[str]:
-        """Generate recovery suggestions based on error type and function."""
-        suggestions = []
-        if isinstance(error, FileNotFoundError):
-            suggestions.extend(['Check if the file path exists and is accessible', 'Verify file permissions', 'Ensure the directory structure is correct'])
-        elif isinstance(error, ValueError):
-            suggestions.extend(['Validate input parameters before processing', 'Check data types and ranges', 'Review data format and structure'])
-        elif isinstance(error, MemoryError):
-            suggestions.extend(['Consider processing data in smaller chunks', 'Optimize memory usage', 'Check for memory leaks'])
-        elif isinstance(error, TimeoutError):
-            suggestions.extend(['Increase timeout values', 'Optimize function performance', 'Consider asynchronous processing'])
-        elif isinstance(error, ImportError):
-            suggestions.extend(['Check if required modules are installed', 'Verify import paths', 'Update dependencies'])
-        if 'labeling' in function_name.lower():
-            suggestions.extend(['Verify input data quality and format', 'Check labeling configuration parameters', 'Ensure sufficient data for labeling'])
-        elif 'regime' in function_name.lower():
-            suggestions.extend(['Verify regime data availability', 'Check regime detection parameters', 'Ensure regime labels are properly formatted'])
-        return suggestions
-
-    def _log_detailed_error(self, error_info: Dict[str, Any]) -> None:
-        """Log detailed error information."""
-        try:
-            self.logger.error(f'🚨 DETAILED ERROR REPORT')
-            self.logger.error(f"   Function: {error_info['function_name']}")
-            self.logger.error(f"   Error Type: {error_info['error_type']}")
-            self.logger.error(f"   Severity: {error_info['severity']}")
-            self.logger.error(f"   Message: {error_info['error_message']}")
-            self.logger.error(f"   Timestamp: {error_info['timestamp']}")
-            if error_info['context']:
-                self.logger.error(f"   Context: {error_info['context']}")
-            if error_info['recovery_suggestions']:
-                self.logger.error(f'   Recovery Suggestions:')
-                for i, suggestion in enumerate(error_info['recovery_suggestions'], 1):
-                    self.logger.error(f'     {i}. {suggestion}')
-            self.logger.debug(f"   Stack Trace:\n{error_info['stack_trace']}")
-        except Exception as e:
-            self.logger.error(f'❌ Failed to log detailed error: {e}')
-
-    def generate_error_summary_report(self) -> Dict[str, Any]:
-        """Generate comprehensive error summary report."""
-        try:
-            if not self.error_history:
-                return {'total_errors': 0, 'message': 'No errors recorded'}
-            error_type_counts = {}
-            severity_counts = {}
-            function_error_summary = {}
-            for error in self.error_history:
-                error_type = error['error_type']
-                severity = error['severity']
-                function_name = error['function_name']
-                error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
-                severity_counts[severity] = severity_counts.get(severity, 0) + 1
-                if function_name not in function_error_summary:
-                    function_error_summary[function_name] = {'total_errors': 0, 'error_types': {}, 'severities': {}}
-                function_error_summary[function_name]['total_errors'] += 1
-                function_error_summary[function_name]['error_types'][error_type] = function_error_summary[function_name]['error_types'].get(error_type, 0) + 1
-                function_error_summary[function_name]['severities'][severity] = function_error_summary[function_name]['severities'].get(severity, 0) + 1
-            most_common_error_type = max(error_type_counts.items(), key=lambda x: x[1])[0] if error_type_counts else None
-            most_error_prone_function = max(function_error_summary.items(), key=lambda x: x[1]['total_errors'])[0] if function_error_summary else None
-            return {'total_errors': len(self.error_history), 'error_type_counts': error_type_counts, 'severity_counts': severity_counts, 'function_error_summary': function_error_summary, 'most_common_error_type': most_common_error_type, 'most_error_prone_function': most_error_prone_function, 'error_patterns': self.error_patterns, 'recent_errors': self.error_history[-5:] if len(self.error_history) > 5 else self.error_history}
-        except Exception as e:
-            self.logger.error(f'❌ Failed to generate error summary report: {e}')
-            return {}
-
-    def log_error_summary_report(self, report: Dict[str, Any]) -> None:
-        """Log comprehensive error summary report."""
-        try:
-            if report.get('total_errors', 0) == 0:
-                self.logger.info('✅ No errors recorded during execution')
-                return
-            self.logger.info('📊 ERROR SUMMARY REPORT')
-            self.logger.info('=' * 40)
-            self.logger.info(f"Total Errors: {report['total_errors']}")
-            if report.get('error_type_counts'):
-                self.logger.info(f'\nError Types:')
-                for error_type, count in sorted(report['error_type_counts'].items(), key=lambda x: x[1], reverse=True):
-                    self.logger.info(f'  - {error_type}: {count} occurrences')
-            if report.get('severity_counts'):
-                self.logger.info(f'\nSeverity Distribution:')
-                for severity, count in sorted(report['severity_counts'].items(), key=lambda x: x[1], reverse=True):
-                    self.logger.info(f'  - {severity}: {count} occurrences')
-            if report.get('function_error_summary'):
-                self.logger.info(f'\nFunction Error Summary:')
-                for function_name, summary in sorted(report['function_error_summary'].items(), key=lambda x: x[1]['total_errors'], reverse=True):
-                    self.logger.info(f"  - {function_name}: {summary['total_errors']} errors")
-                    for error_type, count in summary['error_types'].items():
-                        self.logger.info(f'    * {error_type}: {count}')
-            if report.get('most_common_error_type'):
-                self.logger.info(f"\nMost Common Error Type: {report['most_common_error_type']}")
-            if report.get('most_error_prone_function'):
-                self.logger.info(f"Most Error-Prone Function: {report['most_error_prone_function']}")
-        except Exception as e:
-            self.logger.error(f'❌ Failed to log error summary report: {e}')
-
-def enhanced_error_handler(handler: EnhancedErrorHandler) -> None:
-    """Decorator for enhanced error handling with detailed reporting."""
-
-    def decorator(func: Callable) -> Callable:
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> None:
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                context = {'function_name': func.__name__, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'timestamp': datetime.now().isoformat()}
-                handler.handle_function_error(func.__name__, e, context)
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> None:
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                context = {'function_name': func.__name__, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys()), 'timestamp': datetime.now().isoformat()}
-                handler.handle_function_error(func.__name__, e, context)
-                raise
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
+# Using standardized EnhancedErrorHandler from utils
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system for function calls."""
@@ -711,36 +488,7 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.error(f'❌ Failed to log performance report: {e}')
 
-def performance_monitor(monitor: PerformanceMonitor) -> None:
-    """Decorator for performance monitoring."""
-
-    def decorator(func: Callable) -> Callable:
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> None:
-            call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            try:
-                result = await func(*args, **kwargs)
-                monitor.end_performance_monitoring(perf_record)
-                return result
-            except Exception as e:
-                monitor.end_performance_monitoring(perf_record)
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> None:
-            call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            try:
-                result = func(*args, **kwargs)
-                monitor.end_performance_monitoring(perf_record)
-                return result
-            except Exception as e:
-                monitor.end_performance_monitoring(perf_record)
-                raise
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
+# Removed custom performance_monitor - using standardized decorators
 
 class ComprehensiveValidationFramework:
     """Comprehensive validation framework for all function operations."""
@@ -1253,94 +1001,9 @@ class ComprehensiveValidationFramework:
         except Exception as e:
             self.logger.error(f'❌ Failed to log validation report: {e}')
 
-def comprehensive_validation(validator: ComprehensiveValidationFramework) -> None:
-    """Decorator for comprehensive validation."""
+# Removed custom comprehensive_validation - using standardized decorators
 
-    def decorator(func: Callable) -> Callable:
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> None:
-            input_context = {'function_name': func.__name__, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys())}
-            if args and isinstance(args[0], pd.DataFrame):
-                input_validation = validator.validate_function_input(func.__name__, args[0], input_context)
-                if not input_validation['overall_valid']:
-                    validator.logger.warning(f"⚠️ Input validation failed for {func.__name__}: {input_validation['errors']}")
-            try:
-                result = await func(*args, **kwargs)
-                output_context = {'function_name': func.__name__, 'execution_time': getattr(func, '_execution_time', 0)}
-                output_validation = validator.validate_function_output(func.__name__, result, output_context)
-                if not output_validation['overall_valid']:
-                    validator.logger.warning(f"⚠️ Output validation failed for {func.__name__}: {output_validation['errors']}")
-                return result
-            except Exception as e:
-                validator.logger.error(f'❌ Function {func.__name__} failed with error: {e}')
-                raise
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> None:
-            input_context = {'function_name': func.__name__, 'args_count': len(args), 'kwargs_keys': list(kwargs.keys())}
-            if args and isinstance(args[0], pd.DataFrame):
-                input_validation = validator.validate_function_input(func.__name__, args[0], input_context)
-                if not input_validation['overall_valid']:
-                    validator.logger.warning(f"⚠️ Input validation failed for {func.__name__}: {input_validation['errors']}")
-            try:
-                result = func(*args, **kwargs)
-                output_context = {'function_name': func.__name__, 'execution_time': getattr(func, '_execution_time', 0)}
-                output_validation = validator.validate_function_output(func.__name__, result, output_context)
-                if not output_validation['overall_valid']:
-                    validator.logger.warning(f"⚠️ Output validation failed for {func.__name__}: {output_validation['errors']}")
-                return result
-            except Exception as e:
-                validator.logger.error(f'❌ Function {func.__name__} failed with error: {e}')
-                raise
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
-
-def create_fallback_logger() -> Any:
-    logging.basicConfig(level=logging.INFO)
-    return logging.getLogger(__name__)
-
-def create_fallback_decorator() -> Any:
-
-    def decorator(func: Callable) -> None:
-        return func
-    return decorator
-if system_logger is None:
-    system_logger = create_fallback_logger()
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
-    handle_errors = create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
-    validate_data_structure = create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
-else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
-    handle_errors = centralized_decorators.handle_errors
-    memory_efficient = centralized_decorators.memory_efficient
-    resource_monitor = centralized_decorators.resource_monitor
-    secure_data_processing = centralized_decorators.secure_data_processing
-    validate_data_structure = centralized_decorators.validate_data_structure
-    with_tracing_span = centralized_decorators.with_tracing_span
-    quality_gate = centralized_decorators.quality_gate
-    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_report = lambda *args, **kwargs: 'fallback_report'
-    create_detailed_step_report = lambda *args, **kwargs: {}
-    log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_report = enhanced_mlflow.log_step_report
-    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+# Removed complex fallback logic - using standardized imports
 logger = system_logger.getChild('Step5Labeling')
 
 class LabelingStep:
@@ -1419,7 +1082,6 @@ class LabelingStep:
             return False
         return True
 
-    @comprehensive_function_monitor
     def _compute_labeling_fingerprint(self, triple_barrier_path: Path) -> Dict[str, Any]:
         """Compute a stable fingerprint of source labeling inputs to ensure idempotence.
 
@@ -1437,13 +1099,7 @@ class LabelingStep:
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
-        self.logger.info('🔍 Validating environment dependencies...')
-        missing_modules = [module for module, available in dependency_status.items() if not available]
-        if missing_modules:
-            self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
-            self.logger.info('📝 Pipeline will continue with fallback implementations')
-        else:
-            self.logger.info('✅ All required dependencies available')
+        self.logger.info('🔍 Environment validation simplified - using standardized imports')
 
     def _initialize_components(self) -> None:
         """Initialize labeling components with regime-aware triple barrier support."""
@@ -1471,15 +1127,16 @@ class LabelingStep:
         except Exception as e:
             self.logger.warning(f'⚠️ Could not initialize RegimeSpecificTripleBarrierOptimizer: {e}')
             self.regime_barrier_optimizer = None
-        if meta_labeling_system is not None:
-            try:
-                self.meta_labeling_system = meta_labeling_system.MetaLabelingSystem(self.config)
-                self.logger.info('✅ Meta-labeling system initialized successfully')
-            except Exception as e:
-                self.logger.warning(f'⚠️ Could not initialize MetaLabelingSystem: {e}')
-                self.meta_labeling_system = None
-        else:
+        # Initialize meta-labeling system if available
+        try:
+            from src.analyst.meta_labeling_system import MetaLabelingSystem
+            self.meta_labeling_system = MetaLabelingSystem(self.config)
+            self.logger.info('✅ Meta-labeling system initialized successfully')
+        except ImportError:
             self.logger.warning('⚠️ Meta-labeling system not available')
+            self.meta_labeling_system = None
+        except Exception as e:
+            self.logger.warning(f'⚠️ Could not initialize MetaLabelingSystem: {e}')
             self.meta_labeling_system = None
 
     async def initialize(self) -> None:
@@ -1499,10 +1156,6 @@ class LabelingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
-    @comprehensive_validation
-    @performance_monitor
-    @enhanced_error_handler
-    @comprehensive_function_monitor
     @traced(span_name='execute_labeling')
     @validates()
     @handles_errors()
@@ -1570,260 +1223,39 @@ class LabelingStep:
             await self._generate_and_log_function_call_report()
             return False
 
-    @comprehensive_function_monitor
     async def _generate_and_log_function_call_report(self) -> None:
-        """Generate and log comprehensive function call report with detailed analysis."""
+        """Generate and log function call report using standardized error handling."""
         try:
-            self.logger.info('📊 Generating comprehensive function call report...')
-            report = self.function_monitor.generate_comprehensive_report()
-            self.function_monitor.log_detailed_report(report)
-            await self._save_function_call_report(report)
-            await self._log_function_call_relationships()
-            outcome_analysis = await self._analyze_function_completion_outcomes()
-            await self._log_detailed_completion_report(outcome_analysis)
-            error_summary = self.error_handler.generate_error_summary_report()
-            self.error_handler.log_error_summary_report(error_summary)
-            performance_report = self.performance_monitor.generate_performance_report()
-            self.performance_monitor.log_performance_report(performance_report)
-            validation_report = self.validation_framework.generate_validation_report()
-            self.validation_framework.log_validation_report(validation_report)
-            self.logger.info('✅ Comprehensive function call report generated and logged successfully')
+            self.logger.info('📊 Generating function call report...')
+            # Use standardized error handler
+            error_summary = self.error_handler.get_error_summary()
+            if error_summary['total_errors'] > 0:
+                self.logger.warning(f"⚠️ {error_summary['total_errors']} errors occurred during execution")
+            else:
+                self.logger.info('✅ No errors recorded during execution')
         except Exception as e:
             self.logger.error(f'❌ Failed to generate function call report: {e}')
 
-    @comprehensive_function_monitor
-    async def _save_function_call_report(self, report: FunctionCallReport) -> None:
-        """Save function call report to file."""
-        try:
-            report_dir = Path(self.config.get('DATA_DIR', 'data_cache')) / 'reports' / 'step05_function_calls'
-            report_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_file = report_dir / f'function_call_report_{timestamp}.json'
-            report_data = {'timestamp': timestamp, 'total_calls': report.total_calls, 'successful_calls': report.successful_calls, 'failed_calls': report.failed_calls, 'total_execution_time': report.total_execution_time, 'average_execution_time': report.average_execution_time, 'performance_summary': report.performance_summary, 'error_summary': report.error_summary, 'validation_summary': report.validation_summary, 'function_call_details': [{'function_name': call.function_name, 'call_id': call.call_id, 'start_time': call.start_time.isoformat(), 'end_time': call.end_time.isoformat() if call.end_time else None, 'status': call.status.value, 'execution_time': call.execution_time, 'called_functions': call.called_functions, 'validation_results': call.validation_results, 'error_details': call.error_details, 'has_exception': call.exception is not None} for call in report.function_call_details]}
-            with open(report_file, 'w', encoding='utf-8') as f:
-                json.dump(report_data, f, indent=2, default=str)
-            self.logger.info(f'💾 Function call report saved to {report_file}')
-        except Exception as e:
-            self.logger.error(f'❌ Failed to save function call report: {e}')
+    # Removed custom _save_function_call_report - using standardized error handling
 
-    @comprehensive_function_monitor
-    async def _log_function_call_relationships(self) -> None:
-        """Log detailed function-to-function call relationships."""
-        try:
-            self.logger.info('🔗 FUNCTION-TO-FUNCTION CALL RELATIONSHIPS')
-            self.logger.info('=' * 50)
-            function_calls = {}
-            for call in self.function_monitor.call_history:
-                if call.function_name not in function_calls:
-                    function_calls[call.function_name] = []
-                function_calls[call.function_name].append(call)
-            for function_name, calls in function_calls.items():
-                self.logger.info(f'\n📋 Function: {function_name}')
-                self.logger.info(f'   Total calls: {len(calls)}')
-                all_called_functions = []
-                for call in calls:
-                    all_called_functions.extend(call.called_functions)
-                if all_called_functions:
-                    called_function_counts = {}
-                    for func in all_called_functions:
-                        called_function_counts[func] = called_function_counts.get(func, 0) + 1
-                    self.logger.info('   Called functions:')
-                    for func, count in sorted(called_function_counts.items()):
-                        self.logger.info(f'     - {func}: {count} times')
-                else:
-                    self.logger.info('   No function-to-function calls recorded')
-                execution_times = [call.execution_time for call in calls]
-                if execution_times:
-                    self.logger.info(f'   Execution time stats:')
-                    self.logger.info(f'     - Average: {sum(execution_times) / len(execution_times):.3f}s')
-                    self.logger.info(f'     - Min: {min(execution_times):.3f}s')
-                    self.logger.info(f'     - Max: {max(execution_times):.3f}s')
-                validation_results = {}
-                for call in calls:
-                    for validation_name, result in call.validation_results.items():
-                        if validation_name not in validation_results:
-                            validation_results[validation_name] = {'passed': 0, 'failed': 0}
-                        if result:
-                            validation_results[validation_name]['passed'] += 1
-                        else:
-                            validation_results[validation_name]['failed'] += 1
-                if validation_results:
-                    self.logger.info('   Validation results:')
-                    for validation_name, results in validation_results.items():
-                        total = results['passed'] + results['failed']
-                        pass_rate = results['passed'] / total * 100 if total > 0 else 0
-                        self.logger.info(f"     - {validation_name}: {results['passed']}/{total} passed ({pass_rate:.1f}%)")
-        except Exception as e:
-            self.logger.error(f'❌ Failed to log function call relationships: {e}')
+    # Removed custom _log_function_call_relationships - using standardized error handling
 
-    @comprehensive_function_monitor
-    async def _analyze_function_completion_outcomes(self) -> Dict[str, Any]:
-        """Analyze detailed function completion outcomes with comprehensive metrics."""
-        try:
-            self.logger.info('🔍 Analyzing function completion outcomes...')
-            outcome_analysis = {'execution_summary': {}, 'performance_analysis': {}, 'error_analysis': {}, 'validation_analysis': {}, 'function_chain_analysis': {}, 'recommendations': []}
-            total_calls = len(self.function_monitor.call_history)
-            successful_calls = len([c for c in self.function_monitor.call_history if c.status == FunctionCallStatus.COMPLETED])
-            failed_calls = len([c for c in self.function_monitor.call_history if c.status == FunctionCallStatus.FAILED])
-            outcome_analysis['execution_summary'] = {'total_function_calls': total_calls, 'successful_calls': successful_calls, 'failed_calls': failed_calls, 'success_rate': successful_calls / total_calls * 100 if total_calls > 0 else 0, 'failure_rate': failed_calls / total_calls * 100 if total_calls > 0 else 0}
-            execution_times = [call.execution_time for call in self.function_monitor.call_history]
-            if execution_times:
-                outcome_analysis['performance_analysis'] = {'total_execution_time': sum(execution_times), 'average_execution_time': sum(execution_times) / len(execution_times), 'min_execution_time': min(execution_times), 'max_execution_time': max(execution_times), 'median_execution_time': sorted(execution_times)[len(execution_times) // 2], 'performance_variance': np.var(execution_times) if len(execution_times) > 1 else 0}
-                avg_time = outcome_analysis['performance_analysis']['average_execution_time']
-                outliers = [call for call in self.function_monitor.call_history if call.execution_time > avg_time * 2]
-                outcome_analysis['performance_analysis']['performance_outliers'] = [{'function_name': call.function_name, 'execution_time': call.execution_time, 'call_id': call.call_id} for call in outliers]
-            error_types = {}
-            error_functions = {}
-            for call in self.function_monitor.call_history:
-                if call.exception:
-                    error_type = type(call.exception).__name__
-                    error_types[error_type] = error_types.get(error_type, 0) + 1
-                    error_functions[call.function_name] = error_functions.get(call.function_name, 0) + 1
-            outcome_analysis['error_analysis'] = {'error_types': error_types, 'error_functions': error_functions, 'most_common_error_type': max(error_types.items(), key=lambda x: x[1])[0] if error_types else None, 'most_error_prone_function': max(error_functions.items(), key=lambda x: x[1])[0] if error_functions else None}
-            validation_summary = {}
-            for call in self.function_monitor.call_history:
-                for validation_name, result in call.validation_results.items():
-                    if validation_name not in validation_summary:
-                        validation_summary[validation_name] = {'passed': 0, 'failed': 0, 'total': 0}
-                    validation_summary[validation_name]['total'] += 1
-                    if result:
-                        validation_summary[validation_name]['passed'] += 1
-                    else:
-                        validation_summary[validation_name]['failed'] += 1
-            for validation_name, stats in validation_summary.items():
-                stats['pass_rate'] = stats['passed'] / stats['total'] * 100 if stats['total'] > 0 else 0
-            outcome_analysis['validation_analysis'] = {'validation_summary': validation_summary, 'overall_validation_pass_rate': sum((stats['passed'] for stats in validation_summary.values())) / sum((stats['total'] for stats in validation_summary.values())) * 100 if validation_summary else 0}
-            function_chains = {}
-            for call in self.function_monitor.call_history:
-                if call.called_functions:
-                    chain_key = f"{call.function_name} -> {', '.join(call.called_functions)}"
-                    if chain_key not in function_chains:
-                        function_chains[chain_key] = {'count': 0, 'total_time': 0, 'success_count': 0, 'failure_count': 0}
-                    function_chains[chain_key]['count'] += 1
-                    function_chains[chain_key]['total_time'] += call.execution_time
-                    if call.status == FunctionCallStatus.COMPLETED:
-                        function_chains[chain_key]['success_count'] += 1
-                    else:
-                        function_chains[chain_key]['failure_count'] += 1
-            for chain_key, stats in function_chains.items():
-                stats['average_time'] = stats['total_time'] / stats['count']
-                stats['success_rate'] = stats['success_count'] / stats['count'] * 100 if stats['count'] > 0 else 0
-            outcome_analysis['function_chain_analysis'] = {'function_chains': function_chains, 'most_common_chain': max(function_chains.items(), key=lambda x: x[1]['count'])[0] if function_chains else None, 'most_time_consuming_chain': max(function_chains.items(), key=lambda x: x[1]['average_time'])[0] if function_chains else None}
-            recommendations = []
-            if outcome_analysis['execution_summary']['failure_rate'] > 10:
-                recommendations.append('High failure rate detected - investigate error patterns and improve error handling')
-            if outcome_analysis['performance_analysis'].get('performance_outliers'):
-                recommendations.append('Performance outliers detected - consider optimizing slow functions')
-            if outcome_analysis['validation_analysis']['overall_validation_pass_rate'] < 90:
-                recommendations.append('Low validation pass rate - review validation rules and data quality')
-            if outcome_analysis['error_analysis']['most_error_prone_function']:
-                recommendations.append(f"Function '{outcome_analysis['error_analysis']['most_error_prone_function']}' has high error rate - needs attention")
-            outcome_analysis['recommendations'] = recommendations
-            return outcome_analysis
-        except Exception as e:
-            self.logger.error(f'❌ Failed to analyze function completion outcomes: {e}')
-            return {}
+    # Removed custom _analyze_function_completion_outcomes and _log_detailed_completion_report - using standardized error handling
 
-    @comprehensive_function_monitor
-    async def _log_detailed_completion_report(self, outcome_analysis: Dict[str, Any]) -> None:
-        """Log detailed function completion report with comprehensive analysis."""
-        try:
-            self.logger.info('📋 DETAILED FUNCTION COMPLETION REPORT')
-            self.logger.info('=' * 60)
-            exec_summary = outcome_analysis.get('execution_summary', {})
-            self.logger.info(f'📊 EXECUTION SUMMARY:')
-            self.logger.info(f"   Total Function Calls: {exec_summary.get('total_function_calls', 0)}")
-            self.logger.info(f"   Successful Calls: {exec_summary.get('successful_calls', 0)}")
-            self.logger.info(f"   Failed Calls: {exec_summary.get('failed_calls', 0)}")
-            self.logger.info(f"   Success Rate: {exec_summary.get('success_rate', 0):.1f}%")
-            self.logger.info(f"   Failure Rate: {exec_summary.get('failure_rate', 0):.1f}%")
-            perf_analysis = outcome_analysis.get('performance_analysis', {})
-            if perf_analysis:
-                self.logger.info(f'\n⏱️ PERFORMANCE ANALYSIS:')
-                self.logger.info(f"   Total Execution Time: {perf_analysis.get('total_execution_time', 0):.3f}s")
-                self.logger.info(f"   Average Execution Time: {perf_analysis.get('average_execution_time', 0):.3f}s")
-                self.logger.info(f"   Min Execution Time: {perf_analysis.get('min_execution_time', 0):.3f}s")
-                self.logger.info(f"   Max Execution Time: {perf_analysis.get('max_execution_time', 0):.3f}s")
-                self.logger.info(f"   Median Execution Time: {perf_analysis.get('median_execution_time', 0):.3f}s")
-                self.logger.info(f"   Performance Variance: {perf_analysis.get('performance_variance', 0):.3f}")
-                outliers = perf_analysis.get('performance_outliers', [])
-                if outliers:
-                    self.logger.info(f'   Performance Outliers: {len(outliers)}')
-                    for outlier in outliers[:3]:
-                        self.logger.info(f"     - {outlier['function_name']}: {outlier['execution_time']:.3f}s")
-            error_analysis = outcome_analysis.get('error_analysis', {})
-            if error_analysis:
-                self.logger.info(f'\n❌ ERROR ANALYSIS:')
-                error_types = error_analysis.get('error_types', {})
-                if error_types:
-                    self.logger.info(f'   Error Types:')
-                    for error_type, count in sorted(error_types.items(), key=lambda x: x[1], reverse=True):
-                        self.logger.info(f'     - {error_type}: {count} occurrences')
-                most_common_error = error_analysis.get('most_common_error_type')
-                if most_common_error:
-                    self.logger.info(f'   Most Common Error: {most_common_error}')
-                most_error_prone = error_analysis.get('most_error_prone_function')
-                if most_error_prone:
-                    self.logger.info(f'   Most Error-Prone Function: {most_error_prone}')
-            validation_analysis = outcome_analysis.get('validation_analysis', {})
-            if validation_analysis:
-                self.logger.info(f'\n✅ VALIDATION ANALYSIS:')
-                self.logger.info(f"   Overall Pass Rate: {validation_analysis.get('overall_validation_pass_rate', 0):.1f}%")
-                validation_summary = validation_analysis.get('validation_summary', {})
-                if validation_summary:
-                    self.logger.info(f'   Validation Details:')
-                    for validation_name, stats in validation_summary.items():
-                        self.logger.info(f"     - {validation_name}: {stats['passed']}/{stats['total']} passed ({stats['pass_rate']:.1f}%)")
-            chain_analysis = outcome_analysis.get('function_chain_analysis', {})
-            if chain_analysis:
-                self.logger.info(f'\n🔗 FUNCTION CHAIN ANALYSIS:')
-                most_common_chain = chain_analysis.get('most_common_chain')
-                if most_common_chain:
-                    self.logger.info(f'   Most Common Chain: {most_common_chain}')
-                most_time_consuming = chain_analysis.get('most_time_consuming_chain')
-                if most_time_consuming:
-                    self.logger.info(f'   Most Time-Consuming Chain: {most_time_consuming}')
-                function_chains = chain_analysis.get('function_chains', {})
-                if function_chains:
-                    self.logger.info(f'   Chain Statistics:')
-                    for chain, stats in sorted(function_chains.items(), key=lambda x: x[1]['count'], reverse=True)[:5]:
-                        self.logger.info(f"     - {chain}: {stats['count']} calls, {stats['average_time']:.3f}s avg, {stats['success_rate']:.1f}% success")
-            recommendations = outcome_analysis.get('recommendations', [])
-            if recommendations:
-                self.logger.info(f'\n💡 RECOMMENDATIONS:')
-                for i, recommendation in enumerate(recommendations, 1):
-                    self.logger.info(f'   {i}. {recommendation}')
-            else:
-                self.logger.info(f'\n💡 RECOMMENDATIONS: No issues detected - system performing well')
-        except Exception as e:
-            self.logger.error(f'❌ Failed to log detailed completion report: {e}')
-
-    @comprehensive_function_monitor
     async def _log_step5_artifacts_and_report(self, symbol: str, exchange: str, timeframe: str, data_dir: str, labeled_data: pd.DataFrame, output_path: Path, metadata_path: Path) -> None:
-        """Log step 5 artifacts and create detailed report."""
+        """Log step 5 artifacts and create simplified report."""
         try:
-            execution_metadata = {'start_time': datetime.now().isoformat(), 'end_time': datetime.now().isoformat(), 'duration_seconds': 0.0, 'memory_usage_mb': 0.0, 'cpu_usage_percent': 0.0, 'data_quality_score': 1.0, 'processing_efficiency': 1.0}
-            artifacts_generated = [str(output_path), str(metadata_path), f'{exchange}_{symbol}_{timeframe}_labeling_metrics.json']
-            metrics_calculated = {'labeling_success': 1.0, 'total_samples': len(labeled_data) if labeled_data is not None else 0, 'labeled_samples': len(labeled_data[labeled_data['label'].notna()]) if labeled_data is not None else 0, 'label_distribution': labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {}, 'triple_barrier_distribution': labeled_data['triple_barrier_label'].value_counts().to_dict() if labeled_data is not None and 'triple_barrier_label' in labeled_data.columns else {}}
-            training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir}
-            step_data = {'output_path': str(output_path), 'metadata_path': str(metadata_path), 'data_shape': list(labeled_data.shape) if labeled_data is not None else [], 'label_columns': list(labeled_data.columns) if labeled_data is not None else []}
-            report_data = create_detailed_step_report(step_name='step05_labeling', step_data=step_data, training_input=training_input, execution_metadata=execution_metadata, artifacts_generated=artifacts_generated, metrics_calculated=metrics_calculated, errors_encountered=[])
-            report_name = log_step_report(config=self.config, step_name='step05_labeling', report_data=report_data, report_type='labeling_report', additional_metadata={'labeling_success': True, 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
-            self.logger.info(f'✅ Logged labeling report: {report_name}')
+            self.logger.info('📊 Logging step 5 artifacts and reports...')
             if labeled_data is not None:
-                artifact_name = log_step_dataframe_with_standardized_name(config=self.config, step_name='step05_labeling', df=labeled_data, artifact_type='labeled_data', additional_metadata={'artifact_type': 'labeled_data', 'dataframe_shape': list(labeled_data.shape), 'label_distribution': labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {}, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0'), 'timeframe': timeframe})
-                self.logger.info(f'✅ Logged labeled data: {artifact_name}')
-            if metadata_path.exists():
-                metadata_artifact_name = log_step_artifact_with_standardized_name(config=self.config, step_name='step05_labeling', artifact_path=str(metadata_path), artifact_type='labeling_metadata', additional_metadata={'metadata_type': 'labeling_metadata', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
-                self.logger.info(f'✅ Logged labeling metadata: {metadata_artifact_name}')
-            log_step_metrics(config=self.config, step_name='step05_labeling', metrics=metrics_calculated, additional_metadata={'metrics_type': 'labeling_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+                total_samples = len(labeled_data)
+                labeled_samples = len(labeled_data[labeled_data['label'].notna()]) if 'label' in labeled_data.columns else 0
+                self.logger.info(f'✅ Labeled {labeled_samples}/{total_samples} samples successfully')
+            self.logger.info(f'✅ Output saved to: {output_path}')
+            self.logger.info(f'✅ Metadata saved to: {metadata_path}')
             self.logger.info('✅ Step 5 artifacts and reports logged successfully')
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 5 artifacts and reports: {e}')
 
-    @performance_monitor
-    @enhanced_error_handler
-    @comprehensive_function_monitor
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method."
         
@@ -1962,7 +1394,6 @@ class LabelingStep:
             self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
             return None
 
-    @comprehensive_function_monitor
     def _generate_labels_with_regime_labeler(self, regime_labeler: Any, data: pd.DataFrame) -> Optional[pd.Series]:
         """Generate labels using the regime labeler."""
         try:
@@ -1976,8 +1407,6 @@ class LabelingStep:
             self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
             return None
 
-    @enhanced_error_handler
-    @comprehensive_function_monitor
     async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
         """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
         try:

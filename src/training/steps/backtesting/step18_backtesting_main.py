@@ -28,15 +28,11 @@ from src.utils.common_operations import (
 )
 from src.utils.trading_decorators import (
     handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose
+    timeout, error_boundary, compose, validate_data_quality, 
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
-from src.utils.trading_decorators import (
 import json
 import logging
-
-    validate_data_quality, monitor_step_execution, 
-    ensure_data_integrity, validate_pipeline_step
-)
 
 # Setup logging
 logger = get_logger('Step18BacktestingMain')

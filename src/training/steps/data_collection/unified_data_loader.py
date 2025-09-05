@@ -34,7 +34,7 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
-
+    from src.utils.data_operations import (
         guard_dataframe_nulls, 
         secure_file_path, 
         validate_dataframe_schema, 

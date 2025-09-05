@@ -26,11 +26,11 @@ sys.path.insert(0, str(project_root))
 
 from typing import Any, Dict, List
 from .utils.logger import system_logger
-import pandas as pd
-
+from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, 
     ValidationSeverity, ValidationError
 )
+import pandas as pd
 
 logger = system_logger.getChild("EnhancedDataCollector")
 

@@ -76,16 +76,62 @@ class ValidatorOrchestrator:
                 self.logger.error(f'❌ Validator failed for {step_name} in {duration:.3f}s: {failure_reason}')
                 self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=failure_reason)
             return result
+        except ImportError as e:
+            duration = max(0.0, time.perf_counter() - start_perf)
+            error_msg = f'Import error for {step_name}: {str(e)}'
+            self.logger.error(f'❌ {error_msg}')
+            error_result = {
+                'step_name': step_name, 
+                'validation_passed': False, 
+                'error': error_msg,
+                'error_type': 'ImportError',
+                'duration': duration, 
+                'timestamp': time.time()
+            }
+            self.validation_results[step_name] = error_result
+            try:
+                self.metrics.record_step_execution(step_name=step_name, duration=duration, status='IMPORT_ERROR')
+            except Exception:
+                self.logger.debug('Metrics recording for import error failed', exc_info=True)
+            self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=error_msg)
+            return error_result
+        except AttributeError as e:
+            duration = max(0.0, time.perf_counter() - start_perf)
+            error_msg = f'Attribute error for {step_name}: {str(e)}'
+            self.logger.error(f'❌ {error_msg}')
+            error_result = {
+                'step_name': step_name, 
+                'validation_passed': False, 
+                'error': error_msg,
+                'error_type': 'AttributeError',
+                'duration': duration, 
+                'timestamp': time.time()
+            }
+            self.validation_results[step_name] = error_result
+            try:
+                self.metrics.record_step_execution(step_name=step_name, duration=duration, status='ATTRIBUTE_ERROR')
+            except Exception:
+                self.logger.debug('Metrics recording for attribute error failed', exc_info=True)
+            self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=error_msg)
+            return error_result
         except Exception as e:
             duration = max(0.0, time.perf_counter() - start_perf)
-            self.logger.exception(f'❌ Exception while running validator for {step_name}: {e}')
-            error_result = {'step_name': step_name, 'validation_passed': False, 'error': str(e), 'duration': duration, 'timestamp': time.time()}
+            error_msg = f'Unexpected error for {step_name}: {str(e)}'
+            self.logger.exception(f'❌ {error_msg}')
+            error_result = {
+                'step_name': step_name, 
+                'validation_passed': False, 
+                'error': error_msg,
+                'error_type': type(e).__name__,
+                'duration': duration, 
+                'timestamp': time.time()
+            }
             self.validation_results[step_name] = error_result
             try:
                 self.metrics.record_step_execution(step_name=step_name, duration=duration, status='EXCEPTION')
             except Exception:
                 self.logger.debug('Metrics recording for exception failed', exc_info=True)
-            self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=f'Validator execution error: {str(e)}')
+            self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=error_msg)
             return error_result
 
     async def _run_pre_validation_checks(self, step_name: str, training_input: dict[str, Any], pipeline_state: dict[str, Any], config: dict[str, Any], validation_level: str) -> dict[str, Any]:
@@ -206,23 +252,18 @@ class ValidatorOrchestrator:
             Dictionary containing validation results
         """
         validator_mapping = {
-            # Support both naming conventions
-            'step1_data_collection': 'step01_data_collection_validator',
+            # Standardized naming convention using step0X format
             'step01_data_collection': 'step01_data_collection_validator',
-            'step1_5_data_converter': 'step01_5_data_converter_validator', 
-            'step01_5_data_converter': 'step01_5_data_converter_validator',
-            'step2_data_reading': 'step02_data_reading_validator',
+            'step01_5_data_converter': 'step01_5_data_converter_validator', 
             'step02_data_reading': 'step02_data_reading_validator',
-            'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',
             'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
-            'step3_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
             'step03_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
-            'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
             'step04_regime_data_splitting': 'step04_regime_data_splitting_validator',
+            'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
             'step05_labeling': 'step05_labeling_validator',
             'step06_feature_engineering': 'step06_feature_engineering_validator',
             'step07_enhanced_matrix_operations': 'step07_enhanced_matrix_operations_validator',
-            'step8_regime_data_splitting': 'step8_regime_data_splitting_validator',
+            'step08_regime_data_splitting': 'step08_regime_data_splitting_validator',
             'step09_hmm_based_training': 'step09_hmm_based_training_validator',
             'step09_5_multi_timeframe_hmm_ensemble': 'step09_5_multi_timeframe_hmm_ensemble_validator',
             'step09_5_hmm_lm_generalist_training': 'step09_5_hmm_lm_generalist_training_validator',
@@ -237,7 +278,14 @@ class ValidatorOrchestrator:
             'step18_walk_forward_validation': 'step18_walk_forward_validation_validator',
             'step19_monte_carlo_validation': 'step19_monte_carlo_validation_validator',
             'step20_ab_testing': 'step20_ab_testing_validator',
-            'step21_saving': 'step21_saving_validator'
+            'step21_saving': 'step21_saving_validator',
+            # Legacy support for old naming conventions (deprecated)
+            'step1_data_collection': 'step01_data_collection_validator',
+            'step1_5_data_converter': 'step01_5_data_converter_validator', 
+            'step2_data_reading': 'step02_data_reading_validator',
+            'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',
+            'step3_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
+            'step8_regime_data_splitting': 'step08_regime_data_splitting_validator',
         }
         validator_module_name = validator_mapping.get(step_name)
         if not validator_module_name:
@@ -246,7 +294,7 @@ class ValidatorOrchestrator:
         # Determine the correct subdirectory based on the step name
         if validator_module_name.startswith('step01') or validator_module_name.startswith('step02'):
             module_path = f'src.training.steps.data_collection.{validator_module_name}'
-        elif validator_module_name.startswith('step03') or validator_module_name.startswith('step04') or validator_module_name.startswith('step05') or validator_module_name.startswith('step06') or validator_module_name.startswith('step07'):
+        elif validator_module_name.startswith('step03') or validator_module_name.startswith('step04') or validator_module_name.startswith('step05') or validator_module_name.startswith('step06') or validator_module_name.startswith('step07') or validator_module_name.startswith('step08'):
             module_path = f'src.training.steps.market_analysis.{validator_module_name}'
         elif validator_module_name.startswith('step09') or validator_module_name.startswith('step10') or validator_module_name.startswith('step11') or validator_module_name.startswith('step12') or validator_module_name.startswith('step13') or validator_module_name.startswith('step14') or validator_module_name.startswith('step15'):
             module_path = f'src.training.steps.model_training.{validator_module_name}'

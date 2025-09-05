@@ -88,6 +88,20 @@ python complexity_cli.py analyze /path/to/code
 python enhanced_import_analysis.py --target /path/to/code
 ```
 
+#### 7. Intelligent Import Fixer (`intelligent_import_fixer.py`)
+**Purpose**: Automatic fixing of import issues with confidence-based actions
+**Features**:
+- High confidence (95%): Auto-fix immediately
+- Medium confidence (4%): Auto-fix with user confirmation
+- Low confidence (1%): Flag for manual review only
+- Safety scoring and validation
+- Comprehensive reporting
+
+**Usage**:
+```bash
+python intelligent_import_fixer.py --target /path/to/code
+```
+
 ### Specialized Components
 
 #### Enhanced Import Analyzer Plugin (`enhanced_import_analyzer_plugin.py`)
@@ -130,6 +144,7 @@ unified_enhanced_pipeline (no dependencies)
 ├── code_interaction_mapper
 │   └── dead_code_analyzer
 └── enhanced_import_analysis
+    └── intelligent_import_fixer
 
 complexity_cli (independent)
 ```

@@ -29,15 +29,15 @@ from pathlib import Path
 # Enhanced pipeline function with comprehensive validation and error handling
 async def run_model_training_pipeline(symbol, exchange, timeframe, data_dir, **config):
     """Run the complete model training pipeline with comprehensive validation and error handling."""
-    from .core.decorators import handles_errors, validates, log_call, traced
-        get_current_datetime, format_datetime, ensure_directory,
-        safe_json_dump, safe_json_load, validate_dataframe_schema,
-        validate_data_quality, safe_copy, safe_file_exists, safe_float, safe_int,
-        safe_read_parquet, safe_to_parquet, optimize_dataframe_dtypes,
-        safe_resample, align_dataframes, timed_operation, format_bytes,
-        chunked_iterable, parallel_map, safe_log_metric, safe_log_params,
-        safe_log_artifact, standardize_price_action_probabilities
-    )
+    from src.core.decorators import handles_errors, validates, log_call, traced
+    try:
+        from src.utils.common_operations import (
+            get_current_datetime,
+            format_datetime,
+        )
+    except Exception:
+        # Optional utilities; function will guard their usage
+        pass
     from .utils.logger import system_logger
     from .utils.validator_orchestrator import ValidatorOrchestrator
     from .utils.step_dependency_validator import StepDependencyValidator

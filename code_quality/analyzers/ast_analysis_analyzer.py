@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from core.config import AnalysisConfig
+from core.config import AnalysisConfig, CodeQualityConfig
 
 try:
     import astroid

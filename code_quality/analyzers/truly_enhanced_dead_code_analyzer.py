@@ -45,7 +45,7 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
 
-from core.config import AnalysisConfig
+from core.config import AnalysisConfig, CodeQualityConfig
 from utils.file_utils import find_python_files
 
 

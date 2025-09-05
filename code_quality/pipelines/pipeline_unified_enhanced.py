@@ -310,14 +310,37 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         
         try:
+            # Get all Python files
+            from utils.file_utils import find_python_files
+            python_files = find_python_files(str(self.project_root))
+            print(f"🔍 Found {len(python_files)} Python files to analyze")
+            
             # Use the enhanced ImportFixer with auto-detection
             from scripts.fix_missing_imports import ImportFixer
             fixer = ImportFixer(str(self.project_root))
             
-            # Auto-detect and fix missing imports
+            # Auto-detect missing imports (dry run first to see what would be fixed)
             print("🔍 Auto-detecting missing imports...")
+            dry_run_result = fixer.auto_fix_all_files(
+                [str(f) for f in python_files], 
+                dry_run=True  # Dry run first to see what we'd fix
+            )
+            
+            print(f"📊 Dry run results:")
+            print(f"  Files with missing imports: {dry_run_result.get('files_to_fix', 0)}")
+            print(f"  Total imports to add: {dry_run_result.get('imports_to_add', 0)}")
+            
+            # Show module breakdown
+            module_counts = dry_run_result.get('module_counts', {})
+            if module_counts:
+                print(f"\n📈 Missing imports by module:")
+                for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"    {module}: {count} files")
+            
+            # Now actually fix the files
+            print("\n🔧 Applying import fixes...")
             result = fixer.auto_fix_all_files(
-                [str(f) for f in self.file_paths],  # Use all files
+                [str(f) for f in python_files], 
                 dry_run=False  # Actually fix the files
             )
             
@@ -337,7 +360,7 @@ class UnifiedEnhancedPipeline:
                 "total_failed": result.get('failed', 0),
                 "execution_time": time.time() - start_time,
                 "auto_detection_summary": {
-                    "files_analyzed": len(self.file_paths),
+                    "files_analyzed": len(python_files),
                     "files_with_missing_imports": result.get('fixed', 0),
                     "module_counts": result.get('module_counts', {})
                 }
@@ -419,6 +442,66 @@ class UnifiedEnhancedPipeline:
             json.dump(formatted_result, f, indent=2)
 
         return formatted_result
+
+    def run_import_auto_detection_analysis(self) -> dict[str, Any]:
+        """Run import auto-detection analysis without fixing files."""
+        print("\n" + "="*60)
+        print("Running Import Auto-Detection Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        
+        try:
+            # Get all Python files
+            from utils.file_utils import find_python_files
+            python_files = find_python_files(str(self.project_root))
+            print(f"🔍 Found {len(python_files)} Python files to analyze")
+            
+            # Use the enhanced ImportFixer with auto-detection (dry run only)
+            from scripts.fix_missing_imports import ImportFixer
+            fixer = ImportFixer(str(self.project_root))
+            
+            # Auto-detect missing imports (dry run only)
+            print("🔍 Auto-detecting missing imports...")
+            result = fixer.auto_fix_all_files(
+                [str(f) for f in python_files], 
+                dry_run=True  # Dry run only - don't fix files
+            )
+            
+            print(f"📊 Analysis results:")
+            print(f"  Files with missing imports: {result.get('files_to_fix', 0)}")
+            print(f"  Total imports to add: {result.get('imports_to_add', 0)}")
+            
+            # Show module breakdown
+            module_counts = result.get('module_counts', {})
+            if module_counts:
+                print(f"\n📈 Missing imports by module:")
+                for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"    {module}: {count} files")
+            
+            formatted_result = {
+                "files_analyzed": len(python_files),
+                "files_with_missing_imports": result.get('files_to_fix', 0),
+                "total_imports_to_add": result.get('imports_to_add', 0),
+                "module_counts": result.get('module_counts', {}),
+                "execution_time": time.time() - start_time,
+                "analysis_type": "import_auto_detection"
+            }
+            
+            # Save report
+            report_path = self.reports_dir / f"import_auto_detection_analysis_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(formatted_result, f, indent=2)
+            
+            return formatted_result
+            
+        except Exception as e:
+            print(f"❌ Import auto-detection analysis failed: {e}")
+            return {
+                "status": "error", 
+                "error": str(e),
+                "execution_time": time.time() - start_time
+            }
 
     def detect_circular_imports(self) -> dict[str, Any]:
         """Detect circular imports."""
@@ -1516,6 +1599,73 @@ class UnifiedEnhancedPipeline:
 
         results["execution_time"] = time.time() - start_time
 
+    def run_external_linter_analysis(self) -> dict[str, Any]:
+        """Run external linter analysis (flake8, pylint, mypy, etc.)."""
+        print("\n" + "="*60)
+        print("Running External Linter Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+        
+        # Try to run flake8
+        try:
+            print("Running flake8 analysis...")
+            import subprocess
+            import os
+            
+            # Change to project directory
+            original_dir = os.getcwd()
+            os.chdir(str(self.project_root))
+            
+            try:
+                # Run flake8
+                result = subprocess.run(
+                    ['flake8', '--format=json', '--output-file=/tmp/flake8_results.json', '.'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                # Read results
+                if os.path.exists('/tmp/flake8_results.json'):
+                    with open('/tmp/flake8_results.json', 'r') as f:
+                        flake8_data = json.load(f)
+                    results["flake8"] = {
+                        "status": "success",
+                        "errors": len(flake8_data),
+                        "data": flake8_data
+                    }
+                    print(f"✅ Flake8 found {len(flake8_data)} issues")
+                else:
+                    results["flake8"] = {"status": "no_issues", "errors": 0}
+                    print("✅ Flake8 found no issues")
+                    
+            except subprocess.TimeoutExpired:
+                results["flake8"] = {"status": "timeout", "error": "Analysis timed out"}
+                print("⚠️  Flake8 analysis timed out")
+            except FileNotFoundError:
+                results["flake8"] = {"status": "not_installed", "error": "flake8 not found"}
+                print("⚠️  Flake8 not installed")
+            except Exception as e:
+                results["flake8"] = {"status": "error", "error": str(e)}
+                print(f"❌ Flake8 analysis failed: {e}")
+            finally:
+                os.chdir(original_dir)
+                
+        except Exception as e:
+            results["flake8"] = {"status": "error", "error": str(e)}
+            print(f"❌ Flake8 setup failed: {e}")
+        
+        results["execution_time"] = time.time() - start_time
+        
+        # Save report
+        report_path = self.reports_dir / f"external_linter_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+        
+        return results
+
     def run_enhanced_dependency_analysis(self) -> dict[str, Any]:
         """Run enhanced dependency analysis."""
         print("\n" + "="*60)
@@ -1814,6 +1964,7 @@ class UnifiedEnhancedPipeline:
         self.results["basic_analysis"] = {
             "syntax_validation": self.run_syntax_validation(),
             "import_validation": self.run_import_validation(),
+            "import_auto_detection_analysis": self.run_import_auto_detection_analysis(),
             "circular_imports": self.detect_circular_imports(),
             "comprehensive_import_undefined_check": self.run_comprehensive_import_undefined_check(),
             "enhanced_undefined_names_analysis": self.run_enhanced_undefined_names_analysis(),
@@ -1830,6 +1981,7 @@ class UnifiedEnhancedPipeline:
             "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
+            "external_linter_analysis": self.run_external_linter_analysis(),
             "metrics": self.run_metrics_analysis(),
             "test_coverage": self.run_test_coverage_analysis(),
             "code_smells": self.run_code_smell_detection(),

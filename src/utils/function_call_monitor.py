@@ -17,7 +17,10 @@ import inspect
 import logging
 import time
 import traceback
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import os
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
@@ -100,6 +103,8 @@ class FunctionCallMonitor:
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
+            if psutil is None:
+                return 0.0
             process = psutil.Process(os.getpid())
             return process.memory_info().rss / 1024 / 1024
         except Exception:
@@ -108,6 +113,8 @@ class FunctionCallMonitor:
     def _get_cpu_percent(self) -> float:
         """Get current CPU usage percentage."""
         try:
+            if psutil is None:
+                return 0.0
             return psutil.cpu_percent()
         except Exception:
             return 0.0

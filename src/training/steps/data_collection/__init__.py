@@ -31,7 +31,19 @@ async def run_data_collection_pipeline(symbol, exchange, timeframe, data_dir, **
         print(f"Data collection pipeline failed: {e}")
         return False
 
+# Import comprehensive monitoring modules
+from .step01_enhanced_with_monitoring import (
+    EnhancedDataCollectionStepWithMonitoring,
+    run_enhanced_step01_with_monitoring
+)
+
+from .step01_comprehensive_monitoring import (
+    Step01ComprehensiveMonitoring,
+    run_comprehensive_step01
+)
+
 __all__ = [
+    # Original modules
     'DataCollectionStep',
     'DataCollectionValidator',
     'DataConverterValidator',
@@ -42,5 +54,13 @@ __all__ = [
     'RawDataQualityChecker',
     'RefactoredDataQualityChecker',
     'IntegratedDataQualityPipeline',
-    'run_data_collection_pipeline'
+    'run_data_collection_pipeline',
+    
+    # Enhanced monitoring modules
+    'EnhancedDataCollectionStepWithMonitoring',
+    'run_enhanced_step01_with_monitoring',
+    
+    # Comprehensive monitoring modules
+    'Step01ComprehensiveMonitoring',
+    'run_comprehensive_step01'
 ]

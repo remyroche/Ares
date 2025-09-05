@@ -80,6 +80,8 @@ class FunctionCallMonitor:
         """Setup performance monitoring capabilities."""
         try:
             import psutil
+import numpy as np
+
             self.psutil_available = True
             self.process = psutil.Process()
         except ImportError:

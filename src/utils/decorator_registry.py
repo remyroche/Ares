@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     from .logger import log_error_with_context
+import numpy as np
+
 except ImportError:
 
     def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:

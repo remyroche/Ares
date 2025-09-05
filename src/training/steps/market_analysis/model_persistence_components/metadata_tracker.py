@@ -139,6 +139,8 @@ class MetadataTracker:
         """Get versions of key packages."""
         try:
             import pkg_resources
+import numpy as np
+
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
             packages = {}
             for package in key_packages:

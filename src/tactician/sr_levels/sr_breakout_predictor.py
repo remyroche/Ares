@@ -86,6 +86,8 @@ class SRBreakoutPredictor:
             
             try:
                 from .sr_modules import SRAnalyzer
+import numpy as np
+
                 self.analyzer = SRAnalyzer(self.config)
             except ImportError:
                 self.logger.warning("SR analyzer not available")

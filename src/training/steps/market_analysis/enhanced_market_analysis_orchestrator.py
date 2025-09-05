@@ -375,6 +375,8 @@ class MarketAnalysisPipelineOrchestrator:
         try:
             import pandas as pd
             from pathlib import Path
+import numpy as np
+
             matrix_path = Path(data_dir) / f'matrix_operations_{exchange}_{symbol}_{timeframe}.parquet'
             if not matrix_path.exists():
                 step7_metrics = self._get_fallback_matrix_metrics()

@@ -97,6 +97,8 @@ class LocationClassifierOptimized:
         Analyze multiple timeframes in parallel using multiprocessing.
         """
         from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+
         with ProcessPoolExecutor(max_workers=len(timeframes)) as executor:
             futures = {executor.submit(self._analyze_single_timeframe, market_data[tf], tf): tf for tf in timeframes}
             results = {}

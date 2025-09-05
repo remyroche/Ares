@@ -146,6 +146,8 @@ def sr_error_handler(exceptions: Tuple[type, ...]=(Exception,), default_return: 
                     if attempt < max_retries:
                         error_handler.logger.warning(f'Attempt {attempt + 1} failed in {context}, retrying in {retry_delay}s: {e}')
                         import time
+import numpy as np
+
                         time.sleep(retry_delay)
                         retry_delay *= 2
                     else:

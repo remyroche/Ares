@@ -342,6 +342,8 @@ class SystemCoordinator:
         """
         try:
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
+import numpy as np
+
             enhanced_manager = EnhancedExecutionManager(self.config)
             analyst_decision = analyst_signals.get('analyst_decision', {})
             if not analyst_decision.get('should_enter_position', False):

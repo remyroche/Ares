@@ -413,6 +413,7 @@ class _PrefitWrapper:
         return proba
 import os
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 @deterministic_seed(42)
 @idempotent_step(step_key='step11_confidence_calibration')

@@ -232,6 +232,8 @@ class RegimeMonitoringWebSocket:
     async def start(self) -> None:
         """Start WebSocket server."""
         import websockets
+import numpy as np
+
         await websockets.serve(self.handler, 'localhost', self.port)
         logger.info(f'WebSocket server started on port {self.port}')
 

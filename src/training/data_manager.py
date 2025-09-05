@@ -481,6 +481,7 @@ class UnifiedDataManager:
 
         # Save metadata
         import json
+import numpy as np
 
         with open(self.metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)

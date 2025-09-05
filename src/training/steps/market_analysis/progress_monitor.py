@@ -201,6 +201,8 @@ def monitor_progress(step_name: str, total_work: int=100) -> None:
         def wrapper(*args, **kwargs) -> None:
             with ProgressContext(step_name, total_work) as progress:
                 import inspect
+import numpy as np
+
                 sig = inspect.signature(func)
                 if 'progress' in sig.parameters:
                     kwargs['progress'] = progress

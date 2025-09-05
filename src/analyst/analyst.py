@@ -310,6 +310,7 @@ class Analyst:
         """Initialize Liquidation Risk Model."""
         try:
             from .analyst.liquidation_risk_model import setup_liquidation_risk_model
+import numpy as np
             
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,

@@ -25,6 +25,8 @@ from typing import Optional
 from typing import List
 from typing import Callable
 from datetime import datetime
+import numpy as np
+
 logger = system_logger.getChild('EnhancedValidationWithDecorators')
 
 class DataType(Enum):

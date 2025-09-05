@@ -1,3 +1,5 @@
+import numpy as np
+
 # Improvements for the Fractal Location Classifier
 
 

@@ -17,6 +17,7 @@ import torch
 
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
+import numpy as np
 
 
 class GPUAccelerationM1:

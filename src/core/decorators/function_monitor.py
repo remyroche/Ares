@@ -215,6 +215,8 @@ class FunctionCallMonitor:
                 report_file = Path(self.report_file_path) / f'execution_report_{execution_id}.json'
                 report_file.parent.mkdir(parents=True, exist_ok=True)
                 import json
+import numpy as np
+
                 with open(report_file, 'w') as f:
                     json.dump(report_data, f, indent=2, default=str)
                 self.logger.info(f'📊 Detailed execution report saved to: {report_file}')

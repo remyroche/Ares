@@ -13,6 +13,7 @@ from .utils.logger import system_logger
 import logging
 import pandas as pd
 from .core.decorators.validation import validates as validate_data_quality, traced as with_tracing_span
+import numpy as np
 
 class UnifiedRegimeClassifierSRFocused:
     """

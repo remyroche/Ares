@@ -46,6 +46,8 @@ try:
 except ImportError:
     pipeline_standards = None
 import logging
+import numpy as np
+
 logger = logging.getLogger('Step15TacticianSpecialistTrainingPerRegime')
 
 class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTrainingStep):

@@ -199,6 +199,8 @@ class PositionSizer:
         """Adjust position size using logarithmic computations to prevent multiplicative compounding."""
         try:
             import math
+import numpy as np
+
             epsilon = 1e-08
             log_adjusted = math.log(base_size + epsilon)
             if market_health_analysis:

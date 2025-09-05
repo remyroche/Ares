@@ -1363,6 +1363,8 @@ class MLConfidencePredictor:
                 return {'success': False, 'error': 'Async order executor not available', 'execution_id': None}
             from src.tactician.enhanced_order_manager import ExecutionRequest, ExecutionStrategy, OrderSide, OrderType
             from .core.decorators.errors import handles_errors
+import numpy as np
+
             order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
             order_type = OrderType.LIMIT if price else OrderType.MARKET
             strategy_map = {'immediate': ExecutionStrategy.IMMEDIATE, 'batch': ExecutionStrategy.BATCH, 'twap': ExecutionStrategy.TWAP, 'vwap': ExecutionStrategy.VWAP, 'iceberg': ExecutionStrategy.ICEBERG, 'adaptive': ExecutionStrategy.ADAPTIVE}

@@ -13,6 +13,7 @@ from typing import Any
 from typing import Dict
 from typing import Optional
 from datetime import datetime
+import numpy as np
 
 @dataclass
 class BarrierOptimizationResult:

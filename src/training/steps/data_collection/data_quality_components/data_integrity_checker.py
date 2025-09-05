@@ -5,6 +5,7 @@ Extracted from raw_data_quality_checker.py
 from typing import Any, Optional, Tuple
 from datetime import timedelta
 from .utils.logger import system_logger
+import numpy as np
 
 class DataIntegrityChecker:
     """Validates data integrity and logical consistency of market data.

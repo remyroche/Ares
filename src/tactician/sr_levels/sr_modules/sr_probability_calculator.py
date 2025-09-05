@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 
 class SRProbabilityCalculator:

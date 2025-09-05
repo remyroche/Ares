@@ -10,6 +10,7 @@ from typing import Any
 from .utils.logger import system_logger
 from .utils.warning_symbols import failed, initialization_error
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 class BehaviorMetricType(Enum):
     """Model behavior metric types."""

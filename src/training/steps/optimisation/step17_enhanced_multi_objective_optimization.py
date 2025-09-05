@@ -11,6 +11,7 @@ from optuna.samplers import NSGAIISampler, TPESampler
 from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
+import numpy as np
 
 class OptimizationBlock(Enum):
     """Logical blocks for parameter optimization to avoid curse of dimensionality."""

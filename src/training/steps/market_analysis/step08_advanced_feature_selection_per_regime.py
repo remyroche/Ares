@@ -14,6 +14,8 @@ try:
 except Exception:
     from src.utils.decorators import traced, validates, handles_errors
 from src.utils.logger import get_logger
+import numpy as np
+
 logger = get_logger('Step8AdvancedFeatureSelectionPerRegime')
 
 class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):

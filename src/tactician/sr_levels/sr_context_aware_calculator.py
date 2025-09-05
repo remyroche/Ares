@@ -178,6 +178,8 @@ class ContextAwareSRCalculator:
         """Load base S/R parameters."""
         try:
             from .utils.sr_parameter_loader import SRParameterLoader
+import numpy as np
+
             return SRParameterLoader.load_optimized_parameters(self.config)
         except Exception as e:
             self.logger.error(f'Error loading base parameters: {e}')

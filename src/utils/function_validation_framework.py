@@ -19,6 +19,7 @@ import json
 from datetime import datetime
 import os
 import pathlib
+import numpy as np
 
 class ValidationSeverity(Enum):
     """Severity levels for validation issues."""

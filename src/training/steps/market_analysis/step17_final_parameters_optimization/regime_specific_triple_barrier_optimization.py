@@ -186,6 +186,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Extract regime names from data using shared regime accessor."""
         try:
             from .utils.regime_data_access import get_regime_column
+import numpy as np
+
             regime_column = get_regime_column(data)
         except Exception:
             regime_column = None

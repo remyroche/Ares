@@ -184,6 +184,8 @@ class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
         """Load previously optimized weights if available."""
         import json
         import os
+import numpy as np
+
         weights_file = os.path.join(self.config.get('model_dir', 'models'), f'sr_weights_{self.exchange}_{self.symbol}.json')
         try:
             if os.path.exists(weights_file):

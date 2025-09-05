@@ -1271,6 +1271,7 @@ class AdvancedFeatureEngineering:
             if self.enable_meta_labeling:
                 try:
                     from .analyst.meta_labeling_system import MetaLabelingSystem
+import numpy as np
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()

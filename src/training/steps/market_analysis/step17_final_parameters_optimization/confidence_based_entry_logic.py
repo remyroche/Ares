@@ -308,6 +308,7 @@ class ConfidenceBasedEntryLogic:
         
         # Calculate position size multiplier using linear confidence scaling
         from .utils.linear_confidence_scaling import LinearConfidenceScaler
+import numpy as np
         
         # Create linear scaler with current config
         linear_scaler = LinearConfidenceScaler({

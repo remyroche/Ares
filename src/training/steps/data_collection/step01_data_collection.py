@@ -690,4 +690,6 @@ if __name__ == '__main__':
         print(f'❌ Error: {e}')
     finally:
         import gc
+import numpy as np
+
         gc.collect()

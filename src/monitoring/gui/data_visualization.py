@@ -8,6 +8,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from .utils.logger import system_logger
+import numpy as np
 
 class MonitoringVisualization:
     """

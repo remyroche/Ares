@@ -7,6 +7,8 @@ from pathlib import Path
 from .utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators.errors import handles_errors
+import numpy as np
+
 logger = get_logger('RegimeHandler')
 
 class RegimeHandler:

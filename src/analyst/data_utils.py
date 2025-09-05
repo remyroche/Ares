@@ -8,6 +8,7 @@ from .utils.logger import system_logger
 from src.utils.warning_symbols import critical, failed, initialization_error, invalid, missing, warning
 from .core.decorators.errors import handles_errors
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
 
 class DataUtils:
     """

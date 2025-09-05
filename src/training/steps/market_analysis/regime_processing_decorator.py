@@ -3,10 +3,12 @@ from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 'Decorator for automatic per-regime processing in training steps.\n\nThis module provides a decorator that automatically handles per-regime processing\nfor training steps, ensuring consistent regime-based execution across steps 4-21.\n'
 import functools
-from .training.steps.regime_handler import regime_handler
+from src.training.steps.market_analysis.regime_handler import regime_handler
 import pandas as pd
 import logging
 import numpy as np
+
+from src.utils.common_operations import get_logger
 
 logger = get_logger('RegimeProcessingDecorator')
 

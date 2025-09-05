@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import core components (ONLY orchestration related)
 from core.config import get_default_config
 from utils.dependency_manager import DependencyManager
-from utils.file_utils import FileUtils
+from utils.file_utils import find_python_files, get_directory_stats
 from utils.progress import ProgressTracker
 from utils.report_aggregator import ReportAggregator
 

@@ -43,7 +43,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import standalone enhanced analyzer
-from standalone_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer, AnalysisConfig
+from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
+from core.config import AnalysisConfig
 
 # Note: Enhanced complexity analysis is available as a separate pipeline
 # Use: python code_complexity/cli.py for comprehensive complexity analysis
@@ -129,7 +130,7 @@ class CodeInteractionMapper:
         
         try:
             # Use our enhanced dead code analyzer
-            analyzer = SimplifiedEnhancedDeadCodeAnalyzer(self.config)
+            analyzer = EnhancedDeadCodeAnalyzer(self.config)
             report = analyzer.analyze_directory(self.project_root)
             
             # Store results
@@ -2471,4 +2472,5 @@ For comprehensive complexity analysis, use the separate complexity pipeline:
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

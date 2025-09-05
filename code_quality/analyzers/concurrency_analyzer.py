@@ -9,8 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from minimal_config import get_default_config
+from core.config import CodeQualityConfig, get_default_config
 
 
 class ConcurrencyIssue:

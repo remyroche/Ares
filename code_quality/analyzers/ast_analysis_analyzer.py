@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ..core.config import CodeQualityConfig
+from core.config import CodeQualityConfig
 
 try:
     import astroid

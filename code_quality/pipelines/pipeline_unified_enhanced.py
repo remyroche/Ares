@@ -33,8 +33,8 @@ from analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer
 
 # Import comprehensive analysis components (ONLY comprehensive analysis related)
 from comprehensive_code_review import CodeQualityReviewer
-from script_integration_analysis import ScriptIntegrationAnalyzer
-from merge_conflict_detector import MergeConflictDetector
+# from script_integration_analysis import ScriptIntegrationAnalyzer  # Deleted during cleanup
+# from merge_conflict_detector import MergeConflictDetector  # Deleted during cleanup
 
 # Import validators (ONLY comprehensive analysis related)
 from validators.enhanced_validator import EnhancedValidator

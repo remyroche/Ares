@@ -263,6 +263,49 @@ class EnhancedImportAnalyzer:
             pass
         return ""
 
+    def analyze_unused_imports(self, directory: str) -> Dict[str, Any]:
+        """
+        Analyze unused imports in a directory (compatibility method for pipeline).
+        
+        Args:
+            directory: Path to directory to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            # Use the existing comprehensive analysis
+            results = self.run_comprehensive_analysis(directory)
+            
+            # Extract unused imports from the results
+            unused_imports = []
+            for file_path, file_results in results.get("file_results", {}).items():
+                if "import_analysis" in file_results:
+                    import_issues = file_results["import_analysis"].get("issues", [])
+                    for issue in import_issues:
+                        if issue.get("type") == "unused_import":
+                            unused_imports.append({
+                                "file": file_path,
+                                "line": issue.get("line", 0),
+                                "column": issue.get("column", 0),
+                                "import_name": issue.get("name", ""),
+                                "description": issue.get("description", ""),
+                                "severity": issue.get("severity", "medium")
+                            })
+            
+            return {
+                "unused_imports": unused_imports,
+                "total_unused_imports": len(unused_imports),
+                "files_analyzed": len(results.get("file_results", {})),
+                "summary": results.get("summary", {})
+            }
+        except Exception as e:
+            return {
+                "unused_imports": [],
+                "total_unused_imports": 0,
+                "error": str(e)
+            }
+
 
 class EnhancedUndefinedAnalyzer:
     """Enhanced undefined variable analyzer with improved accuracy."""

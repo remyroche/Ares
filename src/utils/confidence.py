@@ -1,3 +1,5 @@
+import numpy as np
+
 DUAL_CONF_BASELINE = 0.216
 DUAL_CONF_RANGE = 0.784
 
@@ -16,7 +18,6 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
     return (dual, normalized)
 from collections.abc import Iterable
 from typing import Any
-import numpy as np
 
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else min(value, 1.0)

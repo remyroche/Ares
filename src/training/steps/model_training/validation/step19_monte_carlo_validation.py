@@ -15,6 +15,8 @@ from .core.domain import ParquetDatasetManager
 from .utils.logger import system_logger
 from ...base_step import BaseStep
 from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+import numpy as np
+import pandas as pd
 
 class MonteCarloValidationStep(BaseStep):
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
@@ -25,8 +27,6 @@ class MonteCarloValidationStep(BaseStep):
         """Validate environment dependencies and configuration."""
         # Check for required dependencies
         try:
-            import pandas as pd
-            import numpy as np
             self.logger.info("✅ Required dependencies available")
         except ImportError as e:
             self.logger.warning(f"Missing required dependency: {e}")

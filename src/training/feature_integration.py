@@ -9,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, initialization_error
+import numpy as np
+import pandas as pd
 
 class FeatureIntegrationManager:
     """Manages integration of advanced features (including liquidity features)"
@@ -34,8 +36,6 @@ class FeatureIntegrationManager:
             self.logger.info('🚀 Initializing feature integration manager...')
             if self.enable_advanced_features:
                 from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
-import numpy as np
-import pandas as pd
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(self.config)
                 await self.advanced_feature_engineering.initialize()

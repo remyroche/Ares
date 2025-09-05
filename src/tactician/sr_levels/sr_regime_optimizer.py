@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 'S/R Market Regime Optimizer.\n\nThis module optimizes market regime detection and adaptation through backtesting,\nensuring that regime-specific logic is validated and optimized for performance.\n'
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass

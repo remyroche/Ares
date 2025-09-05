@@ -9,6 +9,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
+import numpy as np
 
 try:
     import psutil
@@ -21,7 +22,6 @@ except ImportError:
     PANDAS_AVAILABLE = False
 try:
     from .utils.logger import system_logger
-import numpy as np
 
 except ImportError:
     system_logger = logging.getLogger('EnhancedMemoryManagement')

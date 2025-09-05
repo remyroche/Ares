@@ -1,5 +1,7 @@
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
+import numpy as np
+
 """
 Enhanced Dead Code Analyzer
 
@@ -48,7 +50,6 @@ from core.config import AnalysisConfig
 from utils.file_utils import find_python_files
 from typing import Set
 from typing import Any
-import numpy as np
 
 from typing import Dict
 from typing import List

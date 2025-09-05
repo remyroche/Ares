@@ -15,6 +15,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
+
 from src.utils.warning_symbols import (
     failed,
     invalid,
@@ -25,8 +28,6 @@ if TYPE_CHECKING:
     from .analyst.analyst import Analyst
     from .tactician.tactician import Tactician
 from .core.decorators.errors import handles_errors
-import pandas as pd
-import numpy as np
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods

@@ -1,3 +1,5 @@
+import numpy as np
+import pandas as pd
 
 """
 Strategist module for trading strategy generation.
@@ -31,9 +33,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .analyst.analyst import Analyst
     from .tactician.tactician import Tactician
-import pandas as pd
 from typing import Any
-import numpy as np
 
 
 class Strategist:

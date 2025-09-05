@@ -1,3 +1,4 @@
+import numpy as np
 
 '\nEnhanced Data Quality Validation Utilities\n\nThis module provides comprehensive data quality validation capabilities for the training pipeline.\n'
 import logging
@@ -10,7 +11,6 @@ except ImportError:
     PANDAS_AVAILABLE = False
 try:
     from .utils.logger import system_logger
-import numpy as np
 
 except ImportError:
     system_logger = logging.getLogger('EnhancedDataQualityValidator')

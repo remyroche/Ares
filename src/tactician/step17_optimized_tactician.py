@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 '\nStep17 Optimized Tactician\n\nThis module implements a complete step17-optimized Tactician where ALL decision logic,\nposition sizing, leverage, and confidence calculations are configurable by step17.\n'
 import logging
 from datetime import datetime

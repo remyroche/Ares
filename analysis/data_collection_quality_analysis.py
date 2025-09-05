@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import src.utils.warning_symbols
+import numpy as np
+
 """
 Data Collection Quality Analysis Report
 Analyzes the quality, completeness, and reliability of collected financial data.
@@ -11,8 +14,6 @@ import warnings
 from datetime import datetime, timedelta
 
 
-from src.utils.warning_symbols import (
-import numpy as np
 import pandas as pd
 
     warning,

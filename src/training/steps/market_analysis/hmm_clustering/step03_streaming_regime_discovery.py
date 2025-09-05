@@ -1,7 +1,8 @@
-import numpy as np
 from typing import Dict
 import pandas as pd
 from typing import Any
+import numpy as np
+
 'Streaming Regime Discovery with Memory Optimization.\n\nThis module implements chunked processing and memory-efficient regime discovery\nto handle large datasets without loading everything into memory.\n'
 import gc
 from collections import deque

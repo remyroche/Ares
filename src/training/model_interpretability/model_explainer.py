@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """Model Explainer for Trading Pipeline.
 
 This module provides comprehensive model interpretability using SHAP and LIME
@@ -39,8 +42,6 @@ class ModelExplainer:
 from typing import Any
 from typing import Dict
 from typing import List
-import numpy as np
-import pandas as pd
             
             self.shap_analyzer = SHAPAnalyzer(self.config)
             self.lime_analyzer = LIMEAnalyzer(self.config)

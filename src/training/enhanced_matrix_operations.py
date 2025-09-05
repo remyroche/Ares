@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 # src/training/enhanced_matrix_operations.py
 
@@ -41,7 +42,6 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 from .utils.logger import system_logger
-import pandas as pd
 
 try:
 

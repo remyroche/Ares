@@ -6,11 +6,11 @@ Creates heatmap visualizations of code complexity metrics.
 
 from typing import Dict, List, Optional, Tuple, Any
 from .code_visualizer import CodeVisualizer
+import numpy as np
+import pandas as pd
 
 try:
     import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
     MATPLOTLIB_AVAILABLE = True
 except ImportError:

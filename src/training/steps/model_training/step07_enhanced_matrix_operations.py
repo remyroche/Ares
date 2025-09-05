@@ -9,6 +9,8 @@ import json
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+import numpy as np
+import pandas as pd
 
 try:
     PANDAS_AVAILABLE = True
@@ -31,8 +33,6 @@ from src.core.decorators import handles_errors
 from src.training.steps.model_training.matrix_components import MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 from src.utils.logger import system_logger
 
-import pandas as pd
-import numpy as np
 import psutil
 
 

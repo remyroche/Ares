@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """SHAP Analyzer for Model Interpretability.
 
 This module provides SHAP (SHapley Additive exPlanations) analysis for understanding
@@ -34,8 +37,6 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
-import numpy as np
-import pandas as pd
 
             self.shap = shap
             self.shap_available = True

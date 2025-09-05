@@ -1,3 +1,5 @@
+import src.utils.warning_symbols
+import numpy as np
 
 # src/paper_trader.py
 """
@@ -35,16 +37,6 @@ class ExecutionMode(Enum):
     BACKTEST = "backtest"
     PAPER = "paper"
     SIMULATION = "simulation"
-
-
-from src.utils.warning_symbols import (
-import numpy as np
-
-    execution_error,
-    initialization_error,
-    invalid,
-    validation_error,
-)
 
 
 class PaperTrader:

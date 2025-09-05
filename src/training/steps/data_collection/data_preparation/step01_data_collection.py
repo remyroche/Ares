@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 from .core.decorators import handles_errors
 from .training.base_step import BaseStep
 import pandas as pd
+import numpy as np
 
 class DataCollectionStep(BaseStep):
     """Step 1: Data Collection using standardized base class."""
@@ -29,7 +30,6 @@ class DataCollectionStep(BaseStep):
         """Initialize step-specific components."""
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
-import numpy as np
 
             self.data_downloader = download_all_data_with_consolidation
             self.logger.info('✅ Data downloader initialized')

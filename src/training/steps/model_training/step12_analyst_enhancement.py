@@ -61,6 +61,7 @@ except ImportError:
         def __init__(self, *args, **kwargs):
             self.data = {}
             self.columns = []
+            self.shape = (0, 0)
         
         def drop(self, *args, **kwargs):
             return self
@@ -73,13 +74,23 @@ except ImportError:
         
         def empty(self):
             return True
+        
+        def __getitem__(self, key):
+            return FallbackSeries()
+        
+        def __setitem__(self, key, value):
+            pass
     
     class FallbackSeries:
         def __init__(self, *args, **kwargs):
             self.data = []
+            self.values = [0, 1]
         
         def unique(self):
-            return []
+            return [0, 1]
+        
+        def __getitem__(self, key):
+            return 0
     
     pd = type('MockPandas', (), {
         'DataFrame': FallbackDataFrame,
@@ -91,11 +102,22 @@ try:
     import numpy as np
 except ImportError:
     # Create fallback numpy-like objects
+    class FallbackRandom:
+        def choice(self, *args, **kwargs):
+            return [0, 1]
+    
     class FallbackNumpy:
-        def random(self):
-            return type('MockRandom', (), {
-                'choice': lambda *args, **kwargs: [0, 1]
-            })()
+        def __init__(self):
+            self.random = FallbackRandom()
+        
+        def array(self, *args, **kwargs):
+            return [0, 1]  # Simple fallback
+        
+        def zeros(self, *args, **kwargs):
+            return [0, 0]  # Simple fallback
+        
+        def ones(self, *args, **kwargs):
+            return [1, 1]  # Simple fallback
     
     np = FallbackNumpy()
 

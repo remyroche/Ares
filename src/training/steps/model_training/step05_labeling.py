@@ -1,7 +1,7 @@
 
-from typing import Dict
+from typing import Any, Dict, Tuple
 import pandas as pd
-from typing import Any
+import numpy as np
 """Step 5: Labeling - Refactored to use BaseStep.
 
 This module creates comprehensive labels for the training data, combining triple barrier
@@ -9,8 +9,15 @@ labels with additional labeling strategies and meta-labeling features.
 """
 from pathlib import Path
 import json
-from .training.base_step import BaseStep
-from .core.decorators import handles_errors
+from src.training.base_step import BaseStep
+try:
+    from src.utils.decorators.errors import handles_errors
+except Exception:
+    def handles_errors(*_args, **_kwargs):
+        def _wrap(fn):
+            return fn
+        return _wrap
+from src.utils.logger import system_logger
 
 class LabelingStep(BaseStep):
     """Step 5: Labeling using standardized base class."""
@@ -22,6 +29,12 @@ class LabelingStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, '05', 'labeling')
+        # Ensure a working logger
+        try:
+            self.logger = system_logger.getChild('ModelTrainingLabelingStep')
+        except Exception:
+            import logging as _logging
+            self.logger = _logging.getLogger('ModelTrainingLabelingStep')
         self.labeling_config = config.get('labeling_config', {'use_triple_barrier': True, 'use_meta_labeling': True, 'barrier_config': {'profit_taking': 0.02, 'stop_loss': 0.01, 'max_holding_period': 100}, 'regime_aware': True})
         self.triple_barrier_labeler = None
         self.meta_labeler = None
@@ -30,10 +43,10 @@ class LabelingStep(BaseStep):
         """Initialize step-specific components."""
         try:
             if self.labeling_config.get('use_triple_barrier', True):
-                from .training.steps.model_training.labeling_components import TripleBarrierLabeler
+                from .labeling_components import TripleBarrierLabeler
                 self.triple_barrier_labeler = TripleBarrierLabeler(self.labeling_config.get('barrier_config', {}))
             if self.labeling_config.get('use_meta_labeling', True):
-                from .analyst.meta_labeling_system import MetaLabelingSystem
+                from src.analyst.meta_labeling_system import MetaLabelingSystem
                 
                 self.meta_labeler = MetaLabelingSystem()
             self.logger.info('✅ Labeling components initialized')

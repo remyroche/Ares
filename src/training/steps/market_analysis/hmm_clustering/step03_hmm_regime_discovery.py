@@ -26,6 +26,15 @@ sys.path.insert(0, str(project_root))
 # dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 # centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
 from src.utils.logger import system_logger
+# Use centralized pipeline standards/utilities
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Validate core runtime dependencies for this step
+REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.logger']
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES, logger=system_logger)
+
+# Optional components
+sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
 # enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 # sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
 import psutil
@@ -124,6 +133,8 @@ class HMMRegimeDiscoveryStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        # Default to no external quality manager unless injected
+        self.data_quality_manager = None
         self._validate_environment()
         self._initialize_components()
 

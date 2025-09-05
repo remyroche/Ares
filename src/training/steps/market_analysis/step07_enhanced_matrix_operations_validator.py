@@ -7,9 +7,26 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .utils.common_operations import safe_json_load
-from .utils.logger import system_logger
+# Import utilities with fallback
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger(__name__)
 
+def safe_json_load(file_path):
+    """Safe JSON loading with fallback."""
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+# Base validator fallback
+class BaseValidator:
+    def __init__(self, step_name: str, config: dict):
+        self.step_name = step_name
+        self.config = config
 
 class Step7EnhancedMatrixOperationsValidator(BaseValidator):
     """Validator for Step 7: Enhanced Matrix Operations."""
@@ -31,23 +48,23 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            # Check if step6_feature_engineering output exists
-            step6_output_dir = Path("data/training")
-            step6_files = list(
-                step6_output_dir.glob(
+            # Check if step06_feature_engineering output exists
+            step06_output_dir = Path("data/training")
+            step06_files = list(
+                step06_output_dir.glob(
                     f"{exchange}_{symbol}_{timeframe}*features*.parquet"
                 )
             )
 
-            if not step6_files:
+            if not step06_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
-                    f"Step 6 feature engineering output not found for {exchange}_{symbol}_{timeframe}",
+                    f"Step 06 feature engineering output not found for {exchange}_{symbol}_{timeframe}",
                 )
             else:
-                validation_result["details"]["step6_files_found"] = len(step6_files)
-                validation_result["details"]["step6_files"] = [
-                    str(f) for f in step6_files
+                validation_result["details"]["step06_files_found"] = len(step06_files)
+                validation_result["details"]["step06_files"] = [
+                    str(f) for f in step06_files
                 ]
 
             # Check if matrix operations directory exists

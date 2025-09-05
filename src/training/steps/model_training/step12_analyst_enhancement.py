@@ -28,6 +28,12 @@ try:
     from sklearn.metrics import accuracy_score
     from sklearn.model_selection import KFold
     
+    # ML libraries - REQUIRED (not optional)
+    import lightgbm as lgb
+    import xgboost as xgb
+    import shap
+    from shap.explainers import TreeExplainer, KernelExplainer
+    
     # Set optuna logging
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     
@@ -36,18 +42,13 @@ try:
     
 except ImportError as e:
     print(f"Required dependencies not available: {e}")
-    print("Please install: pandas, numpy, torch, sklearn, joblib, optuna")
+    print("Please install: pandas, numpy, torch, sklearn, joblib, optuna, lightgbm, xgboost, shap")
     raise ImportError(f"Missing required dependencies: {e}")
 
 # Constants
 BLANK_TRAINING_LOOKBACK_DAYS = 1095
 
-# Optional dependencies
-try:
-    import shap
-except ImportError:
-    shap = None
-
+# Additional sklearn dependencies
 try:
     from sklearn.svm import SVC
     from sklearn.neural_network import MLPClassifier
@@ -57,9 +58,7 @@ try:
     from io import StringIO
     from sklearn.metrics import log_loss
     import platform
-    from shap.explainers import TreeExplainer
     from sklearn.inspection import permutation_importance
-    from shap.explainers import KernelExplainer
     from sklearn.feature_selection import SelectKBest, f_classif
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -137,7 +136,7 @@ CONFIG = {
     'DEFAULT_EXCHANGE': 'BINANCE'
 }
 
-REQUIRED_MODULES = ['numpy', 'pandas', 'torch', 'sklearn', 'lightgbm', 'xgboost', 'optuna', 'joblib', 'src.utils.logger', 'src.utils.error_handler']
+REQUIRED_MODULES = ['numpy', 'pandas', 'torch', 'sklearn', 'lightgbm', 'xgboost', 'shap', 'optuna', 'joblib']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 '\nCompatibility shim for NumPy RNG unpickling across versions.\nWe avoid nested functions to keep the shim picklable.\n'
 _NUMPY_RNG_UNPICKLE_PATCHED = False

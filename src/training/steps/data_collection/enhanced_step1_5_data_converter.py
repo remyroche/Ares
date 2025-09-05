@@ -330,4 +330,4 @@ import pandas as pd
             print('=' * 60)
         except Exception as e:
             print(f'❌ Enhanced Step1_5 execution failed: {e}')
-    asyncio.run(await main())
+    asyncio.run(main())

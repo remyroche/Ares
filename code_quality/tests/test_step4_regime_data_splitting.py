@@ -14,8 +14,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import the modules to be tested
-from src.training.steps.step4_regime_data_splitting import RegimeDataSplittingStep
-from src.training.steps.step4_triple_barrier_method import TripleBarrierMethodStep
+from src.training.steps.market_analysis.step04_regime_data_splitting import RegimeDataSplittingStep
+from src.training.steps.model_training.step04_5_triple_barrier_method import TripleBarrierMethodStep
 
 
 class TestRegimeDataSplittingStep(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         }
 
         # Mock the logger
-        with patch("src.training.steps.step4_regime_data_splitting.system_logger"):
+        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.system_logger"):
             self.step = RegimeDataSplittingStep(self.config)
 
         # Create sample test data with regimes
@@ -56,7 +56,7 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
 
     def test_validate_environment(self):
         """Test environment validation."""
-        with patch("src.training.steps.step4_regime_data_splitting.dependency_status",
+        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.dependency_status",
                   {"pandas": True, "numpy": True}):
             # Should not raise any exceptions
             self.step._validate_environment()
@@ -66,7 +66,7 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         await self.step.initialize()
         assert self.step.start_time is not None
 
-    @patch("src.training.steps.step4_regime_data_splitting.pandas.read_parquet")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.pandas.read_parquet")
     async def test_load_regime_data_success(self, mock_read_parquet):
         """Test successful regime data loading."""
         # Set up mock
@@ -81,7 +81,7 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         assert result is not None
         pd.testing.assert_frame_equal(result, self.test_data)
 
-    @patch("src.training.steps.step4_regime_data_splitting.pandas.read_parquet")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.pandas.read_parquet")
     async def test_load_regime_data_file_not_found(self, mock_read_parquet):
         """Test regime data loading when file doesn't exist."""
         # Set up mock to raise FileNotFoundError
@@ -122,8 +122,8 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
             assert "duration_minutes" in stats[regime_id]
             assert "mean_volume" in stats[regime_id]
 
-    @patch("src.training.steps.step4_regime_data_splitting.ensure_directory")
-    @patch("src.training.steps.step4_regime_data_splitting.safe_json_dump")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.ensure_directory")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.safe_json_dump")
     async def test_save_regime_metadata(self, mock_json_dump, mock_ensure_dir):
         """Test saving regime metadata."""
         # Run the method
@@ -135,11 +135,11 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         mock_ensure_dir.assert_called()
         mock_json_dump.assert_called()
 
-    @patch("src.training.steps.step4_regime_data_splitting.RegimeDataSplittingStep._load_regime_data")
-    @patch("src.training.steps.step4_regime_data_splitting.RegimeDataSplittingStep._create_unified_regime_dataset")
-    @patch("src.training.steps.step4_regime_data_splitting.RegimeDataSplittingStep._save_regime_metadata")
-    @patch("src.training.steps.step4_regime_data_splitting.log_step_metrics")
-    @patch("src.training.steps.step4_regime_data_splitting.log_step_report")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.RegimeDataSplittingStep._load_regime_data")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.RegimeDataSplittingStep._create_unified_regime_dataset")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.RegimeDataSplittingStep._save_regime_metadata")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.log_step_metrics")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.log_step_report")
     async def test_split_data_by_regimes_success(self, mock_log_report, mock_log_metrics,
                                                 mock_save_metadata, mock_create_unified, mock_load):
         """Test successful regime data splitting."""
@@ -152,11 +152,11 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         }
 
         # Patch decorators
-        with patch("src.training.steps.step4_regime_data_splitting.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
-            with patch("src.training.steps.step4_regime_data_splitting.with_tracing_span", lambda x: lambda fn: fn):
-                with patch("src.training.steps.step4_regime_data_splitting.quality_gate", lambda **kwargs: lambda fn: fn):
-                    with patch("src.training.steps.step4_regime_data_splitting.handle_errors", lambda fn: fn):
-                        with patch("src.training.steps.step4_regime_data_splitting.resource_monitor", lambda fn: fn):
+        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
+            with patch("src.training.steps.market_analysis.step04_regime_data_splitting.with_tracing_span", lambda x: lambda fn: fn):
+                with patch("src.training.steps.market_analysis.step04_regime_data_splitting.quality_gate", lambda **kwargs: lambda fn: fn):
+                    with patch("src.training.steps.market_analysis.step04_regime_data_splitting.handle_errors", lambda fn: fn):
+                        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.resource_monitor", lambda fn: fn):
                             # Run the method
                             result = await self.step.split_data_by_regimes(
                                 symbol="ETHUSDT",
@@ -170,18 +170,18 @@ class TestRegimeDataSplittingStep(unittest.TestCase):
         assert "unified_data" in result
         assert "regime_stats" in result
 
-    @patch("src.training.steps.step4_regime_data_splitting.RegimeDataSplittingStep._load_regime_data")
+    @patch("src.training.steps.market_analysis.step04_regime_data_splitting.RegimeDataSplittingStep._load_regime_data")
     async def test_split_data_by_regimes_load_failure(self, mock_load):
         """Test regime data splitting when loading fails."""
         # Set up mock
         mock_load.return_value = None
 
         # Patch decorators
-        with patch("src.training.steps.step4_regime_data_splitting.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
-            with patch("src.training.steps.step4_regime_data_splitting.with_tracing_span", lambda x: lambda fn: fn):
-                with patch("src.training.steps.step4_regime_data_splitting.quality_gate", lambda **kwargs: lambda fn: fn):
-                    with patch("src.training.steps.step4_regime_data_splitting.handle_errors", lambda fn: fn):
-                        with patch("src.training.steps.step4_regime_data_splitting.resource_monitor", lambda fn: fn):
+        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
+            with patch("src.training.steps.market_analysis.step04_regime_data_splitting.with_tracing_span", lambda x: lambda fn: fn):
+                with patch("src.training.steps.market_analysis.step04_regime_data_splitting.quality_gate", lambda **kwargs: lambda fn: fn):
+                    with patch("src.training.steps.market_analysis.step04_regime_data_splitting.handle_errors", lambda fn: fn):
+                        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.resource_monitor", lambda fn: fn):
                             # Run the method
                             result = await self.step.split_data_by_regimes(
                                 symbol="ETHUSDT",
@@ -211,7 +211,7 @@ class TestTripleBarrierMethodStep(unittest.TestCase):
         }
 
         # Mock the logger
-        with patch("src.training.steps.step4_triple_barrier_method.system_logger"):
+        with patch("src.training.steps.model_training.step04_5_triple_barrier_method.system_logger"):
             self.step = TripleBarrierMethodStep(self.config)
 
         # Create sample test data
@@ -234,7 +234,7 @@ class TestTripleBarrierMethodStep(unittest.TestCase):
 
     def test_initialize_components(self):
         """Test component initialization."""
-        with patch("src.training.steps.step4_triple_barrier_method.OptimizedTripleBarrierLabeling") as mock_labeler:
+        with patch("src.training.steps.model_training.step04_5_triple_barrier_method.OptimizedTripleBarrierLabeling") as mock_labeler:
             mock_labeler.return_value = Mock()
             self.step._initialize_components()
             # Should initialize without errors
@@ -301,11 +301,11 @@ class TestTripleBarrierMethodStep(unittest.TestCase):
         assert result is not None
         assert "label" in result.columns
 
-    @patch("src.training.steps.step4_triple_barrier_method.TripleBarrierMethodStep._load_data")
-    @patch("src.training.steps.step4_triple_barrier_method.TripleBarrierMethodStep._apply_triple_barrier")
-    @patch("src.training.steps.step4_triple_barrier_method.TripleBarrierMethodStep._save_labeled_data")
-    @patch("src.training.steps.step4_triple_barrier_method.log_step_metrics")
-    @patch("src.training.steps.step4_triple_barrier_method.log_step_report")
+    @patch("src.training.steps.model_training.step04_5_triple_barrier_method.TripleBarrierMethodStep._load_data")
+    @patch("src.training.steps.model_training.step04_5_triple_barrier_method.TripleBarrierMethodStep._apply_triple_barrier")
+    @patch("src.training.steps.model_training.step04_5_triple_barrier_method.TripleBarrierMethodStep._save_labeled_data")
+    @patch("src.training.steps.model_training.step04_5_triple_barrier_method.log_step_metrics")
+    @patch("src.training.steps.model_training.step04_5_triple_barrier_method.log_step_report")
     async def test_execute_success(self, mock_log_report, mock_log_metrics,
                                   mock_save, mock_apply, mock_load):
         """Test successful execution of triple barrier method."""
@@ -317,10 +317,10 @@ class TestTripleBarrierMethodStep(unittest.TestCase):
         mock_save.return_value = True
 
         # Patch decorators
-        with patch("src.training.steps.step4_triple_barrier_method.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
-            with patch("src.training.steps.step4_triple_barrier_method.with_tracing_span", lambda x: lambda fn: fn):
-                with patch("src.training.steps.step4_triple_barrier_method.handle_errors", lambda fn: fn):
-                    with patch("src.training.steps.step4_triple_barrier_method.resource_monitor", lambda fn: fn):
+        with patch("src.training.steps.model_training.step04_5_triple_barrier_method.with_enhanced_mlflow_logging", lambda x: lambda fn: fn):
+            with patch("src.training.steps.model_training.step04_5_triple_barrier_method.with_tracing_span", lambda x: lambda fn: fn):
+                with patch("src.training.steps.model_training.step04_5_triple_barrier_method.handle_errors", lambda fn: fn):
+                    with patch("src.training.steps.model_training.step04_5_triple_barrier_method.resource_monitor", lambda fn: fn):
                         # Run the method
                         result = await self.step.execute(
                             symbol="ETHUSDT",
@@ -365,8 +365,8 @@ class TestRegimeTripleBarrierIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up test data."""
         import shutil
-import pandas as pd
-import numpy as np
+        import pandas as pd
+        import numpy as np
 
         if self.test_data_dir.exists():
             shutil.rmtree(self.test_data_dir)
@@ -386,8 +386,8 @@ import numpy as np
         }
 
         # Initialize steps with mocked dependencies
-        with patch("src.training.steps.step4_regime_data_splitting.system_logger"):
-            with patch("src.training.steps.step4_triple_barrier_method.system_logger"):
+        with patch("src.training.steps.market_analysis.step04_regime_data_splitting.system_logger"):
+            with patch("src.training.steps.model_training.step04_5_triple_barrier_method.system_logger"):
                 regime_step = RegimeDataSplittingStep(config)
                 barrier_step = TripleBarrierMethodStep(config)
 

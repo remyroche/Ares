@@ -679,6 +679,47 @@ class UndefinedNamesAnalyzer:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
+    def analyze_undefined_names(self, directory: str) -> Dict[str, Any]:
+        """
+        Analyze undefined names in a directory (compatibility method for pipeline).
+        
+        Args:
+            directory: Path to directory to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            # Use the existing directory analysis
+            results = self.analyze_directory(directory)
+            
+            # Extract undefined names from the results
+            undefined_names = []
+            for file_path, file_result in results.get("file_results", {}).items():
+                for error in file_result.get("errors", []):
+                    undefined_names.append({
+                        "file": file_path,
+                        "line": error.get("line", 0),
+                        "column": error.get("column", 0),
+                        "name": error.get("name", ""),
+                        "error_type": error.get("error_type", "undefined_name"),
+                        "description": error.get("description", ""),
+                        "context": error.get("context", "")
+                    })
+            
+            return {
+                "undefined_names": undefined_names,
+                "total_undefined_names": len(undefined_names),
+                "files_analyzed": len(results.get("file_results", {})),
+                "summary": results.get("summary", {})
+            }
+        except Exception as e:
+            return {
+                "undefined_names": [],
+                "total_undefined_names": 0,
+                "error": str(e)
+            }
+
 
 def main():
     """Command-line interface for the undefined names analyzer."""

@@ -1,4 +1,5 @@
 from typing import Dict, List, Any, Optional
+from collections import defaultdict
 """
 Enhanced Dead Code Analyzer
 
@@ -770,3 +771,45 @@ class EnhancedDeadCodeAnalyzer:
                 
         except Exception as e:
             self.logger.error(f"Failed to export results: {e}")
+
+    def analyze_dead_code(self, directory: str | Path) -> Dict[str, Any]:
+        """
+        Analyze dead code in a directory (compatibility method for pipeline).
+        
+        Args:
+            directory: Path to directory to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            report = self.analyze_directory(directory)
+            
+            # Convert report to dictionary format expected by pipeline
+            issues = []
+            for file_path, file_issues in report.issues_by_file.items():
+                for issue in file_issues:
+                    issues.append({
+                        "file": file_path,
+                        "line": issue.line_number,
+                        "type": issue.issue_type,
+                        "description": issue.description,
+                        "confidence": issue.confidence,
+                        "severity": issue.severity,
+                        "code_snippet": issue.code_snippet,
+                        "tool_source": issue.tool_source
+                    })
+            
+            return {
+                "issues": issues,
+                "total_issues": report.total_issues,
+                "issues_by_type": report.issues_by_type,
+                "issues_by_severity": {k: len(v) for k, v in report.issues_by_severity.items()},
+                "issues_by_tool": {k: len(v) for k, v in report.issues_by_tool.items()},
+                "confidence_distribution": report.confidence_distribution,
+                "potential_savings": report.potential_savings,
+                "false_positives_filtered": report.false_positives_filtered
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to analyze dead code: {e}")
+            return {"issues": [], "error": str(e)}

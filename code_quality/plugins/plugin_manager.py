@@ -10,6 +10,7 @@ import time
 from typing import Optional, List, Dict, Any
 from .plugin_registry import PluginRegistry
 from .base_plugin import PluginContext, PluginResult, PluginCategory, PluginPriority
+from .exceptions import PluginExecutionError, PluginTimeoutError
 
 
 class PluginManager:

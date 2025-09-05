@@ -23,11 +23,11 @@ def _resolve_default_return(default_return: Any, *args: Any, **kwargs: Any) -> A
     except Exception:
         return None
 
-def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optional[Iterable[Type[BaseException]]]=None, Exception: Optional[Iterable[Type[BaseException]]]=None, default_return: Any=None, fallback: Any=None, context: Optional[str]=None, error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]]=None) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
+def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optional[Iterable[Type[BaseException]]]=None, exception_types: Optional[Iterable[Type[BaseException]]]=None, default_return: Any=None, fallback: Any=None, context: Optional[str]=None, error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]]=None) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
     """Decorator to handle errors consistently across sync/async functions.
 
 	Parameters
-	- exceptions / Exception: Iterable of exception classes to catch. Defaults to (Exception,).
+	- exceptions / exception_types: Iterable of exception classes to catch. Defaults to (Exception,).
 	- default_return / fallback: Value (or callable) to return on error if no specific handler is found.
 	- context: Optional string describing the operation, used for logging.
 	- error_handlers: Mapping of Exception type to either a return value or a (return, message) tuple.
@@ -37,7 +37,7 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
 	- If wrapping an async function, the wrapper is async and awaits the function
 	- If default_return/fallback is callable, it will be invoked to produce the value
 	"""
-    catch_exceptions = tuple(exceptions or Exception or (BaseException,))
+    catch_exceptions = tuple(exceptions or exception_types or (BaseException,))
     if catch_exceptions == (BaseException,):
         catch_exceptions = (Exception,)
     default_value = default_return if default_return is not None else fallback
@@ -59,7 +59,7 @@ import logging
         ctx = f' (context: {context})' if context else ''
         print(f'Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}')
 
-    def _handle_with_mapping(err: BaseException) -> Any:
+    def _handle_with_mapping(err: BaseException, *args: Any, **kwargs: Any) -> Any:
         for exc_type, ret in handlers.items():
             try:
                 if isinstance(err, exc_type):
@@ -68,7 +68,7 @@ import logging
                     return ret
             except Exception:
                 continue
-        return _resolve_default_return(default_value)
+        return _resolve_default_return(default_value, *args, **kwargs)
 
     def _decorate(f: Callable[..., Any]) -> Callable[..., Any] | Callable[..., Awaitable[Any]]:
         if inspect.iscoroutinefunction(f):
@@ -78,7 +78,7 @@ import logging
                     return await f(*a, **kw)
                 except catch_exceptions as err:
                     _log_error(err, f.__name__)
-                    return _handle_with_mapping(err)
+                    return _handle_with_mapping(err, *a, **kw)
             _async_wrapper.__name__ = getattr(f, '__name__', 'wrapped_async')
             _async_wrapper.__doc__ = getattr(f, '__doc__', None)
             return _async_wrapper
@@ -88,7 +88,7 @@ import logging
                 return f(*a, **kw)
             except catch_exceptions as err:
                 _log_error(err, f.__name__)
-                return _handle_with_mapping(err)
+                return _handle_with_mapping(err, *a, **kw)
         _sync_wrapper.__name__ = getattr(f, '__name__', 'wrapped')
         _sync_wrapper.__doc__ = getattr(f, '__doc__', None)
         return _sync_wrapper

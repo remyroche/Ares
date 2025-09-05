@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import time
+import re
 
 def run_autopep8(filepath):
     """Run autopep8 on a file to fix basic syntax issues."""

@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Domain-specific decorators for the trading system.
 
@@ -7,8 +10,6 @@ the core decorator system. It combines decorators from multiple modules
 for easy importing.
 """
 from ..decorators import compose, handles_errors, traced, validates
-import numpy as np
-import pandas as pd
 
 def with_tracing_span(*args, **kwargs) -> None:
     """Alias for traced to preserve backward compatibility with older imports."""

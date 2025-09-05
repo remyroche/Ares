@@ -1,6 +1,6 @@
-import numpy as np
 import pandas as pd
 import typing
+import numpy as np
 
 # Improvements for the Fractal Location Classifier
 

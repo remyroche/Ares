@@ -6,6 +6,7 @@ for S/R level detection with advanced performance metrics.
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import numpy as np
+import pandas as pd
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -14,7 +15,6 @@ from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
 import logging
 import os
-import pandas as pd
 
 @dataclass
 class ValidationResult:

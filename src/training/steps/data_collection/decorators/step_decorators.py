@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .utils.common_operations
+import numpy as np
+
 """
 Comprehensive Step Decorators for Data Collection Pipeline
 
@@ -23,8 +26,6 @@ from .data_quality_decorators import (
     prevent_data_leakage,
     quality_gate
 )
-from .utils.common_operations import (
-import numpy as np
 import pandas as pd
 import typing
 

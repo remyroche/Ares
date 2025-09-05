@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 import logging
 import typing
+import numpy as np
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
@@ -53,7 +54,6 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
 
         try:
             # Calculate R-squared
-            import numpy as np
             from sklearn.linear_model import LinearRegression
             
             model = LinearRegression()

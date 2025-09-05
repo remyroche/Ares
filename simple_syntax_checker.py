@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+import re
 
 
 def check_syntax(file_path: str) -> dict[str, Any]:

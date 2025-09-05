@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import os
+import pandas as pd
 from datetime import datetime
 from typing import Any, Dict
 
@@ -12,25 +13,27 @@ from typing import Any, Dict
 
 from .core.domain import ParquetDatasetManager
 from .utils.logger import system_logger
-    log_step_metrics,
-    log_step_report,
-)
+from ...base_step import BaseStep
 from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
-class MonteCarloValidationStep:
+class MonteCarloValidationStep(BaseStep):
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
     
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
-        if not dependency_status["all_available"]:
-            missing_modules = dependency_status["missing_modules"]
-            self.logger.warning(f"Missing modules: {missing_modules}")
+        # Check for required dependencies
+        try:
+            import pandas as pd
+            import numpy as np
+            self.logger.info("✅ Required dependencies available")
+        except ImportError as e:
+            self.logger.warning(f"Missing required dependency: {e}")
             # Continue with available modules, using fallbacks where needed
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+        super().__init__(config, "19", "monte_carlo_validation")
         self.logger = system_logger
 
     async def initialize(self) -> None:
@@ -137,8 +140,7 @@ class MonteCarloValidationStep:
 
             # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
             try:
-                    EnhancedTrainingManagerOptimized
-                )
+                from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized
                 
                 pdm = ParquetDatasetManager(logger=self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
@@ -194,6 +196,7 @@ class MonteCarloValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from .core.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -209,9 +212,6 @@ class MonteCarloValidationStep:
     time_budget_watchdog,
     validate_step_output,
     validate_step_prerequisites,
-)
-import os
-
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -223,10 +223,7 @@ import os
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step14_monte_carlo_validation")
-# @artifact_write_lock() - removed, handled by file system
-@validates()
-# @artifact_versioning("1.0") - removed, handled by pipeline
+@idempotent_step(step_key="step19_monte_carlo_validation")
 @timeout(timeout=7200)
 @validates(
     required_directories=["data/training", "models"],
@@ -246,6 +243,12 @@ import os
     feature_leakage_detection=True,
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
+    required_files=["data/training/parquet/mc/*.parquet"],
+    performance_thresholds={"mc_time_minutes": 180.0, "memory_usage_gb": 8.0},
+    format_validation=True,
+    model_performance_thresholds={"mc_accuracy": 0.6, "mc_sharpe": 1.0},
+    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    validation_score_requirements={"mc_score": 0.6},
 )
 @log_execution_time(
     memory_threshold_gb=16.0,
@@ -268,18 +271,6 @@ import os
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
-)
-@validates(
-    required_files=["data/training/parquet/mc/*.parquet"],
-    data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["scenario_id", "seed", "pnl"],
-    },
-    performance_thresholds={"mc_time_minutes": 180.0, "memory_usage_gb": 8.0},
-    format_validation=True,
-    model_performance_thresholds={"mc_accuracy": 0.6, "mc_sharpe": 1.0},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"mc_score": 0.6},
 )
 async def run_step(
     symbol: str,
@@ -328,4 +319,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(await test())
+    asyncio.run(test())

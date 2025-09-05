@@ -8,7 +8,7 @@ import numpy as np
 This validator ensures quality insurance for the Unified Regime Intelligence step.
 """
 
-from .core.decorators import handles_errors
+from src.utils.decorators import handles_errors
 import os
 import pickle
 import warnings
@@ -18,8 +18,8 @@ from typing import Any, Dict
 import torch
 from sklearn.preprocessing import LabelEncoder
 
-from .utils.logger import system_logger
-from .utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 warnings.filterwarnings("ignore")
 
@@ -741,6 +741,9 @@ async def run_step5_5_validation(
 		artifacts_dir = config.get(
 			"artifacts_dir", "checkpoints/unified_regime_intelligence",
 		)
+		
+		# Ensure artifacts directory exists
+		ensure_directory(artifacts_dir)
 
 		# Run comprehensive validation
 		validation_passed = await validator.run_comprehensive_validation(

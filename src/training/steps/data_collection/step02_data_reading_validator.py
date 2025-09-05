@@ -10,7 +10,6 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-import .step02_data_reading
 import numpy as np
 
 project_root = Path(__file__).parent.parent.parent
@@ -21,7 +20,7 @@ from .utils.common_operations import safe_json_load, ensure_directory, safe_json
 import pandas as pd
 
 # Import the comprehensive function monitoring framework from step02
-
+from .utils.monitoring import (
     comprehensive_function_monitoring,
     function_monitor,
     FunctionCallMonitor,

@@ -386,6 +386,173 @@ class EnhancedCodeInteractionMapper:
             logger.error(f"Analysis failed: {e}")
             raise
 
+    def map_interactions(self, project_root: str) -> dict:
+        """Map enhanced code interactions across the project."""
+        print(f"\n{'='*60}")
+        print("ENHANCED CODE INTERACTION MAPPING")
+        print(f"{'='*60}")
+        print(f"Project root: {project_root}")
+        
+        # Initialize enhanced results
+        interactions = {
+            "interactions": [],
+            "module_dependencies": [],
+            "function_calls": [],
+            "class_interactions": [],
+            "import_relationships": [],
+            "complex_interactions": [],
+            "cross_module_interactions": [],
+            "call_graph": {},
+            "dependency_graph": {},
+            "enhanced_metrics": {
+                "total_interactions": 0,
+                "function_calls": 0,
+                "class_interactions": 0,
+                "module_dependencies": 0,
+                "complex_interactions": 0,
+                "cross_module_interactions": 0,
+                "files_analyzed": 0,
+                "complexity_score": 0.0,
+                "coupling_score": 0.0
+            }
+        }
+        
+        try:
+            # Import analyzers for enhanced analysis
+            from analyzers.call_graph_analyzer import CallGraphAnalyzer
+            from analyzers.dependency_analyzer import DependencyAnalyzer
+            from analyzers.architecture_analyzer import ArchitectureAnalyzer
+            
+            # Initialize analyzers with default config
+            from core.config import get_default_config
+            config = get_default_config()
+            call_analyzer = CallGraphAnalyzer(config)
+            dep_analyzer = DependencyAnalyzer(config)
+            arch_analyzer = ArchitectureAnalyzer(config)
+            
+            # Run enhanced analysis
+            print("Running enhanced call graph analysis...")
+            call_results = call_analyzer.analyze_directory(project_root)
+            
+            print("Running enhanced dependency analysis...")
+            dep_results = dep_analyzer.analyze_directory(project_root)
+            
+            print("Running enhanced architecture analysis...")
+            arch_results = arch_analyzer.analyze_directory(project_root)
+            
+            # Extract function calls with enhanced metrics
+            if "functions" in call_results:
+                for func_name, func_data in call_results["functions"].items():
+                    calls = func_data.get("calls", [])
+                    for call in calls:
+                        interaction = {
+                            "type": "function_call",
+                            "source": func_name,
+                            "target": call,
+                            "source_file": func_data.get("file_path", ""),
+                            "line_number": func_data.get("line_number", 0),
+                            "complexity": len(calls),  # Number of calls as complexity metric
+                            "is_cross_module": "/" in call or "." in call
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["function_calls"].append(interaction)
+                        
+                        # Categorize as complex if high call count
+                        if len(calls) > 10:
+                            interactions["complex_interactions"].append(interaction)
+                        
+                        # Categorize as cross-module if external
+                        if interaction["is_cross_module"]:
+                            interactions["cross_module_interactions"].append(interaction)
+            
+            # Extract module dependencies with enhanced metrics
+            if "modules" in dep_results:
+                for module_name, module_data in dep_results["modules"].items():
+                    dependencies = module_data.get("dependencies", [])
+                    for dep in dependencies:
+                        interaction = {
+                            "type": "module_dependency",
+                            "source": module_name,
+                            "target": dep,
+                            "relationship": "imports",
+                            "source_file": module_data.get("file_path", ""),
+                            "complexity": len(dependencies),  # Number of dependencies as complexity
+                            "is_external": not dep.startswith("src/") and not dep.startswith(".")
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["module_dependencies"].append(interaction)
+                        
+                        # Categorize as complex if high dependency count
+                        if len(dependencies) > 15:
+                            interactions["complex_interactions"].append(interaction)
+                        
+                        # Categorize as cross-module if external
+                        if interaction["is_external"]:
+                            interactions["cross_module_interactions"].append(interaction)
+            
+            # Extract class interactions from architecture with enhanced metrics
+            if "components" in arch_results:
+                for component_name, component_data in arch_results["components"].items():
+                    component_interactions = component_data.get("interactions", [])
+                    for interaction in component_interactions:
+                        interaction["type"] = "class_interaction"
+                        interaction["source_file"] = component_data.get("file_path", "")
+                        interaction["complexity"] = len(component_interactions)
+                        interactions["interactions"].append(interaction)
+                        interactions["class_interactions"].append(interaction)
+                        
+                        # Categorize as complex if high interaction count
+                        if len(component_interactions) > 5:
+                            interactions["complex_interactions"].append(interaction)
+            
+            # Store enhanced graphs
+            interactions["call_graph"] = call_results
+            interactions["dependency_graph"] = dep_results
+            
+            # Calculate enhanced metrics
+            interactions["enhanced_metrics"]["total_interactions"] = len(interactions["interactions"])
+            interactions["enhanced_metrics"]["function_calls"] = len([i for i in interactions["interactions"] if i["type"] == "function_call"])
+            interactions["enhanced_metrics"]["class_interactions"] = len([i for i in interactions["interactions"] if i["type"] == "class_interaction"])
+            interactions["enhanced_metrics"]["module_dependencies"] = len([i for i in interactions["interactions"] if i["type"] == "module_dependency"])
+            interactions["enhanced_metrics"]["complex_interactions"] = len(interactions["complex_interactions"])
+            interactions["enhanced_metrics"]["cross_module_interactions"] = len(interactions["cross_module_interactions"])
+            interactions["enhanced_metrics"]["files_analyzed"] = self.stats["files_analyzed"]
+            
+            # Calculate complexity and coupling scores
+            if interactions["enhanced_metrics"]["total_interactions"] > 0:
+                interactions["enhanced_metrics"]["complexity_score"] = sum(i.get("complexity", 0) for i in interactions["interactions"]) / interactions["enhanced_metrics"]["total_interactions"]
+                interactions["enhanced_metrics"]["coupling_score"] = interactions["enhanced_metrics"]["cross_module_interactions"] / interactions["enhanced_metrics"]["total_interactions"]
+            
+            # Store enhanced graphs
+            interactions["call_graph"] = self.results.get("call_graph", {})
+            interactions["dependency_graph"] = self.results.get("dependency_graph", {})
+            
+            print(f"\n✅ Enhanced interaction mapping completed:")
+            print(f"   - Total interactions: {interactions['enhanced_metrics']['total_interactions']}")
+            print(f"   - Function calls: {interactions['enhanced_metrics']['function_calls']}")
+            print(f"   - Class interactions: {interactions['enhanced_metrics']['class_interactions']}")
+            print(f"   - Module dependencies: {interactions['enhanced_metrics']['module_dependencies']}")
+            print(f"   - Complex interactions: {interactions['enhanced_metrics']['complex_interactions']}")
+            print(f"   - Cross-module interactions: {interactions['enhanced_metrics']['cross_module_interactions']}")
+            print(f"   - Complexity score: {interactions['enhanced_metrics']['complexity_score']:.2f}")
+            print(f"   - Coupling score: {interactions['enhanced_metrics']['coupling_score']:.2f}")
+            print(f"   - Files analyzed: {interactions['enhanced_metrics']['files_analyzed']}")
+            
+            return interactions
+            
+        except Exception as e:
+            print(f"❌ Error in enhanced interaction mapping: {e}")
+            return {
+                "error": str(e),
+                "interactions": [],
+                "module_dependencies": [],
+                "function_calls": [],
+                "class_interactions": [],
+                "complex_interactions": [],
+                "cross_module_interactions": [],
+                "enhanced_metrics": {"total_interactions": 0}
+            }
+
 
 def main():
     """Main entry point."""

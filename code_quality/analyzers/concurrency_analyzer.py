@@ -8,9 +8,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-
-from core.config import CodeQualityConfig, get_default_config
-import numpy as np
+from core.config import AnalysisConfig, get_default_config
 
 
 class ConcurrencyIssue:

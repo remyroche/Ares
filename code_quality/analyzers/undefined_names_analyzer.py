@@ -10,8 +10,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional
-
-from core.config import AnalysisConfig
+from core.config import AnalysisConfig, get_default_config
 from utils.file_utils import find_python_files
 import logging
 

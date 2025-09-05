@@ -2432,6 +2432,124 @@ class CodeInteractionMapper:
 """
         return html
 
+    def map_interactions(self, project_root: str) -> dict:
+        """Map code interactions across the project."""
+        print(f"\n{'='*60}")
+        print("MAPPING CODE INTERACTIONS")
+        print(f"{'='*60}")
+        print(f"Project root: {project_root}")
+        
+        # Initialize results
+        interactions = {
+            "interactions": [],
+            "module_dependencies": [],
+            "function_calls": [],
+            "class_interactions": [],
+            "import_relationships": [],
+            "call_graph": {},
+            "dependency_graph": {},
+            "statistics": {
+                "total_interactions": 0,
+                "function_calls": 0,
+                "class_interactions": 0,
+                "module_dependencies": 0,
+                "files_analyzed": 0
+            }
+        }
+        
+        try:
+            # Import analyzers
+            from analyzers.call_graph_analyzer import CallGraphAnalyzer
+            from analyzers.dependency_analyzer import DependencyAnalyzer
+            from analyzers.architecture_analyzer import ArchitectureAnalyzer
+            
+            # Initialize analyzers with default config
+            from core.config import get_default_config
+            config = get_default_config()
+            call_analyzer = CallGraphAnalyzer(config)
+            dep_analyzer = DependencyAnalyzer(config)
+            arch_analyzer = ArchitectureAnalyzer(config)
+            
+            # Run call graph analysis
+            print("Running call graph analysis...")
+            call_results = call_analyzer.analyze_directory(project_root)
+            
+            # Run dependency analysis
+            print("Running dependency analysis...")
+            dep_results = dep_analyzer.analyze_directory(project_root)
+            
+            # Run architecture analysis
+            print("Running architecture analysis...")
+            arch_results = arch_analyzer.analyze_directory(project_root)
+            
+            # Extract function calls from call graph
+            if "functions" in call_results:
+                for func_name, func_data in call_results["functions"].items():
+                    for call in func_data.get("calls", []):
+                        interaction = {
+                            "type": "function_call",
+                            "source": func_name,
+                            "target": call,
+                            "source_file": func_data.get("file_path", ""),
+                            "line_number": func_data.get("line_number", 0)
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["function_calls"].append(interaction)
+            
+            # Extract module dependencies
+            if "modules" in dep_results:
+                for module_name, module_data in dep_results["modules"].items():
+                    for dep in module_data.get("dependencies", []):
+                        interaction = {
+                            "type": "module_dependency",
+                            "source": module_name,
+                            "target": dep,
+                            "relationship": "imports",
+                            "source_file": module_data.get("file_path", "")
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["module_dependencies"].append(interaction)
+            
+            # Extract class interactions from architecture
+            if "components" in arch_results:
+                for component_name, component_data in arch_results["components"].items():
+                    for interaction in component_data.get("interactions", []):
+                        interaction["type"] = "class_interaction"
+                        interaction["source_file"] = component_data.get("file_path", "")
+                        interactions["interactions"].append(interaction)
+                        interactions["class_interactions"].append(interaction)
+            
+            # Store full results
+            interactions["call_graph"] = call_results
+            interactions["dependency_graph"] = dep_results
+            
+            # Update statistics
+            interactions["statistics"]["total_interactions"] = len(interactions["interactions"])
+            interactions["statistics"]["function_calls"] = len(interactions["function_calls"])
+            interactions["statistics"]["class_interactions"] = len(interactions["class_interactions"])
+            interactions["statistics"]["module_dependencies"] = len(interactions["module_dependencies"])
+            interactions["statistics"]["files_analyzed"] = call_results.get("files_analyzed", 0)
+            
+            print(f"\n✅ Interaction mapping completed:")
+            print(f"   - Total interactions: {interactions['statistics']['total_interactions']}")
+            print(f"   - Function calls: {interactions['statistics']['function_calls']}")
+            print(f"   - Class interactions: {interactions['statistics']['class_interactions']}")
+            print(f"   - Module dependencies: {interactions['statistics']['module_dependencies']}")
+            print(f"   - Files analyzed: {interactions['statistics']['files_analyzed']}")
+            
+            return interactions
+            
+        except Exception as e:
+            print(f"❌ Error in interaction mapping: {e}")
+            return {
+                "error": str(e),
+                "interactions": [],
+                "module_dependencies": [],
+                "function_calls": [],
+                "class_interactions": [],
+                "statistics": {"total_interactions": 0}
+            }
+
 
 def main():
     """Main entry point for code interaction mapping."""

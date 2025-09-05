@@ -21,14 +21,6 @@ class MockProgress:
     def __init__(self, *args, **kwargs):
         pass
     
-    def add_task(self, *args, **kwargs):
-        return 0
-    
-    def update(self, *args, **kwargs):
-        pass
-    
-    def advance(self, *args, **kwargs):
-        pass
     
     def __enter__(self):
         return self
@@ -40,8 +32,6 @@ class MockConsole:
     def print_output(self, *args, **kwargs):
         self.print_output(args[0] if args else "")
     
-    def log(self, *args, **kwargs):
-        self.print_output(args[0] if args else "")
 
 class MockLive:
     def __init__(self, *args, **kwargs):
@@ -53,8 +43,6 @@ class MockLive:
     def __exit__(self, *args):
         pass
     
-    def update(self, *args, **kwargs):
-        pass
 
 # Create mock modules
 mock_rich = type(sys)('rich')

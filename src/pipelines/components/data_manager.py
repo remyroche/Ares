@@ -17,6 +17,7 @@ from .core.domain import (
 from typing import Any
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 class DataManager:
     def __init__(self, config: dict[str, Any]) -> None:

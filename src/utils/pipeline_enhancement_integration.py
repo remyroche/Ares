@@ -12,6 +12,7 @@ from src.utils.data_streaming_manager import data_streaming_manager
 from src.utils.cross_step_validator import cross_step_validator
 from src.utils.advanced_quality_metrics import advanced_quality_metrics
 from typing import Dict, List, Optional, Union, Any, Tuple
+import logging
 
 class PipelineEnhancementIntegration:
     """Integration class for all pipeline enhancements."""

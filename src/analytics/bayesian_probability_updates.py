@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.core.decorators.errors import handles_errors
+import logging
+import time
 
 @dataclass
 class BayesianUpdate:

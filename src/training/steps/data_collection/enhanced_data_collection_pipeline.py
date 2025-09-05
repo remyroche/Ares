@@ -45,6 +45,11 @@ from .utils.data_operations_utils import (
     ProcessingError
 )
 from .monitoring.pipeline_monitor import (
+import numpy as np
+import pandas as pd
+import time
+import typing
+
     PipelineMonitor,
     StepMonitor,
     MonitorStatus

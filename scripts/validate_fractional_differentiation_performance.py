@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import numpy as np
+import os
 
 # Add project root to path
 project_root=Path(__file__).parent.parent

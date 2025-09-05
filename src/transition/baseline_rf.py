@@ -13,6 +13,7 @@ import pandas as pd
 
 try:
     import shap  # type: ignore
+import logging
 
 except Exception:  # pragma: no cover
     shap = None  # type: ignore

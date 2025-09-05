@@ -18,6 +18,7 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
     return (dual, normalized)
 from collections.abc import Iterable
 from typing import Any
+import logging
 
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else min(value, 1.0)

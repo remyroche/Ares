@@ -10,6 +10,8 @@ from src.training.steps.regime_processing_decorator import per_regime_processing
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
 from .core.decorators.errors import handles_errors
+import logging
+
 logger = get_logger('Step5LabelingPerRegime')
 
 class PerRegimeLabelingStep(LabelingStep):

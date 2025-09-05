@@ -48,6 +48,7 @@ except ImportError:
 try:
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LinearRegression
+import time
 
     SKLEARN_AVAILABLE = True
 except ImportError:

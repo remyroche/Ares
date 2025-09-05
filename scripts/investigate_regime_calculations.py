@@ -19,6 +19,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
+import logging
 
 warnings.filterwarnings("ignore")
 

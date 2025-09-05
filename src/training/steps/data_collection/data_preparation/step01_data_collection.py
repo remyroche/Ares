@@ -30,6 +30,8 @@ class DataCollectionStep(BaseStep):
         """Initialize step-specific components."""
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
+import logging
+import time
 
             self.data_downloader = download_all_data_with_consolidation
             self.logger.info('✅ Data downloader initialized')

@@ -8,6 +8,11 @@ import json
 from collections import defaultdict
 from pathlib import Path
 import numpy as np
+import logging
+import os
+import pandas as pd
+import time
+import typing
 
 # Enhanced function to module mappings with comprehensive coverage
 COMMON_IMPORTS = {
@@ -111,20 +116,57 @@ COMMON_IMPORTS = {
     "Union": ("typing", None),
     "Any": ("typing", None),
 
-    # Logging operations
+    # Logging operations - Enhanced coverage
     "getLogger": ("logging", None),
+    "info": ("logging", None),
+    "debug": ("logging", None),
+    "warning": ("logging", None),
+    "error": ("logging", None),
+    "critical": ("logging", None),
+    "basicConfig": ("logging", None),
+    "setLevel": ("logging", None),
+    "Logger": ("logging", None),
+    "StreamHandler": ("logging", None),
+    "FileHandler": ("logging", None),
+    "Formatter": ("logging", None),
 
-    # JSON operations
+    # JSON operations - Enhanced coverage
     "dumps": ("json", None),
     "loads": ("json", None),
+    "dump": ("json", None),
+    "load": ("json", None),
 
-    # Other common operations
+    # Other common operations - Enhanced coverage
     "ArgumentParser": ("argparse", None),
     "defaultdict": ("collections", None),
     "Counter": ("collections", None),
     "deque": ("collections", None),
+    "OrderedDict": ("collections", None),
+    "namedtuple": ("collections", None),
     "deepcopy": ("copy", None),
     "copy": ("copy", None),
+    
+    # OS operations - Enhanced coverage
+    "listdir": ("os", None),
+    "makedirs": ("os", None),
+    "remove": ("os", None),
+    "rmdir": ("os", None),
+    "getcwd": ("os", None),
+    "chdir": ("os", None),
+    "path": ("os", None),
+    "environ": ("os", None),
+    "system": ("os", None),
+    "popen": ("os", None),
+    
+    # Time operations - Enhanced coverage
+    "sleep": ("time", None),
+    "time": ("time", None),
+    "ctime": ("time", None),
+    "gmtime": ("time", None),
+    "localtime": ("time", None),
+    "strftime": ("time", None),
+    "strptime": ("time", None),
+    "mktime": ("time", None),
     
     # Additional common functions that are often missing
     "filterwarnings": ("warnings", None),  # Common missing import
@@ -236,12 +278,22 @@ class ImportFixer:
 
     def auto_detect_missing_imports(self, file_path: str) -> set:
         """Automatically detect missing imports by analyzing the file content."""
+        missing_imports = set()  # Initialize outside try block
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             tree = ast.parse(content)
-            missing_imports = set()
+            
+            # Get existing imports to avoid duplicates
+            existing_imports = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        existing_imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        existing_imports.add(node.module.split('.')[0])
             
             # Find all function calls and attribute access
             for node in ast.walk(tree):
@@ -249,8 +301,14 @@ class ImportFixer:
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     
+                    # Check for common imports first
+                    if func_name in COMMON_IMPORTS and COMMON_IMPORTS[func_name]:
+                        module, alias = COMMON_IMPORTS[func_name]
+                        if module not in existing_imports:
+                            missing_imports.add((module, alias))
+                    
                     # Check for numpy functions
-                    if func_name in self.numpy_patterns:
+                    elif func_name in self.numpy_patterns:
                         missing_imports.add(('numpy', 'np'))
                     
                     # Check for pandas functions
@@ -315,6 +373,78 @@ class ImportFixer:
             print(f"Unknown error analyzing {file_path}: {e}")
             return set()
 
+    def add_common_missing_imports(self, file_path: str) -> set:
+        """Add the most common missing imports based on usage patterns."""
+        missing_imports = set()  # Initialize outside try block
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content)
+            
+            # Get existing imports
+            existing_imports = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        existing_imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        existing_imports.add(node.module.split('.')[0])
+            
+            # Check for common patterns that indicate missing imports
+            content_lower = content.lower()
+            
+            # Check for numpy usage patterns
+            if any(pattern in content_lower for pattern in ['np.', 'numpy.', 'array(', 'zeros(', 'ones(', 'mean(', 'std(', 'sum(']):
+                if 'numpy' not in existing_imports:
+                    missing_imports.add(('numpy', 'np'))
+            
+            # Check for pandas usage patterns
+            if any(pattern in content_lower for pattern in ['pd.', 'pandas.', 'dataframe', 'series', 'read_csv', 'read_parquet']):
+                if 'pandas' not in existing_imports:
+                    missing_imports.add(('pandas', 'pd'))
+            
+            # Check for logging usage patterns
+            if any(pattern in content_lower for pattern in ['logger.', 'logging.', 'info(', 'debug(', 'warning(', 'error(', 'critical(']):
+                if 'logging' not in existing_imports:
+                    missing_imports.add(('logging', None))
+            
+            # Check for datetime usage patterns
+            if any(pattern in content_lower for pattern in ['datetime.', 'now()', 'today()', 'timedelta']):
+                if 'datetime' not in existing_imports:
+                    missing_imports.add(('datetime', None))
+            
+            # Check for os usage patterns
+            if any(pattern in content_lower for pattern in ['os.', 'listdir', 'makedirs', 'getcwd', 'chdir']):
+                if 'os' not in existing_imports:
+                    missing_imports.add(('os', None))
+            
+            # Check for time usage patterns
+            if any(pattern in content_lower for pattern in ['time.', 'sleep(', 'time()']):
+                if 'time' not in existing_imports:
+                    missing_imports.add(('time', None))
+            
+            # Check for collections usage patterns
+            if any(pattern in content_lower for pattern in ['defaultdict', 'counter', 'deque', 'ordereddict']):
+                if 'collections' not in existing_imports:
+                    missing_imports.add(('collections', None))
+            
+            # Check for json usage patterns
+            if any(pattern in content_lower for pattern in ['json.', 'dumps(', 'loads(', 'dump(', 'load(']):
+                if 'json' not in existing_imports:
+                    missing_imports.add(('json', None))
+            
+            # Check for typing usage patterns
+            if any(pattern in content_lower for pattern in ['list[', 'dict[', 'set[', 'tuple[', 'optional[', 'union[']):
+                if 'typing' not in existing_imports:
+                    missing_imports.add(('typing', None))
+            
+        except Exception as e:
+            print(f"Error analyzing {file_path}: {e}")
+            
+        return missing_imports
+
     def analyze_file_with_categorization(self, file_path: str) -> dict:
         """Analyze a file and return categorized results."""
         result = {
@@ -352,42 +482,13 @@ class ImportFixer:
                 tree = ast.parse(content)
                 result["can_parse_ast"] = True
                 
-                # Now analyze for missing imports
-                missing_imports = set()
+                # Now analyze for missing imports using enhanced detection
+                missing_imports = self.auto_detect_missing_imports(file_path)
+                common_missing = self.add_common_missing_imports(file_path)
                 
-                # Find all function calls and attribute access
-                for node in ast.walk(tree):
-                    # Handle direct function calls like np.array()
-                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                        func_name = node.func.id
-                        
-                        # Check for numpy functions
-                        if func_name in self.numpy_patterns:
-                            missing_imports.add(('numpy', 'np'))
-                        
-                        # Check for pandas functions
-                        elif func_name in self.pandas_patterns:
-                            missing_imports.add(('pandas', 'pd'))
-                        
-                        # Check for warnings functions
-                        elif func_name in self.warnings_patterns:
-                            missing_imports.add(('warnings', None))
-                    
-                    # Handle attribute access like np.array, pd.DataFrame
-                    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                        if isinstance(node.func.value, ast.Name):
-                            module_name = node.func.value.id
-                            func_name = node.func.attr
-                            
-                            # Check for numpy patterns
-                            if module_name == 'np' and func_name in self.numpy_patterns:
-                                missing_imports.add(('numpy', 'np'))
-                            
-                            # Check for pandas patterns
-                            elif module_name == 'pd' and func_name in self.pandas_patterns:
-                                missing_imports.add(('pandas', 'pd'))
-                
-                result["missing_imports"] = missing_imports
+                # Combine both sets
+                all_missing_imports = missing_imports.union(common_missing)
+                result["missing_imports"] = all_missing_imports
                 
             except SyntaxError as e:
                 result["status"] = "ast_parse_error"
@@ -421,14 +522,18 @@ class ImportFixer:
     def auto_fix_file_imports(self, file_path: str) -> bool:
         """Automatically detect and fix missing imports in a file."""
         try:
-            # Auto-detect missing imports
+            # Auto-detect missing imports using both methods
             missing_imports = self.auto_detect_missing_imports(file_path)
+            common_missing = self.add_common_missing_imports(file_path)
             
-            if not missing_imports:
+            # Combine both sets
+            all_missing_imports = missing_imports.union(common_missing)
+            
+            if not all_missing_imports:
                 return False
             
             # Fix the imports
-            return self.fix_file_imports(file_path, missing_imports)
+            return self.fix_file_imports(file_path, all_missing_imports)
             
         except Exception as e:
             print(f"Error auto-fixing {file_path}: {e}")

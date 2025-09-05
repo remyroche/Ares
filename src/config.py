@@ -7,6 +7,7 @@ from typing import Any
 
 
 from logger import system_logger
+import logging
 
 def get_config() -> dict[str, Any]:
     """

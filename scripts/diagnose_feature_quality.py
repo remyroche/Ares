@@ -23,6 +23,7 @@ try:
     from src.utils.logger import system_logger  # noqa: E402
 except ImportError:
     import logging
+import typing
 
 system_logger = logging.getLogger(__name__)
 

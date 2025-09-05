@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from .utils.logger import system_logger
 from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
+import logging
 
 @dataclass
 class RegimePerformance:

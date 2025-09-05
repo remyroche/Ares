@@ -24,6 +24,8 @@ import psycopg2
 import sqlite3
 from pymongo import MongoClient
 import redis
+import logging
+import time
 
 
 class DatabaseType:

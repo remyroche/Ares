@@ -25,6 +25,7 @@ from typing import Dict, List, Any, Tuple
 import json
 from datetime import datetime
 import numpy as np
+import time
 
 class ComprehensiveSyntaxValidator:
     """Comprehensive syntax validation with multiple validation methods."""

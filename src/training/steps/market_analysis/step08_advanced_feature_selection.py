@@ -45,6 +45,9 @@ except ImportError:
     warnings.warn('LIME not available - interpretability features will be limited')
 try:
     import lightgbm as lgb
+import logging
+import time
+
     LGB_AVAILABLE = True
 except ImportError:
     LGB_AVAILABLE = False

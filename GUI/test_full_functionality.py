@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import requests
+import logging
 
 class GUIFunctionalityTester:
     def __init__(self):

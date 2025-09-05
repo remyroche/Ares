@@ -8,6 +8,7 @@ sys.path.insert(0, str(project_root))
 from .training.steps.step07_enhanced_matrix_operations import run_step as run_step07
 from .training.steps.step08_advanced_feature_selection import run_step as run_step08
 from .utils.logger import system_logger
+import logging
 
 async def run_feature_pipeline(symbol: str, exchange: str, timeframe: str='1m') -> Any:
     """Run the complete feature engineering and selection pipeline."""

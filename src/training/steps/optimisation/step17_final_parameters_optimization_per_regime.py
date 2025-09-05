@@ -19,6 +19,8 @@ from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
 from .core.decorators.errors import handles_errors
 import numpy as np
+import logging
+import typing
 
 
 logger = get_logger('Step17FinalParametersOptimizationPerRegime')

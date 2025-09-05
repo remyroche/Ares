@@ -6,6 +6,8 @@ for feature matrices and matrix operations results.
 from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
+import logging
+import os
 
 # Optional dependencies with fallback handling
 try:

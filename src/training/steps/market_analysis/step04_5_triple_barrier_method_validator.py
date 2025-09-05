@@ -10,6 +10,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .utils.logger import system_logger
 from .core.decorators import handles_errors, traced, validates
+import logging
+
 logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
 
 @traced(span_name='validate_triple_barrier_method')

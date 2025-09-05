@@ -14,6 +14,8 @@ from .enhanced_sr_detection import EnhancedSRDetector, SRLevel
 from .enhanced_sr_validation import EnhancedSRValidator, ValidationResult, BacktestResult
 from .core.decorators.errors import handles_errors
 import numpy as np
+import logging
+import time
 
 @dataclass
 class EnhancedOptimizationResult:

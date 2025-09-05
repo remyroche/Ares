@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from .utils.logger import system_logger
 if TYPE_CHECKING:
     from .interfaces.base_interfaces import IEventBus, IExchangeClient, IStateManager
+import logging
 
 class InjectableBase:
     """

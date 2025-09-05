@@ -24,6 +24,8 @@ if str(project_root) not in sys.path:
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import validate_dataframe_operation
+import logging
+import typing
 
 logger=system_logger.getChild("TimeframeRegenerator")
 

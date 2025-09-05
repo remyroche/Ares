@@ -43,6 +43,8 @@ class EnsembleClusteringRegimeDetector:
         """Optimize feature preprocessing for efficiency."""
         if features.shape[1] > 50:
             from sklearn.decomposition import IncrementalPCA
+import typing
+
             n_components = min(50, features.shape[1] // 2)
             pca = IncrementalPCA(n_components=n_components, batch_size=1000)
             features_reduced = pca.fit_transform(features)

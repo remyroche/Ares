@@ -12,6 +12,9 @@ from typing import get_type_hints, Callable, Any
 from .compose import P, R, uniform_wrapper
 
 import pydantic
+import logging
+import numpy as np
+import pandas as pd
 
 
 # Try to import optional validation libraries

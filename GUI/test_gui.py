@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import requests
+import json
 
 def test_api_endpoints():
     """Test all API endpoints"""

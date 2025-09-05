@@ -22,6 +22,7 @@ except ImportError:
 try:
     from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
     from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+import time
 
     TRIPLE_BARRIER_AVAILABLE = True
 except ImportError:

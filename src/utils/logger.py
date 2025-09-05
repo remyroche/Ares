@@ -19,6 +19,9 @@ import numpy as np
 
 try:
     from src.utils.pipeline_standards import PipelineStandards
+import collections
+import pandas as pd
+
 except ImportError:
     PipelineStandards = None
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']

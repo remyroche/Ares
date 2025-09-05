@@ -28,6 +28,8 @@ def check_dependencies() -> bool:
         missing_deps.append('matplotlib')
     try:
         import seaborn
+import logging
+
     except ImportError:
         missing_deps.append('seaborn')
     if missing_deps:

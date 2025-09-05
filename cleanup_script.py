@@ -10,6 +10,7 @@ import os
 import re
 
 import ast
+import typing
 
 
 class CodeAnalyzer:

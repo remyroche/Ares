@@ -48,6 +48,7 @@ try:
 except ImportError:
     pipeline_standards = None
 import logging
+import time
 
 logger = logging.getLogger('Step15TacticianSpecialistTrainingPerRegime')
 

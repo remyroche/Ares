@@ -31,8 +31,6 @@ class Step03HMMRegimeDiscovery(BaseStep):
         """Setup HMM model with graceful fallback."""
         try:
             from sklearn.mixture import GaussianMixture
-import logging
-
             self.logger.info('✅ Using GaussianMixture for regime discovery')
             return GaussianMixture
         except ImportError:

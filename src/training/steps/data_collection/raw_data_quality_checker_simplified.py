@@ -14,10 +14,6 @@ from .utils.logger import system_logger
 
 # Import the extracted components
 from .data_quality_components import (
-import json
-import logging
-import numpy as np
-
     QualityCheckConfig,
     DataPreprocessor,
     DataDownloader,
@@ -35,6 +31,9 @@ import numpy as np
     log_validation_progress,
     handle_validation_errors
 )
+import json
+import logging
+import numpy as np
 
 
 class RawDataQualityChecker:

@@ -6,8 +6,11 @@ contract used by the pipeline orchestration.
 
 from typing import Any, Dict, Tuple
 
-from .core.decorators import handles_errors
-from .training.base_step import BaseStep
+try:
+    from src.core.decorators import handles_errors
+except Exception:
+    from src.utils.decorators import handles_errors  # type: ignore
+from src.training.base_step import BaseStep
 
 
 class AdvancedFeatureSelectionStep(BaseStep):
@@ -15,6 +18,11 @@ class AdvancedFeatureSelectionStep(BaseStep):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config, "08", "advanced_feature_selection")
+        try:
+            from src.utils.logger import get_logger
+            self.logger = get_logger("AdvancedFeatureSelectionStep")
+        except Exception:
+            self.logger = None
 
     def _initialize_step(self) -> None:
         self.logger.info("✅ Advanced feature selection wrapper initialized")
@@ -48,7 +56,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
 
     async def _execute_feature_selection(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the advanced feature selection step."""
-        from .training.steps.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+        from src.training.steps.market_analysis.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
         
         step_impl = Step08AdvancedFeatureSelection(self.config)
         result_state = await step_impl.execute(training_input, pipeline_state)

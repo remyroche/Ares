@@ -46,6 +46,12 @@ from analyzers.metrics_analyzer import MetricsAnalyzer
 from analyzers.data_flow_analyzer import DataFlowAnalyzer
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 
+# Import enhanced analyzers for false positive reduction
+from analyzers.enhanced_fallback_detector import EnhancedFallbackDetector, analyze_fallback_patterns
+from analyzers.enhanced_security_analyzer import EnhancedSecurityAnalyzer, analyze_security_issues
+from analyzers.enhanced_dynamic_import_analyzer import EnhancedDynamicImportAnalyzer, analyze_dynamic_imports
+from analyzers.stub_object_analyzer import StubObjectAnalyzer, analyze_stub_objects
+
 # Import comprehensive analysis components (ONLY comprehensive analysis related)
 from comprehensive_code_review import CodeQualityReviewer
 # from script_integration_analysis import ScriptIntegrationAnalyzer  # Deleted during cleanup
@@ -1564,16 +1570,113 @@ class UnifiedEnhancedPipeline:
             return {"status": "error", "error": str(e)}
 
     def run_enhanced_analysis_integration(self) -> dict[str, Any]:
-        """Run enhanced analysis integration."""
+        """Run enhanced analysis integration with false positive reduction."""
         print("\n" + "="*60)
         print("Running Enhanced Analysis Integration")
         print("="*60)
         
+        start_time = time.time()
+        
         try:
-            # Stub implementation - these functions don't exist
-            return {"status": "skipped", "message": "Enhanced analysis functions not available"}
+            # Run enhanced analyzers for false positive reduction
+            enhanced_results = {}
+            
+            # 1. Fallback Pattern Detection
+            print("Running Fallback Pattern Detection...")
+            fallback_analyzer = EnhancedFallbackDetector()
+            fallback_results = []
+            
+            for file_path in self.file_paths[:10]:  # Sample first 10 files
+                try:
+                    result = fallback_analyzer.analyze_file(file_path)
+                    fallback_results.append(result)
+                except Exception as e:
+                    print(f"Error analyzing {file_path}: {e}")
+            
+            enhanced_results["fallback_patterns"] = {
+                "total_files_analyzed": len(fallback_results),
+                "total_patterns": sum(r.total_patterns for r in fallback_results),
+                "patterns_by_type": self._aggregate_patterns_by_type(fallback_results)
+            }
+            
+            # 2. Enhanced Security Analysis
+            print("Running Enhanced Security Analysis...")
+            security_analyzer = EnhancedSecurityAnalyzer()
+            security_results = []
+            
+            for file_path in self.file_paths[:10]:  # Sample first 10 files
+                try:
+                    result = security_analyzer.analyze_file(file_path)
+                    security_results.append(result)
+                except Exception as e:
+                    print(f"Error analyzing {file_path}: {e}")
+            
+            enhanced_results["enhanced_security"] = {
+                "total_files_analyzed": len(security_results),
+                "total_issues": sum(r.total_issues for r in security_results),
+                "real_issues": sum(r.real_issues for r in security_results),
+                "false_positives": sum(r.false_positives for r in security_results),
+                "false_positive_rate": self._calculate_false_positive_rate(security_results)
+            }
+            
+            # 3. Dynamic Import Analysis
+            print("Running Dynamic Import Analysis...")
+            import_analyzer = EnhancedDynamicImportAnalyzer()
+            import_results = []
+            
+            for file_path in self.file_paths[:10]:  # Sample first 10 files
+                try:
+                    result = import_analyzer.analyze_file(file_path)
+                    import_results.append(result)
+                except Exception as e:
+                    print(f"Error analyzing {file_path}: {e}")
+            
+            enhanced_results["dynamic_imports"] = {
+                "total_files_analyzed": len(import_results),
+                "total_patterns": sum(r.total_patterns for r in import_results),
+                "total_issues": sum(r.total_issues for r in import_results),
+                "real_issues": sum(r.real_issues for r in import_results),
+                "false_positives": sum(r.false_positives for r in import_results)
+            }
+            
+            # 4. Stub Object Analysis
+            print("Running Stub Object Analysis...")
+            stub_analyzer = StubObjectAnalyzer()
+            stub_results = []
+            
+            for file_path in self.file_paths[:10]:  # Sample first 10 files
+                try:
+                    result = stub_analyzer.analyze_file(file_path)
+                    stub_results.append(result)
+                except Exception as e:
+                    print(f"Error analyzing {file_path}: {e}")
+            
+            enhanced_results["stub_objects"] = {
+                "total_files_analyzed": len(stub_results),
+                "total_stubs": sum(r.total_stubs for r in stub_results),
+                "expected_stubs": sum(r.expected_stubs for r in stub_results),
+                "unexpected_stubs": sum(r.unexpected_stubs for r in stub_results),
+                "stubs_by_category": self._aggregate_stubs_by_category(stub_results)
+            }
+            
+            result = {
+                "status": "completed",
+                "execution_time": time.time() - start_time,
+                "enhanced_results": enhanced_results,
+                "message": "Enhanced analysis with false positive reduction completed"
+            }
+            
+            self.results["enhanced_analysis"] = result
+            return result
+            
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            error_result = {
+                "status": "error",
+                "execution_time": time.time() - start_time,
+                "error": str(e)
+            }
+            self.results["enhanced_analysis"] = error_result
+            return error_result
 
     def run_validation_checks(self) -> dict[str, Any]:
         """Run validation checks."""
@@ -1737,6 +1840,30 @@ class UnifiedEnhancedPipeline:
         self._print_aggregated_summary()
 
         return self.results
+
+    def _aggregate_patterns_by_type(self, results) -> dict[str, int]:
+        """Aggregate patterns by type across multiple results."""
+        type_counts = {}
+        for result in results:
+            for pattern_type, count in result.patterns_by_type.items():
+                type_counts[pattern_type.value] = type_counts.get(pattern_type.value, 0) + count
+        return type_counts
+    
+    def _calculate_false_positive_rate(self, results) -> float:
+        """Calculate the false positive rate across multiple results."""
+        total_issues = sum(r.total_issues for r in results)
+        false_positives = sum(r.false_positives for r in results)
+        if total_issues == 0:
+            return 0.0
+        return (false_positives / total_issues) * 100
+    
+    def _aggregate_stubs_by_category(self, results) -> dict[str, int]:
+        """Aggregate stubs by category across multiple results."""
+        category_counts = {}
+        for result in results:
+            for category, count in result.stubs_by_category.items():
+                category_counts[category.value] = category_counts.get(category.value, 0) + count
+        return category_counts
 
     def _generate_summary(self, total_time: float) -> dict[str, Any]:
         """Generate summary of all results."""

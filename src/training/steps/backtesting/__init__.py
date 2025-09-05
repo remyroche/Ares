@@ -19,7 +19,7 @@ from pathlib import Path
 # Import enhanced components
 from .step18_walk_forward_validation_per_regime import WalkForwardValidationPerRegimeStep
 from .step19_monte_carlo_validation_per_regime import MonteCarloValidationPerRegimeStep
-from .step20_ab_testing_per_regime import ABTestingPerRegimeStep
+from .step20_ab_testing_per_regime import PerRegimeABTestingStep
 from .step21_saving import SavingStep
 
 # Import enhanced logging system
@@ -35,15 +35,11 @@ from src.utils.common_operations import (
 )
 from src.utils.trading_decorators import (
     handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose
-)
-from src.utils.trading_decorators import (
-from typing import Any
-from typing import Dict
-
+    timeout, error_boundary, compose,
     validate_data_quality, monitor_step_execution, 
     ensure_data_integrity, validate_pipeline_step
 )
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 

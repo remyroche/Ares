@@ -40,6 +40,7 @@ from quick_start import quick_validate
 from plugins.plugin_manager import PluginManager
 from plugins.plugin_registry import PluginRegistry
 from plugins.base_plugin import PluginCategory, PluginPriority
+import logging
 
 
 class OverallPipeline:

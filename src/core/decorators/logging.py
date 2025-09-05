@@ -42,7 +42,7 @@ SENSITIVE_FIELDS = {
 def get_correlation_id() -> str:
     """Get current correlation ID or generate a new one."""
     cid = correlation_id_var.get()
-    if not cid:
+    if cid is None:
         cid = str(uuid.uuid4())
         correlation_id_var.set(cid)
     return cid
@@ -137,8 +137,8 @@ def log_call(
         args: tuple,
         kwargs: dict,
         result: Any = None,
-        error: Exception = None,
-        duration: float = None,
+        error: Exception | None = None,
+        duration: float | None = None,
     ) -> dict[str, Any]:
         """Prepare structured log data."""
         log_data = {

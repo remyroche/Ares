@@ -1,3 +1,5 @@
+import src.utils.warning_symbols
+import numpy as np
 
 # src/paper_trader.py
 """
@@ -26,6 +28,10 @@ from src.utils.decorators import (
 )
 from domain import handle_specific_errors
 from logger import system_logger
+import logging
+import os
+import pandas as pd
+import time
 
 
 class ExecutionMode(Enum):
@@ -35,14 +41,6 @@ class ExecutionMode(Enum):
     BACKTEST = "backtest"
     PAPER = "paper"
     SIMULATION = "simulation"
-
-
-from src.utils.warning_symbols import (
-    execution_error,
-    initialization_error,
-    invalid,
-    validation_error,
-)
 
 
 class PaperTrader:

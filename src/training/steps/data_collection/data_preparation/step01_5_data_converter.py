@@ -13,9 +13,15 @@ from .core.decorators import traced, validates
 
 from functools import cached_property
 from functools import cached_property
+import numpy as np
+import pandas as pd
+import warnings
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .utils.pipeline_standards import PipelineStandards
+import json
+
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.core.decorators', 'src.utils.logger', 'src.training.steps.data_downloader', 'pyarrow']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 enhanced_decorators = PipelineStandards.safe_import('src.core.decorators', None)
@@ -1242,7 +1248,6 @@ class UnifiedDataConverter:
     @quality_gate
     @handles_errors(fallback=None)
     async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
-        import warnings
         warnings.warn('_create_klines_from_aggtrades is deprecated. Use _download_klines_data instead.', DeprecationWarning, stacklevel=2)
         return None
 
@@ -1414,7 +1419,5 @@ if __name__ == '__main__':
     finally:
         import gc
 from .core.decorators.errors import handles_errors
-import pandas as pd
-import numpy as np
 
 gc.collect()

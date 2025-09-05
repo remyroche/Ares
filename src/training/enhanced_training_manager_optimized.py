@@ -7,6 +7,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 import psutil
+import numpy as np
+import pandas as pd
+
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -17,6 +20,11 @@ except ImportError:
     ds = None
 import contextlib
 from .utils.logger import system_logger
+import collections
+import datetime
+import json
+import logging
+import time
 
 def _make_hashable(obj: Any) -> Any:
     """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples."
@@ -281,8 +289,7 @@ class StreamingDataProcessor:
             import pyarrow.parquet as pq_mod
         except Exception as e:
             pass
-        import pandas as pd
-        import numpy as np
+        from .core.decorators.errors import handles_errors
 
         writer = None
         for df in chunks_iter:

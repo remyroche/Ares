@@ -1,4 +1,6 @@
 from typing import Dict, List, Any, Optional
+import numpy as np
+
 """
 AST Analysis Analyzer - Integrates Astroid, Rope, and Jedi for advanced AST-based code analysis.
 """
@@ -24,6 +26,7 @@ ROPE_AVAILABLE = False
 
 try:
     import jedi
+
     JEDI_AVAILABLE = True
 except ImportError:
     JEDI_AVAILABLE = False

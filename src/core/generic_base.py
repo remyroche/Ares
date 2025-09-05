@@ -1,32 +1,18 @@
-
-# src/core/generic_base.py
-
+from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Generic base classes with proper type constraints for reusable components.
 """
 from abc import ABC, abstractmethod
-from typing import (
-    Generic,
-    Protocol,
-    TypeVar,
-    runtime_checkable,
-)
+from typing import Generic, Protocol, TypeVar, runtime_checkable
+from src.custom_types import ConfigDict, PerformanceMetrics, TradingComponent
+import logging
 
-from src.custom_types import (
-    ConfigDict,
-    PerformanceMetrics,
-    TradingComponent,
-)
+ConfigT = TypeVar('ConfigT', bound=ConfigDict)
+DataT = TypeVar('DataT')
+ResultT = TypeVar('ResultT')
+ErrorT = TypeVar('ErrorT', bound=Exception)
+ComponentT = TypeVar('ComponentT', bound=TradingComponent)
 
-# Type variables with constraints
-ConfigT = TypeVar("ConfigT", bound=ConfigDict)
-DataT = TypeVar("DataT")
-ResultT = TypeVar("ResultT")
-ErrorT = TypeVar("ErrorT", bound=Exception)
-ComponentT = TypeVar("ComponentT", bound=TradingComponent)
-
-
-# Protocol constraints for data processing
 @runtime_checkable
 class Serializable(Protocol):
     """Protocol for serializable data."""
@@ -36,10 +22,9 @@ class Serializable(Protocol):
         ...
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict) -> None:
         """Create from dictionary."""
         ...
-
 
 @runtime_checkable
 class Validatable(Protocol):
@@ -53,8 +38,6 @@ class Validatable(Protocol):
         """Get validation errors."""
         ...
 
-
-# Generic base classes
 class GenericTradingComponent(Generic[ConfigT], ABC):
     """
     Generic base class for trading components with type-safe configuration.
@@ -94,7 +77,6 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
         """Get health status."""
         ...
 
-
 class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
     Generic base class for data processors with input/output type constraints.
@@ -102,7 +84,7 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
 
     def __init__(self, config: ConfigDict) -> None:
         self._config = config
-        self._processing_stats = {"processed": 0, "errors": 0}
+        self._processing_stats = {'processed': 0, 'errors': 0}
 
     @abstractmethod
     async def process(self, data: DataT) -> ResultT:
@@ -112,7 +94,6 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     def get_processing_stats(self) -> dict[str, int]:
         """Get processing statistics."""
         return self._processing_stats.copy()
-
 
 class GenericErrorHandler(Generic[ErrorT], ABC):
     """
@@ -132,7 +113,6 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
         """Get total error count."""
         return self._error_count
 
-
 class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
     Generic base class for async context managers that manage components.
@@ -143,12 +123,12 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
         self._components: list[ComponentT] = []
         self._is_active = False
 
-    async def __aenter__(self) -> "GenericAsyncManager[ComponentT]":
+    async def __aenter__(self) -> 'GenericAsyncManager[ComponentT]':
         """Enter async context."""
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit async context."""
         await self.stop()
 
@@ -179,7 +159,6 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
         """Check if manager is active."""
         return self._is_active
 
-
 class GenericFactory(Generic[ComponentT], ABC):
     """
     Generic base class for component factories.
@@ -201,7 +180,6 @@ class GenericFactory(Generic[ComponentT], ABC):
     def clear_components(self) -> None:
         """Clear all created components."""
         self._created_components.clear()
-
 
 class GenericValidator(Generic[DataT], ABC):
     """

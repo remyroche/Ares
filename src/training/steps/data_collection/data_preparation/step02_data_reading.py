@@ -3,58 +3,43 @@
 This module handles reading the unified data from step1_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery.
 """
-
 from pathlib import Path
-
 from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
-from src.utils.common_operations import (
-    validate_dataframe_schema, validate_data_quality
-)
+from src.utils.common_operations import validate_dataframe_schema, validate_data_quality
 from src.utils.parquet_utils import ParquetUtils
 from typing import Any, Dict, Tuple
 import pandas as pd
 from src.utils.logger import system_logger
-
+import numpy as np
+import logging
 
 class DataReadingStep(BaseStep):
     """Step 2: Data Reading and Validation using standardized base class."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize data reading step.
         
         Args:
             config: Configuration dictionary
         """
-        super().__init__(config, "02", "data_reading")
-        
-        # Initialize logger
-        self.logger = system_logger.getChild("DataReadingStep")
-        
-        # Step-specific configuration
-        self.data_quality_thresholds = config.get("data_quality_thresholds", {
-            "min_rows": 1000,
-            "max_missing_pct": 0.05,
-            "min_unique_timestamps": 500
-        })
-        
+        super().__init__(config, '02', 'data_reading')
+        self.logger = system_logger.getChild('DataReadingStep')
+        self.data_quality_thresholds = config.get('data_quality_thresholds', {'min_rows': 1000, 'max_missing_pct': 0.05, 'min_unique_timestamps': 500})
+
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
-        self.logger.info("✅ Data reading step initialized")
-    
+        self.logger.info('✅ Data reading step initialized')
+
     async def initialize(self) -> None:
         """Initialize the step."""
         self._initialize_step()
-    
+
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the step."""
         return await self.execute_logic(training_input, pipeline_state)
-    
-    def validate_inputs(
-        self, 
-        training_input: Dict[str, Any], 
-        pipeline_state: Dict[str, Any]
-    ) -> Tuple[bool, list]:
+
+    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
         
         Args:
@@ -65,42 +50,25 @@ class DataReadingStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check if unified data path exists from step 1.5 or can be constructed
-        data_path = pipeline_state.get("unified_data_path") or pipeline_state.get("raw_market_data")
-        
+        data_path = pipeline_state.get('unified_data_path') or pipeline_state.get('raw_market_data')
         if not data_path:
-            # Try to construct data path from training input parameters
-            symbol = training_input.get("symbol", "").upper()
-            exchange = training_input.get("exchange", "").upper()
-            timeframe = training_input.get("timeframe", "1m")
-            
+            symbol = training_input.get('symbol', '').upper()
+            exchange = training_input.get('exchange', '').upper()
+            timeframe = training_input.get('timeframe', '1m')
             if symbol and exchange and timeframe:
-                data_path = f"data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}"
-                self.logger.info(f"Constructed data path for validation: {data_path}")
+                data_path = f'data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}'
+                self.logger.info(f'Constructed data path for validation: {data_path}')
             else:
-                errors.append("No unified_data_path or raw_market_data in pipeline state, and cannot construct from training input")
-        
-        # Validate data file exists
-        if data_path and not Path(data_path).exists():
-            errors.append(f"Data file does not exist: {data_path}")
-        
-        # Validate key training inputs present
-        for key in ["symbol", "exchange", "timeframe"]:
+                errors.append('No unified_data_path or raw_market_data in pipeline state, and cannot construct from training input')
+        if data_path and (not Path(data_path).exists()):
+            errors.append(f'Data file does not exist: {data_path}')
+        for key in ['symbol', 'exchange', 'timeframe']:
             if key not in training_input:
-                errors.append(f"Missing required input: {key}")
-        
-        return len(errors) == 0, errors
-    
-    @handles_errors(
-        Exception,
-        fallback={"success": False}
-    )
-    async def execute_logic(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+                errors.append(f'Missing required input: {key}')
+        return (len(errors) == 0, errors)
+
+    @handles_errors(Exception, fallback={'success': False})
+    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data reading and validation logic.
         
         Args:
@@ -110,116 +78,67 @@ class DataReadingStep(BaseStep):
         Returns:
             Updated pipeline state
         """
-        # Get data path - construct if not provided in pipeline state
-        data_path = pipeline_state.get("unified_data_path") or pipeline_state.get("raw_market_data")
-        
+        data_path = pipeline_state.get('unified_data_path') or pipeline_state.get('raw_market_data')
         if not data_path:
-            # Construct data path from training input parameters
-            symbol = training_input.get("symbol", "").upper()
-            exchange = training_input.get("exchange", "").upper()
-            timeframe = training_input.get("timeframe", "1m")
-            
-            # Use the same path structure as found by the launcher
-            data_path = f"data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}"
-            self.logger.info(f"📖 Constructed data path: {data_path}")
+            symbol = training_input.get('symbol', '').upper()
+            exchange = training_input.get('exchange', '').upper()
+            timeframe = training_input.get('timeframe', '1m')
+            data_path = f'data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}'
+            self.logger.info(f'📖 Constructed data path: {data_path}')
         else:
-            self.logger.info(f"📖 Reading data from: {data_path}")
-        
-        # Read data
+            self.logger.info(f'📖 Reading data from: {data_path}')
         try:
             parquet_utils = ParquetUtils()
             data_path_obj = Path(data_path)
-            
             if data_path_obj.is_file():
-                # Single file
                 data = parquet_utils.safe_read_parquet(data_path)
             elif data_path_obj.is_dir():
-                # Directory with multiple parquet files
-                parquet_files = list(data_path_obj.glob("**/*.parquet"))
+                parquet_files = list(data_path_obj.glob('**/*.parquet'))
                 if not parquet_files:
-                    raise ValueError(f"No parquet files found in directory: {data_path}")
-                
-                self.logger.info(f"📁 Found {len(parquet_files)} parquet files in directory")
-                
-                # Read and concatenate all parquet files
+                    raise ValueError(f'No parquet files found in directory: {data_path}')
+                self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
                 dataframes = []
                 for i, file_path in enumerate(parquet_files):
-                    self.logger.info(f"📖 Reading file {i+1}/{len(parquet_files)}: {file_path.name}")
+                    self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
                     df = parquet_utils.safe_read_parquet(str(file_path))
-                    if df is not None and not df.empty:
+                    if df is not None and (not df.empty):
                         dataframes.append(df)
-                
                 if not dataframes:
-                    raise ValueError(f"Failed to read any data from parquet files in {data_path}")
-                
-                # Concatenate all dataframes
+                    raise ValueError(f'Failed to read any data from parquet files in {data_path}')
                 data = pd.concat(dataframes, ignore_index=True)
-                self.logger.info(f"📊 Concatenated {len(dataframes)} dataframes")
+                self.logger.info(f'📊 Concatenated {len(dataframes)} dataframes')
             else:
-                raise ValueError(f"Path does not exist: {data_path}")
-            
+                raise ValueError(f'Path does not exist: {data_path}')
             if data is None or data.empty:
-                raise ValueError(f"Failed to read data from {data_path}")
-            
-            self.logger.info(f"✅ Loaded {len(data)} rows with {len(data.columns)} columns")
-            
+                raise ValueError(f'Failed to read data from {data_path}')
+            self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns')
         except Exception as e:
-            self.logger.error(f"❌ Failed to read data: {e}")
+            self.logger.error(f'❌ Failed to read data: {e}')
             raise
-        
-        # Normalize index if needed
         try:
             if not isinstance(data.index, (pd.DatetimeIndex,)):
-                self.logger.warning("Index is not DatetimeIndex; attempting auto-conversion from timestamp/date/time column")
-                for ts_col in ["timestamp", "date", "time"]:
+                self.logger.warning('Index is not DatetimeIndex; attempting auto-conversion from timestamp/date/time column')
+                for ts_col in ['timestamp', 'date', 'time']:
                     if ts_col in data.columns:
                         data[ts_col] = pd.to_datetime(data[ts_col], errors='coerce')
                         data.set_index(ts_col, inplace=True)
                         break
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not normalize index: {e}")
-        
-        # Basic OHLCV presence log
-        required_cols = ["open", "high", "low", "close", "volume"]
+            self.logger.warning(f'⚠️ Could not normalize index: {e}')
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
         missing_cols = [c for c in required_cols if c not in data.columns]
         if missing_cols:
-            self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_cols}")
-        
-        # Perform data quality validation
+            self.logger.warning(f'⚠️ Missing OHLCV columns: {missing_cols}')
         validation_results = self._validate_data_quality(data)
-        
-        # Update pipeline state
-        pipeline_state["validated_data"] = data
-        pipeline_state["data_validation_results"] = validation_results
-        pipeline_state["data_info"] = {
-            "shape": data.shape,
-            "columns": list(data.columns),
-            "index_type": str(type(data.index)),
-            "memory_usage_mb": data.memory_usage(deep=True).sum() / 1024 / 1024,
-            "date_range": {
-                "start": str(data.index.min()) if hasattr(data.index, 'min') else None,
-                "end": str(data.index.max()) if hasattr(data.index, 'max') else None
-            }
-        }
-        
-        # Log validation summary
+        pipeline_state['validated_data'] = data
+        pipeline_state['data_validation_results'] = validation_results
+        pipeline_state['data_info'] = {'shape': data.shape, 'columns': list(data.columns), 'index_type': str(type(data.index)), 'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024, 'date_range': {'start': str(data.index.min()) if hasattr(data.index, 'min') else None, 'end': str(data.index.max()) if hasattr(data.index, 'max') else None}}
         self._log_validation_summary(validation_results)
-        
-        # Store in-memory for next steps
-        pipeline_state["dataframe"] = data
-        pipeline_state["validated_data"] = data  # For step 2.5
-        pipeline_state["data_validation_results"] = validation_results
-        
-        return {
-            "success": True,
-            "step02_data_reading_completed": True,
-            "validated_data": data,
-            "data_validation_results": validation_results,
-            "data_info": pipeline_state["data_info"],
-            "dataframe": data,
-            "step_name": "step02_data_reading"
-        }
-    
+        pipeline_state['dataframe'] = data
+        pipeline_state['validated_data'] = data
+        pipeline_state['data_validation_results'] = validation_results
+        return {'success': True, 'step02_data_reading_completed': True, 'validated_data': data, 'data_validation_results': validation_results, 'data_info': pipeline_state['data_info'], 'dataframe': data, 'step_name': 'step02_data_reading'}
+
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step outputs.
         
@@ -230,30 +149,21 @@ class DataReadingStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check if validated data exists
-        if "validated_data" not in pipeline_state and "dataframe" not in pipeline_state:
-            errors.append("No validated data in pipeline state")
-            return False, errors
-        
-        # Check data validation results
-        if "data_validation_results" not in pipeline_state:
-            errors.append("No data validation results in pipeline state")
+        if 'validated_data' not in pipeline_state and 'dataframe' not in pipeline_state:
+            errors.append('No validated data in pipeline state')
+            return (False, errors)
+        if 'data_validation_results' not in pipeline_state:
+            errors.append('No data validation results in pipeline state')
         else:
-            validation_results = pipeline_state["data_validation_results"]
-            
-            # Check for critical issues
-            if not validation_results.get("has_required_columns", True):
-                errors.append("Missing required columns")
-            
-            if validation_results.get("missing_data_pct", 100) > self.data_quality_thresholds["max_missing_pct"] * 100:
+            validation_results = pipeline_state['data_validation_results']
+            if not validation_results.get('has_required_columns', True):
+                errors.append('Missing required columns')
+            if validation_results.get('missing_data_pct', 100) > self.data_quality_thresholds['max_missing_pct'] * 100:
                 errors.append(f"Too much missing data: {validation_results.get('missing_data_pct', 0):.2f}%")
-            
-            if validation_results.get("total_rows", 0) < self.data_quality_thresholds["min_rows"]:
+            if validation_results.get('total_rows', 0) < self.data_quality_thresholds['min_rows']:
                 errors.append(f"Insufficient data rows: {validation_results.get('total_rows', 0)}")
-        
-        return len(errors) == 0, errors
-    
+        return (len(errors) == 0, errors)
+
     def _validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Perform comprehensive data quality validation.
         
@@ -263,115 +173,86 @@ class DataReadingStep(BaseStep):
         Returns:
             Validation results dictionary
         """
-        results = {
-            "total_rows": len(data),
-            "total_columns": len(data.columns),
-            "has_required_columns": True,
-            "missing_data_pct": 0,
-            "duplicate_rows": 0,
-            "data_quality_score": 100,
-            "issues": []
-        }
-        
-        # Check required columns
-        required_columns = ["open", "high", "low", "close", "volume"]
+        results = {'total_rows': len(data), 'total_columns': len(data.columns), 'has_required_columns': True, 'missing_data_pct': 0, 'duplicate_rows': 0, 'data_quality_score': 100, 'issues': []}
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
         missing_columns = set(required_columns) - set(data.columns)
         if missing_columns:
-            results["has_required_columns"] = False
-            results["issues"].append(f"Missing required columns: {missing_columns}")
-            results["data_quality_score"] -= 20
-        
-        # Check for missing data
+            results['has_required_columns'] = False
+            results['issues'].append(f'Missing required columns: {missing_columns}')
+            results['data_quality_score'] -= 20
         missing_count = data.isnull().sum().sum()
         total_cells = data.shape[0] * data.shape[1]
         if total_cells > 0:
-            results["missing_data_pct"] = (missing_count / total_cells) * 100
-            if results["missing_data_pct"] > 0:
-                results["issues"].append(f"Missing data: {results['missing_data_pct']:.2f}%")
-                results["data_quality_score"] -= min(20, results["missing_data_pct"] * 4)
-        
-        # Check for duplicates
+            results['missing_data_pct'] = missing_count / total_cells * 100
+            if results['missing_data_pct'] > 0:
+                results['issues'].append(f"Missing data: {results['missing_data_pct']:.2f}%")
+                results['data_quality_score'] -= min(20, results['missing_data_pct'] * 4)
         if hasattr(data.index, 'duplicated'):
             duplicate_count = data.index.duplicated().sum()
             if duplicate_count > 0:
-                results["duplicate_rows"] = duplicate_count
-                results["issues"].append(f"Duplicate timestamps: {duplicate_count}")
-                results["data_quality_score"] -= 10
-        
-        # Check data consistency
-        if all(col in data.columns for col in ["high", "low", "open", "close"]):
-            # High should be >= max(open, close, low)
-            invalid_high = (data["high"] < data[["open", "close", "low"]].max(axis=1)).sum()
+                results['duplicate_rows'] = duplicate_count
+                results['issues'].append(f'Duplicate timestamps: {duplicate_count}')
+                results['data_quality_score'] -= 10
+        if all((col in data.columns for col in ['high', 'low', 'open', 'close'])):
+            invalid_high = (data['high'] < data[['open', 'close', 'low']].max(axis=1)).sum()
             if invalid_high > 0:
-                results["issues"].append(f"Invalid high values: {invalid_high} rows")
-                results["data_quality_score"] -= 5
-            
-            # Low should be <= min(open, close, high)
-            invalid_low = (data["low"] > data[["open", "close", "high"]].min(axis=1)).sum()
+                results['issues'].append(f'Invalid high values: {invalid_high} rows')
+                results['data_quality_score'] -= 5
+            invalid_low = (data['low'] > data[['open', 'close', 'high']].min(axis=1)).sum()
             if invalid_low > 0:
-                results["issues"].append(f"Invalid low values: {invalid_low} rows")
-                results["data_quality_score"] -= 5
-        
-        # Check for zero or negative prices
-        price_columns = ["open", "high", "low", "close"]
+                results['issues'].append(f'Invalid low values: {invalid_low} rows')
+                results['data_quality_score'] -= 5
+        price_columns = ['open', 'high', 'low', 'close']
         for col in price_columns:
             if col in data.columns:
                 invalid_prices = (data[col] <= 0).sum()
                 if invalid_prices > 0:
-                    results["issues"].append(f"Invalid {col} prices: {invalid_prices} rows")
-                    results["data_quality_score"] -= 5
-        
-        # Check for zero volume
-        if "volume" in data.columns:
-            zero_volume = (data["volume"] == 0).sum()
+                    results['issues'].append(f'Invalid {col} prices: {invalid_prices} rows')
+                    results['data_quality_score'] -= 5
+        if 'volume' in data.columns:
+            zero_volume = (data['volume'] == 0).sum()
             if zero_volume > 0:
-                zero_volume_pct = (zero_volume / len(data)) * 100
+                zero_volume_pct = zero_volume / len(data) * 100
                 if zero_volume_pct > 10:
-                    results["issues"].append(f"Zero volume: {zero_volume} rows ({zero_volume_pct:.1f}%)")
-                    results["data_quality_score"] -= min(10, zero_volume_pct)
-        
-        # Additional index checks
+                    results['issues'].append(f'Zero volume: {zero_volume} rows ({zero_volume_pct:.1f}%)')
+                    results['data_quality_score'] -= min(10, zero_volume_pct)
         try:
             if isinstance(data.index, pd.DatetimeIndex):
                 if not data.index.is_monotonic_increasing:
-                    results["issues"].append("Non-monotonic datetime index")
-                    results["data_quality_score"] -= 5
+                    results['issues'].append('Non-monotonic datetime index')
+                    results['data_quality_score'] -= 5
         except Exception:
             pass
-        
-        # Ensure score doesn't go below 0
-        results["data_quality_score"] = max(0, results["data_quality_score"])
-        
+        results['data_quality_score'] = max(0, results['data_quality_score'])
         return results
-    
+
     def _log_validation_summary(self, validation_results: Dict[str, Any]) -> None:
         """Log a summary of validation results.
         
         Args:
             validation_results: Validation results dictionary
         """
-        self.logger.info("📊 Data Validation Summary:")
+        self.logger.info('📊 Data Validation Summary:')
         self.logger.info(f"   - Total rows: {validation_results['total_rows']:,}")
         self.logger.info(f"   - Total columns: {validation_results['total_columns']}")
         self.logger.info(f"   - Missing data: {validation_results['missing_data_pct']:.2f}%")
         self.logger.info(f"   - Duplicate rows: {validation_results['duplicate_rows']}")
         self.logger.info(f"   - Quality score: {validation_results['data_quality_score']}/100")
-        
-        if validation_results["issues"]:
-            self.logger.warning("⚠️ Data quality issues found:")
-            for issue in validation_results["issues"]:
-                self.logger.warning(f"   - {issue}")
+        if validation_results['issues']:
+            self.logger.warning('⚠️ Data quality issues found:')
+            for issue in validation_results['issues']:
+                self.logger.warning(f'   - {issue}')
         else:
-            self.logger.info("✅ No data quality issues found")
-    
+            self.logger.info('✅ No data quality issues found')
+
     def get_required_inputs(self) -> list:
         """Get list of required inputs for this step."""
-        return ["unified_data_path or raw_market_data"]
-    
+        return ['unified_data_path or raw_market_data']
+
     def get_produced_outputs(self) -> list:
         """Get list of outputs produced by this step."""
-        return ["validated_data", "data_validation_results", "data_info", "dataframe"]
-    
+        return ['validated_data', 'data_validation_results', 'data_info', 'dataframe']
+
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
-        return ["01_data_collection", "01_5_data_converter"]  # Can work with either
+        return ['01_data_collection', '01_5_data_converter']

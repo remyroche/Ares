@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 
 from ..utils.logger import system_logger
+import logging
 
 
 def determine_timeframe_from_data(data: pd.DataFrame) -> str:

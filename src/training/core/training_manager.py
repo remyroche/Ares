@@ -1,3 +1,4 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
 """Core training manager - simplified and focused.
 
 This module provides the main training manager that coordinates
@@ -7,14 +8,16 @@ from typing import Any, Dict, Optional
 try:
     from .core.decorators import handles_errors
 except Exception:
-    # Minimal fallback to allow import-time decoration without failing
-    def handles_errors(*args, **kwargs):  # type: ignore
-        def _decorator(fn):
+
+    def handles_errors(*args, **kwargs) -> None:
+
+        def _decorator(fn: Any) -> None:
             return fn
         return _decorator
 from ..simplified_training_manager import SimplifiedTrainingManager
 from ...utils.logger import system_logger
 from ...core.decorators.errors import handles_errors
+import logging
 
 class TrainingManager:
     """Main training manager for the ML pipeline.

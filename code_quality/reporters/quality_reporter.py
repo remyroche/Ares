@@ -15,6 +15,7 @@ from analyzers.syntax_validator import SyntaxValidator
 from core.config import AnalysisConfig, get_default_config
 from fixers.auto_fixer import AutoFixer
 from utils.file_utils import get_directory_stats
+import numpy as np
 
 
 class QualityReporter:

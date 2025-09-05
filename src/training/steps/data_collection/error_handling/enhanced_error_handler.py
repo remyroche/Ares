@@ -14,6 +14,11 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 from src.utils.common_operations import (
+import json
+import numpy as np
+import time
+import typing
+
     get_current_datetime,
     format_datetime,
     safe_json_dump,
@@ -347,11 +352,6 @@ class EnhancedErrorHandler:
     def _generate_error_id(self, error: Exception, context: ErrorContext) -> str:
         """Generate a unique error ID."""
         import hashlib
-from typing import Any
-from typing import Dict
-from typing import Optional
-from typing import Callable
-        
         error_info = f"{type(error).__name__}_{context.operation}_{context.step_name}_{context.symbol}_{context.exchange}"
         return hashlib.md5(error_info.encode()).hexdigest()[:12]
     

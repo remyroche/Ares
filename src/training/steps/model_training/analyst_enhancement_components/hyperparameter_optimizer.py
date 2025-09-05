@@ -7,6 +7,8 @@ import optuna
 from sklearn.model_selection import cross_val_score
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
+import numpy as np
 
 class HyperparameterOptimizer:
     """Handles hyperparameter optimization for analyst models."""

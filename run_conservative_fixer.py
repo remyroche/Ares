@@ -32,6 +32,8 @@ def main():
     
     # You can specify a target directory or file
     import argparse
+import time
+
     parser = argparse.ArgumentParser(description="Conservative Python code fixer")
     parser.add_argument("target", nargs="?", default="src", 
                        help="Target file or directory (default: src)")

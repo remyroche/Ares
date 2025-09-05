@@ -10,12 +10,14 @@ automated reporting, and comprehensive tracking.
 
 
 # Enhanced ML Monitoring Components
+from .monitoring.enhanced_ml_monitor import (
     EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision,
     EnsembleDecision, TradeDecision, TradingMode, ModelType,
     ModelPerformanceMetrics, EnsemblePerformanceMetrics
 )
 
 # GUI components
+from .gui.monitoring_dashboard import (
     MonitoringDashboard, EnhancedMonitoringDashboard,
     MonitoringVisualization, VisualizationControlPanel,
     launch_dashboard

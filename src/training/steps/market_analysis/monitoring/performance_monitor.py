@@ -12,6 +12,8 @@ import numpy as np
 
 try:
     import psutil
+import time
+
 except ImportError:
     psutil = None
 

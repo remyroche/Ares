@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Enhanced Step 1: Data Collection with Real-time Validation
 
@@ -22,6 +25,11 @@ sys.path.insert(0, str(project_root))
 
 from .utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
+import collections
+import json
+import logging
+import time
+import typing
 
 logger = system_logger.getChild("EnhancedStep01DataCollection")
 
@@ -362,7 +370,6 @@ class EnhancedDataCollectionStep:
         """Save validated data to files."""
         try:
             import os
-            import pandas as pd
             
             self.logger.info('💾 Saving validated data...')
             
@@ -594,4 +601,4 @@ if __name__ == "__main__":
         else:
             print("❌ Enhanced data collection failed")
     
-    asyncio.run(await main())
+    asyncio.run(main())

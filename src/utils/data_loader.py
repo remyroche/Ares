@@ -14,6 +14,8 @@ from typing import Any
 
 from .core.decorators import validates, with_tracing_span
 from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 try:
     PYARROW_AVAILABLE = True

@@ -9,6 +9,7 @@ from .utils.logger import system_logger
 from .exchange.binance import BinanceClient
 from .utils.state_manager import StateManager
 from .supervisor.performance_reporter import PerformanceReporter
+import logging
 
 
 class DILauncher:

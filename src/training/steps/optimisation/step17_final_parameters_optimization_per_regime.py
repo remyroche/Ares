@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 
 from .training.steps.step17_final_parameters_optimization_new import Step17FinalParametersOptimization
+from .training.steps.regime_processing_utils import (
     per_regime_processing,
     aggregate_regime_results,
     RegimeProcessingContext
@@ -17,6 +18,9 @@ from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
 from .core.decorators.errors import handles_errors
+import numpy as np
+import logging
+import typing
 
 
 logger = get_logger('Step17FinalParametersOptimizationPerRegime')

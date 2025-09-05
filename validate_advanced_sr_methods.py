@@ -6,6 +6,8 @@ Dependency-free validation script for advanced S/R methods in sr_breakout_predic
 import ast
 import sys
 from pathlib import Path
+import numpy as np
+import typing
 
 
 def check_file_syntax(file_path: str) -> bool:

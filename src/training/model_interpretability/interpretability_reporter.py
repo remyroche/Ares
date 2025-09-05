@@ -42,6 +42,11 @@ class InterpretabilityReporter:
         try:
             # Use report manager for standardized report organization
             from .utils.report_manager import get_report_manager
+import json
+import logging
+import time
+import typing
+
             report_manager = get_report_manager()
             
             # Generate different report formats using report manager
@@ -80,9 +85,6 @@ class InterpretabilityReporter:
                         model_type, symbol, exchange, "summary.json"
                     )
                     import shutil
-from typing import Any
-from typing import Dict
-from typing import Optional
 
                     shutil.copy2(summary_report_path, target_summary_path)
                     reports_created.append(str(target_summary_path))

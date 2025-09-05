@@ -16,6 +16,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
 from unified_quality_orchestrator import QualityThresholds, UnifiedQualityOrchestrator
+import numpy as np
+import pandas as pd
+import os
 
 
 def create_sample_data():

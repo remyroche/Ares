@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Data Collection Integration
 
@@ -27,6 +29,8 @@ sys.path.insert(0, str(project_root))
 from .utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
+import numpy as np
+import logging
 
 logger = system_logger.getChild("EnhancedDataCollectionIntegration")
 
@@ -350,10 +354,10 @@ async def demonstrate_enhanced_validation():
     logger.info("📋 Example 3: Testing different data types")
     
     from .enhanced_data_validation_framework import get_validator
-import pandas as pd
 from typing import Any
 from typing import Dict
-    
+
+def test_klines_validation():
     # Test klines validation
     klines_validator = get_validator(DataType.KLINES)
     test_klines_data = [

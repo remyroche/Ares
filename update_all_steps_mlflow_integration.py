@@ -11,6 +11,13 @@ This script will:
 
 import re
 from pathlib import Path
+import numpy as np
+import collections
+import datetime
+import logging
+import pandas as pd
+import time
+import typing
 
 # Define the steps that need to be updated
 STEPS_TO_UPDATE=[

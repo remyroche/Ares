@@ -16,6 +16,9 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 import functools
+import pandas as pd
+import numpy as np
+import collections
 
 # Enhanced function monitoring framework
 class FunctionCallStatus(Enum):
@@ -734,7 +737,6 @@ else:
     log_step_metrics = enhanced_mlflow.log_step_metrics
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-import pandas as pd
 
 # Provide safe, no-op decorators to avoid import-time failures in legacy module
 def _identity_decorator(*_dargs: Any, **_dkwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

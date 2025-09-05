@@ -1,11 +1,10 @@
 # src/tactician/enhanced_execution_manager.py
 
+from .core.decorators import (
     handles_errors,
     traced,
     validates
 )
-
-
 
 from .utils.logger import get_logger
 
@@ -36,6 +35,7 @@ class EnhancedExecutionManager:
         # Import dynamic barrier calculator
         from .tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
         from .core.decorators.errors import handles_errors
+import numpy as np
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)

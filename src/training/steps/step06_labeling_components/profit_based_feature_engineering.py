@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """Profit-Based Feature Engineering System.
 
 This module provides comprehensive profit-based feature engineering capabilities
@@ -16,6 +19,9 @@ from .utils.logger import system_logger
 # Import Numba for performance optimization
 try:
     from numba import jit
+import logging
+import typing
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -694,8 +700,6 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
 
 if __name__ == "__main__":
     # Example usage
-    import numpy as np
-    import pandas as pd
     
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

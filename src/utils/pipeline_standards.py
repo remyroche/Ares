@@ -1,5 +1,16 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
+"""
+Pipeline Standards and Utilities
 
-'\nPipeline Standards and Utilities\n\nThis module provides standardized utilities for the data pipeline including:\n- Import management with consistent fallback patterns\n- Directory structure standardization\n- Timestamp format standardization\n- Schema validation\n- Data quality validation\n- File naming conventions\n- Metadata standards\n'
+This module provides standardized utilities for the data pipeline including:
+- Import management with consistent fallback patterns
+- Directory structure standardization
+- Timestamp format standardization
+- Schema validation
+- Data quality validation
+- File naming conventions
+- Metadata standards
+"""
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -9,19 +20,20 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 import pandas as pd
+import time
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-def _check_pandas_available():
+def _check_pandas_available() -> None:
     """Check if pandas is available and raise informative error if not."""
     if pd is None:
-        raise ImportError("pandas is required for this operation but is not available. Please install pandas.")
+        raise ImportError('pandas is required for this operation but is not available. Please install pandas.')
 
-def _check_numpy_available():
+def _check_numpy_available() -> None:
     """Check if numpy is available and raise informative error if not."""
     if np is None:
-        raise ImportError("numpy is required for this operation but is not available. Please install numpy.")
+        raise ImportError('numpy is required for this operation but is not available. Please install numpy.')
 
 class DataQualityLevel(Enum):
     """Data quality levels for validation."""
@@ -124,19 +136,9 @@ class PipelineStandards:
         return path_template.format(exchange=exchange.lower(), asset=asset.lower(), **kwargs)
 
     @staticmethod
-    def standardize_timestamp(df, column: str='timestamp', target_format: str='int64'):
+    def standardize_timestamp(df: pd.DataFrame, column: str='timestamp', target_format: str='int64') -> None:
         _check_pandas_available()
-        """
-        Standardize timestamp column to consistent format.
-
-        Args:
-            df: DataFrame to process
-            column: Timestamp column name
-            target_format: Target format ("int64" for milliseconds, "datetime64[ns]" for datetime)
-
-        Returns:
-            DataFrame with standardized timestamp
-        """
+        '\n        Standardize timestamp column to consistent format.\n\n        Args:\n            df: DataFrame to process\n            column: Timestamp column name\n            target_format: Target format ("int64" for milliseconds, "datetime64[ns]" for datetime)\n\n        Returns:\n            DataFrame with standardized timestamp\n        '
         if column not in df.columns:
             return df
         df = df.copy()
@@ -165,7 +167,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_timestamp_format(df, column: str='timestamp', expected_format: str='int64') -> ValidationResult:
+    def validate_timestamp_format(df: pd.DataFrame, column: str='timestamp', expected_format: str='int64') -> ValidationResult:
         """
         Validate timestamp format consistency.
 
@@ -211,7 +213,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def validate_schema(df, schema_name: str) -> ValidationResult:
+    def validate_schema(df: pd.DataFrame, schema_name: str) -> ValidationResult:
         """
         Validate DataFrame against standard schema.
 
@@ -248,7 +250,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def enforce_schema(df, schema_name: str):
+    def enforce_schema(df: pd.DataFrame, schema_name: str) -> None:
         """
         Enforce schema by converting data types and adding missing columns.
 
@@ -291,7 +293,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_data_quality(df, schema_name: str, quality_thresholds: dict[str, Any] | None=None) -> ValidationResult:
+    def validate_data_quality(df: pd.DataFrame, schema_name: str, quality_thresholds: dict[str, Any] | None=None) -> ValidationResult:
         """
         Comprehensive data quality validation.
 
@@ -412,7 +414,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def track_data_lineage(data, source_step: str, transformations: list[str]) -> dict[str, Any]:
+    def track_data_lineage(data: Union[pd.DataFrame, Dict[str, Any]], source_step: str, transformations: list[str]) -> dict[str, Any]:
         """
         Track data lineage and transformations.
 
@@ -427,7 +429,7 @@ class PipelineStandards:
         return {'source_step': source_step, 'transformations': transformations, 'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'columns': list(data.columns), 'memory_usage': data.memory_usage(deep=True).sum(), 'dtypes': data.dtypes.to_dict()}
 
     @staticmethod
-    def calculate_comprehensive_quality_score(data, context: str='general') -> float:
+    def calculate_comprehensive_quality_score(data: Union[pd.DataFrame, Dict[str, Any]], context: str='general') -> float:
         """
         Calculate comprehensive data quality score.
 
@@ -469,7 +471,7 @@ class PipelineStandards:
         return np.mean(scores)
 
     @staticmethod
-    def validate_feature_engineering_output(features, original_data) -> ValidationResult:
+    def validate_feature_engineering_output(features: Union[pd.DataFrame, np.ndarray], original_data: Any) -> ValidationResult:
         """
         Validate feature engineering output.
 

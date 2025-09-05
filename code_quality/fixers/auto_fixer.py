@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover
     toml = None
     print("Warning: toml not available")
 
-from core.config import CodeQualityConfig, get_default_config
+from core.config import AnalysisConfig, get_default_config
 from core.plugins import PluginManager
 from utils.file_utils import (
     backup_file,

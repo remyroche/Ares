@@ -8,7 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from core.config import CodeQualityConfig, get_default_config
+from core.config import AnalysisConfig, get_default_config
 from utils.file_utils import find_python_files
 
 
@@ -67,7 +67,7 @@ class ArchitectureAnalyzer:
     - Architecture violation detection
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.architecture_issues: list[ArchitectureIssue] = []
         self.architecture_metrics: dict[str, ArchitectureMetrics] = {}

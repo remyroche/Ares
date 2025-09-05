@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from core.config import CodeQualityConfig
+from core.config import AnalysisConfig
 
 
 class StaticAnalysisAnalyzer:

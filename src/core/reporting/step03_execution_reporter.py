@@ -22,8 +22,34 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
-import pandas as pd
-import numpy as np
+# Optional dependencies
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    # Create a mock pandas for basic functionality
+    class MockDataFrame:
+        def __init__(self, data=None):
+            self.data = data or []
+        def to_csv(self, *args, **kwargs):
+            pass
+        def __len__(self):
+            return len(self.data)
+    pd = type('MockPandas', (), {'DataFrame': MockDataFrame})()
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Create a mock numpy for basic functionality
+    class MockNumpy:
+        def mean(self, data):
+            return sum(data) / len(data) if data else 0
+        def unique(self, data):
+            return list(set(data)), [data.count(x) for x in set(data)]
+    np = MockNumpy()
 
 class ReportFormat(Enum):
     """Report output formats."""

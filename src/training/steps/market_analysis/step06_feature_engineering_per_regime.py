@@ -47,16 +47,14 @@ except ImportError:
             pass
 try:
     from src.utils.pipeline_standards import pipeline_standards
-import datetime
-
+    import datetime
 except ImportError:
-
     def pipeline_standards(*args, **kwargs) -> None:
         return {}
+
 try:
     from src.utils.centralized_decorators import traced, validates, handles_errors
 except ImportError:
-
     def traced(*args, **kwargs) -> None:
 
         def decorator(func: Callable) -> None:

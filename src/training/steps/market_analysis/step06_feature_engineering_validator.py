@@ -19,8 +19,7 @@ try:
     from src.utils.logger import system_logger
 except ImportError:
     import logging
-import datetime
-
+    import datetime
     system_logger = logging.getLogger(__name__)
 
 class BaseValidator:

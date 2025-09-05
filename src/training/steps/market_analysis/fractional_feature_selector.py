@@ -1,4 +1,3 @@
-import .utils.validation
 import numpy as np
 
 # src/training/steps/fractional_feature_selector.py
@@ -20,7 +19,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
 import pandas as pd
-
+from .utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

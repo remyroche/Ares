@@ -24,7 +24,7 @@ except ImportError:
 
 # Try to import enhanced MLflow integration
 try:
-
+    from .utils.mlflow_integration import (
         with_enhanced_mlflow_logging as _with_enhanced_mlflow_logging,
         log_step_report as _log_step_report,
         create_detailed_step_report as _create_detailed_step_report,

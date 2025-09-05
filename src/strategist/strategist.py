@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
 """
 Strategist module for trading strategy generation.

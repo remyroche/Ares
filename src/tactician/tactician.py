@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
 'Tactician module for trading strategy execution.'
 from datetime import datetime

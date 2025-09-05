@@ -1,6 +1,9 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.training.steps.model_training.step04_common_types import (
+    StepResult, RegimeDataResult, StepResultStatus, standardize_result
+)
 
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
@@ -313,38 +316,66 @@ class RegimeDataSplittingStep:
     @traced(span_name='split_data_by_regimes')
     @validates()
     @cached()
-    async def split_data_by_regimes(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, Any]:
+    async def split_data_by_regimes(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> RegimeDataResult:
         """Create unified dataset with regime labels for regime-aware processing.
 
-        Returns a dictionary suitable for tests and downstream usage:
-        {"success": bool, "unified_data": pd.DataFrame | None, "regime_stats": dict | None, "saved_path": str | None}
+        Returns a standardized RegimeDataResult with all relevant information.
         """
         step_start = time.time()
         self.logger.info(f'🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})')
         try:
             regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
             if regime_data is None:
-                return {'success': False, 'error': 'regime_data_not_found', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
+                return RegimeDataResult.failure_result(
+                    error='regime_data_not_found',
+                    error_type='DataNotFoundError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+            
             regime_ids = regime_data['composite_cluster_id'].unique()
             num_regimes = len(regime_ids)
             self.logger.info(f'📊 Found {num_regimes} regimes: {sorted(regime_ids)}')
+            
             if num_regimes < 3:
                 self.logger.error(f'❌ Too few regimes: {num_regimes} (minimum 3 required)')
-                return {'success': False, 'error': 'too_few_regimes', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
+                return RegimeDataResult.failure_result(
+                    error=f'too_few_regimes: {num_regimes} (minimum 3 required)',
+                    error_type='InsufficientRegimesError',
+                    metadata={'regime_count': num_regimes, 'regime_ids': regime_ids.tolist()}
+                )
+            
             if num_regimes > 20:
                 self.logger.warning(f'⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)')
+            
             dataset_info = await self._create_unified_regime_dataset(regime_data, regime_ids, data_dir, symbol, exchange, timeframe)
             if isinstance(dataset_info, dict):
                 self._log_step_timing('Regime Data Splitting', step_start)
                 self.logger.info(f'✅ Successfully created unified dataset with {num_regimes} regime labels')
                 await self._save_regime_metadata(regime_ids, data_dir, symbol, exchange, timeframe)
-                return {'success': True, 'unified_data': dataset_info.get('unified_data'), 'regime_stats': dataset_info.get('regime_stats'), 'saved_path': dataset_info.get('saved_path')}
+                
+                return RegimeDataResult.success_result(
+                    data=dataset_info.get('unified_data'),
+                    metadata={
+                        'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
+                        'regime_count': num_regimes, 'regime_ids': regime_ids.tolist()
+                    },
+                    execution_time=time.time() - step_start
+                )
             else:
                 self.logger.error('❌ Failed to create unified regime dataset')
-                return {'success': False, 'error': 'creation_failed', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
+                return RegimeDataResult.failure_result(
+                    error='creation_failed',
+                    error_type='DatasetCreationError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
         except Exception as e:
             self.logger.exception(f'❌ Error in regime data splitting: {e}')
-            return {'success': False, 'error': str(e), 'unified_data': None, 'regime_stats': None, 'saved_path': None}
+            return RegimeDataResult.failure_result(
+                error=str(e),
+                error_type=type(e).__name__,
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
 
     @comprehensive_function_monitor
     async def _load_regime_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -487,7 +518,7 @@ class RegimeDataSplittingStep:
 @cached()
 @log_execution_time()
 @monitor_feature_engineering()
-async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: dict[str, Any]=None) -> bool:
+async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: dict[str, Any]=None) -> StepResult:
     """Run Step 4: Regime Data Splitting with standardized data quality management."
     
     Args:
@@ -499,31 +530,50 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=Non
         config: Configuration dictionary
         
     Returns:
-        bool: Success status
+        StepResult: Standardized result with success status and details
     """
     logger.info('🚀 Starting Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring')
     if data_dir is None:
         data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+    
+    step_start = time.time()
     try:
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
         result = await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
-        success = bool(result.get('success', bool(result))) if isinstance(result, dict) else bool(result)
+        
+        # Standardize the result if it's not already a StepResult
+        standardized_result = standardize_result(result, "regime_data_splitting")
+        
         logger.info('📊 Generating comprehensive function call summary...')
         log_function_call_summary()
-        if success:
+        
+        if standardized_result.success:
             logger.info('✅ Step 4: Regime Data Splitting completed successfully')
             logger.info('🎯 All function calls executed with comprehensive monitoring')
         else:
             logger.error('❌ Step 4: Regime Data Splitting failed')
+            logger.error(f'🔍 Error: {standardized_result.error}')
             logger.error('🔍 Check function call summary above for detailed error analysis')
-        return success
+        
+        return standardized_result
+        
     except Exception as e:
-        error_context = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'config_keys': list(config.keys()) if config else []}
+        error_context = {
+            'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 
+            'data_dir': data_dir, 'force_rerun': force_rerun, 
+            'config_keys': list(config.keys()) if config else []
+        }
         log_comprehensive_error_report(e, error_context)
         logger.error('📊 Generating function call summary for error analysis...')
         log_function_call_summary()
-        return False
+        
+        return StepResult.failure_result(
+            error=str(e),
+            error_type=type(e).__name__,
+            metadata=error_context,
+            execution_time=time.time() - step_start
+        )
 if __name__ == '__main__':
 
     async def test() -> None:

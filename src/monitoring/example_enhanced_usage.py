@@ -7,13 +7,12 @@ information, daily summaries, and GUI integration.
 """
 
 import asyncio
-from datetime import datetime, date, timedelta
-
-from .monitoring_orchestrator import (
 import logging
 import numpy as np
 import time
+from datetime import datetime, date, timedelta
 
+from .monitoring_orchestrator import (
     MonitoringOrchestrator, create_monitoring_orchestrator,
     TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision,
     TradeDecision, TradingMode, ModelType, ModelPerformanceMetrics,
@@ -332,13 +331,13 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Run enhanced monitoring example
-    asyncio.run(await example_enhanced_monitoring_with_hmm())
+    asyncio.run(example_enhanced_monitoring_with_hmm())
     
     # Ask user if they want to launch GUI
     try:
         response = input("\n🖥️ Would you like to launch the GUI dashboard? (y/n): ")
         if response.lower() in ['y', 'yes']:
-            asyncio.run(await example_gui_launch())
+            asyncio.run(example_gui_launch())
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
     

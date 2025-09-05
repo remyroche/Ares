@@ -18,33 +18,26 @@ from typing import Any, Dict, List, Optional
 warnings.filterwarnings('ignore')
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+import logging
+import time
+
 try:
     from .config.constants import DEFAULT_LOOKBACK_DAYS
-except Exception as e:
-    pass
     from .config.training_modes import TRAINING_MODES
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.unified_data_loader import UnifiedDataLoader
     from .utils.logger import system_logger
-import logging
-import time
-
+    UNIFIED_LOADER_AVAILABLE = True
+    DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
     print(f'Warning: Could not import config modules: {e}')
     DEFAULT_LOOKBACK_DAYS = 730
     system_logger = None
-try:
-    UNIFIED_LOADER_AVAILABLE = True
-except ImportError as e:
-    print(f'Warning: UnifiedDataLoader not available: {e}')
     UNIFIED_LOADER_AVAILABLE = False
-    UnifiedDataLoader = None
-try:
-    DATA_DOWNLOADER_AVAILABLE = True
-except ImportError as e:
-    print(f'Warning: Data downloader not available: {e}')
     DATA_DOWNLOADER_AVAILABLE = False
     download_all_data_with_consolidation = None
+    UnifiedDataLoader = None
 
 class SRDataIntegration:
     """

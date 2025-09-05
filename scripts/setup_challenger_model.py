@@ -26,12 +26,11 @@ from src.utils.state_manager import StateManager  # noqa: E402
 from src.utils.warning_symbols import error as error_src_utils_warning_symbols, missing  # noqa: E402
 
 try:
-	import mlflow  # type: ignore
-import logging
-
+    import mlflow  # type: ignore
+    import logging
 except Exception as e:  # noqa: BLE001
-	mlflow=None  # type: ignore
-	system_logger.warning(f"MLflow not available: {e}")
+    mlflow = None  # type: ignore
+    system_logger.warning(f"MLflow not available: {e}")
 
 
 def setup_challenger_model(run_id: str) -> bool:

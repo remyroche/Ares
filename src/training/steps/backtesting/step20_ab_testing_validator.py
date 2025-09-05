@@ -3,14 +3,15 @@
 
 import asyncio
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 # Add project root to path for proper imports
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, system_logger
 from src.utils.common_operations import safe_json_load
 
 logger = get_logger('Step20ABTestingValidator')
@@ -70,19 +71,48 @@ class Step20ABTestingValidator:
 
 
 async def run_validator(
-    symbol: str,
-    exchange: str,
-    timeframe: str,
-    data_dir: str,
-    **kwargs
-) -> dict[str, Any]:
-    config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-    validator = Step20ABTestingValidator(config)
-    validation_passed = await validator.validate(symbol, exchange, timeframe, data_dir, **kwargs)
-    return {
-        "step_name": "step20_ab_testing",
-        "validation_passed": validation_passed,
-        "validation_results": validator.validation_results,
-        "duration": 0,
-        "timestamp": asyncio.get_event_loop().time(),
-    }
+    training_input: Dict[str, Any],
+    pipeline_state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run the Step 20 AB Testing validator.
+
+    Args:
+        training_input: Training input parameters
+        pipeline_state: Current pipeline state
+
+    Returns:
+        Dictionary containing validation results
+    """
+    start_time = time.time()
+    try:
+        symbol = training_input.get("symbol", "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe = training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
+        config = training_input.get("config", {})
+        kwargs = training_input.get("kwargs", {})
+        
+        validator = Step20ABTestingValidator(config)
+        validation_passed = await validator.validate(symbol, exchange, timeframe, data_dir, **kwargs)
+        
+        duration = time.time() - start_time
+        return {
+            "step_name": "step20_ab_testing",
+            "validation_passed": validation_passed,
+            "validation_results": validator.validation_results,
+            "duration": duration,
+            "timestamp": time.time(),
+        }
+    except Exception as e:
+        duration = time.time() - start_time
+        error_result = {
+            "step_name": "step20_ab_testing",
+            "validation_passed": False,
+            "error": f"Validator execution failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "validation_results": {},
+            "duration": duration,
+            "timestamp": time.time(),
+        }
+        system_logger.error(f"❌ Step20 AB testing validator failed: {str(e)}")
+        return error_result

@@ -1,0 +1,16 @@
+2025-09-05 10:34:18,442 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🔵 VALIDATOR FUNCTION ENTRY [1] - src.training.steps.data_collection.step02_5_sr_optimization_validator.__init__ - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 📥 Parameters: args=2, kwargs=[] - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🔍 VALIDATOR INPUT VALIDATION - __init__ - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📋 self: SROptimizationValidator = <src.training.steps.data_collection.step02_5_sr_optimization_validator.SROptimizationValidator objec... - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📋 config: dict = {}... - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.SROptimizationValidator ✅ SROptimizationValidator initialized with comprehensive monitoring - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🔍 VALIDATOR OUTPUT VALIDATION - __init__ - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📤 Result type: NoneType - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📊 Result size: 1 - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🟢 VALIDATOR FUNCTION EXIT [1] - src.training.steps.data_collection.step02_5_sr_optimization_validator.__init__ - -
+2025-09-05 10:34:18,839 INFO AresTradingSystem.System.Step2_5SROptimizationValidator ⏱️ Execution time: 0.0004s - -
+2025-09-05 10:34:18,840 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 📤 Result type: NoneType - -
+2025-09-05 10:34:18,840 INFO AresTradingSystem.System.Step2_5SROptimizationValidator ✅ Status: SUCCESS - -
+2025-09-05 10:34:18,840 INFO AresTradingSystem.System.Validator.Step1 🔍 Validating Step 1 data collection for BINANCE ETHUSDT 1m - -
+2025-09-05 10:34:18,840 ERROR AresTradingSystem.System.Validator.Step1 ❌ No market data found in state or consolidated files - Issues: pipeline state data validation failed, no consolidated files found, consolidated data quality validation failed - -

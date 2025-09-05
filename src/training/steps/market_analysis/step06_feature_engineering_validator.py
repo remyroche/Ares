@@ -5,14 +5,29 @@ from typing import Any
 # src/training/steps/step7_feature_engineering_validator.py
 
 
-from .core.decorators import validates
-
 import json
 from pathlib import Path
 
+# Import decorators with fallback
+try:
+    from src.utils.centralized_decorators import validates
+except ImportError:
+    def validates(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
-from .utils.base_validator import BaseValidator
-from .utils.logger import system_logger
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger(__name__)
+
+# Base validator fallback
+class BaseValidator:
+    def __init__(self, step_name: str, config: dict):
+        self.step_name = step_name
+        self.config = config
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 

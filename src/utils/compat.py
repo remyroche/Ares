@@ -1,11 +1,14 @@
 
 """Compatibility shims to forward legacy decorators to core equivalents.
-from functools import wraps
-import asyncio
 
 This module allows gradual migration by re-exporting adapter functions
 that map old decorator signatures to the new core decorators.
 """
+from functools import wraps
+import asyncio
+from typing import Any, Callable
+
+from .decorators.errors import handles_errors as _handles_errors
 
 
 

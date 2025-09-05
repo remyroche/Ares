@@ -352,4 +352,4 @@ if __name__ == "__main__":
         )
         print(f"Pipeline result: {result}")
     
-    asyncio.run(await main())
+    asyncio.run(main())

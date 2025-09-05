@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.logger import system_logger
-from .core.decorators import handles_errors, traced, validates
+from src.utils.logger import system_logger
+from src.core.decorators import traced, validates
+from src.utils.decorators.errors import handles_errors
 import logging
 
 logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
@@ -72,7 +73,7 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
             return file_validation_error
         try:
             data = pd.read_parquet(triple_barrier_path)
-            content_validation_error = await _validate_data_content(data)
+            content_validation_error = _validate_data_content(data)
             if content_validation_error:
                 return content_validation_error
             result = _validate_label_distribution(data)

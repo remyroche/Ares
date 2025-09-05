@@ -17,6 +17,7 @@ from src.utils.decorators import (
 import json
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
@@ -74,47 +75,67 @@ except ImportError:
 
 from src.utils.logger import system_logger
 
+@dataclass
+class ModelTrainingConfig:
+    """Configuration for model training parameters."""
+    model_type: str = "LightGBM"
+    direction_threshold: float = 0.0
+    profit_scaling: str = "standard"  # "standard", "robust", "minmax"
+    ensemble_method: str = "stacking"  # "stacking", "voting", "blending"
+    validation_method: str = "time_series_cv"
+    n_splits: int = 5
+    test_size: float = 0.2
+    random_state: int = 42
+    use_enhanced_feature_selection: bool = True
+    supported_model_types: Optional[List[str]] = None
+
+@dataclass
+class TargetConfig:
+    """Configuration for target variables."""
+    direction_target: str = "direction"
+    profit_target: str = "expected_profit"
+    use_profit_features: bool = True
+    profit_feature_columns: Optional[List[str]] = None
+
+@dataclass
+class ProbabilityConfig:
+    """Configuration for probability outputs."""
+    enable_probability_outputs: bool = True
+    probability_targets: Optional[List[str]] = None
+    probability_config: Optional[Dict[str, Any]] = None
+
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
     
     def __init__(
         self,
-        model_type: str = "LightGBM",
-        direction_target: str = "direction",
-        profit_target: str = "expected_profit",
-        use_profit_features: bool = True,
-        profit_feature_columns: Optional[List[str]] = None,
-        direction_threshold: float = 0.0,
-        profit_scaling: str = "standard",  # "standard", "robust", "minmax"
-        ensemble_method: str = "stacking",  # "stacking", "voting", "blending"
-        validation_method: str = "time_series_cv",
-        n_splits: int = 5,
-        test_size: float = 0.2,
-        random_state: int = 42,
-        use_enhanced_feature_selection: bool = True,  # NEW: Use enhanced feature selection
-        supported_model_types: List[str] = None,  # NEW: Supported model types
-        # NEW: Probability output configuration
-        enable_probability_outputs: bool = True,
-        probability_targets: Optional[List[str]] = None,
-        probability_config: Optional[Dict[str, Any]] = None,
+        model_config: Optional[ModelTrainingConfig] = None,
+        target_config: Optional[TargetConfig] = None,
+        probability_config: Optional[ProbabilityConfig] = None,
     ):
-        self.model_type = model_type
-        self.direction_target = direction_target
-        self.profit_target = profit_target
-        self.use_profit_features = use_profit_features
-        self.profit_feature_columns = profit_feature_columns or []
-        self.direction_threshold = direction_threshold
-        self.profit_scaling = profit_scaling
-        self.ensemble_method = ensemble_method
-        self.validation_method = validation_method
-        self.n_splits = n_splits
-        self.test_size = test_size
-        self.random_state = random_state
-        self.use_enhanced_feature_selection = use_enhanced_feature_selection
+        # Initialize with defaults
+        self.model_config = model_config or ModelTrainingConfig()
+        self.target_config = target_config or TargetConfig()
+        self.probability_config = probability_config or ProbabilityConfig()
         
-        # NEW: Probability output configuration
-        self.enable_probability_outputs = enable_probability_outputs
-        if probability_targets is None:
+        # Map to legacy attributes for backward compatibility
+        self.model_type = self.model_config.model_type
+        self.direction_target = self.target_config.direction_target
+        self.profit_target = self.target_config.profit_target
+        self.use_profit_features = self.target_config.use_profit_features
+        self.profit_feature_columns = self.target_config.profit_feature_columns or []
+        self.direction_threshold = self.model_config.direction_threshold
+        self.profit_scaling = self.model_config.profit_scaling
+        self.ensemble_method = self.model_config.ensemble_method
+        self.validation_method = self.model_config.validation_method
+        self.n_splits = self.model_config.n_splits
+        self.test_size = self.model_config.test_size
+        self.random_state = self.model_config.random_state
+        self.use_enhanced_feature_selection = self.model_config.use_enhanced_feature_selection
+        
+        # Probability output configuration
+        self.enable_probability_outputs = self.probability_config.enable_probability_outputs
+        if self.probability_config.probability_targets is None:
             self.probability_targets = [
                 "triple_barrier_probability",
                 "direction_probability", 
@@ -122,11 +143,11 @@ class MultiOutputModelConfig:
                 "barrier_avoidance_probability"
             ]
         else:
-            self.probability_targets = probability_targets
+            self.probability_targets = self.probability_config.probability_targets
         
         # Default probability configuration
-        if probability_config is None:
-            self.probability_config = {
+        if self.probability_config.probability_config is None:
+            self.probability_config_dict = {
                 "profit_target": 0.02,
                 "stop_loss": 0.01,
                 "look_ahead_periods": 20,
@@ -135,10 +156,10 @@ class MultiOutputModelConfig:
                 "avoidance_look_ahead": 10
             }
         else:
-            self.probability_config = probability_config
+            self.probability_config_dict = self.probability_config.probability_config
         
         # Supported model types for multi-output training
-        if supported_model_types is None:
+        if self.model_config.supported_model_types is None:
             self.supported_model_types = [
                 "LightGBM", "RandomForest", "XGBoost", "CatBoost", "NeuralNetwork"
             ]
@@ -146,7 +167,7 @@ class MultiOutputModelConfig:
             if EXISTING_MODELS_AVAILABLE:
                 self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
         else:
-            self.supported_model_types = supported_model_types
+            self.supported_model_types = self.model_config.supported_model_types
 
 class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
@@ -2097,10 +2118,15 @@ def create_multi_output_trainer(
     Returns:
         Configured MultiOutputModelTrainer instance
     """
+    # Create config objects
+    model_config = ModelTrainingConfig(model_type=model_type, **{k: v for k, v in kwargs.items() if k in ModelTrainingConfig.__annotations__})
+    target_config = TargetConfig(use_profit_features=use_profit_features, **{k: v for k, v in kwargs.items() if k in TargetConfig.__annotations__})
+    probability_config = ProbabilityConfig(**{k: v for k, v in kwargs.items() if k in ProbabilityConfig.__annotations__})
+    
     config = MultiOutputModelConfig(
-        model_type=model_type,
-        use_profit_features=use_profit_features,
-        **kwargs
+        model_config=model_config,
+        target_config=target_config,
+        probability_config=probability_config
     )
     
     return MultiOutputModelTrainer(config)

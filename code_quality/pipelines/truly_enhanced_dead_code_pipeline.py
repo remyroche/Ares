@@ -140,7 +140,9 @@ class TrulyEnhancedDeadCodePipeline:
                         "module_type": issue.module_type,
                         "is_public_api": issue.is_public_api,
                         "has_docstring": issue.has_docstring,
-                        "decorators": issue.decorators
+                        "decorators": issue.decorators,
+                        "filtering_reasons": issue.filtering_reasons,
+                        "original_confidence": issue.original_confidence
                     }
                     for issue in self._get_all_issues(report)
                 ]
@@ -167,10 +169,21 @@ class TrulyEnhancedDeadCodePipeline:
         
         # Overall statistics
         print(f"📊 Total Issues Found: {report.total_issues}")
-        print(f"🎯 High Confidence Issues: {report.high_confidence_issues}")
-        print(f"⚖️  Medium Confidence Issues: {report.medium_confidence_issues}")
-        print(f"⚠️  Low Confidence Issues: {report.low_confidence_issues}")
+        print(f"🎯 High Confidence Issues (>80%): {report.high_confidence_issues}")
+        print(f"⚖️  Medium Confidence Issues (60-80%): {report.medium_confidence_issues}")
+        print(f"⚠️  Low Confidence Issues (<60%): {report.low_confidence_issues}")
         print()
+        
+        # Show confidence distribution
+        if report.total_issues > 0:
+            print("📈 CONFIDENCE DISTRIBUTION:")
+            high_pct = (report.high_confidence_issues / report.total_issues) * 100
+            medium_pct = (report.medium_confidence_issues / report.total_issues) * 100
+            low_pct = (report.low_confidence_issues / report.total_issues) * 100
+            print(f"   High Confidence:   {report.high_confidence_issues:3d} ({high_pct:5.1f}%)")
+            print(f"   Medium Confidence: {report.medium_confidence_issues:3d} ({medium_pct:5.1f}%)")
+            print(f"   Low Confidence:    {report.low_confidence_issues:3d} ({low_pct:5.1f}%)")
+            print()
         
         # Filtering effectiveness
         print("🔍 FILTERING EFFECTIVENESS:")
@@ -195,6 +208,41 @@ class TrulyEnhancedDeadCodePipeline:
         for i, (file_path, count) in enumerate(file_issue_counts[:10], 1):
             print(f"   {i:2d}. {count:3d} issues: {file_path}")
         print()
+        
+        # Show some example issues with confidence levels
+        all_issues = self._get_all_issues(report)
+        if all_issues:
+            print("🔍 EXAMPLE ISSUES BY CONFIDENCE LEVEL:")
+            
+            # Show top 5 high confidence issues
+            high_conf_issues = [i for i in all_issues if i.confidence > 80][:5]
+            if high_conf_issues:
+                print("   🎯 HIGH CONFIDENCE ISSUES (>80%):")
+                for i, issue in enumerate(high_conf_issues, 1):
+                    print(f"      {i}. {issue.confidence:5.1f}% - {issue.function_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
+                    if issue.filtering_reasons:
+                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
+                print()
+            
+            # Show top 5 medium confidence issues
+            medium_conf_issues = [i for i in all_issues if 60 <= i.confidence <= 80][:5]
+            if medium_conf_issues:
+                print("   ⚖️  MEDIUM CONFIDENCE ISSUES (60-80%):")
+                for i, issue in enumerate(medium_conf_issues, 1):
+                    print(f"      {i}. {issue.confidence:5.1f}% - {issue.function_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
+                    if issue.filtering_reasons:
+                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
+                print()
+            
+            # Show top 5 low confidence issues
+            low_conf_issues = [i for i in all_issues if i.confidence < 60][:5]
+            if low_conf_issues:
+                print("   ⚠️  LOW CONFIDENCE ISSUES (<60%):")
+                for i, issue in enumerate(low_conf_issues, 1):
+                    print(f"      {i}. {issue.confidence:5.1f}% - {issue.function_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
+                    if issue.filtering_reasons:
+                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
+                print()
         
         # Tool agreement matrix
         if report.tool_agreement_matrix:

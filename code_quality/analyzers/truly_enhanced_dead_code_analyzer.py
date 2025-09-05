@@ -73,6 +73,10 @@ class TrulyEnhancedDeadCodeIssue:
     is_public_api: bool = False
     has_docstring: bool = False
     decorators: List[str] = field(default_factory=list)
+    
+    # Filtering information
+    filtering_reasons: List[str] = field(default_factory=list)  # Why confidence was adjusted
+    original_confidence: float = 0.0  # Original confidence before adjustments
 
 
 @dataclass
@@ -247,30 +251,30 @@ class TrulyEnhancedDeadCodeAnalyzer:
         return tool_results
     
     def _apply_advanced_filtering(self, tool_results: Dict[str, List[TrulyEnhancedDeadCodeIssue]]) -> List[TrulyEnhancedDeadCodeIssue]:
-        """Apply advanced filtering to reduce false positives."""
+        """Apply advanced filtering to reduce false positives while preserving all issues with confidence levels."""
         all_issues = []
         for tool, issues in tool_results.items():
             all_issues.extend(issues)
         
-        # Step 1: Multi-tool consensus filtering
+        # Step 1: Multi-tool consensus filtering (but keep all issues)
         consensus_issues = self._apply_consensus_filtering(all_issues)
         
-        # Step 2: Dynamic usage detection
+        # Step 2: Dynamic usage detection (adjust confidence but keep issues)
         dynamic_filtered = self._filter_dynamic_usage(consensus_issues)
         
-        # Step 3: Call graph validation
+        # Step 3: Call graph validation (adjust confidence but keep issues)
         call_graph_filtered = self._filter_call_graph_validation(dynamic_filtered)
         
-        # Step 4: Context-aware filtering
+        # Step 4: Context-aware filtering (adjust confidence but keep issues)
         context_filtered = self._apply_context_aware_filtering(call_graph_filtered)
         
-        # Step 5: Confidence scoring and final filtering
+        # Step 5: Confidence scoring (keep all issues, just score them)
         final_issues = self._apply_confidence_scoring(context_filtered)
         
         return final_issues
     
     def _apply_consensus_filtering(self, all_issues: List[TrulyEnhancedDeadCodeIssue]) -> List[TrulyEnhancedDeadCodeIssue]:
-        """Require consensus from multiple tools."""
+        """Apply consensus scoring but keep all issues."""
         consensus_issues = []
         issues_by_location = defaultdict(list)
         
@@ -279,15 +283,26 @@ class TrulyEnhancedDeadCodeAnalyzer:
             key = (issue.file_path, issue.line_number, issue.function_name)
             issues_by_location[key].append(issue)
         
-        # Only keep issues with consensus
+        # Process all issues, adjusting confidence based on consensus
         for location, issues in issues_by_location.items():
-            if len(issues) >= 2:  # At least 2 tools agree
-                # Take the issue with highest confidence
+            if len(issues) >= 2:  # Multiple tools agree
+                # Take the issue with highest confidence and boost it
                 best_issue = max(issues, key=lambda x: x.confidence)
                 best_issue.consensus_count = len(issues)
+                best_issue.original_confidence = best_issue.confidence
+                best_issue.confidence = min(100.0, best_issue.confidence * 1.2)  # Boost confidence
+                best_issue.filtering_reasons.append(f"Multi-tool consensus ({len(issues)} tools agree)")
                 consensus_issues.append(best_issue)
+            else:  # Single tool detection
+                # Keep the issue but reduce confidence
+                issue = issues[0]
+                issue.consensus_count = 1
+                issue.original_confidence = issue.confidence
+                issue.confidence = issue.confidence * 0.8  # Reduce confidence for single tool
+                issue.filtering_reasons.append("Single tool detection (lower confidence)")
+                consensus_issues.append(issue)
         
-        self.logger.info(f"Consensus filtering: {len(consensus_issues)} issues from {len(all_issues)} original")
+        self.logger.info(f"Consensus filtering: {len(consensus_issues)} issues processed from {len(all_issues)} original")
         return consensus_issues
     
     def _filter_dynamic_usage(self, issues: List[TrulyEnhancedDeadCodeIssue]) -> List[TrulyEnhancedDeadCodeIssue]:
@@ -299,6 +314,7 @@ class TrulyEnhancedDeadCodeAnalyzer:
                 issue.dynamic_usage_detected = True
                 # Reduce confidence but don't completely filter out
                 issue.confidence *= 0.7
+                issue.filtering_reasons.append("Dynamic usage detected (confidence reduced)")
             filtered_issues.append(issue)
         
         dynamic_count = sum(1 for i in filtered_issues if i.dynamic_usage_detected)
@@ -316,6 +332,7 @@ class TrulyEnhancedDeadCodeAnalyzer:
             if self._is_verified_by_call_graph(issue):
                 issue.call_graph_verified = True
                 issue.confidence *= 1.2  # Boost confidence
+                issue.filtering_reasons.append("Call graph verified (confidence boosted)")
             filtered_issues.append(issue)
         
         verified_count = sum(1 for i in filtered_issues if i.call_graph_verified)
@@ -333,8 +350,10 @@ class TrulyEnhancedDeadCodeAnalyzer:
             # Adjust confidence based on context
             if context_score > 0.8:  # High confidence context
                 issue.confidence *= 1.1
+                issue.filtering_reasons.append("High confidence context (confidence boosted)")
             elif context_score < 0.3:  # Low confidence context
                 issue.confidence *= 0.8
+                issue.filtering_reasons.append("Low confidence context (confidence reduced)")
             
             filtered_issues.append(issue)
         
@@ -342,19 +361,24 @@ class TrulyEnhancedDeadCodeAnalyzer:
         return filtered_issues
     
     def _apply_confidence_scoring(self, issues: List[TrulyEnhancedDeadCodeIssue]) -> List[TrulyEnhancedDeadCodeIssue]:
-        """Apply final confidence scoring and filter low-confidence issues."""
-        # Calculate false positive risk
+        """Apply final confidence scoring but keep all issues."""
+        # Calculate false positive risk for all issues
         for issue in issues:
             issue.false_positive_risk = self._calculate_false_positive_risk(issue)
+            
+            # Adjust confidence based on false positive risk
+            if issue.false_positive_risk > 0.7:
+                issue.confidence = issue.confidence * 0.5  # Significantly reduce confidence
+                issue.filtering_reasons.append(f"High false positive risk ({issue.false_positive_risk:.2f}) - confidence significantly reduced")
+            elif issue.false_positive_risk > 0.5:
+                issue.confidence = issue.confidence * 0.8  # Reduce confidence
+                issue.filtering_reasons.append(f"Medium false positive risk ({issue.false_positive_risk:.2f}) - confidence reduced")
         
-        # Filter out high-risk false positives
-        filtered_issues = [
-            issue for issue in issues 
-            if issue.false_positive_risk < 0.7 and issue.confidence > 60.0
-        ]
+        # Keep all issues but sort by confidence
+        issues.sort(key=lambda x: x.confidence, reverse=True)
         
-        self.logger.info(f"Confidence scoring: {len(filtered_issues)} issues from {len(issues)} after filtering")
-        return filtered_issues
+        self.logger.info(f"Confidence scoring: {len(issues)} issues scored and sorted by confidence")
+        return issues
     
     def _has_dynamic_usage(self, issue: TrulyEnhancedDeadCodeIssue) -> bool:
         """Check if a function has dynamic usage patterns."""
@@ -369,8 +393,12 @@ class TrulyEnhancedDeadCodeAnalyzer:
             # Check for dynamic usage patterns
             for pattern_type, patterns in self.dynamic_usage_patterns.items():
                 for pattern in patterns:
-                    if re.search(pattern, content):
-                        return True
+                    try:
+                        if re.search(pattern, content):
+                            return True
+                    except re.error:
+                        # Skip invalid regex patterns
+                        continue
             
             return False
         except Exception:
@@ -642,37 +670,43 @@ class TrulyEnhancedDeadCodeAnalyzer:
         # Analyze functions
         for func in functions:
             if self._is_unused_function(func, tree, content):
-                issue = TrulyEnhancedDeadCodeIssue(
-                    file_path=str(file_path),
-                    line_number=func.lineno,
-                    issue_type="dead_code",
-                    description=f"Function '{func.name}' is defined but never called",
-                    confidence=70.0,
-                    severity="medium",
-                    code_snippet=self._get_code_snippet(func),
-                    tool_source="Enhanced AST",
-                    function_name=func.name,
-                    has_docstring=ast.get_docstring(func) is not None,
-                    decorators=[self._get_decorator_name(dec) for dec in func.decorator_list]
-                )
-                issues.append(issue)
+                try:
+                    issue = TrulyEnhancedDeadCodeIssue(
+                        file_path=str(file_path),
+                        line_number=func.lineno,
+                        issue_type="dead_code",
+                        description=f"Function '{func.name}' is defined but never called",
+                        confidence=70.0,
+                        severity="medium",
+                        code_snippet=self._get_code_snippet(func),
+                        tool_source="Enhanced AST",
+                        function_name=func.name,
+                        has_docstring=ast.get_docstring(func) is not None,
+                        decorators=[self._get_decorator_name(dec) for dec in func.decorator_list]
+                    )
+                    issues.append(issue)
+                except Exception as e:
+                    self.logger.warning(f"Failed to create issue for function {func.name}: {e}")
         
         # Analyze classes
         for cls in classes:
             if self._is_unused_class(cls, tree, content):
-                issue = TrulyEnhancedDeadCodeIssue(
-                    file_path=str(file_path),
-                    line_number=cls.lineno,
-                    issue_type="dead_code",
-                    description=f"Class '{cls.name}' is defined but never used",
-                    confidence=70.0,
-                    severity="medium",
-                    code_snippet=self._get_code_snippet(cls),
-                    tool_source="Enhanced AST",
-                    class_name=cls.name,
-                    has_docstring=ast.get_docstring(cls) is not None
-                )
-                issues.append(issue)
+                try:
+                    issue = TrulyEnhancedDeadCodeIssue(
+                        file_path=str(file_path),
+                        line_number=cls.lineno,
+                        issue_type="dead_code",
+                        description=f"Class '{cls.name}' is defined but never used",
+                        confidence=70.0,
+                        severity="medium",
+                        code_snippet=self._get_code_snippet(cls),
+                        tool_source="Enhanced AST",
+                        class_name=cls.name,
+                        has_docstring=ast.get_docstring(cls) is not None
+                    )
+                    issues.append(issue)
+                except Exception as e:
+                    self.logger.warning(f"Failed to create issue for class {cls.name}: {e}")
         
         return issues
     
@@ -711,8 +745,12 @@ class TrulyEnhancedDeadCodeAnalyzer:
         # Check for string references
         string_patterns = [f'"{func_name}"', f"'{func_name}'"]
         for pattern in string_patterns:
-            if pattern in content:
-                return False
+            try:
+                if pattern in content:
+                    return False
+            except Exception:
+                # Skip if there are issues with string matching
+                continue
         
         return True
     

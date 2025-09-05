@@ -242,8 +242,9 @@ class ImportFixer:
             tree = ast.parse(content)
             missing_imports = set()
             
-            # Find all function calls
+            # Find all function calls and attribute access
             for node in ast.walk(tree):
+                # Handle direct function calls like np.array()
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     
@@ -258,6 +259,29 @@ class ImportFixer:
                     # Check for warnings functions
                     elif func_name in self.warnings_patterns:
                         missing_imports.add(('warnings', None))
+                
+                # Handle attribute access like np.array, pd.DataFrame
+                elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    if isinstance(node.func.value, ast.Name):
+                        module_name = node.func.value.id
+                        func_name = node.func.attr
+                        
+                        # Check for numpy patterns
+                        if module_name == 'np' and func_name in self.numpy_patterns:
+                            missing_imports.add(('numpy', 'np'))
+                        
+                        # Check for pandas patterns
+                        elif module_name == 'pd' and func_name in self.pandas_patterns:
+                            missing_imports.add(('pandas', 'pd'))
+                
+                # Handle attribute access without calls like np.inf
+                elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                    module_name = node.value.id
+                    attr_name = node.attr
+                    
+                    # Check for numpy constants
+                    if module_name == 'np' and attr_name in {'inf', 'nan', 'pi', 'e'}:
+                        missing_imports.add(('numpy', 'np'))
             
             # Check existing imports to avoid duplicates
             existing_imports = set()
@@ -306,19 +330,24 @@ class ImportFixer:
             # Parse the file to find where to insert imports
             tree = ast.parse(content)
 
-            # Find existing imports
+            # Find existing imports at the top of the file only
             existing_imports = set()
             last_import_line = 0
-
+            
+            # Only consider imports at the top of the file (before any non-import statements)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         existing_imports.add(alias.name)
-                    last_import_line = max(last_import_line, node.lineno)
+                    # Only update last_import_line if this import is at the top
+                    if node.lineno <= 50:  # Only consider imports in first 50 lines
+                        last_import_line = max(last_import_line, node.lineno)
                 elif isinstance(node, ast.ImportFrom):
                     if node.module:
                         existing_imports.add(node.module)
-                    last_import_line = max(last_import_line, node.lineno)
+                    # Only update last_import_line if this import is at the top
+                    if node.lineno <= 50:  # Only consider imports in first 50 lines
+                        last_import_line = max(last_import_line, node.lineno)
 
             # Prepare new imports
             new_imports = []
@@ -335,16 +364,25 @@ class ImportFixer:
             # Insert imports after existing imports or at the beginning
             lines = content.split("\n")
 
-            # Find the right place to insert
-            insert_line = max(0, last_import_line)
-
-            # Handle module docstrings
-            if insert_line == 0 and lines and (lines[0].startswith('"""') or lines[0].startswith("'''")):
-                # Find end of docstring
-                for i, line in enumerate(lines[1:], 1):
-                    if line.strip().endswith('"""') or line.strip().endswith("'''"):
-                        insert_line = i + 1
-                        break
+            # Find the right place to insert - be more careful about placement
+            if last_import_line > 0:
+                # Insert after the last import at the top
+                insert_line = last_import_line
+            else:
+                # No imports found at the top, insert at the beginning
+                insert_line = 0
+                
+                # Handle module docstrings
+                if lines and (lines[0].startswith('"""') or lines[0].startswith("'''")):
+                    # Find end of docstring
+                    for i, line in enumerate(lines[1:], 1):
+                        if line.strip().endswith('"""') or line.strip().endswith("'''"):
+                            insert_line = i + 1
+                            break
+                
+                # Handle shebang lines
+                if lines and lines[0].startswith('#!'):
+                    insert_line = 1
 
             # Insert the imports
             for imp in sorted(new_imports):

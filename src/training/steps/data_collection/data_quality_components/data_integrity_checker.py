@@ -4,7 +4,9 @@ Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional, Tuple
 from datetime import timedelta
-from .utils.logger import system_logger
+import pandas as pd
+import numpy as np
+from ..utils.logger import system_logger
 
 
 class DataIntegrityChecker:

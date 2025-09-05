@@ -110,7 +110,7 @@ class ExplanationVisualizer:
             # Add value labels on bars
             for i, (bar, value) in enumerate(zip(bars, values)):
                 ax.text(value + (0.01 if value > 0 else -0.01), i, f'{value:.3f}',
-                       va='center', ha='left' if value > 0 else 'right', fontsize=9)
+                    va='center', ha='left' if value > 0 else 'right', fontsize=9)
             
             # Invert y-axis to show highest values at top
             ax.invert_yaxis()
@@ -237,7 +237,7 @@ class ExplanationVisualizer:
             # Add value labels
             for i, (bar, value) in enumerate(zip(bars, values)):
                 ax.text(value + (0.01 if value > 0 else -0.01), i, f'{value:.3f}',
-                       va='center', ha='left' if value > 0 else 'right', fontsize=9)
+                    va='center', ha='left' if value > 0 else 'right', fontsize=9)
             
             # Invert y-axis
             ax.invert_yaxis()
@@ -246,8 +246,8 @@ class ExplanationVisualizer:
             if 'prediction' in explanation.lime_explanation:
                 pred_text = f"Prediction: {explanation.lime_explanation['prediction']:.3f}"
                 ax.text(0.02, 0.98, pred_text, transform=ax.transAxes, 
-                       bbox=dict(boxstyle="round,pad=0.3", facecolor=self.colors['background']),
-                       fontsize=10, verticalalignment='top')
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor=self.colors['background']),
+                    fontsize=10, verticalalignment='top')
             
             plt.tight_layout()
             
@@ -310,7 +310,7 @@ class ExplanationVisualizer:
             # Add value labels
             for i, (bar, value) in enumerate(zip(bars, values)):
                 ax.text(value + (0.01 if value > 0 else -0.01), i, f'{value:.3f}',
-                       va='center', ha='left' if value > 0 else 'right', fontsize=9)
+                    va='center', ha='left' if value > 0 else 'right', fontsize=9)
             
             # Invert y-axis
             ax.invert_yaxis()
@@ -510,8 +510,8 @@ Feature Importance: {'Yes' if explanation.feature_importance is not None else 'N
             """.strip()
             
             ax.text(0.05, 0.95, summary_text, transform=ax.transAxes, fontsize=10,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor=self.colors['background']))
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor=self.colors['background']))
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Summary plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -566,8 +566,8 @@ Feature Importance: {'Yes' if explanation.feature_importance is not None else 'N
                 metadata_text += "No metadata available"
             
             ax.text(0.05, 0.95, metadata_text, transform=ax.transAxes, fontsize=9,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor=self.colors['background']))
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor=self.colors['background']))
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Metadata plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -689,8 +689,8 @@ Factors:
             """.strip()
             
             ax.text(0.05, 0.95, summary_text, transform=ax.transAxes, fontsize=10,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Summary plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -721,7 +721,7 @@ Factors:
             # Add value labels
             for bar, count in zip(bars, model_counts):
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
-                       'Yes' if count else 'No', ha='center', va='bottom', fontweight='bold')
+                    'Yes' if count else 'No', ha='center', va='bottom', fontweight='bold')
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Model contributions plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -773,7 +773,7 @@ Factors:
             # Add value labels
             for bar, count in zip(bars, counts):
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                       str(count), ha='center', va='bottom', fontweight='bold')
+                    str(count), ha='center', va='bottom', fontweight='bold')
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Risk/opportunity plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -797,8 +797,8 @@ Factors:
                     conditions_text += f"{key}: {value}\n"
             
             ax.text(0.05, 0.95, conditions_text, transform=ax.transAxes, fontsize=9,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Market conditions plot error: {e}', ha='center', va='center', transform=ax.transAxes)
@@ -824,8 +824,8 @@ Explanation Sources:
             """.strip()
             
             ax.text(0.05, 0.95, timeline_text, transform=ax.transAxes, fontsize=9,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor='#F8F8FF'))
             
         except Exception as e:
             ax.text(0.5, 0.5, f'Timeline plot error: {e}', ha='center', va='center', transform=ax.transAxes)

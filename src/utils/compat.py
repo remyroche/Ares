@@ -1,5 +1,7 @@
 
 """Compatibility shims to forward legacy decorators to core equivalents.
+from functools import wraps
+import asyncio
 
 This module allows gradual migration by re-exporting adapter functions
 that map old decorator signatures to the new core decorators.
@@ -36,8 +38,6 @@ def handle_specific_errors(
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        import asyncio
-        from functools import wraps
 
         if asyncio.iscoroutinefunction(func):
 

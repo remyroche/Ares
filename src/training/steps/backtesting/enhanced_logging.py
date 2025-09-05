@@ -2,7 +2,6 @@
 """Enhanced Logging System for Backtesting Pipeline.
 
 This module provides comprehensive logging with emojis, progress tracking,
-quality assessment, and detailed error reporting for the backtesting pipeline.
 """
 
 import logging
@@ -17,7 +16,6 @@ from contextlib import contextmanager
 
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
-    ensure_directory, safe_json_dump, safe_json_load
 )
 
 class BacktestingLogger:
@@ -29,7 +27,6 @@ class BacktestingLogger:
         self.enable_console = enable_console
         
         # Ensure log directory exists
-        ensure_directory(self.log_dir)
         
         # Initialize logger
         self.logger = logging.getLogger(f"backtesting.{name}")
@@ -447,7 +444,6 @@ class BacktestingLogger:
         }
         
         if output_file:
-            safe_json_dump(report, output_file, indent=2)
             self.logger.info(f"📋 Report saved to: {output_file}")
         
         return report

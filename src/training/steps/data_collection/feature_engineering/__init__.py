@@ -1,4 +1,5 @@
 """
+from .step06_feature_engineering import FeatureEngineeringStep
 Feature Engineering Step06 Components
 
 This package contains feature engineering components for step06 including:
@@ -9,7 +10,6 @@ This package contains feature engineering components for step06 including:
 """
 
 try:
-    from .step06_feature_engineering import FeatureEngineeringStep
     FEATURE_ENGINEERING_STEP_AVAILABLE = True
 except ImportError:
     FEATURE_ENGINEERING_STEP_AVAILABLE = False

@@ -144,7 +144,6 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
 
 @traced(span_name='run_per_regime_monte_carlo_validation_step')
 @validates()
-@handles_errors(exceptions=(Exception,), fallback=False)
 async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the per-regime Monte Carlo validation step."""
     logger.info("🚀 Starting Step 19: Per-Regime Monte Carlo Validation")

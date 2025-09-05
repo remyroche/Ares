@@ -24,7 +24,6 @@ from typing import Optional
 import numpy as np
 
 
-logger = get_logger('Step18WalkForwardValidationPerRegime')
 
 
 class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
@@ -615,7 +614,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
                     'precision': min(1.0, fold_performance - 0.05),
                     'recall': min(1.0, fold_performance - 0.03),
                     'f1_score': 2 * (fold_performance - 0.05) * (fold_performance - 0.03) / 
-                              (2 * fold_performance - 0.08) if (2 * fold_performance - 0.08) > 0 else 0.0,
+                            (2 * fold_performance - 0.08) if (2 * fold_performance - 0.08) > 0 else 0.0,
                     'sharpe_ratio': np.random.uniform(0.5, 2.0),
                     'max_drawdown': np.random.uniform(0.05, 0.2),
                     'win_rate': np.random.uniform(0.4, 0.7)
@@ -776,7 +775,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
                 'validation_methods_used': len(validation_folds),
                 'average_performance': metrics['overall_validation_performance'],
                 'best_method': max(validation_folds.keys(), 
-                                 key=lambda k: metrics['method_performances'].get(k, 0.0)) if validation_folds else None,
+                                key=lambda k: metrics['method_performances'].get(k, 0.0)) if validation_folds else None,
                 'validation_timestamp': datetime.now().isoformat()
             }
             
@@ -825,7 +824,6 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
 
 @traced(span_name='run_per_regime_walk_forward_validation_step')
 @validates()
-@handles_errors
 async def run_per_regime_step(
     symbol: str,
     exchange: str,

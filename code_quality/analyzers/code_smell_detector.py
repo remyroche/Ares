@@ -101,7 +101,7 @@ class CodeSmellDetector:
                         )
 
     def _add_smell(self, smell_type: str, severity: str, file_path: str,
-                   line_number: int, entity_name: str, message: str, suggestion: str) -> None:
+                line_number: int, entity_name: str, message: str, suggestion: str) -> None:
         """Add a detected code smell."""
         self.smells.append(CodeSmell(
             smell_type=smell_type,
@@ -356,7 +356,7 @@ class SmellDetectorVisitor(ast.NodeVisitor):
         return dict(external_refs), internal_refs
 
     def _add_smell(self, smell_type: str, severity: str, line_number: int,
-                   entity_name: str, message: str, suggestion: str) -> None:
+                entity_name: str, message: str, suggestion: str) -> None:
         """Add a detected smell."""
         smell = CodeSmell(
             smell_type=smell_type,

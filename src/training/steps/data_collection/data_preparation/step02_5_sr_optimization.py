@@ -1088,20 +1088,20 @@ def print_function_summary(report: Dict[str, Any]) -> None:
     print("-" * 50)
     for i, (func_name, metrics) in enumerate(report["most_called_functions"], 1):
         print(f"{i:2d}. {func_name}: {metrics['total_calls']} calls, "
-              f"avg: {metrics['avg_time']:.4f}s")
+            f"avg: {metrics['avg_time']:.4f}s")
     
     print("\n⚡ TOP 10 FASTEST FUNCTIONS:")
     print("-" * 50)
     for i, (func_name, metrics) in enumerate(report["top_performing_functions"], 1):
         print(f"{i:2d}. {func_name}: {metrics['avg_time']:.4f}s avg, "
-              f"{metrics['total_calls']} calls")
+            f"{metrics['total_calls']} calls")
     
     print("\n📋 RECENT FUNCTION CALLS (Last 10):")
     print("-" * 50)
     for call in report["call_history"][-10:]:
         status_emoji = "✅" if call["status"] == "success" else "❌"
         print(f"{status_emoji} [{call['call_id']}] {call['function_name']} - "
-              f"{call.get('execution_time', 0):.4f}s - {call['status']}")
+            f"{call.get('execution_time', 0):.4f}s - {call['status']}")
     
     print("="*80)
 

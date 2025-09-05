@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 from .tactician.sr_levels_manager import SRLevelsManager
 from .utils.logger import system_logger
+
+from .tactician.sr_levels_manager import create_sr_levels_manager
+
 logger = system_logger.getChild('SRTradingIntelligence')
 
 class SRTradingIntelligence:
@@ -58,7 +61,6 @@ class SRTradingIntelligence:
     async def _create_sr_manager(self) -> SRLevelsManager | None:
         """Create and initialize SR Levels Manager."""
         try:
-            from .tactician.sr_levels_manager import create_sr_levels_manager
             return await create_sr_levels_manager(self.config)
         except Exception as e:
             self.logger.exception(f'❌ Error creating SR Levels Manager: {e}')

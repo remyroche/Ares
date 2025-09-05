@@ -666,4 +666,4 @@ async def main() -> None:
         await pipeline.stop()
         sys.exit(1)
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run( main())

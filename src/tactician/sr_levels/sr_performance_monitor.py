@@ -244,14 +244,14 @@ class SRPerformanceMonitor:
             return
         
         correct = sum(1 for pred, outcome in recent_matches 
-                     if pred.predicted_outcome == outcome.actual_outcome)
+                    if pred.predicted_outcome == outcome.actual_outcome)
         accuracy = correct / len(recent_matches)
         
         # Check if below threshold
         if accuracy < self.alert_threshold:
             # Check cooldown
             if self.last_alert_time is None or \
-               datetime.now() - self.last_alert_time > self.alert_cooldown:
+            datetime.now() - self.last_alert_time > self.alert_cooldown:
                 
                 await self._send_performance_alert(accuracy)
                 self.last_alert_time = datetime.now()
@@ -287,7 +287,7 @@ class SRPerformanceMonitor:
         
         # Overall accuracy
         correct = sum(1 for pred, outcome in matches 
-                     if pred.predicted_outcome == outcome.actual_outcome)
+                    if pred.predicted_outcome == outcome.actual_outcome)
         overall_accuracy = correct / len(matches)
         
         # Accuracy by outcome type
@@ -305,7 +305,7 @@ class SRPerformanceMonitor:
         weak_matches = [(p, o) for p, o in matches if p.level_strength <= 0.7]
         
         strong_accuracy = (sum(1 for p, o in strong_matches if p.predicted_outcome == o.actual_outcome) / 
-                          len(strong_matches)) if strong_matches else 0.0
+                        len(strong_matches)) if strong_matches else 0.0
         
         weak_accuracy = (sum(1 for p, o in weak_matches if p.predicted_outcome == o.actual_outcome) / 
                         len(weak_matches)) if weak_matches else 0.0

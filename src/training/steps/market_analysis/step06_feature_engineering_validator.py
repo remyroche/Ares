@@ -345,5 +345,5 @@ if __name__ == "__main__":
     
     test_state = {}
     
-    result = asyncio.run(await run_validator(test_input, test_state))
+    result = asyncio.run( run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

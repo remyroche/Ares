@@ -16,7 +16,7 @@ class DuplicationBlock:
     """Container for duplicate code block information."""
 
     def __init__(self, content: str, hash_value: str, locations: list[tuple[str, int, int]],
-                 similarity: float = 1.0, block_type: str = "unknown"):
+                similarity: float = 1.0, block_type: str = "unknown"):
         self.content = content
         self.hash_value = hash_value
         self.locations = locations  # (file_path, start_line, end_line)
@@ -73,7 +73,7 @@ class CodeDuplicationAnalyzer:
 
             # Clear previous results for this file
             self.duplication_blocks = [block for block in self.duplication_blocks
-                                     if not any(loc[0] == str(file_path) for loc in block.locations)]
+                                    if not any(loc[0] == str(file_path) for loc in block.locations)]
 
             with open(file_path, encoding="utf-8") as f:
                 content = f.read()

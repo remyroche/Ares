@@ -10,6 +10,11 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error, r2_score
 from .utils.logger import system_logger
 
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+import optuna
+
+
 class HMMModelTrainer:
     """Trains HMM-based models with various algorithms."""
 
@@ -278,7 +283,6 @@ class ModelEvaluator:
     def _safe_precision(self, y_true: Any, y_pred: Any) -> float:
         """Calculate precision score safely."""
         try:
-            from sklearn.metrics import precision_score
             return precision_score(y_true, y_pred, average='weighted', zero_division=0)
         except:
             return 0.0
@@ -286,7 +290,6 @@ class ModelEvaluator:
     def _safe_recall(self, y_true: Any, y_pred: Any) -> float:
         """Calculate recall score safely."""
         try:
-            from sklearn.metrics import recall_score
             return recall_score(y_true, y_pred, average='weighted', zero_division=0)
         except:
             return 0.0
@@ -316,7 +319,6 @@ class HyperparameterOptimizer:
             Optimal hyperparameters
         """
         try:
-            import optuna
 
             def objective(trial: Any) -> float:
                 if model_type == 'lightgbm':

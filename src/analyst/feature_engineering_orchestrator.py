@@ -10,6 +10,10 @@ from .core.decorators import handles_errors
 from .core.domain import handle_data_processing_errors, handle_file_operations
 from .utils.logger import system_logger
 
+from .config_optuna import get_parameter_value
+from .analyst.meta_labeling_system import MetaLabelingSystem
+
+
 class FeatureEngineeringOrchestrator:
     """
     Comprehensive feature engineering orchestrator that coordinates all feature generation components.
@@ -33,7 +37,6 @@ class FeatureEngineeringOrchestrator:
         os.makedirs(self.model_storage_path, exist_ok=True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, 'der_scaler.joblib')
-        from .config_optuna import get_parameter_value
         self.orchestrator_config = config.get('feature_engineering_orchestrator', {})
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)
         self.enable_autoencoder_features = get_parameter_value('feature_engineering_parameters.enable_autoencoder_features', True)
@@ -153,7 +156,6 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:
-            from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
             advanced_fe = AdvancedFeatureEngineering(self.config)
             await advanced_fe.initialize()
             multi_timeframe_features = await advanced_fe._engineer_multi_timeframe_features(price_data, volume_data, order_flow_data)
@@ -166,7 +168,6 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_meta_labeling_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
         """Calculate meta-labeling features."""
         try:
-            from .analyst.meta_labeling_system import MetaLabelingSystem
 
             meta_labeling = MetaLabelingSystem(self.config)
             await meta_labeling.initialize()

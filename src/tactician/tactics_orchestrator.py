@@ -449,10 +449,10 @@ class TacticsOrchestrator:
         Execute a single tactics cycle using provided inputs.
 
         Expected tactics_input keys:
-          - market_data: pd.DataFrame
-          - analyst_predictions: dict with 'upper_barrier','lower_barrier','confidence'
-          - symbol: str
-          - timeframe: str
+        - market_data: pd.DataFrame
+        - analyst_predictions: dict with 'upper_barrier','lower_barrier','confidence'
+        - symbol: str
+        - timeframe: str
         """
         try:
             market_data: pd.DataFrame | None = tactics_input.get('market_data')
@@ -773,7 +773,7 @@ class TacticsOrchestrator:
 
         Produces keys:
           - price_target_confidences: {'0.25%','0.5%','0.75%','1.0%'}
-          - adversarial_confidences:  same keys representing adverse move risks
+        - adversarial_confidences:  same keys representing adverse move risks
         """
         try:
             # Gather confidences for 25% and 50% barriers across timeframes

@@ -233,13 +233,11 @@ def get_sr_comprehensive_config_loader() -> SRComprehensiveConfigLoader:
     return _sr_config_loader
 
 
-async def get_sr_comprehensive_config() -> SRComprehensiveConfig:
     """Get comprehensive S/R configuration."""
     loader = get_sr_comprehensive_config_loader()
     return await loader.load_config()
 
 
-async def get_sr_comprehensive_config_dict() -> Dict[str, Any]:
     """Get comprehensive S/R configuration as dictionary."""
     loader = get_sr_comprehensive_config_loader()
     return await loader.get_config_dict()

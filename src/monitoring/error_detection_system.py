@@ -2,7 +2,6 @@
 """
 Error Detection and Alerting System (minimal scaffold)
 
-Provides scaffolding for error and anomaly detection.
 """
 
 

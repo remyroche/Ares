@@ -16,7 +16,6 @@ logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
 
 @traced(span_name='validate_triple_barrier_method')
 @validates()
-@handles_errors
 def _validate_file_exists(triple_barrier_path: Path) -> Optional[Dict[str, Any]]:
     """Validate that the triple barrier file exists and is not empty."""
     if not triple_barrier_path.exists():
@@ -142,4 +141,4 @@ if __name__ == '__main__':
         test_state = {}
         result = await run_validator(test_input, test_state)
         print(f'Validation result: {result}')
-    asyncio.run(await test())
+    asyncio.run( test())

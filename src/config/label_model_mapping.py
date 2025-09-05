@@ -77,5 +77,4 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
         return RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)
 
 def select_model_for_label_timeframe(label: str, timeframe: str) -> None:
-    key, params = get_model_choice_for_label(label, timeframe)
     return build_model(key, params)

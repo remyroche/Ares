@@ -131,7 +131,7 @@ class PerformanceMetricsCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_calmar_ratio(self, returns: np.ndarray, 
-                              equity_curve: np.ndarray) -> float:
+                            equity_curve: np.ndarray) -> float:
         """
         Calculate Calmar ratio.
 
@@ -171,7 +171,7 @@ class PerformanceMetricsCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_recovery_factor(self, total_pnl: float, 
-                                 max_drawdown: float) -> float:
+                                max_drawdown: float) -> float:
         """
         Calculate recovery factor.
 

@@ -3,7 +3,6 @@
 Fixed HMM Regime Discovery Script
 
 This script runs the HMM regime discovery step with proper 6-month data range
-and comprehensive error handling to fix the issues encountered.
 """
 
 import asyncio
@@ -57,7 +56,7 @@ async def main():
 
 if __name__== "__main__":
     try:
-        success = asyncio.run(await main())
+        success = asyncio.run( main())
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")

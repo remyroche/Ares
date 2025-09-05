@@ -31,8 +31,8 @@ class OptimizationMetricsCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_kelly_criterion(self, win_rate: float, 
-                                 avg_win: float, 
-                                 avg_loss: float) -> Dict[str, float]:
+                                avg_win: float,
+                                avg_loss: float) -> Dict[str, float]:
         """
         Calculate Kelly Criterion for optimal position sizing.
 
@@ -77,7 +77,7 @@ class OptimizationMetricsCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_information_ratio(self, excess_returns: np.ndarray, 
-                                   benchmark_returns: np.ndarray) -> float:
+                                benchmark_returns: np.ndarray) -> float:
         """
         Calculate Information Ratio.
 
@@ -119,7 +119,7 @@ class OptimizationMetricsCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_omega_ratio(self, returns: np.ndarray, 
-                             threshold: float = 0.0) -> float:
+                            threshold: float = 0.0) -> float:
         """
         Calculate Omega Ratio.
 

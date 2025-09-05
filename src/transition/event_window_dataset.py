@@ -112,8 +112,8 @@ class EventWindowDatasetBuilder:
     ) -> dict[str, Any]:
         """
         Returns a dict with:
-          - samples: list of dicts with keys {event_label, t0_time, X_pre_states, X_pre_numeric, Y_post_returns, Y_post_states, multi_hot_labels, rf_features}
-          - tensors: optional stacked arrays for model consumption (can be large; we keep lightweight here)
+        - samples: list of dicts with keys {event_label, t0_time, X_pre_states, X_pre_numeric, Y_post_returns, Y_post_states, multi_hot_labels, rf_features}
+        - tensors: optional stacked arrays for model consumption (can be large; we keep lightweight here)
         """
         if klines_df.empty or combined_df.empty or event_index.empty:
             return {"samples": []}

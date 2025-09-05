@@ -29,7 +29,6 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
 from src.utils.error_handler import handle_errors
 
 
-@handle_errors(exceptions=(Exception,), default_return=None, context="run_multi_timeframe_training")
 async def run_multi_timeframe_training(
     symbol: str,
     timeframes: list[str],
@@ -119,7 +118,6 @@ async def run_multi_timeframe_training(
     return results
 
 
-@handle_errors(exceptions=(Exception,), default_return=None, context="run_quick_multi_timeframe_test")
 async def run_quick_multi_timeframe_test(symbol: str):
     """Run a quick multi-timeframe test with limited data."""
     logger=system_logger.getChild("QuickMultiTimeframeTest")
@@ -144,7 +142,6 @@ async def run_quick_multi_timeframe_test(symbol: str):
     )
 
 
-@handle_errors(exceptions=(Exception,), default_return=None, context="run_ensemble_only")
 async def run_ensemble_only(symbol: str, timeframes: list[str]):
     """Run ensemble creation only (assumes models already trained)."""
     logger=system_logger.getChild("EnsembleOnly")
@@ -198,7 +195,6 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
     return final_results
 
 
-@handle_errors(exceptions=(Exception,), default_return=None, context="analyze_timeframe_correlations")
 async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
     """Analyze correlations between timeframes."""
     logger=system_logger.getChild("TimeframeAnalysis")
@@ -291,22 +287,22 @@ def main() -> None:
         epilog="""
 Examples:
   # List all available timeframes and their purposes
-  python scripts/run_multi_timeframe_training.py --list-timeframes
+python scripts/run_multi_timeframe_training.py --list-timeframes
 
   # Full multi-timeframe training
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d
+python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d
 
   # Quick test with limited data
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --quick-test
+python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --quick-test
 
   # Ensemble only (assumes models already trained)
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --ensemble-only --timeframes 1h,4h,1d
+python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --ensemble-only --timeframes 1h,4h,1d
 
   # Analyze timeframe correlations
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --analyze --timeframes 1h,4h,1d
+python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --analyze --timeframes 1h,4h,1d
 
   # Sequential training (no parallel)
-  python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d --sequential
+python scripts/run_multi_timeframe_training.py --symbol ETHUSDT --timeframes 1h,4h,1d --sequential
         """,
     )
 

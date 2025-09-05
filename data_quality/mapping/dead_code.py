@@ -12,12 +12,14 @@ from typing import Any
 
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
+import csv
+
+
 
 def _load_cq_config(config_path: str | None) -> CodeQualityConfig:
     """Load code quality configuration."""
     if config_path:
         return load_config(config_path)
-    return get_default_config()
 
 
 def map_dead_code(
@@ -137,7 +139,6 @@ def export_dead_code_mapping(
 
 def _export_to_csv(mapping_data: dict[str, Any], output_path: Path) -> None:
     """Export mapping data to CSV format."""
-    import csv
     
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)

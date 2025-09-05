@@ -205,7 +205,7 @@ class EnhancedDataValidator:
     @traced(span_name="validate_data_batch", log_args=False, log_result_len_only=True)
     @memory_efficient(batch_size=1000)
     def validate_batch(self, batch_data: List[Dict[str, Any]], 
-                      previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+                    previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Validate a batch of data with time gap detection and extensive logging.
         
@@ -305,7 +305,7 @@ class EnhancedDataValidator:
     
     @handles_errors(fallback=None, context="validate_and_convert_field")
     def _validate_and_convert_field(self, value: Any, field_def: FieldDefinition, 
-                                   row_index: int) -> Any:
+                                row_index: int) -> Any:
         """Validate and convert a field value with extensive logging."""
         self.logger.debug(f"🔍 Validating field {field_def.name}: {value} (type: {type(value)})")
         
@@ -375,7 +375,7 @@ class EnhancedDataValidator:
     
     @handles_errors(fallback=[], context="validate_value")
     def _validate_value(self, value: Any, field_def: FieldDefinition, 
-                       row_index: int) -> List[ValidationError]:
+                    row_index: int) -> List[ValidationError]:
         """Validate field value against constraints with extensive logging."""
         errors = []
         
@@ -843,7 +843,6 @@ SCHEMA_REGISTRY = {
 logger.info(f"📋 Initialized schema registry with {len(SCHEMA_REGISTRY)} schemas")
 
 
-@handles_errors(fallback=None, context="get_validator")
 def get_validator(data_type: DataType, exchange: str = "UNKNOWN") -> EnhancedDataValidator:
     """Get validator for specified data type and exchange with extensive logging."""
     logger.info(f"🔍 Getting validator for {data_type.value} data from {exchange}")
@@ -859,10 +858,9 @@ def get_validator(data_type: DataType, exchange: str = "UNKNOWN") -> EnhancedDat
     return validator
 
 
-@handles_errors(fallback=[], context="validate_data_batch")
 @traced(span_name="validate_data_batch", log_args=False, log_result_len_only=True)
 def validate_data_batch(data_type: DataType, batch_data: List[Dict[str, Any]], 
-                       exchange: str = "UNKNOWN", previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+                    exchange: str = "UNKNOWN", previous_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
     """Convenience function to validate a batch of data with extensive logging."""
     logger.info(f"🚀 Starting batch validation for {data_type.value} data from {exchange}")
     

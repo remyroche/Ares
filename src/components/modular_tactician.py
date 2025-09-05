@@ -988,7 +988,6 @@ class ModularTactician:
 modular_tactician: ModularTactician | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_modular_tactician(
     config: dict[str, Any] | None = None,
 ) -> ModularTactician | None:

@@ -29,6 +29,9 @@ from pathlib import Path
 
 from .compose import P, R, uniform_wrapper
 
+import json
+
+
 # Context variable for function call tracking
 function_call_stack: ContextVar[List[str]] = ContextVar("function_call_stack", default=[])
 execution_report: ContextVar[Dict[str, Any]] = ContextVar("execution_report", default={})
@@ -77,14 +80,14 @@ class FunctionCallMonitor:
     """Comprehensive function call monitoring system."""
     
     def __init__(self, 
-                 enable_performance_monitoring: bool = True,
-                 enable_memory_monitoring: bool = True,
-                 enable_cpu_monitoring: bool = True,
-                 enable_parameter_validation: bool = True,
-                 enable_nested_call_tracking: bool = True,
-                 log_level: str = "INFO",
-                 generate_detailed_report: bool = True,
-                 report_file_path: Optional[str] = None):
+                enable_performance_monitoring: bool = True,
+                enable_memory_monitoring: bool = True,
+                enable_cpu_monitoring: bool = True,
+                enable_parameter_validation: bool = True,
+                enable_nested_call_tracking: bool = True,
+                log_level: str = "INFO",
+                generate_detailed_report: bool = True,
+                report_file_path: Optional[str] = None):
         """
         Initialize the function call monitor.
         
@@ -313,7 +316,6 @@ class FunctionCallMonitor:
                 report_file = Path(self.report_file_path) / f"execution_report_{execution_id}.json"
                 report_file.parent.mkdir(parents=True, exist_ok=True)
                 
-                import json
                 with open(report_file, 'w') as f:
                     json.dump(report_data, f, indent=2, default=str)
                 

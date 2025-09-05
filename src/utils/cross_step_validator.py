@@ -111,11 +111,11 @@ class CrossStepValidator:
         self.logger.info("🔍 CrossStepValidator initialized with comprehensive consistency rules")
     
     def validate_step_transition(self, 
-                               from_step: str, 
-                               to_step: str, 
-                               input_data: pd.DataFrame,
-                               output_data: pd.DataFrame,
-                               step_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                            from_step: str,
+                            to_step: str,
+                            input_data: pd.DataFrame,
+                            output_data: pd.DataFrame,
+                            step_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Validate data consistency between pipeline steps.
         
@@ -175,7 +175,7 @@ class CrossStepValidator:
             
             # Determine if validation passed
             critical_issues = [issue for issue in validation_result['issues'] 
-                             if issue.get('severity') == 'critical']
+                            if issue.get('severity') == 'critical']
             if critical_issues:
                 validation_result['passed'] = False
                 self.logger.error(f"❌ Critical consistency issues found: {len(critical_issues)}")
@@ -185,8 +185,8 @@ class CrossStepValidator:
             
             # Log summary
             self.logger.info(f"✅ Consistency validation completed: "
-                           f"score={validation_result['consistency_score']:.1f}, "
-                           f"issues={total_issues}, warnings={total_warnings}")
+                        f"score={validation_result['consistency_score']:.1f}, "
+                        f"issues={total_issues}, warnings={total_warnings}")
             
             return validation_result
             
@@ -201,10 +201,10 @@ class CrossStepValidator:
             }
     
     def _record_data_lineage(self, 
-                           step_name: str, 
-                           input_data: pd.DataFrame, 
-                           output_data: pd.DataFrame,
-                           metadata: Optional[Dict[str, Any]]) -> DataLineage:
+                        step_name: str,
+                        input_data: pd.DataFrame,
+                        output_data: pd.DataFrame,
+                        metadata: Optional[Dict[str, Any]]) -> DataLineage:
         """Record data lineage information."""
         lineage = DataLineage(
             step_name=step_name,
@@ -237,8 +237,8 @@ class CrossStepValidator:
         return lineage
     
     def _check_timestamp_continuity(self, from_step: str, to_step: str, 
-                                  input_data: pd.DataFrame, output_data: pd.DataFrame,
-                                  metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
+                                input_data: pd.DataFrame, output_data: pd.DataFrame,
+                                metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
         """Check timestamp continuity between steps."""
         issues = []
         warnings = []
@@ -380,8 +380,8 @@ class CrossStepValidator:
         return issues, warnings
     
     def _check_column_preservation(self, from_step: str, to_step: str,
-                                 input_data: pd.DataFrame, output_data: pd.DataFrame,
-                                 metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
+                                input_data: pd.DataFrame, output_data: pd.DataFrame,
+                                metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
         """Check column preservation between steps."""
         issues = []
         warnings = []
@@ -457,8 +457,8 @@ class CrossStepValidator:
         return issues, warnings
     
     def _check_step_specific_rules(self, from_step: str, to_step: str,
-                                 input_data: pd.DataFrame, output_data: pd.DataFrame,
-                                 metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
+                                input_data: pd.DataFrame, output_data: pd.DataFrame,
+                                metadata: Optional[Dict[str, Any]]) -> Tuple[List[Dict], List[Dict]]:
         """Check step-specific validation rules."""
         issues = []
         warnings = []
@@ -512,7 +512,7 @@ class CrossStepValidator:
         return issues, warnings
     
     def _calculate_consistency_score(self, total_issues: int, total_warnings: int,
-                                   input_data: pd.DataFrame, output_data: pd.DataFrame) -> float:
+                                input_data: pd.DataFrame, output_data: pd.DataFrame) -> float:
         """Calculate overall consistency score."""
         base_score = 100.0
         

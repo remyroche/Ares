@@ -24,6 +24,9 @@ if str(project_root) not in sys.path:
 
 from .config import CONFIG
 
+import asyncio as _asyncio
+
+
 
 class Step21SavingValidator(BaseValidator):
     """Validator for Step 21: Extended Saving."""
@@ -505,7 +508,6 @@ async def run_validator(
 
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
 
     # Example usage
     async def test_validator() -> None:
@@ -519,4 +521,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(await test_validator())
+    _asyncio.run( test_validator())

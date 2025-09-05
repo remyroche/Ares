@@ -2,7 +2,10 @@
 Detects various types of anomalies in market data.
 Extracted from raw_data_quality_checker.py
 """
-from .utils.logger import system_logger
+from typing import Any, Optional, List
+import pandas as pd
+import numpy as np
+from ..utils.logger import system_logger
 
 
 class AnomalyDetector:
@@ -310,7 +313,7 @@ class AnomalyDetector:
             "zero_count": len(results["zero_volume_periods"]),
             "anomaly_rate": float(
                 (len(results["volume_spikes"]) + len(results["volume_drops"]) + 
-                 len(results["zero_volume_periods"])) / len(data)
+                len(results["zero_volume_periods"])) / len(data)
             )
         }
         
@@ -363,7 +366,7 @@ class AnomalyDetector:
                     returns.iloc[i + 1] < -extreme_threshold * 0.5):
                     reversals.append(data.index[i])
                 elif (returns.iloc[i] < -extreme_threshold and 
-                      returns.iloc[i + 1] > extreme_threshold * 0.5):
+                    returns.iloc[i + 1] > extreme_threshold * 0.5):
                     reversals.append(data.index[i])
                     
             results["price_reversals"][col] = reversals

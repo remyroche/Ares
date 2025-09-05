@@ -479,8 +479,8 @@ class EnhancedSROptimizer:
             if backtest_result:
                 optimization_score = (optimization_score + 
                                     (backtest_result.win_rate + 
-                                     min(backtest_result.sharpe_ratio / 2, 0.5) + 
-                                     min(backtest_result.profit_factor / 3, 0.5)) / 3) / 2
+                                    min(backtest_result.sharpe_ratio / 2, 0.5) +
+                                    min(backtest_result.profit_factor / 3, 0.5)) / 3) / 2
             
             metrics.update({
                 'optimization_score': optimization_score,

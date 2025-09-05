@@ -114,9 +114,9 @@ class RobustAsyncFixer:
                                 modified = True
                                 break
 
-                    # Fix asyncio.run(await ...) pattern
-                    if "asyncio.run(await" in stripped:
-                        lines[i] = lines[i].replace("asyncio.run(await", "asyncio.run(")
+                    # Fix asyncio.run( ...) pattern
+                    if "asyncio.run(" in stripped:
+                        lines[i] = lines[i].replace("asyncio.run(", "asyncio.run(")
                         modified = True
 
             if modified:
@@ -135,6 +135,22 @@ class RobustAsyncFixer:
 
         except Exception:
             return False
+
+    def fix_async_issues(self, directory: str = None) -> dict:
+        """Main method called by the pipeline to fix async issues."""
+        if directory is None:
+            directory = str(self.project_root)
+        
+        # Use the existing fix_all_async_issues method
+        result = self.fix_all_async_issues(dry_run=False)
+        
+        return {
+            "status": "completed",
+            "total_files": result.get("total_files", 0),
+            "files_fixed": result.get("files_fixed", 0),
+            "files_failed": result.get("files_failed", 0),
+            "changes_made": result.get("changes_made", 0)
+        }
 
     def fix_all_async_issues(self, dry_run: bool = True):
         """Fix async/await issues in all files."""

@@ -389,7 +389,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         
         # Pattern 4: Low penetration (consolidation)
         low_penetration = (penetration_features['upper_wick_penetration'] < penetration_features['upper_wick_penetration'].rolling(20).quantile(0.2)) & \
-                         (penetration_features['lower_wick_penetration'] < penetration_features['lower_wick_penetration'].rolling(20).quantile(0.2))
+                        (penetration_features['lower_wick_penetration'] < penetration_features['lower_wick_penetration'].rolling(20).quantile(0.2))
         patterns[low_penetration] = 4
         
         # Default: Normal penetration

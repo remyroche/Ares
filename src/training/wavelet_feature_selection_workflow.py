@@ -1104,4 +1104,4 @@ class WaveletFeatureSelectionWorkflow:
         import pandas as pd
         import numpy as np
 
-        return TreeExplainer(model)
+return TreeExplainer(model)

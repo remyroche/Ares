@@ -261,7 +261,6 @@ class MainSupervisor:
         return history
 main_supervisor: MainSupervisor | None = None
 
-@handles_errors(fallback=None)
 async def setup_main_supervisor(config: dict[str, Any] | None=None) -> MainSupervisor | None:
     try:
         global main_supervisor

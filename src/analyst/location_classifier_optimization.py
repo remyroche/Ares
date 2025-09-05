@@ -3,6 +3,9 @@
 from functools import lru_cache
 import numba
 
+from concurrent.futures import ProcessPoolExecutor
+
+
 class LocationClassifierOptimized:
     """Optimized version of location classifier with caching and vectorization."""
     
@@ -190,7 +193,6 @@ class LocationClassifierOptimized:
         """
         Analyze multiple timeframes in parallel using multiprocessing.
         """
-        from concurrent.futures import ProcessPoolExecutor
         
         with ProcessPoolExecutor(max_workers=len(timeframes)) as executor:
             # Submit tasks for each timeframe

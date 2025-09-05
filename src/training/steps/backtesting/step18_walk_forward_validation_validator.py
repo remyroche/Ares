@@ -23,6 +23,11 @@ if str(project_root) not in sys.path:
 from .config import CONFIG
 from .utils.base_validator import BaseValidator
 
+import json
+import asyncio as _asyncio
+from .core.decorators.errors import handles_errors
+
+
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
 
@@ -265,7 +270,6 @@ class Step13WalkForwardValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load walk forward metadata
         metadata_file = f"{data_dir}/{exchange}_{symbol}_walk_forward_metadata.json"
@@ -339,7 +343,6 @@ class Step13WalkForwardValidationValidator(BaseValidator):
             Tuple[bool, dict]: (passed, metrics)
 
         """
-        import json
 
         # Load walk forward results
         results_file = f"{data_dir}/{exchange}_{symbol}_walk_forward_results.json"
@@ -419,8 +422,6 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
-    from .core.decorators.errors import handles_errors
 
     # Example usage
     async def test_validator() -> None:

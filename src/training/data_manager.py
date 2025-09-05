@@ -193,7 +193,6 @@ class UnifiedDataManager:
         total_samples = len(data)
 
         # Check for BLANK mode to adjust minimum requirements
-        import os
 
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
 
@@ -480,7 +479,6 @@ class UnifiedDataManager:
             pickle.dump(data, f)
 
         # Save metadata
-        import json
 
         with open(self.metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)

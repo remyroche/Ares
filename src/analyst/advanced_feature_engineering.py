@@ -1,39 +1,28 @@
 # src/analyst/advanced_feature_engineering.py
 
-from .core.decorators import handles_errors
-
 """
 Advanced Feature Engineering for enhanced financial performance.
 Implements sophisticated market microstructure features, regime detection,
 and adaptive indicators for improved prediction accuracy.
 """
 import logging
-from typing import Any
+import numpy as np
+import pandas as pd
+from typing import Any, Dict, List, Optional
 
-
+from .core.decorators import handles_errors
 from .utils.logger import system_logger
+from .feature_engineering_utils import (
+    TechnicalIndicatorCalculator, VolatilityCalculator, MomentumCalculator,
+    LiquidityCalculator, CorrelationCalculator, MicrostructureCalculator,
+    AdaptiveIndicatorCalculator, initialization_error, print_message
+)
+from .candlestick_pattern_analyzer import CandlestickPatternAnalyzer
+
+from .analyst.meta_labeling_system import MetaLabelingSystem
 
 
-class CandlestickPatternAnalyzer:
-    """
-    Comprehensive candlestick pattern analyzer implementing all major patterns
-    for enhanced feature engineering and ML model training.
-    """
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.config = config
-        self.logger = system_logger.getChild("CandlestickPatternAnalyzer")
 
-        # Pattern detection parameters
-        self.pattern_config = config.get("candlestick_patterns", {})
-        self.doji_threshold = self.pattern_config.get("doji_threshold", 0.1)
-        self.hammer_ratio = self.pattern_config.get("hammer_ratio", 0.3)
-        self.shadow_ratio = self.pattern_config.get("shadow_ratio", 2.0)
-        self.engulfing_ratio = self.pattern_config.get("engulfing_ratio", 1.1)
-        self.tweezer_threshold = self.pattern_config.get("tweezer_threshold", 0.02)
-        self.marubozu_threshold = self.pattern_config.get("marubozu_threshold", 0.1)
-
-        self.is_initialized = False
 
     @handles_errors(
         exceptions=(Exception,),
@@ -1270,7 +1259,6 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 try:
-                    from .analyst.meta_labeling_system import MetaLabelingSystem
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()

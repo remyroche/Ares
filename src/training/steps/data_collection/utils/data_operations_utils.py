@@ -3,7 +3,9 @@
 Common Utilities for Data Operations
 
 This module provides comprehensive utilities for data formatting, analysis,
+from .exceptions import (
 access control, and error handling in the data collection pipeline.
+)
 """
 
 import json
@@ -14,12 +16,9 @@ from enum import Enum
 import pickle
 
 
+from .utils.common_operations import (
     get_current_datetime,
     format_datetime,
-    safe_file_exists,
-    ensure_directory,
-    safe_json_dump,
-    safe_json_load
 )
 
 
@@ -552,7 +551,6 @@ class DataStorageManager:
         
         try:
             file_path = Path(file_path)
-            ensure_directory(file_path.parent)
             
             self.logger.info(f"Saving data to {file_path} in {format.value} format")
             
@@ -586,7 +584,6 @@ class DataStorageManager:
             # Save metadata if provided
             if metadata:
                 metadata_path = file_path.with_suffix('.metadata.json')
-                safe_json_dump(metadata, metadata_path)
             
             execution_time = time.time() - start_time
             

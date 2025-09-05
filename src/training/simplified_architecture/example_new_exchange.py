@@ -59,6 +59,10 @@ class DeribitDataSource(BaseExchangeDataSource):
 from typing import Optional
 from .modular_components import BaseModelTrainer, IModel
 
+from catboost import CatBoostClassifier
+import asyncio
+
+
 class CatBoostModel(IModel):
     """Wrapper for CatBoost model with standard interface."""
 
@@ -95,7 +99,6 @@ class CatBoostTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Optional[Tuple[pd.DataFrame, pd.Series]]=None) -> IModel:
         """Train CatBoost model."""
-        from catboost import CatBoostClassifier
         self.model = CatBoostClassifier(**self.hyperparameters)
         eval_set = None
         if validation_data is not None:
@@ -112,8 +115,6 @@ def register_new_components() -> None:
     ExchangeDataSourceFactory.register_exchange('deribit', DeribitDataSource)
     ModelTrainerFactory.register_trainer('catboost', CatBoostTrainer)
     print('✅ New components registered successfully!')
-    print(f'Available exchanges: {ExchangeDataSourceFactory.get_available_exchanges()}')
-    print(f'Available models: {ModelTrainerFactory.get_available_models()}')
 
 async def example_usage() -> None:
     """Example using the new components."""
@@ -129,9 +130,7 @@ async def example_usage() -> None:
     model = catboost_trainer.train(features, labels)
     predictions = model.predict(features.iloc[:10])
     print(f'Sample predictions: {predictions}')
-    importance = catboost_trainer.get_feature_importance()
     print(f'\nFeature importance:\n{importance}')
 EXAMPLE_CONFIG_WITH_NEW_COMPONENTS = {'name': 'Pipeline_With_New_Components', 'version': '1.0.0', 'global_settings': {'data_source': {'type': 'exchange', 'exchange': 'bybit', 'api_key': 'your_api_key', 'api_secret': 'your_api_secret', 'testnet': True}, 'model': {'type': 'catboost', 'hyperparameters': {'iterations': 200, 'learning_rate': 0.03, 'depth': 8, 'l2_leaf_reg': 3.0}}}, 'steps': {}}
 if __name__ == '__main__':
-    import asyncio
     asyncio.run(example_usage())

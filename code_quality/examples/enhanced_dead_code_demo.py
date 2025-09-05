@@ -33,7 +33,6 @@ Sample file demonstrating various dead code patterns.
 """
 
 import os
-import sys
 import json  # This import is unused
 from typing import List, Dict  # Dict is unused
 
@@ -70,7 +69,6 @@ def dynamic_import_example():
 # Function with importlib
 def importlib_example():
     """Function using importlib."""
-    import importlib
     module = importlib.import_module('json')
     return module
 
@@ -112,8 +110,12 @@ File demonstrating import patterns.
 """
 
 from sample_dead_code import used_function, old_function
-import os
 import sys  # This import is unused
+
+import importlib
+
+
+
 
 def example_usage():
     """Example of using imported functions."""
@@ -135,7 +137,6 @@ def demonstrate_enhanced_dead_code_detection():
     print(f"Created sample code in: {sample_dir}")
     
     # Initialize analyzer
-    config = get_default_config()
     analyzer = DeadCodeAnalyzer(config)
     
     print(f"\nAnalyzing directory: {sample_dir}")

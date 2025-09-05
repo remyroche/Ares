@@ -11,11 +11,14 @@ import json
 from enum import Enum
 from pathlib import Path
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
+
+from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
+from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
+
 
 
 class TradingMode(Enum):
@@ -215,8 +218,6 @@ class EnhancedMLMonitor:
     def _initialize_explainability_tools(self):
         """Initialize SHAP and LIME analyzers."""
         try:
-            from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
-            from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
             
             self.shap_analyzer = SHAPAnalyzer(self.config) if self.enable_shap else None
             self.lime_analyzer = LIMEAnalyzer(self.config) if self.enable_lime else None
@@ -491,7 +492,7 @@ class EnhancedMLMonitor:
     
     @handles_errors(default_return=None, context="enhanced_ml_monitor.get_model_explanations")
     async def get_model_explanations(self, model_id: str, features: np.ndarray, 
-                                   model: Any) -> Dict[str, Any]:
+                                model: Any) -> Dict[str, Any]:
         """Get SHAP and LIME explanations for a model prediction."""
         explanations = {}
         

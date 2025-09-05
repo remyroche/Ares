@@ -278,11 +278,11 @@ class MLOptimizedBarriers:
         # Initial guess (current barriers or middle of bounds)
         initial_guess = [
             (self.optimization_bounds['profit_take_multiplier'][0] + 
-             self.optimization_bounds['profit_take_multiplier'][1]) / 2,
+            self.optimization_bounds['profit_take_multiplier'][1]) / 2,
             (self.optimization_bounds['stop_loss_multiplier'][0] + 
-             self.optimization_bounds['stop_loss_multiplier'][1]) / 2,
+            self.optimization_bounds['stop_loss_multiplier'][1]) / 2,
             (self.optimization_bounds['confidence_threshold'][0] + 
-             self.optimization_bounds['confidence_threshold'][1]) / 2
+            self.optimization_bounds['confidence_threshold'][1]) / 2
         ]
         
         # Optimization constraints (accounting for trading fee)

@@ -1,7 +1,15 @@
 
 from typing import Dict
 from typing import Any
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+def _check_pandas_available():
+    """Check if pandas is available and raise informative error if not."""
+    if pd is None:
+        raise ImportError("pandas is required for this operation but is not available. Please install pandas.")
 from typing import Optional
 from typing import Tuple
 """Regime Continuity Manager for Per-HMM Regime Pipeline.
@@ -15,8 +23,9 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 from enum import Enum
 
-from .utils.pipeline_standards import pipeline_standards
-
+from src.utils.pipeline_standards import pipeline_standards
+from src.utils.logger import get_logger
+from src.utils.decorators import traced
 
 logger = get_logger('RegimeContinuityManager')
 
@@ -157,7 +166,8 @@ class RegimeContinuityManager:
         exchange: str,
         timeframe: str,
         data_dir: str
-    ) -> Optional[pd.DataFrame]:
+    ):
+        _check_pandas_available()
         """Load regime data from step 4.
         
         Args:
@@ -188,7 +198,7 @@ class RegimeContinuityManager:
     @traced(span_name='extract_regime_metadata')
     async def _extract_regime_metadata(
         self,
-        regime_data: pd.DataFrame,
+        regime_data,
         symbol: str,
         exchange: str,
         timeframe: str
@@ -235,7 +245,8 @@ class RegimeContinuityManager:
         except Exception as e:
             self.logger.exception(f"❌ Error extracting regime metadata: {e}")
     
-    def _analyze_regime_characteristics(self, regime_data: pd.DataFrame) -> Dict[str, Any]:
+    def _analyze_regime_characteristics(self, regime_data) -> Dict[str, Any]:
+        _check_pandas_available()
         """Analyze characteristics of a specific regime.
         
         Args:

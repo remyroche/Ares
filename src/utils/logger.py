@@ -13,12 +13,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
 
-from src.utils.pipeline_standards import PipelineStandards
+try:
+    from src.utils.pipeline_standards import PipelineStandards
+except ImportError:
+    PipelineStandards = None
 
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
-warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+if PipelineStandards is not None:
+    dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+    structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
+    warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+else:
+    dependency_status = {module: False for module in REQUIRED_MODULES}
+    structured_logging = None
+    warning_symbols = None
 
 def create_fallback_correlation_filter() -> Any:
 

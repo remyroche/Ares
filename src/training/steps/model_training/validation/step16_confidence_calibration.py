@@ -10,7 +10,10 @@ from sklearn.metrics import accuracy_score, f1_score
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 try:
     import joblib
 except Exception:
@@ -208,7 +211,9 @@ class RegimeAwareConfidenceCalibrationStep:
             self.print(error(f'❌ Error in Confidence Calibration: {e}'))
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
 
-    def _load_validation_frame(self, data_dir: str, exchange: str, symbol: str) -> pd.DataFrame | None:
+    def _load_validation_frame(self, data_dir: str, exchange: str, symbol: str):
+        if pd is None:
+            return None
         """Load generic validation features frame saved by step 4."""
         try:
             path = f'{data_dir}/{exchange}_{symbol}_features_validation.pkl'

@@ -48,7 +48,7 @@ class LinterAnalyzer:
     Analyzes Python code using various linters and collects error reports.
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.results: list[LinterResult] = []
         self.linter_outputs: dict[str, dict[str, Any]] = {}

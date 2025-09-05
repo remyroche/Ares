@@ -68,7 +68,7 @@ class ErrorHandlingAnalyzer:
     - Error handling coverage analysis
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.error_issues: list[ErrorHandlingIssue] = []
         self.error_patterns: list[ErrorHandlingPattern] = []

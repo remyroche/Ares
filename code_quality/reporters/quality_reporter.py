@@ -23,7 +23,7 @@ class QualityReporter:
     Main quality reporter that orchestrates all analysis tools and generates comprehensive reports.
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.results = {}
         self.start_time = None

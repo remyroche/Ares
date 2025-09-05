@@ -40,7 +40,7 @@ class ASTAnalysisAnalyzer:
     - Custom AST Analysis: Cyclomatic complexity, nesting levels, unused variables
     """
 
-    def __init__(self, config: CodeQualityConfig):
+    def __init__(self, config: AnalysisConfig):
         self.config = config
         self.results = {}
 

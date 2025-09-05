@@ -110,7 +110,7 @@ class ImprovedSignatureAnalyzer:
         'pytest', 'unittest', 'mock', 'tqdm', 'click', 'argparse',
     }
 
-    def __init__(self, config: CodeQualityConfig):
+    def __init__(self, config: AnalysisConfig):
         self.config = config
         self.functions_by_file = defaultdict(list)
         self.function_calls_by_file = defaultdict(list)

@@ -34,7 +34,7 @@ class AutoFixer:
     Main class for automatically fixing Python code issues.
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.fix_results = {}
         self.backup_files = {}

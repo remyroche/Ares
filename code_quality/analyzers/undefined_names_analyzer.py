@@ -642,7 +642,7 @@ class UndefinedNamesAnalyzer:
         print(f"Analyzing undefined names in directory: {directory_path}")
         
         # Find all Python files
-        python_files = find_python_files(directory_path, self.config.analysis_config.exclude_patterns)
+        python_files = find_python_files(directory_path, self.config.exclude_patterns)
         
         if not python_files:
             return {

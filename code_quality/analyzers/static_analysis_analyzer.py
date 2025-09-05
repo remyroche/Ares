@@ -21,7 +21,7 @@ class StaticAnalysisAnalyzer:
     - Bandit: Security vulnerability scanning
     """
 
-    def __init__(self, config: CodeQualityConfig):
+    def __init__(self, config: AnalysisConfig):
         self.config = config
         self.results = {}
         self.tools = {

@@ -73,7 +73,7 @@ class AdvancedASTAnalyzer:
     - Architecture insights
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.ast_patterns: list[ASTPattern] = []
         self.code_structures: dict[str, list[CodeStructure]] = {}

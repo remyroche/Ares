@@ -85,7 +85,7 @@ class TypeChecker:
     - Generic type validation
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.type_issues: list[TypeIssue] = []
         self.type_info: dict[str, list[TypeInfo]] = {}

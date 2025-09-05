@@ -75,7 +75,7 @@ class SyntaxValidator:
     Comprehensive Python syntax validation, AST parsing, and compilation checker.
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.syntax_errors: list[SyntaxError] = []
         self.ast_nodes: dict[str, ASTNode] = {}

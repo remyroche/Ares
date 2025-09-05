@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.config import ReportingConfig
+from core.config import AnalysisConfig
 import numpy as np
 import logging
 import time
@@ -58,14 +58,14 @@ class TrendReporter:
     - Improvement recommendations
     """
 
-    def __init__(self, config: ReportingConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         """
         Initialize the trend reporter.
 
         Args:
             config: Reporting configuration
         """
-        self.config = config or ReportingConfig()
+        self.config = config or AnalysisConfig()
         self.history_file = Path(self.config.report_dir) / "quality_history.json"
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 

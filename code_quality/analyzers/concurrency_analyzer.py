@@ -68,7 +68,7 @@ class ConcurrencyAnalyzer:
     - Concurrency best practice validation
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.concurrency_issues: list[ConcurrencyIssue] = []
         self.concurrency_patterns: list[ConcurrencyPattern] = []

@@ -52,7 +52,7 @@ class CodeDuplicationAnalyzer:
     - Duplication metrics and reporting
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or get_default_config()
         self.duplication_blocks: list[DuplicationBlock] = []
         self.file_duplications: dict[str, list[DuplicationBlock]] = {}

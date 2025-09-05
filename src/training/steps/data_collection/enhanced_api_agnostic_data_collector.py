@@ -31,12 +31,11 @@ sys.path.insert(0, str(project_root))
 
 from .utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
+    DataType, EnhancedDataValidator, get_validator, ValidationSeverity
+)
 import logging
 import numpy as np
 import typing
-
-    DataType, EnhancedDataValidator, get_validator, ValidationSeverity
-)
 
 logger = system_logger.getChild("EnhancedAPIAgnosticDataCollector")
 

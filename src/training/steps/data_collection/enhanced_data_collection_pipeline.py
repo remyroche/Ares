@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import .monitoring.pipeline_monitor
 import numpy as np
 
 """
@@ -51,6 +50,7 @@ import pandas as pd
 import time
 import typing
 
+from .monitoring.pipeline_monitor import (
     PipelineMonitor,
     StepMonitor,
     MonitorStatus

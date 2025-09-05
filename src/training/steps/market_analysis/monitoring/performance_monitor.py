@@ -9,11 +9,10 @@ from typing import Any, Callable, Dict, List
 
 import asyncio
 import numpy as np
+import time
 
 try:
     import psutil
-import time
-
 except ImportError:
     psutil = None
 

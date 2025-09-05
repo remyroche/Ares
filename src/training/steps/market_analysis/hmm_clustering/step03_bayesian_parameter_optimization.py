@@ -39,13 +39,13 @@ from .utils.logger import system_logger
 logger = system_logger.getChild("Step3BayesianParameterOptimization")
 
 # Try to import Optuna
+import logging
+import typing
+
 try:
     import optuna
     from optuna.samplers import TPESampler
     from optuna.pruners import MedianPruner
-import logging
-import typing
-
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False

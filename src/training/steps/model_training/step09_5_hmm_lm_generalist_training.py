@@ -10,7 +10,6 @@ from typing import Any, Dict, Tuple
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
-import .utils.enhanced_mlflow_integration
 import numpy as np
 
 from .core.decorators import (
@@ -37,7 +36,7 @@ from .core.decorators import (
 from .utils.logger import system_logger
 from .core.decorators import handles_errors, traced, timeout
 import pandas as pd
-
+from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,

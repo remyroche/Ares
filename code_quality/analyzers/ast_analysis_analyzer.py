@@ -126,6 +126,9 @@ class ASTAnalysisAnalyzer:
 
     def _run_astroid_analysis(self, file_path: str) -> Dict[str, Any]:
         """Run Astroid analysis on a file."""
+        if not ASTROID_AVAILABLE:
+            return {"status": "skipped", "reason": "astroid not available"}
+        
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -358,8 +361,11 @@ class ASTAnalysisAnalyzer:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    def _get_nesting_level(self, node: astroid.NodeNG) -> int:
+    def _get_nesting_level(self, node) -> int:
         """Calculate the nesting level of a node."""
+        if not ASTROID_AVAILABLE:
+            return 0
+        
         level = 0
         current = node
         while current.parent:
@@ -368,8 +374,11 @@ class ASTAnalysisAnalyzer:
             current = current.parent
         return level
 
-    def _is_variable_used(self, var_name: str, assign_node: astroid.Assign) -> bool:
+    def _is_variable_used(self, var_name: str, assign_node) -> bool:
         """Check if a variable is used after assignment."""
+        if not ASTROID_AVAILABLE:
+            return True  # Assume it's used if astroid is not available
+        
         # This is a simplified check - in practice, you'd need more sophisticated analysis
         try:
             # Look for uses of the variable in the same scope

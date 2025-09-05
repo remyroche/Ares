@@ -3,6 +3,7 @@
 
 import ast
 import re
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -94,6 +95,83 @@ def is_documentation_file(file_path: str) -> bool:
         return True
     
     return False
+
+
+def is_valid_python_file(file_path: Path) -> bool:
+    """Check if a file is a valid Python file."""
+    try:
+        if not file_path.suffix == '.py':
+            return False
+        
+        content = read_file_safely(file_path)
+        if content is None:
+            return False
+        
+        # Try to parse the AST to check for syntax errors
+        ast.parse(content, filename=str(file_path))
+        return True
+    except (SyntaxError, UnicodeDecodeError, Exception):
+        return False
+
+
+def backup_file(file_path: Path) -> Optional[Path]:
+    """Create a backup of a file."""
+    try:
+        backup_path = file_path.with_suffix(file_path.suffix + '.backup')
+        shutil.copy2(file_path, backup_path)
+        return backup_path
+    except Exception:
+        return None
+
+
+def restore_file(file_path: Path, backup_path: Path) -> bool:
+    """Restore a file from backup."""
+    try:
+        shutil.copy2(backup_path, file_path)
+        return True
+    except Exception:
+        return False
+
+
+def find_unused_imports(file_path: Path) -> List[str]:
+    """Find unused imports in a Python file."""
+    try:
+        content = read_file_safely(file_path)
+        if content is None:
+            return []
+        
+        tree = ast.parse(content, filename=str(file_path))
+        imports = []
+        used_names = set()
+        
+        # Collect all imports
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    for alias in node.names:
+                        imports.append(f"{node.module}.{alias.name}")
+        
+        # Collect all used names
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                used_names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                # Handle attribute access like module.function
+                if isinstance(node.value, ast.Name):
+                    used_names.add(f"{node.value.id}.{node.attr}")
+        
+        # Find unused imports
+        unused = []
+        for imp in imports:
+            if imp not in used_names and imp.split('.')[-1] not in used_names:
+                unused.append(imp)
+        
+        return unused
+    except Exception:
+        return []
 
 
 class FileUtils:

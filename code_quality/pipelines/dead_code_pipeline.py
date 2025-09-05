@@ -30,7 +30,7 @@ from analyzers.enhanced_import_analysis import EnhancedImportAnalyzer
 # The enhanced_dead_code_analyzer provides all necessary functionality
 
 # Import core components
-from core.config import get_default_config
+from core.config import AnalysisConfig
 from plugins.plugin_registry import PluginRegistry
 from plugins.plugin_manager import PluginManager
 
@@ -45,7 +45,7 @@ class DeadCodePipeline:
         self.enable_plugins = enable_plugins
         
         # Initialize analyzers
-        self.config = get_default_config()
+        self.config = AnalysisConfig()
         self.dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
         self.undefined_names_analyzer = UndefinedNamesAnalyzer(self.config)
         self.import_analyzer = EnhancedImportAnalyzer(None)  # Use default config

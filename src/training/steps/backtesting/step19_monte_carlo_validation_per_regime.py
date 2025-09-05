@@ -4,17 +4,17 @@ import asyncio
 from pathlib import Path
 import json
 
-from .training.steps.step19_monte_carlo_validation import Step19MonteCarloValidation
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
+from ..model_training.validation.step19_monte_carlo_validation import MonteCarloValidationStep as Step19MonteCarloValidation
+from ..market_analysis.regime_continuity_decorator import per_regime_step
+from ...utils.pipeline_standards import pipeline_standards
+from ...core.decorators import traced, validates, handles_errors
 from typing import Any
 from typing import Dict
 import numpy as np
 from typing import Optional
+from src.utils.logger import system_logger
 
-logger = get_logger('Step19MonteCarloValidationPerRegime')
+logger = system_logger
 
 class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
     """Monte Carlo validation step that processes each regime separately."""
@@ -143,7 +143,7 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
 
 @traced(span_name='run_per_regime_monte_carlo_validation_step')
 @validates()
-@handles_errors
+@handles_errors(exceptions=(Exception,), fallback=False)
 async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the per-regime Monte Carlo validation step."""
     logger.info("🚀 Starting Step 19: Per-Regime Monte Carlo Validation")
@@ -169,4 +169,4 @@ if __name__ == '__main__':
     async def test():
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Per-regime Monte Carlo validation result: {success}')
-    asyncio.run(await test())
+    asyncio.run(test())

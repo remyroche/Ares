@@ -2,10 +2,10 @@
 import os
 from typing import Any
 
-from .utils.common_operations import safe_json_load
-from .utils.logger import system_logger
-from .utils.warning_symbols import failed, missing, success, warning
-from .core.decorators.errors import handles_errors
+from src.utils.common_operations import safe_json_load
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import failed, missing, success, warning, error
+from src.core.decorators import handles_errors
 
 # src/training/steps/step13_*.py
 
@@ -21,7 +21,11 @@ class Step7AnalystEnsembleCreationValidator:
         self.logger = logger
         self.validation_results = {}
 
-    @handles_errors
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="analyst ensemble creation validation",
+    )
     def validate(
         self,
         symbol: str,
@@ -41,7 +45,7 @@ class Step7AnalystEnsembleCreationValidator:
             bool: True if validation passes
 
         """
-        logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
+        self.logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
 
         try:
             # Validate ensemble files exist
@@ -62,12 +66,12 @@ class Step7AnalystEnsembleCreationValidator:
             overall_passed = ensemble_files_passed and ensemble_structure_passed
 
             if overall_passed:
-                logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
+                self.logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
                 self.print_message(
                     success("✅ Step 7: Analyst Ensemble Creation validation passed"),
                 )
             else:
-                logger.warning("⚠️ Step 7: Analyst Ensemble Creation validation failed")
+                self.logger.warning("⚠️ Step 7: Analyst Ensemble Creation validation failed")
                 self.print_message(
                     failed("⚠️ Step 7: Analyst Ensemble Creation validation failed"),
                 )
@@ -75,7 +79,7 @@ class Step7AnalystEnsembleCreationValidator:
             return overall_passed
 
         except Exception as e:
-            logger.exception(f"❌ Error in Step 7 validation: {e}")
+            self.logger.exception(f"❌ Error in Step 7 validation: {e}")
             self.print_message(error(f"❌ Error in Step 7 validation: {e}"))
             return False
 

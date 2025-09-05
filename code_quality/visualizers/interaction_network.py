@@ -5,10 +5,19 @@ Creates network visualizations of code interactions and relationships.
 """
 
 from typing import Optional, Dict, List, Any, Tuple
-import matplotlib.pyplot as plt
-import networkx as nx
-import numpy as np
-from matplotlib.patches import FancyBboxPatch
+
+try:
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    import numpy as np
+    from matplotlib.patches import FancyBboxPatch
+    MATPLOTLIB_AVAILABLE = True
+    NETWORKX_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    NETWORKX_AVAILABLE = False
+    print("Warning: matplotlib/networkx not available - network visualization will be limited")
+
 from .code_visualizer import CodeVisualizer
 
 
@@ -30,6 +39,9 @@ class InteractionNetworkVisualizer(CodeVisualizer):
         Returns:
             Tuple of (figure, metadata)
         """
+        if not MATPLOTLIB_AVAILABLE or not NETWORKX_AVAILABLE:
+            return None, {"error": "matplotlib/networkx not available"}
+        
         # Build the graph
         G = nx.DiGraph()
         for func, calls in call_graph.items():
@@ -396,7 +408,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
         
         return fig
     
-    def _calculate_hierarchical_layout(self, G: nx.DiGraph, roots: List[str]) -> Dict:
+    def _calculate_hierarchical_layout(self, G: Any, roots: List[str]) -> Dict:
         """Calculate hierarchical layout for directed graph."""
         if not roots:
             # Find potential roots
@@ -441,7 +453,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
         
         return pos
     
-    def _plot_function_statistics(self, ax: plt.Axes, G: nx.DiGraph, 
+    def _plot_function_statistics(self, ax: Any, G: Any, 
                                 pagerank: Dict, betweenness: Dict):
         """Plot function call statistics."""
         # Top functions by different metrics
@@ -464,7 +476,7 @@ class InteractionNetworkVisualizer(CodeVisualizer):
             ax.invert_yaxis()
             ax.grid(True, alpha=0.3)
     
-    def _plot_module_clusters(self, ax: plt.Axes, matrix: np.ndarray, modules: List[str]):
+    def _plot_module_clusters(self, ax: Any, matrix: Any, modules: List[str]):
         """Plot module clustering analysis."""
         from scipy.cluster.hierarchy import dendrogram, linkage
         

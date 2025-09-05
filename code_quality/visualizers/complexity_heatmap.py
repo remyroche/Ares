@@ -85,7 +85,7 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
     
     def create_treemap_visualization(self, complexity_data: Dict[str, Dict[str, float]], 
                                    metric: str = 'cyclomatic_complexity',
-                                   title: str = "Code Complexity Treemap") -> plt.Figure:
+                                   title: str = "Code Complexity Treemap") -> Any:
         """
         Create a treemap visualization of code complexity.
         
@@ -150,7 +150,7 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
         return fig
     
     def create_complexity_timeline(self, historical_data: List[Dict[str, Any]], 
-                                 title: str = "Complexity Over Time") -> plt.Figure:
+                                 title: str = "Complexity Over Time") -> Any:
         """
         Create a timeline visualization of complexity metrics.
         
@@ -217,7 +217,7 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
         return fig
     
     def create_module_complexity_bubble_chart(self, complexity_data: Dict[str, Dict[str, float]], 
-                                            title: str = "Module Complexity Overview") -> plt.Figure:
+                                            title: str = "Module Complexity Overview") -> Any:
         """
         Create a bubble chart showing multiple complexity dimensions.
         
@@ -287,7 +287,7 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
         
         return fig
     
-    def _plot_complexity_distribution(self, ax: plt.Axes, complexity_data: Dict[str, Dict[str, float]]):
+    def _plot_complexity_distribution(self, ax: Any, complexity_data: Dict[str, Dict[str, float]]):
         """Plot distribution of complexity metrics."""
         # Collect all complexity values by metric type
         metrics_distribution = {}

@@ -36,12 +36,13 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
     @traced
     async def _monitor_memory_usage() -> dict:
         """Monitor memory usage and provide optimization alerts."""
+        import json
+        import logging
+        import time
+        
         try:
             import psutil
             import gc
-import json
-import logging
-import time
 
             memory_info = psutil.virtual_memory()
             process = psutil.Process()

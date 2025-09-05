@@ -266,6 +266,30 @@ class UnifiedEnhancedPipeline:
             print(f"⚠ Warning: Could not initialize some visualizers: {e}")
             self.visualizers = {}
 
+    def run_syntax_validation(self) -> dict[str, Any]:
+        """Run syntax validation."""
+        print("\n" + "="*60)
+        print("Running Syntax Validation")
+        print("="*60)
+        
+        try:
+            results = self.syntax_validator.validate_syntax(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_import_validation(self) -> dict[str, Any]:
+        """Run import validation."""
+        print("\n" + "="*60)
+        print("Running Import Validation")
+        print("="*60)
+        
+        try:
+            results = self.import_analyzer.validate_imports(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
     def run_syntax_fixes(self) -> dict[str, Any]:
         """Run advanced syntax fixes."""
         print("\n" + "="*60)
@@ -1583,12 +1607,11 @@ class UnifiedEnhancedPipeline:
 
         total_start = time.time()
 
-        # Syntax and Imports
-        self.results["syntax_imports"] = {
-            "syntax_fixes": self.run_syntax_fixes(),
-            "import_fixes": self.run_import_fixes(),
+        # Basic Analysis (excluding specialized pipelines)
+        self.results["basic_analysis"] = {
+            "syntax_validation": self.run_syntax_validation(),
+            "import_validation": self.run_import_validation(),
             "circular_imports": self.detect_circular_imports(),
-            "dead_code_fixes": self.run_dead_code_fixes(),
             "comprehensive_import_undefined_check": self.run_comprehensive_import_undefined_check(),
             "enhanced_undefined_names_analysis": self.run_enhanced_undefined_names_analysis(),
         }
@@ -1599,12 +1622,11 @@ class UnifiedEnhancedPipeline:
             "type_hints": self.run_type_hints(),
         }
 
-        # Basic Analysis
-        self.results["basic_analysis"] = {
+        # Core Analysis (excluding specialized pipelines)
+        self.results["core_analysis"] = {
             "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
-            "interaction_mapping": self.run_interaction_mapping(),
             "metrics": self.run_metrics_analysis(),
             "test_coverage": self.run_test_coverage_analysis(),
             "code_smells": self.run_code_smell_detection(),
@@ -1615,20 +1637,14 @@ class UnifiedEnhancedPipeline:
             "ast_analysis": self.run_ast_analysis(),
         }
 
-        # Advanced Analysis
+        # Advanced Analysis (excluding specialized pipelines)
         self.results["advanced_analysis"] = self.run_advanced_analysis()
-
-        # Architecture Analysis
-        self.results["architecture_analysis"] = self.run_architecture_analysis()
 
         # Performance Analysis
         self.results["performance_analysis"] = self.run_performance_analysis()
 
         # Security Analysis
         self.results["security_analysis"] = self.run_security_analysis()
-
-        # Dead Code Analysis
-        self.results["dead_code_analysis"] = self.run_dead_code_analysis()
 
         # Visualization Analysis
         self.results["visualization"] = self.run_visualization_analysis()

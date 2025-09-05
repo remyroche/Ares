@@ -679,63 +679,10 @@ def _retry_function_call_sync(func: Callable, args: tuple, kwargs: dict, retry_a
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-# Define utility functions directly to avoid import issues
-def ensure_directory(path):
-    """Ensure directory exists."""
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-def safe_json_dump(data, path, **kwargs):
-    """Safely dump data to JSON file."""
-    import json
-    with open(path, 'w') as f:
-        json.dump(data, f, **kwargs)
-
-def safe_read_parquet(path):
-    """Safely read parquet file."""
-    return pd.read_parquet(path)
-
-class PipelineStandards:
-    """Pipeline standards with fallback implementations."""
-    @staticmethod
-    def validate_environment_dependencies(modules):
-        return {module: True for module in modules}
-    
-    @staticmethod
-    def safe_import(module, default):
-        try:
-            return __import__(module)
-        except ImportError:
-            return default
-
-class pipeline_standards:
-    """Pipeline standards implementation."""
-    @staticmethod
-    def build_path(path_type, exchange, symbol):
-        return f"data/{path_type}/{exchange}/{symbol}"
-    
-    @staticmethod
-    def standardize_timestamp(df, col):
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col])
-        return df
-    
-    @staticmethod
-    def enforce_schema(df, schema_type):
-        return df
-    
-    @staticmethod
-    def validate_data_quality(df, schema_type):
-        class ValidationResult:
-            def __init__(self):
-                self.passed = True
-                self.quality_score = 0.9
-                self.issues = []
-                self.warnings = []
-        return ValidationResult()
-
-# Initialize dependency status
+from src.utils.common_operations import safe_read_parquet
+from pathlib import Path as _Path
+import json as _json
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
@@ -751,61 +698,65 @@ def handles_errors(exceptions=(Exception,), default_return=None, context=None):
                 return default_return
         return wrapper
     return decorator
+if system_logger is None:
+    system_logger = create_fallback_logger()
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: 'fallback_report'
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+import pandas as pd
 
-def traced(span_name=None):
-    """Fallback tracing decorator."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+# Provide safe, no-op decorators to avoid import-time failures in legacy module
+def _identity_decorator(*_dargs: Any, **_dkwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def _decor(fn: Callable[..., Any]) -> Callable[..., Any]:
+        return fn
+    return _decor
 
-def validates(min_quality_score=None, max_correlation=None, required_grade=None):
-    """Fallback validation decorator."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+traced = _identity_decorator
+validates = _identity_decorator
+cached = _identity_decorator
+log_execution_time = _identity_decorator
+handles_errors = _identity_decorator
 
-def cached(func):
-    """Fallback caching decorator."""
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-    return wrapper
+# Ensure we obtain a proper logger instance (not the module) when available
+try:
+    if system_logger is not None and not hasattr(system_logger, 'getChild'):
+        # Likely the imported module; extract the logger instance attribute
+        system_logger = getattr(system_logger, 'system_logger', system_logger)
+except Exception:
+    pass
 
-def log_execution_time(func):
-    """Fallback execution time logging decorator."""
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-    return wrapper
-
-# Initialize logger
-system_logger = logging.getLogger(__name__)
-system_logger.setLevel(logging.INFO)
-if not system_logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    system_logger.addHandler(handler)
-
-# Create fallback MLflow functions
-def log_step_report(*args, **kwargs):
-    return 'fallback_report'
-
-def create_detailed_step_report(*args, **kwargs):
-    return {}
-
-def log_step_metrics(*args, **kwargs):
-    return None
-
-def log_step_dataframe_with_standardized_name(*args, **kwargs):
-    return 'fallback_dataframe'
-
-def log_step_artifact_with_standardized_name(*args, **kwargs):
-    return 'fallback_artifact'
-
-logger = system_logger.getChild('Step2DataReading')
+logger = system_logger.getChild('Step2DataReading') if hasattr(system_logger, 'getChild') else create_fallback_logger()
 
 class DataReadingStep:
     """Step 2: Data Reading and Validation with comprehensive function monitoring and standardized data quality management."""
@@ -911,23 +862,48 @@ class DataReadingStep:
         self.logger.info('🔍 Validating data quality...')
         try:
             validation_result = self.standards.validate_data_quality(data, 'unified')
+<<<<<<< HEAD
+            computed_data_info = {
+=======
             
             # Create data_info dictionary
             data_info = {
+>>>>>>> origin/main
                 'rows': len(data) if data is not None else 0,
                 'columns': list(data.columns) if data is not None else [],
                 'date_range': {
                     'start': data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None,
+<<<<<<< HEAD
+                    'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None,
+                },
+                'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0,
+            }
+=======
                     'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None
                 },
                 'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0
             }
             
             # Create validation_results with data_info
+>>>>>>> origin/main
             validation_results = {
                 'passed': validation_result.passed,
                 'issues': [issue.message for issue in validation_result.issues],
                 'warnings': [warning.message for warning in validation_result.warnings],
+<<<<<<< HEAD
+                'data_info': computed_data_info,
+                'quality_score': validation_result.quality_score,
+            }
+            self.logger.info(f'✅ Data quality validation completed')
+            self.logger.info(f"   - Rows: {computed_data_info['rows']}")
+            self.logger.info(f"   - Memory usage: {computed_data_info['memory_usage']:.2f} MB")
+            self.logger.info(f'   - Quality score: {validation_result.quality_score:.2f}')
+            self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
+            self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
+            thresholds = self.config.get('step02_quality_thresholds', {'min_rows': 100000, 'max_null_ratio': 0.01, 'min_quality_score': 0.8})
+            rows = computed_data_info['rows']
+            null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
+=======
                 'data_info': data_info,
                 'quality_score': validation_result.quality_score
             }
@@ -947,6 +923,7 @@ class DataReadingStep:
             })
             rows = data_info['rows']
             null_ratio = float(data.isnull().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
+>>>>>>> origin/main
             quality_score = float(validation_results['quality_score'])
             
             if rows < thresholds['min_rows'] or null_ratio > thresholds['max_null_ratio'] or quality_score < thresholds['min_quality_score']:
@@ -983,7 +960,8 @@ class DataReadingStep:
         self.logger.info('💾 Saving validation report...')
         
         try:
-            reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'data_quality')
+            reports_dir = Path(data_dir) / 'reports' / 'data_quality'
+            reports_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             report_filename = f'data_reading_validation_{exchange}_{symbol}_{timestamp}.json'
             report_path = reports_dir / report_filename
@@ -997,7 +975,8 @@ class DataReadingStep:
                 'step_timings': self.step_timings
             }
             
-            safe_json_dump(report_data, report_path, indent=2, default=str)
+            with open(report_path, 'w') as _f:
+                _json.dump(report_data, _f, indent=2, default=str)
             self.logger.info(f'✅ Validation report saved to {report_path}')
             self._log_step_timing('save_validation_report', step_start)
             return True
@@ -1036,7 +1015,7 @@ class DataReadingStep:
                 self.logger.error(f"   Issues: {validation_results['issues']}")
                 return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
             processed_dir = self.standards.build_path('processed_data', exchange, symbol)
-            ensure_directory(processed_dir)
+            Path(processed_dir).mkdir(parents=True, exist_ok=True)
             output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
             output_path = Path(processed_dir) / output_file
             unified_data = self.standards.standardize_timestamp(unified_data, 'timestamp')

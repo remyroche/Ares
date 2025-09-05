@@ -1,0 +1,288 @@
+{
+  "timestamp": "20250905_160540",
+  "analysis_type": "enhanced_import_fixes",
+  "project_root": "pipelines",
+  "auto_detection_fixes": 0,
+  "auto_detection_failures": 12,
+  "traditional_import_fixes": 0,
+  "import_placement_fixes": 0,
+  "circular_imports_found": 0,
+  "module_breakdown": {},
+  "files_analyzed": 12,
+  "files_fixed": [],
+  "results": {
+    "syntax_validation": {
+      "total_files": 12,
+      "syntax_errors": [],
+      "indentation_errors": [],
+      "import_errors": [
+        {
+          "file_path": "pipelines/pipeline_simplified.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "name_error",
+          "error_message": "Name error: name 'CodeQualityConfig' is not defined",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "name_error"
+          }
+        },
+        {
+          "file_path": "pipelines/pipeline_unified_enhanced.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "name_error",
+          "error_message": "Name error: name 'CodeQualityConfig' is not defined",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "name_error"
+          }
+        },
+        {
+          "file_path": "pipelines/overall_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: cannot import name 'load_config' from 'core.config' (/workspace/code_quality/core/config.py)",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        },
+        {
+          "file_path": "pipelines/import_free_analysis_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "name_error",
+          "error_message": "Name error: name 'CodeQualityConfig' is not defined",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "name_error"
+          }
+        },
+        {
+          "file_path": "pipelines/interaction_mapping_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": false,
+          "error_type": "import_error",
+          "error_message": "Import error: No module named 'matplotlib'",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "import_error"
+          }
+        }
+      ],
+      "runtime_errors": [],
+      "valid_files": [
+        {
+          "file_path": "pipelines/simple_enhanced_dead_code_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/auto_fixer_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/dead_code_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/complexity_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/truly_enhanced_dead_code_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/base_pipeline.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        },
+        {
+          "file_path": "pipelines/__init__.py",
+          "syntax_valid": true,
+          "ast_parseable": true,
+          "compilable": true,
+          "importable": true,
+          "error_type": "valid",
+          "error_message": "File is valid",
+          "line_number": null,
+          "validation_methods": {
+            "compile": "success",
+            "ast_parse": "success",
+            "py_compile": "success",
+            "import": "success"
+          }
+        }
+      ],
+      "file_not_found": [],
+      "permission_errors": [],
+      "error_counts": {
+        "syntax_errors": 0,
+        "indentation_errors": 0,
+        "import_errors": 5,
+        "runtime_errors": 0,
+        "valid_files": 7,
+        "file_not_found": 0,
+        "permission_errors": 0
+      }
+    },
+    "dependency_installation": {
+      "status": "completed",
+      "installed": [
+        "validators",
+        "visualizers",
+        "scripts",
+        "analyzers",
+        "argparse",
+        "quick_start",
+        "utils"
+      ],
+      "failed": [
+        "time",
+        "core",
+        "plugins",
+        "cli",
+        "enhanced_map_code_interactions",
+        "comprehensive_code_review",
+        "reporters",
+        "ast",
+        "subprocess",
+        "mappers",
+        "fixers",
+        "visualize_interactions",
+        "run_full_pipeline"
+      ],
+      "total_missing": 20
+    },
+    "auto_detection_fixes": {
+      "fixed": 0,
+      "failed": 12,
+      "fixed_files": [],
+      "failed_files": [
+        "pipelines/pipeline_simplified.py",
+        "pipelines/simple_enhanced_dead_code_pipeline.py",
+        "pipelines/auto_fixer_pipeline.py",
+        "pipelines/dead_code_pipeline.py",
+        "pipelines/pipeline_unified_enhanced.py",
+        "pipelines/complexity_pipeline.py",
+        "pipelines/overall_pipeline.py",
+        "pipelines/truly_enhanced_dead_code_pipeline.py",
+        "pipelines/import_free_analysis_pipeline.py",
+        "pipelines/base_pipeline.py",
+        "pipelines/__init__.py",
+        "pipelines/interaction_mapping_pipeline.py"
+      ]
+    },
+    "traditional_import_fixes": {
+      "fixed": 0,
+      "failed": 0
+    },
+    "import_placement_fixes": {
+      "files_with_incorrect_placement": 0,
+      "files_fixed": 0,
+      "status": "success"
+    },
+    "circular_import_fixes": {
+      "circular_imports_found": 0,
+      "cycles": []
+    }
+  }
+}

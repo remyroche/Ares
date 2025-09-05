@@ -46,6 +46,7 @@ def handles_errors(exceptions: List[Any]=(Exception,), default_return: Any=None,
         return wrapper
     return decorator
 try:
+    import numpy as np
 except ImportError:
 
     class FallbackNumpy:

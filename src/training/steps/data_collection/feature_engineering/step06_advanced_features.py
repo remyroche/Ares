@@ -13,8 +13,7 @@ from src.training.base_step import BaseStep
 # Optional advanced components; fallback to basic if unavailable
 try:
     from src.training.simplified_architecture.modular_components import TechnicalIndicatorCalculator as _TechnicalIndicatorCalculator  # type: ignore
-import logging
-
+    import logging
 except Exception:
     _TechnicalIndicatorCalculator = None  # type: ignore
 

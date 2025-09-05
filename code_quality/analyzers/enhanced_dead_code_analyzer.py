@@ -24,12 +24,14 @@ import shutil
 
 # Try to import optional dependencies
 try:
+    import pycg
     PYCG_AVAILABLE = True
 except ImportError:
     PYCG_AVAILABLE = False
     print("Warning: PyCG not available. Install with: pip install pycg")
 
 try:
+    import deadcode
     DEADCODE_AVAILABLE = True
 except ImportError:
     DEADCODE_AVAILABLE = False
@@ -303,6 +305,9 @@ class EnhancedDeadCodeAnalyzer:
 
     def _analyze_imports_for_dependency_graph(self, tree: ast.AST, file_path: Path) -> None:
         """Analyze imports to build dependency graph."""
+        # Ensure file_path is a Path object
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
         module_name = file_path.stem
         
         for node in ast.walk(tree):
@@ -430,7 +435,12 @@ class EnhancedDeadCodeAnalyzer:
     def _analyze_file_ast(self, tree: ast.AST, file_path: Path) -> List[EnhancedDeadCodeIssue]:
         """Analyze single file AST for dead code."""
         issues = []
-        lines = tree.source.split('\n') if hasattr(tree, 'source') else []
+        # Read the file content to get lines
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.read().split('\n')
+        except Exception:
+            lines = []
         
         # Track function definitions and calls
         defined_functions = {}

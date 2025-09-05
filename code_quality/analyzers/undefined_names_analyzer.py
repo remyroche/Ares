@@ -115,6 +115,16 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
     
     def visit_Module(self, node: ast.Module) -> None:
         """Visit module node."""
+        # Visit all top-level definitions first to populate the module scope
+        for child in node.body:
+            if isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Add to module scope
+                self.scope_stack.add_defined_name(child.name)
+            elif isinstance(child, (ast.Import, ast.ImportFrom)):
+                # Handle imports
+                self.generic_visit(child)
+        
+        # Now visit all nodes normally
         self.generic_visit(node)
     
     def visit_ClassDef(self, node: ast.ClassDef) -> None:

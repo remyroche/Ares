@@ -107,10 +107,11 @@ class ScopeStack:
 class ScopeTrackingVisitor(ast.NodeVisitor):
     """AST visitor that tracks scopes and detects undefined names."""
     
-    def __init__(self, scope_stack: ScopeStack, builtin_names: Set[str], file_path: str):
+    def __init__(self, scope_stack: ScopeStack, builtin_names: Set[str], file_path: str, tree: ast.AST):
         self.scope_stack = scope_stack
         self.builtin_names = builtin_names
         self.file_path = file_path
+        self.tree = tree
         self.errors: List[UndefinedNameError] = []
     
     def visit_Module(self, node: ast.Module) -> None:
@@ -338,7 +339,14 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
             if hasattr(parent, 'annotation') and node in ast.walk(parent.annotation):
                 return True
             if hasattr(parent, 'args') and parent.args:
-                for arg in parent.args:
+                # Handle both list and arguments object
+                if isinstance(parent.args, list):
+                    args_list = parent.args
+                else:
+                    # For arguments object, get all arguments
+                    args_list = getattr(parent.args, 'args', []) + getattr(parent.args, 'kwonlyargs', [])
+                
+                for arg in args_list:
                     if hasattr(arg, 'annotation') and node in ast.walk(arg.annotation):
                         return True
         return False
@@ -605,7 +613,7 @@ class UndefinedNamesAnalyzer:
         errors = []
         
         # Use a visitor pattern for better control
-        visitor = ScopeTrackingVisitor(self._scope_stack, self.builtin_names, file_path)
+        visitor = ScopeTrackingVisitor(self._scope_stack, self.builtin_names, file_path, tree)
         visitor.visit(tree)
         
         return visitor.errors

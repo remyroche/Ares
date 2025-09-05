@@ -116,7 +116,9 @@ class RegimeDataSplittingStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("Step8.RegimeSplit")
-        self.standards = pipeline_standards
+        
+        # Initialize pipeline standards for validation
+        self.standards = PipelineStandards(self.logger)
 
         # Validate environment on initialization
         self._validate_environment()
@@ -144,10 +146,18 @@ class RegimeDataSplittingStep:
     @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step08_regime_splitting.execute", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step08_execution")
-    async def execute(self) -> dict[str, Any]:
-        """Execute the regime data splitting step."""
+    async def execute(self, training_input: dict[str, Any] = None, pipeline_state: dict[str, Any] = None) -> dict[str, Any]:
+        """Execute the regime data splitting step with validation."""
         try:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
+            
+            # Validate input data if available
+            if pipeline_state and 'dataframe' in pipeline_state:
+                data = pipeline_state['dataframe']
+                if isinstance(data, pd.DataFrame):
+                    data = self._validate_and_fix_input_data(data)
+                    pipeline_state['dataframe'] = data
+            
             data_loader = get_unified_data_loader(self.config)
             
             # Validate data loader is available
@@ -244,6 +254,64 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
             return {"success": False, "error": str(e)}
+    
+    def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate and fix input data using pipeline standards.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Validated and fixed DataFrame
+        """
+        self.logger.info("🔍 Validating input data for regime data splitting...")
+        
+        # Validate data quality using pipeline standards
+        validation_result = self.standards.validate_data_quality(data, 'unified')
+        
+        if not validation_result.passed:
+            self.logger.warning(f"⚠️ Data quality issues detected: {validation_result.quality_score:.2f}")
+            for issue in validation_result.issues:
+                self.logger.warning(f"   - {issue.message}")
+        
+        # Apply fixes for common issues
+        fixed_data = data.copy()
+        
+        # Fix duplicate timestamps
+        if 'timestamp' in fixed_data.columns:
+            duplicate_count = fixed_data['timestamp'].duplicated().sum()
+            if duplicate_count > 0:
+                self.logger.info(f"🗑️ Removing {duplicate_count} duplicate timestamps")
+                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+        
+        # Fix non-monotonic index
+        if 'timestamp' in fixed_data.columns:
+            if not fixed_data['timestamp'].is_monotonic_increasing:
+                self.logger.info("📈 Sorting data by timestamp")
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+        
+        # Ensure proper data types using pipeline standards
+        try:
+            fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
+            self.logger.info("✅ Applied schema enforcement")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Schema enforcement failed: {e}")
+        
+        # Set datetime index if timestamp column exists
+        if 'timestamp' in fixed_data.columns and not isinstance(fixed_data.index, pd.DatetimeIndex):
+            try:
+                fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
+                fixed_data = fixed_data.set_index('timestamp')
+                self.logger.info("📅 Set datetime index")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not set datetime index: {e}")
+        
+        # Final validation
+        final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
+        self.logger.info(f"✅ Final data quality score: {final_validation.quality_score:.2f}")
+        
+        return fixed_data
     async def _log_step8_artifacts_and_report(self, unified_data, summary) -> None:
         """Log step 8 artifacts and create detailed report."""
         try:

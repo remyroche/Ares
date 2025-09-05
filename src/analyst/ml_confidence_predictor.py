@@ -9,6 +9,7 @@ from .config_optuna import get_parameter_value
 import contextlib
 import os
 import pickle
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 import pandas as pd
@@ -2567,29 +2568,27 @@ class MLConfidencePredictor:
 
             return {}
 
+    @dataclass
+    class OrderExecutionConfig:
+        """Configuration for order execution."""
+        symbol: str
+        side: str
+        quantity: float
+        price: float | None = None
+        strategy_type: str = "immediate"
+        leverage: float | None = None
+        strategy_id: str | None = None
+        additional_params: dict = None
+
     async def execute_order_with_strategy(
         self,
-        symbol: str,
-        side: str,
-        quantity: float,
-        price: float | None = None,
-        strategy_type: str = "immediate",
-        leverage: float | None = None,
-        strategy_id: str | None = None,
-        **kwargs,
+        config: OrderExecutionConfig,
     ) -> dict[str, Any]:
         """
         Execute order with specified strategy using async order executor.
 
         Args:
-            symbol: Trading symbol
-            side: Order side ("buy" or "sell")
-            quantity: Order quantity
-            price: Order price (optional for market orders)
-            strategy_type: Execution strategy ("immediate", "batch", "twap", "vwap", "iceberg", "adaptive")
-            leverage: Leverage (optional)
-            strategy_id: Strategy identifier
-            **kwargs: Additional parameters
+            config: OrderExecutionConfig containing all order execution parameters
 
         Returns:
             Dictionary containing execution results
@@ -2612,10 +2611,10 @@ class MLConfidencePredictor:
             from .core.decorators.errors import handles_errors
 
             # Convert side string to OrderSide enum
-            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            order_side = OrderSide.BUY if config.side.lower() == "buy" else OrderSide.SELL
 
             # Determine order type
-            order_type = OrderType.LIMIT if price else OrderType.MARKET
+            order_type = OrderType.LIMIT if config.price else OrderType.MARKET
 
             # Convert strategy type to ExecutionStrategy enum
             strategy_map = {
@@ -2627,22 +2626,22 @@ class MLConfidencePredictor:
                 "adaptive": ExecutionStrategy.ADAPTIVE,
             }
             execution_strategy = strategy_map.get(
-                strategy_type,
+                config.strategy_type,
                 ExecutionStrategy.IMMEDIATE,
             )
 
             # Create execution request
             execution_request = ExecutionRequest(
-                symbol=symbol,
+                symbol=config.symbol,
                 side=order_side,
                 order_type=order_type,
-                quantity=quantity,
-                price=price,
-                leverage=leverage,
-                strategy_type=strategy_type,
+                quantity=config.quantity,
+                price=config.price,
+                leverage=config.leverage,
+                strategy_type=config.strategy_type,
                 execution_strategy=execution_strategy,
-                strategy_id=strategy_id,
-                metadata=kwargs,
+                strategy_id=config.strategy_id,
+                metadata=config.additional_params or {},
             )
 
             # Execute order
@@ -2653,12 +2652,12 @@ class MLConfidencePredictor:
             return {
                 "success": True,
                 "execution_id": execution_id,
-                "strategy_type": strategy_type,
-                "symbol": symbol,
-                "side": side,
-                "quantity": quantity,
-                "price": price,
-                "leverage": leverage,
+                "strategy_type": config.strategy_type,
+                "symbol": config.symbol,
+                "side": config.side,
+                "quantity": config.quantity,
+                "price": config.price,
+                "leverage": config.leverage,
             }
 
         except Exception as e:
@@ -3084,45 +3083,50 @@ class MLConfidencePredictor:
         return confidences
 
     # NEW: Reliability-aware mixture score helper
+    @dataclass
+    class MixtureScoreConfig:
+        """Configuration for mixture score computation."""
+        intensities: dict[str, float]
+        confidences: dict[str, float]
+        reliability: dict[str, float] | None = None
+        alpha: float = 1.0
+        beta: float = 1.0
+        gamma: float = 1.0
+        top_k: int = 0
+        w_min: float = 0.0
+        w_max: float = 1.0
+        normalize: bool = False
+
     def compute_mixture_scores(
         self,
-        intensities: dict[str, float],
-        confidences: dict[str, float],
-        reliability: dict[str, float] | None = None,
-        alpha: float = 1.0,
-        beta: float = 1.0,
-        gamma: float = 1.0,
-        top_k: int = 0,
-        w_min: float = 0.0,
-        w_max: float = 1.0,
-        normalize: bool = False,
+        config: MixtureScoreConfig,
     ) -> dict[str, float]:
         scores: dict[str, float] = {}
-        rel_map = reliability or {}
-        for label, inten in intensities.items():
-            c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
+        rel_map = config.reliability or {}
+        for label, inten in config.intensities.items():
+            c = float(np.clip(config.confidences.get(label, 0.5), 0.0, 1.0))
             r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
             s = float(
-                np.power(np.clip(float(inten), 0.0, 1.0), alpha)
-                * np.power(c, beta)
-                * np.power(r, gamma)
+                np.power(np.clip(float(inten), 0.0, 1.0), config.alpha)
+                * np.power(c, config.beta)
+                * np.power(r, config.gamma)
             )
             scores[label] = float(np.clip(s, 0.0, 1.0))
-        if top_k > 0 and len(scores) > top_k:
+        if config.top_k > 0 and len(scores) > config.top_k:
             ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
-            keep = {k for k, _ in ranked[:top_k]}
+            keep = {k for k, _ in ranked[:config.top_k]}
         else:
             keep = set(scores.keys())
         weights: dict[str, float] = {}
         for label, s in scores.items():
             if label in keep:
-                lo = w_min if w_min > 0 else 0.0
-                hi = w_max if w_max < 1.0 else 1.0
+                lo = config.w_min if config.w_min > 0 else 0.0
+                hi = config.w_max if config.w_max < 1.0 else 1.0
                 w = float(np.clip(s, lo, hi))
             else:
                 w = 0.0
             weights[label] = w
-        if normalize:
+        if config.normalize:
             total = float(sum(weights.values()))
             if total > 0:
                 weights = {k: float(v / total) for k, v in weights.items()}

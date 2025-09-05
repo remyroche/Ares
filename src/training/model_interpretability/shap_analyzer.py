@@ -30,12 +30,6 @@ class SHAPAnalyzer:
         """Check if SHAP is available and initialize if possible."""
         try:
             import shap
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-import numpy as np
-import pandas as pd
 
             self.shap = shap
             self.shap_available = True

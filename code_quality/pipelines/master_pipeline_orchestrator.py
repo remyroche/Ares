@@ -132,20 +132,13 @@ class MasterPipelineOrchestrator:
     def _discover_pipelines(self):
         """Discover all available pipelines."""
         pipeline_files = {
-            "unified_enhanced_pipeline": "pipeline_unified_enhanced.py",
+            "overall_pipeline": "overall_pipeline.py",
             "complexity_pipeline": "complexity_pipeline.py",
-            "dead_code_pipeline": "dead_code_pipeline.py",
+            "dead_code_pipeline": "dead_code_pipeline.py", 
             "auto_fixer_pipeline": "auto_fixer_pipeline.py",
             "interaction_mapping_pipeline": "interaction_mapping_pipeline.py",
             "import_free_analysis_pipeline": "import_free_analysis_pipeline.py",
-            "testing_pipeline": "testing_pipeline.py",
-            "utility_pipeline": "utility_pipeline.py",
-            "sequential_code_fixer": "sequential_code_fixer.py",
-            "code_interaction_mapper": "code_interaction_mapper.py",
-            "dead_code_analyzer": "dead_code_analyzer.py",
-            "complexity_cli": "complexity_cli.py",
-            "enhanced_import_analysis": "enhanced_import_analysis.py",
-            "intelligent_import_fixer": "intelligent_import_fixer.py"
+            "pipeline_unified_enhanced": "pipeline_unified_enhanced.py"
         }
         
         for pipeline_name, filename in pipeline_files.items():
@@ -164,14 +157,13 @@ class MasterPipelineOrchestrator:
     def _setup_dependencies(self):
         """Setup pipeline dependencies."""
         self.pipeline_dependencies = {
-            "unified_enhanced_pipeline": [],  # No dependencies
-            "unified_standalone_pipeline": [],  # No dependencies, can run independently
-            "sequential_code_fixer": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
-            "code_interaction_mapper": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
-            "dead_code_analyzer": ["code_interaction_mapper"],  # Depends on interaction mapping
-            "complexity_cli": [],  # Independent
-            "enhanced_import_analysis": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
-            "intelligent_import_fixer": ["enhanced_import_analysis"]  # Depends on enhanced import analysis
+            "overall_pipeline": [],  # Master orchestrator, no dependencies
+            "complexity_pipeline": [],  # Independent
+            "dead_code_pipeline": [],  # Independent
+            "auto_fixer_pipeline": [],  # Independent
+            "interaction_mapping_pipeline": [],  # Independent
+            "import_free_analysis_pipeline": [],  # Independent
+            "pipeline_unified_enhanced": []  # Independent
         }
     
     def _execute_pipeline(self, pipeline_name: str) -> PipelineResult:
@@ -195,66 +187,34 @@ class MasterPipelineOrchestrator:
             # Import and execute the pipeline
             sys.path.insert(0, str(self.pipelines_dir))
             
-            if pipeline_name == "unified_enhanced_pipeline":
-                from pipeline_unified_enhanced import UnifiedEnhancedPipeline
-                pipeline = UnifiedEnhancedPipeline(str(self.project_root))
-                result = pipeline.run_all()
-            elif pipeline_name == "testing_pipeline":
-                from testing_pipeline import TestingPipeline
-                pipeline = TestingPipeline(str(self.project_root))
-                result = pipeline.run_all_tests()
-            elif pipeline_name == "utility_pipeline":
-                from utility_pipeline import UtilityPipeline
-                pipeline = UtilityPipeline(str(self.project_root))
-                result = pipeline.run_all_utilities()
+            if pipeline_name == "overall_pipeline":
+                from overall_pipeline import OverallPipeline
+                pipeline = OverallPipeline(str(self.project_root))
+                result = pipeline.run_all_pipelines()
             elif pipeline_name == "complexity_pipeline":
                 from complexity_pipeline import ComplexityPipeline
-                pipeline = ComplexityPipeline(str(self.project_root))
-                result = pipeline.run_all_complexity_analysis()
+                pipeline = ComplexityPipeline(str(self.project_root), "cyclomatic")
+                result = pipeline.analyze_project()
             elif pipeline_name == "dead_code_pipeline":
                 from dead_code_pipeline import DeadCodePipeline
                 pipeline = DeadCodePipeline(str(self.project_root))
-                result = pipeline.run_all_dead_code_analysis()
+                result = pipeline.run_enhanced_dead_code_analysis()
             elif pipeline_name == "auto_fixer_pipeline":
                 from auto_fixer_pipeline import AutoFixerPipeline
                 pipeline = AutoFixerPipeline(str(self.project_root))
-                result = pipeline.run_all_auto_fixes()
+                result = pipeline.run_import_fixes()
             elif pipeline_name == "interaction_mapping_pipeline":
                 from interaction_mapping_pipeline import InteractionMappingPipeline
                 pipeline = InteractionMappingPipeline(str(self.project_root))
-                result = pipeline.run_all_interaction_mapping()
+                result = pipeline.run_call_graph_analysis()
             elif pipeline_name == "import_free_analysis_pipeline":
                 from import_free_analysis_pipeline import ImportFreeAnalysisPipeline
                 pipeline = ImportFreeAnalysisPipeline(str(self.project_root))
-                result = pipeline.run_all_import_free_analysis()
-            elif pipeline_name == "unified_standalone_pipeline":
-                from unified_standalone_pipeline import StandaloneCodeAnalyzer
-                pipeline = StandaloneCodeAnalyzer(str(self.project_root))
-                result = pipeline.analyze_project()
-            elif pipeline_name == "sequential_code_fixer":
-                from sequential_code_fixer import SequentialFixer
-                pipeline = SequentialFixer(str(self.project_root))
-                result = pipeline.run_enhanced_pipeline()
-            elif pipeline_name == "code_interaction_mapper":
-                from code_interaction_mapper import CodeInteractionMapper
-                pipeline = CodeInteractionMapper(str(self.project_root))
-                result = pipeline.map_all_interactions()
-            elif pipeline_name == "dead_code_analyzer":
-                from dead_code_analyzer import DeadCodeAnalyzer
-                pipeline = DeadCodeAnalyzer(str(self.project_root))
-                result = pipeline.analyze_dead_code()
-            elif pipeline_name == "complexity_cli":
-                from complexity_cli import main as complexity_main
-                # Run complexity analysis
-                result = {"status": "completed", "message": "Complexity analysis completed"}
-            elif pipeline_name == "enhanced_import_analysis":
-                from enhanced_import_analysis import main as import_main
-                # Run import analysis
-                result = {"status": "completed", "message": "Import analysis completed"}
-            elif pipeline_name == "intelligent_import_fixer":
-                from intelligent_import_fixer import main as fixer_main
-                # Run intelligent import fixer
-                result = {"status": "completed", "message": "Intelligent import fixer completed"}
+                result = pipeline.run_syntax_analysis()
+            elif pipeline_name == "pipeline_unified_enhanced":
+                from pipeline_unified_enhanced import UnifiedEnhancedPipeline
+                pipeline = UnifiedEnhancedPipeline(str(self.project_root))
+                result = pipeline.run_all()
             else:
                 result = {"status": "skipped", "message": f"Pipeline {pipeline_name} not implemented"}
             

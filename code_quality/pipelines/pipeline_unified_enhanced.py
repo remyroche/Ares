@@ -1824,21 +1824,18 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Comprehensive Code Quality Analysis Pipeline - The most complete code quality assessment available",
+        description="Unified Enhanced Pipeline - Comprehensive analysis with imports",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run complete comprehensive analysis
-  python pipeline_unified_enhanced.py
+  # Run comprehensive analysis with imports
+  python pipelines/pipeline_unified_enhanced.py
   
   # Run on specific project directory
-  python pipeline_unified_enhanced.py --project-root /path/to/project
+  python pipelines/pipeline_unified_enhanced.py --project-root /path/to/project
   
   # Disable plugins
-  python pipeline_unified_enhanced.py --no-plugins
-  
-  # Skip specific categories
-  python pipeline_unified_enhanced.py --skip-syntax --skip-async
+  python pipelines/pipeline_unified_enhanced.py --no-plugins
         """
     )
     parser.add_argument("--project-root", default="/workspace/src",

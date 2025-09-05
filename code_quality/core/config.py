@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 """Configuration management for code analysis."""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+
+
+@dataclass
+class CodeQualityConfig:
+    """Main configuration class for code quality analysis."""
+    
+    # Project settings
+    project_root: str = "."
+    output_dir: str = "analysis_results"
+    
+    # Analysis configuration
+    analysis_config: Optional['AnalysisConfig'] = None
+    
+    def __post_init__(self):
+        """Initialize default values if not provided."""
+        if self.analysis_config is None:
+            self.analysis_config = AnalysisConfig()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return {
+            "project_root": self.project_root,
+            "output_dir": self.output_dir,
+            "analysis_config": self.analysis_config.to_dict()
+        }
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'CodeQualityConfig':
+        """Create configuration from dictionary."""
+        analysis_config = AnalysisConfig.from_dict(config_dict.get("analysis_config", {}))
+        return cls(
+            project_root=config_dict.get("project_root", "."),
+            output_dir=config_dict.get("output_dir", "analysis_results"),
+            analysis_config=analysis_config
+        )
 
 
 @dataclass
@@ -60,3 +95,8 @@ class AnalysisConfig:
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'AnalysisConfig':
         """Create configuration from dictionary."""
         return cls(**config_dict)
+
+
+def get_default_config() -> CodeQualityConfig:
+    """Get default configuration for code quality analysis."""
+    return CodeQualityConfig()

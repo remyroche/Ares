@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Paper Trading Integration Module
 
@@ -91,6 +93,7 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reporting.paper_trading_reporter import (
+
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

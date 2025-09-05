@@ -1,6 +1,7 @@
 # src/analyst/analyst.py
 
 import logging
+import numpy as np
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,

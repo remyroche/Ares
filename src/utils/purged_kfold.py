@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 
 import pandas as pd
+import numpy as np
+
 @dataclass
 class PurgedKFoldTime:
     """Purged and Embargoed K-Fold for DatetimeIndex time series.

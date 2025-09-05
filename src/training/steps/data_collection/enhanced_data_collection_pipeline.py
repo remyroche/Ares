@@ -20,6 +20,7 @@ from .validators.pipeline_validators import (
     ValidationResult,
     ValidationReport
 )
+from .decorators.data_operation_decorators import (
     data_operation_protection,
     data_formatting_protection,
     data_analysis_protection,

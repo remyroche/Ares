@@ -1,3 +1,5 @@
+import numpy as np
+
 # src/training/factory.py
 
 """Factory for creating optimized training components based on configuration."""
@@ -128,6 +130,7 @@ class OptimizedTrainingFactory:
 
         # Add performance expectations
         from src.config.computational_optimization_config import (
+
             get_performance_expectations,
         )
 

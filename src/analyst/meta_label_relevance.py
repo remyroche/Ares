@@ -10,6 +10,7 @@ import os
 
 from .utils.logger import system_logger
 import logging
+import numpy as np
 
 
 @handles_errors(
@@ -43,6 +44,7 @@ def compute_mutual_information(
         )
     else:
         from sklearn.feature_selection import mutual_info_regression
+import pandas as pd
 
         mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
     return {c: float(v) for c, v in zip(Xn.columns, mi)}

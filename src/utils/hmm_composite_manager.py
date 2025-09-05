@@ -23,6 +23,7 @@ from typing import Any
 from .core.decorators import handles_errors
 from .core.decorators.errors import handles_errors
 from .utils.logger import system_logger
+import numpy as np
 
 # Module-level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately

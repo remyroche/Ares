@@ -20,6 +20,8 @@ import pandas as pd
 
 # Import the comprehensive function monitoring framework from step02
 from .step02_data_reading import (
+import numpy as np
+
     comprehensive_function_monitoring,
     function_monitor,
     FunctionCallMonitor,

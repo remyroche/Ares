@@ -1,3 +1,5 @@
+import numpy as np
+
 '\nAuthentication and authorization decorators.\n\nProvides decorators for enforcing authentication and permission\npolicies in a framework-agnostic way.\n'
 from abc import ABC, abstractmethod
 from contextvars import ContextVar
@@ -7,12 +9,6 @@ from typing import Optional, Any, Callable
 from ..errors.base import AuthenticationError, AuthorizationError
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
-
-import inspect
-from collections import defaultdict
-from time import time
-from .core.errors.base import RateLimitError
-
 current_user_var: ContextVar[Optional['User']] = ContextVar('current_user', default=None)
 
 class PermissionType(Enum):
@@ -97,6 +93,7 @@ def set_auth_provider(provider: AuthProvider) -> None:
 
 def get_current_user() -> User | None:
     """Get the current authenticated user."""
+    return _auth_provider.get_current_user()
 
 def set_current_user(user: User | None) -> None:
     """Set the current user in context."""
@@ -112,23 +109,29 @@ def authenticated(*, optional: bool=False) -> Callable[[Callable[P, R]], Callabl
     Example:
         @authenticated()
         def get_profile() -> dict:
+            user = get_current_user()
             return {"id": user.id, "username": user.username}
 
         @authenticated(optional=True)
         def get_public_data() -> dict:
+            user = get_current_user()
             if user:
                 return {"data": "private_data"}
             return {"data": "public_data"}
     """
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user and (not optional):
             msg = 'Authentication required'
+            raise AuthenticationError(msg, details={'function': func.__name__, 'correlation_id': get_correlation_id()})
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user and (not optional):
             msg = 'Authentication required'
+            raise AuthenticationError(msg, details={'function': func.__name__, 'correlation_id': get_correlation_id()})
         return await func(*args, **kwargs)
     return uniform_wrapper('authenticated', sync_handler, async_handler)
 
@@ -151,6 +154,7 @@ def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P,
     """
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
@@ -161,6 +165,7 @@ def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P,
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
@@ -191,6 +196,7 @@ def requires_permission(*permissions: str, require_all: bool=False) -> Callable[
     """
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
@@ -201,6 +207,7 @@ def requires_permission(*permissions: str, require_all: bool=False) -> Callable[
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
@@ -233,9 +240,11 @@ def owner_only(owner_field: str='user_id', param_name: str=None) -> Callable[[Ca
     """
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
+        import inspect
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
         if param_name:
@@ -259,9 +268,11 @@ def owner_only(owner_field: str='user_id', param_name: str=None) -> Callable[[Ca
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        user = get_current_user()
         if not user:
             msg = 'Authentication required'
             raise AuthenticationError(msg)
+        import inspect
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
         if param_name:
@@ -300,32 +311,41 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
             # Max 5 emails per minute per user
             return email_service.send(to, subject)
     """
+    from collections import defaultdict
+    from time import time
     call_times: dict[str, list[float]] = defaultdict(list)
 
     def get_rate_limit_key() -> str:
         """Get rate limit key for current context."""
         if key_func:
             return key_func()
+        user = get_current_user()
         if user:
             return f'user:{user.id}'
+        return f'correlation:{get_correlation_id()}'
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        key = get_rate_limit_key()
         current_time = time()
         call_times[key] = [t for t in call_times[key] if current_time - t < period]
         if len(call_times[key]) >= calls:
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
+            from .core.errors.base import RateLimitError
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        key = get_rate_limit_key()
         current_time = time()
         call_times[key] = [t for t in call_times[key] if current_time - t < period]
         if len(call_times[key]) >= calls:
             oldest_call = min(call_times[key])
             retry_after = int(period - (current_time - oldest_call))
+            from .core.errors.base import RateLimitError
+
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
             raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)

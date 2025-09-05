@@ -38,6 +38,8 @@ class ExecutionMode(Enum):
 
 
 from src.utils.warning_symbols import (
+import numpy as np
+
     execution_error,
     initialization_error,
     invalid,

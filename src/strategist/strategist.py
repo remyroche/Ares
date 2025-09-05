@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from .tactician.tactician import Tactician
 import pandas as pd
 from typing import Any
+import numpy as np
 
 
 class Strategist:

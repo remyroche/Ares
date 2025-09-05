@@ -370,4 +370,4 @@ if __name__ == "__main__":
         else:
             print("Failed to load data")
 
-    asyncio.run(await main())
+    asyncio.run(main())

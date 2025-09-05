@@ -915,4 +915,4 @@ if __name__ == "__main__":
         logger.info("🎉 Enhanced validation framework tests completed successfully!")
         logger.info("=" * 80)
     
-    asyncio.run(await test_enhanced_validation())
+    asyncio.run(test_enhanced_validation())

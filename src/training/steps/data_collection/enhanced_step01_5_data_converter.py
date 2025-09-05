@@ -718,4 +718,4 @@ if __name__ == "__main__":
         else:
             print("❌ Enhanced data conversion failed")
     
-    asyncio.run(await main())
+    asyncio.run(main())

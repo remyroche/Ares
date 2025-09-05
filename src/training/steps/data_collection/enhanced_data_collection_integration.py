@@ -403,4 +403,4 @@ from typing import Dict
 
 if __name__ == "__main__":
     # Run demonstration
-    asyncio.run(await demonstrate_enhanced_validation())
+    asyncio.run(demonstrate_enhanced_validation())

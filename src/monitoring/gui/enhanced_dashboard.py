@@ -140,7 +140,7 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         
         # Configure columns
         self.summary_tree['columns'] = ('date', 'total_trades', 'long_trades', 'short_trades', 
-                                       'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
+                                    'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
         self.summary_tree['show'] = 'headings'
         
         # Set column headings
@@ -204,7 +204,7 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         
         # Configure columns
         self.regime_tree['columns'] = ('regime_id', 'regime_name', 'probability', 'stability', 
-                                      'duration', 'trade_count', 'avg_pnl', 'win_rate')
+                                    'duration', 'trade_count', 'avg_pnl', 'win_rate')
         self.regime_tree['show'] = 'headings'
         
         # Set column headings

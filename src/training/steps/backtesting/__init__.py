@@ -2,12 +2,10 @@
 """Enhanced Backtesting Package for Trading Pipeline.
 
 This package contains all the components for backtesting with comprehensive validation,
-error handling, and common utilities:
 - Walk forward validation per regime with validators
 - Monte Carlo validation per regime with validators
 - A/B testing per regime with validators
 - Model saving and persistence with validators
-- Comprehensive data validation and error handling
 - Common utilities for data operations
 - Enhanced logging with emojis and progress tracking
 - Performance monitoring and quality assessment
@@ -31,7 +29,6 @@ from .comprehensive_reporting import generate_backtesting_report, generate_step_
 from .utils.base_validator import BaseValidator
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
-    ensure_directory, safe_json_dump, safe_json_load
 )
 from src.utils.trading_decorators import (
     handles_errors, validates, traced, log_execution_time, 
@@ -574,7 +571,6 @@ async def run_backtesting_pipeline(symbol, exchange, timeframe, data_dir, **conf
         
         # Save results to file
         results_file = Path(data_dir) / f"backtesting_pipeline_results_{symbol}_{timeframe}.json"
-        safe_json_dump(pipeline_results, results_file, indent=2)
         bt_logger.log_success(f"Pipeline results saved to: {results_file}", "RESULTS")
         
         # Generate comprehensive report

@@ -1,4 +1,3 @@
-'Pydantic-based configuration for Enhanced LM Optimizer.\n\nThis module provides type-safe configuration with automatic validation,\nclear error messages, and auto-generated documentation.\n'
 from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field, validator

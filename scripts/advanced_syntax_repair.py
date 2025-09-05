@@ -4,7 +4,7 @@ Advanced syntax repair for src/training/steps.
 
 Repairs:
 - Multiline function parameter lists: insert missing commas between parameters
-  and fix chained type corruption like `a: T=b: U` (with optional default).
+and fix chained type corruption like `a: T=b: U` (with optional default).
 - Decorator argument lists: insert missing commas between keyword args.
 """
 

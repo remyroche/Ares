@@ -246,7 +246,7 @@ class UnifiedRegimeClassifierSRFocused:
             
             # Bearish reversal (potential resistance)
             elif (returns[i-1] > min_reversal and returns[i] < -min_reversal and
-                  norm_returns[i-1] > 1 and norm_returns[i] < -1):
+                norm_returns[i-1] > 1 and norm_returns[i] < -1):
                 levels.append({
                     'price': prices[i],
                     'type': 'resistance',

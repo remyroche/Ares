@@ -501,7 +501,7 @@ class ModelTrainingPipeline:
             f.write("REGIME PERFORMANCE RANKING\n")
             f.write("-" * 40 + "\n")
             regime_ranking = sorted(final_report['regime_analysis'].items(), 
-                                  key=lambda x: x[1]['performance_rank'])
+                                key=lambda x: x[1]['performance_rank'])
             for regime, data in regime_ranking:
                 f.write(f"{data['performance_rank']}. {regime.upper()}\n")
                 f.write(f"   Accuracy: {data['average_accuracy']:.3f}\n")
@@ -511,7 +511,7 @@ class ModelTrainingPipeline:
             f.write("CLUSTER PERFORMANCE RANKING\n")
             f.write("-" * 40 + "\n")
             cluster_ranking = sorted(final_report['cluster_analysis'].items(), 
-                                   key=lambda x: x[1]['performance_rank'])
+                                key=lambda x: x[1]['performance_rank'])
             for cluster, data in cluster_ranking:
                 f.write(f"{data['performance_rank']}. {cluster.upper()}\n")
                 f.write(f"   Accuracy: {data['average_accuracy']:.3f}\n")

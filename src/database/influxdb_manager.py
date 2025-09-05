@@ -110,12 +110,12 @@ class InfluxDBManager:
         """
         query = f"""
         from(bucket: "{self.bucket}")
-          |> range(start: {start_date}, stop: {end_date})
-          |> filter(fn: (r) => r["_measurement"] == "kline_data")
-          |> filter(fn: (r) => r["symbol"] == "{symbol}")
-          |> filter(fn: (r) => r["interval"] == "{interval}")
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-          |> rename(columns: {{_time: "timestamp"}})
+        |> range(start: {start_date}, stop: {end_date})
+        |> filter(fn: (r) => r["_measurement"] == "kline_data")
+        |> filter(fn: (r) => r["symbol"] == "{symbol}")
+        |> filter(fn: (r) => r["interval"] == "{interval}")
+        |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+        |> rename(columns: {{_time: "timestamp"}})
         """
         df = self.query_api.query_data_frame(query, org=self.org)
         if isinstance(df, list):

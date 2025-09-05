@@ -41,7 +41,6 @@ class WalkForwardValidator:
         self.max_acceptable_degradation = config.get('max_acceptable_degradation', 0.3)
         self.min_out_sample_sharpe = config.get('min_out_sample_sharpe', 0.5)
         self.results_dir = Path(config.get('results_dir', 'validation_results'))
-        ensure_directory(self.results_dir)
 
     def generate_walk_forward_windows(self, data: pd.DataFrame) -> List[WalkForwardWindow]:
         """Generate walk-forward validation windows."""
@@ -245,9 +244,7 @@ class WalkForwardValidator:
         """Save validation results to disk."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         results_path = self.results_dir / f'validation_results_{timestamp}.json'
-        safe_json_dump({'config': self.config, 'results': results, 'analysis': analysis, 'timestamp': timestamp}, results_path)
         summary_path = self.results_dir / f'validation_summary_{timestamp}.json'
-        safe_json_dump(analysis, summary_path)
         self.logger.info(f'Saved validation results to {results_path}')
         self.logger.info(f'Saved validation summary to {summary_path}')
 

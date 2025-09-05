@@ -31,7 +31,6 @@ if str(project_root) not in sys.path:
 logger=system_logger.getChild("MultiTimeframeHMMTraining")
 
 
-@handle_errors(default_return=pd.DataFrame(), context="load_timeframe_data")
 @validate_dataframe_operation("load_timeframe", validate_before=False, validate_after=True)
 def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load HMM cluster data for a specific timeframe."""
@@ -94,7 +93,6 @@ def create_ensemble_config() -> EnsembleConfig:
     )
 
 
-@handle_errors(default_return=False, context="validate_data_quality")
 def validate_data_quality(timeframe_data: dict[str, pd.DataFrame]) -> bool:
     """Validate data quality across all timeframes."""
     logger.info("🔍 Validating data quality...")
@@ -129,7 +127,6 @@ def validate_data_quality(timeframe_data: dict[str, pd.DataFrame]) -> bool:
     return True
 
 
-@handle_errors(default_return=False, context="main_training")
 def main() -> bool:
     """Main training function."""
     parser=argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")

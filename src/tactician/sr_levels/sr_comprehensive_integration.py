@@ -106,7 +106,7 @@ class SRComprehensiveIntegration:
             # Check if critical components are initialized
             critical_components = ['detector', 'strength_optimizer', 'breakout_predictor']
             critical_success = all(self.initialization_status.get(comp, False) 
-                                 for comp in critical_components)
+                                for comp in critical_components)
             
             if not critical_success:
                 self.logger.error("❌ Critical S/R components failed to initialize")
@@ -263,8 +263,8 @@ class SRComprehensiveIntegration:
             return False
     
     async def detect_sr_levels(self, market_data: pd.DataFrame, 
-                              timeframe: str = '1m',
-                              use_ensemble: bool = True) -> Dict[str, Any]:
+                            timeframe: str = '1m',
+                            use_ensemble: bool = True) -> Dict[str, Any]:
         """
         Detect S/R levels using all available components.
         
@@ -498,8 +498,8 @@ class SRComprehensiveIntegration:
             }
     
     async def integrate_data(self, sr_results: Dict[str, Any],
-                           market_data: pd.DataFrame,
-                           additional_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                        market_data: pd.DataFrame,
+                        additional_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Integrate S/R results with additional data sources.
         
@@ -527,8 +527,8 @@ class SRComprehensiveIntegration:
             return sr_results
     
     async def update_levels(self, market_data: pd.DataFrame,
-                          current_price: float,
-                          volume: Optional[float] = None) -> Dict[str, Any]:
+                        current_price: float,
+                        volume: Optional[float] = None) -> Dict[str, Any]:
         """
         Update S/R levels with new market data.
         

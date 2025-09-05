@@ -342,7 +342,7 @@ class MLRegimeTransitionDetector:
         return labels
     
     def _train_single_model(self, model_type: str, X_train: np.ndarray, X_test: np.ndarray,
-                          y_train: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+                        y_train: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Train a single model type."""
         try:
             # Scale features
@@ -417,7 +417,7 @@ class MLRegimeTransitionDetector:
             raise ValueError(f"Unknown model type: {model_type}")
     
     def _calculate_model_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
-                                   y_pred_proba: Optional[np.ndarray] = None) -> Dict[str, float]:
+                                y_pred_proba: Optional[np.ndarray] = None) -> Dict[str, float]:
         """Calculate model performance metrics."""
         performance = {}
         
@@ -483,7 +483,7 @@ class MLRegimeTransitionDetector:
         return summary
     
     def predict_transitions(self, data: pd.DataFrame, regimes: np.ndarray, 
-                          model_type: Optional[str] = None) -> Dict[str, Any]:
+                        model_type: Optional[str] = None) -> Dict[str, Any]:
         """Predict regime transitions using trained models."""
         if not self.models:
             return {'error': 'No trained models available'}

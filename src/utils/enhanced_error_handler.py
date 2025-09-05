@@ -188,7 +188,6 @@ class EnhancedErrorHandler:
 
 
 # Global error handler instance
-_global_error_handler = EnhancedErrorHandler()
 
 
 def handle_errors_with_tracking(fallback: bool = True):

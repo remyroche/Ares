@@ -170,9 +170,9 @@ class BasePipeline:
         return self.plugin_registry.get_plugin_info(plugin_name)
     
     def execute_plugins(self, 
-                       plugin_names: Optional[List[str]] = None,
-                       categories: Optional[List[PluginCategory]] = None,
-                       priorities: Optional[List[PluginPriority]] = None) -> Dict[str, Any]:
+                    plugin_names: Optional[List[str]] = None,
+                    categories: Optional[List[PluginCategory]] = None,
+                    priorities: Optional[List[PluginPriority]] = None) -> Dict[str, Any]:
         """Execute plugins based on configuration."""
         # Find target files
         target_files = self._find_python_files()

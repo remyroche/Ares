@@ -56,11 +56,11 @@ def resolve_time_window_ms(
     """Resolve t0_ms/t1_ms from config or environment.
 
     Order of precedence:
-      1) config['t0_ms']/config['t1_ms']
-      2) config['start_timestamp_ms']/config['end_timestamp_ms']
-      3) ENV: ARES_T0_MS/ARES_T1_MS
-      4) config['start_datetime']/config['end_datetime'] (ISO strings)
-      5) ENV: ARES_START_DATETIME/ARES_END_DATETIME (ISO strings)
+    1) config['t0_ms']/config['t1_ms']
+    2) config['start_timestamp_ms']/config['end_timestamp_ms']
+    3) ENV: ARES_T0_MS/ARES_T1_MS
+    4) config['start_datetime']/config['end_datetime'] (ISO strings)
+    5) ENV: ARES_START_DATETIME/ARES_END_DATETIME (ISO strings)
     """
     cfg = config or {}
 

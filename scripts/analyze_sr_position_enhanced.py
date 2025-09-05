@@ -226,7 +226,7 @@ class EnhancedSRPositionAnalyzer:
 
         # Count significant levels
         significant_support=len([level for level in sr_context.get("support_levels", [])
-                                 if level.get("enhanced_strength", 0.5) > 0.6])
+                                if level.get("enhanced_strength", 0.5) > 0.6])
         significant_resistance=len([level for level in sr_context.get("resistance_levels", [])
                                     if level.get("enhanced_strength", 0.5) > 0.6])
 

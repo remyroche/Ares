@@ -22,7 +22,6 @@ from .core.decorators import traced, validates, handles_errors
 from .core.decorators.errors import handles_errors
 
 
-logger = get_logger('Step5LabelingPerRegime')
 
 
 class PerRegimeLabelingStep(LabelingStep):
@@ -269,7 +268,6 @@ class PerRegimeLabelingStep(LabelingStep):
 
 @traced(span_name='run_per_regime_labeling_step')
 @validates()
-@handles_errors
 async def run_per_regime_step(
     symbol: str,
     exchange: str,

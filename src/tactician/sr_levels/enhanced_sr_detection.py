@@ -99,7 +99,7 @@ class EnhancedSRDetector:
             
             # Combine and validate all levels
             all_levels = (fractal_levels + pivot_levels + volume_levels + 
-                         statistical_levels + psychological_levels)
+                        statistical_levels + psychological_levels)
             
             # Remove duplicates and validate
             validated_levels = self._validate_and_merge_levels(all_levels, market_data)
@@ -467,7 +467,7 @@ class EnhancedSRDetector:
             right_values = high[index + 1:index + period + 1]
             
             return (center_value > np.max(left_values) and 
-                   center_value > np.max(right_values))
+                center_value > np.max(right_values))
         except Exception:
             return False
     
@@ -482,7 +482,7 @@ class EnhancedSRDetector:
             right_values = low[index + 1:index + period + 1]
             
             return (center_value < np.min(left_values) and 
-                   center_value < np.min(right_values))
+                center_value < np.min(right_values))
         except Exception:
             return False
     

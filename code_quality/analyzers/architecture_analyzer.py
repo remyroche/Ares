@@ -16,7 +16,7 @@ class ArchitectureIssue:
     """Container for architecture issue information."""
 
     def __init__(self, issue_type: str, description: str, line: int,
-                 severity: str = "warning", details: dict[str, Any] = None):
+                severity: str = "warning", details: dict[str, Any] = None):
         self.issue_type = issue_type
         self.description = description
         self.line = line
@@ -38,7 +38,7 @@ class ArchitectureMetrics:
     """Container for architecture metrics."""
 
     def __init__(self, coupling_score: float, cohesion_score: float,
-                 abstraction_levels: int, dependency_count: int):
+                abstraction_levels: int, dependency_count: int):
         self.coupling_score = coupling_score
         self.cohesion_score = cohesion_score
         self.abstraction_levels = abstraction_levels
@@ -229,7 +229,7 @@ class ArchitectureAnalyzer:
                 for child in node.body:
                     if isinstance(child, ast.FunctionDef):
                         if any("abstract" in decorator.id.lower() for decorator in child.decorator_list
-                               if isinstance(decorator, ast.Name)):
+                            if isinstance(decorator, ast.Name)):
                             interface_count += 1
 
         abstraction_levels = inheritance_depth + interface_count

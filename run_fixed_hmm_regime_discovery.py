@@ -3,7 +3,6 @@
 Fixed HMM Regime Discovery Script
 
 This script runs the HMM regime discovery step with proper 6-month data range
-and comprehensive error handling to fix the issues encountered.
 """
 
 import asyncio

@@ -183,10 +183,10 @@ async def main() -> None:
     parser.add_argument("--symbol", required=True, help="Trading symbol (e.g., ETHUSDT)")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name (default: BINANCE)")
     parser.add_argument("--timeframes", nargs="+",
-                       default=["5m", "15m", "30m", "1h", "4h"],
-                       help="Timeframes to regenerate (default: all)")
+                    default=["5m", "15m", "30m", "1h", "4h"],
+                    help="Timeframes to regenerate (default: all)")
     parser.add_argument("--data-cache", default="data_cache",
-                       help="Data cache directory (default: data_cache)")
+                    help="Data cache directory (default: data_cache)")
 
     args=parser.parse_args()
 

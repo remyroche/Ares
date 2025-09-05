@@ -8,7 +8,6 @@ This script first ensures that all historical data is up-to-date by running
 the data collection and consolidation step. It then resumes the main training
 pipeline from Step 2 (Preliminary Optimization).
 
-This is useful if a training run failed after the data collection step, or if
 you want to retrain on the latest data without starting from scratch.
 
 Usage:

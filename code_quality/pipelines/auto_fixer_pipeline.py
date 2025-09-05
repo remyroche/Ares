@@ -21,32 +21,45 @@ from typing import Any, Dict, List
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import fixers
+# Import main fixers (ONLY auto-fixing related)
 from fixers.auto_fixer import AutoFixer
 from fixers.conservative_auto_fixer import ConservativeAutoFixer
-from fixers.sequential_fixer import SequentialFixer
+from fixers.sequential_fixer_fixed import SequentialFixer
 
-# Import script-based fixers
+# Import script-based fixers (ONLY auto-fixing related)
 from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
-from scripts.detect_circular_imports import CircularImportDetector
-from scripts.add_type_hints import TypeHintAdder
 from scripts.fix_missing_imports import MissingImportFixer
 from scripts.bulk_syntax_cleanup import BulkSyntaxCleanup
 from scripts.apply_all_fixes import ApplyAllFixes
 from scripts.final_code_fixes import FinalCodeFixes
 from scripts.fix_async_await import AsyncAwaitFixer
 
-# Import comprehensive fixers
-from comprehensive_import_fixer import ComprehensiveImportFixer
-from targeted_import_fixer import TargetedImportFixer
-from auto_fix_dead_code import AutoFixDeadCode
+# Import comprehensive fixers (ONLY auto-fixing related)
+from fixers.import_fixers.comprehensive_import_fixer import ComprehensiveImportFixer
 
-# Import plugin system
-from plugins.plugin_manager import PluginManager
-from plugins.plugin_registry import PluginRegistry
-from plugins.base_plugin import PluginCategory, PluginPriority
+# Import undefined names fixers (ONLY auto-fixing related)
+from fixers.undefined_names_fixers.fix_undefined_names import FixUndefinedNames
+from fixers.undefined_names_fixers.fix_common_undefined_names import FixCommonUndefinedNames
+from fixers.undefined_names_fixers.fix_parameter_undefined_names import FixParameterUndefinedNames
+from fixers.undefined_names_fixers.fix_simple_undefined_names import FixSimpleUndefinedNames
+from fixers.undefined_names_fixers.fix_top_undefined_names import FixTopUndefinedNames
+
+# Import plugin fixers (ONLY auto-fixing related)
+from plugins.black_fixer import BlackFixer
+from plugins.ruff_fixer import RuffFixer
+from plugins.autopep8_fixer import Autopep8Fixer
+from plugins.isort_fixer import IsortFixer
+from plugins.autoflake_fixer import AutoflakeFixer
+from plugins.docformatter_fixer import DocformatterFixer
+from plugins.flynt_fixer import FlyntFixer
+from plugins.future_annotations_fixer import FutureAnnotationsFixer
+from plugins.import_hygiene_fixer import ImportHygieneFixer
+from plugins.pyupgrade_fixer import PyupgradeFixer
+from plugins.unify_fixer import UnifyFixer
+from plugins.yapf_fixer import YapfFixer
+from plugins.yesqa_fixer import YesqaFixer
 
 # Import core components
 from core.config import get_default_config

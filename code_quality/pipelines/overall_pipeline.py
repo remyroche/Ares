@@ -21,6 +21,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import core components (ONLY orchestration related)
+from core.config import get_default_config
+from utils.dependency_manager import DependencyManager
+from utils.file_utils import FileUtils
+from utils.progress import ProgressTracker
+from utils.report_aggregator import ReportAggregator
+
+# Import CLI and runners (ONLY orchestration related)
+from cli import main as cli_main
+from run_full_pipeline import run_full_pipeline
+from quick_start import quick_validate
+
+# Import plugin system (ONLY orchestration related)
+from plugins.plugin_manager import PluginManager
+from plugins.plugin_registry import PluginRegistry
+from plugins.base_plugin import PluginCategory, PluginPriority
+
 
 class OverallPipeline:
     """Master orchestrator for all code quality pipelines."""

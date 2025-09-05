@@ -20,26 +20,26 @@ from typing import Any, Dict, List
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import interaction mappers
-from map_code_interactions import CodeInteractionMapper
-from enhanced_map_code_interactions import EnhancedCodeInteractionMapper
+# Import interaction mappers (ONLY interaction mapping related)
+from mappers.map_code_interactions import CodeInteractionMapper
+from mappers.enhanced_map_code_interactions import EnhancedCodeInteractionMapper
+from mappers.visualize_interactions import InteractionVisualizer
 
-# Import analyzers for interaction analysis
-from analyzers.call_graph_analyzer import CallGraphAnalyzer
+# Import analyzers for interaction analysis (ONLY interaction mapping related)
 from analyzers.dependency_analyzer import DependencyAnalyzer
+from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
 from analyzers.data_flow_analyzer import DataFlowAnalyzer
-from analyzers.architecture_analyzer import ArchitectureAnalyzer
 
-# Import visualizers
-from visualize_interactions import InteractionVisualizer
+# Import visualizers (ONLY interaction mapping related)
 from visualizers.interaction_network import InteractionNetwork
 from visualizers.dependency_graph import DependencyGraph
-from visualizers.dashboard_generator import DashboardGenerator
 
-# Import plugin system
-from plugins.plugin_manager import PluginManager
-from plugins.plugin_registry import PluginRegistry
-from plugins.base_plugin import PluginCategory, PluginPriority
+# Import scripts (ONLY interaction mapping related)
+from scripts.extract_interactions import ExtractInteractions
+from scripts.interaction_summary import InteractionSummary
+
+# Import pipeline mapper
+from pipelines.code_interaction_mapper import CodeInteractionMapperPipeline
 
 # Import core components
 from core.config import get_default_config

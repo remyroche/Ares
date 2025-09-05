@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
+from .data_quality_decorators import (
     validate_data_quality,
     validate_klines_data_quality,
     ValidationLevel,

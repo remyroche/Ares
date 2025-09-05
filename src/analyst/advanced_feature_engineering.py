@@ -22,7 +22,8 @@ from .candlestick_pattern_analyzer import CandlestickPatternAnalyzer
 from .analyst.meta_labeling_system import MetaLabelingSystem
 
 
-
+class AdvancedFeatureEngineering:
+    """Advanced feature engineering with candlestick pattern analysis."""
 
     @handles_errors(
         exceptions=(Exception,),

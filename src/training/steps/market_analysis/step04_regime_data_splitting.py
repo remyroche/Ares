@@ -1,3 +1,4 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
 This module creates a unified dataset with regime labels for regime-aware processing.
@@ -15,34 +16,36 @@ import traceback
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-
-# Optional psutil import for memory monitoring
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-    # Create a mock psutil for memory monitoring
+
     class MockProcess:
-        def memory_info(self):
+
+        def memory_info(self) -> None:
+
             class MemoryInfo:
                 rss = 0
             return MemoryInfo()
-    
+
     class MockPsutil:
-        def Process(self):
+
+        def Process(self) -> None:
             return MockProcess()
-        
-        def cpu_percent(self):
+
+        def cpu_percent(self) -> float:
             return 0.0
-    
     psutil = MockPsutil()
 from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
 try:
     from src.core.domain.decorators_extended import monitor_feature_engineering
 except Exception:
-    def monitor_feature_engineering(*args, **kwargs):
-        def _decorator(func):
+
+    def monitor_feature_engineering(*args, **kwargs) -> None:
+
+        def _decorator(func: Callable) -> None:
             return func
         return _decorator
 import pandas as pd
@@ -66,13 +69,13 @@ def create_fallback_logger() -> Any:
 def create_fallback_decorator() -> Any:
 
     def decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs):
+
+        def wrapper(*args, **kwargs) -> None:
             return func(*args, **kwargs)
         return wrapper
     return decorator
 if system_logger is None:
     system_logger = create_fallback_logger()
-# Use the real decorators that are already imported
 comprehensive_data_validation = validates
 handle_errors = handles_errors
 memory_efficient = cached
@@ -96,172 +99,99 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 logger = system_logger.getChild('Step4RegimeDataSplitting')
-
-# Global function call tracking
 _function_call_stack = threading.local()
 _function_call_history = []
 _function_call_lock = threading.Lock()
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and monitoring system."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         self.call_history = []
         self.active_calls = {}
         self.performance_metrics = {}
         self.error_tracking = {}
-    
-    def start_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None) -> str:
+
+    def start_call(self, func_name: str, args: tuple, kwargs: dict, caller: str=None) -> str:
         """Start tracking a function call."""
-        call_id = f"{func_name}_{int(time.time() * 1000000)}"
-        
-        call_info = {
-            'call_id': call_id,
-            'function_name': func_name,
-            'caller': caller,
-            'start_time': time.time(),
-            'args': str(args)[:200] + "..." if len(str(args)) > 200 else str(args),
-            'kwargs': str(kwargs)[:200] + "..." if len(str(kwargs)) > 200 else str(kwargs),
-            'memory_before': psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0,  # MB
-            'thread_id': threading.get_ident(),
-            'stack_depth': len(getattr(_function_call_stack, 'stack', []))
-        }
-        
+        call_id = f'{func_name}_{int(time.time() * 1000000)}'
+        call_info = {'call_id': call_id, 'function_name': func_name, 'caller': caller, 'start_time': time.time(), 'args': str(args)[:200] + '...' if len(str(args)) > 200 else str(args), 'kwargs': str(kwargs)[:200] + '...' if len(str(kwargs)) > 200 else str(kwargs), 'memory_before': psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0, 'thread_id': threading.get_ident(), 'stack_depth': len(getattr(_function_call_stack, 'stack', []))}
         with _function_call_lock:
             self.active_calls[call_id] = call_info
             self.call_history.append(call_info.copy())
-        
-        # Update thread-local stack
         if not hasattr(_function_call_stack, 'stack'):
             _function_call_stack.stack = []
         _function_call_stack.stack.append(call_id)
-        
-        logger.info(f"🔍 FUNCTION_CALL_START: {func_name} (ID: {call_id})")
+        logger.info(f'🔍 FUNCTION_CALL_START: {func_name} (ID: {call_id})')
         logger.info(f"   📞 Called by: {caller or 'ROOT'}")
         logger.info(f"   📊 Memory before: {call_info['memory_before']:.2f} MB")
         logger.info(f"   🧵 Thread: {call_info['thread_id']}")
         logger.info(f"   📏 Stack depth: {call_info['stack_depth']}")
-        
         return call_id
-    
-    def end_call(self, call_id: str, result: Any = None, error: Exception = None) -> Dict[str, Any]:
+
+    def end_call(self, call_id: str, result: Any=None, error: Exception=None) -> Dict[str, Any]:
         """End tracking a function call and generate detailed report."""
         with _function_call_lock:
             if call_id not in self.active_calls:
-                logger.warning(f"⚠️ Call ID {call_id} not found in active calls")
+                logger.warning(f'⚠️ Call ID {call_id} not found in active calls')
                 return {}
-            
             call_info = self.active_calls.pop(call_id)
-        
-        # Update thread-local stack
         if hasattr(_function_call_stack, 'stack') and call_id in _function_call_stack.stack:
             _function_call_stack.stack.remove(call_id)
-        
         end_time = time.time()
         execution_time = end_time - call_info['start_time']
-        memory_after = psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0  # MB
+        memory_after = psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0
         memory_delta = memory_after - call_info['memory_before']
-        
-        # Generate detailed outcome report
-        outcome_report = {
-            'call_id': call_id,
-            'function_name': call_info['function_name'],
-            'caller': call_info['caller'],
-            'execution_time_seconds': execution_time,
-            'memory_before_mb': call_info['memory_before'],
-            'memory_after_mb': memory_after,
-            'memory_delta_mb': memory_delta,
-            'success': error is None,
-            'error_type': type(error).__name__ if error else None,
-            'error_message': str(error) if error else None,
-            'result_type': type(result).__name__ if result is not None else None,
-            'result_size': len(str(result)) if result is not None else 0,
-            'thread_id': call_info['thread_id'],
-            'stack_depth': call_info['stack_depth'],
-            'timestamp': time.time()
-        }
-        
-        # Log detailed outcome
-        status_emoji = "✅" if error is None else "❌"
+        outcome_report = {'call_id': call_id, 'function_name': call_info['function_name'], 'caller': call_info['caller'], 'execution_time_seconds': execution_time, 'memory_before_mb': call_info['memory_before'], 'memory_after_mb': memory_after, 'memory_delta_mb': memory_delta, 'success': error is None, 'error_type': type(error).__name__ if error else None, 'error_message': str(error) if error else None, 'result_type': type(result).__name__ if result is not None else None, 'result_size': len(str(result)) if result is not None else 0, 'thread_id': call_info['thread_id'], 'stack_depth': call_info['stack_depth'], 'timestamp': time.time()}
+        status_emoji = '✅' if error is None else '❌'
         logger.info(f"{status_emoji} FUNCTION_CALL_END: {call_info['function_name']} (ID: {call_id})")
-        logger.info(f"   ⏱️ Execution time: {execution_time:.4f} seconds")
-        logger.info(f"   💾 Memory delta: {memory_delta:+.2f} MB")
+        logger.info(f'   ⏱️ Execution time: {execution_time:.4f} seconds')
+        logger.info(f'   💾 Memory delta: {memory_delta:+.2f} MB')
         logger.info(f"   🎯 Success: {outcome_report['success']}")
-        
         if error:
-            logger.error(f"   🚨 Error: {type(error).__name__}: {str(error)}")
-            logger.error(f"   📍 Traceback: {traceback.format_exc()}")
+            logger.error(f'   🚨 Error: {type(error).__name__}: {str(error)}')
+            logger.error(f'   📍 Traceback: {traceback.format_exc()}')
         else:
             logger.info(f"   📦 Result type: {outcome_report['result_type']}")
             logger.info(f"   📏 Result size: {outcome_report['result_size']} chars")
-        
-        # Update performance metrics
         func_name = call_info['function_name']
         if func_name not in self.performance_metrics:
-            self.performance_metrics[func_name] = {
-                'total_calls': 0,
-                'total_time': 0,
-                'success_count': 0,
-                'error_count': 0,
-                'avg_execution_time': 0,
-                'max_execution_time': 0,
-                'min_execution_time': float('inf')
-            }
-        
+            self.performance_metrics[func_name] = {'total_calls': 0, 'total_time': 0, 'success_count': 0, 'error_count': 0, 'avg_execution_time': 0, 'max_execution_time': 0, 'min_execution_time': float('inf')}
         metrics = self.performance_metrics[func_name]
         metrics['total_calls'] += 1
         metrics['total_time'] += execution_time
         metrics['avg_execution_time'] = metrics['total_time'] / metrics['total_calls']
         metrics['max_execution_time'] = max(metrics['max_execution_time'], execution_time)
         metrics['min_execution_time'] = min(metrics['min_execution_time'], execution_time)
-        
         if error:
             metrics['error_count'] += 1
         else:
             metrics['success_count'] += 1
-        
-        # Store error details if any
         if error:
             if func_name not in self.error_tracking:
                 self.error_tracking[func_name] = []
-            self.error_tracking[func_name].append({
-                'timestamp': time.time(),
-                'error_type': type(error).__name__,
-                'error_message': str(error),
-                'call_id': call_id
-            })
-        
+            self.error_tracking[func_name].append({'timestamp': time.time(), 'error_type': type(error).__name__, 'error_message': str(error), 'call_id': call_id})
         return outcome_report
-    
+
     def get_caller_info(self) -> str:
         """Get information about the calling function."""
         if hasattr(_function_call_stack, 'stack') and _function_call_stack.stack:
             return _function_call_stack.stack[-1]
-        return "ROOT"
-    
+        return 'ROOT'
+
     def generate_summary_report(self) -> Dict[str, Any]:
         """Generate a comprehensive summary report of all function calls."""
         with _function_call_lock:
-            return {
-                'total_calls': len(self.call_history),
-                'active_calls': len(self.active_calls),
-                'performance_metrics': self.performance_metrics,
-                'error_summary': {
-                    func: len(errors) for func, errors in self.error_tracking.items()
-                },
-                'recent_calls': self.call_history[-10:] if self.call_history else []
-            }
-
-# Global tracker instance
+            return {'total_calls': len(self.call_history), 'active_calls': len(self.active_calls), 'performance_metrics': self.performance_metrics, 'error_summary': {func: len(errors) for func, errors in self.error_tracking.items()}, 'recent_calls': self.call_history[-10:] if self.call_history else []}
 _function_tracker = FunctionCallTracker()
 
 def comprehensive_function_monitor(func: Callable) -> Callable:
     """Comprehensive function call monitoring decorator."""
+
     @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs):
+    async def async_wrapper(*args, **kwargs) -> None:
         caller = _function_tracker.get_caller_info()
         call_id = _function_tracker.start_call(func.__name__, args, kwargs, caller)
-        
         try:
             result = await func(*args, **kwargs)
             outcome = _function_tracker.end_call(call_id, result)
@@ -269,12 +199,11 @@ def comprehensive_function_monitor(func: Callable) -> Callable:
         except Exception as e:
             outcome = _function_tracker.end_call(call_id, error=e)
             raise
-    
+
     @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs):
+    def sync_wrapper(*args, **kwargs) -> None:
         caller = _function_tracker.get_caller_info()
         call_id = _function_tracker.start_call(func.__name__, args, kwargs, caller)
-        
         try:
             result = func(*args, **kwargs)
             outcome = _function_tracker.end_call(call_id, result)
@@ -282,88 +211,61 @@ def comprehensive_function_monitor(func: Callable) -> Callable:
         except Exception as e:
             outcome = _function_tracker.end_call(call_id, error=e)
             raise
-    
     return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
-def log_function_call_summary():
+def log_function_call_summary() -> None:
     """Log a summary of all function calls."""
     summary = _function_tracker.generate_summary_report()
-    logger.info("📊 FUNCTION_CALL_SUMMARY:")
+    logger.info('📊 FUNCTION_CALL_SUMMARY:')
     logger.info(f"   📞 Total calls: {summary['total_calls']}")
     logger.info(f"   🔄 Active calls: {summary['active_calls']}")
-    
     if summary['performance_metrics']:
-        logger.info("   ⚡ Performance metrics:")
+        logger.info('   ⚡ Performance metrics:')
         for func_name, metrics in summary['performance_metrics'].items():
-            logger.info(f"      {func_name}:")
+            logger.info(f'      {func_name}:')
             logger.info(f"         Calls: {metrics['total_calls']}")
             logger.info(f"         Avg time: {metrics['avg_execution_time']:.4f}s")
             logger.info(f"         Success rate: {metrics['success_count']}/{metrics['total_calls']}")
-    
     if summary['error_summary']:
-        logger.info("   🚨 Error summary:")
+        logger.info('   🚨 Error summary:')
         for func_name, error_count in summary['error_summary'].items():
-            logger.info(f"      {func_name}: {error_count} errors")
-    
-    # Log detailed error context if any errors occurred
+            logger.info(f'      {func_name}: {error_count} errors')
     if _function_tracker.error_tracking:
-        logger.info("   🔍 Detailed error context:")
+        logger.info('   🔍 Detailed error context:')
         for func_name, errors in _function_tracker.error_tracking.items():
-            logger.info(f"      {func_name} errors:")
-            for error in errors[-3:]:  # Show last 3 errors per function
+            logger.info(f'      {func_name} errors:')
+            for error in errors[-3:]:
                 logger.info(f"         - {error['error_type']}: {error['error_message']}")
                 logger.info(f"           Call ID: {error['call_id']}")
 
-def capture_comprehensive_error_context(error: Exception, context: Dict[str, Any] = None) -> Dict[str, Any]:
+def capture_comprehensive_error_context(error: Exception, context: Dict[str, Any]=None) -> Dict[str, Any]:
     """Capture comprehensive error context including function call stack and system state."""
-    error_context = {
-        'error_type': type(error).__name__,
-        'error_message': str(error),
-        'timestamp': time.time(),
-        'traceback': traceback.format_exc(),
-        'system_info': {
-            'memory_usage_mb': psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0,
-            'cpu_percent': psutil.cpu_percent() if PSUTIL_AVAILABLE else 0,
-            'thread_id': threading.get_ident()
-        },
-        'function_call_context': {
-            'active_calls': len(_function_tracker.active_calls),
-            'call_stack': getattr(_function_call_stack, 'stack', []),
-            'recent_calls': _function_tracker.call_history[-5:] if _function_tracker.call_history else []
-        }
-    }
-    
+    error_context = {'error_type': type(error).__name__, 'error_message': str(error), 'timestamp': time.time(), 'traceback': traceback.format_exc(), 'system_info': {'memory_usage_mb': psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0, 'cpu_percent': psutil.cpu_percent() if PSUTIL_AVAILABLE else 0, 'thread_id': threading.get_ident()}, 'function_call_context': {'active_calls': len(_function_tracker.active_calls), 'call_stack': getattr(_function_call_stack, 'stack', []), 'recent_calls': _function_tracker.call_history[-5:] if _function_tracker.call_history else []}}
     if context:
         error_context['additional_context'] = context
-    
     return error_context
 
-def log_comprehensive_error_report(error: Exception, context: Dict[str, Any] = None):
+def log_comprehensive_error_report(error: Exception, context: Dict[str, Any]=None) -> None:
     """Log a comprehensive error report with full context."""
     error_context = capture_comprehensive_error_context(error, context)
-    
-    logger.error("🚨 COMPREHENSIVE_ERROR_REPORT:")
+    logger.error('🚨 COMPREHENSIVE_ERROR_REPORT:')
     logger.error(f"   🔥 Error: {error_context['error_type']}: {error_context['error_message']}")
     logger.error(f"   ⏰ Timestamp: {error_context['timestamp']}")
     logger.error(f"   💾 Memory usage: {error_context['system_info']['memory_usage_mb']:.2f} MB")
     logger.error(f"   🧵 Thread ID: {error_context['system_info']['thread_id']}")
     logger.error(f"   📞 Active function calls: {error_context['function_call_context']['active_calls']}")
-    
     if error_context['function_call_context']['call_stack']:
-        logger.error("   📍 Function call stack:")
+        logger.error('   📍 Function call stack:')
         for call_id in error_context['function_call_context']['call_stack']:
-            logger.error(f"      - {call_id}")
-    
-    logger.error("   📍 Full traceback:")
+            logger.error(f'      - {call_id}')
+    logger.error('   📍 Full traceback:')
     for line in error_context['traceback'].split('\n'):
         if line.strip():
-            logger.error(f"      {line}")
-    
+            logger.error(f'      {line}')
     if context:
-        logger.error("   📋 Additional context:")
+        logger.error('   📋 Additional context:')
         for key, value in context.items():
-            logger.error(f"      {key}: {value}")
-    
+            logger.error(f'      {key}: {value}')
     return error_context
 
 class RegimeDataSplittingStep:
@@ -421,13 +323,13 @@ class RegimeDataSplittingStep:
         try:
             regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
             if regime_data is None:
-                return {"success": False, "error": "regime_data_not_found", "unified_data": None, "regime_stats": None, "saved_path": None}
+                return {'success': False, 'error': 'regime_data_not_found', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
             regime_ids = regime_data['composite_cluster_id'].unique()
             num_regimes = len(regime_ids)
             self.logger.info(f'📊 Found {num_regimes} regimes: {sorted(regime_ids)}')
             if num_regimes < 3:
                 self.logger.error(f'❌ Too few regimes: {num_regimes} (minimum 3 required)')
-                return {"success": False, "error": "too_few_regimes", "unified_data": None, "regime_stats": None, "saved_path": None}
+                return {'success': False, 'error': 'too_few_regimes', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
             if num_regimes > 20:
                 self.logger.warning(f'⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)')
             dataset_info = await self._create_unified_regime_dataset(regime_data, regime_ids, data_dir, symbol, exchange, timeframe)
@@ -435,18 +337,13 @@ class RegimeDataSplittingStep:
                 self._log_step_timing('Regime Data Splitting', step_start)
                 self.logger.info(f'✅ Successfully created unified dataset with {num_regimes} regime labels')
                 await self._save_regime_metadata(regime_ids, data_dir, symbol, exchange, timeframe)
-                return {
-                    "success": True,
-                    "unified_data": dataset_info.get("unified_data"),
-                    "regime_stats": dataset_info.get("regime_stats"),
-                    "saved_path": dataset_info.get("saved_path"),
-                }
+                return {'success': True, 'unified_data': dataset_info.get('unified_data'), 'regime_stats': dataset_info.get('regime_stats'), 'saved_path': dataset_info.get('saved_path')}
             else:
                 self.logger.error('❌ Failed to create unified regime dataset')
-                return {"success": False, "error": "creation_failed", "unified_data": None, "regime_stats": None, "saved_path": None}
+                return {'success': False, 'error': 'creation_failed', 'unified_data': None, 'regime_stats': None, 'saved_path': None}
         except Exception as e:
             self.logger.exception(f'❌ Error in regime data splitting: {e}')
-            return {"success": False, "error": str(e), "unified_data": None, "regime_stats": None, "saved_path": None}
+            return {'success': False, 'error': str(e), 'unified_data': None, 'regime_stats': None, 'saved_path': None}
 
     @comprehensive_function_monitor
     async def _load_regime_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -521,16 +418,7 @@ class RegimeDataSplittingStep:
     def _save_regime_labels(self, data: pd.DataFrame, regime_ids: List[int], training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
         """Save regime labels mapping to JSON file."""
         try:
-            regime_labels = {
-                'regime_column': 'composite_cluster_id',
-                'regime_ids': sorted(regime_ids),
-                'total_regimes': len(regime_ids),
-                'data_shape': data.shape,
-                'timestamp_range': {
-                    'start': data['timestamp'].min().isoformat(),
-                    'end': data['timestamp'].max().isoformat()
-                }
-            }
+            regime_labels = {'regime_column': 'composite_cluster_id', 'regime_ids': sorted(regime_ids), 'total_regimes': len(regime_ids), 'data_shape': data.shape, 'timestamp_range': {'start': data['timestamp'].min().isoformat(), 'end': data['timestamp'].max().isoformat()}}
             labels_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_labels.json'
             safe_json_dump(regime_labels, labels_file, indent=2)
             self.logger.info(f'✅ Saved regime labels mapping: {labels_file}')
@@ -543,29 +431,16 @@ class RegimeDataSplittingStep:
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:
         """Create unified dataset with regime labels and return dataset info."""
         try:
-            # Prepare data
             data = data.sort_values('timestamp').reset_index(drop=True)
             training_dir = ensure_directory(Path(data_dir) / 'training' / 'regime_splits')
-            
-            # Save unified dataset
             if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
                 return None
-            
-            # Save regime statistics
             if not self._save_regime_statistics(data, regime_ids, training_dir, exchange, symbol, timeframe):
                 return None
-            
-            # Save regime labels
             if not self._save_regime_labels(data, regime_ids, training_dir, exchange, symbol, timeframe):
                 return None
-
             saved_path = str(training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet')
-            return {
-                "unified_data": data,
-                "regime_stats": self._calculate_regime_statistics(data, regime_ids),
-                "saved_path": saved_path,
-            }
-            
+            return {'unified_data': data, 'regime_stats': self._calculate_regime_statistics(data, regime_ids), 'saved_path': saved_path}
         except Exception as e:
             self.logger.exception(f'❌ Error creating unified regime dataset: {e}')
             return None
@@ -578,22 +453,16 @@ class RegimeDataSplittingStep:
             for regime_id in regime_ids:
                 regime_data = data[data['composite_cluster_id'] == regime_id]
                 if len(regime_data) == 0:
-                    stats[int(regime_id)] = {"count": 0, "duration_minutes": 0, "mean_volume": 0.0}
+                    stats[int(regime_id)] = {'count': 0, 'duration_minutes': 0, 'mean_volume': 0.0}
                     continue
                 start_ts = regime_data['timestamp'].min()
                 end_ts = regime_data['timestamp'].max()
                 try:
-                    # If timestamps are int64 ms
                     duration_minutes = int((int(end_ts) - int(start_ts)) / 60000)
                 except Exception:
-                    # If timestamps are datetime
                     duration_minutes = int((pd.to_datetime(end_ts) - pd.to_datetime(start_ts)).total_seconds() / 60)
                 mean_volume = float(regime_data['volume'].mean()) if 'volume' in regime_data.columns else 0.0
-                stats[int(regime_id)] = {
-                    "count": int(len(regime_data)),
-                    "duration_minutes": duration_minutes,
-                    "mean_volume": mean_volume,
-                }
+                stats[int(regime_id)] = {'count': int(len(regime_data)), 'duration_minutes': duration_minutes, 'mean_volume': mean_volume}
             return stats
         except Exception as e:
             self.logger.exception(f'❌ Error calculating regime statistics: {e}')
@@ -638,12 +507,9 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=Non
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
         result = await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
-        success = bool(result.get("success", bool(result))) if isinstance(result, dict) else bool(result)
-        
-        # Log comprehensive function call summary
+        success = bool(result.get('success', bool(result))) if isinstance(result, dict) else bool(result)
         logger.info('📊 Generating comprehensive function call summary...')
         log_function_call_summary()
-        
         if success:
             logger.info('✅ Step 4: Regime Data Splitting completed successfully')
             logger.info('🎯 All function calls executed with comprehensive monitoring')
@@ -652,14 +518,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=Non
             logger.error('🔍 Check function call summary above for detailed error analysis')
         return success
     except Exception as e:
-        error_context = {
-            'symbol': symbol,
-            'exchange': exchange,
-            'timeframe': timeframe,
-            'data_dir': data_dir,
-            'force_rerun': force_rerun,
-            'config_keys': list(config.keys()) if config else []
-        }
+        error_context = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'config_keys': list(config.keys()) if config else []}
         log_comprehensive_error_report(e, error_context)
         logger.error('📊 Generating function call summary for error analysis...')
         log_function_call_summary()

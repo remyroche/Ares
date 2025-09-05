@@ -1,10 +1,11 @@
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Any, Tuple
 """Step 16: Enhanced Confidence Calibration - Per-Regime Implementation.
 
 This module provides per-HMM regime confidence calibration functionality with comprehensive
 data protection, validation, and error handling, ensuring that confidence calibration is 
 performed specifically for each regime's characteristics and market behavior.
 """
-
 import asyncio
 import sys
 import time
@@ -14,371 +15,256 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 import numpy as np
-
-# Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-# Import required modules with fallbacks
 try:
     from src.utils.logger import get_logger
 except ImportError:
     import logging
-    def get_logger(name):
-        return logging.getLogger(name)
 
+    def get_logger(name: Any) -> Any:
+        return logging.getLogger(name)
 try:
     from src.training.steps.optimisation.step16_confidence_calibration import Step16ConfidenceCalibration
 except ImportError:
-    # Fallback base class
-    class Step16ConfidenceCalibration:
-        def __init__(self, config):
-            self.config = config
 
+    class Step16ConfidenceCalibration:
+
+        def __init__(self, config: Dict[str, Any]) -> None:
+            self.config = config
 try:
     from src.training.steps.regime_continuity_decorator import per_regime_step
 except ImportError:
-    def per_regime_step(step_name):
-        def decorator(func):
+
+    def per_regime_step(step_name: Any) -> None:
+
+        def decorator(func: Callable) -> None:
             return func
         return decorator
-
 try:
     from src.utils.pipeline_standards import pipeline_standards
 except ImportError:
     pipeline_standards = None
-
 try:
-    from src.utils.common_operations import (
-        format_datetime, get_current_datetime, safe_file_exists, 
-        ensure_directory, safe_json_dump, safe_json_load, safe_sleep
-    )
+    from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load, safe_sleep
 except ImportError:
-    # Fallback implementations
-    def format_datetime(dt, fmt):
-        return dt.strftime(fmt) if dt else ""
-    
-    def get_current_datetime():
+
+    def format_datetime(dt: Any, fmt: Any) -> str:
+        return dt.strftime(fmt) if dt else ''
+
+    def get_current_datetime() -> Any:
         return datetime.now()
-    
-    def safe_file_exists(path):
+
+    def safe_file_exists(path: Union[str, Path]) -> None:
         return Path(path).exists()
-    
-    def ensure_directory(path):
+
+    def ensure_directory(path: Union[str, Path]) -> None:
         Path(path).mkdir(parents=True, exist_ok=True)
         return Path(path)
-    
-    def safe_json_dump(data, path, **kwargs):
+
+    def safe_json_dump(data: Union[pd.DataFrame, Dict[str, Any]], path: Union[str, Path], **kwargs) -> None:
         with open(path, 'w') as f:
             json.dump(data, f, **kwargs)
-    
-    def safe_json_load(path):
+
+    def safe_json_load(path: Union[str, Path]) -> None:
         with open(path, 'r') as f:
             return json.load(f)
-    
-    def safe_sleep(seconds):
-        time.sleep(seconds)
 
+    def safe_sleep(seconds: List[Any]) -> None:
+        time.sleep(seconds)
 try:
     from src.utils.data_quality_framework import DataQualityFramework
 except ImportError:
-    class DataQualityFramework:
-        def validate_data(self, data, schema):
-            return {'overall_passed': True, 'errors': []}
 
+    class DataQualityFramework:
+
+        def validate_data(self, data: Union[pd.DataFrame, Dict[str, Any]], schema: Any) -> bool:
+            return {'overall_passed': True, 'errors': []}
 try:
     from src.utils.data_formatting_framework import DataFormattingFramework
 except ImportError:
-    class DataFormattingFramework:
-        def format_dataframe(self, df, schema):
-            return df
 
+    class DataFormattingFramework:
+
+        def format_dataframe(self, df: pd.DataFrame, schema: Any) -> str:
+            return df
 try:
     from src.core.decorators.errors import handles_errors
 except ImportError:
-    def handles_errors(fallback=None, context=None):
-        def decorator(func):
+
+    def handles_errors(fallback: Any=None, context: Any=None) -> None:
+
+        def decorator(func: Callable) -> None:
             return func
         return decorator
-
 try:
     from src.core.decorators import validates, traced
 except ImportError:
-    def validates(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def traced(span_name=None):
-        def decorator(func):
+
+    def validates(**kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
             return func
         return decorator
 
+    def traced(span_name: Any=None) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
 logger = get_logger('Step16ConfidenceCalibrationPerRegime')
-
 
 class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
     """Enhanced confidence calibration step that processes each regime separately with comprehensive data protection."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_confidence_calibration', True)
         self.regime_specific_configs = config.get('regime_specific_calibration_configs', {})
         self.adaptive_calibration_parameters = config.get('adaptive_calibration_parameters_per_regime', True)
-        
-        # Initialize data protection frameworks
         self.dq_framework = DataQualityFramework()
         self.df_framework = DataFormattingFramework()
-        
-        # Enhanced logging
         self.logger = logger.getChild('PerRegimeConfidenceCalibration')
-        self.logger.info("🔧 Enhanced Per-Regime Confidence Calibration initialized with data protection")
-    
+        self.logger.info('🔧 Enhanced Per-Regime Confidence Calibration initialized with data protection')
+
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
         self.logger.info('🚀 Initializing Per-Regime Confidence Calibration Step...')
         self.logger.info('📋 Step 16 Configuration:')
-        self.logger.info(f"   - Per-regime enabled: {self.per_regime_enabled}")
-        self.logger.info(f"   - Adaptive parameters: {self.adaptive_calibration_parameters}")
+        self.logger.info(f'   - Per-regime enabled: {self.per_regime_enabled}')
+        self.logger.info(f'   - Adaptive parameters: {self.adaptive_calibration_parameters}')
         self.logger.info('✅ Per-Regime Confidence Calibration Step initialized successfully')
-    
+
     async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
         """Execute the complete per-regime confidence calibration step."""
         self.logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration')
         try:
             await self.initialize()
-            
-            # Execute per-regime confidence calibration
-            success = await self.execute_per_regime_confidence_calibration(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=kwargs.get('force_rerun', False)
-            )
-            
+            success = await self.execute_per_regime_confidence_calibration(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=kwargs.get('force_rerun', False))
             if success:
                 self.logger.info('✅ Step 16: Per-Regime Confidence Calibration completed successfully')
                 return {'success': True, 'status': 'COMPLETED'}
             else:
                 self.logger.error('❌ Step 16: Per-Regime Confidence Calibration failed')
                 return {'success': False, 'error': 'Per-regime confidence calibration failed'}
-                
         except Exception as e:
             self.logger.exception(f'❌ Error in Step 16: {e}')
             return {'success': False, 'error': str(e)}
-    
+
     @validates()
-    async def validate_tactician_data(self, tactician_data: pd.DataFrame, regime_id: Optional[int] = None) -> Tuple[bool, Dict[str, Any]]:
+    async def validate_tactician_data(self, tactician_data: pd.DataFrame, regime_id: Optional[int]=None) -> Tuple[bool, Dict[str, Any]]:
         """Validate tactician specialist data with comprehensive quality checks."""
-        self.logger.info(f"🔍 Validating tactician data for regime {regime_id}...")
-        
-        validation_metrics = {
-            'data_shape': tactician_data.shape,
-            'data_completeness': 0.0,
-            'quality_issues': [],
-            'critical_issues': 0,
-            'warnings': 0
-        }
-        
+        self.logger.info(f'🔍 Validating tactician data for regime {regime_id}...')
+        validation_metrics = {'data_shape': tactician_data.shape, 'data_completeness': 0.0, 'quality_issues': [], 'critical_issues': 0, 'warnings': 0}
         try:
-            # Check data is not empty
             if tactician_data.empty:
-                validation_metrics['quality_issues'].append({
-                    'type': 'empty_data',
-                    'severity': 'critical',
-                    'message': 'Tactician data is empty'
-                })
+                validation_metrics['quality_issues'].append({'type': 'empty_data', 'severity': 'critical', 'message': 'Tactician data is empty'})
                 validation_metrics['critical_issues'] += 1
-                return False, validation_metrics
-            
-            # Calculate data completeness
+                return (False, validation_metrics)
             total_cells = tactician_data.size
             non_null_cells = tactician_data.count().sum()
             validation_metrics['data_completeness'] = non_null_cells / total_cells if total_cells > 0 else 0.0
-            
-            # Check for required columns
             required_columns = ['timestamp', 'confidence', 'prediction']
             missing_columns = [col for col in required_columns if col not in tactician_data.columns]
-            
             if missing_columns:
-                validation_metrics['quality_issues'].append({
-                    'type': 'missing_columns',
-                    'severity': 'critical',
-                    'missing_columns': missing_columns
-                })
+                validation_metrics['quality_issues'].append({'type': 'missing_columns', 'severity': 'critical', 'missing_columns': missing_columns})
                 validation_metrics['critical_issues'] += 1
-            
-            # Data quality validation
             quality_result = self.dq_framework.validate_data(tactician_data, ['features_schema'])
             if not quality_result.get('overall_passed', False):
                 for issue in quality_result.get('errors', []):
-                    validation_metrics['quality_issues'].append({
-                        'type': 'data_quality',
-                        'severity': 'high',
-                        'issue': issue
-                    })
+                    validation_metrics['quality_issues'].append({'type': 'data_quality', 'severity': 'high', 'issue': issue})
                     validation_metrics['warnings'] += 1
-            
-            # Check for extreme values in confidence scores
             if 'confidence' in tactician_data.columns:
                 confidence_values = tactician_data['confidence'].dropna()
                 if len(confidence_values) > 0:
                     min_conf = confidence_values.min()
                     max_conf = confidence_values.max()
-                    
                     if min_conf < 0 or max_conf > 1:
-                        validation_metrics['quality_issues'].append({
-                            'type': 'invalid_confidence_range',
-                            'severity': 'high',
-                            'min_confidence': min_conf,
-                            'max_confidence': max_conf
-                        })
+                        validation_metrics['quality_issues'].append({'type': 'invalid_confidence_range', 'severity': 'high', 'min_confidence': min_conf, 'max_confidence': max_conf})
                         validation_metrics['warnings'] += 1
-            
             validation_passed = validation_metrics['critical_issues'] == 0
-            
             if validation_passed:
-                self.logger.info(f"✅ Tactician data validation passed for regime {regime_id}")
+                self.logger.info(f'✅ Tactician data validation passed for regime {regime_id}')
             else:
                 self.logger.error(f"❌ Tactician data validation failed for regime {regime_id}: {validation_metrics['critical_issues']} critical issues")
-            
-            return validation_passed, validation_metrics
-            
+            return (validation_passed, validation_metrics)
         except Exception as e:
-            self.logger.exception(f"❌ Tactician data validation failed with exception: {e}")
-            validation_metrics['quality_issues'].append({
-                'type': 'validation_error',
-                'severity': 'critical',
-                'error': str(e)
-            })
+            self.logger.exception(f'❌ Tactician data validation failed with exception: {e}')
+            validation_metrics['quality_issues'].append({'type': 'validation_error', 'severity': 'critical', 'error': str(e)})
             validation_metrics['critical_issues'] += 1
-            return False, validation_metrics
-    
-    @handles_errors(fallback=None, context="load_tactician_data_with_protection")
-    async def _load_tactician_data_with_protection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: Optional[int] = None) -> Optional[pd.DataFrame]:
+            return (False, validation_metrics)
+
+    @handles_errors(fallback=None, context='load_tactician_data_with_protection')
+    async def _load_tactician_data_with_protection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: Optional[int]=None) -> Optional[pd.DataFrame]:
         """Load tactician specialist data with comprehensive data protection."""
-        self.logger.info(f"📊 Loading tactician data with protection for regime {regime_id}...")
-        
+        self.logger.info(f'📊 Loading tactician data with protection for regime {regime_id}...')
         try:
-            # Construct file path
             if regime_id is not None:
-                file_path = f"{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}_regime_{regime_id}.parquet"
+                file_path = f'{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}_regime_{regime_id}.parquet'
             else:
-                file_path = f"{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}.parquet"
-            
-            # Check file existence
+                file_path = f'{data_dir}/tactician_specialist_{symbol}_{exchange}_{timeframe}.parquet'
             if not safe_file_exists(file_path):
-                self.logger.error(f"❌ Tactician data file not found: {file_path}")
+                self.logger.error(f'❌ Tactician data file not found: {file_path}')
                 return None
-            
-            # Load data with error handling
             try:
                 tactician_data = pd.read_parquet(file_path)
-                self.logger.info(f"✅ Loaded tactician data: {tactician_data.shape}")
+                self.logger.info(f'✅ Loaded tactician data: {tactician_data.shape}')
             except Exception as e:
-                self.logger.error(f"❌ Failed to load tactician data from {file_path}: {e}")
+                self.logger.error(f'❌ Failed to load tactician data from {file_path}: {e}')
                 return None
-            
-            # Validate loaded data
             validation_passed, validation_metrics = await self.validate_tactician_data(tactician_data, regime_id)
-            
             if not validation_passed:
-                self.logger.error(f"❌ Tactician data validation failed for regime {regime_id}")
+                self.logger.error(f'❌ Tactician data validation failed for regime {regime_id}')
                 return None
-            
-            # Apply data formatting protection
             try:
                 formatted_data = self.df_framework.format_dataframe(tactician_data, 'features')
-                self.logger.info(f"✅ Applied data formatting protection")
+                self.logger.info(f'✅ Applied data formatting protection')
                 return formatted_data
             except Exception as e:
-                self.logger.warning(f"⚠️ Data formatting failed, using original data: {e}")
+                self.logger.warning(f'⚠️ Data formatting failed, using original data: {e}')
                 return tactician_data
-            
         except Exception as e:
-            self.logger.exception(f"❌ Failed to load tactician data with protection: {e}")
+            self.logger.exception(f'❌ Failed to load tactician data with protection: {e}')
             return None
-    
+
     def _construct_output_file_path(self, symbol: str, exchange: str, regime_id: Optional[int]) -> Path:
         """Construct the output file path for calibration results."""
-        output_dir = Path("models")
+        output_dir = Path('models')
         ensure_directory(output_dir)
-        
         if regime_id is not None:
-            return output_dir / f"{symbol}_{exchange}_confidence_calibration_regime_{regime_id}.json"
+            return output_dir / f'{symbol}_{exchange}_confidence_calibration_regime_{regime_id}.json'
         else:
-            return output_dir / f"{symbol}_{exchange}_confidence_calibration.json"
+            return output_dir / f'{symbol}_{exchange}_confidence_calibration.json'
 
-    def _create_enhanced_results(self, calibration_results: Dict[str, Any], symbol: str, 
-                                exchange: str, timeframe: str, regime_id: Optional[int]) -> Dict[str, Any]:
+    def _create_enhanced_results(self, calibration_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, regime_id: Optional[int]) -> Dict[str, Any]:
         """Create enhanced results with metadata."""
-        return {
-            'calibration_results': calibration_results,
-            'metadata': {
-                'symbol': symbol,
-                'exchange': exchange,
-                'timeframe': timeframe,
-                'regime_id': regime_id,
-                'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
-                'version': '1.0',
-                'data_protection_enabled': True
-            }
-        }
+        return {'calibration_results': calibration_results, 'metadata': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'regime_id': regime_id, 'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'version': '1.0', 'data_protection_enabled': True}}
 
     def _save_and_verify_results(self, enhanced_results: Dict[str, Any], output_file: Path) -> bool:
         """Save results and verify file creation."""
         safe_json_dump(enhanced_results, output_file, indent=2)
-        
         if safe_file_exists(output_file):
-            self.logger.info(f"✅ Calibration results saved successfully: {output_file}")
+            self.logger.info(f'✅ Calibration results saved successfully: {output_file}')
             return True
         else:
-            self.logger.error(f"❌ Failed to save calibration results: {output_file}")
+            self.logger.error(f'❌ Failed to save calibration results: {output_file}')
             return False
 
-    @handles_errors(fallback=False, context="save_calibration_results_with_protection")
-    async def _save_calibration_results_with_protection(
-        self, 
-        calibration_results: Dict[str, Any], 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        data_dir: str, 
-        regime_id: Optional[int] = None
-    ) -> bool:
+    @handles_errors(fallback=False, context='save_calibration_results_with_protection')
+    async def _save_calibration_results_with_protection(self, calibration_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: Optional[int]=None) -> bool:
         """Save calibration results with comprehensive data protection."""
-        self.logger.info(f"💾 Saving calibration results with protection for regime {regime_id}...")
-        
+        self.logger.info(f'💾 Saving calibration results with protection for regime {regime_id}...')
         try:
-            # Construct output file path
             output_file = self._construct_output_file_path(symbol, exchange, regime_id)
-            
-            # Create enhanced results with metadata
-            enhanced_results = self._create_enhanced_results(
-                calibration_results, symbol, exchange, timeframe, regime_id
-            )
-            
-            # Save and verify results
+            enhanced_results = self._create_enhanced_results(calibration_results, symbol, exchange, timeframe, regime_id)
             return self._save_and_verify_results(enhanced_results, output_file)
-                
         except Exception as e:
-            self.logger.exception(f"❌ Failed to save calibration results with protection: {e}")
+            self.logger.exception(f'❌ Failed to save calibration results with protection: {e}')
             return False
-        
+
     @traced(span_name='execute_per_regime_confidence_calibration')
     @per_regime_step('step16_confidence_calibration')
-    async def execute_per_regime_confidence_calibration(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool = False,
-        regime_id: Optional[int] = None,
-        regime_context: Optional[Any] = None,
-        per_regime: bool = True
-    ) -> bool:
+    async def execute_per_regime_confidence_calibration(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool=True) -> bool:
         """Execute confidence calibration on a per-regime basis.
         
         Each regime may require different confidence calibration strategies, so confidence
@@ -398,50 +284,27 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Success status
         """
         try:
-            self.logger.info(f"🚀 Starting per-regime confidence calibration for regime {regime_id}")
-            
-            # Load tactician specialist training results from previous step
+            self.logger.info(f'🚀 Starting per-regime confidence calibration for regime {regime_id}')
             specialist_data = await self._load_tactician_specialist_data(symbol, exchange, timeframe, data_dir, regime_id)
             if specialist_data is None:
-                self.logger.error(f"❌ Failed to load tactician specialist data for regime {regime_id}")
+                self.logger.error(f'❌ Failed to load tactician specialist data for regime {regime_id}')
                 return False
-            
-            # Get regime-specific configuration
             regime_config = self._get_regime_calibration_config(regime_id)
-            
-            # Apply regime-specific confidence calibration
-            calibration_results = await self._apply_regime_confidence_calibration(
-                specialist_data, regime_config, regime_id
-            )
-            
+            calibration_results = await self._apply_regime_confidence_calibration(specialist_data, regime_config, regime_id)
             if calibration_results is None:
-                self.logger.error(f"❌ Failed confidence calibration for regime {regime_id}")
+                self.logger.error(f'❌ Failed confidence calibration for regime {regime_id}')
                 return False
-            
-            # Save regime-specific results
-            success = await self._save_regime_calibration_results(
-                calibration_results, symbol, exchange, timeframe, data_dir, regime_id
-            )
-            
+            success = await self._save_regime_calibration_results(calibration_results, symbol, exchange, timeframe, data_dir, regime_id)
             if success:
-                self.logger.info(f"✅ Successfully completed confidence calibration for regime {regime_id}")
+                self.logger.info(f'✅ Successfully completed confidence calibration for regime {regime_id}')
             else:
-                self.logger.error(f"❌ Failed to save calibration results for regime {regime_id}")
-            
+                self.logger.error(f'❌ Failed to save calibration results for regime {regime_id}')
             return success
-            
         except Exception as e:
-            self.logger.exception(f"❌ Error in per-regime confidence calibration for regime {regime_id}: {e}")
+            self.logger.exception(f'❌ Error in per-regime confidence calibration for regime {regime_id}: {e}')
             return False
-    
-    async def _load_tactician_specialist_data(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _load_tactician_specialist_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: int) -> Optional[Dict[str, Any]]:
         """Load tactician specialist training data for a specific regime.
         
         Args:
@@ -455,26 +318,21 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Tactician specialist training data or None
         """
         try:
-            # Try per-regime tactician specialist data first
             specialist_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_tactician_specialist_training_regime_{regime_id}.json'
-            
             if not specialist_path.exists():
-                # Fall back to aggregated tactician specialist data
                 specialist_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_tactician_specialist_training_aggregated.json'
-            
             if specialist_path.exists():
                 with open(specialist_path, 'r') as f:
                     data = json.load(f)
-                self.logger.info(f"✅ Loaded tactician specialist data for regime {regime_id}")
+                self.logger.info(f'✅ Loaded tactician specialist data for regime {regime_id}')
                 return data
             else:
-                self.logger.error(f"❌ Tactician specialist data not found: {specialist_path}")
+                self.logger.error(f'❌ Tactician specialist data not found: {specialist_path}')
                 return None
-                
         except Exception as e:
-            self.logger.error(f"❌ Error loading tactician specialist data for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error loading tactician specialist data for regime {regime_id}: {e}')
             return None
-    
+
     def _get_regime_calibration_config(self, regime_id: int) -> Dict[str, Any]:
         """Get confidence calibration configuration for a specific regime.
         
@@ -486,109 +344,17 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
         Returns:
             Dictionary of regime-specific calibration configuration
         """
-        # Check if custom config exists for this regime
         if f'regime_{regime_id}' in self.regime_specific_configs:
             return self.regime_specific_configs[f'regime_{regime_id}']
-        
-        # Create adaptive configuration based on regime characteristics
-        base_config = {
-            'enable_platt_scaling': True,
-            'enable_isotonic_regression': True,
-            'enable_temperature_scaling': True,
-            'enable_histogram_binning': True,
-            'enable_bayesian_calibration': True,
-            'enable_ensemble_calibration': True
-        }
-        
-        # Adapt based on regime ID patterns
+        base_config = {'enable_platt_scaling': True, 'enable_isotonic_regression': True, 'enable_temperature_scaling': True, 'enable_histogram_binning': True, 'enable_bayesian_calibration': True, 'enable_ensemble_calibration': True}
         if regime_id <= 2:
-            # Low regime IDs - often trending markets
-            # Emphasize trend-following confidence calibration
-            return {
-                **base_config,
-                'calibration_strategy': {
-                    'emphasis': 'trend_following',
-                    'calibration_method': 'platt_scaling',
-                    'confidence_threshold': 0.7,
-                    'calibration_bins': 10
-                },
-                'calibration_parameters': {
-                    'platt_scaling': {
-                        'learning_rate': 0.01,
-                        'max_iterations': 1000,
-                        'convergence_threshold': 1e-6
-                    },
-                    'isotonic_regression': {
-                        'out_of_bounds': 'clip',
-                        'increasing': True
-                    },
-                    'temperature_scaling': {
-                        'temperature_range': [0.1, 10.0],
-                        'optimization_method': 'lbfgs'
-                    }
-                }
-            }
+            return {**base_config, 'calibration_strategy': {'emphasis': 'trend_following', 'calibration_method': 'platt_scaling', 'confidence_threshold': 0.7, 'calibration_bins': 10}, 'calibration_parameters': {'platt_scaling': {'learning_rate': 0.01, 'max_iterations': 1000, 'convergence_threshold': 1e-06}, 'isotonic_regression': {'out_of_bounds': 'clip', 'increasing': True}, 'temperature_scaling': {'temperature_range': [0.1, 10.0], 'optimization_method': 'lbfgs'}}}
         elif regime_id >= 5:
-            # High regime IDs - often volatile/ranging markets
-            # Emphasize volatility-aware confidence calibration
-            return {
-                **base_config,
-                'calibration_strategy': {
-                    'emphasis': 'volatility_aware',
-                    'calibration_method': 'bayesian_calibration',
-                    'confidence_threshold': 0.8,
-                    'calibration_bins': 15
-                },
-                'calibration_parameters': {
-                    'bayesian_calibration': {
-                        'prior_strength': 1.0,
-                        'mcmc_samples': 1000,
-                        'burn_in_samples': 100
-                    },
-                    'histogram_binning': {
-                        'bin_count': 15,
-                        'bin_strategy': 'uniform'
-                    },
-                    'temperature_scaling': {
-                        'temperature_range': [0.05, 20.0],
-                        'optimization_method': 'adam'
-                    }
-                }
-            }
+            return {**base_config, 'calibration_strategy': {'emphasis': 'volatility_aware', 'calibration_method': 'bayesian_calibration', 'confidence_threshold': 0.8, 'calibration_bins': 15}, 'calibration_parameters': {'bayesian_calibration': {'prior_strength': 1.0, 'mcmc_samples': 1000, 'burn_in_samples': 100}, 'histogram_binning': {'bin_count': 15, 'bin_strategy': 'uniform'}, 'temperature_scaling': {'temperature_range': [0.05, 20.0], 'optimization_method': 'adam'}}}
         else:
-            # Medium regime IDs - balanced approach
-            return {
-                **base_config,
-                'calibration_strategy': {
-                    'emphasis': 'balanced_calibration',
-                    'calibration_method': 'ensemble_calibration',
-                    'confidence_threshold': 0.75,
-                    'calibration_bins': 12
-                },
-                'calibration_parameters': {
-                    'ensemble_calibration': {
-                        'ensemble_method': 'weighted_average',
-                        'weight_optimization': True,
-                        'cross_validation_folds': 5
-                    },
-                    'platt_scaling': {
-                        'learning_rate': 0.015,
-                        'max_iterations': 1500,
-                        'convergence_threshold': 1e-7
-                    },
-                    'isotonic_regression': {
-                        'out_of_bounds': 'clip',
-                        'increasing': True
-                    }
-                }
-            }
-    
-    async def _apply_regime_confidence_calibration(
-        self,
-        specialist_data: Dict[str, Any],
-        regime_config: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+            return {**base_config, 'calibration_strategy': {'emphasis': 'balanced_calibration', 'calibration_method': 'ensemble_calibration', 'confidence_threshold': 0.75, 'calibration_bins': 12}, 'calibration_parameters': {'ensemble_calibration': {'ensemble_method': 'weighted_average', 'weight_optimization': True, 'cross_validation_folds': 5}, 'platt_scaling': {'learning_rate': 0.015, 'max_iterations': 1500, 'convergence_threshold': 1e-07}, 'isotonic_regression': {'out_of_bounds': 'clip', 'increasing': True}}}
+
+    async def _apply_regime_confidence_calibration(self, specialist_data: Dict[str, Any], regime_config: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply confidence calibration to regime specialist data.
         
         Args:
@@ -600,48 +366,24 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Calibration results or None
         """
         try:
-            self.logger.info(f"🔧 Applying confidence calibration for regime {regime_id}")
-            
-            # Extract trained specialists
+            self.logger.info(f'🔧 Applying confidence calibration for regime {regime_id}')
             trained_specialists = specialist_data.get('trained_specialists', {})
             if not trained_specialists:
-                self.logger.warning(f"⚠️ No trained specialists found for confidence calibration in regime {regime_id}")
+                self.logger.warning(f'⚠️ No trained specialists found for confidence calibration in regime {regime_id}')
                 return None
-            
-            results = {
-                'regime_id': regime_id,
-                'calibration_strategy': regime_config.get('calibration_strategy', {}),
-                'calibration_parameters': regime_config.get('calibration_parameters', {}),
-                'calibrated_specialists': {},
-                'calibration_metrics': {},
-                'calibration_metadata': {}
-            }
-            
-            # Calibrate each specialist
+            results = {'regime_id': regime_id, 'calibration_strategy': regime_config.get('calibration_strategy', {}), 'calibration_parameters': regime_config.get('calibration_parameters', {}), 'calibrated_specialists': {}, 'calibration_metrics': {}, 'calibration_metadata': {}}
             for specialist_name, specialist_data in trained_specialists.items():
-                calibrated_specialist = await self._calibrate_individual_specialist(
-                    specialist_name, specialist_data, regime_config, regime_id
-                )
+                calibrated_specialist = await self._calibrate_individual_specialist(specialist_name, specialist_data, regime_config, regime_id)
                 if calibrated_specialist:
                     results['calibrated_specialists'][specialist_name] = calibrated_specialist
-            
-            # Calculate calibration metrics
             results['calibration_metrics'] = self._calculate_calibration_metrics(results['calibrated_specialists'])
-            
             self.logger.info(f"✅ Completed confidence calibration for regime {regime_id}: {len(results['calibrated_specialists'])} specialists calibrated")
             return results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying confidence calibration for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying confidence calibration for regime {regime_id}: {e}')
             return None
-    
-    async def _calibrate_individual_specialist(
-        self,
-        specialist_name: str,
-        specialist_data: Dict[str, Any],
-        regime_config: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _calibrate_individual_specialist(self, specialist_name: str, specialist_data: Dict[str, Any], regime_config: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Calibrate an individual specialist.
         
         Args:
@@ -655,83 +397,37 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
         """
         try:
             specialist_type = specialist_data.get('specialist_type', 'unknown')
-            
-            # Create calibrated specialist based on type and regime
-            calibrated_specialist = {
-                **specialist_data,  # Copy specialist data
-                'calibration_applied': True,
-                'calibration_timestamp': datetime.now().isoformat(),
-                'calibration_methods': {},
-                'calibrated_confidence': {},
-                'calibration_improvements': {}
-            }
-            
-            # Apply regime-specific calibration methods
+            calibrated_specialist = {**specialist_data, 'calibration_applied': True, 'calibration_timestamp': datetime.now().isoformat(), 'calibration_methods': {}, 'calibrated_confidence': {}, 'calibration_improvements': {}}
             calibration_params = regime_config.get('calibration_parameters', {})
-            
-            # Apply Platt scaling
             if regime_config.get('enable_platt_scaling', True):
-                platt_results = await self._apply_platt_scaling(
-                    specialist_data, calibration_params.get('platt_scaling', {}), regime_id
-                )
+                platt_results = await self._apply_platt_scaling(specialist_data, calibration_params.get('platt_scaling', {}), regime_id)
                 if platt_results:
                     calibrated_specialist['calibration_methods']['platt_scaling'] = platt_results
-            
-            # Apply isotonic regression
             if regime_config.get('enable_isotonic_regression', True):
-                isotonic_results = await self._apply_isotonic_regression(
-                    specialist_data, calibration_params.get('isotonic_regression', {}), regime_id
-                )
+                isotonic_results = await self._apply_isotonic_regression(specialist_data, calibration_params.get('isotonic_regression', {}), regime_id)
                 if isotonic_results:
                     calibrated_specialist['calibration_methods']['isotonic_regression'] = isotonic_results
-            
-            # Apply temperature scaling
             if regime_config.get('enable_temperature_scaling', True):
-                temperature_results = await self._apply_temperature_scaling(
-                    specialist_data, calibration_params.get('temperature_scaling', {}), regime_id
-                )
+                temperature_results = await self._apply_temperature_scaling(specialist_data, calibration_params.get('temperature_scaling', {}), regime_id)
                 if temperature_results:
                     calibrated_specialist['calibration_methods']['temperature_scaling'] = temperature_results
-            
-            # Apply histogram binning
             if regime_config.get('enable_histogram_binning', True):
-                histogram_results = await self._apply_histogram_binning(
-                    specialist_data, regime_config.get('calibration_strategy', {}), regime_id
-                )
+                histogram_results = await self._apply_histogram_binning(specialist_data, regime_config.get('calibration_strategy', {}), regime_id)
                 if histogram_results:
                     calibrated_specialist['calibration_methods']['histogram_binning'] = histogram_results
-            
-            # Apply Bayesian calibration
             if regime_config.get('enable_bayesian_calibration', True):
-                bayesian_results = await self._apply_bayesian_calibration(
-                    specialist_data, calibration_params.get('bayesian_calibration', {}), regime_id
-                )
+                bayesian_results = await self._apply_bayesian_calibration(specialist_data, calibration_params.get('bayesian_calibration', {}), regime_id)
                 if bayesian_results:
                     calibrated_specialist['calibration_methods']['bayesian_calibration'] = bayesian_results
-            
-            # Calculate calibrated confidence scores
-            calibrated_specialist['calibrated_confidence'] = self._calculate_calibrated_confidence(
-                calibrated_specialist['calibration_methods'], regime_id
-            )
-            
-            # Calculate calibration improvements
-            calibrated_specialist['calibration_improvements'] = self._calculate_calibration_improvements(
-                specialist_data, calibrated_specialist['calibrated_confidence']
-            )
-            
-            self.logger.info(f"✅ Calibrated {specialist_name} for regime {regime_id}")
+            calibrated_specialist['calibrated_confidence'] = self._calculate_calibrated_confidence(calibrated_specialist['calibration_methods'], regime_id)
+            calibrated_specialist['calibration_improvements'] = self._calculate_calibration_improvements(specialist_data, calibrated_specialist['calibrated_confidence'])
+            self.logger.info(f'✅ Calibrated {specialist_name} for regime {regime_id}')
             return calibrated_specialist
-            
         except Exception as e:
-            self.logger.error(f"❌ Error calibrating specialist {specialist_name} for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error calibrating specialist {specialist_name} for regime {regime_id}: {e}')
             return None
-    
-    async def _apply_platt_scaling(
-        self,
-        specialist_data: Dict[str, Any],
-        platt_params: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _apply_platt_scaling(self, specialist_data: Dict[str, Any], platt_params: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply Platt scaling calibration.
         
         Args:
@@ -743,41 +439,13 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Platt scaling results or None
         """
         try:
-            # Simulate Platt scaling calibration
-            platt_results = {
-                'calibration_method': 'platt_scaling',
-                'regime_id': regime_id,
-                'calibration_parameters': platt_params,
-                'calibration_metrics': {
-                    'brier_score_before': np.random.uniform(0.2, 0.4),
-                    'brier_score_after': np.random.uniform(0.1, 0.25),
-                    'ece_before': np.random.uniform(0.05, 0.15),
-                    'ece_after': np.random.uniform(0.02, 0.08),
-                    'reliability_diagram_improvement': np.random.uniform(0.1, 0.3)
-                },
-                'calibration_coefficients': {
-                    'A': np.random.uniform(0.5, 2.0),
-                    'B': np.random.uniform(-1.0, 1.0)
-                },
-                'calibration_quality': {
-                    'convergence_achieved': True,
-                    'iterations_required': np.random.randint(50, 200),
-                    'final_loss': np.random.uniform(0.01, 0.1)
-                }
-            }
-            
+            platt_results = {'calibration_method': 'platt_scaling', 'regime_id': regime_id, 'calibration_parameters': platt_params, 'calibration_metrics': {'brier_score_before': np.random.uniform(0.2, 0.4), 'brier_score_after': np.random.uniform(0.1, 0.25), 'ece_before': np.random.uniform(0.05, 0.15), 'ece_after': np.random.uniform(0.02, 0.08), 'reliability_diagram_improvement': np.random.uniform(0.1, 0.3)}, 'calibration_coefficients': {'A': np.random.uniform(0.5, 2.0), 'B': np.random.uniform(-1.0, 1.0)}, 'calibration_quality': {'convergence_achieved': True, 'iterations_required': np.random.randint(50, 200), 'final_loss': np.random.uniform(0.01, 0.1)}}
             return platt_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying Platt scaling for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying Platt scaling for regime {regime_id}: {e}')
             return None
-    
-    async def _apply_isotonic_regression(
-        self,
-        specialist_data: Dict[str, Any],
-        isotonic_params: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _apply_isotonic_regression(self, specialist_data: Dict[str, Any], isotonic_params: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply isotonic regression calibration.
         
         Args:
@@ -789,42 +457,13 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Isotonic regression results or None
         """
         try:
-            # Simulate isotonic regression calibration
-            isotonic_results = {
-                'calibration_method': 'isotonic_regression',
-                'regime_id': regime_id,
-                'calibration_parameters': isotonic_params,
-                'calibration_metrics': {
-                    'brier_score_before': np.random.uniform(0.2, 0.4),
-                    'brier_score_after': np.random.uniform(0.1, 0.25),
-                    'ece_before': np.random.uniform(0.05, 0.15),
-                    'ece_after': np.random.uniform(0.02, 0.08),
-                    'monotonicity_improvement': np.random.uniform(0.15, 0.35)
-                },
-                'calibration_function': {
-                    'monotonic': True,
-                    'piecewise_linear': True,
-                    'breakpoints': np.random.randint(5, 15)
-                },
-                'calibration_quality': {
-                    'monotonicity_achieved': True,
-                    'smoothness_score': np.random.uniform(0.7, 0.95),
-                    'fit_quality': np.random.uniform(0.8, 0.98)
-                }
-            }
-            
+            isotonic_results = {'calibration_method': 'isotonic_regression', 'regime_id': regime_id, 'calibration_parameters': isotonic_params, 'calibration_metrics': {'brier_score_before': np.random.uniform(0.2, 0.4), 'brier_score_after': np.random.uniform(0.1, 0.25), 'ece_before': np.random.uniform(0.05, 0.15), 'ece_after': np.random.uniform(0.02, 0.08), 'monotonicity_improvement': np.random.uniform(0.15, 0.35)}, 'calibration_function': {'monotonic': True, 'piecewise_linear': True, 'breakpoints': np.random.randint(5, 15)}, 'calibration_quality': {'monotonicity_achieved': True, 'smoothness_score': np.random.uniform(0.7, 0.95), 'fit_quality': np.random.uniform(0.8, 0.98)}}
             return isotonic_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying isotonic regression for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying isotonic regression for regime {regime_id}: {e}')
             return None
-    
-    async def _apply_temperature_scaling(
-        self,
-        specialist_data: Dict[str, Any],
-        temperature_params: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _apply_temperature_scaling(self, specialist_data: Dict[str, Any], temperature_params: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply temperature scaling calibration.
         
         Args:
@@ -836,41 +475,13 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Temperature scaling results or None
         """
         try:
-            # Simulate temperature scaling calibration
-            temperature_results = {
-                'calibration_method': 'temperature_scaling',
-                'regime_id': regime_id,
-                'calibration_parameters': temperature_params,
-                'calibration_metrics': {
-                    'brier_score_before': np.random.uniform(0.2, 0.4),
-                    'brier_score_after': np.random.uniform(0.1, 0.25),
-                    'ece_before': np.random.uniform(0.05, 0.15),
-                    'ece_after': np.random.uniform(0.02, 0.08),
-                    'temperature_effectiveness': np.random.uniform(0.1, 0.3)
-                },
-                'calibration_coefficients': {
-                    'temperature': np.random.uniform(0.5, 3.0),
-                    'bias': np.random.uniform(-0.5, 0.5)
-                },
-                'calibration_quality': {
-                    'optimization_converged': True,
-                    'optimization_iterations': np.random.randint(20, 100),
-                    'final_temperature': np.random.uniform(0.8, 2.5)
-                }
-            }
-            
+            temperature_results = {'calibration_method': 'temperature_scaling', 'regime_id': regime_id, 'calibration_parameters': temperature_params, 'calibration_metrics': {'brier_score_before': np.random.uniform(0.2, 0.4), 'brier_score_after': np.random.uniform(0.1, 0.25), 'ece_before': np.random.uniform(0.05, 0.15), 'ece_after': np.random.uniform(0.02, 0.08), 'temperature_effectiveness': np.random.uniform(0.1, 0.3)}, 'calibration_coefficients': {'temperature': np.random.uniform(0.5, 3.0), 'bias': np.random.uniform(-0.5, 0.5)}, 'calibration_quality': {'optimization_converged': True, 'optimization_iterations': np.random.randint(20, 100), 'final_temperature': np.random.uniform(0.8, 2.5)}}
             return temperature_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying temperature scaling for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying temperature scaling for regime {regime_id}: {e}')
             return None
-    
-    async def _apply_histogram_binning(
-        self,
-        specialist_data: Dict[str, Any],
-        calibration_strategy: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _apply_histogram_binning(self, specialist_data: Dict[str, Any], calibration_strategy: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply histogram binning calibration.
         
         Args:
@@ -882,47 +493,14 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Histogram binning results or None
         """
         try:
-            # Simulate histogram binning calibration
             bin_count = calibration_strategy.get('calibration_bins', 10)
-            
-            histogram_results = {
-                'calibration_method': 'histogram_binning',
-                'regime_id': regime_id,
-                'calibration_parameters': {
-                    'bin_count': bin_count,
-                    'bin_strategy': 'uniform'
-                },
-                'calibration_metrics': {
-                    'brier_score_before': np.random.uniform(0.2, 0.4),
-                    'brier_score_after': np.random.uniform(0.1, 0.25),
-                    'ece_before': np.random.uniform(0.05, 0.15),
-                    'ece_after': np.random.uniform(0.02, 0.08),
-                    'binning_effectiveness': np.random.uniform(0.1, 0.3)
-                },
-                'calibration_bins': {
-                    'bin_edges': np.linspace(0, 1, bin_count + 1).tolist(),
-                    'bin_counts': np.random.randint(10, 100, bin_count).tolist(),
-                    'bin_accuracies': np.random.uniform(0.6, 0.9, bin_count).tolist()
-                },
-                'calibration_quality': {
-                    'binning_quality': np.random.uniform(0.7, 0.95),
-                    'bin_distribution': 'uniform',
-                    'calibration_improvement': np.random.uniform(0.1, 0.3)
-                }
-            }
-            
+            histogram_results = {'calibration_method': 'histogram_binning', 'regime_id': regime_id, 'calibration_parameters': {'bin_count': bin_count, 'bin_strategy': 'uniform'}, 'calibration_metrics': {'brier_score_before': np.random.uniform(0.2, 0.4), 'brier_score_after': np.random.uniform(0.1, 0.25), 'ece_before': np.random.uniform(0.05, 0.15), 'ece_after': np.random.uniform(0.02, 0.08), 'binning_effectiveness': np.random.uniform(0.1, 0.3)}, 'calibration_bins': {'bin_edges': np.linspace(0, 1, bin_count + 1).tolist(), 'bin_counts': np.random.randint(10, 100, bin_count).tolist(), 'bin_accuracies': np.random.uniform(0.6, 0.9, bin_count).tolist()}, 'calibration_quality': {'binning_quality': np.random.uniform(0.7, 0.95), 'bin_distribution': 'uniform', 'calibration_improvement': np.random.uniform(0.1, 0.3)}}
             return histogram_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying histogram binning for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying histogram binning for regime {regime_id}: {e}')
             return None
-    
-    async def _apply_bayesian_calibration(
-        self,
-        specialist_data: Dict[str, Any],
-        bayesian_params: Dict[str, Any],
-        regime_id: int
-    ) -> Optional[Dict[str, Any]]:
+
+    async def _apply_bayesian_calibration(self, specialist_data: Dict[str, Any], bayesian_params: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
         """Apply Bayesian calibration.
         
         Args:
@@ -934,44 +512,13 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Bayesian calibration results or None
         """
         try:
-            # Simulate Bayesian calibration
-            bayesian_results = {
-                'calibration_method': 'bayesian_calibration',
-                'regime_id': regime_id,
-                'calibration_parameters': bayesian_params,
-                'calibration_metrics': {
-                    'brier_score_before': np.random.uniform(0.2, 0.4),
-                    'brier_score_after': np.random.uniform(0.1, 0.25),
-                    'ece_before': np.random.uniform(0.05, 0.15),
-                    'ece_after': np.random.uniform(0.02, 0.08),
-                    'bayesian_improvement': np.random.uniform(0.1, 0.3)
-                },
-                'calibration_posterior': {
-                    'mean_parameters': np.random.uniform(0.5, 2.0, 3).tolist(),
-                    'variance_parameters': np.random.uniform(0.01, 0.1, 3).tolist(),
-                    'credible_intervals': {
-                        'lower_95': np.random.uniform(0.4, 1.5, 3).tolist(),
-                        'upper_95': np.random.uniform(1.5, 2.5, 3).tolist()
-                    }
-                },
-                'calibration_quality': {
-                    'mcmc_convergence': True,
-                    'effective_sample_size': np.random.randint(500, 1000),
-                    'rhat_values': np.random.uniform(1.0, 1.1, 3).tolist()
-                }
-            }
-            
+            bayesian_results = {'calibration_method': 'bayesian_calibration', 'regime_id': regime_id, 'calibration_parameters': bayesian_params, 'calibration_metrics': {'brier_score_before': np.random.uniform(0.2, 0.4), 'brier_score_after': np.random.uniform(0.1, 0.25), 'ece_before': np.random.uniform(0.05, 0.15), 'ece_after': np.random.uniform(0.02, 0.08), 'bayesian_improvement': np.random.uniform(0.1, 0.3)}, 'calibration_posterior': {'mean_parameters': np.random.uniform(0.5, 2.0, 3).tolist(), 'variance_parameters': np.random.uniform(0.01, 0.1, 3).tolist(), 'credible_intervals': {'lower_95': np.random.uniform(0.4, 1.5, 3).tolist(), 'upper_95': np.random.uniform(1.5, 2.5, 3).tolist()}}, 'calibration_quality': {'mcmc_convergence': True, 'effective_sample_size': np.random.randint(500, 1000), 'rhat_values': np.random.uniform(1.0, 1.1, 3).tolist()}}
             return bayesian_results
-            
         except Exception as e:
-            self.logger.error(f"❌ Error applying Bayesian calibration for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error applying Bayesian calibration for regime {regime_id}: {e}')
             return None
-    
-    def _calculate_calibrated_confidence(
-        self,
-        calibration_methods: Dict[str, Any],
-        regime_id: int
-    ) -> Dict[str, Any]:
+
+    def _calculate_calibrated_confidence(self, calibration_methods: Dict[str, Any], regime_id: int) -> Dict[str, Any]:
         """Calculate calibrated confidence scores.
         
         Args:
@@ -982,66 +529,31 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Calibrated confidence scores
         """
         try:
-            calibrated_confidence = {
-                'overall_confidence': 0.0,
-                'confidence_distribution': {},
-                'confidence_reliability': {},
-                'calibration_method_weights': {}
-            }
-            
-            # Calculate weighted average of calibration methods
+            calibrated_confidence = {'overall_confidence': 0.0, 'confidence_distribution': {}, 'confidence_reliability': {}, 'calibration_method_weights': {}}
             method_weights = {}
             method_scores = {}
-            
             for method_name, method_results in calibration_methods.items():
                 if 'calibration_metrics' in method_results:
                     metrics = method_results['calibration_metrics']
-                    
-                    # Calculate method score based on improvement
                     brier_improvement = metrics.get('brier_score_before', 0.3) - metrics.get('brier_score_after', 0.2)
                     ece_improvement = metrics.get('ece_before', 0.1) - metrics.get('ece_after', 0.05)
-                    
                     method_score = (brier_improvement + ece_improvement) / 2
                     method_scores[method_name] = method_score
-            
-            # Normalize weights
             total_score = sum(method_scores.values())
             if total_score > 0:
                 method_weights = {name: score / total_score for name, score in method_scores.items()}
-            
-            # Calculate overall confidence
             overall_confidence = 0.0
             for method_name, weight in method_weights.items():
                 if method_name in calibration_methods:
-                    method_confidence = np.random.uniform(0.7, 0.9)  # Simulated confidence
+                    method_confidence = np.random.uniform(0.7, 0.9)
                     overall_confidence += weight * method_confidence
-            
-            calibrated_confidence.update({
-                'overall_confidence': overall_confidence,
-                'calibration_method_weights': method_weights,
-                'confidence_distribution': {
-                    'mean': overall_confidence,
-                    'std': np.random.uniform(0.05, 0.15),
-                    'min': max(0.0, overall_confidence - 0.2),
-                    'max': min(1.0, overall_confidence + 0.2)
-                },
-                'confidence_reliability': {
-                    'reliability_score': np.random.uniform(0.8, 0.95),
-                    'calibration_quality': 'high' if overall_confidence > 0.8 else 'medium' if overall_confidence > 0.6 else 'low'
-                }
-            })
-            
+            calibrated_confidence.update({'overall_confidence': overall_confidence, 'calibration_method_weights': method_weights, 'confidence_distribution': {'mean': overall_confidence, 'std': np.random.uniform(0.05, 0.15), 'min': max(0.0, overall_confidence - 0.2), 'max': min(1.0, overall_confidence + 0.2)}, 'confidence_reliability': {'reliability_score': np.random.uniform(0.8, 0.95), 'calibration_quality': 'high' if overall_confidence > 0.8 else 'medium' if overall_confidence > 0.6 else 'low'}})
             return calibrated_confidence
-            
         except Exception as e:
-            self.logger.error(f"❌ Error calculating calibrated confidence: {e}")
+            self.logger.error(f'❌ Error calculating calibrated confidence: {e}')
             return {'overall_confidence': 0.5}
-    
-    def _calculate_calibration_improvements(
-        self,
-        original_specialist: Dict[str, Any],
-        calibrated_confidence: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    def _calculate_calibration_improvements(self, original_specialist: Dict[str, Any], calibrated_confidence: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate calibration improvements.
         
         Args:
@@ -1052,31 +564,19 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Calibration improvements
         """
         try:
-            # Extract original performance
             original_performance = original_specialist.get('specialist_performance', {})
             original_accuracy = 0.0
-            
             for metric_name, metric_value in original_performance.items():
                 if 'accuracy' in metric_name.lower() and isinstance(metric_value, (int, float)):
                     original_accuracy = max(original_accuracy, metric_value)
-            
-            # Calculate improvements
             calibrated_accuracy = calibrated_confidence.get('overall_confidence', 0.0)
             accuracy_improvement = calibrated_accuracy - original_accuracy
-            
-            improvements = {
-                'accuracy_improvement': accuracy_improvement,
-                'confidence_improvement': calibrated_confidence.get('confidence_reliability', {}).get('reliability_score', 0.0),
-                'calibration_quality_improvement': 0.1,  # Placeholder
-                'overall_improvement': (accuracy_improvement + 0.1) / 2
-            }
-            
+            improvements = {'accuracy_improvement': accuracy_improvement, 'confidence_improvement': calibrated_confidence.get('confidence_reliability', {}).get('reliability_score', 0.0), 'calibration_quality_improvement': 0.1, 'overall_improvement': (accuracy_improvement + 0.1) / 2}
             return improvements
-            
         except Exception as e:
-            self.logger.error(f"❌ Error calculating calibration improvements: {e}")
+            self.logger.error(f'❌ Error calculating calibration improvements: {e}')
             return {'overall_improvement': 0.0}
-    
+
     def _calculate_calibration_metrics(self, calibrated_specialists: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate overall calibration metrics.
         
@@ -1087,47 +587,25 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             Calibration metrics
         """
         try:
-            metrics = {
-                'total_specialists_calibrated': len(calibrated_specialists),
-                'specialist_types': list(calibrated_specialists.keys()),
-                'overall_calibration_performance': 0.0,
-                'calibration_methods_used': set(),
-                'calibration_improvements': {}
-            }
-            
-            # Analyze calibration methods used
+            metrics = {'total_specialists_calibrated': len(calibrated_specialists), 'specialist_types': list(calibrated_specialists.keys()), 'overall_calibration_performance': 0.0, 'calibration_methods_used': set(), 'calibration_improvements': {}}
             for specialist_data in calibrated_specialists.values():
                 calibration_methods = specialist_data.get('calibration_methods', {})
                 metrics['calibration_methods_used'].update(calibration_methods.keys())
-            
             metrics['calibration_methods_used'] = list(metrics['calibration_methods_used'])
-            
-            # Calculate overall performance
             all_improvements = []
             for specialist_name, specialist_data in calibrated_specialists.items():
                 improvements = specialist_data.get('calibration_improvements', {})
                 overall_improvement = improvements.get('overall_improvement', 0.0)
                 metrics['calibration_improvements'][specialist_name] = overall_improvement
                 all_improvements.append(overall_improvement)
-            
             if all_improvements:
                 metrics['overall_calibration_performance'] = float(np.mean(all_improvements))
-            
             return metrics
-            
         except Exception as e:
-            self.logger.error(f"❌ Error calculating calibration metrics: {e}")
+            self.logger.error(f'❌ Error calculating calibration metrics: {e}')
             return {'overall_calibration_performance': 0.0}
-    
-    async def _save_regime_calibration_results(
-        self,
-        calibration_results: Dict[str, Any],
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        regime_id: int
-    ) -> bool:
+
+    async def _save_regime_calibration_results(self, calibration_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: int) -> bool:
         """Save confidence calibration results for a specific regime.
         
         Args:
@@ -1142,31 +620,19 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
             True if successful
         """
         try:
-            # Save regime-specific results
             calibration_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_confidence_calibration_regime_{regime_id}.json'
-            
             with open(calibration_path, 'w') as f:
                 json.dump(calibration_results, f, indent=2, default=str)
-            
-            self.logger.info(f"✅ Saved confidence calibration results for regime {regime_id}: {calibration_path}")
+            self.logger.info(f'✅ Saved confidence calibration results for regime {regime_id}: {calibration_path}')
             return True
-            
         except Exception as e:
-            self.logger.error(f"❌ Error saving confidence calibration results for regime {regime_id}: {e}")
+            self.logger.error(f'❌ Error saving confidence calibration results for regime {regime_id}: {e}')
             return False
-
 
 @traced(span_name='run_per_regime_confidence_calibration_step')
 @validates()
 @handles_errors
-async def run_per_regime_step(
-    symbol: str,
-    exchange: str,
-    timeframe: str,
-    data_dir: str = None,
-    force_rerun: bool = False,
-    config: Optional[Dict[str, Any]] = None
-) -> bool:
+async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the enhanced per-regime confidence calibration step.
     
     Args:
@@ -1180,79 +646,52 @@ async def run_per_regime_step(
     Returns:
         True if successful, False otherwise
     """
-    logger.info("🚀 Starting Step 16: Per-Regime Confidence Calibration")
-    
+    logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration')
     if config is None:
         config = {}
-        
     if data_dir is None:
         if pipeline_standards:
             data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
         else:
-            data_dir = f"data_cache/{exchange}_{symbol}"
-    
-    # Enable per-regime processing
+            data_dir = f'data_cache/{exchange}_{symbol}'
     config['per_regime_confidence_calibration'] = True
-    
-    # Initialize and run the per-regime confidence calibration step
     step = PerRegimeConfidenceCalibrationStep(config)
-    
-    result = await step.execute(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        force_rerun=force_rerun
-    )
-    
+    result = await step.execute(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
     success = result.get('success', False)
-    
     if success:
-        logger.info("✅ Step 16: Per-Regime Confidence Calibration completed successfully")
+        logger.info('✅ Step 16: Per-Regime Confidence Calibration completed successfully')
     else:
         logger.error(f"❌ Step 16: Per-Regime Confidence Calibration failed: {result.get('error', 'Unknown error')}")
-        
     return success
 
-async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> Dict[str, Any]:
+async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str=None, **kwargs) -> Dict[str, Any]:
     """Enhanced entry point for Step 16: Per-Regime Confidence Calibration."""
     if data_dir is None:
         if pipeline_standards:
             data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
         else:
-            data_dir = f"data_cache/{exchange}_{symbol}"
-    
+            data_dir = f'data_cache/{exchange}_{symbol}'
     logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration (Enhanced)')
     config = {'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, **kwargs}
     step = PerRegimeConfidenceCalibrationStep(config)
-    
     result = await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
-    
     if result['success']:
         logger.info('✅ Step 16: Per-Regime Confidence Calibration completed successfully')
     else:
         logger.error(f"❌ Step 16: Per-Regime Confidence Calibration failed: {result.get('error', 'Unknown error')}")
-    
     return result
 
-async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> bool:
+async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, **kwargs) -> bool:
     """Standard entry point for Step 16: Per-Regime Confidence Calibration."""
     result = await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
     return result['success']
-
-
 if __name__ == '__main__':
-    async def test():
+
+    async def test() -> None:
         """Test the per-regime confidence calibration step."""
         test_symbol = 'TEST_SYMBOL'
         test_exchange = 'TEST_EXCHANGE'
         test_timeframe = '1m'
-        result = await run_step_enhanced(
-            symbol=test_symbol,
-            exchange=test_exchange,
-            timeframe=test_timeframe,
-            data_dir=None
-        )
+        result = await run_step_enhanced(symbol=test_symbol, exchange=test_exchange, timeframe=test_timeframe, data_dir=None)
         print(f'Result: {result}')
-        
     asyncio.run(test())

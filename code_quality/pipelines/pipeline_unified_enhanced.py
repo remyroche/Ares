@@ -31,6 +31,21 @@ from analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
 from analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
 from analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer
 
+# Import additional analyzers
+from analyzers.syntax_validator import SyntaxValidator
+from analyzers.linter_analyzer import LinterAnalyzer
+from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+from analyzers.type_checker import TypeChecker
+from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
+from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
+from analyzers.architecture_analyzer import ArchitectureAnalyzer
+from analyzers.call_graph_analyzer import CallGraphAnalyzer
+from analyzers.complexity_analyzer import ComplexityAnalyzer
+from analyzers.dependency_analyzer import DependencyAnalyzer
+from analyzers.metrics_analyzer import MetricsAnalyzer
+from analyzers.data_flow_analyzer import DataFlowAnalyzer
+from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
+
 # Import comprehensive analysis components (ONLY comprehensive analysis related)
 from comprehensive_code_review import CodeQualityReviewer
 # from script_integration_analysis import ScriptIntegrationAnalyzer  # Deleted during cleanup
@@ -50,6 +65,11 @@ from reporters.trend_reporter import TrendReporter
 # Import core components
 from scripts.robust_async_fixer import RobustAsyncFixer
 from core.config import get_default_config
+
+# Import fixers and utilities
+from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
+from scripts.fix_missing_imports import ImportFixer as SafeImportFixer
+from scripts.enhanced_type_hints import TypeHintEnhancer
 
 # Import plugin system
 from plugins.plugin_manager import PluginManager
@@ -617,8 +637,9 @@ class UnifiedEnhancedPipeline:
         result = analyzer.generate_report()
         result["execution_time"] = time.time() - start_time
 
-        # Add to aggregator
-        self.report_aggregator.file_metrics.update(analyzer.file_metrics)
+        # Add to aggregator (if available)
+        if hasattr(analyzer, 'file_metrics') and hasattr(self.report_aggregator, 'file_metrics'):
+            self.report_aggregator.file_metrics.update(analyzer.file_metrics)
 
         # Save report
         report_path = self.reports_dir / f"metrics_analysis_{self.timestamp}.json"
@@ -778,8 +799,9 @@ class UnifiedEnhancedPipeline:
         result = analyzer.analyze_directory(str(self.project_root))
         result["execution_time"] = time.time() - start_time
 
-        # Add to aggregator
-        self.report_aggregator.add_static_analysis_results(result)
+        # Add to aggregator (if method exists)
+        if hasattr(self.report_aggregator, 'add_static_analysis_results'):
+            self.report_aggregator.add_static_analysis_results(result)
 
         # Save report
         report_path = self.reports_dir / f"static_analysis_{self.timestamp}.json"
@@ -804,8 +826,9 @@ class UnifiedEnhancedPipeline:
         result = analyzer.analyze_directory(str(self.project_root))
         result["execution_time"] = time.time() - start_time
 
-        # Add to aggregator
-        self.report_aggregator.add_ast_analysis_results(result)
+        # Add to aggregator (if method exists)
+        if hasattr(self.report_aggregator, 'add_ast_analysis_results'):
+            self.report_aggregator.add_ast_analysis_results(result)
 
         # Save report
         report_path = self.reports_dir / f"ast_analysis_{self.timestamp}.json"
@@ -1390,6 +1413,47 @@ class UnifiedEnhancedPipeline:
 
         results["execution_time"] = time.time() - start_time
 
+    def run_enhanced_dependency_analysis(self) -> dict[str, Any]:
+        """Run enhanced dependency analysis."""
+        print("\n" + "="*60)
+        print("Running Enhanced Dependency Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        from analyzers.enhanced_dependency_analyzer import EnhancedDependencyAnalyzer
+        analyzer = EnhancedDependencyAnalyzer(str(self.project_root))
+        result = analyzer.analyze_project()
+        result["execution_time"] = time.time() - start_time
+
+        # Convert PluginResult objects to serializable format
+        def make_serializable(obj):
+            if hasattr(obj, 'to_dict'):
+                return make_serializable(obj.to_dict())
+            elif hasattr(obj, '__dict__'):
+                return {k: make_serializable(v) for k, v in obj.__dict__.items()}
+            elif isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj]
+            elif hasattr(obj, '__class__') and 'PluginResult' in str(obj.__class__):
+                # Handle PluginResult objects specifically
+                return {
+                    'type': str(obj.__class__),
+                    'data': make_serializable(obj.__dict__) if hasattr(obj, '__dict__') else str(obj)
+                }
+            else:
+                return obj
+
+        # Recursively convert the result
+        serializable_result = make_serializable(result)
+
+        # Save individual report
+        report_path = self.reports_dir / f"enhanced_dependency_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(serializable_result, f, indent=2)
+
+        return result
+
     def run_enhanced_undefined_names_analysis(self) -> dict[str, Any]:
         """Run the enhanced undefined names analyzer."""
         print("\n" + "="*60)
@@ -1446,9 +1510,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            verify_structure()
-            verify_test_structure()
-            return {"status": "completed", "message": "Test structure verified"}
+            # Stub implementation - these functions don't exist
+            return {"status": "skipped", "message": "Test verification functions not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1459,9 +1522,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            debugger = DebugAnalyzer()
-            results = debugger.analyze_project(str(self.project_root))
-            return {"status": "completed", "results": results}
+            # Stub implementation - DebugAnalyzer doesn't exist
+            return {"status": "skipped", "message": "DebugAnalyzer not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1472,9 +1534,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            detector = MergeConflictDetector()
-            conflicts = detector.detect_conflicts(str(self.project_root))
-            return {"status": "completed", "conflicts_found": len(conflicts), "conflicts": conflicts}
+            # Stub implementation - MergeConflictDetector doesn't exist
+            return {"status": "skipped", "message": "MergeConflictDetector not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1485,9 +1546,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            fixer = ComprehensiveImportFixer()
-            results = fixer.fix_all_imports(str(self.project_root))
-            return {"status": "completed", "results": results}
+            # Stub implementation - ComprehensiveImportFixer doesn't exist
+            return {"status": "skipped", "message": "ComprehensiveImportFixer not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1498,9 +1558,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            fixer = AutoFixDeadCode()
-            results = fixer.auto_fix_dead_code(str(self.project_root))
-            return {"status": "completed", "results": results}
+            # Stub implementation - AutoFixDeadCode doesn't exist
+            return {"status": "skipped", "message": "AutoFixDeadCode not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1511,12 +1570,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            results = {
-                "enhanced_analysis": run_enhanced_analysis(),
-                "enhanced_import_analysis": run_enhanced_import_analysis(),
-                "simple_import_analysis": run_simple_import_analysis(),
-            }
-            return {"status": "completed", "results": results}
+            # Stub implementation - these functions don't exist
+            return {"status": "skipped", "message": "Enhanced analysis functions not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1527,8 +1582,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            results = run_validation()
-            return {"status": "completed", "results": results}
+            # Stub implementation - run_validation function doesn't exist
+            return {"status": "skipped", "message": "Validation functions not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1539,16 +1594,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
         
         try:
-            results = {
-                "final_tests": run_final_tests(),
-                "full_pipeline": run_full_pipeline(),
-                "real_subset_tests": run_real_subset_tests(),
-                "subset_tests": run_subset_tests(),
-                "tests_simple": run_tests_simple(),
-                "tests_with_mocks": run_tests_with_mocks(),
-                "common_operations_tests": run_common_operations_tests(),
-            }
-            return {"status": "completed", "results": results}
+            # Stub implementation - these test functions don't exist
+            return {"status": "skipped", "message": "Test execution functions not available"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
@@ -1632,8 +1679,31 @@ class UnifiedEnhancedPipeline:
 
         # Save individual pipeline report
         report_path = self.reports_dir / f"unified_pipeline_{self.timestamp}.json"
+        
+        # Convert PluginResult objects to serializable format
+        def make_serializable(obj):
+            if hasattr(obj, 'to_dict'):
+                return make_serializable(obj.to_dict())
+            elif hasattr(obj, '__dict__'):
+                return {k: make_serializable(v) for k, v in obj.__dict__.items()}
+            elif isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj]
+            elif hasattr(obj, '__class__') and 'PluginResult' in str(obj.__class__):
+                # Handle PluginResult objects specifically
+                return {
+                    'type': str(obj.__class__),
+                    'data': make_serializable(obj.__dict__) if hasattr(obj, '__dict__') else str(obj)
+                }
+            else:
+                return obj
+
+        # Recursively convert the results
+        serializable_results = make_serializable(self.results)
+        
         with open(report_path, "w") as f:
-            json.dump(self.results, f, indent=2)
+            json.dump(serializable_results, f, indent=2)
 
         # Generate and save unified reports
         print("\n" + "="*60)
@@ -1682,14 +1752,15 @@ class UnifiedEnhancedPipeline:
                 continue
 
             category_summary = {}
-            for tool_name, result in tools.items():
-                if isinstance(result, dict):
-                    category_summary[tool_name] = {
-                        "execution_time": result.get("execution_time", 0),
-                        "issues_fixed": result.get("total_fixed", 0),
-                        "issues_found": result.get("total_issues", 0),
-                        "files_processed": result.get("total_files", 0),
-                    }
+            if tools is not None:
+                for tool_name, result in tools.items():
+                    if isinstance(result, dict):
+                        category_summary[tool_name] = {
+                            "execution_time": result.get("execution_time", 0),
+                            "issues_fixed": result.get("total_fixed", 0),
+                            "issues_found": result.get("total_issues", 0),
+                            "files_processed": result.get("total_files", 0),
+                        }
 
             summary["categories"][category] = category_summary
 

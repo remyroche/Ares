@@ -1,8 +1,8 @@
-
 from typing import Dict
 from src.utils.error_handler import handles_errors
 from typing import Any
-"""Metadata tracker component for model persistence."""
+from typing import Dict, List, Optional, Union, Any, Tuple
+'Metadata tracker component for model persistence.'
 import hashlib
 import json
 from datetime import datetime
@@ -131,17 +131,8 @@ class MetadataTracker:
         """Track environment information."""
         import platform
         import sys
-        
-        environment = {
-            'python_version': sys.version,
-            'platform': platform.platform(),
-            'machine': platform.machine(),
-            'processor': platform.processor()
-        }
-        
-        # Track package versions
+        environment = {'python_version': sys.version, 'platform': platform.platform(), 'machine': platform.machine(), 'processor': platform.processor()}
         environment['packages'] = self._get_package_versions()
-        
         return environment
 
     def _get_package_versions(self) -> Dict[str, str]:
@@ -150,17 +141,15 @@ class MetadataTracker:
             import pkg_resources
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
             packages = {}
-            
             for package in key_packages:
                 version = self._get_package_version(pkg_resources, package)
                 if version:
                     packages[package] = version
-            
             return packages
         except ImportError:
             return {}
 
-    def _get_package_version(self, pkg_resources, package: str) -> Optional[str]:
+    def _get_package_version(self, pkg_resources: List[Any], package: str) -> Optional[str]:
         """Get version of a specific package."""
         try:
             return pkg_resources.get_distribution(package).version

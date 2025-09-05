@@ -1,4 +1,10 @@
-'\nExtended domain-specific decorators for specialized use cases.\n\nThis module provides additional decorators for specific validation,\nmonitoring, and processing requirements in the trading system.\n'
+from typing import Dict, List, Optional, Union, Any, Tuple
+"""
+Extended domain-specific decorators for specialized use cases.
+
+This module provides additional decorators for specific validation,
+monitoring, and processing requirements in the trading system.
+"""
 import logging
 from datetime import datetime
 from functools import wraps
@@ -11,9 +17,10 @@ F = TypeVar('F', bound=Callable[..., Any])
 
 def validate_ohlcv_data_quality(check_volume: bool=True, min_volume: float=0, price_columns: List[str]=['open', 'high', 'low', 'close']) -> Callable[[F], F]:
     """Validate OHLCV data quality with specific checks."""
-    # Simple implementation since domain_decorators doesn't exist
-    def validate_klines_data_quality(**kwargs):
-        def decorator(func):
+
+    def validate_klines_data_quality(**kwargs) -> bool:
+
+        def decorator(func: Callable) -> None:
             return func
         return decorator
 

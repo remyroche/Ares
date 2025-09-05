@@ -5,40 +5,26 @@ call sites across the codebase. It supports both synchronous and asynchronous
 functions, optional exception filtering, default/fallback return values, and
 per-exception handlers.
 """
-
 from __future__ import annotations
-
 import asyncio
 import inspect
 import traceback
 from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Tuple, Type
 
-
 def _resolve_default_return(default_return: Any, *args: Any, **kwargs: Any) -> Any:
-	"""Return default value, calling if it's a zero-arg or flexible callable."""
-	try:
-		if callable(default_return):
-			# Try most permissive call first; if that fails, call without args
-			try:
-				return default_return(*args, **kwargs)
-			except TypeError:
-				return default_return()
-		return default_return
-	except Exception:
-		return None
+    """Return default value, calling if it's a zero-arg or flexible callable."""
+    try:
+        if callable(default_return):
+            try:
+                return default_return(*args, **kwargs)
+            except TypeError:
+                return default_return()
+        return default_return
+    except Exception:
+        return None
 
-
-def handles_errors(
-	func: Optional[Callable[..., Any]] = None,
-	*,
-	exceptions: Optional[Iterable[Type[BaseException]]] = None,
-	Exception: Optional[Iterable[Type[BaseException]]] = None,  # alias for legacy call sites
-	default_return: Any = None,
-	fallback: Any = None,  # alias for legacy call sites
-	context: Optional[str] = None,
-	error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]] = None,
-) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
-	"""Decorator to handle errors consistently across sync/async functions.
+def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optional[Iterable[Type[BaseException]]]=None, Exception: Optional[Iterable[Type[BaseException]]]=None, default_return: Any=None, fallback: Any=None, context: Optional[str]=None, error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]]=None) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
+    """Decorator to handle errors consistently across sync/async functions.
 
 	Parameters
 	- exceptions / Exception: Iterable of exception classes to catch. Defaults to (Exception,).
@@ -51,87 +37,73 @@ def handles_errors(
 	- If wrapping an async function, the wrapper is async and awaits the function
 	- If default_return/fallback is callable, it will be invoked to produce the value
 	"""
+    catch_exceptions = tuple(exceptions or Exception or (BaseException,))
+    if catch_exceptions == (BaseException,):
+        catch_exceptions = (Exception,)
+    default_value = default_return if default_return is not None else fallback
+    handlers = error_handlers or {}
 
-	# Normalize aliases
-	catch_exceptions = tuple(exceptions or Exception or (BaseException,))
-	# If neither provided, default to Exception (not BaseException) to avoid catching SystemExit/KeyboardInterrupt
-	if catch_exceptions == (BaseException,):
-		catch_exceptions = (Exception,)
+    def _log_error(err: BaseException, fn_name: str) -> None:
+        try:
+            from src.utils.logger import system_logger
+            if system_logger is not None:
+                prefix = f'Error in {fn_name}'
+                if context:
+                    prefix += f' (context: {context})'
+                system_logger.exception(f'{prefix}: {err}')
+                return
+        except Exception:
+            pass
+        ctx = f' (context: {context})' if context else ''
+        print(f'Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}')
 
-	default_value = default_return if default_return is not None else fallback
-	handlers = error_handlers or {}
+    def _handle_with_mapping(err: BaseException) -> Any:
+        for exc_type, ret in handlers.items():
+            try:
+                if isinstance(err, exc_type):
+                    if isinstance(ret, tuple) and len(ret) >= 1:
+                        return ret[0]
+                    return ret
+            except Exception:
+                continue
+        return _resolve_default_return(default_value)
 
-	def _log_error(err: BaseException, fn_name: str) -> None:
-		try:
-			# Lazy import to avoid circular deps
-			from src.utils.logger import system_logger  # type: ignore
-			if system_logger is not None:
-				prefix = f"Error in {fn_name}"
-				if context:
-					prefix += f" (context: {context})"
-				system_logger.exception(f"{prefix}: {err}")
-				return
-		except Exception:
-			pass
-		# Fallback logging to stdout
-		ctx = f" (context: {context})" if context else ""
-		print(f"Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}")
+    def _decorate(f: Callable[..., Any]) -> Callable[..., Any] | Callable[..., Awaitable[Any]]:
+        if inspect.iscoroutinefunction(f):
 
-	def _handle_with_mapping(err: BaseException) -> Any:
-		# Find the most specific matching handler
-		for exc_type, ret in handlers.items():
-			try:
-				if isinstance(err, exc_type):
-					if isinstance(ret, tuple) and len(ret) >= 1:
-						return ret[0]
-					return ret
-			except Exception:
-				continue
-		# Fall back to default value
-		return _resolve_default_return(default_value)
+            async def _async_wrapper(*a: Any, **kw: Any) -> Any:
+                try:
+                    return await f(*a, **kw)
+                except catch_exceptions as err:
+                    _log_error(err, f.__name__)
+                    return _handle_with_mapping(err)
+            _async_wrapper.__name__ = getattr(f, '__name__', 'wrapped_async')
+            _async_wrapper.__doc__ = getattr(f, '__doc__', None)
+            return _async_wrapper
 
-	def _decorate(f: Callable[..., Any]) -> Callable[..., Any] | Callable[..., Awaitable[Any]]:
-		if inspect.iscoroutinefunction(f):
+        def _sync_wrapper(*a: Any, **kw: Any) -> Any:
+            try:
+                return f(*a, **kw)
+            except catch_exceptions as err:
+                _log_error(err, f.__name__)
+                return _handle_with_mapping(err)
+        _sync_wrapper.__name__ = getattr(f, '__name__', 'wrapped')
+        _sync_wrapper.__doc__ = getattr(f, '__doc__', None)
+        return _sync_wrapper
+    if callable(func):
+        return _decorate(func)
+    return _decorate
 
-			async def _async_wrapper(*a: Any, **kw: Any) -> Any:
-				try:
-					return await f(*a, **kw)
-				except catch_exceptions as err:  # type: ignore[misc]
-					_log_error(err, f.__name__)
-					return _handle_with_mapping(err)
+def converts_errors(*_args: Any, **_kwargs: Any) -> None:
+    """No-op decorator placeholder for compatibility."""
 
-			_async_wrapper.__name__ = getattr(f, "__name__", "wrapped_async")
-			_async_wrapper.__doc__ = getattr(f, "__doc__", None)
-			return _async_wrapper
+    def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        return fn
+    return _decorator
 
-		def _sync_wrapper(*a: Any, **kw: Any) -> Any:
-			try:
-				return f(*a, **kw)
-			except catch_exceptions as err:  # type: ignore[misc]
-				_log_error(err, f.__name__)
-				return _handle_with_mapping(err)
+def error_boundary(*_args: Any, **_kwargs: Any) -> None:
+    """No-op decorator placeholder for compatibility."""
 
-		_sync_wrapper.__name__ = getattr(f, "__name__", "wrapped")
-		_sync_wrapper.__doc__ = getattr(f, "__doc__", None)
-		return _sync_wrapper
-
-	# Support both @handles_errors and @handles_errors(...)
-	if callable(func):
-		return _decorate(func)
-	return _decorate
-
-
-# Placeholders for compatibility with code expecting these decorators
-
-def converts_errors(*_args: Any, **_kwargs: Any):
-	"""No-op decorator placeholder for compatibility."""
-	def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-		return fn
-	return _decorator
-
-
-def error_boundary(*_args: Any, **_kwargs: Any):
-	"""No-op decorator placeholder for compatibility."""
-	def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-		return fn
-	return _decorator
+    def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        return fn
+    return _decorator

@@ -1102,4 +1102,4 @@ async def run_comprehensive_gap_filling_pipeline(
 
 
 if __name__ == "__main__":
-    asyncio.run(await run_comprehensive_gap_filling_pipeline())
+    asyncio.run( run_comprehensive_gap_filling_pipeline())

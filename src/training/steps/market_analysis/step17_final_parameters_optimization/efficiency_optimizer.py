@@ -516,4 +516,4 @@ async def run_efficiency_test() -> None:
     await optimizer.cleanup()
 
 if __name__ == '__main__':
-    asyncio.run(await run_efficiency_test())
+    asyncio.run( run_efficiency_test())

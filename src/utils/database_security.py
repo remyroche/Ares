@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from .error_handler import handles_errors
 from .logger import system_logger
+import numpy as np
 
 import psycopg2
 import sqlite3

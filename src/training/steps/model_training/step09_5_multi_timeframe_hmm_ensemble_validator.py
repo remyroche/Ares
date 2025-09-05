@@ -1,3 +1,5 @@
+import numpy as np
+
 # src/training/steps/step9_5_multi_timeframe_hmm_ensemble_validator.py
 
 """Validator for Step 9.5: Multi-Timeframe HMM Ensemble Training.

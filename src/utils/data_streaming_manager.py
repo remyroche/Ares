@@ -1,5 +1,4 @@
 """Data streaming and chunking manager for handling large datasets efficiently."""
-
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator, Generator, Callable
@@ -13,15 +12,10 @@ import os
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 
-
 class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
-    
-    def __init__(self, 
-                chunk_size: int = 10000,
-                memory_threshold: float = 0.8,
-                overlap_size: int = 100,
-                enable_compression: bool = True):
+
+    def __init__(self, chunk_size: int=10000, memory_threshold: float=0.8, overlap_size: int=100, enable_compression: bool=True) -> None:
         """
         Initialize data streaming manager.
         
@@ -37,18 +31,9 @@ class DataStreamingManager:
         self.overlap_size = overlap_size
         self.enable_compression = enable_compression
         self.standards = PipelineStandards(self.logger)
-        
-        # Performance tracking
-        self.performance_metrics = {
-            'chunks_processed': 0,
-            'total_rows_processed': 0,
-            'memory_usage_peak': 0.0,
-            'processing_time_total': 0.0,
-            'compression_ratio': 0.0
-        }
-        
-        self.logger.info(f"🚀 DataStreamingManager initialized: chunk_size={chunk_size}, memory_threshold={memory_threshold}")
-    
+        self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
+        self.logger.info(f'🚀 DataStreamingManager initialized: chunk_size={chunk_size}, memory_threshold={memory_threshold}')
+
     def get_memory_usage(self) -> float:
         """Get current memory usage as percentage."""
         try:
@@ -57,9 +42,9 @@ class DataStreamingManager:
             system_memory = psutil.virtual_memory()
             return memory_info.rss / system_memory.total
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not get memory usage: {e}")
+            self.logger.warning(f'⚠️ Could not get memory usage: {e}')
             return 0.0
-    
+
     def should_chunk_data(self, data: pd.DataFrame) -> bool:
         """
         Determine if data should be chunked based on size and memory usage.
@@ -70,28 +55,20 @@ class DataStreamingManager:
         Returns:
             True if data should be chunked
         """
-        # Check memory usage
         current_memory = self.get_memory_usage()
         if current_memory > self.memory_threshold:
-            self.logger.info(f"📊 Memory usage high ({current_memory:.2%}), chunking recommended")
+            self.logger.info(f'📊 Memory usage high ({current_memory:.2%}), chunking recommended')
             return True
-        
-        # Check data size
-        if len(data) > self.chunk_size * 2:  # If data is more than 2 chunks
-            self.logger.info(f"📊 Large dataset ({len(data)} rows), chunking recommended")
+        if len(data) > self.chunk_size * 2:
+            self.logger.info(f'📊 Large dataset ({len(data)} rows), chunking recommended')
             return True
-        
-        # Check memory footprint
-        memory_footprint = data.memory_usage(deep=True).sum() / (1024**3)  # GB
-        if memory_footprint > 1.0:  # More than 1GB
-            self.logger.info(f"📊 Large memory footprint ({memory_footprint:.2f} GB), chunking recommended")
+        memory_footprint = data.memory_usage(deep=True).sum() / 1024 ** 3
+        if memory_footprint > 1.0:
+            self.logger.info(f'📊 Large memory footprint ({memory_footprint:.2f} GB), chunking recommended')
             return True
-        
         return False
-    
-    def create_data_chunks(self, data: pd.DataFrame, 
-                        preserve_order: bool = True,
-                        time_based_chunking: bool = True) -> Generator[pd.DataFrame, None, None]:
+
+    def create_data_chunks(self, data: pd.DataFrame, preserve_order: bool=True, time_based_chunking: bool=True) -> Generator[pd.DataFrame, None, None]:
         """
         Create data chunks with optional overlap and time-based chunking.
         
@@ -103,100 +80,64 @@ class DataStreamingManager:
         Yields:
             DataFrame chunks
         """
-        self.logger.info(f"🔪 Creating chunks from {len(data)} rows...")
-        
+        self.logger.info(f'🔪 Creating chunks from {len(data)} rows...')
         if not self.should_chunk_data(data):
-            self.logger.info("📊 Data size acceptable, returning as single chunk")
+            self.logger.info('📊 Data size acceptable, returning as single chunk')
             yield data
             return
-        
-        # Time-based chunking if timestamp column exists
         if time_based_chunking and 'timestamp' in data.columns:
             yield from self._create_time_based_chunks(data, preserve_order)
         else:
             yield from self._create_size_based_chunks(data, preserve_order)
-    
+
     def _create_time_based_chunks(self, data: pd.DataFrame, preserve_order: bool) -> Generator[pd.DataFrame, None, None]:
         """Create chunks based on time intervals."""
-        self.logger.info("⏰ Using time-based chunking...")
-        
-        # Ensure timestamp is datetime
+        self.logger.info('⏰ Using time-based chunking...')
         if not pd.api.types.is_datetime64_any_dtype(data['timestamp']):
             data['timestamp'] = pd.to_datetime(data['timestamp'])
-        
-        # Sort by timestamp if needed
-        if preserve_order and not data['timestamp'].is_monotonic_increasing:
+        if preserve_order and (not data['timestamp'].is_monotonic_increasing):
             data = data.sort_values('timestamp').reset_index(drop=True)
-        
-        # Calculate time interval per chunk
         total_time_span = data['timestamp'].max() - data['timestamp'].min()
         time_per_chunk = total_time_span / (len(data) / self.chunk_size)
-        
         current_time = data['timestamp'].min()
         chunk_index = 0
-        
         while current_time < data['timestamp'].max():
-            # Define chunk time range
             chunk_end_time = current_time + time_per_chunk
-            
-            # Get data for this time range
             chunk_mask = (data['timestamp'] >= current_time) & (data['timestamp'] < chunk_end_time)
             chunk_data = data[chunk_mask].copy()
-            
             if len(chunk_data) > 0:
-                # Add overlap from previous chunk if needed
                 if chunk_index > 0 and self.overlap_size > 0:
-                    overlap_start = current_time - timedelta(seconds=self.overlap_size * 60)  # Assume 1-minute intervals
+                    overlap_start = current_time - timedelta(seconds=self.overlap_size * 60)
                     overlap_mask = (data['timestamp'] >= overlap_start) & (data['timestamp'] < current_time)
                     overlap_data = data[overlap_mask].copy()
-                    
                     if len(overlap_data) > 0:
                         chunk_data = pd.concat([overlap_data, chunk_data], ignore_index=True)
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
-                
-                self.logger.info(f"📦 Created time-based chunk {chunk_index + 1}: {len(chunk_data)} rows, "
-                            f"time range: {chunk_data['timestamp'].min()} to {chunk_data['timestamp'].max()}")
-                
+                self.logger.info(f"📦 Created time-based chunk {chunk_index + 1}: {len(chunk_data)} rows, time range: {chunk_data['timestamp'].min()} to {chunk_data['timestamp'].max()}")
                 yield chunk_data
                 chunk_index += 1
-            
             current_time = chunk_end_time
-    
+
     def _create_size_based_chunks(self, data: pd.DataFrame, preserve_order: bool) -> Generator[pd.DataFrame, None, None]:
         """Create chunks based on row count."""
-        self.logger.info("📊 Using size-based chunking...")
-        
+        self.logger.info('📊 Using size-based chunking...')
         total_rows = len(data)
         chunk_index = 0
-        
         for start_idx in range(0, total_rows, self.chunk_size):
             end_idx = min(start_idx + self.chunk_size, total_rows)
-            
-            # Get chunk data
             chunk_data = data.iloc[start_idx:end_idx].copy()
-            
-            # Add overlap from previous chunk if needed
             if chunk_index > 0 and self.overlap_size > 0:
                 overlap_start = max(0, start_idx - self.overlap_size)
                 overlap_data = data.iloc[overlap_start:start_idx].copy()
-                
                 if len(overlap_data) > 0:
                     chunk_data = pd.concat([overlap_data, chunk_data], ignore_index=True)
-                    # Remove duplicates if timestamp column exists
                     if 'timestamp' in chunk_data.columns:
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
-            
-            self.logger.info(f"📦 Created size-based chunk {chunk_index + 1}: {len(chunk_data)} rows "
-                        f"(rows {start_idx}-{end_idx-1})")
-            
+            self.logger.info(f'📦 Created size-based chunk {chunk_index + 1}: {len(chunk_data)} rows (rows {start_idx}-{end_idx - 1})')
             yield chunk_data
             chunk_index += 1
-    
-    def process_large_dataset(self, 
-                            data: pd.DataFrame,
-                            processing_func: Callable[[pd.DataFrame], pd.DataFrame],
-                            combine_results: bool = True,
-                            progress_callback: Optional[Callable[[int, int], None]] = None) -> Union[pd.DataFrame, List[pd.DataFrame]]:
+
+    def process_large_dataset(self, data: pd.DataFrame, processing_func: Callable[[pd.DataFrame], pd.DataFrame], combine_results: bool=True, progress_callback: Optional[Callable[[int, int], None]]=None) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Process large dataset in chunks with memory management.
         
@@ -210,108 +151,69 @@ class DataStreamingManager:
             Processed DataFrame or list of processed chunks
         """
         start_time = datetime.now()
-        self.logger.info(f"🔄 Processing large dataset: {len(data)} rows...")
-        
+        self.logger.info(f'🔄 Processing large dataset: {len(data)} rows...')
         processed_chunks = []
         chunk_count = 0
-        
         try:
             for chunk in self.create_data_chunks(data):
                 chunk_count += 1
-                self.logger.info(f"⚙️ Processing chunk {chunk_count}...")
-                
-                # Process chunk
+                self.logger.info(f'⚙️ Processing chunk {chunk_count}...')
                 try:
                     processed_chunk = processing_func(chunk)
                     processed_chunks.append(processed_chunk)
-                    
-                    # Update metrics
                     self.performance_metrics['chunks_processed'] += 1
                     self.performance_metrics['total_rows_processed'] += len(processed_chunk)
-                    
-                    # Check memory usage
                     current_memory = self.get_memory_usage()
-                    self.performance_metrics['memory_usage_peak'] = max(
-                        self.performance_metrics['memory_usage_peak'], current_memory
-                    )
-                    
-                    # Progress callback
+                    self.performance_metrics['memory_usage_peak'] = max(self.performance_metrics['memory_usage_peak'], current_memory)
                     if progress_callback:
                         progress_callback(chunk_count, len(processed_chunks))
-                    
-                    # Force garbage collection if memory usage is high
                     if current_memory > self.memory_threshold * 0.9:
-                        self.logger.info("🧹 High memory usage, triggering garbage collection...")
+                        self.logger.info('🧹 High memory usage, triggering garbage collection...')
                         gc.collect()
-                    
                 except Exception as e:
-                    self.logger.error(f"❌ Error processing chunk {chunk_count}: {e}")
+                    self.logger.error(f'❌ Error processing chunk {chunk_count}: {e}')
                     raise
-            
-            # Combine results if requested
             if combine_results and processed_chunks:
-                self.logger.info("🔗 Combining processed chunks...")
-                
-                # Remove overlaps when combining
+                self.logger.info('🔗 Combining processed chunks...')
                 if self.overlap_size > 0 and 'timestamp' in processed_chunks[0].columns:
                     combined_data = self._combine_chunks_without_overlap(processed_chunks)
                 else:
                     combined_data = pd.concat(processed_chunks, ignore_index=True)
-                
-                # Final validation
                 combined_data = self.standards.validate_data_quality(combined_data, 'unified')
-                
-                self.logger.info(f"✅ Dataset processing completed: {len(combined_data)} rows")
+                self.logger.info(f'✅ Dataset processing completed: {len(combined_data)} rows')
                 return combined_data
             else:
-                self.logger.info(f"✅ Dataset processing completed: {len(processed_chunks)} chunks")
+                self.logger.info(f'✅ Dataset processing completed: {len(processed_chunks)} chunks')
                 return processed_chunks
-        
         except Exception as e:
-            self.logger.exception(f"❌ Error processing large dataset: {e}")
+            self.logger.exception(f'❌ Error processing large dataset: {e}')
             raise
-        
         finally:
-            # Update performance metrics
             end_time = datetime.now()
             self.performance_metrics['processing_time_total'] = (end_time - start_time).total_seconds()
-            
-            # Log performance summary
             self._log_performance_summary()
-    
+
     def _combine_chunks_without_overlap(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """Combine chunks while removing overlaps."""
         if not chunks:
             return pd.DataFrame()
-        
         if len(chunks) == 1:
             return chunks[0]
-        
-        # Sort chunks by timestamp
         if 'timestamp' in chunks[0].columns:
             chunks = sorted(chunks, key=lambda x: x['timestamp'].min())
-        
         combined_data = chunks[0].copy()
-        
         for i, chunk in enumerate(chunks[1:], 1):
             if 'timestamp' in chunk.columns:
-                # Find non-overlapping data
                 last_timestamp = combined_data['timestamp'].max()
                 non_overlap_mask = chunk['timestamp'] > last_timestamp
                 non_overlap_data = chunk[non_overlap_mask]
-                
                 if len(non_overlap_data) > 0:
                     combined_data = pd.concat([combined_data, non_overlap_data], ignore_index=True)
             else:
-                # If no timestamp, just concatenate (overlap will be minimal)
                 combined_data = pd.concat([combined_data, chunk], ignore_index=True)
-        
         return combined_data
-    
-    def stream_data_from_file(self, 
-                            file_path: Union[str, Path],
-                            chunk_size: Optional[int] = None,
-                            file_format: str = 'parquet') -> Generator[pd.DataFrame, None, None]:
+
+    def stream_data_from_file(self, file_path: Union[str, Path], chunk_size: Optional[int]=None, file_format: str='parquet') -> Generator[pd.DataFrame, None, None]:
         """
         Stream data from file in chunks.
         
@@ -325,63 +227,43 @@ class DataStreamingManager:
         """
         chunk_size = chunk_size or self.chunk_size
         file_path = Path(file_path)
-        
         if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        
-        self.logger.info(f"📁 Streaming data from {file_path} ({file_format})...")
-        
+            raise FileNotFoundError(f'File not found: {file_path}')
+        self.logger.info(f'📁 Streaming data from {file_path} ({file_format})...')
         try:
             if file_format.lower() == 'parquet':
-                # For Parquet files, we can read in chunks
                 parquet_file = pd.read_parquet(file_path, engine='pyarrow')
                 yield from self.create_data_chunks(parquet_file)
-            
             elif file_format.lower() == 'csv':
-                # For CSV files, read in chunks
                 chunk_iter = pd.read_csv(file_path, chunksize=chunk_size)
                 for chunk in chunk_iter:
                     yield chunk
-            
             elif file_format.lower() == 'json':
-                # For JSON files, read entire file and chunk
                 json_data = pd.read_json(file_path)
                 yield from self.create_data_chunks(json_data)
-            
             else:
-                raise ValueError(f"Unsupported file format: {file_format}")
-        
+                raise ValueError(f'Unsupported file format: {file_format}')
         except Exception as e:
-            self.logger.exception(f"❌ Error streaming data from file: {e}")
+            self.logger.exception(f'❌ Error streaming data from file: {e}')
             raise
-    
-    def _log_performance_summary(self):
+
+    def _log_performance_summary(self) -> None:
         """Log performance summary."""
         metrics = self.performance_metrics
-        self.logger.info("📊 Data Streaming Performance Summary:")
+        self.logger.info('📊 Data Streaming Performance Summary:')
         self.logger.info(f"   - Chunks processed: {metrics['chunks_processed']}")
         self.logger.info(f"   - Total rows processed: {metrics['total_rows_processed']:,}")
         self.logger.info(f"   - Peak memory usage: {metrics['memory_usage_peak']:.2%}")
         self.logger.info(f"   - Total processing time: {metrics['processing_time_total']:.2f}s")
-        
         if metrics['chunks_processed'] > 0:
             avg_chunk_time = metrics['processing_time_total'] / metrics['chunks_processed']
-            self.logger.info(f"   - Average chunk processing time: {avg_chunk_time:.2f}s")
-    
+            self.logger.info(f'   - Average chunk processing time: {avg_chunk_time:.2f}s')
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         return self.performance_metrics.copy()
-    
-    def reset_metrics(self):
+
+    def reset_metrics(self) -> None:
         """Reset performance metrics."""
-        self.performance_metrics = {
-            'chunks_processed': 0,
-            'total_rows_processed': 0,
-            'memory_usage_peak': 0.0,
-            'processing_time_total': 0.0,
-            'compression_ratio': 0.0
-        }
-
-
-# Global instance
+        self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
 data_streaming_manager = DataStreamingManager()

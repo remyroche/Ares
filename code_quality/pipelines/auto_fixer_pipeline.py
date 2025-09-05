@@ -33,7 +33,6 @@ from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import ImportFixer
 from scripts.detect_circular_imports import ImportAnalyzer
 from scripts.fix_async_await import AsyncAwaitFixer, AsyncPatternFixer
-from scripts.safe_indentation_fixer import SafeIndentationFixer
 
 # Import comprehensive fixers (ONLY auto-fixing related)
 # Note: Some comprehensive fixers may not be available
@@ -99,26 +98,7 @@ class AutoFixerPipeline:
         self.type_hint_adder = EnhancedTypeHintAdder(str(self.project_root))
         self.missing_import_fixer = ImportFixer(str(self.project_root))
         self.async_await_fixer = AsyncAwaitFixer(set())  # Empty set for now
-        self.safe_indentation_fixer = SafeIndentationFixer(str(self.project_root))
-        
-        # Initialize dead code fixer (placeholder for now)
-        self.auto_dead_code_fixer = self  # Use self as the dead code fixer
         self.async_pattern_fixer = AsyncPatternFixer(str(self.project_root))
-        
-        # Initialize reports directory
-        self.reports_dir = Path("/workspace/code_quality/reports/auto_fixer")
-        self.reports_dir.mkdir(parents=True, exist_ok=True)
-        
-    def auto_fix_dead_code(self, directory: str) -> dict:
-        """Placeholder method for dead code fixing."""
-        return {
-            "status": "completed",
-            "total_files": 0,
-            "files_fixed": 0,
-            "files_failed": 0,
-            "dead_code_removed": 0,
-            "message": "Dead code fixing not yet implemented"
-        }
         
         # Initialize comprehensive fixers
         # Note: Some comprehensive fixers may not be available
@@ -172,48 +152,227 @@ class AutoFixerPipeline:
             print(f"⚠️  Warning: Could not register some plugins: {e}")
     
     def run_import_fixes(self) -> Dict[str, Any]:
-        """Run comprehensive import fixes."""
+        """Run comprehensive import fixes with enhanced auto-detection."""
         print("\n" + "="*60)
-        print("Running Import Fixes")
+        print("Running Enhanced Import Fixes with Auto-Detection")
         print("="*60)
         
         try:
             results = {}
             
-            # Missing import fixes
-            missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
-            results["missing_import_fixes"] = missing_results
+            # Get all Python files
+            file_paths = list(self.project_root.glob("**/*.py"))
+            print(f"🔍 Analyzing {len(file_paths)} Python files for import issues...")
             
-            # Circular import detection
-            circular_report = self.circular_import_detector.generate_report()
-            results["circular_import_fixes"] = {
-                "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
-                "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
-            }
+            # Enhanced auto-detection import fixes (primary method)
+            print("🚀 Running enhanced auto-detection for missing imports...")
+            auto_detection_results = self.missing_import_fixer.auto_fix_all_files(
+                [str(f) for f in file_paths], 
+                dry_run=False
+            )
+            results["auto_detection_fixes"] = auto_detection_results
             
-            # Generate import fixes report
+            # Only run traditional fixes if auto-detection found issues or failed
+            auto_fixed = auto_detection_results.get("fixed", 0)
+            auto_failed = auto_detection_results.get("failed", 0)
+            
+            if auto_fixed == 0 and auto_failed > 0:
+                print("🔧 Auto-detection had issues, running traditional missing import fixes...")
+                try:
+                    missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
+                    results["traditional_import_fixes"] = missing_results
+                except Exception as e:
+                    print(f"⚠️  Traditional import fixes also failed: {e}")
+                    results["traditional_import_fixes"] = {"status": "error", "error": str(e)}
+            else:
+                print("✅ Auto-detection completed successfully, skipping traditional fixes")
+                results["traditional_import_fixes"] = {"status": "skipped", "reason": "auto_detection_successful"}
+            
+            # Import placement correction (run after import fixes)
+            print("🔧 Correcting import placement...")
+            try:
+                from scripts.fix_incorrect_imports import find_incorrect_imports, fix_incorrect_imports
+                
+                # Find files with incorrect import placement
+                files_with_issues = []
+                for file_path in file_paths:
+                    incorrect_imports = find_incorrect_imports(str(file_path))
+                    if incorrect_imports:
+                        files_with_issues.append((str(file_path), incorrect_imports))
+                
+                # Fix incorrect imports
+                placement_fixed = 0
+                for file_path, _ in files_with_issues:
+                    if fix_incorrect_imports(file_path):
+                        placement_fixed += 1
+                
+                results["import_placement_fixes"] = {
+                    "files_with_incorrect_placement": len(files_with_issues),
+                    "files_fixed": placement_fixed,
+                    "status": "success"
+                }
+                
+                if files_with_issues:
+                    print(f"  ✅ Fixed import placement in {placement_fixed} files")
+                else:
+                    print(f"  ✅ No incorrect import placement found")
+                    
+            except Exception as e:
+                print(f"⚠️  Import placement correction failed: {e}")
+                results["import_placement_fixes"] = {"status": "error", "error": str(e)}
+            
+            # Circular import detection (always run)
+            print("🔄 Detecting circular imports...")
+            try:
+                circular_report = self.circular_import_detector.generate_report()
+                results["circular_import_fixes"] = {
+                    "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
+                    "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
+                }
+            except Exception as e:
+                print(f"⚠️  Circular import detection failed: {e}")
+                results["circular_import_fixes"] = {"status": "error", "error": str(e)}
+            
+            # Enhanced reporting
+            total_auto_fixed = auto_detection_results.get("fixed", 0)
+            total_auto_failed = auto_detection_results.get("failed", 0)
+            total_traditional_fixed = results["traditional_import_fixes"].get("fixes_applied", 0) if isinstance(results["traditional_import_fixes"], dict) else 0
+            total_placement_fixed = results["import_placement_fixes"].get("files_fixed", 0) if isinstance(results["import_placement_fixes"], dict) else 0
+            total_circular_found = results["circular_import_fixes"].get("circular_imports_found", 0) if isinstance(results["circular_import_fixes"], dict) else 0
+            
+            print(f"\n📊 Import Fixes Summary:")
+            print(f"  ✅ Auto-detection fixes: {total_auto_fixed} files")
+            print(f"  ❌ Auto-detection failures: {total_auto_failed} files")
+            print(f"  🔧 Traditional fixes: {total_traditional_fixed} files")
+            print(f"  📍 Import placement fixes: {total_placement_fixed} files")
+            print(f"  🔄 Circular imports found: {total_circular_found}")
+            
+            # Show module breakdown for auto-detection
+            module_counts = auto_detection_results.get("module_counts", {})
+            if module_counts:
+                print(f"\n📈 Imports added by module:")
+                for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"    {module}: {count} files")
+            
+            # Show specific files that were fixed
+            fixed_files = auto_detection_results.get("fixed_files", [])
+            if fixed_files:
+                print(f"\n📁 Files fixed by auto-detection:")
+                for file_path in fixed_files[:10]:  # Show first 10
+                    print(f"    ✓ {file_path}")
+                if len(fixed_files) > 10:
+                    print(f"    ... and {len(fixed_files) - 10} more files")
+            
+            # Generate comprehensive import fixes report
             import_fixes_report = {
                 "timestamp": self.timestamp,
-                "analysis_type": "import_fixes",
+                "analysis_type": "enhanced_import_fixes",
                 "project_root": str(self.project_root),
-                "missing_import_fixes": missing_results.get("fixes_applied", 0),
-                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
+                "auto_detection_fixes": total_auto_fixed,
+                "auto_detection_failures": total_auto_failed,
+                "traditional_import_fixes": total_traditional_fixed,
+                "import_placement_fixes": total_placement_fixed,
+                "circular_imports_found": total_circular_found,
+                "module_breakdown": module_counts,
+                "files_analyzed": len(file_paths),
+                "files_fixed": fixed_files,
                 "results": results
             }
             
             # Save report
-            report_path = self.reports_dir / f"import_fixes_{self.timestamp}.json"
+            report_path = self.reports_dir / f"enhanced_import_fixes_{self.timestamp}.json"
             with open(report_path, "w") as f:
                 json.dump(import_fixes_report, f, indent=2)
+            
+            print(f"\n💾 Report saved to: {report_path}")
             
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "total_import_fixes": missing_results.get("fixes_applied", 0),
-                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
+                "auto_detection_fixes": total_auto_fixed,
+                "auto_detection_failures": total_auto_failed,
+                "traditional_import_fixes": total_traditional_fixed,
+                "circular_imports_found": total_circular_found,
+                "module_breakdown": module_counts,
+                "files_analyzed": len(file_paths),
+                "files_fixed": fixed_files,
                 "results": results
             }
         except Exception as e:
+            print(f"❌ Enhanced import fixes failed: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    def run_enhanced_auto_detection(self, file_pattern: str = "**/*.py", dry_run: bool = False) -> Dict[str, Any]:
+        """Run enhanced auto-detection for missing imports only."""
+        print("\n" + "="*60)
+        print("Running Enhanced Auto-Detection for Missing Imports")
+        print("="*60)
+        
+        try:
+            # Get file paths based on pattern
+            file_paths = list(self.project_root.glob(file_pattern))
+            print(f"🔍 Analyzing {len(file_paths)} Python files...")
+            
+            # Run auto-detection
+            auto_detection_results = self.missing_import_fixer.auto_fix_all_files(
+                [str(f) for f in file_paths], 
+                dry_run=dry_run
+            )
+            
+            # Enhanced reporting
+            total_files = auto_detection_results.get("files_to_fix", 0)
+            total_imports = auto_detection_results.get("imports_to_add", 0)
+            module_counts = auto_detection_results.get("module_counts", {})
+            
+            if dry_run:
+                print(f"\n📊 Auto-Detection Summary (DRY RUN):")
+                print(f"  📁 Files analyzed: {len(file_paths)}")
+                print(f"  🎯 Files with missing imports: {total_files}")
+                print(f"  📦 Total imports to add: {total_imports}")
+            else:
+                print(f"\n📊 Auto-Detection Summary:")
+                print(f"  📁 Files analyzed: {len(file_paths)}")
+                print(f"  ✅ Files fixed: {auto_detection_results.get('fixed', 0)}")
+                print(f"  ❌ Files failed: {auto_detection_results.get('failed', 0)}")
+            
+            # Show module breakdown
+            if module_counts:
+                print(f"\n📈 Imports by module:")
+                for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"    {module}: {count} files")
+            
+            # Generate report
+            auto_detection_report = {
+                "timestamp": self.timestamp,
+                "analysis_type": "enhanced_auto_detection",
+                "project_root": str(self.project_root),
+                "file_pattern": file_pattern,
+                "dry_run": dry_run,
+                "files_analyzed": len(file_paths),
+                "files_with_missing_imports": total_files,
+                "total_imports_to_add": total_imports,
+                "module_breakdown": module_counts,
+                "results": auto_detection_results
+            }
+            
+            # Save report
+            report_suffix = "dry_run" if dry_run else "applied"
+            report_path = self.reports_dir / f"auto_detection_{report_suffix}_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(auto_detection_report, f, indent=2)
+            
+            return {
+                "status": "completed",
+                "report_path": str(report_path),
+                "files_analyzed": len(file_paths),
+                "files_with_missing_imports": total_files,
+                "total_imports_to_add": total_imports,
+                "module_breakdown": module_counts,
+                "dry_run": dry_run,
+                "results": auto_detection_results
+            }
+        except Exception as e:
+            print(f"❌ Enhanced auto-detection failed: {e}")
             return {"status": "error", "error": str(e)}
     
     def run_syntax_fixes(self) -> Dict[str, Any]:
@@ -229,17 +388,17 @@ class AutoFixerPipeline:
             syntax_results = self.syntax_fixer.fix_syntax_issues(str(self.project_root))
             results["advanced_syntax_fixes"] = syntax_results
             
-            # Safe indentation fixes
-            indentation_results = self.safe_indentation_fixer.fix_indentation_errors(str(self.project_root))
-            results["safe_indentation_fixes"] = indentation_results
+            # Bulk syntax cleanup
+            bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
+            results["bulk_syntax_cleanup"] = bulk_results
             
             # Generate syntax fixes report
             syntax_fixes_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "syntax_fixes",
                 "project_root": str(self.project_root),
-                "syntax_fixes": syntax_results.get("fixed_files", []),
-                "indentation_fixes": indentation_results.get("fixed_files", []),
+                "syntax_fixes": syntax_results.get("fixes_applied", 0),
+                "bulk_cleanup_fixes": bulk_results.get("fixes_applied", 0),
                 "results": results
             }
             
@@ -251,49 +410,10 @@ class AutoFixerPipeline:
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "total_syntax_fixes": len(syntax_results.get("fixed_files", [])) + len(indentation_results.get("fixed_files", [])),
+                "total_syntax_fixes": (syntax_results.get("fixes_applied", 0) + 
+                                     bulk_results.get("fixes_applied", 0)),
                 "results": results
             }
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-
-    def run_safe_indentation_fixes(self) -> Dict[str, Any]:
-        """Run safe indentation fixes."""
-        print("\n" + "="*60)
-        print("Running Safe Indentation Fixes")
-        print("="*60)
-        
-        try:
-            results = self.safe_indentation_fixer.fix_indentation_errors(str(self.project_root))
-            
-            # Generate indentation fixes report
-            indentation_fixes_report = {
-                "timestamp": self.timestamp,
-                "analysis_type": "safe_indentation_fixes",
-                "project_root": str(self.project_root),
-                "total_files": results.get("total_files", 0),
-                "files_fixed": len(results.get("fixed_files", [])),
-                "files_failed": len(results.get("failed_files", [])),
-                "files_skipped": len(results.get("skipped_files", [])),
-                "changes_made": results.get("changes_made", 0)
-            }
-            
-            # Save report
-            report_path = self.reports_dir / f"safe_indentation_fixes_{self.timestamp}.json"
-            with open(report_path, "w") as f:
-                json.dump(indentation_fixes_report, f, indent=2)
-            
-            return {
-                "status": "completed",
-                "report_path": str(report_path),
-                "total_files": results.get("total_files", 0),
-                "files_fixed": len(results.get("fixed_files", [])),
-                "files_failed": len(results.get("failed_files", [])),
-                "files_skipped": len(results.get("skipped_files", [])),
-                "changes_made": results.get("changes_made", 0),
-                "results": results
-            }
-            
         except Exception as e:
             return {"status": "error", "error": str(e)}
     
@@ -498,7 +618,7 @@ class AutoFixerPipeline:
         
         total_start = time.time()
         
-        # Run all auto-fixes
+        # Run all auto-fixes (enhanced auto-detection is included in import_fixes)
         self.results["import_fixes"] = self.run_import_fixes()
         self.results["syntax_fixes"] = self.run_syntax_fixes()
         self.results["type_hint_fixes"] = self.run_type_hint_fixes()
@@ -566,9 +686,20 @@ def main():
     parser.add_argument(
         "--fix-type",
         type=str,
-        choices=["imports", "syntax", "type_hints", "async", "dead_code", "indentation", "all"],
+        choices=["imports", "auto_detection", "syntax", "type_hints", "async", "dead_code", "all"],
         default="imports",
         help="Type of fixes to apply (default: imports)"
+    )
+    parser.add_argument(
+        "--file-pattern",
+        type=str,
+        default="**/*.py",
+        help="File pattern for auto-detection (default: **/*.py)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode (show what would be fixed without making changes)"
     )
     
     args = parser.parse_args()
@@ -584,6 +715,11 @@ def main():
         results = pipeline.run_all_auto_fixes()
     elif args.fix_type == "imports":
         results = pipeline.run_import_fixes()
+    elif args.fix_type == "auto_detection":
+        results = pipeline.run_enhanced_auto_detection(
+            file_pattern=args.file_pattern,
+            dry_run=args.dry_run
+        )
     elif args.fix_type == "syntax":
         results = pipeline.run_syntax_fixes()
     elif args.fix_type == "type_hints":
@@ -592,8 +728,6 @@ def main():
         results = pipeline.run_async_fixes()
     elif args.fix_type == "dead_code":
         results = pipeline.run_dead_code_fixes()
-    elif args.fix_type == "indentation":
-        results = pipeline.run_safe_indentation_fixes()
     elif args.fix_type == "plugins":
         results = pipeline.run_plugin_fixes()
     elif args.fix_type == "sequential":

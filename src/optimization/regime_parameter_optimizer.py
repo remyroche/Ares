@@ -17,6 +17,8 @@ logger = system_logger.getChild('RegimeParameterOptimizer')
 @dataclass
 class RegimeParameters:
     """Parameters specific to a market regime."""
+import numpy as np
+
     regime: str
     profit_target: float
     stop_loss: float

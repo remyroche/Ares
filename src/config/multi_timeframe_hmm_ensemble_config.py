@@ -10,6 +10,7 @@ that combines predictions from HMM clusters across multiple timeframes.
 
 from dataclasses import dataclass
 from typing import Any
+import numpy as np
 
 
 @dataclass

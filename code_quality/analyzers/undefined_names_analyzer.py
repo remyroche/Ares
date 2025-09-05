@@ -304,7 +304,8 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
                 return
             
             # Skip common variable names that are often used in loops/comprehensions
-            if name in {'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 'result', 'temp'}:
+            # But be more aggressive about detecting undefined names
+            if name in {'i', 'j', 'k', 'x', 'y', 'z'}:
                 # Only flag if it's not in a loop or comprehension context
                 if not self._is_in_loop_context(node):
                     return

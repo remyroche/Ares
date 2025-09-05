@@ -18,7 +18,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 # Standardized import management
 REQUIRED_MODULES = [
     "pandas", "src.utils.centralized_decorators",
-    "src.training.steps.unified_data_loader",
+    "src.training.steps.data_collection.unified_data_loader",
     "src.utils.logger",
     "src.utils.enhanced_mlflow_integration"
 ]
@@ -28,14 +28,16 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 
 # Safe imports with fallbacks
 centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-unified_data_loader = PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
+unified_data_loader = PipelineStandards.safe_import("src.training.steps.data_collection.unified_data_loader", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 
 # Import get_unified_data_loader function
 if unified_data_loader is not None:
-    get_unified_data_loader = unified_data_loader.get_unified_data_loader
+    # Create factory function for UnifiedDataLoader
+    def get_unified_data_loader(config):
+        return unified_data_loader.UnifiedDataLoader(config)
 else:
     def get_unified_data_loader(config):
         raise ImportError("unified_data_loader module not available")
@@ -170,7 +172,8 @@ class RegimeDataSplittingStep:
                 symbol=self.config.get("symbol", "ETHUSDT"),
                 exchange=self.config.get("exchange", "BINANCE"),
                 timeframe=self.config.get("timeframe", "1m"),
-                lookback_days=config_lookback, )
+                data_dir=self.config.get("data_dir", "data_cache")
+            )
 
             # Validate unified_data is not None and has data
             if unified_data is None:

@@ -142,4 +142,5 @@ def main():
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

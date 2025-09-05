@@ -472,4 +472,5 @@ def main():
     print("📁 Detailed results saved to: code_quality_assessment_results.json")
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

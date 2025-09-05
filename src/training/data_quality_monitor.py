@@ -569,4 +569,4 @@ async def main() -> None:
     print('\nQuality Summary:')
     print(json.dumps(report['quality_summary'], indent=2))
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run(main())

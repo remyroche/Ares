@@ -347,4 +347,5 @@ def main():
     print("The enhanced_training_manager can now use this data for steps 1_5, 2, 3, and 4.")
 
 if __name__== "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

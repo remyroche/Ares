@@ -110,4 +110,4 @@ async def main() -> None:
     else:
         print('\n❌ Integration failed. Check logs for details.')
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run(main())

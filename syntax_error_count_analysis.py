@@ -213,4 +213,5 @@ def main():
     print(f"Error Rate: {(files_with_errors/total_files)*100:.1f}%")
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

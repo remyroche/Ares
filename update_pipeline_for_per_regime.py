@@ -13,7 +13,7 @@ from src.training.steps.per_regime_integrator import (
     per_regime_integrator,
     integrate_per_regime_processing
 )
-
+from src.utils.logging_utils import get_logger
 
 logger = get_logger('UpdatePipelineForPerRegime')
 

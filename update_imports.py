@@ -41,4 +41,5 @@ def main():
             update_file_imports(str(analyzer_file))
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

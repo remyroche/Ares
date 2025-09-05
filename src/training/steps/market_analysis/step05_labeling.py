@@ -87,547 +87,124 @@ re_module = PipelineStandards.safe_import('re', None)
 os_module = PipelineStandards.safe_import('os', None)
 
 # =============================================================================
-# COMPREHENSIVE FUNCTION CALL MONITORING AND VALIDATION SYSTEM
+# SIMPLIFIED MONITORING SYSTEM
 # =============================================================================
 
-class FunctionCallStatus(Enum):
-    """Status of function call execution."""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
-    CANCELLED = "cancelled"
-
 @dataclass
-class FunctionCallRecord:
-    """Record of a function call with comprehensive metadata."""
+class SimpleCallRecord:
+    """Simple record of a function call."""
     function_name: str
-    call_id: str
     start_time: datetime
     end_time: Optional[datetime] = None
-    status: FunctionCallStatus = FunctionCallStatus.PENDING
-    input_args: Dict[str, Any] = field(default_factory=dict)
-    input_kwargs: Dict[str, Any] = field(default_factory=dict)
-    return_value: Any = None
-    exception: Optional[Exception] = None
     execution_time: float = 0.0
-    memory_usage_mb: float = 0.0
-    cpu_usage_percent: float = 0.0
-    called_functions: List[str] = field(default_factory=list)
-    validation_results: Dict[str, bool] = field(default_factory=dict)
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
-    error_details: Optional[str] = None
-    stack_trace: Optional[str] = None
+    success: bool = True
+    error: Optional[str] = None
 
-@dataclass
-class FunctionCallReport:
-    """Comprehensive report of function call execution."""
-    total_calls: int = 0
-    successful_calls: int = 0
-    failed_calls: int = 0
-    total_execution_time: float = 0.0
-    average_execution_time: float = 0.0
-    function_call_details: List[FunctionCallRecord] = field(default_factory=list)
-    performance_summary: Dict[str, float] = field(default_factory=dict)
-    error_summary: Dict[str, int] = field(default_factory=dict)
-    validation_summary: Dict[str, bool] = field(default_factory=dict)
-
-class FunctionCallMonitor:
-    """Comprehensive function call monitoring and validation system."""
+class SimpleMonitor:
+    """Simplified function call monitoring system."""
     
     def __init__(self, logger: Any = None):
         self.logger = logger or create_fallback_logger()
-        self.active_calls: Dict[str, FunctionCallRecord] = {}
-        self.call_history: List[FunctionCallRecord] = []
-        self.function_call_counter = 0
-        self.validation_rules: Dict[str, Callable] = {}
-        self.performance_thresholds: Dict[str, float] = {}
+        self.call_history: List[SimpleCallRecord] = []
         
-    def generate_call_id(self, function_name: str) -> str:
-        """Generate unique call ID for function call tracking."""
-        self.function_call_counter += 1
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        return f"{function_name}_{timestamp}_{self.function_call_counter}"
-    
-    def start_function_call(self, function_name: str, args: tuple, kwargs: dict) -> str:
+    def start_call(self, function_name: str) -> SimpleCallRecord:
         """Start monitoring a function call."""
-        call_id = self.generate_call_id(function_name)
-        
-        # Capture input arguments (sanitized for logging)
-        input_args = {}
-        input_kwargs = {}
-        
-        # Get function signature to map positional args
-        try:
-            # This is a simplified approach - in practice, you'd get the actual function
-            input_args = {f"arg_{i}": str(arg)[:100] for i, arg in enumerate(args)}
-            input_kwargs = {k: str(v)[:100] for k, v in kwargs.items()}
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not capture function arguments: {e}")
-        
-        call_record = FunctionCallRecord(
-            function_name=function_name,
-            call_id=call_id,
-            start_time=datetime.now(),
-            status=FunctionCallStatus.IN_PROGRESS,
-            input_args=input_args,
-            input_kwargs=input_kwargs
-        )
-        
-        self.active_calls[call_id] = call_record
-        self.logger.info(f"🚀 Starting function call: {function_name} (ID: {call_id})")
-        
-        return call_id
+        record = SimpleCallRecord(function_name=function_name, start_time=datetime.now())
+        self.logger.info(f"🚀 Starting: {function_name}")
+        return record
     
-    def end_function_call(self, call_id: str, return_value: Any = None, exception: Exception = None) -> FunctionCallRecord:
-        """End monitoring a function call and record results."""
-        if call_id not in self.active_calls:
-            self.logger.error(f"❌ Call ID {call_id} not found in active calls")
-            return None
+    def end_call(self, record: SimpleCallRecord, success: bool = True, error: str = None) -> None:
+        """End monitoring a function call."""
+        record.end_time = datetime.now()
+        record.execution_time = (record.end_time - record.start_time).total_seconds()
+        record.success = success
+        record.error = error
         
-        call_record = self.active_calls[call_id]
-        call_record.end_time = datetime.now()
-        call_record.execution_time = (call_record.end_time - call_record.start_time).total_seconds()
-        call_record.return_value = return_value
-        call_record.exception = exception
-        
-        if exception:
-            call_record.status = FunctionCallStatus.FAILED
-            call_record.error_details = str(exception)
-            call_record.stack_trace = traceback.format_exc()
-            self.logger.error(f"❌ Function call failed: {call_record.function_name} (ID: {call_id}) - {exception}")
+        if success:
+            self.logger.info(f"✅ Completed: {record.function_name} in {record.execution_time:.3f}s")
         else:
-            call_record.status = FunctionCallStatus.COMPLETED
-            self.logger.info(f"✅ Function call completed: {call_record.function_name} (ID: {call_id}) in {call_record.execution_time:.3f}s")
+            self.logger.error(f"❌ Failed: {record.function_name} - {error}")
         
-        # Move from active to history
-        del self.active_calls[call_id]
-        self.call_history.append(call_record)
-        
-        return call_record
+        self.call_history.append(record)
     
-    def record_function_to_function_call(self, parent_call_id: str, child_function_name: str) -> None:
-        """Record a function-to-function call relationship."""
-        if parent_call_id in self.active_calls:
-            self.active_calls[parent_call_id].called_functions.append(child_function_name)
-            self.logger.debug(f"🔗 Function call chain: {self.active_calls[parent_call_id].function_name} -> {child_function_name}")
-    
-    def validate_function_call(self, call_record: FunctionCallRecord) -> Dict[str, bool]:
-        """Validate function call against defined rules."""
-        validation_results = {}
-        
-        # Performance validation
-        if call_record.function_name in self.performance_thresholds:
-            threshold = self.performance_thresholds[call_record.function_name]
-            validation_results['performance'] = call_record.execution_time <= threshold
-            if not validation_results['performance']:
-                self.logger.warning(f"⚠️ Performance threshold exceeded for {call_record.function_name}: {call_record.execution_time:.3f}s > {threshold}s")
-        
-        # Custom validation rules
-        if call_record.function_name in self.validation_rules:
-            try:
-                validation_results['custom'] = self.validation_rules[call_record.function_name](call_record)
-            except Exception as e:
-                self.logger.error(f"❌ Custom validation failed for {call_record.function_name}: {e}")
-                validation_results['custom'] = False
-        
-        # Basic validation rules
-        validation_results['has_return_value'] = call_record.return_value is not None
-        validation_results['no_exception'] = call_record.exception is None
-        validation_results['reasonable_execution_time'] = 0 < call_record.execution_time < 3600  # Less than 1 hour
-        
-        call_record.validation_results = validation_results
-        return validation_results
-    
-    def generate_comprehensive_report(self) -> FunctionCallReport:
-        """Generate comprehensive function call report."""
+    def get_summary(self) -> Dict[str, Any]:
+        """Get simple summary of function calls."""
         if not self.call_history:
-            return FunctionCallReport()
+            return {'total_calls': 0, 'success_rate': 0, 'total_time': 0}
         
         total_calls = len(self.call_history)
-        successful_calls = len([c for c in self.call_history if c.status == FunctionCallStatus.COMPLETED])
-        failed_calls = len([c for c in self.call_history if c.status == FunctionCallStatus.FAILED])
-        total_execution_time = sum(c.execution_time for c in self.call_history)
-        average_execution_time = total_execution_time / total_calls if total_calls > 0 else 0.0
+        successful_calls = len([c for c in self.call_history if c.success])
+        total_time = sum(c.execution_time for c in self.call_history)
         
-        # Performance summary
-        performance_summary = {
-            'total_execution_time': total_execution_time,
-            'average_execution_time': average_execution_time,
-            'max_execution_time': max(c.execution_time for c in self.call_history),
-            'min_execution_time': min(c.execution_time for c in self.call_history)
+        return {
+            'total_calls': total_calls,
+            'successful_calls': successful_calls,
+            'failed_calls': total_calls - successful_calls,
+            'success_rate': successful_calls / total_calls * 100,
+            'total_time': total_time,
+            'average_time': total_time / total_calls
         }
-        
-        # Error summary
-        error_summary = {}
-        for call in self.call_history:
-            if call.exception:
-                error_type = type(call.exception).__name__
-                error_summary[error_type] = error_summary.get(error_type, 0) + 1
-        
-        # Validation summary
-        validation_summary = {}
-        for call in self.call_history:
-            for validation_name, result in call.validation_results.items():
-                if validation_name not in validation_summary:
-                    validation_summary[validation_name] = {'passed': 0, 'failed': 0}
-                if result:
-                    validation_summary[validation_name]['passed'] += 1
-                else:
-                    validation_summary[validation_name]['failed'] += 1
-        
-        return FunctionCallReport(
-            total_calls=total_calls,
-            successful_calls=successful_calls,
-            failed_calls=failed_calls,
-            total_execution_time=total_execution_time,
-            average_execution_time=average_execution_time,
-            function_call_details=self.call_history.copy(),
-            performance_summary=performance_summary,
-            error_summary=error_summary,
-            validation_summary=validation_summary
-        )
-    
-    def log_detailed_report(self, report: FunctionCallReport) -> None:
-        """Log detailed function call report."""
-        self.logger.info("📊 COMPREHENSIVE FUNCTION CALL REPORT")
-        self.logger.info("=" * 50)
-        self.logger.info(f"Total Function Calls: {report.total_calls}")
-        self.logger.info(f"Successful Calls: {report.successful_calls}")
-        self.logger.info(f"Failed Calls: {report.failed_calls}")
-        self.logger.info(f"Success Rate: {report.successful_calls/report.total_calls*100:.1f}%" if report.total_calls > 0 else "N/A")
-        self.logger.info(f"Total Execution Time: {report.total_execution_time:.3f}s")
-        self.logger.info(f"Average Execution Time: {report.average_execution_time:.3f}s")
-        
-        if report.performance_summary:
-            self.logger.info("\n📈 PERFORMANCE SUMMARY:")
-            for metric, value in report.performance_summary.items():
-                self.logger.info(f"  {metric}: {value:.3f}s")
-        
-        if report.error_summary:
-            self.logger.info("\n❌ ERROR SUMMARY:")
-            for error_type, count in report.error_summary.items():
-                self.logger.info(f"  {error_type}: {count} occurrences")
-        
-        if report.validation_summary:
-            self.logger.info("\n✅ VALIDATION SUMMARY:")
-            for validation_name, results in report.validation_summary.items():
-                total = results['passed'] + results['failed']
-                pass_rate = results['passed'] / total * 100 if total > 0 else 0
-                self.logger.info(f"  {validation_name}: {results['passed']}/{total} passed ({pass_rate:.1f}%)")
-        
-        self.logger.info("\n🔍 DETAILED FUNCTION CALLS:")
-        for call in report.function_call_details:
-            status_emoji = "✅" if call.status == FunctionCallStatus.COMPLETED else "❌"
-            self.logger.info(f"  {status_emoji} {call.function_name} (ID: {call.call_id})")
-            self.logger.info(f"    Status: {call.status.value}")
-            self.logger.info(f"    Execution Time: {call.execution_time:.3f}s")
-            if call.called_functions:
-                self.logger.info(f"    Called Functions: {', '.join(call.called_functions)}")
-            if call.validation_results:
-                validation_status = "✅" if all(call.validation_results.values()) else "⚠️"
-                self.logger.info(f"    Validation: {validation_status} {call.validation_results}")
-            if call.exception:
-                self.logger.info(f"    Error: {call.error_details}")
 
-def comprehensive_function_monitor(monitor: FunctionCallMonitor):
-    """Decorator for comprehensive function call monitoring."""
+def simple_monitor(monitor: SimpleMonitor):
+    """Simple decorator for function call monitoring."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            call_id = monitor.start_function_call(func.__name__, args, kwargs)
+            record = monitor.start_call(func.__name__)
             try:
                 result = await func(*args, **kwargs)
-                call_record = monitor.end_function_call(call_id, result)
-                if call_record:
-                    monitor.validate_function_call(call_record)
+                monitor.end_call(record, success=True)
                 return result
             except Exception as e:
-                call_record = monitor.end_function_call(call_id, exception=e)
-                if call_record:
-                    monitor.validate_function_call(call_record)
+                monitor.end_call(record, success=False, error=str(e))
                 raise
         
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            call_id = monitor.start_function_call(func.__name__, args, kwargs)
+            record = monitor.start_call(func.__name__)
             try:
                 result = func(*args, **kwargs)
-                call_record = monitor.end_function_call(call_id, result)
-                if call_record:
-                    monitor.validate_function_call(call_record)
+                monitor.end_call(record, success=True)
                 return result
             except Exception as e:
-                call_record = monitor.end_function_call(call_id, exception=e)
-                if call_record:
-                    monitor.validate_function_call(call_record)
+                monitor.end_call(record, success=False, error=str(e))
                 raise
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
-def function_to_function_tracker(monitor: FunctionCallMonitor, parent_call_id: str = None):
-    """Decorator for tracking function-to-function calls."""
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            if parent_call_id:
-                monitor.record_function_to_function_call(parent_call_id, func.__name__)
-            return await func(*args, **kwargs)
-        
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            if parent_call_id:
-                monitor.record_function_to_function_call(parent_call_id, func.__name__)
-            return func(*args, **kwargs)
-        
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
-
-class EnhancedErrorHandler:
-    """Enhanced error handling system with detailed function-level error reporting."""
+class SimpleErrorHandler:
+    """Simplified error handling system."""
     
     def __init__(self, logger: Any = None):
         self.logger = logger or create_fallback_logger()
-        self.error_history: List[Dict[str, Any]] = []
-        self.error_patterns: Dict[str, int] = {}
-        self.function_error_counts: Dict[str, int] = {}
+        self.error_count = 0
+        self.error_types: Dict[str, int] = {}
         
-    def handle_function_error(self, function_name: str, error: Exception, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Handle and analyze function-level errors with detailed reporting."""
-        try:
-            error_info = {
-                'timestamp': datetime.now().isoformat(),
-                'function_name': function_name,
-                'error_type': type(error).__name__,
-                'error_message': str(error),
-                'error_details': {
-                    'module': getattr(error, '__module__', 'unknown'),
-                    'args': getattr(error, 'args', ()),
-                    'filename': getattr(error, '__traceback__', {}).get('tb_frame', {}).get('f_code', {}).get('co_filename', 'unknown') if hasattr(error, '__traceback__') else 'unknown',
-                    'line_number': getattr(error, '__traceback__', {}).get('tb_lineno', 'unknown') if hasattr(error, '__traceback__') else 'unknown'
-                },
-                'context': context or {},
-                'stack_trace': traceback.format_exc(),
-                'severity': self._determine_error_severity(error),
-                'recovery_suggestions': self._generate_recovery_suggestions(error, function_name)
-            }
-            
-            # Update error patterns and counts
-            error_key = f"{function_name}:{type(error).__name__}"
-            self.error_patterns[error_key] = self.error_patterns.get(error_key, 0) + 1
-            self.function_error_counts[function_name] = self.function_error_counts.get(function_name, 0) + 1
-            
-            # Add to error history
-            self.error_history.append(error_info)
-            
-            # Log detailed error information
-            self._log_detailed_error(error_info)
-            
-            return error_info
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to handle error in EnhancedErrorHandler: {e}")
-            return {}
-    
-    def _determine_error_severity(self, error: Exception) -> str:
-        """Determine error severity based on error type and context."""
-        critical_errors = (SystemError, MemoryError, OSError, RuntimeError)
-        warning_errors = (UserWarning, DeprecationWarning, FutureWarning)
+    def handle_error(self, function_name: str, error: Exception) -> None:
+        """Handle and log function errors."""
+        self.error_count += 1
+        error_type = type(error).__name__
+        self.error_types[error_type] = self.error_types.get(error_type, 0) + 1
         
-        if isinstance(error, critical_errors):
-            return "CRITICAL"
-        elif isinstance(error, warning_errors):
-            return "WARNING"
-        elif isinstance(error, (ValueError, TypeError, AttributeError)):
-            return "ERROR"
-        else:
-            return "UNKNOWN"
+        self.logger.error(f"❌ Error in {function_name}: {error_type} - {str(error)}")
     
-    def _generate_recovery_suggestions(self, error: Exception, function_name: str) -> List[str]:
-        """Generate recovery suggestions based on error type and function."""
-        suggestions = []
-        
-        if isinstance(error, FileNotFoundError):
-            suggestions.extend([
-                "Check if the file path exists and is accessible",
-                "Verify file permissions",
-                "Ensure the directory structure is correct"
-            ])
-        elif isinstance(error, ValueError):
-            suggestions.extend([
-                "Validate input parameters before processing",
-                "Check data types and ranges",
-                "Review data format and structure"
-            ])
-        elif isinstance(error, MemoryError):
-            suggestions.extend([
-                "Consider processing data in smaller chunks",
-                "Optimize memory usage",
-                "Check for memory leaks"
-            ])
-        elif isinstance(error, TimeoutError):
-            suggestions.extend([
-                "Increase timeout values",
-                "Optimize function performance",
-                "Consider asynchronous processing"
-            ])
-        elif isinstance(error, ImportError):
-            suggestions.extend([
-                "Check if required modules are installed",
-                "Verify import paths",
-                "Update dependencies"
-            ])
-        
-        # Function-specific suggestions
-        if 'labeling' in function_name.lower():
-            suggestions.extend([
-                "Verify input data quality and format",
-                "Check labeling configuration parameters",
-                "Ensure sufficient data for labeling"
-            ])
-        elif 'regime' in function_name.lower():
-            suggestions.extend([
-                "Verify regime data availability",
-                "Check regime detection parameters",
-                "Ensure regime labels are properly formatted"
-            ])
-        
-        return suggestions
-    
-    def _log_detailed_error(self, error_info: Dict[str, Any]) -> None:
-        """Log detailed error information."""
-        try:
-            self.logger.error(f"🚨 DETAILED ERROR REPORT")
-            self.logger.error(f"   Function: {error_info['function_name']}")
-            self.logger.error(f"   Error Type: {error_info['error_type']}")
-            self.logger.error(f"   Severity: {error_info['severity']}")
-            self.logger.error(f"   Message: {error_info['error_message']}")
-            self.logger.error(f"   Timestamp: {error_info['timestamp']}")
-            
-            if error_info['context']:
-                self.logger.error(f"   Context: {error_info['context']}")
-            
-            if error_info['recovery_suggestions']:
-                self.logger.error(f"   Recovery Suggestions:")
-                for i, suggestion in enumerate(error_info['recovery_suggestions'], 1):
-                    self.logger.error(f"     {i}. {suggestion}")
-            
-            # Log stack trace at debug level to avoid cluttering logs
-            self.logger.debug(f"   Stack Trace:\n{error_info['stack_trace']}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to log detailed error: {e}")
-    
-    def generate_error_summary_report(self) -> Dict[str, Any]:
-        """Generate comprehensive error summary report."""
-        try:
-            if not self.error_history:
-                return {'total_errors': 0, 'message': 'No errors recorded'}
-            
-            # Analyze error patterns
-            error_type_counts = {}
-            severity_counts = {}
-            function_error_summary = {}
-            
-            for error in self.error_history:
-                error_type = error['error_type']
-                severity = error['severity']
-                function_name = error['function_name']
-                
-                error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
-                severity_counts[severity] = severity_counts.get(severity, 0) + 1
-                
-                if function_name not in function_error_summary:
-                    function_error_summary[function_name] = {
-                        'total_errors': 0,
-                        'error_types': {},
-                        'severities': {}
-                    }
-                
-                function_error_summary[function_name]['total_errors'] += 1
-                function_error_summary[function_name]['error_types'][error_type] = \
-                    function_error_summary[function_name]['error_types'].get(error_type, 0) + 1
-                function_error_summary[function_name]['severities'][severity] = \
-                    function_error_summary[function_name]['severities'].get(severity, 0) + 1
-            
-            # Find most common errors
-            most_common_error_type = max(error_type_counts.items(), key=lambda x: x[1])[0] if error_type_counts else None
-            most_error_prone_function = max(function_error_summary.items(), key=lambda x: x[1]['total_errors'])[0] if function_error_summary else None
-            
-            return {
-                'total_errors': len(self.error_history),
-                'error_type_counts': error_type_counts,
-                'severity_counts': severity_counts,
-                'function_error_summary': function_error_summary,
-                'most_common_error_type': most_common_error_type,
-                'most_error_prone_function': most_error_prone_function,
-                'error_patterns': self.error_patterns,
-                'recent_errors': self.error_history[-5:] if len(self.error_history) > 5 else self.error_history
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to generate error summary report: {e}")
-            return {}
-    
-    def log_error_summary_report(self, report: Dict[str, Any]) -> None:
-        """Log comprehensive error summary report."""
-        try:
-            if report.get('total_errors', 0) == 0:
-                self.logger.info("✅ No errors recorded during execution")
-                return
-            
-            self.logger.info("📊 ERROR SUMMARY REPORT")
-            self.logger.info("=" * 40)
-            self.logger.info(f"Total Errors: {report['total_errors']}")
-            
-            # Error type summary
-            if report.get('error_type_counts'):
-                self.logger.info(f"\nError Types:")
-                for error_type, count in sorted(report['error_type_counts'].items(), key=lambda x: x[1], reverse=True):
-                    self.logger.info(f"  - {error_type}: {count} occurrences")
-            
-            # Severity summary
-            if report.get('severity_counts'):
-                self.logger.info(f"\nSeverity Distribution:")
-                for severity, count in sorted(report['severity_counts'].items(), key=lambda x: x[1], reverse=True):
-                    self.logger.info(f"  - {severity}: {count} occurrences")
-            
-            # Function error summary
-            if report.get('function_error_summary'):
-                self.logger.info(f"\nFunction Error Summary:")
-                for function_name, summary in sorted(report['function_error_summary'].items(), 
-                                                   key=lambda x: x[1]['total_errors'], reverse=True):
-                    self.logger.info(f"  - {function_name}: {summary['total_errors']} errors")
-                    for error_type, count in summary['error_types'].items():
-                        self.logger.info(f"    * {error_type}: {count}")
-            
-            # Most problematic areas
-            if report.get('most_common_error_type'):
-                self.logger.info(f"\nMost Common Error Type: {report['most_common_error_type']}")
-            
-            if report.get('most_error_prone_function'):
-                self.logger.info(f"Most Error-Prone Function: {report['most_error_prone_function']}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to log error summary report: {e}")
+    def get_summary(self) -> Dict[str, Any]:
+        """Get simple error summary."""
+        return {
+            'total_errors': self.error_count,
+            'error_types': self.error_types.copy()
+        }
 
-def enhanced_error_handler(handler: EnhancedErrorHandler):
-    """Decorator for enhanced error handling with detailed reporting."""
+def simple_error_handler(handler: SimpleErrorHandler):
+    """Simple decorator for error handling."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
-                context = {
-                    'function_name': func.__name__,
-                    'args_count': len(args),
-                    'kwargs_keys': list(kwargs.keys()),
-                    'timestamp': datetime.now().isoformat()
-                }
-                handler.handle_function_error(func.__name__, e, context)
+                handler.handle_error(func.__name__, e)
                 raise
         
         @wraps(func)
@@ -635,601 +212,249 @@ def enhanced_error_handler(handler: EnhancedErrorHandler):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                context = {
-                    'function_name': func.__name__,
-                    'args_count': len(args),
-                    'kwargs_keys': list(kwargs.keys()),
-                    'timestamp': datetime.now().isoformat()
-                }
-                handler.handle_function_error(func.__name__, e, context)
+                handler.handle_error(func.__name__, e)
                 raise
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
-class PerformanceMonitor:
-    """Comprehensive performance monitoring system for function calls."""
+class SimplePerformanceMonitor:
+    """Simplified performance monitoring system."""
     
     def __init__(self, logger: Any = None):
         self.logger = logger or create_fallback_logger()
-        self.performance_history: List[Dict[str, Any]] = []
-        self.function_performance_stats: Dict[str, Dict[str, Any]] = {}
-        self.performance_thresholds: Dict[str, float] = {}
-        self.memory_usage_history: List[Dict[str, Any]] = []
-        self.cpu_usage_history: List[Dict[str, Any]] = []
+        self.execution_times: Dict[str, List[float]] = {}
         
-    def start_performance_monitoring(self, function_name: str, call_id: str) -> Dict[str, Any]:
-        """Start performance monitoring for a function call."""
-        try:
-            # Get initial system metrics
-            initial_metrics = self._get_system_metrics()
-            
-            performance_record = {
-                'function_name': function_name,
-                'call_id': call_id,
-                'start_time': datetime.now(),
-                'start_metrics': initial_metrics,
-                'end_time': None,
-                'end_metrics': None,
-                'execution_time': 0.0,
-                'memory_delta_mb': 0.0,
-                'cpu_usage_percent': 0.0,
-                'performance_score': 0.0,
-                'bottlenecks': [],
-                'optimization_suggestions': []
-            }
-            
-            return performance_record
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to start performance monitoring: {e}")
-            return {}
-    
-    def end_performance_monitoring(self, performance_record: Dict[str, Any]) -> Dict[str, Any]:
-        """End performance monitoring and calculate metrics."""
-        try:
-            if not performance_record:
-                return {}
-            
-            # Get final system metrics
-            final_metrics = self._get_system_metrics()
-            performance_record['end_time'] = datetime.now()
-            performance_record['end_metrics'] = final_metrics
-            
-            # Calculate execution time
-            if performance_record['start_time'] and performance_record['end_time']:
-                performance_record['execution_time'] = (
-                    performance_record['end_time'] - performance_record['start_time']
-                ).total_seconds()
-            
-            # Calculate memory delta
-            if (performance_record['start_metrics'] and performance_record['end_metrics'] and
-                'memory_mb' in performance_record['start_metrics'] and 
-                'memory_mb' in performance_record['end_metrics']):
-                performance_record['memory_delta_mb'] = (
-                    performance_record['end_metrics']['memory_mb'] - 
-                    performance_record['start_metrics']['memory_mb']
-                )
-            
-            # Calculate CPU usage
-            if (performance_record['start_metrics'] and performance_record['end_metrics'] and
-                'cpu_percent' in performance_record['start_metrics'] and 
-                'cpu_percent' in performance_record['end_metrics']):
-                performance_record['cpu_usage_percent'] = (
-                    performance_record['end_metrics']['cpu_percent'] - 
-                    performance_record['start_metrics']['cpu_percent']
-                )
-            
-            # Calculate performance score
-            performance_record['performance_score'] = self._calculate_performance_score(performance_record)
-            
-            # Identify bottlenecks
-            performance_record['bottlenecks'] = self._identify_bottlenecks(performance_record)
-            
-            # Generate optimization suggestions
-            performance_record['optimization_suggestions'] = self._generate_optimization_suggestions(
-                performance_record
-            )
-            
-            # Update function performance stats
-            self._update_function_performance_stats(performance_record)
-            
-            # Add to history
-            self.performance_history.append(performance_record)
-            
-            return performance_record
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to end performance monitoring: {e}")
-            return performance_record
-    
-    def _get_system_metrics(self) -> Dict[str, Any]:
-        """Get current system metrics."""
-        try:
-            metrics = {}
-            
-            # Memory usage
-            if psutil:
-                process = psutil.Process()
-                memory_info = process.memory_info()
-                metrics['memory_mb'] = memory_info.rss / 1024 / 1024  # Convert to MB
-                metrics['memory_percent'] = process.memory_percent()
-            
-            # CPU usage
-            if psutil:
-                metrics['cpu_percent'] = psutil.cpu_percent()
-            
-            # System load
-            if psutil:
-                metrics['load_average'] = psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None
-            
-            return metrics
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to get system metrics: {e}")
-            return {}
-    
-    def _calculate_performance_score(self, performance_record: Dict[str, Any]) -> float:
-        """Calculate performance score based on execution time, memory usage, and CPU usage."""
-        try:
-            score = 100.0  # Start with perfect score
-            
-            # Execution time penalty
-            execution_time = performance_record.get('execution_time', 0)
-            if execution_time > 60:  # More than 1 minute
-                score -= min(30, (execution_time - 60) * 0.5)
-            elif execution_time > 10:  # More than 10 seconds
-                score -= min(20, (execution_time - 10) * 2)
-            
-            # Memory usage penalty
-            memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-            if memory_delta > 1000:  # More than 1GB
-                score -= min(25, (memory_delta - 1000) * 0.025)
-            elif memory_delta > 100:  # More than 100MB
-                score -= min(15, (memory_delta - 100) * 0.15)
-            
-            # CPU usage penalty
-            cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
-            if cpu_usage > 80:  # More than 80% CPU
-                score -= min(20, (cpu_usage - 80) * 0.5)
-            elif cpu_usage > 50:  # More than 50% CPU
-                score -= min(10, (cpu_usage - 50) * 0.33)
-            
-            return max(0, score)  # Ensure score doesn't go below 0
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to calculate performance score: {e}")
-            return 50.0  # Default score
-    
-    def _identify_bottlenecks(self, performance_record: Dict[str, Any]) -> List[str]:
-        """Identify performance bottlenecks."""
-        bottlenecks = []
-        
-        execution_time = performance_record.get('execution_time', 0)
-        memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-        cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
+    def record_execution_time(self, function_name: str, execution_time: float) -> None:
+        """Record execution time for a function."""
+        if function_name not in self.execution_times:
+            self.execution_times[function_name] = []
+        self.execution_times[function_name].append(execution_time)
         
         if execution_time > 60:
-            bottlenecks.append("Long execution time (>60s)")
-        elif execution_time > 10:
-            bottlenecks.append("Moderate execution time (>10s)")
-        
-        if memory_delta > 1000:
-            bottlenecks.append("High memory usage (>1GB)")
-        elif memory_delta > 100:
-            bottlenecks.append("Moderate memory usage (>100MB)")
-        
-        if cpu_usage > 80:
-            bottlenecks.append("High CPU usage (>80%)")
-        elif cpu_usage > 50:
-            bottlenecks.append("Moderate CPU usage (>50%)")
-        
-        return bottlenecks
+            self.logger.warning(f"⚠️ Slow execution: {function_name} took {execution_time:.3f}s")
     
-    def _generate_optimization_suggestions(self, performance_record: Dict[str, Any]) -> List[str]:
-        """Generate optimization suggestions based on performance metrics."""
-        suggestions = []
-        
-        execution_time = performance_record.get('execution_time', 0)
-        memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-        cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
-        function_name = performance_record.get('function_name', '')
-        
-        if execution_time > 30:
-            suggestions.extend([
-                "Consider breaking down the function into smaller, more manageable parts",
-                "Implement caching for repeated computations",
-                "Use vectorized operations instead of loops where possible"
-            ])
-        
-        if memory_delta > 500:
-            suggestions.extend([
-                "Process data in smaller chunks to reduce memory footprint",
-                "Use memory-efficient data types (e.g., float32 instead of float64)",
-                "Clear unused variables and objects explicitly"
-            ])
-        
-        if cpu_usage > 70:
-            suggestions.extend([
-                "Consider parallel processing for independent operations",
-                "Optimize algorithms for better time complexity",
-                "Use more efficient data structures"
-            ])
-        
-        # Function-specific suggestions
-        if 'labeling' in function_name.lower():
-            suggestions.extend([
-                "Consider using vectorized labeling operations",
-                "Implement early termination for labeling loops",
-                "Use efficient data structures for label storage"
-            ])
-        elif 'regime' in function_name.lower():
-            suggestions.extend([
-                "Cache regime detection results",
-                "Use efficient regime transition algorithms",
-                "Optimize regime-specific computations"
-            ])
-        
-        return suggestions
-    
-    def _update_function_performance_stats(self, performance_record: Dict[str, Any]) -> None:
-        """Update function performance statistics."""
-        try:
-            function_name = performance_record['function_name']
-            
-            if function_name not in self.function_performance_stats:
-                self.function_performance_stats[function_name] = {
-                    'total_calls': 0,
-                    'total_execution_time': 0.0,
-                    'total_memory_usage': 0.0,
-                    'total_cpu_usage': 0.0,
-                    'execution_times': [],
-                    'memory_usages': [],
-                    'cpu_usages': [],
-                    'performance_scores': [],
-                    'bottlenecks': {},
-                    'optimization_suggestions': set()
-                }
-            
-            stats = self.function_performance_stats[function_name]
-            stats['total_calls'] += 1
-            stats['total_execution_time'] += performance_record.get('execution_time', 0)
-            stats['total_memory_usage'] += abs(performance_record.get('memory_delta_mb', 0))
-            stats['total_cpu_usage'] += abs(performance_record.get('cpu_usage_percent', 0))
-            
-            stats['execution_times'].append(performance_record.get('execution_time', 0))
-            stats['memory_usages'].append(abs(performance_record.get('memory_delta_mb', 0)))
-            stats['cpu_usages'].append(abs(performance_record.get('cpu_usage_percent', 0)))
-            stats['performance_scores'].append(performance_record.get('performance_score', 0))
-            
-            # Update bottlenecks
-            for bottleneck in performance_record.get('bottlenecks', []):
-                stats['bottlenecks'][bottleneck] = stats['bottlenecks'].get(bottleneck, 0) + 1
-            
-            # Update optimization suggestions
-            for suggestion in performance_record.get('optimization_suggestions', []):
-                stats['optimization_suggestions'].add(suggestion)
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to update function performance stats: {e}")
-    
-    def generate_performance_report(self) -> Dict[str, Any]:
-        """Generate comprehensive performance report."""
-        try:
-            if not self.performance_history:
-                return {'total_monitored_calls': 0, 'message': 'No performance data recorded'}
-            
-            # Overall statistics
-            total_calls = len(self.performance_history)
-            total_execution_time = sum(record.get('execution_time', 0) for record in self.performance_history)
-            total_memory_usage = sum(abs(record.get('memory_delta_mb', 0)) for record in self.performance_history)
-            total_cpu_usage = sum(abs(record.get('cpu_usage_percent', 0)) for record in self.performance_history)
-            
-            # Performance scores
-            performance_scores = [record.get('performance_score', 0) for record in self.performance_history]
-            avg_performance_score = sum(performance_scores) / len(performance_scores) if performance_scores else 0
-            
-            # Identify worst performers
-            worst_performers = sorted(
-                self.performance_history,
-                key=lambda x: x.get('performance_score', 0)
-            )[:5]
-            
-            # Function-specific analysis
-            function_analysis = {}
-            for function_name, stats in self.function_performance_stats.items():
-                if stats['total_calls'] > 0:
-                    function_analysis[function_name] = {
-                        'total_calls': stats['total_calls'],
-                        'average_execution_time': stats['total_execution_time'] / stats['total_calls'],
-                        'average_memory_usage': stats['total_memory_usage'] / stats['total_calls'],
-                        'average_cpu_usage': stats['total_cpu_usage'] / stats['total_calls'],
-                        'average_performance_score': sum(stats['performance_scores']) / len(stats['performance_scores']),
-                        'most_common_bottlenecks': sorted(
-                            stats['bottlenecks'].items(),
-                            key=lambda x: x[1],
-                            reverse=True
-                        )[:3],
-                        'optimization_suggestions': list(stats['optimization_suggestions'])[:5]
-                    }
-            
-            return {
-                'total_monitored_calls': total_calls,
-                'overall_statistics': {
-                    'total_execution_time': total_execution_time,
-                    'total_memory_usage': total_memory_usage,
-                    'total_cpu_usage': total_cpu_usage,
-                    'average_performance_score': avg_performance_score
-                },
-                'worst_performers': [
-                    {
-                        'function_name': record['function_name'],
-                        'call_id': record['call_id'],
-                        'performance_score': record.get('performance_score', 0),
-                        'execution_time': record.get('execution_time', 0),
-                        'bottlenecks': record.get('bottlenecks', [])
-                    }
-                    for record in worst_performers
-                ],
-                'function_analysis': function_analysis,
-                'performance_trends': self._analyze_performance_trends()
+    def get_summary(self) -> Dict[str, Any]:
+        """Get simple performance summary."""
+        summary = {}
+        for function_name, times in self.execution_times.items():
+            summary[function_name] = {
+                'total_calls': len(times),
+                'average_time': sum(times) / len(times),
+                'max_time': max(times),
+                'min_time': min(times)
             }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to generate performance report: {e}")
-            return {}
-    
-    def _analyze_performance_trends(self) -> Dict[str, Any]:
-        """Analyze performance trends over time."""
-        try:
-            if len(self.performance_history) < 2:
-                return {'trend': 'insufficient_data'}
-            
-            # Sort by start time
-            sorted_history = sorted(self.performance_history, key=lambda x: x['start_time'])
-            
-            # Calculate trend for execution time
-            execution_times = [record.get('execution_time', 0) for record in sorted_history]
-            if len(execution_times) > 1:
-                time_trend = 'improving' if execution_times[-1] < execution_times[0] else 'degrading'
-            else:
-                time_trend = 'stable'
-            
-            # Calculate trend for performance scores
-            performance_scores = [record.get('performance_score', 0) for record in sorted_history]
-            if len(performance_scores) > 1:
-                score_trend = 'improving' if performance_scores[-1] > performance_scores[0] else 'degrading'
-            else:
-                score_trend = 'stable'
-            
-            return {
-                'execution_time_trend': time_trend,
-                'performance_score_trend': score_trend,
-                'data_points': len(sorted_history)
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to analyze performance trends: {e}")
-            return {}
-    
-    def log_performance_report(self, report: Dict[str, Any]) -> None:
-        """Log comprehensive performance report."""
-        try:
-            if report.get('total_monitored_calls', 0) == 0:
-                self.logger.info("📊 No performance data recorded")
-                return
-            
-            self.logger.info("📊 PERFORMANCE MONITORING REPORT")
-            self.logger.info("=" * 50)
-            self.logger.info(f"Total Monitored Calls: {report['total_monitored_calls']}")
-            
-            # Overall statistics
-            overall_stats = report.get('overall_statistics', {})
-            if overall_stats:
-                self.logger.info(f"\n📈 OVERALL STATISTICS:")
-                self.logger.info(f"   Total Execution Time: {overall_stats.get('total_execution_time', 0):.3f}s")
-                self.logger.info(f"   Total Memory Usage: {overall_stats.get('total_memory_usage', 0):.1f}MB")
-                self.logger.info(f"   Total CPU Usage: {overall_stats.get('total_cpu_usage', 0):.1f}%")
-                self.logger.info(f"   Average Performance Score: {overall_stats.get('average_performance_score', 0):.1f}/100")
-            
-            # Worst performers
-            worst_performers = report.get('worst_performers', [])
-            if worst_performers:
-                self.logger.info(f"\n⚠️ WORST PERFORMERS:")
-                for i, performer in enumerate(worst_performers, 1):
-                    self.logger.info(f"   {i}. {performer['function_name']} (Score: {performer['performance_score']:.1f})")
-                    self.logger.info(f"      Execution Time: {performer['execution_time']:.3f}s")
-                    if performer['bottlenecks']:
-                        self.logger.info(f"      Bottlenecks: {', '.join(performer['bottlenecks'])}")
-            
-            # Function analysis
-            function_analysis = report.get('function_analysis', {})
-            if function_analysis:
-                self.logger.info(f"\n🔍 FUNCTION ANALYSIS:")
-                for function_name, analysis in function_analysis.items():
-                    self.logger.info(f"   {function_name}:")
-                    self.logger.info(f"     Calls: {analysis['total_calls']}")
-                    self.logger.info(f"     Avg Execution Time: {analysis['average_execution_time']:.3f}s")
-                    self.logger.info(f"     Avg Memory Usage: {analysis['average_memory_usage']:.1f}MB")
-                    self.logger.info(f"     Avg Performance Score: {analysis['average_performance_score']:.1f}/100")
-                    
-                    if analysis['most_common_bottlenecks']:
-                        self.logger.info(f"     Common Bottlenecks: {', '.join([b[0] for b in analysis['most_common_bottlenecks']])}")
-            
-            # Performance trends
-            trends = report.get('performance_trends', {})
-            if trends:
-                self.logger.info(f"\n📊 PERFORMANCE TRENDS:")
-                self.logger.info(f"   Execution Time Trend: {trends.get('execution_time_trend', 'unknown')}")
-                self.logger.info(f"   Performance Score Trend: {trends.get('performance_score_trend', 'unknown')}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to log performance report: {e}")
+        return summary
 
-def performance_monitor(monitor: PerformanceMonitor):
-    """Decorator for performance monitoring."""
+def simple_performance_monitor(monitor: SimplePerformanceMonitor):
+    """Simple decorator for performance monitoring."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            # Generate call ID
-            call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            
-            # Start performance monitoring
-            perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            
+            start_time = time.time()
             try:
                 result = await func(*args, **kwargs)
-                # End performance monitoring
-                monitor.end_performance_monitoring(perf_record)
+                execution_time = time.time() - start_time
+                monitor.record_execution_time(func.__name__, execution_time)
                 return result
             except Exception as e:
-                # End performance monitoring even on error
-                monitor.end_performance_monitoring(perf_record)
+                execution_time = time.time() - start_time
+                monitor.record_execution_time(func.__name__, execution_time)
                 raise
         
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            # Generate call ID
-            call_id = f"{func.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            
-            # Start performance monitoring
-            perf_record = monitor.start_performance_monitoring(func.__name__, call_id)
-            
+            start_time = time.time()
             try:
                 result = func(*args, **kwargs)
-                # End performance monitoring
-                monitor.end_performance_monitoring(perf_record)
+                execution_time = time.time() - start_time
+                monitor.record_execution_time(func.__name__, execution_time)
                 return result
             except Exception as e:
-                # End performance monitoring even on error
-                monitor.end_performance_monitoring(perf_record)
+                execution_time = time.time() - start_time
+                monitor.record_execution_time(func.__name__, execution_time)
                 raise
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
-class ComprehensiveValidationFramework:
-    """Comprehensive validation framework for all function operations."""
+class SimpleValidator:
+    """Simplified validation system."""
     
     def __init__(self, logger: Any = None):
         self.logger = logger or create_fallback_logger()
-        self.validation_rules: Dict[str, List[Callable]] = {}
-        self.validation_history: List[Dict[str, Any]] = []
-        self.validation_results: Dict[str, Dict[str, Any]] = {}
-        
-        # Initialize default validation rules
-        self._initialize_default_validation_rules()
+        self.validation_count = 0
+        self.validation_errors = 0
     
-    def _initialize_default_validation_rules(self) -> None:
-        """Initialize default validation rules for common operations."""
-        try:
-            # Input validation rules
-            self.validation_rules['input_validation'] = [
-                self._validate_dataframe_input,
-                self._validate_string_input,
-                self._validate_numeric_input,
-                self._validate_path_input
-            ]
-            
-            # Output validation rules
-            self.validation_rules['output_validation'] = [
-                self._validate_dataframe_output,
-                self._validate_boolean_output,
-                self._validate_numeric_output,
-                self._validate_series_output
-            ]
-            
-            # Data quality validation rules
-            self.validation_rules['data_quality'] = [
-                self._validate_data_completeness,
-                self._validate_data_types,
-                self._validate_data_ranges,
-                self._validate_data_consistency
-            ]
-            
-            # Performance validation rules
-            self.validation_rules['performance_validation'] = [
-                self._validate_execution_time,
-                self._validate_memory_usage,
-                self._validate_cpu_usage
-            ]
-            
-            # Business logic validation rules
-            self.validation_rules['business_logic'] = [
-                self._validate_labeling_logic,
-                self._validate_regime_logic,
-                self._validate_triple_barrier_logic
-            ]
-            
-            self.logger.info('✅ Default validation rules initialized')
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize default validation rules: {e}")
-    
-    def _validate_dataframe_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Validate DataFrame input."""
-        result = {'valid': True, 'errors': [], 'warnings': []}
+    def validate_dataframe(self, data: Any, required_columns: List[str] = None) -> bool:
+        """Simple DataFrame validation."""
+        self.validation_count += 1
         
-        try:
-            if not isinstance(data, pd.DataFrame):
-                result['valid'] = False
-                result['errors'].append(f"Expected DataFrame, got {type(data).__name__}")
-                return result
-            
-            if data.empty:
-                result['valid'] = False
-                result['errors'].append("DataFrame is empty")
-                return result
-            
-            # Check for required columns
-            required_columns = context.get('required_columns', [])
+        if not isinstance(data, pd.DataFrame):
+            self.logger.error(f"❌ Expected DataFrame, got {type(data).__name__}")
+            self.validation_errors += 1
+            return False
+        
+        if data.empty:
+            self.logger.warning("⚠️ DataFrame is empty")
+            return False
+        
+        if required_columns:
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
-                result['valid'] = False
-                result['errors'].append(f"Missing required columns: {missing_columns}")
-            
-            # Check for NaN values in critical columns
-            critical_columns = context.get('critical_columns', [])
-            for col in critical_columns:
-                if col in data.columns and data[col].isna().any():
-                    result['warnings'].append(f"Column '{col}' contains NaN values")
-            
-            # Check data types
-            expected_types = context.get('expected_types', {})
-            for col, expected_type in expected_types.items():
-                if col in data.columns:
-                    actual_type = data[col].dtype
-                    if not pd.api.types.is_dtype_equal(actual_type, expected_type):
-                        result['warnings'].append(f"Column '{col}' has type {actual_type}, expected {expected_type}")
-            
-        except Exception as e:
-            result['valid'] = False
-            result['errors'].append(f"Validation error: {str(e)}")
+                self.logger.error(f"❌ Missing required columns: {missing_columns}")
+                self.validation_errors += 1
+                return False
         
-        return result
+        return True
     
-    def _validate_string_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Validate string input."""
-        result = {'valid': True, 'errors': [], 'warnings': []}
+    def validate_labels(self, data: pd.DataFrame, label_column: str = 'label') -> bool:
+        """Simple label validation."""
+        if label_column not in data.columns:
+            return True  # No labels to validate
         
-        try:
-            if not isinstance(data, str):
-                result['valid'] = False
-                result['errors'].append(f"Expected string, got {type(data).__name__}")
-                return result
+        labels = data[label_column].dropna()
+        if len(labels) == 0:
+            self.logger.warning("⚠️ No labels found")
+            return False
+        
+        # Check for reasonable label distribution
+        label_counts = labels.value_counts()
+        if len(label_counts) == 1:
+            self.logger.warning("⚠️ Only one label class found")
+        
+        return True
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """Get simple validation summary."""
+        return {
+            'total_validations': self.validation_count,
+            'validation_errors': self.validation_errors,
+            'success_rate': (self.validation_count - self.validation_errors) / self.validation_count * 100 if self.validation_count > 0 else 0
+        }
+    
+def simple_validation(validator: SimpleValidator, required_columns: List[str] = None):
+    """Simple decorator for validation."""
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Validate first argument if it's a DataFrame
+            if args and isinstance(args[0], pd.DataFrame):
+                if not validator.validate_dataframe(args[0], required_columns):
+                    raise ValueError(f"Input validation failed for {func.__name__}")
             
-            if not data.strip():
-                result['valid'] = False
-                result['errors'].append("String is empty or whitespace only")
-                return result
+            result = await func(*args, **kwargs)
             
-            # Check length constraints
-            min_length = context.get('min_length', 0)
-            max_length = context.get('max_length', float('inf'))
+            # Validate output if it's a DataFrame
+            if isinstance(result, pd.DataFrame):
+                validator.validate_labels(result)
             
-            if len(data) < min_length:
-                result['valid'] = False
-                result['errors'].append(f"String too short (min: {min_length})")
+            return result
+        
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Validate first argument if it's a DataFrame
+            if args and isinstance(args[0], pd.DataFrame):
+                if not validator.validate_dataframe(args[0], required_columns):
+                    raise ValueError(f"Input validation failed for {func.__name__}")
+            
+            result = func(*args, **kwargs)
+            
+            # Validate output if it's a DataFrame
+            if isinstance(result, pd.DataFrame):
+                validator.validate_labels(result)
+            
+            return result
+        
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+    return decorator
+
+def create_fallback_logger() -> Any:
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator() -> Any:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
+if system_logger is None:
+    system_logger = create_fallback_logger()
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: 'fallback_report'
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+
+logger = system_logger.getChild('Step5Labeling')
+
+class LabelingStep:
+    """Step 5: Labeling with simplified monitoring and validation."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild('LabelingStep')
+        self.standards = pipeline_standards
+        self.start_time = None
+        self.step_timings = {}
+        
+        # Initialize simplified monitoring systems
+        self.monitor = SimpleMonitor(self.logger)
+        self.error_handler = SimpleErrorHandler(self.logger)
+        self.performance_monitor = SimplePerformanceMonitor(self.logger)
+        self.validator = SimpleValidator(self.logger)
+        
+        self._validate_environment()
+        self._initialize_components()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info('🔍 Validating environment dependencies...')
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
+            self.logger.info('📝 Pipeline will continue with fallback implementations')
+        else:
+            self.logger.info('✅ All required dependencies available')
+
+    def _initialize_components(self) -> None:
+        """Initialize labeling components."""
+        self.logger.info('🔧 Initializing labeling components...')
+        labeling_cfg = self.config.get('vectorized_labelling_orchestrator', {})
+        self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get('auto_recalculate_hmm_barriers', True))
+        self.regime_col = str(labeling_cfg.get('hmm_barrier_regime_column', 'hmm_regime'))
+        self.time_barrier_minutes = int(labeling_cfg.get('time_barrier_minutes', 30))
+        self.max_lookahead = int(labeling_cfg.get('max_lookahead', 100))
+        self.logger.info(f'📋 Labeling configuration loaded')
             
             if len(data) > max_length:
                 result['valid'] = False

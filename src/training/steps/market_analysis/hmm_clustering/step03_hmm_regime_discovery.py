@@ -26,8 +26,18 @@ sys.path.insert(0, str(project_root))
 # dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 # centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
 from src.utils.logger import system_logger
-# enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
-# sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+# Establish required modules list and dependency status using PipelineStandards
+REQUIRED_MODULES = [
+    'pandas',
+    'numpy',
+    'psutil',
+    'src.utils.logger',
+]
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+# Safe import of optional components
+sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
+enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 import psutil
 import numpy
 import pandas
@@ -95,24 +105,24 @@ log_execution_time = create_fallback_decorator()
 #     traced = centralized_decorators.traced
 #     handles_errors = centralized_decorators.handles_errors
 #     log_execution_time = getattr(centralized_decorators, 'log_execution_time', create_fallback_decorator())
-# if enhanced_mlflow is None:
-with_enhanced_mlflow_logging = create_fallback_decorator()
-log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
-log_step_dataframe = lambda *args, **kwargs: 'fallback_dataframe'
-log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-log_step_report = lambda *args, **kwargs: 'fallback_report'
-log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
-log_step_model = lambda *args, **kwargs: 'fallback_model'
-# else:
-#     with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-#     log_step_artifact = enhanced_mlflow.log_step_artifact
-#     log_step_dataframe = enhanced_mlflow.log_step_dataframe
-#     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-#     log_step_report = enhanced_mlflow.log_step_report
-#     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-#     log_step_metrics = enhanced_mlflow.log_step_metrics
-#     log_step_model = enhanced_mlflow.log_step_model
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
+    log_step_dataframe = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_report = lambda *args, **kwargs: 'fallback_report'
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+    log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
+    log_step_model = lambda *args, **kwargs: 'fallback_model'
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact = enhanced_mlflow.log_step_artifact
+    log_step_dataframe = enhanced_mlflow.log_step_dataframe
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_report = enhanced_mlflow.log_step_report
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_model = enhanced_mlflow.log_step_model
 logger = system_logger.getChild('Step3HMMRegimeDiscovery')
 
 class HMMRegimeDiscoveryStep:
@@ -124,6 +134,8 @@ class HMMRegimeDiscoveryStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        # Default to no external quality manager unless injected
+        self.data_quality_manager = None
         self._validate_environment()
         self._initialize_components()
 
@@ -140,6 +152,15 @@ class HMMRegimeDiscoveryStep:
     def _initialize_components(self) -> None:
         """Initialize HMM and data quality components."""
         self.logger.info('🔧 Initializing HMM regime discovery components...')
+        # Ensure a data quality manager is available
+        try:
+            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import (
+                EnhancedDataQualityManager,
+            )
+            self.data_quality_manager = EnhancedDataQualityManager()
+        except Exception as e:
+            self.logger.warning(f'⚠️ Data quality manager unavailable: {e}')
+            self.data_quality_manager = None
         if sr_breakout_predictor is not None:
             try:
                 sr_config = self.config.copy()

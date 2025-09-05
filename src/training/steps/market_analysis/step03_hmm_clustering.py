@@ -9,16 +9,16 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
-    from .utils.logger import system_logger
+    from src.utils.logger import system_logger
 except ImportError:
     import logging
     system_logger = logging.getLogger('Step3HMMClustering')
 try:
-    from .training.steps.hmm_clustering import run_enhanced_step
+    from src.training.steps.market_analysis.hmm_clustering import run_enhanced_step
 except ImportError:
     run_enhanced_step = None
 try:
-    from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+    from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
 except ImportError:
     run_validator = None
 from src.core.decorators import monitor_step03_functions, handle_step03_errors, validates, traced

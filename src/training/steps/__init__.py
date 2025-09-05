@@ -32,14 +32,14 @@ try:
 except ImportError:
     VALIDATION_FRAMEWORK_AVAILABLE = False
 
-# Import validation orchestrator
+# Import validation orchestrator (resilient to any import issues)
 try:
     from .step06_validation_orchestrator import (
         Step06ValidationOrchestrator,
         run_step06_comprehensive_validation
     )
     ORCHESTRATOR_AVAILABLE = True
-except ImportError:
+except Exception:
     ORCHESTRATOR_AVAILABLE = False
 
 __all__ = [

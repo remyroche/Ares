@@ -16,7 +16,7 @@ from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 
 if TYPE_CHECKING:
-    pass
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

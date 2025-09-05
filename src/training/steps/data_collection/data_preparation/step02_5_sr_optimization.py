@@ -347,8 +347,150 @@ class SROptimizationStep(BaseStep):
     @monitor_function_calls
     @validate_function_inputs
     async def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect support and resistance levels using enhanced algorithms with volume confirmation."""
-        self.logger.info('🎯 Detecting support and resistance levels with enhanced algorithms...')
+        """Detect support and resistance levels using existing dynamic SR modules."""
+        self.logger.info('🎯 Detecting support and resistance levels with existing dynamic SR modules...')
+        detection_start_time = time.time()
+        
+        try:
+            # Use existing SR Levels Manager with dynamic capabilities
+            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
+            
+            # Configure SR levels manager
+            sr_config = {
+                'sr_levels_manager': {
+                    'storage_path': 'data/sr_levels',
+                    'max_levels': 20,
+                    'min_strength': 0.4,
+                    'proximity_threshold': 0.003
+                }
+            }
+            
+            # Initialize SR levels manager
+            sr_manager = SRLevelsManager(sr_config)
+            await sr_manager.initialize()
+            
+            # Calculate SR levels from backtest data
+            sr_results = await sr_manager.calculate_sr_levels_from_backtest(data, '1m')
+            
+            # Extract levels and apply dynamic adjustments
+            support_levels = [level.price for level in sr_results.get('support_levels', [])]
+            resistance_levels = [level.price for level in sr_results.get('resistance_levels', [])]
+            
+            # Apply SR strength optimization if available
+            try:
+                from src.tactician.sr_levels.sr_strength_optimizer import SRStrengthOptimizer, SRLevelIdentifier
+                
+                # Configure SR strength optimizer
+                strength_config = {
+                    'sr_strength_optimization': {
+                        'n_trials': 50,  # Reduced for faster execution
+                        'n_jobs': 1,
+                        'chunk_size': 1000
+                    }
+                }
+                
+                # Use SR level identifier with optimized parameters
+                sr_identifier = SRLevelIdentifier(strength_config)
+                strong_levels = sr_identifier.identify_strong_sr_levels(data, min_strength=0.4)
+                
+                # Extract strong levels
+                strong_support = [level.price for level in strong_levels if level.type == 'support']
+                strong_resistance = [level.price for level in strong_levels if level.type == 'resistance']
+                
+                # Combine with manager levels, prioritizing strong levels
+                support_levels = list(set(support_levels + strong_support))
+                resistance_levels = list(set(resistance_levels + strong_resistance))
+                
+                self.logger.info(f'✅ Applied SR strength optimization: {len(strong_support)} strong support, {len(strong_resistance)} strong resistance')
+                
+            except ImportError:
+                self.logger.warning('SR strength optimizer not available, using manager levels only')
+            
+            # Apply dynamic SR management if available
+            try:
+                # Use existing dynamic barrier calculator for dynamic adjustments
+                from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+                
+                # Configure dynamic barrier calculator
+                barrier_config = {
+                    'tactician_triple_barrier': {
+                        'analyst_barrier_fractions': {
+                            'upper_barrier_50_fraction': 0.5,
+                            'lower_barrier_50_fraction': 0.5,
+                            'upper_barrier_25_fraction': 0.25,
+                            'lower_barrier_25_fraction': 0.25
+                        },
+                        'timeframes': ['1m', '5m'],
+                        'primary_timeframe': '1m',
+                        'secondary_timeframe': '5m'
+                    }
+                }
+                
+                # Initialize dynamic barrier calculator
+                barrier_calc = DynamicBarrierCalculator(barrier_config)
+                
+                # Calculate dynamic barriers for level adjustment
+                dynamic_barriers = barrier_calc.calculate_dynamic_barriers('1m')
+                
+                # Apply dynamic adjustments to levels based on market conditions
+                current_price = data['close'].iloc[-1]
+                price_volatility = data['close'].pct_change().rolling(20).std().iloc[-1]
+                
+                # Adjust levels based on volatility
+                volatility_factor = 1.0 + (price_volatility * 2)  # Scale adjustment with volatility
+                
+                adjusted_support = []
+                adjusted_resistance = []
+                
+                for level in support_levels:
+                    # Apply dynamic adjustment based on distance from current price
+                    distance_factor = abs(current_price - level) / current_price
+                    adjustment = 1.0 + (distance_factor * volatility_factor * 0.1)
+                    adjusted_support.append(level * adjustment)
+                
+                for level in resistance_levels:
+                    # Apply dynamic adjustment based on distance from current price
+                    distance_factor = abs(current_price - level) / current_price
+                    adjustment = 1.0 + (distance_factor * volatility_factor * 0.1)
+                    adjusted_resistance.append(level * adjustment)
+                
+                support_levels = adjusted_support
+                resistance_levels = adjusted_resistance
+                
+                self.logger.info('✅ Applied dynamic barrier-based SR level adaptation')
+                
+            except ImportError:
+                self.logger.warning('Dynamic SR manager not available, using static levels')
+            
+            # Filter to top levels
+            support_levels = sorted(support_levels)[-5:]
+            resistance_levels = sorted(resistance_levels)[-5:]
+            
+            detection_time = time.time() - detection_start_time
+            self.logger.info(f'✅ Dynamic SR detection completed in {detection_time:.4f}s')
+            self.logger.info(f'🎯 Final result: {len(support_levels)} support and {len(resistance_levels)} resistance levels')
+            
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels,
+                'detection_parameters': sr_config,
+                'detection_metrics': {
+                    'total_levels': len(support_levels) + len(resistance_levels),
+                    'detection_time': detection_time,
+                    'method': 'dynamic_sr_manager'
+                }
+            }
+            
+        except ImportError:
+            self.logger.warning('SR Levels Manager not available, trying enhanced SR detector')
+            return await self._detect_sr_levels_enhanced(data)
+        except Exception as e:
+            self.logger.error(f'Dynamic SR detection failed: {e}')
+            return await self._detect_sr_levels_enhanced(data)
+    
+    async def _detect_sr_levels_enhanced(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback to enhanced SR detector."""
+        self.logger.info('🎯 Using enhanced SR detector as fallback...')
         detection_start_time = time.time()
         
         try:

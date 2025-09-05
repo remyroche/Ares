@@ -1,0 +1,6 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting astroid
+  Downloading astroid-3.3.11-py3-none-any.whl.metadata (4.4 kB)
+Downloading astroid-3.3.11-py3-none-any.whl (275 kB)
+Installing collected packages: astroid
+Successfully installed astroid-3.3.11

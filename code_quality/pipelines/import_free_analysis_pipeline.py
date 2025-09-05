@@ -22,22 +22,9 @@ from collections import defaultdict, Counter
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import analyzers (ONLY import-free analysis related)
-from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
-from analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
-from analyzers.syntax_validator import SyntaxValidator
-from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
-from analyzers.linter_analyzer import LinterAnalyzer
-from analyzers.type_checker import TypeChecker
-
-# Import scripts (ONLY import-free analysis related)
-from scripts.detect_circular_imports import ImportAnalyzer
-# from extract_non_pandas_tests import ExtractNonPandasTests  # Deleted during cleanup
-# from analyze_undefined_names import AnalyzeUndefinedNames  # Deleted during cleanup
-
-# Import core components
-from core.config import get_default_config
-import numpy as np
+# Note: This is an import-free analysis pipeline
+# We don't import external analyzers to avoid dependency issues
+# All analysis is done using only Python standard library
 
 
 class ImportFreeAnalyzer:
@@ -49,7 +36,6 @@ class ImportFreeAnalyzer:
     
     def find_python_files(self) -> List[Path]:
         """Find all Python files in the project, respecting .gitignore patterns."""
-        from ..utils.gitignore_parser import filter_ignored_files
         python_files = []
         for py_file in self.project_root.rglob("*.py"):
             # Skip common directories to avoid
@@ -57,9 +43,18 @@ class ImportFreeAnalyzer:
                 continue
             python_files.append(py_file)
         
-        # Filter out ignored files
-        python_files = filter_ignored_files(python_files, self.project_root)
-        return python_files
+        # Simple filtering without external dependencies
+        # Skip test files and common ignored patterns
+        filtered_files = []
+        for file_path in python_files:
+            file_str = str(file_path)
+            if not any(pattern in file_str for pattern in [
+                "/test_", "/tests/", "/.pytest_cache/", "/build/", "/dist/",
+                "/.tox/", "/.coverage", "/htmlcov/", "/.mypy_cache/"
+            ]):
+                filtered_files.append(file_path)
+        
+        return filtered_files
     
     def parse_file(self, file_path: Path) -> ast.AST:
         """Parse a Python file and return AST."""

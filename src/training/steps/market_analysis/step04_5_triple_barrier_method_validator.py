@@ -1,22 +1,22 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import pandas as pd
 
-'Validator for Step 4: Triple Barrier Method.\n\nThis module validates the triple barrier method step outputs.\n'
+'Validator for Step 4: Triple Barrier Method.\n\nThis module validates the triple barrier method step outputs.'
 import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.logger import system_logger
-from .core.decorators import handles_errors, traced, validates
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors, traced, validates
 import logging
 
 logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
 
 @traced(span_name='validate_triple_barrier_method')
 @validates()
-@handles_errors
+@handles_errors()
 def _validate_file_exists(triple_barrier_path: Path) -> Optional[Dict[str, Any]]:
     """Validate that the triple barrier file exists and is not empty."""
     if not triple_barrier_path.exists():
@@ -29,12 +29,14 @@ def _validate_file_exists(triple_barrier_path: Path) -> Optional[Dict[str, Any]]
     return None
 
 def _validate_data_content(data: Union[pd.DataFrame, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Validate the content of the loaded data."""
-    required_columns = ['triple_barrier_label']
-    missing_columns = [col for col in required_columns if col not in data.columns]
-    if missing_columns:
-        logger.error(f'❌ Missing required columns: {missing_columns}')
-        return {'step_name': 'step04_5_triple_barrier_method', 'validation_passed': False, 'error': f'Missing required columns: {missing_columns}'}
+    """Validate the content of the loaded data.
+
+    Accept either 'triple_barrier_label' or 'label' as the label column.
+    """
+    label_column = 'triple_barrier_label' if 'triple_barrier_label' in data.columns else ('label' if 'label' in data.columns else None)
+    if label_column is None:
+        logger.error("❌ Missing required label column: 'triple_barrier_label' or 'label'")
+        return {'step_name': 'step04_5_triple_barrier_method', 'validation_passed': False, 'error': "Missing required label column: 'triple_barrier_label' or 'label'"}
     if len(data) == 0:
         logger.error('❌ No data rows found')
         return {'step_name': 'step04_5_triple_barrier_method', 'validation_passed': False, 'error': 'No data rows found'}
@@ -42,7 +44,8 @@ def _validate_data_content(data: Union[pd.DataFrame, Dict[str, Any]]) -> Optiona
 
 def _validate_label_distribution(data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:
     """Validate the distribution of labels in the data."""
-    label_counts = data['triple_barrier_label'].value_counts()
+    label_column = 'triple_barrier_label' if 'triple_barrier_label' in data.columns else 'label'
+    label_counts = data[label_column].value_counts()
     logger.info(f'✅ Label distribution: {label_counts.to_dict()}')
     if 0 in label_counts and label_counts[0] == len(data):
         logger.warning('⚠️ All labels are 0 (hold) - this might indicate an issue')
@@ -72,7 +75,7 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
             return file_validation_error
         try:
             data = pd.read_parquet(triple_barrier_path)
-            content_validation_error = await _validate_data_content(data)
+            content_validation_error = _validate_data_content(data)
             if content_validation_error:
                 return content_validation_error
             result = _validate_label_distribution(data)

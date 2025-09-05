@@ -16,6 +16,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 import logging
+from src.utils.pipeline_standards import pipeline_standards
 
 try:
     from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, log_step_metrics
@@ -91,7 +92,8 @@ class TripleBarrierMethodStep:
         step_start = time.time()
         self.logger.info(f'🚀 Executing Triple Barrier Method for {symbol} on {exchange}')
         try:
-            unified_data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
+            unified_base = Path(pipeline_standards.build_path('unified_data', exchange, symbol))
+            unified_data_path = unified_base / timeframe
             if not unified_data_path.exists():
                 self.logger.error(f'❌ Unified data not found at {unified_data_path}')
                 return False
@@ -113,7 +115,13 @@ class TripleBarrierMethodStep:
             output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
             ensure_directory(output_path.parent)
             result_data = data.copy()
-            result_data['label'] = labeled_data['label']
+            label_col = 'triple_barrier_label' if 'triple_barrier_label' in labeled_data.columns else ('label' if 'label' in labeled_data.columns else None)
+            if label_col is None:
+                self.logger.error('❌ Labeled data missing required label column')
+                return False
+            if label_col != 'triple_barrier_label':
+                labeled_data = labeled_data.rename(columns={label_col: 'triple_barrier_label'})
+            result_data['triple_barrier_label'] = labeled_data['triple_barrier_label']
             if 'potential_profit_pct' in labeled_data.columns:
                 result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
             result_data.to_parquet(output_path)
@@ -128,7 +136,7 @@ class TripleBarrierMethodStep:
     @with_tracing_span('step04_5_triple_barrier_execute')
     @handles_errors()
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
-        labels = labeled_data.get('label')
+        labels = labeled_data['triple_barrier_label'] if 'triple_barrier_label' in labeled_data.columns else labeled_data.get('label')
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
         return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
@@ -200,7 +208,7 @@ class TripleBarrierMethodStep:
     def _get_triple_barrier_config(self) -> Dict[str, float]:
         """Extract triple barrier configuration parameters."""
         triple_barrier_config = self.config.get('triple_barrier', {})
-        return {'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002), 'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001), 'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 30), 'max_lookahead': triple_barrier_config.get('max_lookahead', 100)}
+        return {'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002), 'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001), 'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 30), 'max_lookahead': triple_barrier_config.get('max_lookahead', 100), 'taker_fee_bps': triple_barrier_config.get('taker_fee_bps', 2.0), 'slippage_bps': triple_barrier_config.get('slippage_bps', 1.0)}
 
     def _create_triple_barrier_labeler(self, config: Dict[str, float]) -> None:
         from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
@@ -225,22 +233,26 @@ class TripleBarrierMethodStep:
             profit_take_multiplier = self.config.get('triple_barrier', {}).get('profit_take_multiplier', 0.002)
             stop_loss_multiplier = self.config.get('triple_barrier', {}).get('stop_loss_multiplier', 0.001)
             max_lookahead = self.config.get('triple_barrier', {}).get('max_lookahead', 100)
+            taker_fee_bps = self.config.get('triple_barrier', {}).get('taker_fee_bps', 2.0)
+            slippage_bps = self.config.get('triple_barrier', {}).get('slippage_bps', 1.0)
+            total_cost_pct = (2.0 * taker_fee_bps + 2.0 * slippage_bps) / 10000.0
+            effective_profit_take_multiplier = profit_take_multiplier + total_cost_pct
             labels = np.zeros(len(close_prices), dtype=np.int8)
             profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
             for i in range(len(close_prices) - 1):
                 entry_price = close_prices[i]
-                profit_barrier = entry_price * (1 + profit_take_multiplier)
+                profit_barrier = entry_price * (1 + effective_profit_take_multiplier)
                 stop_barrier = entry_price * (1 - stop_loss_multiplier)
                 for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
                     if high_prices[j] >= profit_barrier:
                         labels[i] = 1
-                        profit_pcts[i] = profit_take_multiplier
+                        profit_pcts[i] = effective_profit_take_multiplier
                         break
                     elif low_prices[j] <= stop_barrier:
                         labels[i] = -1
                         profit_pcts[i] = -stop_loss_multiplier
                         break
-            result_data = pd.DataFrame({'label': labels, 'potential_profit_pct': profit_pcts})
+            result_data = pd.DataFrame({'triple_barrier_label': labels, 'potential_profit_pct': profit_pcts})
             return result_data
         except Exception as e:
             self.logger.exception(f'❌ Error in basic triple barrier: {e}')

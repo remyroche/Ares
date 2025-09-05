@@ -1,0 +1,20 @@
+2025-09-05 10:33:43,601 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-09-05 10:33:43,998 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🔵 VALIDATOR FUNCTION ENTRY [1] - src.training.steps.data_collection.step02_5_sr_optimization_validator.__init__ - -
+2025-09-05 10:33:43,998 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 📥 Parameters: args=2, kwargs=[] - -
+2025-09-05 10:33:43,998 INFO AresTradingSystem.System.Step2_5SROptimizationValidator 🔍 VALIDATOR INPUT VALIDATION - __init__ - -
+2025-09-05 10:33:43,998 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📋 self: SROptimizationValidator = <src.training.steps.data_collection.step02_5_sr_optimization_validator.SROptimizationValidator objec... - -
+2025-09-05 10:33:43,998 INFO AresTradingSystem.System.Step2_5SROptimizationValidator   📋 config: dict = {}... - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Step2_5SROptimizationValidator 🔴 VALIDATOR FUNCTION ERROR [1] - src.training.steps.data_collection.step02_5_sr_optimization_validator.__init__ - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Step2_5SROptimizationValidator ⏱️ Execution time: 0.0003s - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Step2_5SROptimizationValidator ❌ Error type: TypeError - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Step2_5SROptimizationValidator 💥 Error message: isinstance() argument 2 cannot be a parameterized generic - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Step2_5SROptimizationValidator 📋 Traceback: Traceback (most recent call last):
+  File "/workspace/src/training/steps/data_collection/step02_5_sr_optimization_validator.py", line 245, in sync_wrapper
+    result = func(*args, **kwargs)
+  File "/workspace/src/training/steps/data_collection/step02_5_sr_optimization_validator.py", line 379, in sync_wrapper
+    if param_type != inspect.Parameter.empty and not isinstance(param_value, param_type):
+                                                     ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: isinstance() argument 2 cannot be a parameterized generic
+ - -
+2025-09-05 10:33:43,999 INFO AresTradingSystem.System.Validator.Step1 🔍 Validating Step 1 data collection for BINANCE ETHUSDT 1m - -
+2025-09-05 10:33:43,999 ERROR AresTradingSystem.System.Validator.Step1 ❌ No market data found in state or consolidated files - Issues: pipeline state data validation failed, no consolidated files found, consolidated data quality validation failed - -

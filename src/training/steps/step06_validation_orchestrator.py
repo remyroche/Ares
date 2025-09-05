@@ -51,15 +51,38 @@ except ImportError as e:
         FAILED = "failed"
         TIMEOUT = "timeout"
 
-# Import step06 components
+# Import step06 components with fallback
 try:
-    from market_analysis.step06_feature_engineering import FeatureInteractionEngine
-    from step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-    from data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+    from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
     COMPONENTS_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Some step06 components not available: {e}")
+    logging.warning(f"FeatureInteractionEngine not available: {e}")
+    # Create fallback class
+    class FeatureInteractionEngine:
+        def __init__(self, config):
+            self.config = config
+            self.logger = logging.getLogger(__name__)
+        async def create_interactions(self, data):
+            return data
     COMPONENTS_AVAILABLE = False
+
+try:
+    from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+except ImportError as e:
+    logging.warning(f"OptimizedTripleBarrierLabeling not available: {e}")
+    class OptimizedTripleBarrierLabeling:
+        def __init__(self, config):
+            self.config = config
+            self.logger = logging.getLogger(__name__)
+
+try:
+    from src.training.steps.data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+except ImportError as e:
+    logging.warning(f"FeatureEngineeringStep not available: {e}")
+    class FeatureEngineeringStep:
+        def __init__(self, config):
+            self.config = config
+            self.logger = logging.getLogger(__name__)
 
 
 class Step06ValidationOrchestrator:

@@ -23,6 +23,7 @@ class Step1DataCollectionValidator:
         self.step_name = "step01_data_collection"
         self.config = config
         self.logger = system_logger.getChild("Validator.Step1")
+        # Container for last validation result (consumed by orchestrator wrappers)
         self.validation_results: Dict[str, Any] = {}
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_records = 500  # Reduced from 1000 to allow smaller datasets
@@ -30,8 +31,6 @@ class Step1DataCollectionValidator:
         self.max_gap_hours = 48  # Increased from 24 hours
         self.price_tolerance = 0.001  # Allow very small negative prices due to precision
         self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
-        # Container for last validation result (consumed by orchestrator wrappers)
-        self.validation_results: Dict[str, Any] = {}
 
     async def validate(
         self,
@@ -139,7 +138,18 @@ class Step1DataCollectionValidator:
             validation_result["critical_issues"].append("No consolidated files found")
 
         if not validation_result["validation_passed"]:
-            self.logger.error("❌ No market data found in state or consolidated files")
+            error_details = []
+            if not validation_result.get("validation_results", {}).get("pipeline_state_data", {}).get("valid", False):
+                error_details.append("pipeline state data validation failed")
+            if not validation_result.get("validation_results", {}).get("consolidated_files", {}).get("found", False):
+                error_details.append("no consolidated files found")
+            if not validation_result.get("validation_results", {}).get("data_quality", {}).get("valid", False):
+                error_details.append("consolidated data quality validation failed")
+            
+            error_msg = "❌ No market data found in state or consolidated files"
+            if error_details:
+                error_msg += f" - Issues: {', '.join(error_details)}"
+            self.logger.error(error_msg)
 
         # Store results for external access
         self.validation_results = validation_result
@@ -491,7 +501,7 @@ async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run the Step 1 Data Collection validator."
+    """Run the Step 1 Data Collection validator.
 
     Args:
         training_input: Training input parameters
@@ -501,18 +511,34 @@ async def run_validator(
         Dictionary containing validation results
 
     """
-    validator = Step1DataCollectionValidator(training_input)
-    result = await validator.validate(training_input, pipeline_state)
-    # Ensure attribute is populated for orchestrators that expect it
-    validator.validation_results = result
-
-    return {
-        "step_name": "step01_data_collection",
-        "validation_passed": bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result),
-        "validation_results": result if isinstance(result, dict) else {"result": result},
-        "duration": 0,  # Could be enhanced to track actual duration
-        "timestamp": time.time(),
-    }
+    start_time = time.time()
+    try:
+        validator = Step1DataCollectionValidator(training_input)
+        result = await validator.validate(training_input, pipeline_state)
+        # Ensure attribute is populated for orchestrators that expect it
+        validator.validation_results = result
+        
+        duration = time.time() - start_time
+        return {
+            "step_name": "step01_data_collection",
+            "validation_passed": bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result),
+            "validation_results": result if isinstance(result, dict) else {"result": result},
+            "duration": duration,
+            "timestamp": time.time(),
+        }
+    except Exception as e:
+        duration = time.time() - start_time
+        error_result = {
+            "step_name": "step01_data_collection",
+            "validation_passed": False,
+            "error": f"Validator execution failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "validation_results": {},
+            "duration": duration,
+            "timestamp": time.time(),
+        }
+        system_logger.error(f"❌ Step01 validator failed: {str(e)}")
+        return error_result
 
 
 if __name__ == "__main__":

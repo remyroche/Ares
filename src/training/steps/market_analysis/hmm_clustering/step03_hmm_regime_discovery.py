@@ -21,12 +21,58 @@ import pandas as pd
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-# from .utils.pipeline_standards import PipelineStandards, pipeline_standards
-# REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.tactician.sr_breakout_predictor']
-# dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-# centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Import decorators safely
+try:
+    from src.utils.centralized_decorators import (
+        handles_errors, monitor_feature_engineering, validates, 
+        traced, log_execution_time, cached, ensure_data_integrity,
+        monitor_step_execution, secure_step_execution
+    )
+except ImportError:
+    # Fallback decorators if centralized_decorators is not available
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def monitor_feature_engineering(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def validates(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def traced(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def log_execution_time(func):
+        return func
+    
+    def cached(func):
+        return func
+    
+    def ensure_data_integrity(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def monitor_step_execution(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def secure_step_execution(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 # Establish required modules list and dependency status using PipelineStandards
 REQUIRED_MODULES = [
     'pandas',

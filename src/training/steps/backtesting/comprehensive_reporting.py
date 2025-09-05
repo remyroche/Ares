@@ -4,9 +4,11 @@ This module provides detailed reporting capabilities for troubleshooting and ana
 including quality assessment, performance metrics, and actionable recommendations.
 """
 from pathlib import Path
+from typing import Dict, Any, List, Optional
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
 import numpy as np
 import pandas as pd
+import logging
 
 class BacktestingReportGenerator:
     """Comprehensive report generator for backtesting pipeline."""
@@ -191,47 +193,132 @@ def generate_step_report(step_name: str, step_results: Dict[str, Any], symbol: s
     reporter = ComprehensiveReporter(symbol, timeframe, data_dir)
     return reporter.generate_step_report(step_name, step_results, symbol, timeframe, data_dir, output_file)
 
-def generate_detailed_regime_metrics_report(pipeline_results: Dict[str, Any], output_file: Optional[str]=None) -> Dict[str, Any]:
-    """Generate detailed regime/cluster metrics report with datetime."""
-    timestamp = get_current_datetime()
-    report = {'report_info': {'type': 'regime_cluster_metrics', 'timestamp': timestamp, 'generated_by': 'comprehensive_reporting_system'}, 'regime_analysis': {}, 'cluster_analysis': {}, 'performance_by_regime': {}, 'risk_metrics_by_regime': {}, 'model_performance_by_regime': {}, 'recommendations': [], 'quality_flags': []}
-    if 'walk_forward_results' in pipeline_results:
-        wf_results = pipeline_results['walk_forward_results']
-        if 'regime_performance' in wf_results:
-            report['regime_analysis']['walk_forward'] = wf_results['regime_performance']
-    if 'monte_carlo_results' in pipeline_results:
-        mc_results = pipeline_results['monte_carlo_results']
-        if 'regime_performance' in mc_results:
-            report['regime_analysis']['monte_carlo'] = mc_results['regime_performance']
-    if 'ab_testing_results' in pipeline_results:
-        ab_results = pipeline_results['ab_testing_results']
-        if 'regime_performance' in ab_results:
-            report['regime_analysis']['ab_testing'] = ab_results['regime_performance']
-    for validation_type, regime_data in report['regime_analysis'].items():
-        report['performance_by_regime'][validation_type] = {}
+def _extract_regime_analysis_from_pipeline(pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract regime analysis data from pipeline results."""
+    regime_analysis = {}
+    validation_types = ['walk_forward_results', 'monte_carlo_results', 'ab_testing_results']
+    
+    for validation_type in validation_types:
+        if validation_type in pipeline_results:
+            results = pipeline_results[validation_type]
+            if 'regime_performance' in results:
+                regime_analysis[validation_type.replace('_results', '')] = results['regime_performance']
+    
+    return regime_analysis
+
+def _build_performance_by_regime(regime_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Build performance metrics by regime from regime analysis."""
+    performance_by_regime = {}
+    
+    for validation_type, regime_data in regime_analysis.items():
+        performance_by_regime[validation_type] = {}
         for regime, metrics in regime_data.items():
-            report['performance_by_regime'][validation_type][regime] = {'return': metrics.get('regime_return', 0), 'sharpe': metrics.get('regime_sharpe', 0), 'volatility': metrics.get('regime_volatility', 0), 'max_drawdown': metrics.get('regime_max_drawdown', 0), 'win_rate': metrics.get('regime_win_rate', 0), 'duration': metrics.get('regime_duration', 0), 'frequency': metrics.get('regime_frequency', 0)}
-    for validation_type, regime_data in report['regime_analysis'].items():
+            performance_by_regime[validation_type][regime] = {
+                'return': metrics.get('regime_return', 0),
+                'sharpe': metrics.get('regime_sharpe', 0),
+                'volatility': metrics.get('regime_volatility', 0),
+                'max_drawdown': metrics.get('regime_max_drawdown', 0),
+                'win_rate': metrics.get('regime_win_rate', 0),
+                'duration': metrics.get('regime_duration', 0),
+                'frequency': metrics.get('regime_frequency', 0)
+            }
+    
+    return performance_by_regime
+
+def _generate_quality_flags_from_regimes(regime_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Generate quality flags based on regime performance."""
+    quality_flags = []
+    
+    for validation_type, regime_data in regime_analysis.items():
         for regime, metrics in regime_data.items():
             if 'regime_return' in metrics and metrics['regime_return'] < 0:
-                report['quality_flags'].append({'type': 'WARNING', 'validation_type': validation_type, 'regime': regime, 'message': f"Negative returns in {regime} regime: {metrics['regime_return']:.2%}", 'severity': 'MEDIUM'})
+                quality_flags.append({
+                    'type': 'WARNING',
+                    'validation_type': validation_type,
+                    'regime': regime,
+                    'message': f"Negative returns in {regime} regime: {metrics['regime_return']:.2%}",
+                    'severity': 'MEDIUM'
+                })
             if 'regime_sharpe' in metrics and metrics['regime_sharpe'] < 1.0:
-                report['quality_flags'].append({'type': 'WARNING', 'validation_type': validation_type, 'regime': regime, 'message': f"Low Sharpe ratio in {regime} regime: {metrics['regime_sharpe']:.2f}", 'severity': 'LOW'})
+                quality_flags.append({
+                    'type': 'WARNING',
+                    'validation_type': validation_type,
+                    'regime': regime,
+                    'message': f"Low Sharpe ratio in {regime} regime: {metrics['regime_sharpe']:.2f}",
+                    'severity': 'LOW'
+                })
+    
+    return quality_flags
+
+def _generate_regime_recommendations(regime_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Generate recommendations based on regime performance."""
+    recommendations = []
     negative_regimes = []
-    for validation_type, regime_data in report['regime_analysis'].items():
+    
+    for validation_type, regime_data in regime_analysis.items():
         for regime, metrics in regime_data.items():
             if 'regime_return' in metrics and metrics['regime_return'] < 0:
                 negative_regimes.append((validation_type, regime))
+    
     if negative_regimes:
-        report['recommendations'].append({'category': 'REGIME_PERFORMANCE', 'priority': 'HIGH', 'recommendation': f'Address negative returns in {len(negative_regimes)} regime(s)', 'action': 'Review strategy parameters for underperforming market regimes', 'affected_regimes': negative_regimes})
+        recommendations.append({
+            'category': 'REGIME_PERFORMANCE',
+            'priority': 'HIGH',
+            'recommendation': f'Address negative returns in {len(negative_regimes)} regime(s)',
+            'action': 'Review strategy parameters for underperforming market regimes',
+            'affected_regimes': negative_regimes
+        })
+    
+    return recommendations
+
+def generate_detailed_regime_metrics_report(pipeline_results: Dict[str, Any], output_file: Optional[str]=None) -> Dict[str, Any]:
+    """Generate detailed regime/cluster metrics report with datetime."""
+    timestamp = get_current_datetime()
+    
+    # Initialize report structure
+    report = {
+        'report_info': {
+            'type': 'regime_cluster_metrics',
+            'timestamp': timestamp,
+            'generated_by': 'comprehensive_reporting_system'
+        },
+        'regime_analysis': {},
+        'cluster_analysis': {},
+        'performance_by_regime': {},
+        'risk_metrics_by_regime': {},
+        'model_performance_by_regime': {},
+        'recommendations': [],
+        'quality_flags': []
+    }
+    
+    # Extract regime analysis from pipeline results
+    report['regime_analysis'] = _extract_regime_analysis_from_pipeline(pipeline_results)
+    
+    # Build performance metrics by regime
+    report['performance_by_regime'] = _build_performance_by_regime(report['regime_analysis'])
+    
+    # Generate quality flags and recommendations
+    report['quality_flags'] = _generate_quality_flags_from_regimes(report['regime_analysis'])
+    report['recommendations'] = _generate_regime_recommendations(report['regime_analysis'])
+    
+    # Save report if output file specified
     if output_file:
         safe_json_dump(report, output_file, indent=2)
         logging.info(f'Detailed regime metrics report saved to: {output_file}')
+    
     return report
+
+class ComprehensiveReporter:
+    """Comprehensive reporter for backtesting pipeline."""
+    
+    def __init__(self, symbol: str, timeframe: str, data_dir: str) -> None:
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.data_dir = data_dir
 
     def _generate_execution_summary(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate execution summary."""
-        return {'symbol': self.symbol, 'exchange': self.exchange, 'timeframe': self.timeframe, 'execution_date': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'pipeline_version': 'enhanced_v2.0_with_logging', 'total_steps_completed': len([k for k, v in pipeline_results.items() if v is not None]), 'success_rate': self._calculate_success_rate(pipeline_results), 'overall_status': 'SUCCESS' if pipeline_results.get('success', False) else 'FAILED'}
+        return {'symbol': self.symbol, 'timeframe': self.timeframe, 'execution_date': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'pipeline_version': 'enhanced_v2.0_with_logging', 'total_steps_completed': len([k for k, v in pipeline_results.items() if v is not None]), 'success_rate': self._calculate_success_rate(pipeline_results), 'overall_status': 'SUCCESS' if pipeline_results.get('success', False) else 'FAILED'}
 
     def _generate_backtesting_results(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive backtesting results analysis."""

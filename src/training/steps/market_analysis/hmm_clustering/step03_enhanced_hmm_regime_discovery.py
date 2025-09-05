@@ -23,43 +23,50 @@ import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import centralized systems
+from .step03_imports import get_import_manager, safe_import, check_feature_availability
+from .step03_config import Step03Config, get_config
+from .step03_technical_indicators import TechnicalIndicators, get_technical_indicators
+from .step03_memory_manager import MemoryManager, get_memory_manager, memory_aware_processing
+
 # Import pipeline utilities (optional)
-try:
-    from .utils.pipeline_decorators import (
-        comprehensive_data_validation,
-        ensure_data_integrity,
-        handle_errors,
-        memory_efficient,
-        monitor_feature_engineering,
-        monitor_step_execution,
-        quality_gate,
-        resource_monitor,
-        secure_data_processing,
-        secure_step_execution,
-        validate_data_structure,
-        with_tracing_span,
-        validate_pipeline_step
-    )
-    PIPELINE_UTILITIES_AVAILABLE = True
-except ImportError:
-    PIPELINE_UTILITIES_AVAILABLE = False
+PIPELINE_UTILITIES_AVAILABLE = check_feature_availability('pipeline_utilities')
+if PIPELINE_UTILITIES_AVAILABLE:
+    pipeline_decorators = safe_import('utils.pipeline_decorators')
+    if pipeline_decorators:
+        comprehensive_data_validation = getattr(pipeline_decorators, 'comprehensive_data_validation', None)
+        ensure_data_integrity = getattr(pipeline_decorators, 'ensure_data_integrity', None)
+        handle_errors = getattr(pipeline_decorators, 'handle_errors', None)
+        memory_efficient = getattr(pipeline_decorators, 'memory_efficient', None)
+        monitor_feature_engineering = getattr(pipeline_decorators, 'monitor_feature_engineering', None)
+        monitor_step_execution = getattr(pipeline_decorators, 'monitor_step_execution', None)
+        quality_gate = getattr(pipeline_decorators, 'quality_gate', None)
+        resource_monitor = getattr(pipeline_decorators, 'resource_monitor', None)
+        secure_data_processing = getattr(pipeline_decorators, 'secure_data_processing', None)
+        secure_step_execution = getattr(pipeline_decorators, 'secure_step_execution', None)
+        validate_data_structure = getattr(pipeline_decorators, 'validate_data_structure', None)
+        with_tracing_span = getattr(pipeline_decorators, 'with_tracing_span', None)
+        validate_pipeline_step = getattr(pipeline_decorators, 'validate_pipeline_step', None)
+
 # Import core decorators
-from .core.decorators import validates, handles_errors, traced
+core_decorators = safe_import('core.decorators')
+if core_decorators:
+    validates = getattr(core_decorators, 'validates', lambda: lambda x: x)
+    handles_errors = getattr(core_decorators, 'handles_errors', lambda x: lambda y: y)
+    traced = getattr(core_decorators, 'traced', lambda x: lambda y: y)
 
 # Import logger (optional)
-try:
-    from .utils.logger import system_logger
-except ImportError:
-    import logging
-    system_logger = logging.getLogger("Step3EnhancedHMMRegimeDiscovery")
+system_logger = safe_import('utils.logger', logging.getLogger("Step3EnhancedHMMRegimeDiscovery"))
+if hasattr(system_logger, 'system_logger'):
+    system_logger = system_logger.system_logger
 
 # Import enhanced monitoring decorators
-from src.core.decorators import (
-    monitor_step03_functions,
-    handle_step03_errors,
-    validates as enhanced_validates,
-    traced as enhanced_traced
-)
+enhanced_decorators = safe_import('src.core.decorators')
+if enhanced_decorators:
+    monitor_step03_functions = getattr(enhanced_decorators, 'monitor_step03_functions', lambda x: x)
+    handle_step03_errors = getattr(enhanced_decorators, 'handle_step03_errors', lambda x: x)
+    enhanced_validates = getattr(enhanced_decorators, 'validates', lambda: lambda x: x)
+    enhanced_traced = getattr(enhanced_decorators, 'traced', lambda x: lambda y: y)
 
 # Import our new modules
 from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOptimization
@@ -78,11 +85,20 @@ logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
 class EnhancedHMMRegimeDiscoveryStep:
     """Enhanced Step 3: HMM Regime Discovery with all improvements integrated."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
+    def __init__(self, config: Union[dict[str, Any], Step03Config]) -> None:
+        # Convert dict config to Step03Config if needed
+        if isinstance(config, dict):
+            self.config = Step03Config.from_dict(config)
+        else:
+            self.config = config
+        
         self.logger = system_logger.getChild('EnhancedHMMRegimeDiscoveryStep')
         self.start_time = None
         self.step_timings = {}
+        
+        # Initialize centralized systems
+        self.technical_indicators = get_technical_indicators(self.config.feature_engineering.__dict__)
+        self.memory_manager = get_memory_manager(self.config.memory.__dict__)
         
         # Initialize components
         self._initialize_components()
@@ -365,15 +381,16 @@ class EnhancedHMMRegimeDiscoveryStep:
             features['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
             features['ewma_volatility_20'] = df['close'].pct_change().ewm(span=20).std()
             
-            # Technical indicators
-            features['rsi'] = self._calculate_rsi(df['close'])
-            features['macd'] = self._calculate_macd(df['close'])
-            features['atr'] = self._calculate_atr(df)
-            features['adx'] = self._calculate_adx(df)
+            # Technical indicators using centralized system
+            features['rsi'] = self.technical_indicators.calculate_rsi(df['close'])
+            macd_data = self.technical_indicators.calculate_macd(df['close'])
+            features['macd'] = macd_data['macd']
+            features['atr'] = self.technical_indicators.calculate_atr(df['high'], df['low'], df['close'])
+            features['adx'] = self.technical_indicators.calculate_adx(df['high'], df['low'], df['close'])
             
             # Bollinger Bands
-            bb_features = self._calculate_bollinger_bands(df['close'])
-            features = pd.concat([features, bb_features], axis=1)
+            bb_features = self.technical_indicators.calculate_bollinger_bands(df['close'])
+            features = pd.concat([features, pd.DataFrame(bb_features)], axis=1)
             
             # Moving averages
             features['sma_20'] = df['close'].rolling(window=20).mean()

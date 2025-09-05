@@ -17,11 +17,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-from training.steps.vectorized_advanced_feature_engineering import (
 import typing
 
-	VectorizedAdvancedFeatureEngineering,
+from training.steps.vectorized_advanced_feature_engineering import (
+    VectorizedAdvancedFeatureEngineering,
 )
 
 # Add the src directory to the Python path

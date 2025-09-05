@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Callable
 """Validator for Step 4: Regime Data Splitting.
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
@@ -49,6 +50,61 @@ class BaseValidator:
     def __init__(self, step_name: str, config: dict) -> None:
         self.step_name = step_name
         self.config = config
+        try:
+            from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator  # type: ignore
+            self._dq_validator = EnhancedDataQualityValidator()
+        except Exception:
+            self._dq_validator = None
+
+    def validate_file_exists(self, path: str, description: str='file') -> tuple[bool, dict[str, Any]]:
+        """Check if a file exists and return simple metrics."""
+        try:
+            p = Path(path)
+            if not p.exists():
+                return False, {'path': str(p), 'description': description, 'exists': False}
+            stat = p.stat()
+            return True, {
+                'path': str(p),
+                'description': description,
+                'exists': True,
+                'size_bytes': stat.st_size,
+                'modified_ts': stat.st_mtime,
+            }
+        except Exception as e:
+            return False, {'path': path, 'description': description, 'exists': False, 'error': str(e)}
+
+    def validate_dataframe_quality(self, df: Any, min_rows: int=0, required_columns: Optional[List[str]]=None, check_data_types: bool=False, check_value_ranges: bool=False, check_duplicates: bool=False, check_temporal_consistency: bool=False) -> tuple[bool, dict[str, Any]]:
+        """Validate DataFrame quality using shared validator if available, else basic checks."""
+        metrics: dict[str, Any] = {}
+        passed = True
+        try:
+            import pandas as pd  # noqa: F401
+        except Exception:
+            return False, {'error': 'pandas_not_available'}
+        if df is None:
+            return False, {'error': 'none_dataframe'}
+        try:
+            metrics['rows'] = int(len(df))
+            metrics['columns'] = list(getattr(df, 'columns', []))
+        except Exception:
+            pass
+        if len(df) < int(min_rows):
+            passed = False
+            metrics['min_rows_failed'] = {'required': int(min_rows), 'actual': int(len(df))}
+        if required_columns:
+            missing = [c for c in required_columns if c not in getattr(df, 'columns', [])]
+            metrics['required_columns_missing'] = missing
+            if missing:
+                passed = False
+        if self._dq_validator is not None:
+            try:
+                result = self._dq_validator.validate_dataframe_quality(df, context=self.step_name)
+                metrics['dq_summary'] = result.get_summary()
+                passed = passed and bool(result.passed)
+            except Exception as e:
+                metrics['dq_error'] = str(e)
+        # Light-weight optional checks toggles can be used for future expansion
+        return passed, metrics
 logger = system_logger.getChild('Step4RegimeDataSplittingValidator')
 
 class Step4RegimeDataSplittingValidator(BaseValidator):
@@ -87,7 +143,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             for regime_file in regime_files:
                 if not await self._validate_regime_file(regime_file):
                     return False
-            stats_file = regime_splits_dir / f'{exchange}_{symbol}_1m_regime_statistics.json'
+            timeframe = training_input.get('timeframe', '1m') if isinstance(training_input, dict) else '1m'
+            stats_file = regime_splits_dir / f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
             if not stats_file.exists():
                 self.logger.warning(f'⚠️ Regime statistics file not found: {stats_file}')
                 return False
@@ -143,11 +200,18 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 if not isinstance(stats, dict):
                     self.logger.warning(f'⚠️ Invalid statistics format for regime {regime_id}')
                     return False
-                basic_fields = ['count', 'percentage', 'mean_volatility', 'mean_momentum']
-                missing_basic = [field for field in basic_fields if field not in stats]
-                if missing_basic:
-                    self.logger.warning(f'⚠️ Missing basic statistics for regime {regime_id}: {missing_basic}')
-                    return False
+                expected_new = {'count', 'percentage', 'mean_volatility', 'mean_momentum'}
+                expected_old = {'count', 'duration_minutes', 'mean_volume'}
+                keys = set(stats.keys())
+                if expected_new.issubset(keys):
+                    continue
+                if expected_old.issubset(keys):
+                    # Accept older stats schema for backward compatibility
+                    continue
+                missing_new = list(expected_new - keys)
+                missing_old = list(expected_old - keys)
+                self.logger.warning(f"⚠️ Statistics for regime {regime_id} missing required fields. Missing (new schema): {missing_new}; Missing (old schema): {missing_old}")
+                return False
             self.logger.info(f'✅ Statistics file validated: {stats_file.name}')
             return True
         except Exception as e:

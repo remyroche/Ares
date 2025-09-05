@@ -1,13 +1,13 @@
 
-from src.utils.error_handler import handles_errors
 #!/usr/bin/env python3
-"""Step 2.5: S/R Detection Optimization Validator.
+"""Step 2.5: S/R Detection Optimization Validator with Comprehensive Function Call Monitoring.
 
 This module validates the S/R detection optimization step to ensure:
 1. Optimization results are properly saved
 2. Optimized parameters are correctly formatted
 3. Configuration is updated with optimized parameters
 4. All required artifacts are present
+5. Comprehensive function call monitoring and reporting
 """
 
 import asyncio
@@ -15,115 +15,589 @@ import sys
 from pathlib import Path
 import json
 import time
+import functools
+import traceback
+import inspect
+from datetime import datetime
+from typing import Any, Dict, Callable
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.trading_decorators import (
+from src.core.domain import (
     handle_errors,
     monitor_step_execution,
     secure_step_execution,
     validate_pipeline_step,
     quality_gate
 )
+from src.utils.decorators.errors import handles_errors
 from .utils.logger import system_logger
 from .utils.common_operations import safe_json_load
-from typing import Any
-from typing import Dict
 
 logger = system_logger.getChild("Step2_5SROptimizationValidator")
 
-class SROptimizationValidator:
-    """Validator for S/R detection optimization step."""
+# Global function call tracking for validator
+validator_function_tracker = {
+    "call_count": 0,
+    "call_history": [],
+    "performance_metrics": {},
+    "error_count": 0,
+    "success_count": 0
+}
 
+def monitor_validator_function_calls(func: Callable) -> Callable:
+    """Comprehensive function call monitoring decorator for validator."""
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Increment call counter
+        validator_function_tracker["call_count"] += 1
+        call_id = validator_function_tracker["call_count"]
+        
+        # Get function info
+        func_name = func.__name__
+        module_name = func.__module__
+        start_time = time.time()
+        
+        # Log function entry
+        logger.info(f"🔵 VALIDATOR FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}")
+        logger.info(f"📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}")
+        
+        # Store call info
+        call_info = {
+            "call_id": call_id,
+            "function_name": func_name,
+            "module_name": module_name,
+            "start_time": start_time,
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()),
+            "status": "running"
+        }
+        validator_function_tracker["call_history"].append(call_info)
+        
+        try:
+            # Execute function
+            result = await func(*args, **kwargs)
+            
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            
+            # Update call info
+            call_info.update({
+                "status": "success",
+                "execution_time": execution_time,
+                "result_type": type(result).__name__,
+                "result_size": len(str(result)) if hasattr(result, '__len__') else 1
+            })
+            
+            # Update performance metrics
+            if func_name not in validator_function_tracker["performance_metrics"]:
+                validator_function_tracker["performance_metrics"][func_name] = {
+                    "total_calls": 0,
+                    "total_time": 0,
+                    "avg_time": 0,
+                    "min_time": float('inf'),
+                    "max_time": 0,
+                    "success_count": 0,
+                    "error_count": 0
+                }
+            
+            metrics = validator_function_tracker["performance_metrics"][func_name]
+            metrics["total_calls"] += 1
+            metrics["total_time"] += execution_time
+            metrics["avg_time"] = metrics["total_time"] / metrics["total_calls"]
+            metrics["min_time"] = min(metrics["min_time"], execution_time)
+            metrics["max_time"] = max(metrics["max_time"], execution_time)
+            metrics["success_count"] += 1
+            
+            # Update global counters
+            validator_function_tracker["success_count"] += 1
+            
+            # Log function exit
+            logger.info(f"🟢 VALIDATOR FUNCTION EXIT [{call_id}] - {module_name}.{func_name}")
+            logger.info(f"⏱️ Execution time: {execution_time:.4f}s")
+            logger.info(f"📤 Result type: {type(result).__name__}")
+            logger.info(f"✅ Status: SUCCESS")
+            
+            return result
+            
+        except Exception as e:
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            
+            # Update call info
+            call_info.update({
+                "status": "error",
+                "execution_time": execution_time,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            })
+            
+            # Update performance metrics
+            if func_name not in validator_function_tracker["performance_metrics"]:
+                validator_function_tracker["performance_metrics"][func_name] = {
+                    "total_calls": 0,
+                    "total_time": 0,
+                    "avg_time": 0,
+                    "min_time": float('inf'),
+                    "max_time": 0,
+                    "success_count": 0,
+                    "error_count": 0
+                }
+            
+            metrics = validator_function_tracker["performance_metrics"][func_name]
+            metrics["total_calls"] += 1
+            metrics["total_time"] += execution_time
+            metrics["avg_time"] = metrics["total_time"] / metrics["total_calls"]
+            metrics["min_time"] = min(metrics["min_time"], execution_time)
+            metrics["max_time"] = max(metrics["max_time"], execution_time)
+            metrics["error_count"] += 1
+            
+            # Update global counters
+            validator_function_tracker["error_count"] += 1
+            
+            # Log function error
+            logger.error(f"🔴 VALIDATOR FUNCTION ERROR [{call_id}] - {module_name}.{func_name}")
+            logger.error(f"⏱️ Execution time: {execution_time:.4f}s")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"💥 Error message: {str(e)}")
+            logger.error(f"📋 Traceback: {traceback.format_exc()}")
+            
+            raise
+    
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        # Increment call counter
+        validator_function_tracker["call_count"] += 1
+        call_id = validator_function_tracker["call_count"]
+        
+        # Get function info
+        func_name = func.__name__
+        module_name = func.__module__
+        start_time = time.time()
+        
+        # Log function entry
+        logger.info(f"🔵 VALIDATOR FUNCTION ENTRY [{call_id}] - {module_name}.{func_name}")
+        logger.info(f"📥 Parameters: args={len(args)}, kwargs={list(kwargs.keys())}")
+        
+        # Store call info
+        call_info = {
+            "call_id": call_id,
+            "function_name": func_name,
+            "module_name": module_name,
+            "start_time": start_time,
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()),
+            "status": "running"
+        }
+        validator_function_tracker["call_history"].append(call_info)
+        
+        try:
+            # Execute function
+            result = func(*args, **kwargs)
+            
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            
+            # Update call info
+            call_info.update({
+                "status": "success",
+                "execution_time": execution_time,
+                "result_type": type(result).__name__,
+                "result_size": len(str(result)) if hasattr(result, '__len__') else 1
+            })
+            
+            # Update performance metrics
+            if func_name not in validator_function_tracker["performance_metrics"]:
+                validator_function_tracker["performance_metrics"][func_name] = {
+                    "total_calls": 0,
+                    "total_time": 0,
+                    "avg_time": 0,
+                    "min_time": float('inf'),
+                    "max_time": 0,
+                    "success_count": 0,
+                    "error_count": 0
+                }
+            
+            metrics = validator_function_tracker["performance_metrics"][func_name]
+            metrics["total_calls"] += 1
+            metrics["total_time"] += execution_time
+            metrics["avg_time"] = metrics["total_time"] / metrics["total_calls"]
+            metrics["min_time"] = min(metrics["min_time"], execution_time)
+            metrics["max_time"] = max(metrics["max_time"], execution_time)
+            metrics["success_count"] += 1
+            
+            # Update global counters
+            validator_function_tracker["success_count"] += 1
+            
+            # Log function exit
+            logger.info(f"🟢 VALIDATOR FUNCTION EXIT [{call_id}] - {module_name}.{func_name}")
+            logger.info(f"⏱️ Execution time: {execution_time:.4f}s")
+            logger.info(f"📤 Result type: {type(result).__name__}")
+            logger.info(f"✅ Status: SUCCESS")
+            
+            return result
+            
+        except Exception as e:
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            
+            # Update call info
+            call_info.update({
+                "status": "error",
+                "execution_time": execution_time,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            })
+            
+            # Update performance metrics
+            if func_name not in validator_function_tracker["performance_metrics"]:
+                validator_function_tracker["performance_metrics"][func_name] = {
+                    "total_calls": 0,
+                    "total_time": 0,
+                    "avg_time": 0,
+                    "min_time": float('inf'),
+                    "max_time": 0,
+                    "success_count": 0,
+                    "error_count": 0
+                }
+            
+            metrics = validator_function_tracker["performance_metrics"][func_name]
+            metrics["total_calls"] += 1
+            metrics["total_time"] += execution_time
+            metrics["avg_time"] = metrics["total_time"] / metrics["total_calls"]
+            metrics["min_time"] = min(metrics["min_time"], execution_time)
+            metrics["max_time"] = max(metrics["max_time"], execution_time)
+            metrics["error_count"] += 1
+            
+            # Update global counters
+            validator_function_tracker["error_count"] += 1
+            
+            # Log function error
+            logger.error(f"🔴 VALIDATOR FUNCTION ERROR [{call_id}] - {module_name}.{func_name}")
+            logger.error(f"⏱️ Execution time: {execution_time:.4f}s")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"💥 Error message: {str(e)}")
+            logger.error(f"📋 Traceback: {traceback.format_exc()}")
+            
+            raise
+    
+    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+def validate_validator_inputs(func: Callable) -> Callable:
+    """Validate validator function inputs and outputs."""
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Get function signature
+        sig = inspect.signature(func)
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        
+        # Log input validation
+        logger.info(f"🔍 VALIDATOR INPUT VALIDATION - {func.__name__}")
+        for param_name, param_value in bound_args.arguments.items():
+            param_type = sig.parameters[param_name].annotation
+            logger.info(f"  📋 {param_name}: {type(param_value).__name__} = {str(param_value)[:100]}...")
+            
+            # Basic type validation
+            if param_type != inspect.Parameter.empty and not isinstance(param_value, param_type):
+                logger.warning(f"  ⚠️ Type mismatch for {param_name}: expected {param_type}, got {type(param_value)}")
+        
+        # Execute function
+        result = await func(*args, **kwargs)
+        
+        # Log output validation
+        logger.info(f"🔍 VALIDATOR OUTPUT VALIDATION - {func.__name__}")
+        logger.info(f"  📤 Result type: {type(result).__name__}")
+        logger.info(f"  📊 Result size: {len(str(result)) if hasattr(result, '__len__') else 1}")
+        
+        return result
+    
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        # Get function signature
+        sig = inspect.signature(func)
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        
+        # Log input validation
+        logger.info(f"🔍 VALIDATOR INPUT VALIDATION - {func.__name__}")
+        for param_name, param_value in bound_args.arguments.items():
+            param_type = sig.parameters[param_name].annotation
+            logger.info(f"  📋 {param_name}: {type(param_value).__name__} = {str(param_value)[:100]}...")
+            
+            # Basic type validation
+            if param_type != inspect.Parameter.empty and not isinstance(param_value, param_type):
+                logger.warning(f"  ⚠️ Type mismatch for {param_name}: expected {param_type}, got {type(param_value)}")
+        
+        # Execute function
+        result = func(*args, **kwargs)
+        
+        # Log output validation
+        logger.info(f"🔍 VALIDATOR OUTPUT VALIDATION - {func.__name__}")
+        logger.info(f"  📤 Result type: {type(result).__name__}")
+        logger.info(f"  📊 Result size: {len(str(result)) if hasattr(result, '__len__') else 1}")
+        
+        return result
+    
+    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+def generate_validator_report() -> Dict[str, Any]:
+    """Generate comprehensive validator function call report."""
+    total_calls = validator_function_tracker["call_count"]
+    success_rate = (validator_function_tracker["success_count"] / total_calls * 100) if total_calls > 0 else 0
+    
+    report = {
+        "summary": {
+            "total_function_calls": total_calls,
+            "successful_calls": validator_function_tracker["success_count"],
+            "failed_calls": validator_function_tracker["error_count"],
+            "success_rate_percent": round(success_rate, 2),
+            "report_generated_at": datetime.now().isoformat(),
+            "validator_type": "step02_5_sr_optimization_validator"
+        },
+        "performance_metrics": validator_function_tracker["performance_metrics"],
+        "call_history": validator_function_tracker["call_history"][-50:],  # Last 50 calls
+        "top_performing_functions": sorted(
+            validator_function_tracker["performance_metrics"].items(),
+            key=lambda x: x[1]["avg_time"]
+        )[:10],
+        "most_called_functions": sorted(
+            validator_function_tracker["performance_metrics"].items(),
+            key=lambda x: x[1]["total_calls"],
+            reverse=True
+        )[:10]
+    }
+    
+    return report
+
+class SROptimizationValidator:
+    """Validator for S/R detection optimization step with comprehensive monitoring."""
+
+    @monitor_validator_function_calls
+    @validate_validator_inputs
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("SROptimizationValidator")
         self.validation_results = {}
+        self.validation_start_time = None
+        
+        # Initialize validation tracking
+        self.validation_tracker = {
+            "validation_steps": 0,
+            "step_times": {},
+            "step_results": {},
+            "total_validation_time": 0
+        }
+        
+        self.logger.info("✅ SROptimizationValidator initialized with comprehensive monitoring")
 
+    @monitor_validator_function_calls
+    @validate_validator_inputs
     @handles_errors(fallback=False)
     async def validate_step(self, symbol: str, exchange: str, timeframe: str) -> bool:
-        """Validate the S/R optimization step."""
+        """Validate the S/R optimization step with detailed monitoring."""
         try:
-            self.logger.info("🔍 Starting S/R optimization validation...")
+            self.logger.info("🔍 Starting S/R optimization validation with comprehensive monitoring...")
+            self.validation_start_time = time.time()
             
             validation_passed = True
             validation_details = []
             
+            # Generate pre-validation report
+            pre_report = generate_validator_report()
+            self.logger.info(f"📊 Pre-validation function calls: {pre_report['summary']['total_function_calls']}")
+            
             # Validate optimization results file
+            self.logger.info("🔍 Step 1: Validating optimization results file...")
+            step_start = time.time()
             results_validation = await self._validate_optimization_results()
+            step_time = time.time() - step_start
+            
+            self.validation_tracker["validation_steps"] += 1
+            self.validation_tracker["step_times"]["optimization_results"] = step_time
+            self.validation_tracker["step_results"]["optimization_results"] = {
+                "valid": results_validation["valid"],
+                "errors": results_validation.get("errors", []),
+                "execution_time": step_time
+            }
+            
             if not results_validation["valid"]:
                 validation_passed = False
                 validation_details.extend(results_validation["errors"])
+                self.logger.error(f"❌ Optimization results validation failed: {results_validation['errors']}")
+            else:
+                self.logger.info(f"✅ Optimization results validation passed in {step_time:.4f}s")
             
             # Validate optimized parameters
+            self.logger.info("🔍 Step 2: Validating optimized parameters...")
+            step_start = time.time()
             params_validation = await self._validate_optimized_parameters()
+            step_time = time.time() - step_start
+            
+            self.validation_tracker["validation_steps"] += 1
+            self.validation_tracker["step_times"]["optimized_parameters"] = step_time
+            self.validation_tracker["step_results"]["optimized_parameters"] = {
+                "valid": params_validation["valid"],
+                "errors": params_validation.get("errors", []),
+                "execution_time": step_time
+            }
+            
             if not params_validation["valid"]:
                 validation_passed = False
                 validation_details.extend(params_validation["errors"])
+                self.logger.error(f"❌ Optimized parameters validation failed: {params_validation['errors']}")
+            else:
+                self.logger.info(f"✅ Optimized parameters validation passed in {step_time:.4f}s")
             
             # Validate configuration updates
+            self.logger.info("🔍 Step 3: Validating configuration updates...")
+            step_start = time.time()
             config_validation = await self._validate_configuration_updates()
+            step_time = time.time() - step_start
+            
+            self.validation_tracker["validation_steps"] += 1
+            self.validation_tracker["step_times"]["configuration_updates"] = step_time
+            self.validation_tracker["step_results"]["configuration_updates"] = {
+                "valid": config_validation["valid"],
+                "errors": config_validation.get("errors", []),
+                "execution_time": step_time
+            }
+            
             if not config_validation["valid"]:
                 validation_passed = False
                 validation_details.extend(config_validation["errors"])
+                self.logger.error(f"❌ Configuration updates validation failed: {config_validation['errors']}")
+            else:
+                self.logger.info(f"✅ Configuration updates validation passed in {step_time:.4f}s")
             
             # Validate artifact quality
+            self.logger.info("🔍 Step 4: Validating artifact quality...")
+            step_start = time.time()
             quality_validation = await self._validate_artifact_quality()
+            step_time = time.time() - step_start
+            
+            self.validation_tracker["validation_steps"] += 1
+            self.validation_tracker["step_times"]["artifact_quality"] = step_time
+            self.validation_tracker["step_results"]["artifact_quality"] = {
+                "valid": quality_validation["valid"],
+                "errors": quality_validation.get("errors", []),
+                "execution_time": step_time
+            }
+            
             if not quality_validation["valid"]:
                 validation_passed = False
                 validation_details.extend(quality_validation["errors"])
+                self.logger.error(f"❌ Artifact quality validation failed: {quality_validation['errors']}")
+            else:
+                self.logger.info(f"✅ Artifact quality validation passed in {step_time:.4f}s")
+            
+            # Calculate total validation time
+            total_validation_time = time.time() - self.validation_start_time
+            self.validation_tracker["total_validation_time"] = total_validation_time
+            
+            # Generate post-validation report
+            post_report = generate_validator_report()
+            self.logger.info(f"📊 Post-validation function calls: {post_report['summary']['total_function_calls']}")
+            self.logger.info(f"📈 Function call increase: {post_report['summary']['total_function_calls'] - pre_report['summary']['total_function_calls']}")
             
             self.validation_results = {
                 "valid": validation_passed,
                 "details": validation_details,
                 "timestamp": time.time(),
-                "step": "step02_5_sr_optimization"
+                "step": "step02_5_sr_optimization",
+                "validation_tracker": self.validation_tracker,
+                "function_call_report": post_report
             }
             
             if validation_passed:
                 self.logger.info("✅ S/R optimization validation passed")
+                self.logger.info(f"📊 Total validation time: {total_validation_time:.4f}s")
+                self.logger.info(f"📊 Validation steps completed: {self.validation_tracker['validation_steps']}")
             else:
                 self.logger.error(f"❌ S/R optimization validation failed: {validation_details}")
+                self.logger.error(f"📊 Total validation time: {total_validation_time:.4f}s")
+                self.logger.error(f"📊 Validation steps completed: {self.validation_tracker['validation_steps']}")
             
             return validation_passed
             
         except Exception as e:
             self.logger.error(f"Failed to validate S/R optimization: {e}")
+            self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+            
+            # Update validation tracker with error info
+            if self.validation_start_time:
+                total_validation_time = time.time() - self.validation_start_time
+                self.validation_tracker["total_validation_time"] = total_validation_time
+                self.validation_tracker["error"] = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            
             return False
 
+    @monitor_validator_function_calls
+    @validate_validator_inputs
     @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimization_results_validation"
     )
     async def _validate_optimization_results(self) -> Dict[str, Any]:
-        """Validate optimization results file."""
+        """Validate optimization results file with detailed monitoring."""
         try:
-            self.logger.info("📊 Validating optimization results file...")
+            self.logger.info("📊 Validating optimization results file with detailed checks...")
+            validation_start = time.time()
             
             errors = []
+            validation_details = {
+                "files_checked": [],
+                "fields_validated": [],
+                "validation_time": 0
+            }
             
             # Check if optimization results file exists
+            self.logger.info("🔍 Checking optimization results file existence...")
             results_file = Path("data/optimization/sr_optimization_results.json")
+            validation_details["files_checked"].append(str(results_file))
+            
             if not results_file.exists():
-                errors.append("Optimization results file not found")
-                return {"valid": False, "errors": errors}
+                error_msg = "Optimization results file not found"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {results_file}")
+                return {"valid": False, "errors": errors, "details": validation_details}
+            else:
+                self.logger.info(f"✅ Found optimization results file: {results_file}")
             
             # Check if SR predictor results file exists
+            self.logger.info("🔍 Checking SR predictor results file existence...")
             sr_results_file = Path("optimization_results.json")
+            validation_details["files_checked"].append(str(sr_results_file))
+            
             if not sr_results_file.exists():
-                errors.append("SR predictor optimization results file not found")
-                return {"valid": False, "errors": errors}
+                error_msg = "SR predictor optimization results file not found"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {sr_results_file}")
+                return {"valid": False, "errors": errors, "details": validation_details}
+            else:
+                self.logger.info(f"✅ Found SR predictor results file: {sr_results_file}")
             
             # Validate JSON format
+            self.logger.info("🔍 Validating JSON format...")
             try:
                 results_data = safe_json_load(results_file)
+                self.logger.info(f"✅ JSON format valid, loaded {len(results_data)} top-level keys")
             except json.JSONDecodeError as e:
-                errors.append(f"Invalid JSON format in optimization results: {e}")
-                return {"valid": False, "errors": errors}
+                error_msg = f"Invalid JSON format in optimization results: {e}"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}")
+                return {"valid": False, "errors": errors, "details": validation_details}
             
             # Validate required fields
+            self.logger.info("🔍 Validating required fields...")
             required_fields = [
                 "method_weights",
                 "strength_weights", 
@@ -136,90 +610,193 @@ class SROptimizationValidator:
             ]
             
             for field in required_fields:
+                validation_details["fields_validated"].append(field)
                 if field not in results_data:
-                    errors.append(f"Missing required field: {field}")
+                    error_msg = f"Missing required field: {field}"
+                    errors.append(error_msg)
+                    self.logger.error(f"❌ {error_msg}")
+                else:
+                    self.logger.info(f"✅ Found required field: {field}")
             
             # Validate metadata
+            self.logger.info("🔍 Validating metadata...")
             if "metadata" in results_data:
                 metadata = results_data["metadata"]
+                self.logger.info(f"📊 Metadata keys: {list(metadata.keys())}")
+                
                 if "step" not in metadata or metadata["step"] != "step02_5_sr_optimization":
-                    errors.append("Invalid step metadata")
+                    error_msg = "Invalid step metadata"
+                    errors.append(error_msg)
+                    self.logger.error(f"❌ {error_msg}: {metadata.get('step', 'None')}")
+                else:
+                    self.logger.info(f"✅ Valid step metadata: {metadata['step']}")
+                
                 if "timestamp" not in metadata:
-                    errors.append("Missing timestamp in metadata")
+                    error_msg = "Missing timestamp in metadata"
+                    errors.append(error_msg)
+                    self.logger.error(f"❌ {error_msg}")
+                else:
+                    self.logger.info(f"✅ Found timestamp: {metadata['timestamp']}")
+            else:
+                error_msg = "Missing metadata section"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}")
+            
+            validation_time = time.time() - validation_start
+            validation_details["validation_time"] = validation_time
+            
+            validation_result = len(errors) == 0
+            self.logger.info(f"📊 Optimization results validation completed in {validation_time:.4f}s")
+            self.logger.info(f"📊 Validation result: {'PASSED' if validation_result else 'FAILED'}")
+            self.logger.info(f"📊 Errors found: {len(errors)}")
             
             return {
-                "valid": len(errors) == 0,
-                "errors": errors
+                "valid": validation_result,
+                "errors": errors,
+                "details": validation_details
             }
             
         except Exception as e:
-            return {"valid": False, "errors": [f"Validation error: {e}"]}
+            self.logger.error(f"❌ Optimization results validation error: {e}")
+            self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+            return {"valid": False, "errors": [f"Validation error: {e}"], "details": {"error": str(e)}}
 
+    @monitor_validator_function_calls
+    @validate_validator_inputs
     @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
         context="optimized_parameters_validation"
     )
     async def _validate_optimized_parameters(self) -> Dict[str, Any]:
-        """Validate optimized parameters structure and values."""
+        """Validate optimized parameters structure and values with detailed monitoring."""
         try:
-            self.logger.info("⚙️ Validating optimized parameters...")
+            self.logger.info("⚙️ Validating optimized parameters with detailed checks...")
+            validation_start = time.time()
             
             errors = []
+            validation_details = {
+                "parameters_checked": [],
+                "validation_time": 0
+            }
             
             # Load optimization results
+            self.logger.info("🔍 Loading optimization results...")
             results_file = Path("data/optimization/sr_optimization_results.json")
             if not results_file.exists():
-                return {"valid": False, "errors": ["Optimization results file not found"]}
+                error_msg = "Optimization results file not found"
+                self.logger.error(f"❌ {error_msg}: {results_file}")
+                return {"valid": False, "errors": [error_msg], "details": validation_details}
             
             results_data = safe_json_load(results_file)
+            self.logger.info(f"✅ Loaded optimization results with {len(results_data)} keys")
             
             # Validate method weights
+            self.logger.info("🔍 Validating method weights...")
+            validation_details["parameters_checked"].append("method_weights")
             method_weights = results_data.get("method_weights", {})
+            
             if not isinstance(method_weights, dict):
-                errors.append("Method weights must be a dictionary")
+                error_msg = "Method weights must be a dictionary"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {type(method_weights)}")
             else:
+                self.logger.info(f"✅ Method weights is a dictionary with {len(method_weights)} entries")
                 for method, weight in method_weights.items():
                     if not isinstance(weight, (int, float)) or weight < 0:
-                        errors.append(f"Invalid method weight for {method}: {weight}")
+                        error_msg = f"Invalid method weight for {method}: {weight}"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}")
+                    else:
+                        self.logger.info(f"✅ Valid method weight for {method}: {weight}")
             
             # Validate strength weights
+            self.logger.info("🔍 Validating strength weights...")
+            validation_details["parameters_checked"].append("strength_weights")
             strength_weights = results_data.get("strength_weights", {})
+            
             if not isinstance(strength_weights, dict):
-                errors.append("Strength weights must be a dictionary")
+                error_msg = "Strength weights must be a dictionary"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {type(strength_weights)}")
             else:
+                self.logger.info(f"✅ Strength weights is a dictionary with {len(strength_weights)} entries")
                 for strength, weight in strength_weights.items():
                     if not isinstance(weight, (int, float)) or weight < 0:
-                        errors.append(f"Invalid strength weight for {strength}: {weight}")
+                        error_msg = f"Invalid strength weight for {strength}: {weight}"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}")
+                    else:
+                        self.logger.info(f"✅ Valid strength weight for {strength}: {weight}")
             
             # Validate DBSCAN parameters
+            self.logger.info("🔍 Validating DBSCAN parameters...")
+            validation_details["parameters_checked"].append("dbscan_params")
             dbscan_params = results_data.get("dbscan_params", {})
+            
             if not isinstance(dbscan_params, dict):
-                errors.append("DBSCAN parameters must be a dictionary")
+                error_msg = "DBSCAN parameters must be a dictionary"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {type(dbscan_params)}")
             else:
-                if "eps" in dbscan_params and not isinstance(dbscan_params["eps"], (int, float)):
-                    errors.append("DBSCAN eps must be a number")
-                if "min_samples" in dbscan_params and not isinstance(dbscan_params["min_samples"], int):
-                    errors.append("DBSCAN min_samples must be an integer")
+                self.logger.info(f"✅ DBSCAN parameters is a dictionary with {len(dbscan_params)} entries")
+                if "eps" in dbscan_params:
+                    if not isinstance(dbscan_params["eps"], (int, float)):
+                        error_msg = "DBSCAN eps must be a number"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}: {type(dbscan_params['eps'])}")
+                    else:
+                        self.logger.info(f"✅ Valid DBSCAN eps: {dbscan_params['eps']}")
+                
+                if "min_samples" in dbscan_params:
+                    if not isinstance(dbscan_params["min_samples"], int):
+                        error_msg = "DBSCAN min_samples must be an integer"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}: {type(dbscan_params['min_samples'])}")
+                    else:
+                        self.logger.info(f"✅ Valid DBSCAN min_samples: {dbscan_params['min_samples']}")
             
             # Validate performance metrics
+            self.logger.info("🔍 Validating performance metrics...")
+            validation_details["parameters_checked"].append("performance_metrics")
             performance_metrics = results_data.get("performance_metrics", {})
+            
             if not isinstance(performance_metrics, dict):
-                errors.append("Performance metrics must be a dictionary")
+                error_msg = "Performance metrics must be a dictionary"
+                errors.append(error_msg)
+                self.logger.error(f"❌ {error_msg}: {type(performance_metrics)}")
             else:
+                self.logger.info(f"✅ Performance metrics is a dictionary with {len(performance_metrics)} entries")
                 required_metrics = ["optimization_score", "sharpe_ratio", "win_rate"]
                 for metric in required_metrics:
                     if metric not in performance_metrics:
-                        errors.append(f"Missing performance metric: {metric}")
+                        error_msg = f"Missing performance metric: {metric}"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}")
                     elif not isinstance(performance_metrics[metric], (int, float)):
-                        errors.append(f"Invalid performance metric {metric}: {performance_metrics[metric]}")
+                        error_msg = f"Invalid performance metric {metric}: {performance_metrics[metric]}"
+                        errors.append(error_msg)
+                        self.logger.error(f"❌ {error_msg}")
+                    else:
+                        self.logger.info(f"✅ Valid performance metric {metric}: {performance_metrics[metric]}")
+            
+            validation_time = time.time() - validation_start
+            validation_details["validation_time"] = validation_time
+            
+            validation_result = len(errors) == 0
+            self.logger.info(f"📊 Optimized parameters validation completed in {validation_time:.4f}s")
+            self.logger.info(f"📊 Validation result: {'PASSED' if validation_result else 'FAILED'}")
+            self.logger.info(f"📊 Errors found: {len(errors)}")
             
             return {
-                "valid": len(errors) == 0,
-                "errors": errors
+                "valid": validation_result,
+                "errors": errors,
+                "details": validation_details
             }
             
         except Exception as e:
-            return {"valid": False, "errors": [f"Parameter validation error: {e}"]}
+            self.logger.error(f"❌ Optimized parameters validation error: {e}")
+            self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+            return {"valid": False, "errors": [f"Parameter validation error: {e}"], "details": {"error": str(e)}}
 
     @handles_errors(
         default_return={"valid": False, "errors": ["Validation failed"]},
@@ -333,34 +910,123 @@ class SROptimizationValidator:
         except Exception as e:
             return {"valid": False, "errors": [f"Quality validation error: {e}"]}
 
+    @monitor_validator_function_calls
+    @validate_validator_inputs
     def get_validation_results(self) -> Dict[str, Any]:
-        """Get validation results."""
+        """Get validation results with detailed information."""
+        self.logger.info("📊 Retrieving validation results...")
+        
+        # Add function call report to results
+        if "function_call_report" not in self.validation_results:
+            self.validation_results["function_call_report"] = generate_validator_report()
+        
+        self.logger.info(f"📊 Validation results contain {len(self.validation_results)} keys")
         return self.validation_results
 
+@monitor_validator_function_calls
+@validate_validator_inputs
 @handles_errors(fallback=False)
 async def run_validation(config: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> bool:
-    """Run validation for the S/R optimization step."""
+    """Run validation for the S/R optimization step with comprehensive monitoring."""
     try:
-        logger.info("🚀 Starting Step 2.5: S/R Detection Optimization Validation")
+        logger.info("🚀 Starting Step 2.5: S/R Detection Optimization Validation with comprehensive monitoring")
+        validation_start_time = time.time()
+        
+        # Generate pre-validation report
+        pre_report = generate_validator_report()
+        logger.info(f"📊 Pre-validation function calls: {pre_report['summary']['total_function_calls']}")
         
         # Create validator
+        logger.info("🔧 Creating SROptimizationValidator instance...")
         validator = SROptimizationValidator(config)
         
         # Run validation
+        logger.info("🔍 Running validation step...")
         success = await validator.validate_step(symbol, exchange, timeframe)
         
         # Log results
         results = validator.get_validation_results()
+        validation_time = time.time() - validation_start_time
+        
+        # Generate post-validation report
+        post_report = generate_validator_report()
+        logger.info(f"📊 Post-validation function calls: {post_report['summary']['total_function_calls']}")
+        logger.info(f"📈 Function call increase: {post_report['summary']['total_function_calls'] - pre_report['summary']['total_function_calls']}")
+        
         if success:
             logger.info("✅ Step 2.5: S/R Detection Optimization Validation completed successfully")
+            logger.info(f"📊 Total validation time: {validation_time:.4f}s")
+            logger.info(f"📊 Function calls made: {post_report['summary']['total_function_calls']}")
+            logger.info(f"📊 Success rate: {post_report['summary']['success_rate_percent']:.2f}%")
         else:
             logger.error(f"❌ Step 2.5: S/R Detection Optimization Validation failed: {results.get('details', [])}")
+            logger.error(f"📊 Total validation time: {validation_time:.4f}s")
+            logger.error(f"📊 Function calls made: {post_report['summary']['total_function_calls']}")
+            logger.error(f"📊 Success rate: {post_report['summary']['success_rate_percent']:.2f}%")
+        
+        # Add validation report to results
+        results["validation_summary"] = {
+            "total_validation_time": validation_time,
+            "function_call_report": post_report,
+            "validation_success": success
+        }
         
         return success
         
     except Exception as e:
         logger.error(f"Failed to run S/R optimization validation: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         return False
+
+def save_validator_report(report: Dict[str, Any], filename: str = None) -> str:
+    """Save validator function call report to file."""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"step02_5_validator_report_{timestamp}.json"
+    
+    report_path = Path("reports") / filename
+    report_path.parent.mkdir(exist_ok=True)
+    
+    with open(report_path, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+    
+    logger.info(f"📄 Validator report saved to: {report_path}")
+    return str(report_path)
+
+def print_validator_summary(report: Dict[str, Any]) -> None:
+    """Print a summary of validator function call report."""
+    summary = report["summary"]
+    
+    print("\n" + "="*80)
+    print("📊 STEP 2.5 VALIDATOR FUNCTION CALL REPORT SUMMARY")
+    print("="*80)
+    print(f"📈 Total Function Calls: {summary['total_function_calls']}")
+    print(f"✅ Successful Calls: {summary['successful_calls']}")
+    print(f"❌ Failed Calls: {summary['failed_calls']}")
+    print(f"📊 Success Rate: {summary['success_rate_percent']:.2f}%")
+    print(f"🕐 Report Generated: {summary['report_generated_at']}")
+    print(f"🔧 Validator Type: {summary['validator_type']}")
+    
+    print("\n🔝 TOP 10 MOST CALLED VALIDATOR FUNCTIONS:")
+    print("-" * 50)
+    for i, (func_name, metrics) in enumerate(report["most_called_functions"], 1):
+        print(f"{i:2d}. {func_name}: {metrics['total_calls']} calls, "
+              f"avg: {metrics['avg_time']:.4f}s")
+    
+    print("\n⚡ TOP 10 FASTEST VALIDATOR FUNCTIONS:")
+    print("-" * 50)
+    for i, (func_name, metrics) in enumerate(report["top_performing_functions"], 1):
+        print(f"{i:2d}. {func_name}: {metrics['avg_time']:.4f}s avg, "
+              f"{metrics['total_calls']} calls")
+    
+    print("\n📋 RECENT VALIDATOR FUNCTION CALLS (Last 10):")
+    print("-" * 50)
+    for call in report["call_history"][-10:]:
+        status_emoji = "✅" if call["status"] == "success" else "❌"
+        print(f"{status_emoji} [{call['call_id']}] {call['function_name']} - "
+              f"{call.get('execution_time', 0):.4f}s - {call['status']}")
+    
+    print("="*80)
 
 def _create_test_config() -> Dict[str, Any]:
     """Create test configuration for validation."""
@@ -379,11 +1045,73 @@ def _create_test_config() -> Dict[str, Any]:
     }
 
 async def _run_test_validation() -> bool:
-    """Run test validation with test configuration."""
+    """Run test validation with test configuration and comprehensive monitoring."""
+    logger.info("🧪 Starting Step 2.5 validator test with comprehensive monitoring")
+    
     test_config = _create_test_config()
-    return await run_validation(test_config, "ETHUSDT", "BINANCE", "1m")
+    logger.info(f"📊 Test configuration created with {len(test_config)} sections")
+    
+    # Run validation
+    success = await run_validation(test_config, "ETHUSDT", "BINANCE", "1m")
+    
+    # Generate and save validator report
+    validator_report = generate_validator_report()
+    report_path = save_validator_report(validator_report)
+    
+    # Print summary
+    print_validator_summary(validator_report)
+    
+    # Print test result summary
+    print("\n🎯 STEP 2.5 VALIDATOR TEST RESULT:")
+    print("-" * 50)
+    print(f"✅ Validation Success: {success}")
+    print(f"📞 Function Calls: {validator_report['summary']['total_function_calls']}")
+    print(f"📈 Success Rate: {validator_report['summary']['success_rate_percent']:.2f}%")
+    print(f"📄 Detailed report saved to: {report_path}")
+    
+    return success
+
+# Test function
+async def test_validator():
+    """Test the validator with comprehensive monitoring."""
+    logger.info("🧪 Starting comprehensive validator test")
+    
+    # Create test configuration
+    test_config = _create_test_config()
+    
+    # Create validator instance
+    validator = SROptimizationValidator(test_config)
+    
+    # Run validation
+    success = await validator.validate_step("ETHUSDT", "BINANCE", "1m")
+    
+    # Get results
+    results = validator.get_validation_results()
+    
+    # Generate and save report
+    validator_report = generate_validator_report()
+    report_path = save_validator_report(validator_report)
+    
+    # Print summary
+    print_validator_summary(validator_report)
+    
+    # Print detailed results
+    print("\n🎯 VALIDATOR TEST DETAILED RESULTS:")
+    print("-" * 50)
+    print(f"✅ Validation Success: {success}")
+    print(f"📊 Validation Steps: {results.get('validation_tracker', {}).get('validation_steps', 0)}")
+    print(f"⏱️ Total Validation Time: {results.get('validation_tracker', {}).get('total_validation_time', 0):.4f}s")
+    
+    if 'validation_tracker' in results:
+        tracker = results['validation_tracker']
+        print(f"📊 Step Times: {tracker.get('step_times', {})}")
+        print(f"📊 Step Results: {tracker.get('step_results', {})}")
+    
+    print(f"📄 Detailed report saved to: {report_path}")
+    
+    return success
 
 if __name__ == "__main__":
-    # Test the validator
-    success = asyncio.run(await _run_test_validation())
-    print(f"Validation {'successful' if success else 'failed'}")
+    # Test the validator with comprehensive monitoring
+    success = asyncio.run(test_validator())
+    print(f"\n🎯 Final Result: Validation {'SUCCESSFUL' if success else 'FAILED'}")

@@ -1,9 +1,7 @@
 from collections.abc import Callable
-
-
-from src.utils.decorators import (
 import pandas as pd
 
+from src.utils.decorators import (
     traced,
     validates,
 )

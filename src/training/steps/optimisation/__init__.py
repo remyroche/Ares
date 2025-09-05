@@ -30,6 +30,7 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
     - 📈 Performance metrics tracking
     - 🛡️ Data quality monitoring throughout the process
     """
+    from .utils.common_operations import (
         format_datetime, get_current_datetime, safe_file_exists, 
         ensure_directory, safe_json_dump, safe_json_load, safe_sleep
     )

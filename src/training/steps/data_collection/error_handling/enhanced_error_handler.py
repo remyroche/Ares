@@ -352,7 +352,7 @@ from typing import Dict
 from typing import Optional
 from typing import Callable
 
-    def _generate_error_id(self, error: Exception, context: ErrorContext) -> str:
+def _generate_error_id(self, error: Exception, context: ErrorContext) -> str:
         """Generate unique error ID for tracking."""
         error_info = f"{type(error).__name__}_{context.operation}_{context.step_name}_{context.symbol}_{context.exchange}"
         return hashlib.md5(error_info.encode()).hexdigest()[:12]

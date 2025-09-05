@@ -20,6 +20,7 @@ import json
 import os
 
 try:
+    import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
         pass

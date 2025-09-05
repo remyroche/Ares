@@ -6,10 +6,7 @@ ensuring they work correctly and maintain compatibility with the original functi
 """
 import asyncio
 try:
-    try:
     import pytest
-except ImportError:
-    pytest = None
 except ImportError:
     pytest = None
 import pandas as pd

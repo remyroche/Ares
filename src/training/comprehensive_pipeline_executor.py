@@ -193,8 +193,8 @@ async def main() -> None:
     except Exception as e:
         print(f'❌ Pipeline execution failed: {e}')
         import traceback
-from typing import List
+        traceback.print_exc()
 
-traceback.print_exc()
+from typing import List
 if __name__ == '__main__':
     asyncio.run(main())

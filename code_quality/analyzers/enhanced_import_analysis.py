@@ -431,132 +431,13 @@ class EnhancedUndefinedAnalyzer:
             tree = ast.parse(content)
             
             # Collect defined names and imports
-            defined_names = set()
-            imported_names = set()
-            function_params = set()
-            class_attributes = set()
+            name_collections = self._collect_defined_names(tree)
             
-            # First pass: collect definitions and imports
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        name = alias.asname or alias.name.split('.')[-1]
-                        imported_names.add(name)
-                        defined_names.add(name)
-                
-                elif isinstance(node, ast.ImportFrom):
-                    for alias in node.names:
-                        name = alias.asname or alias.name
-                        imported_names.add(name)
-                        defined_names.add(name)
-                
-                elif isinstance(node, ast.FunctionDef):
-                    defined_names.add(node.name)
-                    # Add function parameters
-                    for arg in node.args.args:
-                        function_params.add(arg.arg)
-                        defined_names.add(arg.arg)
-                    # Add default arguments
-                    for default in node.args.defaults:
-                        if isinstance(default, ast.Name):
-                            defined_names.add(default.id)
-                    # Add keyword-only arguments
-                    for arg in node.args.kwonlyargs:
-                        function_params.add(arg.arg)
-                        defined_names.add(arg.arg)
-                
-                elif isinstance(node, ast.ClassDef):
-                    defined_names.add(node.name)
-                    # Add class methods and attributes
-                    for item in node.body:
-                        if isinstance(item, ast.FunctionDef):
-                            defined_names.add(item.name)
-                            class_attributes.add(item.name)
-                        elif isinstance(item, ast.Assign):
-                            for target in item.targets:
-                                if isinstance(target, ast.Name):
-                                    defined_names.add(target.id)
-                                    class_attributes.add(target.id)
-                
-                elif isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        if isinstance(target, ast.Name):
-                            defined_names.add(target.id)
-                        elif isinstance(target, ast.Tuple):
-                            for elt in target.elts:
-                                if isinstance(elt, ast.Name):
-                                    defined_names.add(elt.id)
-                
-                elif isinstance(node, ast.For):
-                    if isinstance(node.target, ast.Name):
-                        defined_names.add(node.target.id)
-                    elif isinstance(node.target, ast.Tuple):
-                        for elt in node.target.elts:
-                            if isinstance(elt, ast.Name):
-                                defined_names.add(elt.id)
-                
-                elif isinstance(node, ast.With):
-                    for item in node.items:
-                        if item.optional_vars and isinstance(item.optional_vars, ast.Name):
-                            defined_names.add(item.optional_vars.id)
-                
-                elif isinstance(node, ast.ExceptHandler):
-                    if node.name:
-                        defined_names.add(node.name)
+            # Check for undefined names
+            self._check_undefined_names(tree, name_collections, result, content, file_path)
             
-            # Second pass: check for undefined names
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                    name = node.id
-                    
-                    # Skip if it's a known name
-                    if (name in defined_names or 
-                        name in imported_names or 
-                        name in self.builtin_names):
-                        continue
-                    
-                    # Skip common patterns that are likely false positives
-                    if (name.startswith('_') or  # Private variables
-                        name.isupper() or  # Constants
-                        name in self.common_libraries or  # Common libraries
-                        name in self.false_positive_patterns or  # Common patterns
-                        self._is_exception_variable(node, tree) or  # Exception variables
-                        self._is_lambda_parameter(node, tree) or  # Lambda parameters
-                        self._is_class_attribute_access(node, tree)):  # Class attribute access
-                        continue
-                    
-                    # Determine issue type and severity
-                    issue_type = IssueType.UNDEFINED_NAME
-                    severity = IssueSeverity.HIGH
-                    suggestions = []
-                    
-                    if name in function_params:
-                        issue_type = IssueType.SCOPE_ISSUE
-                        severity = IssueSeverity.MEDIUM
-                        suggestions = [f"Check if '{name}' is properly defined in scope"]
-                    elif name.lower() in [lib.lower() for lib in self.common_libraries]:
-                        issue_type = IssueType.MISSING_IMPORT
-                        severity = IssueSeverity.MEDIUM
-                        suggestions = [f"Add import for '{name}'", f"from {name.lower()} import {name}"]
-                    elif name in class_attributes:
-                        issue_type = IssueType.SCOPE_ISSUE
-                        severity = IssueSeverity.LOW
-                        suggestions = [f"Check if '{name}' is properly defined in class scope"]
-                    
-                    result.issues.append(Issue(
-                        type=issue_type,
-                        severity=severity,
-                        name=name,
-                        line=node.lineno,
-                        column=node.col_offset,
-                        message=f'Undefined name: {name}',
-                        context=self._get_context(content, node.lineno),
-                        file_path=file_path,
-                        suggestions=suggestions
-                    ))
-            
-            result.defined_names = defined_names
-            result.imported_names = imported_names
+            result.defined_names = name_collections['defined_names']
+            result.imported_names = name_collections['imported_names']
             result.execution_time = time.time() - start_time
             return result
             
@@ -572,6 +453,199 @@ class EnhancedUndefinedAnalyzer:
             ))
             result.execution_time = time.time() - start_time
             return result
+    
+    def _collect_defined_names(self, tree: ast.AST) -> Dict[str, Set[str]]:
+        """Collect all defined names from the AST."""
+        defined_names = set()
+        imported_names = set()
+        function_params = set()
+        class_attributes = set()
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                self._collect_import_names(node, imported_names, defined_names)
+            elif isinstance(node, ast.ImportFrom):
+                self._collect_import_from_names(node, imported_names, defined_names)
+            elif isinstance(node, ast.FunctionDef):
+                self._collect_function_names(node, defined_names, function_params)
+            elif isinstance(node, ast.ClassDef):
+                self._collect_class_names(node, defined_names, class_attributes)
+            elif isinstance(node, ast.Assign):
+                self._collect_assignment_names(node, defined_names)
+            elif isinstance(node, ast.For):
+                self._collect_for_loop_names(node, defined_names)
+            elif isinstance(node, ast.With):
+                self._collect_with_statement_names(node, defined_names)
+            elif isinstance(node, ast.ExceptHandler):
+                self._collect_exception_handler_names(node, defined_names)
+        
+        return {
+            'defined_names': defined_names,
+            'imported_names': imported_names,
+            'function_params': function_params,
+            'class_attributes': class_attributes
+        }
+    
+    def _collect_import_names(self, node: ast.Import, imported_names: Set[str], defined_names: Set[str]) -> None:
+        """Collect names from import statements."""
+        for alias in node.names:
+            name = alias.asname or alias.name.split('.')[-1]
+            imported_names.add(name)
+            defined_names.add(name)
+    
+    def _collect_import_from_names(self, node: ast.ImportFrom, imported_names: Set[str], defined_names: Set[str]) -> None:
+        """Collect names from from-import statements."""
+        for alias in node.names:
+            name = alias.asname or alias.name
+            imported_names.add(name)
+            defined_names.add(name)
+    
+    def _collect_function_names(self, node: ast.FunctionDef, defined_names: Set[str], function_params: Set[str]) -> None:
+        """Collect names from function definitions."""
+        defined_names.add(node.name)
+        
+        # Add function parameters
+        for arg in node.args.args:
+            function_params.add(arg.arg)
+            defined_names.add(arg.arg)
+        
+        # Add default arguments
+        for default in node.args.defaults:
+            if isinstance(default, ast.Name):
+                defined_names.add(default.id)
+        
+        # Add keyword-only arguments
+        for arg in node.args.kwonlyargs:
+            function_params.add(arg.arg)
+            defined_names.add(arg.arg)
+    
+    def _collect_class_names(self, node: ast.ClassDef, defined_names: Set[str], class_attributes: Set[str]) -> None:
+        """Collect names from class definitions."""
+        defined_names.add(node.name)
+        
+        # Add class methods and attributes
+        for item in node.body:
+            if isinstance(item, ast.FunctionDef):
+                defined_names.add(item.name)
+                class_attributes.add(item.name)
+            elif isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        defined_names.add(target.id)
+                        class_attributes.add(target.id)
+    
+    def _collect_assignment_names(self, node: ast.Assign, defined_names: Set[str]) -> None:
+        """Collect names from assignment statements."""
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                defined_names.add(target.id)
+            elif isinstance(target, ast.Tuple):
+                for elt in target.elts:
+                    if isinstance(elt, ast.Name):
+                        defined_names.add(elt.id)
+    
+    def _collect_for_loop_names(self, node: ast.For, defined_names: Set[str]) -> None:
+        """Collect names from for loop targets."""
+        if isinstance(node.target, ast.Name):
+            defined_names.add(node.target.id)
+        elif isinstance(node.target, ast.Tuple):
+            for elt in node.target.elts:
+                if isinstance(elt, ast.Name):
+                    defined_names.add(elt.id)
+    
+    def _collect_with_statement_names(self, node: ast.With, defined_names: Set[str]) -> None:
+        """Collect names from with statement optional variables."""
+        for item in node.items:
+            if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+                defined_names.add(item.optional_vars.id)
+    
+    def _collect_exception_handler_names(self, node: ast.ExceptHandler, defined_names: Set[str]) -> None:
+        """Collect names from exception handlers."""
+        if node.name:
+            defined_names.add(node.name)
+    
+    def _check_undefined_names(self, tree: ast.AST, name_collections: Dict[str, Set[str]], 
+                              result: AnalysisResult, content: str, file_path: str) -> None:
+        """Check for undefined names in the AST."""
+        defined_names = name_collections['defined_names']
+        imported_names = name_collections['imported_names']
+        function_params = name_collections['function_params']
+        class_attributes = name_collections['class_attributes']
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                name = node.id
+                
+                # Skip if it's a known name
+                if self._is_known_name(name, defined_names, imported_names):
+                    continue
+                
+                # Skip common patterns that are likely false positives
+                if self._is_false_positive(name, node, tree):
+                    continue
+                
+                # Create issue for undefined name
+                issue = self._create_undefined_name_issue(
+                    name, node, function_params, class_attributes, content, file_path
+                )
+                result.issues.append(issue)
+    
+    def _is_known_name(self, name: str, defined_names: Set[str], imported_names: Set[str]) -> bool:
+        """Check if a name is already known (defined or imported)."""
+        return (name in defined_names or 
+                name in imported_names or 
+                name in self.builtin_names)
+    
+    def _is_false_positive(self, name: str, node: ast.Name, tree: ast.AST) -> bool:
+        """Check if a name is likely a false positive."""
+        return (name.startswith('_') or  # Private variables
+                name.isupper() or  # Constants
+                name in self.common_libraries or  # Common libraries
+                name in self.false_positive_patterns or  # Common patterns
+                self._is_exception_variable(node, tree) or  # Exception variables
+                self._is_lambda_parameter(node, tree) or  # Lambda parameters
+                self._is_class_attribute_access(node, tree))  # Class attribute access
+    
+    def _create_undefined_name_issue(self, name: str, node: ast.Name, function_params: Set[str], 
+                                    class_attributes: Set[str], content: str, file_path: str) -> Issue:
+        """Create an issue for an undefined name."""
+        issue_type, severity, suggestions = self._determine_issue_properties(
+            name, function_params, class_attributes
+        )
+        
+        return Issue(
+            type=issue_type,
+            severity=severity,
+            name=name,
+            line=node.lineno,
+            column=node.col_offset,
+            message=f'Undefined name: {name}',
+            context=self._get_context(content, node.lineno),
+            file_path=file_path,
+            suggestions=suggestions
+        )
+    
+    def _determine_issue_properties(self, name: str, function_params: Set[str], 
+                                   class_attributes: Set[str]) -> Tuple[IssueType, IssueSeverity, List[str]]:
+        """Determine the type, severity, and suggestions for an undefined name issue."""
+        issue_type = IssueType.UNDEFINED_NAME
+        severity = IssueSeverity.HIGH
+        suggestions = []
+        
+        if name in function_params:
+            issue_type = IssueType.SCOPE_ISSUE
+            severity = IssueSeverity.MEDIUM
+            suggestions = [f"Check if '{name}' is properly defined in scope"]
+        elif name.lower() in [lib.lower() for lib in self.common_libraries]:
+            issue_type = IssueType.MISSING_IMPORT
+            severity = IssueSeverity.MEDIUM
+            suggestions = [f"Add import for '{name}'", f"from {name.lower()} import {name}"]
+        elif name in class_attributes:
+            issue_type = IssueType.SCOPE_ISSUE
+            severity = IssueSeverity.LOW
+            suggestions = [f"Check if '{name}' is properly defined in class scope"]
+        
+        return issue_type, severity, suggestions
     
     def _get_context(self, content: str, line_number: int) -> str:
         """Get context around a line number."""

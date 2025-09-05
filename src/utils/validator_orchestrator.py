@@ -12,6 +12,7 @@ sys.path.insert(0, str(project_root))
 from .logger import system_logger
 from .warning_symbols import missing
 from .prometheus_metrics import PrometheusMetrics
+from .graceful_module_handler import graceful_handler
 
 
 class ValidatorOrchestrator:
@@ -21,6 +22,10 @@ class ValidatorOrchestrator:
         self.logger = system_logger.getChild('ValidatorOrchestrator')
         self.validators = {}
         self.validation_results = {}
+        
+        # Setup graceful imports
+        graceful_handler.setup_graceful_imports()
+        
         # Initialize metrics only if not already initialized
         try:
             self.metrics = PrometheusMetrics()

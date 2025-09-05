@@ -23,6 +23,7 @@ import inspect
 from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards
 
 logger = system_logger.getChild("Step2_5SROptimization")
 
@@ -377,6 +378,9 @@ class SROptimizationStep(BaseStep):
         # Initialize logger
         self.logger = system_logger.getChild("SROptimizationStep")
         
+        # Initialize pipeline standards
+        self.standards = PipelineStandards(self.logger)
+        
         # Step-specific configuration
         self.sr_optimization_config = config.get("sr_optimization", {
             "min_touches": 2,
@@ -468,7 +472,65 @@ class SROptimizationStep(BaseStep):
         if errors:
             self.logger.error(f"❌ Validation errors: {errors}")
         
-        return validation_result, errors
+        return validation_result
+    
+    def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate and fix input data using pipeline standards.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Validated and fixed DataFrame
+        """
+        self.logger.info("🔍 Validating input data using pipeline standards...")
+        
+        # Validate data quality using pipeline standards
+        validation_result = self.standards.validate_data_quality(data, 'unified')
+        
+        if not validation_result.passed:
+            self.logger.warning(f"⚠️ Data quality validation failed: {validation_result.quality_score:.2f}")
+            for issue in validation_result.issues:
+                self.logger.warning(f"   - {issue.message}")
+        
+        # Apply fixes for common issues
+        fixed_data = data.copy()
+        
+        # Fix duplicate timestamps
+        if 'timestamp' in fixed_data.columns:
+            duplicate_count = fixed_data['timestamp'].duplicated().sum()
+            if duplicate_count > 0:
+                self.logger.info(f"🗑️ Removing {duplicate_count} duplicate timestamps")
+                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+        
+        # Fix non-monotonic index
+        if 'timestamp' in fixed_data.columns:
+            if not fixed_data['timestamp'].is_monotonic_increasing:
+                self.logger.info("📈 Sorting data by timestamp")
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+        
+        # Ensure proper data types using pipeline standards
+        try:
+            fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
+            self.logger.info("✅ Applied schema enforcement")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Schema enforcement failed: {e}")
+        
+        # Set datetime index if timestamp column exists
+        if 'timestamp' in fixed_data.columns and not isinstance(fixed_data.index, pd.DatetimeIndex):
+            try:
+                fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
+                fixed_data = fixed_data.set_index('timestamp')
+                self.logger.info("📅 Set datetime index")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not set datetime index: {e}")
+        
+        # Final validation
+        final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
+        self.logger.info(f"✅ Final data quality score: {final_validation.quality_score:.2f}")
+        
+        return fixed_data
     
     @monitor_function_calls
     @validate_function_inputs
@@ -500,6 +562,9 @@ class SROptimizationStep(BaseStep):
                 data = training_input.get("validated_data")
             if data is None:
                 raise ValueError("No DataFrame available from step 2. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input.")
+            
+            # Validate and fix data quality issues using pipeline standards
+            data = self._validate_and_fix_input_data(data)
             
             self.logger.info(f"📊 Processing {len(data)} rows of data")
             self.logger.info(f"📊 Data columns: {list(data.columns)}")

@@ -22,21 +22,8 @@ from collections import defaultdict, Counter
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import analyzers (ONLY import-free analysis related)
-from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
-from analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
-from analyzers.syntax_validator import SyntaxValidator
-from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
-from analyzers.linter_analyzer import LinterAnalyzer
-from analyzers.type_checker import TypeChecker
-
-# Import scripts (ONLY import-free analysis related)
-from scripts.detect_circular_imports import ImportAnalyzer
-# from extract_non_pandas_tests import ExtractNonPandasTests  # Deleted during cleanup
-# from analyze_undefined_names import AnalyzeUndefinedNames  # Deleted during cleanup
-
-# Import core components
-from core.config import get_default_config
+# Note: This pipeline is designed to be import-free and doesn't use external analyzers
+# All analysis is performed using only Python's built-in ast module
 
 
 class ImportFreeAnalyzer:
@@ -48,17 +35,27 @@ class ImportFreeAnalyzer:
     
     def find_python_files(self) -> List[Path]:
         """Find all Python files in the project, respecting .gitignore patterns."""
-        from ..utils.gitignore_parser import filter_ignored_files
-        python_files = []
-        for py_file in self.project_root.rglob("*.py"):
-            # Skip common directories to avoid
-            if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
-                continue
-            python_files.append(py_file)
-        
-        # Filter out ignored files
-        python_files = filter_ignored_files(python_files, self.project_root)
-        return python_files
+        try:
+            from code_quality.utils.gitignore_parser import filter_ignored_files
+            python_files = []
+            for py_file in self.project_root.rglob("*.py"):
+                # Skip common directories to avoid
+                if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
+                    continue
+                python_files.append(py_file)
+            
+            # Filter out ignored files
+            python_files = filter_ignored_files(python_files, self.project_root)
+            return python_files
+        except ImportError:
+            # Fallback: simple file finding without gitignore filtering
+            python_files = []
+            for py_file in self.project_root.rglob("*.py"):
+                # Skip common directories to avoid
+                if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
+                    continue
+                python_files.append(py_file)
+            return python_files
     
     def parse_file(self, file_path: Path) -> ast.AST:
         """Parse a Python file and return AST."""

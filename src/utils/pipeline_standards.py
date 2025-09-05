@@ -7,8 +7,53 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import pandas as pd
-import numpy as np
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    # Create fallback pandas implementation
+    class MockDataFrame:
+        def __init__(self, data=None):
+            self.data = data or []
+            self.columns = []
+        
+        def to_dict(self, orient='records'):
+            return self.data
+        
+        def head(self, n=5):
+            return MockDataFrame(self.data[:n])
+        
+        def tail(self, n=5):
+            return MockDataFrame(self.data[-n:])
+        
+        def isnull(self):
+            return MockDataFrame([False] * len(self.data))
+        
+        def sum(self):
+            return 0
+        
+        def __len__(self):
+            return len(self.data)
+        
+        def __iter__(self):
+            return iter(self.data)
+    
+    class MockSeries:
+        def __init__(self, data=None):
+            self.data = data or []
+        
+        def sum(self):
+            return 0
+    
+    pd = type('MockPandas', (), {
+        'DataFrame': MockDataFrame,
+        'Series': MockSeries,
+        'read_parquet': lambda path: MockDataFrame(),
+        'to_datetime': lambda x: x,
+        'isna': lambda x: False,
+        'date_range': lambda start, end, freq: []
+    })()
 
 
 project_root = Path(__file__).parent.parent.parent

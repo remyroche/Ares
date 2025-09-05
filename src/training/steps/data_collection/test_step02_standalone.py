@@ -10,6 +10,7 @@ import sys
 import time
 import traceback
 import inspect
+import contextvars
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Callable, Union
 from datetime import datetime
@@ -398,6 +399,9 @@ class FunctionCallMonitor:
 # Global function call monitor
 function_monitor = FunctionCallMonitor()
 
+# Context variable for tracking current function call
+current_call_context = contextvars.ContextVar('current_call_id', default=None)
+
 def comprehensive_function_monitoring(
     validate_inputs: bool = True,
     validate_outputs: bool = True,
@@ -410,7 +414,14 @@ def comprehensive_function_monitoring(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs) -> Any:
-            call_id = function_monitor.start_function_call(func, args, kwargs)
+            # Get parent call ID from context
+            parent_call_id = current_call_context.get()
+            
+            # Start function call with parent context
+            call_id = function_monitor.start_function_call(func, args, kwargs, parent_call_id)
+            
+            # Set this call as the current context for child calls
+            token = current_call_context.set(call_id)
             
             try:
                 # Input validation
@@ -441,10 +452,20 @@ def comprehensive_function_monitoring(
                     return await _retry_function_call(func, args, kwargs, retry_attempts, call_id)
                 
                 raise
+            finally:
+                # Reset context to parent
+                current_call_context.reset(token)
         
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs) -> Any:
-            call_id = function_monitor.start_function_call(func, args, kwargs)
+            # Get parent call ID from context
+            parent_call_id = current_call_context.get()
+            
+            # Start function call with parent context
+            call_id = function_monitor.start_function_call(func, args, kwargs, parent_call_id)
+            
+            # Set this call as the current context for child calls
+            token = current_call_context.set(call_id)
             
             try:
                 # Input validation
@@ -469,6 +490,9 @@ def comprehensive_function_monitoring(
                     return _retry_function_call_sync(func, args, kwargs, retry_attempts, call_id)
                 
                 raise
+            finally:
+                # Reset context to parent
+                current_call_context.reset(token)
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     
@@ -598,10 +622,21 @@ async def _retry_function_call(func: Callable, args: tuple, kwargs: dict, retry_
     """Retry function call with monitoring."""
     for attempt in range(retry_attempts):
         try:
-            retry_call_id = function_monitor.start_function_call(func, args, kwargs, original_call_id)
-            result = await func(*args, **kwargs)
-            function_monitor.complete_function_call(retry_call_id, result)
-            return result
+            # Get parent call ID from context
+            parent_call_id = current_call_context.get()
+            retry_call_id = function_monitor.start_function_call(func, args, kwargs, parent_call_id)
+            
+            # Set this call as the current context for child calls
+            token = current_call_context.set(retry_call_id)
+            
+            try:
+                result = await func(*args, **kwargs)
+                function_monitor.complete_function_call(retry_call_id, result)
+                return result
+            finally:
+                # Reset context to parent
+                current_call_context.reset(token)
+                
         except Exception as e:
             function_monitor.complete_function_call(retry_call_id, error=e)
             if attempt == retry_attempts - 1:
@@ -612,10 +647,21 @@ def _retry_function_call_sync(func: Callable, args: tuple, kwargs: dict, retry_a
     """Retry function call with monitoring (sync version)."""
     for attempt in range(retry_attempts):
         try:
-            retry_call_id = function_monitor.start_function_call(func, args, kwargs, original_call_id)
-            result = func(*args, **kwargs)
-            function_monitor.complete_function_call(retry_call_id, result)
-            return result
+            # Get parent call ID from context
+            parent_call_id = current_call_context.get()
+            retry_call_id = function_monitor.start_function_call(func, args, kwargs, parent_call_id)
+            
+            # Set this call as the current context for child calls
+            token = current_call_context.set(retry_call_id)
+            
+            try:
+                result = func(*args, **kwargs)
+                function_monitor.complete_function_call(retry_call_id, result)
+                return result
+            finally:
+                # Reset context to parent
+                current_call_context.reset(token)
+                
         except Exception as e:
             function_monitor.complete_function_call(retry_call_id, error=e)
             if attempt == retry_attempts - 1:

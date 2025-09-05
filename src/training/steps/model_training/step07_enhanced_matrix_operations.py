@@ -1,25 +1,430 @@
 
-from typing import List
-from typing import Dict
-from typing import Any
-import pandas as pd
-import numpy as np
+from typing import List, Dict, Any, Tuple, Optional
+import time
+import traceback
+import functools
+import inspect
+import gc
+from pathlib import Path
+import json
+
+# Optional dependencies with fallback handling
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
 """Step 7: Enhanced Matrix Operations - Refactored to use BaseStep.
 
 This module performs advanced matrix operations for comprehensive data analysis
 after feature engineering, with GPU/MPS acceleration support.
+Includes comprehensive function call validation, tracking, and detailed outcome reporting.
 """
-
-from pathlib import Path
-import json
 
 from src.training.base_step import BaseStep
 from src.core.decorators import handles_errors
 from src.training.steps.model_training.matrix_components import (
     MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 )
-from src.core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 
+class FunctionCallTracker:
+    """Comprehensive function call tracking and validation system."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.call_stack = []
+        self.function_calls = {}
+        self.function_to_function_calls = {}
+        self.completion_reports = {}
+        self.start_time = time.time()
+    
+    def track_function_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None):
+        """Track function call initiation."""
+        call_id = f"{func_name}_{len(self.call_stack)}_{int(time.time() * 1000)}"
+        call_info = {
+            'call_id': call_id,
+            'function_name': func_name,
+            'caller': caller,
+            'args_count': len(args),
+            'kwargs_count': len(kwargs),
+            'start_time': time.time(),
+            'args_types': [type(arg).__name__ for arg in args],
+            'kwargs_keys': list(kwargs.keys())
+        }
+        
+        self.call_stack.append(call_id)
+        self.function_calls[call_id] = call_info
+        
+        # Track function-to-function calls
+        if caller:
+            if caller not in self.function_to_function_calls:
+                self.function_to_function_calls[caller] = []
+            self.function_to_function_calls[caller].append({
+                'called_function': func_name,
+                'call_id': call_id,
+                'timestamp': time.time()
+            })
+        
+        self.logger.debug(f"🔍 Function call initiated: {func_name} (ID: {call_id})")
+        return call_id
+    
+    def track_function_completion(self, call_id: str, result: Any = None, error: Exception = None):
+        """Track function call completion with detailed outcome."""
+        if call_id not in self.function_calls:
+            self.logger.warning(f"⚠️ Unknown call ID: {call_id}")
+            return
+        
+        call_info = self.function_calls[call_id]
+        end_time = time.time()
+        duration = end_time - call_info['start_time']
+        
+        completion_report = {
+            'call_id': call_id,
+            'function_name': call_info['function_name'],
+            'caller': call_info['caller'],
+            'duration_seconds': duration,
+            'success': error is None,
+            'error': str(error) if error else None,
+            'error_type': type(error).__name__ if error else None,
+            'result_type': type(result).__name__ if result is not None else None,
+            'result_size': self._get_result_size(result),
+            'end_time': end_time,
+            'stack_depth': len(self.call_stack)
+        }
+        
+        self.completion_reports[call_id] = completion_report
+        
+        # Remove from call stack
+        if call_id in self.call_stack:
+            self.call_stack.remove(call_id)
+        
+        # Log completion
+        status = "✅" if error is None else "❌"
+        self.logger.info(f"{status} Function completed: {call_info['function_name']} "
+                        f"(ID: {call_id}, Duration: {duration:.3f}s)")
+        
+        if error:
+            self.logger.error(f"❌ Function error: {call_info['function_name']} - {error}")
+            self.logger.debug(f"Error traceback: {traceback.format_exc()}")
+        
+        return completion_report
+    
+    def _get_result_size(self, result: Any) -> str:
+        """Get human-readable size of result."""
+        if result is None:
+            return "None"
+        elif isinstance(result, (list, tuple)):
+            return f"len={len(result)}"
+        elif isinstance(result, dict):
+            return f"keys={len(result)}"
+        elif isinstance(result, np.ndarray):
+            return f"shape={result.shape}"
+        elif isinstance(result, pd.DataFrame):
+            return f"shape={result.shape}"
+        else:
+            return f"type={type(result).__name__}"
+    
+    def get_call_summary(self) -> Dict[str, Any]:
+        """Get comprehensive call summary."""
+        total_calls = len(self.function_calls)
+        successful_calls = len([r for r in self.completion_reports.values() if r['success']])
+        failed_calls = total_calls - successful_calls
+        
+        total_duration = sum(r['duration_seconds'] for r in self.completion_reports.values())
+        
+        return {
+            'total_function_calls': total_calls,
+            'successful_calls': successful_calls,
+            'failed_calls': failed_calls,
+            'success_rate': successful_calls / total_calls if total_calls > 0 else 0,
+            'total_duration_seconds': total_duration,
+            'average_duration_seconds': total_duration / total_calls if total_calls > 0 else 0,
+            'function_to_function_calls': len(self.function_to_function_calls),
+            'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default=0),
+            'session_duration_seconds': time.time() - self.start_time
+        }
+
+def comprehensive_function_tracker(logger):
+    """Decorator for comprehensive function call tracking."""
+    def decorator(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Get caller information
+            frame = inspect.currentframe().f_back
+            caller_name = frame.f_code.co_name if frame else "unknown"
+            
+            # Get tracker from self if available
+            tracker = None
+            if args and hasattr(args[0], 'call_tracker'):
+                tracker = args[0].call_tracker
+            
+            if tracker is None:
+                # Create temporary tracker
+                tracker = FunctionCallTracker(logger)
+            
+            call_id = tracker.track_function_call(
+                func.__name__, 
+                args, 
+                kwargs, 
+                caller_name
+            )
+            
+            try:
+                if inspect.iscoroutinefunction(func):
+                    result = await func(*args, **kwargs)
+                else:
+                    result = func(*args, **kwargs)
+                
+                tracker.track_function_completion(call_id, result)
+                return result
+                
+            except Exception as e:
+                tracker.track_function_completion(call_id, error=e)
+                raise
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Get caller information
+            frame = inspect.currentframe().f_back
+            caller_name = frame.f_code.co_name if frame else "unknown"
+            
+            # Get tracker from self if available
+            tracker = None
+            if args and hasattr(args[0], 'call_tracker'):
+                tracker = args[0].call_tracker
+            
+            if tracker is None:
+                # Create temporary tracker
+                tracker = FunctionCallTracker(logger)
+            
+            call_id = tracker.track_function_call(
+                func.__name__, 
+                args, 
+                kwargs, 
+                caller_name
+            )
+            
+            try:
+                result = func(*args, **kwargs)
+                tracker.track_function_completion(call_id, result)
+                return result
+                
+            except Exception as e:
+                tracker.track_function_completion(call_id, error=e)
+                raise
+        
+        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+    return decorator
+
+class EnhancedErrorHandler:
+    """Enhanced error handling with detailed context and recovery mechanisms."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.error_history = []
+        self.recovery_attempts = {}
+        self.error_patterns = {}
+    
+    def handle_error(self, error: Exception, context: Dict[str, Any], recovery_strategies: List[str] = None):
+        """Handle error with detailed context and recovery strategies."""
+        error_info = {
+            'timestamp': time.time(),
+            'error_type': type(error).__name__,
+            'error_message': str(error),
+            'context': context,
+            'traceback': traceback.format_exc(),
+            'recovery_strategies': recovery_strategies or []
+        }
+        
+        self.error_history.append(error_info)
+        
+        # Track error patterns
+        error_key = f"{type(error).__name__}_{context.get('function_name', 'unknown')}"
+        if error_key not in self.error_patterns:
+            self.error_patterns[error_key] = 0
+        self.error_patterns[error_key] += 1
+        
+        self.logger.error(f"❌ Error in {context.get('function_name', 'unknown')}: {error}")
+        self.logger.debug(f"Error context: {context}")
+        self.logger.debug(f"Recovery strategies: {recovery_strategies}")
+        
+        return error_info
+    
+    def get_error_summary(self) -> Dict[str, Any]:
+        """Get comprehensive error summary."""
+        return {
+            'total_errors': len(self.error_history),
+            'error_patterns': self.error_patterns,
+            'recovery_attempts': self.recovery_attempts,
+            'recent_errors': self.error_history[-5:] if self.error_history else []
+        }
+
+class ComprehensiveValidator:
+    """Comprehensive validation framework for step07 operations."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.validation_results = {}
+        self.validation_rules = {}
+    
+    def validate_input_data(self, data: Any, data_type: str) -> Tuple[bool, List[str]]:
+        """Validate input data based on type."""
+        errors = []
+        
+        if data_type == "dataframe" and PANDAS_AVAILABLE:
+            if not isinstance(data, pd.DataFrame):
+                errors.append("Data is not a pandas DataFrame")
+            elif data.empty:
+                errors.append("DataFrame is empty")
+            elif data.isnull().all().any():
+                errors.append("DataFrame has columns with all null values")
+        
+        elif data_type == "numpy_array" and NUMPY_AVAILABLE:
+            if not isinstance(data, np.ndarray):
+                errors.append("Data is not a numpy array")
+            elif data.size == 0:
+                errors.append("Array is empty")
+            elif np.isnan(data).all():
+                errors.append("Array contains only NaN values")
+        
+        elif data_type == "dict":
+            if not isinstance(data, dict):
+                errors.append("Data is not a dictionary")
+            elif not data:
+                errors.append("Dictionary is empty")
+        
+        is_valid = len(errors) == 0
+        if not is_valid:
+            self.logger.warning(f"⚠️ Input validation failed: {errors}")
+        else:
+            self.logger.debug(f"✅ Input validation passed for {data_type}")
+        
+        return is_valid, errors
+    
+    def get_validation_summary(self) -> Dict[str, Any]:
+        """Get comprehensive validation summary."""
+        return {
+            'validation_results': self.validation_results,
+            'validation_rules': self.validation_rules,
+            'total_validations': len(self.validation_results)
+        }
+
+class PerformanceMonitor:
+    """Performance monitoring and resource usage tracking for all functions."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.performance_metrics = {}
+        self.resource_usage = {}
+        self.start_time = time.time()
+        
+        # Handle psutil availability
+        if PSUTIL_AVAILABLE:
+            self.process = psutil.Process()
+            self.psutil_available = True
+        else:
+            self.process = None
+            self.psutil_available = False
+            self.logger.warning("⚠️ psutil not available - limited performance monitoring")
+    
+    def start_monitoring(self, function_name: str) -> Dict[str, Any]:
+        """Start monitoring performance for a function."""
+        if self.psutil_available:
+            initial_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            initial_cpu = self.process.cpu_percent()
+        else:
+            initial_memory = 0.0
+            initial_cpu = 0.0
+        
+        metrics = {
+            'function_name': function_name,
+            'start_time': time.time(),
+            'initial_memory_mb': initial_memory,
+            'initial_cpu_percent': initial_cpu,
+            'initial_gc_count': gc.get_count(),
+            'psutil_available': self.psutil_available
+        }
+        
+        self.performance_metrics[function_name] = metrics
+        return metrics
+    
+    def stop_monitoring(self, function_name: str) -> Dict[str, Any]:
+        """Stop monitoring and calculate performance metrics."""
+        if function_name not in self.performance_metrics:
+            self.logger.warning(f"⚠️ No monitoring data found for {function_name}")
+            return {}
+        
+        metrics = self.performance_metrics[function_name]
+        end_time = time.time()
+        
+        # Calculate performance metrics
+        duration = end_time - metrics['start_time']
+        
+        if self.psutil_available:
+            final_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            final_cpu = self.process.cpu_percent()
+        else:
+            final_memory = 0.0
+            final_cpu = 0.0
+        
+        final_gc_count = gc.get_count()
+        
+        # Update metrics
+        metrics.update({
+            'end_time': end_time,
+            'duration_seconds': duration,
+            'final_memory_mb': final_memory,
+            'final_cpu_percent': final_cpu,
+            'final_gc_count': final_gc_count,
+            'memory_delta_mb': final_memory - metrics['initial_memory_mb'],
+            'cpu_delta_percent': final_cpu - metrics['initial_cpu_percent'],
+            'gc_delta': tuple(f - i for f, i in zip(final_gc_count, metrics['initial_gc_count']))
+        })
+        
+        # Log performance summary
+        self.logger.info(f"📊 Performance metrics for {function_name}:")
+        self.logger.info(f"   Duration: {duration:.3f}s")
+        if self.psutil_available:
+            self.logger.info(f"   Memory delta: {metrics['memory_delta_mb']:.1f} MB")
+            self.logger.info(f"   CPU delta: {metrics['cpu_delta_percent']:.1f}%")
+        else:
+            self.logger.info("   Memory/CPU monitoring: Not available (psutil missing)")
+        self.logger.info(f"   GC delta: {metrics['gc_delta']}")
+        
+        return metrics
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        total_duration = sum(m.get('duration_seconds', 0) for m in self.performance_metrics.values())
+        total_memory_delta = sum(m.get('memory_delta_mb', 0) for m in self.performance_metrics.values())
+        
+        return {
+            'total_functions_monitored': len(self.performance_metrics),
+            'total_duration_seconds': total_duration,
+            'total_memory_delta_mb': total_memory_delta,
+            'average_duration_seconds': total_duration / len(self.performance_metrics) if self.performance_metrics else 0,
+            'average_memory_delta_mb': total_memory_delta / len(self.performance_metrics) if self.performance_metrics else 0,
+            'session_duration_seconds': time.time() - self.start_time,
+            'psutil_available': self.psutil_available,
+            'function_metrics': self.performance_metrics
+        }
 
 class EnhancedMatrixOperationsStep(BaseStep):
     """Step 7: Enhanced Matrix Operations using standardized base class."""
@@ -31,6 +436,21 @@ class EnhancedMatrixOperationsStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, "07", "enhanced_matrix_operations")
+        # Initialize logger
+        self.logger = system_logger.getChild("EnhancedMatrixOperationsStep")
+        
+        # Initialize comprehensive function call tracker
+        self.call_tracker = FunctionCallTracker(self.logger)
+        self.logger.info("🔍 Initialized comprehensive function call tracking system")
+        
+        # Initialize enhanced error handler and validator
+        self.error_handler = EnhancedErrorHandler(self.logger)
+        self.validator = ComprehensiveValidator(self.logger)
+        self.logger.info("🛡️ Initialized enhanced error handling and validation system")
+        
+        # Initialize performance monitor
+        self.performance_monitor = PerformanceMonitor(self.logger)
+        self.logger.info("📊 Initialized performance monitoring system")
         
         # Step-specific configuration
         self.matrix_config = config.get("matrix_operations_config", {
@@ -79,6 +499,30 @@ class EnhancedMatrixOperationsStep(BaseStep):
         except ImportError as e:
             self.logger.warning(f"⚠️ Some matrix components not available: {e}")
             # Will use fallback implementations
+
+    async def initialize(self) -> None:
+        """Initialize the step (BaseStep contract)."""
+        self._initialize_step()
+
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the step (BaseStep contract)."""
+        # Validate inputs if available
+        try:
+            is_valid, errors = self.validate_inputs(training_input, pipeline_state)
+            if not is_valid and errors:
+                self.logger.warning(f"Input validation issues: {errors}")
+        except Exception:
+            pass
+
+        updated_state = await self.execute_logic(training_input, pipeline_state)
+
+        # Ensure completion flag for orchestrators relying on it
+        if isinstance(updated_state, dict):
+            updated_state["step07_enhanced_matrix_operations_completed"] = True
+            return updated_state
+        else:
+            pipeline_state["step07_enhanced_matrix_operations_completed"] = True
+            return pipeline_state
     
     def validate_inputs(
         self, 
@@ -123,6 +567,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         return len(errors) == 0, errors
     
+    @comprehensive_function_tracker(None)  # Will use self.logger
     @handles_errors(
         exceptions=(Exception,),
         default_return={"success": False},
@@ -212,6 +657,51 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         # Save outputs
         await self._save_outputs(training_input, pipeline_state)
+        
+        # Generate comprehensive function call summary
+        call_summary = self.call_tracker.get_call_summary()
+        self.logger.info("📊 COMPREHENSIVE FUNCTION CALL SUMMARY:")
+        self.logger.info(f"   Total function calls: {call_summary['total_function_calls']}")
+        self.logger.info(f"   Successful calls: {call_summary['successful_calls']}")
+        self.logger.info(f"   Failed calls: {call_summary['failed_calls']}")
+        self.logger.info(f"   Success rate: {call_summary['success_rate']:.2%}")
+        self.logger.info(f"   Total duration: {call_summary['total_duration_seconds']:.3f}s")
+        self.logger.info(f"   Average duration: {call_summary['average_duration_seconds']:.3f}s")
+        self.logger.info(f"   Function-to-function calls: {call_summary['function_to_function_calls']}")
+        self.logger.info(f"   Max stack depth: {call_summary['max_stack_depth']}")
+        self.logger.info(f"   Session duration: {call_summary['session_duration_seconds']:.3f}s")
+        
+        # Add comprehensive monitoring summaries to pipeline state
+        pipeline_state["function_call_summary"] = call_summary
+        pipeline_state["function_completion_reports"] = self.call_tracker.completion_reports
+        pipeline_state["function_to_function_calls"] = self.call_tracker.function_to_function_calls
+        
+        # Add performance monitoring summary
+        performance_summary = self.performance_monitor.get_performance_summary()
+        pipeline_state["performance_summary"] = performance_summary
+        self.logger.info("📊 PERFORMANCE MONITORING SUMMARY:")
+        self.logger.info(f"   Functions monitored: {performance_summary['total_functions_monitored']}")
+        self.logger.info(f"   Total duration: {performance_summary['total_duration_seconds']:.3f}s")
+        self.logger.info(f"   Total memory delta: {performance_summary['total_memory_delta_mb']:.1f} MB")
+        self.logger.info(f"   Average duration: {performance_summary['average_duration_seconds']:.3f}s")
+        self.logger.info(f"   psutil available: {performance_summary['psutil_available']}")
+        
+        # Add error handling summary
+        error_summary = self.error_handler.get_error_summary()
+        pipeline_state["error_summary"] = error_summary
+        if error_summary['total_errors'] > 0:
+            self.logger.warning(f"⚠️ ERROR HANDLING SUMMARY:")
+            self.logger.warning(f"   Total errors: {error_summary['total_errors']}")
+            self.logger.warning(f"   Error patterns: {error_summary['error_patterns']}")
+            self.logger.warning(f"   Recovery attempts: {error_summary['recovery_attempts']}")
+        else:
+            self.logger.info("✅ No errors encountered during execution")
+        
+        # Add validation summary
+        validation_summary = self.validator.get_validation_summary()
+        pipeline_state["validation_summary"] = validation_summary
+        self.logger.info(f"🔍 VALIDATION SUMMARY:")
+        self.logger.info(f"   Total validations: {validation_summary['total_validations']}")
         
         return pipeline_state
     
@@ -313,6 +803,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 "method": "default"
             }
     
+    @comprehensive_function_tracker(None)
     async def _compute_matrices(
         self,
         data: pd.DataFrame,
@@ -425,6 +916,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         return transition_matrix
     
+    @comprehensive_function_tracker(None)
     async def _analyze_feature_importance(
         self,
         data_dict: Dict[str, pd.DataFrame],

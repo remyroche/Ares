@@ -302,9 +302,14 @@ class SimpleEnhancedDeadCodePipeline:
                 "execution_time": execution_time,
                 "report_path": str(report_path),
                 "total_issues": len(issues),
-                "high_confidence_issues": len([i for i in issues if i.confidence > 80]),
-                "medium_confidence_issues": len([i for i in issues if 60 <= i.confidence <= 80]),
-                "low_confidence_issues": len([i for i in issues if i.confidence < 60]),
+                "confidence_100": len([i for i in issues if i.confidence >= 100]),
+                "confidence_90": len([i for i in issues if 90 <= i.confidence < 100]),
+                "confidence_80": len([i for i in issues if 80 <= i.confidence < 90]),
+                "confidence_70": len([i for i in issues if 70 <= i.confidence < 80]),
+                "confidence_60": len([i for i in issues if 60 <= i.confidence < 70]),
+                "confidence_50": len([i for i in issues if 50 <= i.confidence < 60]),
+                "confidence_40": len([i for i in issues if 40 <= i.confidence < 50]),
+                "confidence_below_40": len([i for i in issues if i.confidence < 40]),
                 "issues": issues
             }
             
@@ -357,62 +362,66 @@ class SimpleEnhancedDeadCodePipeline:
         print("SIMPLE ENHANCED DEAD CODE ANALYSIS RESULTS")
         print("="*80)
         
-        # Overall statistics
+        # Overall statistics with 7 thresholds
         total_issues = len(issues)
-        high_confidence = len([i for i in issues if i.confidence > 80])
-        medium_confidence = len([i for i in issues if 60 <= i.confidence <= 80])
-        low_confidence = len([i for i in issues if i.confidence < 60])
+        
+        # Calculate counts for each threshold
+        confidence_100 = len([i for i in issues if i.confidence >= 100])
+        confidence_90 = len([i for i in issues if 90 <= i.confidence < 100])
+        confidence_80 = len([i for i in issues if 80 <= i.confidence < 90])
+        confidence_70 = len([i for i in issues if 70 <= i.confidence < 80])
+        confidence_60 = len([i for i in issues if 60 <= i.confidence < 70])
+        confidence_50 = len([i for i in issues if 50 <= i.confidence < 60])
+        confidence_40 = len([i for i in issues if 40 <= i.confidence < 50])
+        confidence_below_40 = len([i for i in issues if i.confidence < 40])
         
         print(f"📊 Total Issues Found: {total_issues}")
-        print(f"🎯 High Confidence Issues (>80%): {high_confidence}")
-        print(f"⚖️  Medium Confidence Issues (60-80%): {medium_confidence}")
-        print(f"⚠️  Low Confidence Issues (<60%): {low_confidence}")
         print()
         
-        # Show confidence distribution
+        # Show detailed confidence distribution
         if total_issues > 0:
-            print("📈 CONFIDENCE DISTRIBUTION:")
-            high_pct = (high_confidence / total_issues) * 100
-            medium_pct = (medium_confidence / total_issues) * 100
-            low_pct = (low_confidence / total_issues) * 100
-            print(f"   High Confidence:   {high_confidence:3d} ({high_pct:5.1f}%)")
-            print(f"   Medium Confidence: {medium_confidence:3d} ({medium_pct:5.1f}%)")
-            print(f"   Low Confidence:    {low_confidence:3d} ({low_pct:5.1f}%)")
+            print("📈 DETAILED CONFIDENCE DISTRIBUTION:")
+            print(f"   🎯 100% Confidence:     {confidence_100:3d} ({confidence_100/total_issues*100:5.1f}%)")
+            print(f"   🎯 90-99% Confidence:   {confidence_90:3d} ({confidence_90/total_issues*100:5.1f}%)")
+            print(f"   🎯 80-89% Confidence:   {confidence_80:3d} ({confidence_80/total_issues*100:5.1f}%)")
+            print(f"   ⚖️  70-79% Confidence:   {confidence_70:3d} ({confidence_70/total_issues*100:5.1f}%)")
+            print(f"   ⚖️  60-69% Confidence:   {confidence_60:3d} ({confidence_60/total_issues*100:5.1f}%)")
+            print(f"   ⚠️  50-59% Confidence:   {confidence_50:3d} ({confidence_50/total_issues*100:5.1f}%)")
+            print(f"   ⚠️  40-49% Confidence:   {confidence_40:3d} ({confidence_40/total_issues*100:5.1f}%)")
+            print(f"   ⚠️  <40% Confidence:     {confidence_below_40:3d} ({confidence_below_40/total_issues*100:5.1f}%)")
             print()
         
         # Show some example issues with confidence levels
         if issues:
             print("🔍 EXAMPLE ISSUES BY CONFIDENCE LEVEL:")
             
-            # Show top 10 high confidence issues
-            high_conf_issues = [i for i in issues if i.confidence > 80][:10]
-            if high_conf_issues:
-                print("   🎯 HIGH CONFIDENCE ISSUES (>80%):")
-                for i, issue in enumerate(high_conf_issues, 1):
-                    print(f"      {i:2d}. {issue.confidence:5.1f}% - {issue.function_name or issue.class_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
-                    if issue.filtering_reasons:
-                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
-                print()
+            # Show examples from each confidence threshold
+            confidence_ranges = [
+                (100, "100% Confidence", "🎯"),
+                (90, "90-99% Confidence", "🎯"),
+                (80, "80-89% Confidence", "🎯"),
+                (70, "70-79% Confidence", "⚖️ "),
+                (60, "60-69% Confidence", "⚖️ "),
+                (50, "50-59% Confidence", "⚠️ "),
+                (40, "40-49% Confidence", "⚠️ "),
+                (0, "<40% Confidence", "⚠️ ")
+            ]
             
-            # Show top 10 medium confidence issues
-            medium_conf_issues = [i for i in issues if 60 <= i.confidence <= 80][:10]
-            if medium_conf_issues:
-                print("   ⚖️  MEDIUM CONFIDENCE ISSUES (60-80%):")
-                for i, issue in enumerate(medium_conf_issues, 1):
-                    print(f"      {i:2d}. {issue.confidence:5.1f}% - {issue.function_name or issue.class_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
-                    if issue.filtering_reasons:
-                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
-                print()
-            
-            # Show top 10 low confidence issues
-            low_conf_issues = [i for i in issues if i.confidence < 60][:10]
-            if low_conf_issues:
-                print("   ⚠️  LOW CONFIDENCE ISSUES (<60%):")
-                for i, issue in enumerate(low_conf_issues, 1):
-                    print(f"      {i:2d}. {issue.confidence:5.1f}% - {issue.function_name or issue.class_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
-                    if issue.filtering_reasons:
-                        print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
-                print()
+            for min_conf, label, emoji in confidence_ranges:
+                if min_conf == 100:
+                    range_issues = [i for i in issues if i.confidence >= 100][:5]
+                elif min_conf == 0:
+                    range_issues = [i for i in issues if i.confidence < 40][:5]
+                else:
+                    range_issues = [i for i in issues if min_conf <= i.confidence < min_conf + 10][:5]
+                
+                if range_issues:
+                    print(f"   {emoji} {label.upper()}:")
+                    for i, issue in enumerate(range_issues, 1):
+                        print(f"      {i:2d}. {issue.confidence:5.1f}% - {issue.function_name or issue.class_name or 'Unknown'} in {Path(issue.file_path).name}:{issue.line_number}")
+                        if issue.filtering_reasons:
+                            print(f"         Reasons: {', '.join(issue.filtering_reasons[:2])}")
+                    print()
         
         # Top files with issues
         if issues:
@@ -449,9 +458,14 @@ def main():
         print(f"\n✅ Simple Enhanced Dead Code Analysis completed successfully!")
         print(f"⏱️  Execution time: {results['execution_time']:.2f} seconds")
         print(f"📊 Found {results['total_issues']} potential dead code issues")
-        print(f"🎯 High confidence issues: {results['high_confidence_issues']}")
-        print(f"⚖️  Medium confidence issues: {results['medium_confidence_issues']}")
-        print(f"⚠️  Low confidence issues: {results['low_confidence_issues']}")
+        print(f"🎯 100% Confidence: {results['confidence_100']}")
+        print(f"🎯 90-99% Confidence: {results['confidence_90']}")
+        print(f"🎯 80-89% Confidence: {results['confidence_80']}")
+        print(f"⚖️  70-79% Confidence: {results['confidence_70']}")
+        print(f"⚖️  60-69% Confidence: {results['confidence_60']}")
+        print(f"⚠️  50-59% Confidence: {results['confidence_50']}")
+        print(f"⚠️  40-49% Confidence: {results['confidence_40']}")
+        print(f"⚠️  <40% Confidence: {results['confidence_below_40']}")
     else:
         print(f"\n❌ Analysis failed: {results.get('error', 'Unknown error')}")
         sys.exit(1)

@@ -26,10 +26,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import lightgbm as lgb
 import xgboost as xgb
-try:
-    import shap
 import time
 
+try:
+    import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False

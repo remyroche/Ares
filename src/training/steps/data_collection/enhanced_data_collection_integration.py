@@ -353,7 +353,8 @@ async def demonstrate_enhanced_validation():
 import pandas as pd
 from typing import Any
 from typing import Dict
-    
+
+def test_klines_validation():
     # Test klines validation
     klines_validator = get_validator(DataType.KLINES)
     test_klines_data = [

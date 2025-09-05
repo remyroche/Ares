@@ -21,9 +21,7 @@ from .explainability.integration import (
     explainable_sr_prediction,
     explainable_analyst_prediction,
     explainable_trading_decision,
-    FeatureExtractor
-)
-
+    FeatureExtractor,
     ExplanationVisualizer,
     DecisionTraceVisualizer
 )

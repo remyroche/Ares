@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import time
-import numpy as np
 
 
 def run_flake8(directory):
@@ -116,13 +115,13 @@ def count_python_files(directory):
     count = 0
     for _root, dirs, files in os.walk(directory):
         # Skip common directories
-        dirs[:] = [d for d in dirs if d not in ["__pycache__", ".git", "venv", "env"]]
+        dirs[:] = [d for d in dirs if d not in ["__pycache__", ".git", "venv", "env", "node_modules", ".pytest_cache", "build", "dist", "mlruns", "artifacts", "logs", "log"]]
         count += sum(1 for f in files if f.endswith(".py"))
     return count
 
 def main():
-    """Run all analyses on src/utils."""
-    directory = "src/utils"
+    """Run all analyses on the whole repository."""
+    directory = "."
 
     if not os.path.exists(directory):
         print(f"Error: Directory {directory} not found!")
@@ -207,4 +206,4 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    sys.exit(await main())
+    sys.exit(main())

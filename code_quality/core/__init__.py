@@ -1,10 +1,8 @@
 """Core modules for code quality analysis."""
 
-from .config import CodeQualityConfig, get_default_config, AnalysisConfig
+from .config import AnalysisConfig
 
 __all__ = [
-    'CodeQualityConfig',
-    'get_default_config',
     'AnalysisConfig'
 ]
 

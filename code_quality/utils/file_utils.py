@@ -105,6 +105,23 @@ def is_documentation_file(file_path: str) -> bool:
     return False
 
 
+def is_valid_python_file(file_path: Path) -> bool:
+    """Check if a file is a valid Python file."""
+    try:
+        if not file_path.suffix == '.py':
+            return False
+        
+        content = read_file_safely(file_path)
+        if content is None:
+            return False
+        
+        # Try to parse the AST to check for syntax errors
+        ast.parse(content, filename=str(file_path))
+        return True
+    except (SyntaxError, UnicodeDecodeError, Exception):
+        return False
+
+
 def get_directory_stats(directory: str) -> Dict[str, Any]:
     """Get statistics about a directory."""
     try:
@@ -176,32 +193,25 @@ def find_unused_imports(file_path: Path) -> List[str]:
                     for alias in node.names:
                         imports.append(f"{node.module}.{alias.name}")
         
-        # Simple check for usage (this is a basic implementation)
+        # Collect all used names
+        used_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                used_names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                # Handle attribute access like module.function
+                if isinstance(node.value, ast.Name):
+                    used_names.add(f"{node.value.id}.{node.attr}")
+        
+        # Find unused imports
         unused = []
         for imp in imports:
-            if imp not in content.replace('import', '').replace('from', ''):
+            if imp not in used_names and imp.split('.')[-1] not in used_names:
                 unused.append(imp)
         
         return unused
     except Exception:
         return []
-
-
-def is_valid_python_file(file_path: Path) -> bool:
-    """Check if a file is a valid Python file."""
-    try:
-        if not file_path.suffix == '.py':
-            return False
-        
-        content = read_file_safely(file_path)
-        if not content:
-            return False
-        
-        # Try to parse the file
-        tree = parse_ast_safely(content, file_path)
-        return tree is not None
-    except Exception:
-        return False
 
 
 class FileUtils:

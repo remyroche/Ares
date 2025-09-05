@@ -24,9 +24,10 @@ from functools import wraps
 from typing import Any
 
 import mlflow
+import pandas as pd
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from .logger import system_logger
+from ..core.decorators.errors import handles_errors
 from src.utils.mlflow_utils import (
     extract_training_metadata,
     log_artifacts_with_metadata,

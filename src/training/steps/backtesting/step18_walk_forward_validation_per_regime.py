@@ -8,13 +8,13 @@ import asyncio
 from pathlib import Path
 import json
 
-from .training.steps.step18_walk_forward_validation import Step18WalkForwardValidation
+from src.training.steps.model_training.validation.step18_walk_forward_validation import Step18WalkForwardValidation
 from src.training.steps.per_regime_integrator import (
     per_regime_processing,
     aggregate_regime_results,
     RegimeProcessingContext
 )
-from .training.steps.regime_continuity_decorator import per_regime_step
+from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
 from .core.decorators.errors import handles_errors
@@ -888,4 +888,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime walk forward validation result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

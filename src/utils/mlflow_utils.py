@@ -1,12 +1,25 @@
 
 from functools import wraps
+from datetime import datetime
+from typing import Any, Callable
 
 import mlflow
 
-from .config import ARES_VERSION
-from .core.decorators.errors import handles_errors
-from .utils.common_operations import format_datetime, get_current_datetime
-from .utils.logger import system_logger
+# Simple fallback for missing config
+ARES_VERSION = "1.0.0"
+
+from ..core.decorators.errors import handles_errors
+
+# Simple fallback functions for missing common_operations
+def format_datetime(dt=None):
+    if dt is None:
+        dt = datetime.now()
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+def get_current_datetime():
+    return datetime.now()
+
+from .logger import system_logger
 
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:

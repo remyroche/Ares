@@ -21,12 +21,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from typing import Any, Dict, List
 from .utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
-from typing import Any
-from typing import Dict
-from typing import List
-
     DataType, EnhancedDataValidator, get_validator, 
     ValidationSeverity, ValidationError
 )

@@ -2,7 +2,10 @@
 Detects various types of anomalies in market data.
 Extracted from raw_data_quality_checker.py
 """
-from .utils.logger import system_logger
+from typing import Any, Optional, List
+import pandas as pd
+import numpy as np
+from ..utils.logger import system_logger
 
 
 class AnomalyDetector:

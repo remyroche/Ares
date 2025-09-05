@@ -866,35 +866,23 @@ class DataReadingStep:
         self.logger.info('🔍 Validating data quality...')
         try:
             validation_result = self.standards.validate_data_quality(data, 'unified')
-<<<<<<< HEAD
-            computed_data_info = {
-=======
             
             # Create data_info dictionary
-            data_info = {
->>>>>>> origin/main
+            computed_data_info = {
                 'rows': len(data) if data is not None else 0,
                 'columns': list(data.columns) if data is not None else [],
                 'date_range': {
                     'start': data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None,
-<<<<<<< HEAD
                     'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None,
                 },
                 'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0,
             }
-=======
-                    'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None
-                },
-                'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0
-            }
             
             # Create validation_results with data_info
->>>>>>> origin/main
             validation_results = {
                 'passed': validation_result.passed,
                 'issues': [issue.message for issue in validation_result.issues],
                 'warnings': [warning.message for warning in validation_result.warnings],
-<<<<<<< HEAD
                 'data_info': computed_data_info,
                 'quality_score': validation_result.quality_score,
             }
@@ -907,10 +895,6 @@ class DataReadingStep:
             thresholds = self.config.get('step02_quality_thresholds', {'min_rows': 100000, 'max_null_ratio': 0.01, 'min_quality_score': 0.8})
             rows = computed_data_info['rows']
             null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
-=======
-                'data_info': data_info,
-                'quality_score': validation_result.quality_score
-            }
             
             self.logger.info(f'✅ Data quality validation completed')
             self.logger.info(f"   - Rows: {data_info['rows']}")
@@ -925,9 +909,8 @@ class DataReadingStep:
                 'max_null_ratio': 0.01, 
                 'min_quality_score': 0.8
             })
-            rows = data_info['rows']
-            null_ratio = float(data.isnull().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
->>>>>>> origin/main
+            rows = computed_data_info['rows']
+            null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
             quality_score = float(validation_results['quality_score'])
             
             if rows < thresholds['min_rows'] or null_ratio > thresholds['max_null_ratio'] or quality_score < thresholds['min_quality_score']:

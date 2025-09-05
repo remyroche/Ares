@@ -196,13 +196,15 @@ class SimpleEnhancedDeadCodeAnalyzer:
                 issue.confidence *= 0.3  # Very low confidence for special functions
                 issue.filtering_reasons.append("Special function (likely not dead code)")
             
-            if issue.is_test_function:
-                issue.confidence *= 0.4  # Low confidence for test functions
-                issue.filtering_reasons.append("Test function (may be unused but not dead)")
+            # REMOVED: Test function confidence adjustment
+            # if issue.is_test_function:
+            #     issue.confidence *= 0.4  # Low confidence for test functions
+            #     issue.filtering_reasons.append("Test function (may be unused but not dead)")
             
-            if issue.has_docstring:
-                issue.confidence *= 0.7  # Lower confidence for documented functions
-                issue.filtering_reasons.append("Has docstring (likely important)")
+            # REMOVED: Docstring confidence adjustment
+            # if issue.has_docstring:
+            #     issue.confidence *= 0.7  # Lower confidence for documented functions
+            #     issue.filtering_reasons.append("Has docstring (likely important)")
             
             if issue.is_public_api:
                 issue.confidence *= 0.6  # Lower confidence for public APIs

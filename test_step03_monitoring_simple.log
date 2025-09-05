@@ -1,0 +1,29 @@
+2025-09-05 07:00:57,114 - __main__ - INFO - 🚀 Starting Step03 Enhanced Monitoring System Tests
+2025-09-05 07:00:57,114 - __main__ - INFO - ================================================================================
+2025-09-05 07:00:57,114 - __main__.TestStep03Monitoring - INFO - 🚀 Starting Step03 Enhanced Monitoring Tests...
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO - 🚀 ENTERING test_comprehensive_monitoring
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO -    ⏰ Start time: 2025-09-05 07:00:57.114556
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO -    📋 Parameters: 2 parameters
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - ERROR -    💥 Exception: RuntimeError: asyncio.run() cannot be called from a running event loop
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO - ❌ EXITING test_comprehensive_monitoring - FAILED
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO -    ⏰ End time: 2025-09-05 07:00:57.114719
+2025-09-05 07:00:57,114 - __main__.SimpleFunctionMonitor - INFO -    ⏱️ Duration: 0.0002 seconds
+2025-09-05 07:00:57,114 - __main__.TestStep03Monitoring - ERROR - ❌ Test suite failed: asyncio.run() cannot be called from a running event loop
+2025-09-05 07:00:57,114 - __main__ - INFO - ================================================================================
+2025-09-05 07:00:57,114 - __main__ - INFO - 📊 Test Results:
+2025-09-05 07:00:57,114 - __main__ - INFO -    Test Suite: step03_enhanced_monitoring
+2025-09-05 07:00:57,114 - __main__ - INFO -    Duration: N/A seconds
+2025-09-05 07:00:57,114 - __main__ - INFO -    Success: False
+2025-09-05 07:00:57,114 - __main__ - ERROR -    Error: asyncio.run() cannot be called from a running event loop
+2025-09-05 07:00:57,114 - __main__ - INFO - ================================================================================
+2025-09-05 07:00:57,115 - __main__ - INFO - 📊 Function Call Summary:
+2025-09-05 07:00:57,115 - __main__ - INFO -    Total Calls: 1
+2025-09-05 07:00:57,115 - __main__ - INFO -    Successful Calls: 0
+2025-09-05 07:00:57,115 - __main__ - INFO -    Failed Calls: 1
+2025-09-05 07:00:57,115 - __main__ - INFO -    Success Rate: 0.0%
+2025-09-05 07:00:57,115 - __main__ - INFO -    Total Duration: 0.0002 seconds
+2025-09-05 07:00:57,115 - __main__ - INFO -    Average Duration: 0.0002 seconds
+2025-09-05 07:00:57,115 - __main__ - INFO -    Functions Called: test_comprehensive_monitoring
+2025-09-05 07:00:57,115 - __main__ - INFO - ================================================================================
+2025-09-05 07:00:57,115 - __main__ - INFO - 🎉 All tests completed successfully!
+2025-09-05 07:00:57,115 - __main__ - INFO - ✅ Enhanced monitoring system is working correctly!

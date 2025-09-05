@@ -10,7 +10,24 @@ Key Enhancements:
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
 import logging
-from .core.decorators import handles_errors, traced, validates, cached, log_execution_time
+try:
+    from src.utils.decorators import handles_errors as _handles_errors
+    from src.utils.decorators import traced as _traced
+    from src.utils.decorators import validates as _validates
+    from src.utils.decorators import cached as _cached
+    from src.utils.decorators import log_execution_time as _log_execution_time
+except Exception:
+    def _identity(fn=None, *args, **kwargs):
+        if fn is None:
+            def _wrap(f):
+                return f
+            return _wrap
+        return fn
+    _handles_errors = _identity
+    _traced = _identity
+    _validates = _identity
+    _cached = _identity
+    _log_execution_time = _identity
 import asyncio
 import sys
 from pathlib import Path
@@ -23,12 +40,12 @@ import numpy as np
 import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.analyst.meta_labeling_system']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 meta_labeling_system = PipelineStandards.safe_import('src.analyst.meta_labeling_system', None)
 psutil = PipelineStandards.safe_import('psutil', None)
@@ -174,11 +191,11 @@ class LabelingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
-    @traced(span_name='execute_labeling')
-    @validates()
-    @handles_errors()
-    @cached()
-    @log_execution_time()
+    @_traced(span_name='execute_labeling')
+    @_validates()
+    @_handles_errors()
+    @_cached()
+    @_log_execution_time()
     async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
         step_start = time.time()
         self.logger.info(f'🚀 Executing Labeling for {symbol} on {exchange}')
@@ -503,4 +520,5 @@ if __name__ == '__main__':
     async def test() -> None:
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Step 5 result: {success}')
-    asyncio.run(await test())
+    # Correct asyncio usage: pass coroutine to asyncio.run
+    asyncio.run(test())

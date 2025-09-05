@@ -20,7 +20,7 @@ import functools
 import traceback
 import inspect
 
-from ....base_step import BaseStep
+from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
 
@@ -497,9 +497,9 @@ class SROptimizationStep(BaseStep):
             self.logger.info("📊 Retrieving data from pipeline state...")
             data = pipeline_state.get("dataframe")
             if data is None:
-                data = pipeline_state.get("validated_data")
+                data = training_input.get("validated_data")
             if data is None:
-                raise ValueError("No DataFrame available from step 2. Checked 'dataframe' and 'validated_data' keys.")
+                raise ValueError("No DataFrame available from step 2. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input.")
             
             self.logger.info(f"📊 Processing {len(data)} rows of data")
             self.logger.info(f"📊 Data columns: {list(data.columns)}")

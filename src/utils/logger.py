@@ -8,16 +8,25 @@ import sys as _sys
 import threading
 import time
 from contextlib import contextmanager
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
 
-from src.utils.pipeline_standards import PipelineStandards
+try:
+    from src.utils.pipeline_standards import PipelineStandards
+except ImportError:
+    PipelineStandards = None
 
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
-warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+if PipelineStandards is not None:
+    dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+    structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
+    warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+else:
+    dependency_status = {module: False for module in REQUIRED_MODULES}
+    structured_logging = None
+    warning_symbols = None
 
 def create_fallback_correlation_filter() -> Any:
 
@@ -1021,6 +1030,4 @@ def log_data_quality_check(check: dict):
     """Log data quality check."""
     system_logger.info(f"Data quality check: {check}")
 
-def setup_logging():
-    """Setup logging configuration."""
-    pass
+# Note: setup_logging is already defined above; avoid redefining it here

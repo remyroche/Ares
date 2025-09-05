@@ -13,27 +13,53 @@ import asyncio
 import sys
 from pathlib import Path
 import time
+from typing import Any, Optional
+
+# Required dependencies
+import pandas as pd
+import numpy as np
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-    comprehensive_data_validation,
-    ensure_data_integrity,
-    handle_errors,
-    memory_efficient,
-    monitor_feature_engineering,
-    monitor_step_execution,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    secure_step_execution,
-    validate_data_structure,
-    with_tracing_span,
-    validate_pipeline_step
-)
+# Import pipeline utilities (optional)
+try:
+    from .utils.pipeline_decorators import (
+        comprehensive_data_validation,
+        ensure_data_integrity,
+        handle_errors,
+        memory_efficient,
+        monitor_feature_engineering,
+        monitor_step_execution,
+        quality_gate,
+        resource_monitor,
+        secure_data_processing,
+        secure_step_execution,
+        validate_data_structure,
+        with_tracing_span,
+        validate_pipeline_step
+    )
+    PIPELINE_UTILITIES_AVAILABLE = True
+except ImportError:
+    PIPELINE_UTILITIES_AVAILABLE = False
+# Import core decorators
 from .core.decorators import validates, handles_errors, traced
-from .utils.logger import system_logger
+
+# Import logger (optional)
+try:
+    from .utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger("Step3EnhancedHMMRegimeDiscovery")
+
+# Import enhanced monitoring decorators
+from src.core.decorators import (
+    monitor_step03_functions,
+    handle_step03_errors,
+    validates as enhanced_validates,
+    traced as enhanced_traced
+)
 
 # Import our new modules
 from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOptimization
@@ -41,7 +67,11 @@ from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
 from .step03_economic_significance_validator import EconomicSignificanceValidator
 from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
-from .core.decorators.errors import handles_errors
+
+try:
+    from .core.decorators.errors import handles_errors
+except ImportError:
+    handles_errors = None
 
 logger = system_logger.getChild("Step3EnhancedHMMRegimeDiscovery")
 
@@ -78,6 +108,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         self.logger.info('✅ All enhanced components initialized successfully')
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='initialize_enhanced_hmm_regime_discovery')
     @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM regime discovery step."""
@@ -89,10 +123,11 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         self.logger.info('✅ Enhanced HMM Regime Discovery Step initialized successfully')
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='execute_enhanced_hmm_regime_discovery')
     @validates()
-    @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
-    @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
-    @secure_step_execution(audit_trail=True)
     @traced(span_name='execute_enhanced_hmm_regime_discovery')
     @handles_errors(fallback={'success': False, 'regimes': [], 'error': 'Enhanced HMM discovery failed'})
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
@@ -234,6 +269,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         return pipeline_state
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='load_and_prepare_data')
     @traced(span_name='load_and_prepare_data')
     @handles_errors(fallback={'success': False, 'error': 'Data loading failed'})
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
@@ -291,7 +330,6 @@ class EnhancedHMMRegimeDiscoveryStep:
             return {'success': False, 'error': str(e)}
 
     @handles_errors(fallback=pd.DataFrame())
-    @monitor_feature_engineering()
     @validates()
     async def _prepare_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare basic features for regime discovery."""
@@ -734,8 +772,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         return bb_features
 
 
-@monitor_step_execution
-@secure_step_execution
+@monitor_step03_functions
+@handle_step03_errors
+@enhanced_validates()
+@enhanced_traced(span_name='run_enhanced_step')
 @validates()
 @handles_errors(fallback=False)
 async def run_enhanced_step(symbol: str, exchange: str, timeframe: str = "1m", 

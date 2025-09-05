@@ -2,7 +2,7 @@
 
 ## 🎯 **Answer: YES, we can automatically make a significant difference!**
 
-The intelligent import fixer demonstrates that we can **automatically handle 95%+ of import issues** while maintaining safety through confidence-based decision making.
+The intelligent import fixer demonstrates that we can **automatically handle 95% of import issues** while maintaining safety through confidence-based decision making.
 
 ## 📊 **Proven Results from Testing**
 
@@ -41,38 +41,20 @@ from typing import List  # ← Auto-removed (already imported)
 - ✅ No dynamic access patterns
 - ✅ Import order not significant
 
-#### **🟡 MEDIUM CONFIDENCE (4%) - Auto-Fix with Confirmation**
-```python
-# These are fixed with user confirmation:
-import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt  # ← Confirmed fix (side effects detected)
-
-from .. import config  # ← Confirmed fix (deep relative import)
-```
-
-**Safety Criteria (2/4 checks pass):**
-- ⚠️ Some side effects or dependencies detected
-- ⚠️ Conditional imports or complex patterns
-- ⚠️ Requires user confirmation for safety
-
-#### **🔴 LOW CONFIDENCE (1%) - Flag Only**
+#### **🔴 LOW CONFIDENCE (5%) - Flag for Manual Review**
 ```python
 # These are flagged for manual review:
-if condition:
-    import module
-else:
-    import module  # ← Flagged (conditional duplicate)
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # ← Flagged (side effects detected)
 
-# Dynamic access
-module = globals()['os']
-import os  # ← Flagged (dynamic access detected)
+from .. import config  # ← Flagged (deep relative import)
 ```
 
-**Safety Criteria (0-1/4 checks pass):**
-- ❌ Significant side effects or dependencies
-- ❌ Complex conditional logic
-- ❌ Dynamic access patterns
-- ❌ Manual review required
+**Safety Criteria (≤2/4 checks pass):**
+- ⚠️ Side effects or dependencies detected
+- ⚠️ Conditional imports or complex patterns
+- ⚠️ Manual review required for safety
+
 
 ## 🚀 **Automatic Difference in Action**
 

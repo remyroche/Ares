@@ -24,14 +24,12 @@ from datetime import datetime
 class ConfidenceLevel(Enum):
     """Confidence levels for automatic fixing."""
     HIGH = "high"      # 95% - Auto-fix immediately
-    MEDIUM = "medium"  # 4% - Auto-fix with confirmation
-    LOW = "low"        # 1% - Flag only, no auto-fix
+    LOW = "low"        # 5% - Flag only, no auto-fix
 
 
 class FixAction(Enum):
     """Actions to take for each issue."""
     AUTO_FIX = "auto_fix"
-    CONFIRM_FIX = "confirm_fix"
     FLAG_ONLY = "flag_only"
     SKIP = "skip"
 
@@ -49,7 +47,6 @@ class ImportIssue:
     safety_score: int = 0
     max_safety_score: int = 4
     can_auto_fix: bool = False
-    requires_confirmation: bool = False
     manual_review_needed: bool = False
 
 
@@ -59,7 +56,6 @@ class FixResult:
     file_path: str
     total_issues: int
     auto_fixed: int
-    confirmed_fixed: int
     flagged_only: int
     skipped: int
     backup_created: bool
@@ -89,9 +85,8 @@ class IntelligentImportFixer:
         self.dry_run = self.config.get('dry_run', False)
         
         # Confidence thresholds
-        self.high_confidence_threshold = 3  # 3/4 safety checks pass
-        self.medium_confidence_threshold = 2  # 2/4 safety checks pass
-        self.low_confidence_threshold = 1   # 1/4 safety checks pass
+        self.high_confidence_threshold = 3  # 3/4 safety checks pass - auto-fix
+        self.low_confidence_threshold = 2   # 2/4 safety checks pass - flag only
         
         # Side effect modules (risky to duplicate)
         self.side_effect_modules = {
@@ -113,7 +108,6 @@ class IntelligentImportFixer:
             file_path=file_path,
             total_issues=0,
             auto_fixed=0,
-            confirmed_fixed=0,
             flagged_only=0,
             skipped=0,
             backup_created=False
@@ -131,12 +125,10 @@ class IntelligentImportFixer:
             
             # Categorize issues by confidence level
             high_confidence_issues = [i for i in issues if i.confidence == ConfidenceLevel.HIGH]
-            medium_confidence_issues = [i for i in issues if i.confidence == ConfidenceLevel.MEDIUM]
             low_confidence_issues = [i for i in issues if i.confidence == ConfidenceLevel.LOW]
             
             print(f"\n📊 Analysis Results for {file_path}:")
             print(f"   High confidence (auto-fix): {len(high_confidence_issues)}")
-            print(f"   Medium confidence (confirm): {len(medium_confidence_issues)}")
             print(f"   Low confidence (flag only): {len(low_confidence_issues)}")
             
             # Auto-fix high confidence issues
@@ -145,17 +137,6 @@ class IntelligentImportFixer:
                 result.auto_fixed = auto_fixed
                 result.fixed_lines.extend([i.line_number for i in high_confidence_issues[:auto_fixed]])
                 print(f"✅ Auto-fixed {auto_fixed} high-confidence issues")
-            
-            # Handle medium confidence issues
-            if medium_confidence_issues:
-                if interactive and self.confirmation_enabled:
-                    confirmed_fixed = self._interactive_fix_issues(file_path, medium_confidence_issues)
-                    result.confirmed_fixed = confirmed_fixed
-                    print(f"✅ Confirmed and fixed {confirmed_fixed} medium-confidence issues")
-                else:
-                    result.flagged_issues.extend(medium_confidence_issues)
-                    result.flagged_only += len(medium_confidence_issues)
-                    print(f"⚠️  Flagged {len(medium_confidence_issues)} medium-confidence issues for review")
             
             # Flag low confidence issues
             if low_confidence_issues:
@@ -233,7 +214,6 @@ class IntelligentImportFixer:
                             reason=reason,
                             safety_score=self._calculate_safety_score(node, alias, lines, tree),
                             can_auto_fix=(confidence == ConfidenceLevel.HIGH),
-                            requires_confirmation=(confidence == ConfidenceLevel.MEDIUM),
                             manual_review_needed=(confidence == ConfidenceLevel.LOW)
                         )
                         issues.append(issue)
@@ -262,7 +242,6 @@ class IntelligentImportFixer:
                             reason=reason,
                             safety_score=self._calculate_safety_score(node, alias, lines, tree),
                             can_auto_fix=(confidence == ConfidenceLevel.HIGH),
-                            requires_confirmation=(confidence == ConfidenceLevel.MEDIUM),
                             manual_review_needed=(confidence == ConfidenceLevel.LOW)
                         )
                         issues.append(issue)
@@ -305,8 +284,6 @@ class IntelligentImportFixer:
         
         if safety_score >= self.high_confidence_threshold:
             return ConfidenceLevel.HIGH, FixAction.AUTO_FIX, "Safe to remove - no side effects or dependencies detected"
-        elif safety_score >= self.medium_confidence_threshold:
-            return ConfidenceLevel.MEDIUM, FixAction.CONFIRM_FIX, "Likely safe but requires confirmation"
         else:
             return ConfidenceLevel.LOW, FixAction.FLAG_ONLY, "Risky - has side effects, dependencies, or dynamic usage"
     
@@ -316,10 +293,8 @@ class IntelligentImportFixer:
         
         if self._is_standalone_script(file_path):
             return ConfidenceLevel.HIGH, FixAction.AUTO_FIX, "Standalone script - convert to absolute import"
-        elif relative_levels >= 3:
-            return ConfidenceLevel.MEDIUM, FixAction.CONFIRM_FIX, f"Deep relative import ({relative_levels} levels) - consider flattening"
-        elif safety_score >= 2:
-            return ConfidenceLevel.MEDIUM, FixAction.CONFIRM_FIX, "Likely safe to convert to absolute import"
+        elif safety_score >= self.high_confidence_threshold:
+            return ConfidenceLevel.HIGH, FixAction.AUTO_FIX, "Safe to convert to absolute import"
         else:
             return ConfidenceLevel.LOW, FixAction.FLAG_ONLY, "Complex relative import - manual review needed"
     
@@ -474,30 +449,6 @@ class IntelligentImportFixer:
             print(f"Error auto-fixing issues: {e}")
             return 0
     
-    def _interactive_fix_issues(self, file_path: str, issues: List[ImportIssue]) -> int:
-        """Interactively fix medium-confidence issues with user confirmation."""
-        fixed_count = 0
-        
-        for issue in issues:
-            print(f"\n⚠️  Medium confidence issue at line {issue.line_number}:")
-            print(f"   {issue.original_line}")
-            print(f"   Reason: {issue.reason}")
-            print(f"   Suggested fix: {issue.suggested_fix}")
-            
-            response = input("Fix this issue? (y/n/s for skip): ").lower().strip()
-            
-            if response in ['y', 'yes']:
-                if self._fix_single_issue(file_path, issue):
-                    fixed_count += 1
-                    print("✅ Fixed")
-                else:
-                    print("❌ Failed to fix")
-            elif response in ['s', 'skip']:
-                print("⏭️  Skipped")
-            else:
-                print("❌ Not fixed")
-        
-        return fixed_count
     
     def _fix_single_issue(self, file_path: str, issue: ImportIssue) -> bool:
         """Fix a single import issue."""
@@ -537,7 +488,6 @@ class IntelligentImportFixer:
         total_files = len(results)
         total_issues = sum(r.total_issues for r in results)
         total_auto_fixed = sum(r.auto_fixed for r in results)
-        total_confirmed_fixed = sum(r.confirmed_fixed for r in results)
         total_flagged = sum(r.flagged_only for r in results)
         
         return {
@@ -545,17 +495,15 @@ class IntelligentImportFixer:
                 "total_files_processed": total_files,
                 "total_issues_found": total_issues,
                 "auto_fixed": total_auto_fixed,
-                "confirmed_fixed": total_confirmed_fixed,
                 "flagged_for_review": total_flagged,
                 "auto_fix_rate": (total_auto_fixed / total_issues * 100) if total_issues > 0 else 0,
-                "total_fix_rate": ((total_auto_fixed + total_confirmed_fixed) / total_issues * 100) if total_issues > 0 else 0
+                "total_fix_rate": (total_auto_fixed / total_issues * 100) if total_issues > 0 else 0
             },
             "files": [
                 {
                     "file_path": r.file_path,
                     "issues_found": r.total_issues,
                     "auto_fixed": r.auto_fixed,
-                    "confirmed_fixed": r.confirmed_fixed,
                     "flagged": r.flagged_only,
                     "backup_created": r.backup_created,
                     "errors": r.errors
@@ -583,7 +531,6 @@ def main():
     
     parser = argparse.ArgumentParser(description="Intelligent Import Fixer")
     parser.add_argument("target", help="File or directory to fix")
-    parser.add_argument("--interactive", "-i", action="store_true", help="Interactive mode for medium confidence issues")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be fixed without making changes")
     parser.add_argument("--no-auto-fix", action="store_true", help="Disable automatic fixing")
     parser.add_argument("--no-backup", action="store_true", help="Don't create backups")
@@ -593,7 +540,6 @@ def main():
     
     config = {
         'auto_fix_enabled': not args.no_auto_fix,
-        'confirmation_enabled': True,
         'backup_enabled': not args.no_backup,
         'dry_run': args.dry_run
     }
@@ -605,12 +551,12 @@ def main():
     
     if target_path.is_file():
         # Single file
-        result = fixer.analyze_and_fix_file(str(target_path), interactive=args.interactive)
+        result = fixer.analyze_and_fix_file(str(target_path), interactive=False)
         results.append(result)
     else:
         # Directory
         for py_file in target_path.rglob("*.py"):
-            result = fixer.analyze_and_fix_file(str(py_file), interactive=args.interactive)
+            result = fixer.analyze_and_fix_file(str(py_file), interactive=False)
             results.append(result)
     
     # Generate and display report
@@ -621,7 +567,6 @@ def main():
     print(f"Files processed: {report['summary']['total_files_processed']}")
     print(f"Total issues found: {report['summary']['total_issues_found']}")
     print(f"Auto-fixed: {report['summary']['auto_fixed']} ({report['summary']['auto_fix_rate']:.1f}%)")
-    print(f"Confirmed fixed: {report['summary']['confirmed_fixed']}")
     print(f"Flagged for review: {report['summary']['flagged_for_review']}")
     print(f"Total fix rate: {report['summary']['total_fix_rate']:.1f}%")
     

@@ -127,27 +127,23 @@ def test_confidence_assessment():
         
         print(f"\n📁 High Confidence File: {high_conf_file.name}")
         high_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.HIGH]
-        medium_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.MEDIUM]
         low_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.LOW]
         
         print(f"   High confidence: {len(high_conf_issues)}")
-        print(f"   Medium confidence: {len(medium_conf_issues)}")
         print(f"   Low confidence: {len(low_conf_issues)}")
         
         for issue in issues:
             print(f"   Line {issue.line_number}: {issue.confidence.value} - {issue.reason}")
         
-        # Test medium confidence file
+        # Test medium confidence file (now low confidence)
         medium_conf_file = Path(temp_dir) / "medium_confidence.py"
         issues = fixer._analyze_import_issues(str(medium_conf_file))
         
         print(f"\n📁 Medium Confidence File: {medium_conf_file.name}")
         high_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.HIGH]
-        medium_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.MEDIUM]
         low_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.LOW]
         
         print(f"   High confidence: {len(high_conf_issues)}")
-        print(f"   Medium confidence: {len(medium_conf_issues)}")
         print(f"   Low confidence: {len(low_conf_issues)}")
         
         for issue in issues:
@@ -159,11 +155,9 @@ def test_confidence_assessment():
         
         print(f"\n📁 Low Confidence File: {low_conf_file.name}")
         high_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.HIGH]
-        medium_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.MEDIUM]
         low_conf_issues = [i for i in issues if i.confidence == ConfidenceLevel.LOW]
         
         print(f"   High confidence: {len(high_conf_issues)}")
-        print(f"   Medium confidence: {len(medium_conf_issues)}")
         print(f"   Low confidence: {len(low_conf_issues)}")
         
         for issue in issues:
@@ -398,9 +392,9 @@ def main():
     if passed == total:
         print("🎉 All tests passed! The intelligent import fixer is working correctly.")
         print("\n🎯 Key Capabilities Demonstrated:")
-        print("   ✅ Automatic confidence assessment (95%/4%/1%)")
+        print("   ✅ Automatic confidence assessment (95%/5%)")
         print("   ✅ Auto-fixing of high-confidence issues")
-        print("   ✅ Flagging of medium/low confidence issues")
+        print("   ✅ Flagging of low confidence issues")
         print("   ✅ Safety scoring and validation")
         print("   ✅ Comprehensive reporting")
         return 0

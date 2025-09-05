@@ -472,7 +472,68 @@ class EnhancedDeadCodeAnalyzer:
                     )
                     issues.append(issue)
         
+        # Find unreachable code after return statements
+        unreachable_issues = self._find_unreachable_code(tree, file_path, lines)
+        issues.extend(unreachable_issues)
+        
         return issues
+
+    def _find_unreachable_code(self, tree: ast.AST, file_path: Path, lines: List[str]) -> List[EnhancedDeadCodeIssue]:
+        """Find unreachable code after return statements."""
+        issues = []
+        
+        class UnreachableCodeVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.issues = []
+                self.lines = lines
+                self.file_path = file_path
+            
+            def _extract_code_snippet_simple(self, lines: List[str], line_number: int, context: int = 2) -> str:
+                """Extract code snippet around a line number."""
+                try:
+                    start = max(0, line_number - context - 1)
+                    end = min(len(lines), line_number + context)
+                    snippet_lines = lines[start:end]
+                    return '\\n'.join(snippet_lines)
+                except:
+                    return f"Line {line_number}"
+            
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                self._check_unreachable_in_function(node)
+                self.generic_visit(node)
+            
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+                self._check_unreachable_in_function(node)
+                self.generic_visit(node)
+            
+            def _check_unreachable_in_function(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+                """Check for unreachable code in a function."""
+                for i, stmt in enumerate(func_node.body):
+                    if isinstance(stmt, (ast.Return, ast.Raise)):
+                        # Check if there are statements after this return/raise
+                        remaining_statements = func_node.body[i + 1:]
+                        for remaining_stmt in remaining_statements:
+                            # Skip docstrings and comments
+                            if isinstance(remaining_stmt, ast.Expr) and isinstance(remaining_stmt.value, ast.Constant):
+                                if isinstance(remaining_stmt.value.value, str):
+                                    continue  # Skip docstrings
+                            
+                            # Found unreachable code
+                            issue = EnhancedDeadCodeIssue(
+                                file_path=str(self.file_path),
+                                line_number=remaining_stmt.lineno,
+                                issue_type="unreachable_code",
+                                description=f"Unreachable code after {type(stmt).__name__.lower()} statement",
+                                confidence=95.0,
+                                code_snippet=self._extract_code_snippet_simple(self.lines, remaining_stmt.lineno),
+                                severity="high",
+                                tool_source="Enhanced AST"
+                            )
+                            self.issues.append(issue)
+        
+        visitor = UnreachableCodeVisitor()
+        visitor.visit(tree)
+        return visitor.issues
 
     def _is_likely_used_function(self, func_name: str, func_node: ast.AST, lines: List[str], file_path: str) -> bool:
         """Check if a function is likely to be used based on various heuristics."""
@@ -484,8 +545,12 @@ class EnhancedDeadCodeAnalyzer:
         if func_name.startswith('__') and func_name.endswith('__'):
             return True
             
-        # Skip functions in test files
-        if 'test' in file_path.lower() or 'tests' in file_path.lower():
+        # Skip functions in test files (but not files that just happen to contain 'test' in the name)
+        if (file_path.lower().endswith('_test.py') or file_path.lower().endswith('test_.py') or
+            file_path.lower().endswith('_tests.py') or
+            '/tests/' in file_path.lower() or
+            file_path.lower().endswith('/test.py') or
+            file_path.lower().endswith('/test_runner.py')):
             return True
             
         # Skip functions in __init__.py files (likely exports)
@@ -500,10 +565,15 @@ class EnhancedDeadCodeAnalyzer:
                     if any(keyword in decorator_name for keyword in ['app', 'route', 'handler', 'callback', 'listener']):
                         return True
         
-        # Check if function is in call graph
+        # Check if function is in call graph and actually called (not just defined)
         func_key = f"{file_path}::{func_name}"
         if func_key in self.call_graph:
-            return True
+            # Check if the function has any callers (is actually called)
+            if self.call_graph.has_node(func_key):
+                # Get the predecessors (callers) of this function
+                callers = list(self.call_graph.predecessors(func_key))
+                if callers:  # Only return True if the function is actually called
+                    return True
             
         return False
 
@@ -537,13 +607,16 @@ class EnhancedDeadCodeAnalyzer:
 
     def _validate_single_tool_issue(self, issue: EnhancedDeadCodeIssue) -> bool:
         """Validate a single-tool issue to reduce false positives."""
-        # Check if function is in call graph
+        # Check if function is in call graph and actually called
         if issue.issue_type == "dead_code":
             func_name = issue.description.split("'")[1] if "'" in issue.description else ""
             if func_name:
                 func_key = f"{issue.file_path}::{func_name}"
                 if func_key in self.call_graph:
-                    return False  # Function is in call graph, likely used
+                    # Check if the function has any callers (is actually called)
+                    callers = list(self.call_graph.predecessors(func_key))
+                    if callers:  # Function is actually called
+                        return False  # Function is in call graph and called, likely used
         
         # Check for dynamic usage patterns
         if self._check_dynamic_usage(issue):

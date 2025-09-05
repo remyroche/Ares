@@ -41,6 +41,7 @@ class IssueType(Enum):
     DUPLICATE_IMPORT = "duplicate_import"
     WILDCARD_IMPORT = "wildcard_import"
     RELATIVE_IMPORT = "relative_import"
+    UNUSED_IMPORT = "unused_import"
     UNDEFINED_NAME = "undefined_name"
     MISSING_IMPORT = "missing_import"
     SCOPE_ISSUE = "scope_issue"
@@ -237,6 +238,31 @@ class EnhancedImportAnalyzer:
                         })
                         result.imported_names.add(as_name)
             
+            # Second pass: check for unused imports
+            used_names = self._find_used_names(tree)
+            unused_imports = result.imported_names - used_names
+            
+            # Add unused import issues
+            for unused_name in unused_imports:
+                # Find the import line for this unused name
+                import_line = 0
+                for import_info in result.imports:
+                    if import_info['name'] == unused_name:
+                        import_line = import_info['line']
+                        break
+                
+                result.issues.append(Issue(
+                    type=IssueType.UNUSED_IMPORT,
+                    severity=IssueSeverity.MEDIUM,
+                    name=unused_name,
+                    line=import_line,
+                    column=0,
+                    message=f'Unused import: {unused_name}',
+                    context=self._get_context(content, import_line),
+                    file_path=file_path,
+                    suggestions=[f"Remove unused import '{unused_name}'"]
+                ))
+            
             result.execution_time = time.time() - start_time
             return result
             
@@ -262,6 +288,46 @@ class EnhancedImportAnalyzer:
         except:
             pass
         return ""
+    
+    def _find_used_names(self, tree: ast.AST) -> Set[str]:
+        """Find all names that are actually used in the code."""
+        used_names = set()
+        
+        class NameVisitor(ast.NodeVisitor):
+            def visit_Name(self, node: ast.Name) -> None:
+                # Skip if this is a name being assigned to (left side of assignment)
+                if isinstance(node.ctx, ast.Store):
+                    return
+                used_names.add(node.id)
+                self.generic_visit(node)
+            
+            def visit_Attribute(self, node: ast.Attribute) -> None:
+                # For attribute access like 'pandas.DataFrame', we need the base name
+                if isinstance(node.value, ast.Name):
+                    used_names.add(node.value.id)
+                self.generic_visit(node)
+            
+            def visit_Import(self, node: ast.Import) -> None:
+                # Skip import statements themselves
+                pass
+            
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+                # Skip import statements themselves
+                pass
+            
+            def visit_Call(self, node: ast.Call) -> None:
+                # For function calls, check if the function name is imported
+                if isinstance(node.func, ast.Name):
+                    used_names.add(node.func.id)
+                elif isinstance(node.func, ast.Attribute):
+                    # For method calls like pd.DataFrame(), we need the base name
+                    if isinstance(node.func.value, ast.Name):
+                        used_names.add(node.func.value.id)
+                self.generic_visit(node)
+        
+        visitor = NameVisitor()
+        visitor.visit(tree)
+        return used_names
 
     def analyze_unused_imports(self, directory: str) -> Dict[str, Any]:
         """

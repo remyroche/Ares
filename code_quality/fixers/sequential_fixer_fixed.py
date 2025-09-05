@@ -38,6 +38,9 @@ except ImportError:
 
 # Import base pipeline for common functionality
 from pipelines.base_pipeline import BasePipeline
+import json
+import logging
+import time
 
 
 class SequentialFixer(BasePipeline):

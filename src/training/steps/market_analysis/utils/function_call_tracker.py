@@ -8,6 +8,9 @@ import traceback
 import functools
 import inspect
 from typing import Any, Callable, Dict, List, Tuple, Optional
+import numpy as np
+import pandas as pd
+import logging
 
 
 class FunctionCallTracker:
@@ -103,8 +106,6 @@ class FunctionCallTracker:
         else:
             # Handle numpy arrays and pandas DataFrames
             try:
-                import numpy as np
-                import pandas as pd
                 if isinstance(result, np.ndarray):
                     return f"shape={result.shape}"
                 elif isinstance(result, pd.DataFrame):

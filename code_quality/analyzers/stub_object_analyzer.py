@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
+import pandas as pd
 
 
 class StubObjectType(Enum):

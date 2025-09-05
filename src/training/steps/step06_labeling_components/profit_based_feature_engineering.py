@@ -19,6 +19,9 @@ from .utils.logger import system_logger
 # Import Numba for performance optimization
 try:
     from numba import jit
+import logging
+import typing
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False

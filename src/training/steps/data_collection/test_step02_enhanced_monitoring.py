@@ -22,6 +22,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.training.steps.data_collection.step02_data_reading import DataReadingStep, function_monitor, comprehensive_function_monitoring, FunctionCallMonitor, FunctionInteractionReport
 from src.training.steps.data_collection.step02_data_reading_validator import run_validator, generate_validation_function_report
+import collections
+import logging
 
 class Step02EnhancedMonitoringTester:
     """Comprehensive test suite for enhanced Step02 function monitoring."""

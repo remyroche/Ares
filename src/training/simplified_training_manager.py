@@ -12,6 +12,7 @@ from .progress_manager import ProgressManager
 from src.training.step_config import get_all_steps, get_step_config, get_step_execution_order_full_names, get_step_number_from_full_name, validate_step_sequence
 from ..utils.logger import system_logger
 from ..utils.step_dependency_validator import StepDependencyValidator
+import logging
 
 class SimplifiedTrainingManager:
     """Simplified training manager for orchestrating the training pipeline.

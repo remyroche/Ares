@@ -6,10 +6,12 @@ Creates visual representations of module and package dependencies.
 
 from typing import Optional, Dict, List, Any, Tuple
 from .code_visualizer import CodeVisualizer
+import numpy as np
 
 try:
     import networkx as nx
     import matplotlib.pyplot as plt
+
     NETWORKX_AVAILABLE = True
     MATPLOTLIB_AVAILABLE = True
 except ImportError:

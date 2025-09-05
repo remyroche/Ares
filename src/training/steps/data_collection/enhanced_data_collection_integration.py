@@ -29,6 +29,8 @@ sys.path.insert(0, str(project_root))
 from .utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
+import numpy as np
+import logging
 
 logger = system_logger.getChild("EnhancedDataCollectionIntegration")
 

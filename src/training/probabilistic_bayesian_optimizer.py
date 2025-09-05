@@ -6,6 +6,8 @@ import warnings
 from dataclasses import dataclass
 import optuna
 from sklearn.metrics import brier_score_loss, roc_auc_score
+import typing
+
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 

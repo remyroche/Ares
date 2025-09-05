@@ -7,7 +7,6 @@ import ast
 import os
 from pathlib import Path
 from collections import defaultdict
-import numpy as np
 
 def analyze_file_complexity(file_path):
     """Analyze cyclomatic complexity of a Python file."""

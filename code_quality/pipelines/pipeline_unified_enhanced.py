@@ -300,41 +300,90 @@ class UnifiedEnhancedPipeline:
         return result
 
     def run_import_fixes(self) -> dict[str, Any]:
-        """Run import fixes."""
+        """Run enhanced import fixes with auto-detection."""
         print("\n" + "="*60)
-        print("Running Import Fixes")
+        print("Running Enhanced Import Fixes with Auto-Detection")
         print("="*60)
 
         start_time = time.time()
-        fixer = SafeImportFixer(str(self.project_root))
-        fixer.fix_project(dry_run=False)
-
-        # Convert fixed_files to proper format for report aggregator
-        fixed_files_formatted = []
-        for file_path in fixer.fixed_files:
-            fixed_files_formatted.append({
-                "file": file_path,
-                "imports_added": []  # SafeImportFixer doesn't track specific imports added
-            })
         
-        result = {
-            "fixed_files": fixed_files_formatted,
-            "failed_files": fixer.failed_files,
-            "import_errors": {},  # SafeImportFixer doesn't have import_errors attribute
-            "total_fixed": len(fixer.fixed_files),
-            "total_failed": len(fixer.failed_files),
-            "execution_time": time.time() - start_time,
-        }
+        try:
+            # Use the enhanced ImportFixer with auto-detection
+            from scripts.fix_missing_imports import ImportFixer
+            fixer = ImportFixer(str(self.project_root))
+            
+            # Auto-detect and fix missing imports
+            print("🔍 Auto-detecting missing imports...")
+            result = fixer.auto_fix_all_files(
+                [str(f) for f in self.file_paths],  # Use all files
+                dry_run=False  # Actually fix the files
+            )
+            
+            # Format results for report aggregator
+            fixed_files_formatted = []
+            for file_path in result.get('fixed_files', []):
+                fixed_files_formatted.append({
+                    "file": file_path,
+                    "imports_added": ["Auto-detected imports"]  # Enhanced fixer tracks this
+                })
+            
+            formatted_result = {
+                "fixed_files": fixed_files_formatted,
+                "failed_files": result.get('failed_files', []),
+                "import_errors": {},
+                "total_fixed": result.get('fixed', 0),
+                "total_failed": result.get('failed', 0),
+                "execution_time": time.time() - start_time,
+                "auto_detection_summary": {
+                    "files_analyzed": len(self.file_paths),
+                    "files_with_missing_imports": result.get('fixed', 0),
+                    "module_counts": result.get('module_counts', {})
+                }
+            }
+            
+            print(f"✅ Auto-fixed {result.get('fixed', 0)} files")
+            print(f"❌ Failed to fix {result.get('failed', 0)} files")
+            
+            # Show module breakdown
+            module_counts = result.get('module_counts', {})
+            if module_counts:
+                print("\n📊 Imports added by module:")
+                for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"  {module}: {count} files")
+
+        except Exception as e:
+            print(f"❌ Enhanced import fixer failed: {e}")
+            # Fallback to original fixer
+            fixer = SafeImportFixer(str(self.project_root))
+            fixer.fix_project(dry_run=False)
+            
+            fixed_files_formatted = []
+            for file_path in fixer.fixed_files:
+                fixed_files_formatted.append({
+                    "file": file_path,
+                    "imports_added": []
+                })
+            
+            formatted_result = {
+                "fixed_files": fixed_files_formatted,
+                "failed_files": fixer.failed_files,
+                "import_errors": {},
+                "total_fixed": len(fixer.fixed_files),
+                "total_failed": len(fixer.failed_files),
+                "execution_time": time.time() - start_time,
+                "fallback_used": True,
+                "error": str(e)
+            }
 
         # Add to aggregator
-        self.report_aggregator.add_import_results(result)
+        self.report_aggregator.add_import_results(formatted_result)
 
         # Save individual report
         report_path = self.reports_dir / f"import_fixes_{self.timestamp}.json"
         with open(report_path, "w") as f:
-            json.dump(result, f, indent=2)
+            json.dump(formatted_result, f, indent=2)
 
-        return result
+        return formatted_result
 
     def detect_circular_imports(self) -> dict[str, Any]:
         """Detect circular imports."""

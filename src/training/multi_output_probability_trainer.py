@@ -21,11 +21,11 @@ except ImportError:
     NEURAL_MODEL_CONFIGS = {}
     NeuralNetworkWrapper = None
     create_neural_model = None
-try:
-    from catboost import CatBoostClassifier
 import logging
 import time
 
+try:
+    from catboost import CatBoostClassifier
     CATBOOST_AVAILABLE = True
 except ImportError:
     CatBoostClassifier = None

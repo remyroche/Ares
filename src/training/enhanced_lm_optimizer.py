@@ -38,10 +38,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from .utils.logger import system_logger
 
 # Import Pydantic configuration
-try:
-    from src.training.enhanced_lm_config import (
 import logging
 
+try:
+    from src.training.enhanced_lm_config import (
         DEFAULT_CONFIG,
         EnhancedLMOptimizerConfig,
     )

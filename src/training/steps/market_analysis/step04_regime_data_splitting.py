@@ -395,26 +395,50 @@ class RegimeDataSplittingStep:
             if not unified_files:
                 self.logger.error(f'❌ No unified data files found in {unified_data_path}')
                 return None
-            unified_data = []
+            unified_data_segments = []
+            use_asof_merge = bool(self.config.get('use_asof_merge', True))
+            merge_tolerance_ms = int(self.config.get('regime_merge_tolerance_ms', 60000))
+            # Load regime data once and sort
+            regime_df = pandas.read_parquet(regime_file)
+            regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
+            regime_df = regime_df.sort_values('timestamp')
+            total_input_rows = 0
+            total_merged_rows = 0
             for file_path in sorted(unified_files):
                 df = pandas.read_parquet(file_path)
                 df = self.standards.standardize_timestamp(df, 'timestamp')
                 df = self.standards.enforce_schema(df, 'unified')
-                unified_data.append(df)
-            unified_df = pd.concat(unified_data, ignore_index=True)
-            regime_df = pandas.read_parquet(regime_file)
-            regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
-            merged_data = pd.merge(unified_df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
+                df = df.sort_values('timestamp')
+                total_input_rows += len(df)
+                if use_asof_merge:
+                    try:
+                        merged_chunk = pd.merge_asof(
+                            df,
+                            regime_df[['timestamp', 'composite_cluster_id']],
+                            on='timestamp',
+                            direction='nearest',
+                            tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
+                        )
+                        # Drop rows where no near regime match found
+                        merged_chunk = merged_chunk.dropna(subset=['composite_cluster_id'])
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ merge_asof failed for {file_path.name}: {e}; falling back to inner merge')
+                        merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
+                else:
+                    merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
+                total_merged_rows += len(merged_chunk)
+                unified_data_segments.append(merged_chunk)
+            unified_df = pd.concat(unified_data_segments, ignore_index=True) if unified_data_segments else pd.DataFrame()
             try:
-                retention_ratio = len(merged_data) / max(len(unified_df), 1) if len(unified_df) else 0.0
+                retention_ratio = (total_merged_rows / max(total_input_rows, 1)) if total_input_rows else 0.0
                 self.logger.info(f'📈 Merge retention ratio: {retention_ratio:.3f}')
                 min_retention = float(self.config.get('regime_merge_min_retention', 0.8))
                 if retention_ratio < min_retention:
                     self.logger.warning(f'⚠️ Low retention after regime merge: {retention_ratio:.3f} (< {min_retention:.2f}). Check timestamp alignment and data coverage.')
             except Exception:
                 pass
-            self.logger.info(f'✅ Loaded {len(merged_data)} data points with regime information')
-            return merged_data
+            self.logger.info(f'✅ Loaded {len(unified_df)} data points with regime information')
+            return unified_df
         except Exception as e:
             self.logger.exception(f'❌ Error loading regime data: {e}')
             return None
@@ -424,6 +448,23 @@ class RegimeDataSplittingStep:
         """Save the unified regime dataset to parquet file."""
         try:
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
+            # Optional streaming write to reduce memory footprint for large frames
+            use_streaming_writer = bool(self.config.get('use_streaming_writer', True))
+            if use_streaming_writer and len(data) > int(self.config.get('streaming_min_rows', 2_000_000)):
+                try:
+                    import pyarrow as pa  # type: ignore
+                    import pyarrow.parquet as pq  # type: ignore
+                    schema = pa.Schema.from_pandas(data)
+                    with pq.ParquetWriter(unified_file, schema) as writer:  # type: ignore
+                        chunk_size = int(self.config.get('streaming_chunk_rows', 500_000))
+                        for start in range(0, len(data), chunk_size):
+                            batch = data.iloc[start:start + chunk_size]
+                            table = pa.Table.from_pandas(batch, schema=schema, preserve_index=False)
+                            writer.write_table(table)
+                    self.logger.info(f'✅ Saved unified regime dataset (streaming): {len(data)} rows -> {unified_file}')
+                    return True
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Streaming writer failed, falling back to pandas parquet: {e}')
             data.to_parquet(unified_file, index=False)
             self.logger.info(f'✅ Saved unified regime dataset: {len(data)} rows -> {unified_file}')
             return True
@@ -479,13 +520,35 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     def _calculate_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int]) -> Dict[str, Any]:
-        """Calculate simple per-regime statistics compatible with tests."""
+        """Calculate per-regime statistics.
+
+        Produces both legacy and enriched fields for backward compatibility with validators.
+        Legacy: count, duration_minutes, mean_volume
+        Enriched: percentage, mean_volatility, mean_momentum
+        """
         try:
             stats: Dict[int, Dict[str, Any]] = {}
+            total_rows = max(int(len(data)), 1)
+            # Precompute simple proxies for volatility and momentum if columns exist
+            has_close = 'close' in data.columns
+            # Compute returns for volatility/momentum estimates if possible
+            returns = None
+            if has_close:
+                try:
+                    returns = data['close'].pct_change().fillna(0.0)
+                except Exception:
+                    returns = None
             for regime_id in regime_ids:
                 regime_data = data[data['composite_cluster_id'] == regime_id]
                 if len(regime_data) == 0:
-                    stats[int(regime_id)] = {'count': 0, 'duration_minutes': 0, 'mean_volume': 0.0}
+                    stats[int(regime_id)] = {
+                        'count': 0,
+                        'duration_minutes': 0,
+                        'mean_volume': 0.0,
+                        'percentage': 0.0,
+                        'mean_volatility': 0.0,
+                        'mean_momentum': 0.0,
+                    }
                     continue
                 start_ts = regime_data['timestamp'].min()
                 end_ts = regime_data['timestamp'].max()
@@ -494,7 +557,27 @@ class RegimeDataSplittingStep:
                 except Exception:
                     duration_minutes = int((pd.to_datetime(end_ts) - pd.to_datetime(start_ts)).total_seconds() / 60)
                 mean_volume = float(regime_data['volume'].mean()) if 'volume' in regime_data.columns else 0.0
-                stats[int(regime_id)] = {'count': int(len(regime_data)), 'duration_minutes': duration_minutes, 'mean_volume': mean_volume}
+                # Enriched fields
+                percentage = float(len(regime_data)) / float(total_rows)
+                if has_close:
+                    try:
+                        regime_returns = regime_data['close'].pct_change().fillna(0.0)
+                        mean_volatility = float(regime_returns.rolling(window=30, min_periods=5).std().mean())
+                        mean_momentum = float(regime_returns.rolling(window=30, min_periods=5).mean().mean())
+                    except Exception:
+                        mean_volatility = 0.0
+                        mean_momentum = 0.0
+                else:
+                    mean_volatility = 0.0
+                    mean_momentum = 0.0
+                stats[int(regime_id)] = {
+                    'count': int(len(regime_data)),
+                    'duration_minutes': duration_minutes,
+                    'mean_volume': mean_volume,
+                    'percentage': percentage,
+                    'mean_volatility': mean_volatility,
+                    'mean_momentum': mean_momentum,
+                }
             return stats
         except Exception as e:
             self.logger.exception(f'❌ Error calculating regime statistics: {e}')

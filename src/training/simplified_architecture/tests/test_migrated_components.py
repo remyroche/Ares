@@ -9,10 +9,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    try:
     import pytest
-except ImportError:
-    pytest = None
 except ImportError:
     pytest = None
 from datetime import datetime, timedelta

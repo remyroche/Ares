@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Import emoji logger with fallback
-try:
-    from src.utils.emoji_logger import (
 import json
 import logging
 
+try:
+    from src.utils.emoji_logger import (
         error,
         warning,
         critical,

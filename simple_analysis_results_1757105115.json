@@ -1,0 +1,27 @@
+{
+  "directory": ".",
+  "file_count": 1125,
+  "analysis_time": 0.0020673274993896484,
+  "results": [
+    {
+      "tool": "flake8",
+      "error": "[Errno 2] No such file or directory: 'flake8'"
+    },
+    {
+      "tool": "pylint",
+      "error": "[Errno 2] No such file or directory: 'pylint'"
+    },
+    {
+      "tool": "mypy",
+      "error": "[Errno 2] No such file or directory: 'mypy'"
+    },
+    {
+      "tool": "bandit",
+      "error": "[Errno 2] No such file or directory: 'bandit'"
+    },
+    {
+      "tool": "radon",
+      "error": "[Errno 2] No such file or directory: 'radon'"
+    }
+  ]
+}

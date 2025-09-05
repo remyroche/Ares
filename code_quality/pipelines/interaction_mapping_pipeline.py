@@ -38,8 +38,7 @@ from visualizers.dependency_graph import DependencyGraph
 from scripts.extract_interactions import ExtractInteractions
 from scripts.interaction_summary import InteractionSummary
 
-# Import pipeline mapper
-from pipelines.code_interaction_mapper import CodeInteractionMapperPipeline
+# Note: CodeInteractionMapperPipeline was removed as it was redundant with mappers
 
 # Import core components
 from core.config import get_default_config

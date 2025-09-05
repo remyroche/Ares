@@ -31,9 +31,7 @@ from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import MissingImportFixer
-from scripts.bulk_syntax_cleanup import BulkSyntaxCleanup
-from scripts.apply_all_fixes import ApplyAllFixes
-from scripts.final_code_fixes import FinalCodeFixes
+# Note: bulk_syntax_cleanup, apply_all_fixes, and final_code_fixes were removed as redundant
 from scripts.fix_async_await import AsyncAwaitFixer
 
 # Import comprehensive fixers (ONLY auto-fixing related)

@@ -33,11 +33,6 @@ class LIMEAnalyzer:
         """Check if LIME is available and initialize if possible."""
         try:
             import lime
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-
             self.lime = lime
             self.lime_tabular = lime.lime_tabular
             self.lime_available = True

@@ -35,6 +35,7 @@ def register_service(
     config: dict[str, Any] | None = None,
 ) -> None:
     # Use type as key to align with canonical container usage
+    container = get_container()
     container.register(
         service_type,
         implementation=implementation,
@@ -45,4 +46,5 @@ def register_service(
 
 
 async def resolve_service(service_type: type[T]) -> T:
+    container = get_container()
     return container.resolve(service_type)

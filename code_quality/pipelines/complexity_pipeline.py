@@ -94,17 +94,52 @@ class ComplexityPipeline:
         print("="*60)
         
         try:
-            results = self.complexity_analyzer.analyze_cyclomatic_complexity(str(self.project_root))
+            print(f"Analyzing directory: {self.project_root}")
+            results = self.complexity_analyzer.analyze_directory(str(self.project_root))
+            print(f"Analysis completed. Found {len(results)} files.")
+            
+            # Convert ModuleComplexity objects to dictionaries for JSON serialization
+            serializable_results = {}
+            for file_path, module_complexity in results.items():
+                serializable_results[file_path] = {
+                    "path": module_complexity.path,
+                    "functions": [
+                        {
+                            "name": func.name,
+                            "complexity": func.complexity,
+                            "line_number": func.line_number,
+                            "signature": func.signature
+                        } for func in module_complexity.functions
+                    ],
+                    "classes": [
+                        {
+                            "name": cls.name,
+                            "complexity": cls.complexity,
+                            "line_number": cls.line_number,
+                            "methods": [
+                                {
+                                    "name": method.name,
+                                    "complexity": method.complexity,
+                                    "line_number": method.line_number
+                                } for method in cls.methods
+                            ]
+                        } for cls in module_complexity.classes
+                    ],
+                    "overall_metrics": {
+                        "cyclomatic_complexity": module_complexity.overall_metrics.cyclomatic_complexity,
+                        "maintainability_index": module_complexity.overall_metrics.maintainability_index,
+                        "halstead_volume": module_complexity.overall_metrics.halstead_volume
+                    },
+                    "complexity_score": module_complexity.complexity_score
+                }
             
             # Generate complexity report
             complexity_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "cyclomatic_complexity",
                 "project_root": str(self.project_root),
-                "total_functions": len(results.get("functions", [])),
-                "high_complexity_functions": len([f for f in results.get("functions", []) 
-                                                if f.get("complexity", 0) > 10]),
-                "results": results
+                "total_files": len(results),
+                "results": serializable_results
             }
             
             # Save report
@@ -112,13 +147,17 @@ class ComplexityPipeline:
             with open(report_path, "w") as f:
                 json.dump(complexity_report, f, indent=2)
             
+            print(f"Report saved to: {report_path}")
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "high_complexity_count": complexity_report["high_complexity_functions"],
-                "results": results
+                "total_files_analyzed": complexity_report["total_files"],
+                "results": serializable_results
             }
         except Exception as e:
+            print(f"Error in complexity analysis: {e}")
+            import traceback
+            traceback.print_exc()
             return {"status": "error", "error": str(e)}
     
     def run_cognitive_complexity_analysis(self) -> Dict[str, Any]:

@@ -134,6 +134,8 @@ class HMMRegimeDiscoveryStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        # Default to no external quality manager unless injected
+        self.data_quality_manager = None
         self._validate_environment()
         self._initialize_components()
 

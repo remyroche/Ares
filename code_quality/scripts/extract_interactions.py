@@ -9,6 +9,17 @@ from datetime import datetime
 from pathlib import Path
 
 
+class ExtractInteractions:
+    """Class wrapper for interaction extraction functionality."""
+    
+    def __init__(self, project_root: str = None):
+        self.project_root = Path(project_root) if project_root else Path.cwd()
+    
+    def extract_interactions(self, json_file):
+        """Extract interaction patterns from the validation report."""
+        return extract_interactions(json_file)
+
+
 def extract_interactions(json_file):
     """Extract interaction patterns from the validation report."""
 

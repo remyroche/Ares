@@ -15,10 +15,10 @@ class Flake8Analyzer(BaseCodeAnalyzer):
     """Flake8 linter plugin."""
 
     def __init__(self, config: dict[str, Any] = None):
-        super().__init__(config)
         self.name = "Flake8"
         self.description = "Python linter for style guide enforcement"
         self.version = "1.0.0"
+        super().__init__(config)
 
     def get_name(self) -> str:
         return self.name
@@ -28,6 +28,21 @@ class Flake8Analyzer(BaseCodeAnalyzer):
 
     def get_version(self) -> str:
         return self.version
+    
+    def get_metadata(self):
+        """Return plugin metadata."""
+        from plugins.base_plugin import PluginMetadata, PluginCategory, PluginPriority
+        return PluginMetadata(
+            name=self.name,
+            version=self.version,
+            description=self.description,
+            author="Code Quality Pipeline",
+            category=PluginCategory.LINTING,
+            priority=PluginPriority.HIGH,
+            dependencies=["flake8"],
+            tags={"linting", "style", "flake8"},
+            required_packages=["flake8"]
+        )
 
     def can_analyze(self, file_path: str) -> bool:
         """Check if Flake8 can analyze this file."""

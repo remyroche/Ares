@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import complexity analyzers (ONLY complexity-related)
 from analyzers.complexity_analyzer import ComplexityAnalyzer
@@ -60,9 +61,13 @@ class ComplexityPipeline:
         
         # Initialize plugin system
         if self.enable_plugins:
-            self.plugin_registry = PluginRegistry()
-            self.plugin_manager = PluginManager(self.plugin_registry)
-            self._register_complexity_plugins()
+            try:
+                self.plugin_registry = PluginRegistry()
+                self.plugin_manager = PluginManager(self.plugin_registry)
+                self._register_complexity_plugins()
+            except Exception as e:
+                print(f"⚠️  Warning: Could not initialize plugin system: {e}")
+                self.enable_plugins = False
         
         # Setup reports directory
         self.reports_dir = self.project_root / "code_quality" / "reports" / "complexity"

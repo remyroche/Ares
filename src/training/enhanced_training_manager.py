@@ -543,7 +543,7 @@ class TrainingManager:
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
-            cpu_percent = process.cpu_percent(interval=0.1)
+            cpu_percent = process.cpu_percent()
             system_memory = psutil.virtual_memory()
             system_memory_percent = system_memory.percent
             return {'memory_mb': float(memory_mb), 'cpu_percent': float(cpu_percent), 'system_memory_percent': float(system_memory_percent), 'available_memory_gb': float(system_memory.available / 1024 / 1024 / 1024)}
@@ -572,7 +572,7 @@ class TrainingManager:
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             timeframe = pipeline_state.get('timeframe', '1m')
             checkpoint_dir = f'checkpoints/{exchange}/{symbol}/{timeframe}'
-            validation_result = await self.step_dependency_validator.validate_step_prerequisites(step_name=step_name, pipeline_state=pipeline_state, checkpoint_dir=checkpoint_dir, force_rerun=force_rerun)
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(symbol=symbol, exchange=exchange, data_dir=checkpoint_dir)
             if validation_result['valid']:
                 self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
                 return True

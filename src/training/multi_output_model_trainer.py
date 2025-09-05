@@ -436,9 +436,9 @@ class MultiOutputModelTrainer:
             raise ImportError('XGBoost is not available. Please install xgboost package.')
         self.logger.info('🌳 Training XGBoost multi-output model...')
         direction_model = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=self.config.random_state, eval_metric='logloss', use_label_encoder=False)
-        direction_model.fit(X_train, y_dir_train, eval_set=[(X_val, y_dir_val)], early_stopping_rounds=10, verbose=False)
+        direction_model.fit(X_train, y_dir_train)
         profit_model = xgb.XGBRegressor(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=self.config.random_state, eval_metric='rmse')
-        profit_model.fit(X_train, y_prof_train, eval_set=[(X_val, y_prof_val)], early_stopping_rounds=10, verbose=False)
+        profit_model.fit(X_train, y_prof_train)
         direction_pred = direction_model.predict(X_val)
         profit_pred = profit_model.predict(X_val)
         direction_accuracy = accuracy_score(y_dir_val, direction_pred)
@@ -454,9 +454,9 @@ class MultiOutputModelTrainer:
             raise ImportError('CatBoost is not available. Please install catboost package.')
         self.logger.info('🐱 Training CatBoost multi-output model...')
         direction_model = cb.CatBoostClassifier(iterations=100, depth=6, learning_rate=0.1, random_state=self.config.random_state, verbose=False)
-        direction_model.fit(X_train, y_dir_train, eval_set=(X_val, y_dir_val), early_stopping_rounds=10)
+        direction_model.fit(X_train, y_dir_train)
         profit_model = cb.CatBoostRegressor(iterations=100, depth=6, learning_rate=0.1, random_state=self.config.random_state, verbose=False)
-        profit_model.fit(X_train, y_prof_train, eval_set=(X_val, y_prof_val), early_stopping_rounds=10)
+        profit_model.fit(X_train, y_prof_train)
         direction_pred = direction_model.predict(X_val)
         profit_pred = profit_model.predict(X_val)
         direction_accuracy = accuracy_score(y_dir_val, direction_pred)
@@ -540,9 +540,9 @@ class MultiOutputModelTrainer:
     def _train_lightgbm_multi_output(self, X_train: np.ndarray, X_val: np.ndarray, y_dir_train: np.ndarray, y_dir_val: np.ndarray, y_prof_train: np.ndarray, y_prof_val: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Train LightGBM multi-output model."""
         direction_model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=self.config.random_state, verbose=-1)
-        direction_model.fit(X_train, y_dir_train, eval_set=[(X_val, y_dir_val)], eval_metric='binary_logloss', early_stopping_rounds=10, verbose=False)
+        direction_model.fit(X_train, y_dir_train)
         profit_model = lgb.LGBMRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=self.config.random_state, verbose=-1)
-        profit_model.fit(X_train, y_prof_train, eval_set=[(X_val, y_prof_val)], eval_metric='rmse', early_stopping_rounds=10, verbose=False)
+        profit_model.fit(X_train, y_prof_train)
         y_dir_pred = direction_model.predict(X_val)
         y_prof_pred = profit_model.predict(X_val)
         direction_metrics = {'accuracy': accuracy_score(y_dir_val, y_dir_pred), 'precision': precision_score(y_dir_val, y_dir_pred, zero_division=0), 'recall': recall_score(y_dir_val, y_dir_pred, zero_division=0), 'f1': f1_score(y_dir_val, y_dir_pred, zero_division=0)}
@@ -812,10 +812,10 @@ class MultiOutputModelTrainer:
             from sklearn.utils.class_weight import compute_class_weight
             class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
             sample_weights = class_weights[y_train.astype(int)]
-            model.fit(X_train, y_train, sample_weight=sample_weights, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
+            model.fit(X_train, y_train, sample_weight=sample_weights)
         except Exception as e:
             self.logger.warning(f'Could not compute class weights for {prob_type}: {e}')
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=50)
+            model.fit(X_train, y_train)
         y_pred = model.predict(X_val)
         y_pred_proba = model.predict_proba(X_val)[:, 1]
         metrics = {'accuracy': accuracy_score(y_val, y_pred), 'f1': f1_score(y_val, y_pred), 'precision': precision_score(y_val, y_pred), 'recall': recall_score(y_val, y_pred)}

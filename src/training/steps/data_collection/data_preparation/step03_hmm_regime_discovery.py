@@ -17,6 +17,7 @@ sys.path.insert(0, str(project_root))
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.graceful_module_handler import graceful_handler
+from src.utils.pipeline_standards import PipelineStandards
 
 logger = system_logger.getChild("Step03HMMRegimeDiscovery")
 
@@ -39,6 +40,9 @@ class Step03HMMRegimeDiscovery(BaseStep):
         
         # Setup graceful imports
         graceful_handler.setup_graceful_imports()
+        
+        # Initialize pipeline standards
+        self.standards = PipelineStandards(self.logger)
         
         # Try to import HMM libraries with fallback
         self.hmm_model = self._setup_hmm_model()
@@ -66,6 +70,9 @@ class Step03HMMRegimeDiscovery(BaseStep):
             
             if data is None:
                 raise ValueError("No DataFrame available for regime discovery")
+            
+            # Validate input data using pipeline standards
+            data = self._validate_input_data(data)
             
             self.logger.info(f"📊 Processing {len(data)} rows for regime discovery")
             
@@ -267,6 +274,57 @@ class Step03HMMRegimeDiscovery(BaseStep):
         
         self.logger.info(f"💾 Saved regime results to {output_path}")
         return output_path
+    
+    def _validate_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate input data using pipeline standards.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Validated DataFrame
+        """
+        self.logger.info("🔍 Validating input data using pipeline standards...")
+        
+        # Validate data quality
+        validation_result = self.standards.validate_data_quality(data, 'unified')
+        
+        if not validation_result.passed:
+            self.logger.warning(f"⚠️ Data quality issues detected: {validation_result.quality_score:.2f}")
+            for issue in validation_result.issues:
+                self.logger.warning(f"   - {issue.message}")
+        
+        # Apply basic fixes if needed
+        fixed_data = data.copy()
+        
+        # Ensure required columns exist
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in fixed_data.columns]
+        if missing_columns:
+            self.logger.error(f"❌ Missing required columns: {missing_columns}")
+            raise ValueError(f"Missing required columns for regime discovery: {missing_columns}")
+        
+        # Ensure numeric data types
+        for col in required_columns:
+            if col in fixed_data.columns:
+                if not pd.api.types.is_numeric_dtype(fixed_data[col]):
+                    self.logger.info(f"🔢 Converting {col} to numeric")
+                    fixed_data[col] = pd.to_numeric(fixed_data[col], errors='coerce')
+        
+        # Remove rows with NaN values in critical columns
+        initial_count = len(fixed_data)
+        fixed_data = fixed_data.dropna(subset=required_columns)
+        removed_count = initial_count - len(fixed_data)
+        if removed_count > 0:
+            self.logger.info(f"🗑️ Removed {removed_count} rows with NaN values")
+        
+        if len(fixed_data) < 100:
+            self.logger.error(f"❌ Insufficient data after cleaning: {len(fixed_data)} rows")
+            raise ValueError(f"Insufficient data for regime discovery: {len(fixed_data)} rows")
+        
+        self.logger.info(f"✅ Input validation completed: {len(fixed_data)} rows")
+        return fixed_data
 
 
 # Export the step class

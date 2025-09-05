@@ -36,14 +36,6 @@ except Exception:
     def log_step_metrics(*args, **kwargs) -> None:
         return None
 
-def with_tracing_span(_name: str) -> None:
-
-    def _decorator(fn: Any) -> None:
-        return fn
-    return _decorator
-
-def resource_monitor(fn: Any) -> None:
-    return fn
 logger = system_logger.getChild('Step4TripleBarrierMethod')
 
 class TripleBarrierMethodStep:
@@ -59,22 +51,17 @@ class TripleBarrierMethodStep:
     def _initialize_components(self) -> None:
         """Initialize triple barrier method components."""
         self.logger.info('🔧 Initializing triple barrier method components...')
-        try:
-            from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-            # Initialize with default parameters - will be overridden by optimized parameters
-            default_config = self._get_triple_barrier_config()
-            self.triple_barrier_labeler = OptimizedTripleBarrierLabeling(
-                profit_take_multiplier=default_config['profit_take_multiplier'],
-                stop_loss_multiplier=default_config['stop_loss_multiplier'],
-                time_barrier_minutes=default_config['time_barrier_minutes'],
-                max_lookahead=default_config['max_lookahead'],
-                binary_classification=True
-            )
-            self.logger.info('✅ Optimized triple barrier labeler initialized successfully')
-        except Exception as e:
-            self.logger.warning(f'⚠️ Could not import OptimizedTripleBarrierLabeling: {e}')
-            self.logger.info('📝 Proceeding without optimized triple barrier labeler')
-            self.triple_barrier_labeler = None
+        from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+        # Initialize with default parameters - will be overridden by optimized parameters
+        default_config = self._get_triple_barrier_config()
+        self.triple_barrier_labeler = OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=default_config['profit_take_multiplier'],
+            stop_loss_multiplier=default_config['stop_loss_multiplier'],
+            time_barrier_minutes=default_config['time_barrier_minutes'],
+            max_lookahead=default_config['max_lookahead'],
+            binary_classification=True
+        )
+        self.logger.info('✅ Optimized triple barrier labeler initialized successfully')
 
     async def initialize(self) -> None:
         """Initialize the triple barrier method step."""
@@ -125,10 +112,7 @@ class TripleBarrierMethodStep:
             data = pd.read_parquet(latest_file)
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
             
-            if self.triple_barrier_labeler:
-                labeled_data = await self._apply_optimized_triple_barrier(data)
-            else:
-                labeled_data = await self._apply_basic_triple_barrier(data)
+            labeled_data = await self._apply_optimized_triple_barrier(data)
             
             if labeled_data is None:
                 self.logger.error('❌ Failed to generate triple barrier labels')
@@ -171,142 +155,35 @@ class TripleBarrierMethodStep:
                 execution_time=time.time() - step_start
             )
 
-    @with_enhanced_mlflow_logging('step04_5_triple_barrier_method')
-    @with_tracing_span('step04_5_triple_barrier_execute')
-    @handles_errors()
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
         labels = labeled_data.get('label')
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
         return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
 
-    async def _load_data(self, file_path: str) -> Optional[pd.DataFrame]:
-        try:
-            return pd.read_parquet(file_path)
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to load data from {file_path}: {e}')
-            return None
-
-    async def _apply_triple_barrier(self, data: pd.DataFrame, profit_target: float, stop_loss: float, max_holding: int) -> Optional[pd.DataFrame]:
-        try:
-            if getattr(self, 'triple_barrier_labeler', None) is not None and hasattr(self.triple_barrier_labeler, 'label_data'):
-                labeled = await self.triple_barrier_labeler.label_data(data, profit_target, stop_loss, max_holding)
-                return labeled
-            close_prices = data['close'].values
-            high_prices = data['high'].values
-            low_prices = data['low'].values
-            labels = np.zeros(len(close_prices), dtype=np.int8)
-            for i in range(len(close_prices) - 1):
-                entry_price = close_prices[i]
-                profit_barrier = entry_price * (1 + profit_target)
-                stop_barrier = entry_price * (1 - stop_loss)
-                for j in range(i + 1, min(i + max_holding, len(close_prices))):
-                    if high_prices[j] >= profit_barrier:
-                        labels[i] = 1
-                        break
-                    elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1
-                        break
-            return pd.DataFrame({'label': labels})
-        except Exception as e:
-            self.logger.exception(f'❌ Error applying triple barrier: {e}')
-            return None
-
-    async def _save_labeled_data(self, labeled_data: pd.DataFrame, output_path: Path) -> bool:
-        try:
-            ensure_directory(output_path.parent)
-            labeled_data.to_parquet(output_path)
-            return True
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to save labeled data: {e}')
-            return False
-
-    @with_enhanced_mlflow_logging('step04_5_triple_barrier_method')
-    @with_tracing_span('step04_5_triple_barrier_execute')
-    @handles_errors()
-    async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache') -> Dict[str, Any]:
-        try:
-            unified_data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
-            latest_file = max(list(unified_data_path.glob('*.parquet')), key=lambda x: x.stat().st_mtime)
-            data = await self._load_data(str(latest_file))
-            if data is None:
-                return {'success': False, 'error': 'data_load_failed'}
-            labeled = await self._apply_triple_barrier(data, self.config.get('PROFIT_TARGET', 0.02), self.config.get('STOP_LOSS', 0.01), self.config.get('MAX_HOLDING_PERIOD', 100))
-            if labeled is None:
-                return {'success': False, 'error': 'labeling_failed'}
-            output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-            saved = await self._save_labeled_data(labeled, output_path)
-            stats = self._calculate_label_statistics(pd.concat([data.reset_index(drop=True), labeled.reset_index(drop=True)], axis=1))
-            log_step_report(config=self.config, step_name='step04_5_triple_barrier_method', report_data={'stats': stats})
-            log_step_metrics(config=self.config, step_name='step04_5_triple_barrier_method', metrics={'total_labels': stats.get('total_labels', 0)})
-            return {'success': bool(saved), 'labeled_data': labeled, 'label_stats': stats}
-        except Exception as e:
-            self.logger.exception(f'❌ Execute failed: {e}')
-            return {'success': False, 'error': str(e)}
-
     def _get_triple_barrier_config(self) -> Dict[str, float]:
         """Extract triple barrier configuration parameters."""
         triple_barrier_config = self.config.get('triple_barrier', {})
         return {'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002), 'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001), 'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 30), 'max_lookahead': triple_barrier_config.get('max_lookahead', 100)}
 
-    def _create_triple_barrier_labeler(self, config: Dict[str, float]) -> Optional[Any]:
+    def _create_triple_barrier_labeler(self, config: Dict[str, float]) -> Any:
         """Create triple barrier labeler with optimized parameters."""
-        try:
-            from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-            return OptimizedTripleBarrierLabeling(
-                profit_take_multiplier=config['profit_take_multiplier'], 
-                stop_loss_multiplier=config['stop_loss_multiplier'], 
-                time_barrier_minutes=config['time_barrier_minutes'], 
-                max_lookahead=config['max_lookahead'], 
-                binary_classification=True
-            )
-        except ImportError as e:
-            self.logger.warning(f'⚠️ Could not import OptimizedTripleBarrierLabeling: {e}')
-            return None
+        from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+        return OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=config['profit_take_multiplier'], 
+            stop_loss_multiplier=config['stop_loss_multiplier'], 
+            time_barrier_minutes=config['time_barrier_minutes'], 
+            max_lookahead=config['max_lookahead'], 
+            binary_classification=True
+        )
 
-    async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
-        try:
-            config = self._get_triple_barrier_config()
-            labeler = self._create_triple_barrier_labeler(config)
-            if labeler is None:
-                self.logger.warning('⚠️ Could not create optimized labeler, falling back to basic implementation')
-                return await self._apply_basic_triple_barrier(data)
-            labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
-            return labeled_data
-        except Exception as e:
-            self.logger.exception(f'❌ Error in optimized triple barrier: {e}')
-            self.logger.info('📝 Falling back to basic triple barrier implementation')
-            return await self._apply_basic_triple_barrier(data)
+    async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply optimized triple barrier labeling using the initialized labeler."""
+        config = self._get_triple_barrier_config()
+        labeler = self._create_triple_barrier_labeler(config)
+        labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
+        return labeled_data
 
-    async def _apply_basic_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
-        try:
-            self.logger.warning('⚠️ Using basic triple barrier implementation')
-            close_prices = data['close'].values
-            high_prices = data['high'].values
-            low_prices = data['low'].values
-            profit_take_multiplier = self.config.get('triple_barrier', {}).get('profit_take_multiplier', 0.002)
-            stop_loss_multiplier = self.config.get('triple_barrier', {}).get('stop_loss_multiplier', 0.001)
-            max_lookahead = self.config.get('triple_barrier', {}).get('max_lookahead', 100)
-            labels = np.zeros(len(close_prices), dtype=np.int8)
-            profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
-            for i in range(len(close_prices) - 1):
-                entry_price = close_prices[i]
-                profit_barrier = entry_price * (1 + profit_take_multiplier)
-                stop_barrier = entry_price * (1 - stop_loss_multiplier)
-                for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
-                    if high_prices[j] >= profit_barrier:
-                        labels[i] = 1
-                        profit_pcts[i] = profit_take_multiplier
-                        break
-                    elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1
-                        profit_pcts[i] = -stop_loss_multiplier
-                        break
-            result_data = pd.DataFrame({'label': labels, 'potential_profit_pct': profit_pcts})
-            return result_data
-        except Exception as e:
-            self.logger.exception(f'❌ Error in basic triple barrier: {e}')
-            return None
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
     """Run Step 4: Triple Barrier Method with standardized return types.
@@ -368,8 +245,9 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='da
             execution_time=time.time() - step_start
         )
 if __name__ == '__main__':
-
     async def test() -> None:
-        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Step 4 result: {success}')
+        result = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        print(f'Step 4 result: {result.success}')
+        if not result.success:
+            print(f'Error: {result.error}')
     asyncio.run(test())

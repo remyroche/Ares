@@ -1,83 +1,49 @@
-"""
-HTML Reporter
+#!/usr/bin/env python3
+"""HTML report generator for code analysis results."""
 
-Generates beautiful, interactive HTML reports for code quality analysis.
-Provides rich visualizations and interactive elements for better data exploration.
-"""
-
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any
-
-
-@dataclass
-class HTMLReportConfig:
-    """Configuration for HTML report generation."""
-    include_charts: bool = True
-    include_interactive: bool = True
-    theme: str = "light"  # 'light' or 'dark'
-    custom_css: str | None = None
-    custom_js: str | None = None
+from typing import Dict, Any
 
 
 class HTMLReporter:
-    """
-    Generates comprehensive HTML reports for code quality analysis.
-
-    Features:
-    - Responsive design
-    - Interactive charts and tables
-    - Multiple themes
-    - Export functionality
-    - Search and filtering
-    """
-
-    def __init__(self, config: HTMLReportConfig | None = None):
-        """
-        Initialize the HTML reporter.
-
-        Args:
-            config: HTML report configuration
-        """
-        self.config = config or HTMLReportConfig()
-        self.template_dir = Path(__file__).parent / "templates"
-
-    def generate_report(self, data: dict[str, Any], title: str = "Code Quality Report") -> str:
-        """
-        Generate HTML report from analysis data.
-
-        Args:
-            data: Analysis data dictionary
-            title: Report title
-
-        Returns:
-            HTML string
-        """
-        html = self._generate_header(title)
-        html += self._generate_navigation()
-        html += self._generate_summary_section(data)
-        html += self._generate_details_section(data)
-        html += self._generate_charts_section(data)
-        html += self._generate_footer()
-
+    """Generates HTML reports from analysis results."""
+    
+    def __init__(self):
+        """Initialize the HTML reporter."""
+        self.template = self._get_base_template()
+    
+    def generate_from_analyzer_results(self, results: Dict[str, Any], title: str = "Code Analysis Report") -> str:
+        """Generate HTML report from analyzer results."""
+        html = self.template.format(
+            title=title,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            content=self._generate_content(results)
+        )
         return html
 
     def _generate_header(self, title: str) -> str:
         """Generate HTML header with CSS and JavaScript."""
 
         return f"""
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <style>{css}</style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>{js}</script>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #007acc; }}
+        .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }}
+        .metric {{ display: inline-block; margin: 10px; padding: 10px; background: #f0f8ff; border-radius: 5px; text-align: center; }}
+        .metric-value {{ font-size: 24px; font-weight: bold; color: #007acc; }}
+        .metric-label {{ font-size: 14px; color: #666; }}
+        .timestamp {{ text-align: center; color: #666; font-size: 0.9em; margin-top: 30px; }}
+    </style>
 </head>
-<body class="theme-{self.config.theme}">
+<body>
     <div class="container">
         <header class="report-header">
             <h1>{title}</h1>
@@ -252,6 +218,7 @@ from .exceptions import (
                 <button onclick="printReport()">Print Report</button>
             </div>
         </section>
+
     </div>
 </body>
 </html>
@@ -438,169 +405,26 @@ from .exceptions import (
 
     def _get_javascript(self) -> str:
         """Get JavaScript functionality."""
+
         return """
-        function initializeCharts() {
-            // Issues by category chart
-            const issuesCtx = document.getElementById('issuesChart');
-            if (issuesCtx) {
-                new Chart(issuesCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Errors', 'Warnings', 'Info'],
-                        datasets: [{
-                            data: [12, 19, 3],
-                            backgroundColor: ['#dc3545', '#ffc107', '#17a2b8']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Issues Distribution'
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Severity chart
-            const severityCtx = document.getElementById('severityChart');
-            if (severityCtx) {
-                new Chart(severityCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['Critical', 'High', 'Medium', 'Low'],
-                        datasets: [{
-                            label: 'Issue Count',
-                            data: [5, 12, 8, 3],
-                            backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#28a745']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Issues by Severity'
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        function exportToJSON() {
-            const data = getReportData();
-            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'code_quality_report.json';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function exportToCSV() {
-            const data = getReportData();
-            const csv = convertToCSV(data);
-            const blob = new Blob([csv], {type: 'text/csv'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'code_quality_report.csv';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function printReport() {
-            window.print();
-        }
-
-        function getReportData() {
-            // This would be populated with actual report data
-            return {
-                summary: {
-                    total_issues: 28,
-                    total_files: 15,
-                    quality_score: 85
-                },
-                timestamp: new Date().toISOString()
-            };
-        }
-
-        function convertToCSV(data) {
-            // Simple CSV conversion
-            const rows = [];
-            for (const [key, value] of Object.entries(data)) {
-                rows.push(`${key},${value}`);
-            }
-            return rows.join('\\n');
-        }
-"""
-
-    def save_report(self, html_content: str, output_path: str | Path) -> None:
+        <div class="section">
+            <h2>�� Analysis Summary</h2>
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div class="metric-label">Total Issues</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div class="metric-label">Files Analyzed</div>
+            </div>
+        </div>
         """
-        Save HTML report to file.
-
-        Args:
-            html_content: Generated HTML content
-            output_path: Path to save the report
+    
+    def _generate_dead_code_section(self, dead_code: Dict[str, Any]) -> str:
+        """Generate dead code analysis section."""
+        return """
+        <div class="section">
+            <h2>💀 Dead Code Analysis</h2>
+            <p>Dead code analysis results will be displayed here.</p>
+        </div>
         """
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
-
-    def generate_from_analyzer_results(self, analyzer_results: dict[str, Any], title: str = "Code Quality Report") -> str:
-        """
-        Generate HTML report from analyzer results.
-
-        Args:
-            analyzer_results: Results from various analyzers
-            title: Report title
-
-        Returns:
-            HTML string
-        """
-        # Transform analyzer results to report format
-        report_data = self._transform_analyzer_results(analyzer_results)
-        return self.generate_report(report_data, title)
-
-    def _transform_analyzer_results(self, results: dict[str, Any]) -> dict[str, Any]:
-        """Transform analyzer results to report format."""
-        transformed = {
-            "summary": {},
-            "details": {
-                "categories": [],
-                "files": [],
-            },
-        }
-
-        # Extract summary information
-        if "complexity" in results:
-            complexity = results["complexity"]
-            transformed["summary"]["total_files"] = complexity.get("total_files", 0)
-            transformed["summary"]["quality_score"] = complexity.get("average_complexity_score", 0)
-
-        if "dead_code" in results:
-            dead_code = results["dead_code"]
-            # Handle DeadCodeReport object (has attributes, not dict methods)
-            if hasattr(dead_code, 'total_issues'):
-                transformed["summary"]["total_issues"] = dead_code.total_issues
-            else:
-                transformed["summary"]["total_issues"] = dead_code.get("total_issues", 0)
-
-        # Extract categories
-        if "complexity" in results:
-            complexity_issues = results["complexity"].get("issues", [])
-            for issue in complexity_issues:
-                transformed["details"]["categories"].append({
-                    "name": issue.get("type", "complexity"),
-                    "count": 1,
-                    "severity": issue.get("severity", "medium"),
-                    "files_affected": 1,
-                })
-
-        return transformed

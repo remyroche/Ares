@@ -457,7 +457,6 @@ class SavingStep:
 @deterministic_seed(42)
 @idempotent_step(step_key="step16_saving")
 # @artifact_write_lock() - removed, handled by file system
-@validates()
 # @artifact_versioning("1.0") - removed, handled by pipeline
 @timeout(timeout=1200)
 @validates(

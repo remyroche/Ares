@@ -1,12 +1,6 @@
 
 import pandas as pd
 import numpy as np
-"""
-Modular Components with Single Responsibility
-
-This module demonstrates the Single Responsibility Principle (SRP) by breaking down
-complex pipeline components into focused, single-purpose modules.
-"""
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -80,94 +74,94 @@ class BaseExchangeDataSource(IExchangeDataSource):
         """Standardize OHLCV data format across exchanges."""
         raise NotImplementedError('Subclasses must implement data standardization')
 
-class BinanceDataSource(BaseExchangeDataSource):
-    """Binance-specific data source implementation."""
+class ExchangeDataSource(BaseExchangeDataSource):
+    """Generic exchange data source with configurable parameters."""
+
+    def __init__(self, exchange_name: str, symbols: List[str], timeframes: List[str], 
+                 price_range: Tuple[float, float], volume_range: Tuple[int, int], 
+                 **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._exchange_name = exchange_name
+        self._symbols = symbols
+        self._timeframes = timeframes
+        self._price_range = price_range
+        self._volume_range = volume_range
 
     @property
     def exchange_name(self) -> str:
-        return 'binance'
+        return self._exchange_name
 
     def get_supported_symbols(self) -> List[str]:
-        """Get Binance trading pairs."""
-        return ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
+        return self._symbols
 
     def get_supported_timeframes(self) -> List[str]:
-        """Get Binance supported timeframes."""
-        return ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
+        return self._timeframes
 
     async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
-        """Fetch OHLCV data from Binance."""
+        """Fetch OHLCV data with configurable price and volume ranges."""
         hours = int((end - start).total_seconds() / 3600)
-        data = pd.DataFrame({'timestamp': pd.date_range(start, end, freq='1H')[:hours], 'open': np.random.randn(hours) * 10 + 100, 'high': np.random.randn(hours) * 10 + 105, 'low': np.random.randn(hours) * 10 + 95, 'close': np.random.randn(hours) * 10 + 100, 'volume': np.random.randint(1000, 10000, hours)})
+        base_price = np.random.uniform(*self._price_range)
+        price_volatility = base_price * 0.05
+        
+        data = pd.DataFrame({
+            'timestamp': pd.date_range(start, end, freq='1H')[:hours],
+            'open': np.random.randn(hours) * price_volatility + base_price,
+            'high': np.random.randn(hours) * price_volatility + base_price * 1.05,
+            'low': np.random.randn(hours) * price_volatility + base_price * 0.95,
+            'close': np.random.randn(hours) * price_volatility + base_price,
+            'volume': np.random.randint(*self._volume_range, hours)
+        })
         return data.set_index('timestamp')
 
     def _perform_connection_test(self) -> bool:
-        """Test Binance API connectivity."""
         return True
-
-class CoinbaseDataSource(BaseExchangeDataSource):
-    """Coinbase-specific data source implementation."""
-
-    @property
-    def exchange_name(self) -> str:
-        return 'coinbase'
-
-    def get_supported_symbols(self) -> List[str]:
-        """Get Coinbase trading pairs."""
-        return ['BTC-USD', 'ETH-USD', 'SOL-USD', 'MATIC-USD']
-
-    def get_supported_timeframes(self) -> List[str]:
-        """Get Coinbase supported timeframes."""
-        return ['1m', '5m', '15m', '1h', '6h', '1d']
-
-    async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
-        """Fetch OHLCV data from Coinbase."""
-        hours = int((end - start).total_seconds() / 3600)
-        data = pd.DataFrame({'timestamp': pd.date_range(start, end, freq='1H')[:hours], 'open': np.random.randn(hours) * 15 + 50000, 'high': np.random.randn(hours) * 15 + 50500, 'low': np.random.randn(hours) * 15 + 49500, 'close': np.random.randn(hours) * 15 + 50000, 'volume': np.random.randint(100, 1000, hours)})
-        return data.set_index('timestamp')
-
-class KrakenDataSource(BaseExchangeDataSource):
-    """Kraken-specific data source implementation."""
-
-    @property
-    def exchange_name(self) -> str:
-        return 'kraken'
-
-    def get_supported_symbols(self) -> List[str]:
-        """Get Kraken trading pairs."""
-        return ['XXBTZUSD', 'XETHZUSD', 'XLTCZUSD', 'XXRPZUSD']
-
-    def get_supported_timeframes(self) -> List[str]:
-        """Get Kraken supported timeframes."""
-        return ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
-
-    async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
-        """Fetch OHLCV data from Kraken."""
-        hours = int((end - start).total_seconds() / 3600)
-        data = pd.DataFrame({'timestamp': pd.date_range(start, end, freq='1H')[:hours], 'open': np.random.randn(hours) * 12 + 45000, 'high': np.random.randn(hours) * 12 + 45500, 'low': np.random.randn(hours) * 12 + 44500, 'close': np.random.randn(hours) * 12 + 45000, 'volume': np.random.randint(500, 5000, hours)})
-        return data.set_index('timestamp')
 
 class ExchangeDataSourceFactory:
     """Factory for creating exchange data sources."""
-    _registry: Dict[str, Type[IExchangeDataSource]] = {'binance': BinanceDataSource, 'coinbase': CoinbaseDataSource, 'kraken': KrakenDataSource}
-
-    @classmethod
-    def register_exchange(cls, name: str, data_source_class: Type[IExchangeDataSource]) -> None:
-        """Register a new exchange data source."""
-        cls._registry[name.lower()] = data_source_class
+    
+    # Predefined exchange configurations
+    EXCHANGE_CONFIGS = {
+        'binance': {
+            'symbols': ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'],
+            'timeframes': ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'],
+            'price_range': (50, 200),
+            'volume_range': (1000, 10000)
+        },
+        'coinbase': {
+            'symbols': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'MATIC-USD'],
+            'timeframes': ['1m', '5m', '15m', '1h', '6h', '1d'],
+            'price_range': (10000, 100000),
+            'volume_range': (100, 1000)
+        },
+        'kraken': {
+            'symbols': ['XXBTZUSD', 'XETHZUSD', 'XLTCZUSD', 'XXRPZUSD'],
+            'timeframes': ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'],
+            'price_range': (20000, 80000),
+            'volume_range': (500, 5000)
+        }
+    }
 
     @classmethod
     def create(cls, exchange: str, **kwargs) -> IExchangeDataSource:
         """Create data source for specified exchange."""
         exchange_lower = exchange.lower()
-        if exchange_lower not in cls._registry:
-            raise ValueError(f'Unknown exchange: {exchange}. Available: {list(cls._registry.keys())}')
-        return cls._registry[exchange_lower](**kwargs)
+        if exchange_lower not in cls.EXCHANGE_CONFIGS:
+            raise ValueError(f'Unknown exchange: {exchange}. Available: {list(cls.EXCHANGE_CONFIGS.keys())}')
+        
+        config = cls.EXCHANGE_CONFIGS[exchange_lower]
+        return ExchangeDataSource(
+            exchange_name=exchange_lower,
+            symbols=config['symbols'],
+            timeframes=config['timeframes'],
+            price_range=config['price_range'],
+            volume_range=config['volume_range'],
+            **kwargs
+        )
 
     @classmethod
     def get_available_exchanges(cls) -> List[str]:
         """Get list of available exchanges."""
-        return list(cls._registry.keys())
+        return list(cls.EXCHANGE_CONFIGS.keys())
 
 class LocalDataSource(IDataSource):
     """Responsible ONLY for loading data from local files."""
@@ -203,79 +197,66 @@ class IDataValidator(ABC):
     def validate(self, data: pd.DataFrame) -> ValidationResult:
         """Validate the data."""
 
-class SchemaValidator(IDataValidator):
-    """Responsible ONLY for validating data schema."""
+class DataValidator(IDataValidator):
+    """Comprehensive data validator that handles schema, quality, and time series validation."""
 
-    def __init__(self, required_columns: List[str], column_types: Dict[str, type]=None) -> None:
-        self.required_columns = required_columns
+    def __init__(self, required_columns: List[str] = None, column_types: Dict[str, type] = None,
+                 max_null_percentage: float = 0.1, max_duplicate_percentage: float = 0.01,
+                 expected_frequency: str = None, max_gaps: int = 0) -> None:
+        self.required_columns = required_columns or []
         self.column_types = column_types or {}
+        self.max_null_percentage = max_null_percentage
+        self.max_duplicate_percentage = max_duplicate_percentage
+        self.expected_frequency = expected_frequency
+        self.max_gaps = max_gaps
 
     def validate(self, data: pd.DataFrame) -> ValidationResult:
-        """Validate data has required columns and types."""
+        """Comprehensive data validation."""
         errors = []
         warnings = []
-        metrics = {}
+        metrics = {'num_columns': len(data.columns), 'num_rows': len(data)}
+        
+        # Schema validation
         missing_columns = set(self.required_columns) - set(data.columns)
         if missing_columns:
             errors.append(f'Missing required columns: {missing_columns}')
+        
         for col, expected_type in self.column_types.items():
             if col in data.columns:
                 actual_type = data[col].dtype
                 if not np.issubdtype(actual_type, expected_type):
                     warnings.append(f"Column '{col}' has type {actual_type}, expected {expected_type}")
-        metrics['num_columns'] = len(data.columns)
-        metrics['num_rows'] = len(data)
-        return ValidationResult(is_valid=len(errors) == 0, errors=errors, warnings=warnings, metrics=metrics)
-
-class DataQualityValidator(IDataValidator):
-    """Responsible ONLY for validating data quality metrics."""
-
-    def __init__(self, max_null_percentage: float=0.1, max_duplicate_percentage: float=0.01) -> None:
-        self.max_null_percentage = max_null_percentage
-        self.max_duplicate_percentage = max_duplicate_percentage
-
-    def validate(self, data: pd.DataFrame) -> ValidationResult:
-        """Validate data quality metrics."""
-        errors = []
-        warnings = []
-        metrics = {}
+        
+        # Data quality validation
         null_percentage = data.isnull().sum().sum() / (len(data) * len(data.columns))
         metrics['null_percentage'] = null_percentage
         if null_percentage > self.max_null_percentage:
             errors.append(f'Too many null values: {null_percentage:.2%} > {self.max_null_percentage:.2%}')
+        
         duplicate_count = data.duplicated().sum()
         duplicate_percentage = duplicate_count / len(data)
         metrics['duplicate_percentage'] = duplicate_percentage
         if duplicate_percentage > self.max_duplicate_percentage:
             warnings.append(f'High duplicate rate: {duplicate_percentage:.2%} > {self.max_duplicate_percentage:.2%}')
-        return ValidationResult(is_valid=len(errors) == 0, errors=errors, warnings=warnings, metrics=metrics)
-
-class TimeSeriesValidator(IDataValidator):
-    """Responsible ONLY for validating time series properties."""
-
-    def __init__(self, expected_frequency: str=None, max_gaps: int=0) -> None:
-        self.expected_frequency = expected_frequency
-        self.max_gaps = max_gaps
-
-    def validate(self, data: pd.DataFrame) -> ValidationResult:
-        """Validate time series specific properties."""
-        errors = []
-        warnings = []
-        metrics = {}
-        if not isinstance(data.index, pd.DatetimeIndex):
+        
+        # Time series validation
+        if isinstance(data.index, pd.DatetimeIndex):
+            if not data.index.is_monotonic_increasing:
+                errors.append('Time series is not sorted')
+            
+            if self.expected_frequency:
+                inferred_freq = pd.infer_freq(data.index)
+                if inferred_freq != self.expected_frequency:
+                    warnings.append(f'Unexpected frequency: {inferred_freq} != {self.expected_frequency}')
+            
+            time_diffs = data.index.to_series().diff()
+            gaps = time_diffs[time_diffs > time_diffs.mode()[0]]
+            metrics['num_gaps'] = len(gaps)
+            if len(gaps) > self.max_gaps:
+                errors.append(f'Too many gaps in time series: {len(gaps)} > {self.max_gaps}')
+        else:
             errors.append('Data index is not DatetimeIndex')
-            return ValidationResult(False, errors, warnings, metrics)
-        if not data.index.is_monotonic_increasing:
-            errors.append('Time series is not sorted')
-        if self.expected_frequency:
-            inferred_freq = pd.infer_freq(data.index)
-            if inferred_freq != self.expected_frequency:
-                warnings.append(f'Unexpected frequency: {inferred_freq} != {self.expected_frequency}')
-        time_diffs = data.index.to_series().diff()
-        gaps = time_diffs[time_diffs > time_diffs.mode()[0]]
-        metrics['num_gaps'] = len(gaps)
-        if len(gaps) > self.max_gaps:
-            errors.append(f'Too many gaps in time series: {len(gaps)} > {self.max_gaps}')
+        
         return ValidationResult(is_valid=len(errors) == 0, errors=errors, warnings=warnings, metrics=metrics)
 
 class IFeatureCalculator(ABC):
@@ -289,62 +270,51 @@ class IFeatureCalculator(ABC):
     def get_feature_names(self) -> List[str]:
         """Get list of features this calculator produces."""
 
-class PriceFeatureCalculator(IFeatureCalculator):
-    """Responsible ONLY for calculating price-based features."""
+class FeatureCalculator(IFeatureCalculator):
+    """Comprehensive feature calculator that handles price, volume, and technical indicators."""
 
-    def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate price-based features."""
-        features = pd.DataFrame(index=data.index)
-        features['returns'] = data['close'].pct_change()
-        features['log_returns'] = np.log1p(features['returns'])
-        features['high_low_ratio'] = data['high'] / data['low']
-        features['close_open_ratio'] = data['close'] / data['open']
-        features['price_position'] = (data['close'] - data['low']) / (data['high'] - data['low'])
-        return features
-
-    def get_feature_names(self) -> List[str]:
-        """Get list of price features."""
-        return ['returns', 'log_returns', 'high_low_ratio', 'close_open_ratio', 'price_position']
-
-class VolumeFeatureCalculator(IFeatureCalculator):
-    """Responsible ONLY for calculating volume-based features."""
-
-    def __init__(self, window: int=20) -> None:
+    def __init__(self, window: int = 20, indicators: List[Dict[str, Any]] = None) -> None:
         self.window = window
+        self.indicators = indicators or []
 
     def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate volume-based features."""
+        """Calculate comprehensive features."""
         features = pd.DataFrame(index=data.index)
-        features['volume_sma'] = data['volume'].rolling(self.window).mean()
-        features['volume_ratio'] = data['volume'] / features['volume_sma']
-        features['volume_volatility'] = data['volume'].pct_change().rolling(self.window).std()
-        features['price_volume_corr'] = data['close'].pct_change().rolling(self.window).corr(data['volume'].pct_change())
-        return features
-
-    def get_feature_names(self) -> List[str]:
-        """Get list of volume features."""
-        return ['volume_sma', 'volume_ratio', 'volume_volatility', 'price_volume_corr']
-
-class TechnicalIndicatorCalculator(IFeatureCalculator):
-    """Responsible ONLY for calculating technical indicators."""
-
-    def __init__(self, indicators: List[Dict[str, Any]]) -> None:
-        self.indicators = indicators
-
-    def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate specified technical indicators."""
-        features = pd.DataFrame(index=data.index)
+        
+        # Price-based features
+        if 'close' in data.columns:
+            features['returns'] = data['close'].pct_change()
+            features['log_returns'] = np.log1p(features['returns'])
+        
+        if all(col in data.columns for col in ['high', 'low']):
+            features['high_low_ratio'] = data['high'] / data['low']
+            features['price_position'] = (data['close'] - data['low']) / (data['high'] - data['low'])
+        
+        if all(col in data.columns for col in ['close', 'open']):
+            features['close_open_ratio'] = data['close'] / data['open']
+        
+        # Volume-based features
+        if 'volume' in data.columns:
+            features['volume_sma'] = data['volume'].rolling(self.window).mean()
+            features['volume_ratio'] = data['volume'] / features['volume_sma']
+            features['volume_volatility'] = data['volume'].pct_change().rolling(self.window).std()
+            
+            if 'close' in data.columns:
+                features['price_volume_corr'] = data['close'].pct_change().rolling(self.window).corr(data['volume'].pct_change())
+        
+        # Technical indicators
         for indicator in self.indicators:
             name = indicator['name']
             params = indicator.get('params', {})
-            if name == 'RSI':
-                features[f"rsi_{params.get('period', 14)}"] = self._calculate_rsi(data['close'], params.get('period', 14))
-            elif name == 'SMA':
-                period = params.get('period', 20)
+            period = params.get('period', 14 if name == 'RSI' else 20)
+            
+            if name == 'RSI' and 'close' in data.columns:
+                features[f"rsi_{period}"] = self._calculate_rsi(data['close'], period)
+            elif name == 'SMA' and 'close' in data.columns:
                 features[f'sma_{period}'] = data['close'].rolling(period).mean()
-            elif name == 'EMA':
-                period = params.get('period', 20)
+            elif name == 'EMA' and 'close' in data.columns:
                 features[f'ema_{period}'] = data['close'].ewm(span=period).mean()
+        
         return features
 
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
@@ -357,14 +327,17 @@ class TechnicalIndicatorCalculator(IFeatureCalculator):
         return rsi
 
     def get_feature_names(self) -> List[str]:
-        """Get list of indicator features."""
-        names = []
+        """Get list of all features this calculator produces."""
+        names = ['returns', 'log_returns', 'high_low_ratio', 'close_open_ratio', 'price_position',
+                'volume_sma', 'volume_ratio', 'volume_volatility', 'price_volume_corr']
+        
         for indicator in self.indicators:
             name = indicator['name']
             params = indicator.get('params', {})
+            period = params.get('period', 14 if name == 'RSI' else 20)
             if name in ['RSI', 'SMA', 'EMA']:
-                period = params.get('period', 14 if name == 'RSI' else 20)
                 names.append(f'{name.lower()}_{period}')
+        
         return names
 
 class IModel(ABC):
@@ -435,24 +408,65 @@ class BaseModelTrainer(IModelTrainer):
         """Get feature importance if available."""
         return self.feature_importance_
 
-class LightGBMModel(IModel):
-    """Wrapper for LightGBM model with standard interface."""
+class ModelWrapper(IModel):
+    """Generic wrapper for any model with standard interface."""
 
-    def __init__(self, lgb_model: Any) -> None:
-        self.model = lgb_model
+    def __init__(self, model: Any, model_type: str, scaler: Any = None) -> None:
+        self.model = model
+        self.model_type = model_type
+        self.scaler = scaler
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
-        return self.model.predict(X)
+        if self.scaler:
+            X_scaled = self.scaler.transform(X)
+        else:
+            X_scaled = X.values
+        
+        if self.model_type == 'neural_network':
+            import torch
+            X_tensor = torch.FloatTensor(X_scaled)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(X_tensor)
+                predictions = (outputs > 0.5).float().numpy().squeeze()
+            return predictions
+        else:
+            return self.model.predict(X_scaled)
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities."""
-        return self.model.predict_proba(X)
+        if self.scaler:
+            X_scaled = self.scaler.transform(X)
+        else:
+            X_scaled = X.values
+        
+        if self.model_type == 'neural_network':
+            import torch
+            X_tensor = torch.FloatTensor(X_scaled)
+            self.model.eval()
+            with torch.no_grad():
+                outputs = torch.sigmoid(self.model(X_tensor)).numpy()
+            proba = np.column_stack([1 - outputs, outputs])
+            return proba
+        else:
+            return self.model.predict_proba(X_scaled)
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.model, path)
+        
+        if self.model_type == 'neural_network':
+            import torch
+            import joblib
+            torch.save(self.model.state_dict(), path.with_suffix('.pth'))
+            if self.scaler:
+                joblib.dump(self.scaler, path.with_suffix('.scaler'))
+        elif self.model_type == 'xgboost':
+            self.model.save_model(str(path))
+        else:
+            import joblib
+            joblib.dump(self.model, path)
 
     def load(self, path: Path) -> None:
         """Load model from disk."""
@@ -461,16 +475,41 @@ class LightGBMModel(IModel):
 class LightGBMTrainer(BaseModelTrainer):
     """LightGBM model trainer."""
 
+
     @property
     def model_type(self) -> str:
-        return 'lightgbm'
+        return self._model_type
 
     def _get_default_hyperparameters(self) -> Dict[str, Any]:
-        """Get LightGBM default hyperparameters."""
-        return {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 31, 'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': -1}
+        """Get default hyperparameters based on model type."""
+        defaults = {
+            'lightgbm': {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 31, 
+                        'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': -1},
+            'xgboost': {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 6, 
+                       'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': 0},
+            'random_forest': {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2, 
+                             'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1},
+            'neural_network': {'hidden_layers': [64, 32], 'activation': 'relu', 'dropout_rate': 0.2, 
+                              'learning_rate': 0.001, 'batch_size': 32, 'epochs': 100, 'early_stopping_patience': 10}
+        }
+        return defaults.get(self._model_type, {})
 
-    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train model based on type."""
+        if self._model_type == 'lightgbm':
+            return self._train_lightgbm(X, y, validation_data)
+        elif self._model_type == 'xgboost':
+            return self._train_xgboost(X, y, validation_data)
+        elif self._model_type == 'random_forest':
+            return self._train_random_forest(X, y, validation_data)
+        elif self._model_type == 'neural_network':
+            return self._train_neural_network(X, y, validation_data)
+        else:
+            raise ValueError(f"Unsupported model type: {self._model_type}")
+
+    def _train_lightgbm(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train LightGBM model."""
+        import lightgbm as lgb
         self.model = lgb.LGBMClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
         if validation_data is not None:
@@ -479,44 +518,11 @@ class LightGBMTrainer(BaseModelTrainer):
         self.model.fit(X, y, eval_set=eval_set, callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
         if hasattr(self.model, 'feature_importances_'):
             self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
-        return LightGBMModel(self.model)
+        return ModelWrapper(self.model, 'lightgbm')
 
-class XGBoostModel(IModel):
-    """Wrapper for XGBoost model with standard interface."""
-
-    def __init__(self, xgb_model: Any) -> None:
-        self.model = xgb_model
-
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Make predictions."""
-        return self.model.predict(X)
-
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Get prediction probabilities."""
-        return self.model.predict_proba(X)
-
-    def save(self, path: Path) -> None:
-        """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.model.save_model(str(path))
-
-    def load(self, path: Path) -> None:
-        """Load model from disk."""
-        self.model.load_model(str(path))
-
-class XGBoostTrainer(BaseModelTrainer):
-    """XGBoost model trainer."""
-
-    @property
-    def model_type(self) -> str:
-        return 'xgboost'
-
-    def _get_default_hyperparameters(self) -> Dict[str, Any]:
-        """Get XGBoost default hyperparameters."""
-        return {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 6, 'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': 0}
-
-    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
+    def _train_xgboost(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train XGBoost model."""
+        import xgboost as xgb
         self.model = xgb.XGBClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
         if validation_data is not None:
@@ -525,10 +531,7 @@ class XGBoostTrainer(BaseModelTrainer):
         self.model.fit(X, y, eval_set=eval_set, early_stopping_rounds=10, verbose=False)
         if hasattr(self.model, 'feature_importances_'):
             self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
-        return XGBoostModel(self.model)
-
-class RandomForestModel(IModel):
-    """Wrapper for Random Forest model with standard interface."""
+        return ModelWrapper(self.model, 'xgboost')
 
     def __init__(self, rf_model: Any) -> None:
         self.model = rf_model
@@ -562,11 +565,12 @@ class RandomForestTrainer(BaseModelTrainer):
         return {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1}
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
+
         """Train Random Forest model."""
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
         self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
-        return RandomForestModel(self.model)
+        return ModelWrapper(self.model, 'random_forest')
 
 class NeuralNetworkModel(IModel):
     """Wrapper for Neural Network model with standard interface."""
@@ -622,21 +626,30 @@ class NeuralNetworkTrainer(BaseModelTrainer):
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
         """Train Neural Network model."""
+
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         input_size = X.shape[1]
         hidden_layers = self.hyperparameters['hidden_layers']
+        
         layers = []
         prev_size = input_size
         for hidden_size in hidden_layers:
-            layers.extend([nn.Linear(prev_size, hidden_size), nn.ReLU() if self.hyperparameters['activation'] == 'relu' else nn.Tanh(), nn.Dropout(self.hyperparameters['dropout_rate'])])
+            layers.extend([
+                nn.Linear(prev_size, hidden_size),
+                nn.ReLU() if self.hyperparameters['activation'] == 'relu' else nn.Tanh(),
+                nn.Dropout(self.hyperparameters['dropout_rate'])
+            ])
             prev_size = hidden_size
         layers.append(nn.Linear(prev_size, 1))
+        
         model = nn.Sequential(*layers)
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(model.parameters(), lr=self.hyperparameters['learning_rate'])
+        
         X_tensor = torch.FloatTensor(X_scaled)
         y_tensor = torch.FloatTensor(y.values).unsqueeze(1)
+        
         model.train()
         for epoch in range(self.hyperparameters['epochs']):
             optimizer.zero_grad()
@@ -644,30 +657,27 @@ class NeuralNetworkTrainer(BaseModelTrainer):
             loss = criterion(outputs, y_tensor)
             loss.backward()
             optimizer.step()
+        
         self.model = model
-        return NeuralNetworkModel(model, scaler)
+        return ModelWrapper(model, 'neural_network', scaler)
 
 class ModelTrainerFactory:
     """Factory for creating model trainers."""
-    _registry: Dict[str, Type[IModelTrainer]] = {'lightgbm': LightGBMTrainer, 'xgboost': XGBoostTrainer, 'random_forest': RandomForestTrainer, 'neural_network': NeuralNetworkTrainer}
-
-    @classmethod
-    def register_trainer(cls, name: str, trainer_class: Type[IModelTrainer]) -> None:
-        """Register a new model trainer."""
-        cls._registry[name.lower()] = trainer_class
+    
+    SUPPORTED_MODELS = ['lightgbm', 'xgboost', 'random_forest', 'neural_network']
 
     @classmethod
     def create(cls, model_type: str, **hyperparameters) -> IModelTrainer:
         """Create model trainer for specified type."""
         model_type_lower = model_type.lower()
-        if model_type_lower not in cls._registry:
-            raise ValueError(f'Unknown model type: {model_type}. Available: {list(cls._registry.keys())}')
-        return cls._registry[model_type_lower](**hyperparameters)
+        if model_type_lower not in cls.SUPPORTED_MODELS:
+            raise ValueError(f'Unknown model type: {model_type}. Available: {cls.SUPPORTED_MODELS}')
+        return ModelTrainer(model_type_lower, **hyperparameters)
 
     @classmethod
     def get_available_models(cls) -> List[str]:
         """Get list of available model types."""
-        return list(cls._registry.keys())
+        return cls.SUPPORTED_MODELS.copy()
 
 class SimplifiedPipeline:
     """
@@ -708,14 +718,43 @@ class SimplifiedPipeline:
         return results
 
 async def example_usage() -> None:
-    """Example of using modular components."""
-    data_source = LocalDataSource('data/cache')
-    validators = [SchemaValidator(required_columns=['open', 'high', 'low', 'close', 'volume'], column_types={'volume': np.number}), DataQualityValidator(max_null_percentage=0.05), TimeSeriesValidator(expected_frequency='H', max_gaps=5)]
-    feature_calculators = [PriceFeatureCalculator(), VolumeFeatureCalculator(window=20), TechnicalIndicatorCalculator([{'name': 'RSI', 'params': {'period': 14}}, {'name': 'SMA', 'params': {'period': 20}}, {'name': 'EMA', 'params': {'period': 12}}])]
-    model_trainer = LightGBMTrainer(num_leaves=31, learning_rate=0.05, n_estimators=100)
-    pipeline = SimplifiedPipeline(data_source=data_source, validators=validators, feature_calculators=feature_calculators, model_trainer=model_trainer)
+    """Example of using simplified modular components."""
+    # Create data source
+    data_source = LocalDataSource(Path('data/cache'))
+    
+    # Create comprehensive validator
+    validator = DataValidator(
+        required_columns=['open', 'high', 'low', 'close', 'volume'],
+        column_types={'volume': np.number},
+        max_null_percentage=0.05,
+        expected_frequency='H',
+        max_gaps=5
+    )
+    
+    # Create comprehensive feature calculator
+    feature_calculator = FeatureCalculator(
+        window=20,
+        indicators=[
+            {'name': 'RSI', 'params': {'period': 14}},
+            {'name': 'SMA', 'params': {'period': 20}},
+            {'name': 'EMA', 'params': {'period': 12}}
+        ]
+    )
+    
+    # Create model trainer
+    model_trainer = ModelTrainerFactory.create('lightgbm', num_leaves=31, learning_rate=0.05, n_estimators=100)
+    
+    # Create and run pipeline
+    pipeline = SimplifiedPipeline(
+        data_source=data_source,
+        validators=[validator],
+        feature_calculators=[feature_calculator],
+        model_trainer=model_trainer
+    )
+    
     results = await pipeline.run(symbol='BTCUSDT', start=datetime(2023, 1, 1), end=datetime(2023, 12, 31))
     print('Pipeline completed successfully!')
     print(f"Features calculated: {results['features'].columns.tolist()}")
+
 if __name__ == '__main__':
     asyncio.run(example_usage())

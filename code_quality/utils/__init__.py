@@ -1,6 +1,4 @@
-"""
-Utility modules for code quality tools.
-"""
+"""Utility functions for code analysis."""
 
 from .file_utils import (
     backup_file,
@@ -17,3 +15,4 @@ __all__ = [
     "restore_file",
     "find_unused_imports",
 ]
+

@@ -384,9 +384,6 @@ class VectorizedOptunaOptimizer:
                 y = y[idx]
             try:
                 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
-from typing import Any
-import numpy as np
-
             except Exception as exc:
                 msg = 'scikit-learn is required for ML evaluation'
                 raise RuntimeError(msg) from exc

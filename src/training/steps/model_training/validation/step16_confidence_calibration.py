@@ -14,15 +14,17 @@ import pandas as pd
 import pandas as pd
 
 try:
+    import pandas as pd
 except ImportError:
     pd = None
+
 try:
     import joblib
-import collections
-import logging
-
 except Exception:
     joblib = None
+
+import collections
+import logging
 
 class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""

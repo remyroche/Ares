@@ -363,9 +363,9 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["basic", "enhanced", "unused_imports", "undefined_names", "auto_fix", "all"],
-        default="all",
-        help="Specific dead code analysis to run (default: all)"
+        choices=["basic", "enhanced", "auto_fix"],
+        default="enhanced",
+        help="Type of dead code analysis to perform (default: enhanced)"
     )
     parser.add_argument(
         "--auto-fix",

@@ -483,9 +483,9 @@ def main():
     parser.add_argument(
         "--fix-type",
         type=str,
-        choices=["imports", "syntax", "type_hints", "async", "dead_code", "plugins", "sequential", "all"],
-        default="all",
-        help="Specific fix type to run (default: all)"
+        choices=["imports", "syntax", "type_hints", "async", "dead_code", "all"],
+        default="imports",
+        help="Type of fixes to apply (default: imports)"
     )
     
     args = parser.parse_args()

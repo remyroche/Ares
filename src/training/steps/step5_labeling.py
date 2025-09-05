@@ -107,6 +107,14 @@ class LabelingStep:
         self.logger = system_logger.getChild("LabelingStep")
         self.start_time: Optional[float] = None
         self.meta_labeling_system: Optional[Any] = None
+        
+        # Initialize pipeline standards for validation
+        try:
+            from src.utils.pipeline_standards import PipelineStandards
+            self.standards = PipelineStandards(self.logger)
+        except ImportError:
+            self.standards = None
+            self.logger.warning("⚠️ Pipeline standards not available")
 
     def _validate_environment(self) -> None:
         missing = [k for k, ok in dependency_status.items() if not ok]
@@ -262,6 +270,106 @@ class LabelingStep:
 
         await self._save_labeled_data(labeled, data_dir, symbol, exchange, timeframe)
         return True
+    
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute labeling step with validation."""
+        try:
+            self.logger.info("🏷️ Starting labeling step with validation...")
+            
+            # Validate input data if available
+            data = pipeline_state.get('dataframe') or pipeline_state.get('validated_data')
+            if data is not None and isinstance(data, pd.DataFrame):
+                data = self._validate_and_fix_input_data(data)
+                pipeline_state['dataframe'] = data
+            
+            # Execute labeling
+            symbol = training_input.get('symbol', 'ETHUSDT')
+            exchange = training_input.get('exchange', 'BINANCE')
+            timeframe = training_input.get('timeframe', '1m')
+            data_dir = training_input.get('data_dir', 'data')
+            
+            success = await self.execute_labeling(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir
+            )
+            
+            return {
+                'success': success,
+                'step_name': 'step05_labeling',
+                'message': 'Labeling completed successfully' if success else 'Labeling failed'
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Labeling step failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'step_name': 'step05_labeling'
+            }
+    
+    def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate and fix input data using pipeline standards.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Validated and fixed DataFrame
+        """
+        if self.standards is None:
+            self.logger.warning("⚠️ Pipeline standards not available, skipping validation")
+            return data
+        
+        self.logger.info("🔍 Validating input data for labeling...")
+        
+        # Validate data quality using pipeline standards
+        validation_result = self.standards.validate_data_quality(data, 'unified')
+        
+        if not validation_result.passed:
+            self.logger.warning(f"⚠️ Data quality issues detected: {validation_result.quality_score:.2f}")
+            for issue in validation_result.issues:
+                self.logger.warning(f"   - {issue.message}")
+        
+        # Apply fixes for common issues
+        fixed_data = data.copy()
+        
+        # Fix duplicate timestamps
+        if 'timestamp' in fixed_data.columns:
+            duplicate_count = fixed_data['timestamp'].duplicated().sum()
+            if duplicate_count > 0:
+                self.logger.info(f"🗑️ Removing {duplicate_count} duplicate timestamps")
+                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+        
+        # Fix non-monotonic index
+        if 'timestamp' in fixed_data.columns:
+            if not fixed_data['timestamp'].is_monotonic_increasing:
+                self.logger.info("📈 Sorting data by timestamp")
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+        
+        # Ensure proper data types using pipeline standards
+        try:
+            fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
+            self.logger.info("✅ Applied schema enforcement")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Schema enforcement failed: {e}")
+        
+        # Set datetime index if timestamp column exists
+        if 'timestamp' in fixed_data.columns and not isinstance(fixed_data.index, pd.DatetimeIndex):
+            try:
+                fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
+                fixed_data = fixed_data.set_index('timestamp')
+                self.logger.info("📅 Set datetime index")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not set datetime index: {e}")
+        
+        # Final validation
+        final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
+        self.logger.info(f"✅ Final data quality score: {final_validation.quality_score:.2f}")
+        
+        return fixed_data
 
 
 __all__ = [

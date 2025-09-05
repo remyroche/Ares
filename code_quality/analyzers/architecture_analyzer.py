@@ -495,7 +495,7 @@ class ArchitectureAnalyzer:
         Returns:
             Dictionary containing analysis results
         """
-        python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
+        python_files = find_python_files(directory, self.config.exclude_directories)
         print(f"Analyzing architecture for {len(python_files)} Python files...")
 
         # Clear previous results
@@ -503,33 +503,72 @@ class ArchitectureAnalyzer:
         self.architecture_metrics.clear()
         self.dependency_graphs.clear()
         self.design_patterns.clear()
-        self.file_stats.clear()
 
+        components = {}
+        layers = []
+        violations = []
         total_issues = 0
         total_architecture_score = 0.0
         successful_files = 0
 
-
         for file_path in python_files:
-            content = self._read_file_safely(file_path)
-            if not content:
+            try:
+                # Analyze individual file
+                file_analysis = self.analyze_file(str(file_path))
+                
+                if file_analysis:
+                    # Extract component information
+                    component_info = {
+                        "type": "module",
+                        "file_path": str(file_path),
+                        "dependencies": file_analysis.get("dependencies", []),
+                        "coupling_score": file_analysis.get("coupling_score", 0.0),
+                        "cohesion_score": file_analysis.get("cohesion_score", 0.0),
+                        "abstraction_level": file_analysis.get("abstraction_level", 0),
+                        "design_patterns": file_analysis.get("design_patterns", []),
+                        "violations": file_analysis.get("violations", []),
+                        "architecture_score": file_analysis.get("architecture_score", 0.0)
+                    }
+                    
+                    components[str(file_path)] = component_info
+                    
+                    # Collect violations
+                    violations.extend(file_analysis.get("violations", []))
+                    
+                    # Update totals
+                    total_issues += len(file_analysis.get("violations", []))
+                    total_architecture_score += file_analysis.get("architecture_score", 0.0)
+                    successful_files += 1
+                    
+            except Exception as e:
+                print(f"Error analyzing {file_path}: {e}")
                 continue
-            
-            tree = self._parse_ast_safely(content, file_path)
-            if not tree:
-                continue
-            
-            component_info = self._analyze_component(tree, file_path)
-            if component_info:
-                components[str(file_path)] = component_info
-            
-            self.stats["files_analyzed"] += 1
+
+        # Calculate overall metrics
+        avg_architecture_score = total_architecture_score / successful_files if successful_files > 0 else 0.0
+        
+        # Identify architectural layers based on dependencies
+        layers = self._identify_architectural_layers(components)
         
         return {
             "components": components,
             "layers": layers,
+            "violations": violations,
             "total_components": len(components),
-            "stats": self.stats
+            "total_violations": len(violations),
+            "avg_architecture_score": avg_architecture_score,
+            "architecture_metrics": {
+                "total_files": len(python_files),
+                "successful_files": successful_files,
+                "failed_files": len(python_files) - successful_files,
+                "avg_coupling": sum(c.get("coupling_score", 0) for c in components.values()) / len(components) if components else 0,
+                "avg_cohesion": sum(c.get("cohesion_score", 0) for c in components.values()) / len(components) if components else 0,
+                "design_patterns_found": len(set(pattern for c in components.values() for pattern in c.get("design_patterns", [])))
+            },
+            "stats": {
+                "files_analyzed": successful_files,
+                "total_issues": total_issues
+            }
         }
     
     def _analyze_component(self, tree, file_path):
@@ -539,3 +578,44 @@ class ArchitectureAnalyzer:
             "dependencies": [],
             "file_path": str(file_path)
         }
+    
+    def _identify_architectural_layers(self, components: dict) -> list[dict]:
+        """Identify architectural layers based on component dependencies."""
+        layers = []
+        
+        # Simple layer identification based on file paths and dependencies
+        layer_patterns = {
+            "presentation": ["gui", "ui", "view", "template", "static"],
+            "business": ["service", "business", "logic", "handler"],
+            "data": ["model", "data", "database", "repository", "dao"],
+            "infrastructure": ["config", "util", "helper", "common", "base"]
+        }
+        
+        layer_components = {layer: [] for layer in layer_patterns.keys()}
+        
+        for file_path, component in components.items():
+            file_path_lower = file_path.lower()
+            assigned = False
+            
+            for layer_name, patterns in layer_patterns.items():
+                if any(pattern in file_path_lower for pattern in patterns):
+                    layer_components[layer_name].append(component)
+                    assigned = True
+                    break
+            
+            if not assigned:
+                # Default to infrastructure layer
+                layer_components["infrastructure"].append(component)
+        
+        # Create layer information
+        for layer_name, components_in_layer in layer_components.items():
+            if components_in_layer:
+                layers.append({
+                    "name": layer_name,
+                    "components": components_in_layer,
+                    "component_count": len(components_in_layer),
+                    "avg_coupling": sum(c.get("coupling_score", 0) for c in components_in_layer) / len(components_in_layer),
+                    "avg_cohesion": sum(c.get("cohesion_score", 0) for c in components_in_layer) / len(components_in_layer)
+                })
+        
+        return layers

@@ -3,6 +3,9 @@
 import contextlib
 import sys
 import os
+import pandas as pd
+import numpy as np
+from typing import Any
 
 # Add the steps directory to the path to import validation framework
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -52,14 +55,49 @@ except ImportError as e:
     
     VALIDATION_AVAILABLE = False
 
-from .core.decorators import handles_errors, traced
+# Import decorators with fallback
+try:
+    from src.utils.centralized_decorators import handles_errors, traced
+except ImportError:
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def traced(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
-
-    guard_dataframe_nulls,
-    handle_errors,
-    with_tracing_span
-)
-from .utils.logger import get_logger
+# Import utilities with fallback
+try:
+    from .utils.dataframe_guards import (
+        guard_dataframe_nulls,
+        handle_errors,
+        with_tracing_span
+    )
+except ImportError:
+    def guard_dataframe_nulls(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def handle_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def with_tracing_span(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+# Import logger with fallback
+try:
+    from src.utils.logger import get_logger
+except ImportError:
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
 
 try:
     import numba  # type: ignore

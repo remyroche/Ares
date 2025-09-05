@@ -7,6 +7,7 @@ import random
 import re
 import time
 import warnings
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -974,81 +975,76 @@ class TrainingManager:
             self.logger.exception(f'❌ Computational optimization initialization failed: {e}')
             return False
 
+    @dataclass
+    class PipelineStepConfig:
+        """Configuration for pipeline step execution."""
+        step_name: str
+        step_key: str
+        step_description: str
+        step_function: callable
+        step_args: dict
+        pipeline_state: dict
+        training_input: dict
+        step_times: dict
+        start_step_key: str
+        should_run_func: callable
+        is_fatal: bool = True
+
     async def _execute_pipeline_step_with_validation(
         self,
-        step_name: str,
-        step_key: str,
-        step_description: str,
-        step_function,
-        step_args: dict,
-        pipeline_state: dict,
-        training_input: dict,
-        step_times: dict,
-        start_step_key: str,
-        _should_run,
-        is_fatal: bool = True
+        config: PipelineStepConfig
     ) -> bool:
         """Execute a pipeline step with validation and error handling.
         
         Args:
-            step_name: Name of the step for logging
-            step_key: Key for the step in pipeline state
-            step_description: Human-readable description
-            step_function: Function to execute the step
-            step_args: Arguments to pass to step function
-            pipeline_state: Current pipeline state
-            training_input: Training input parameters
-            step_times: Dictionary to store step execution times
-            start_step_key: Starting step key for skipping logic
-            _should_run: Function to determine if step should run
-            is_fatal: Whether step failure should stop the pipeline
+            config: PipelineStepConfig containing all step execution parameters
             
         Returns:
             bool: True if step successful, False otherwise
         """
-        should_run = _should_run(step_key)
+        should_run = config.should_run_func(config.step_key)
         if not should_run:
-            self.logger.info(f"⏭️ Skipping {step_description} (starting from '{start_step_key}')")
-            pipeline_state[step_key] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={start_step_key}'}
+            self.logger.info(f"⏭️ Skipping {config.step_description} (starting from '{config.start_step_key}')")
+            config.pipeline_state[config.step_key] = {'status': 'SKIPPED', 'success': True, 'skipped': True, 'reason': f'start_step={config.start_step_key}'}
             return True
             
-        with self._timed_step(step_description, step_times):
-            self.logger.info(f'🔧 {step_description}...')
+        with self._timed_step(config.step_description, config.step_times):
+            self.logger.info(f'🔧 {config.step_description}...')
             
         # Validate dependencies
-        if not await self.validate_step_dependencies(step_key, pipeline_state, self.force_rerun):
-            self.logger.error(f'❌ {step_description} dependencies not met, skipping')
+        if not await self.validate_step_dependencies(config.step_key, config.pipeline_state, self.force_rerun):
+            self.logger.error(f'❌ {config.step_description} dependencies not met, skipping')
             return False
             
         # Execute step
         try:
-            step_success = await step_function(**step_args)
+            step_success = await config.step_function(**config.step_args)
         except Exception as e:
-            self.logger.exception(f'❌ Error in {step_description}: {e}')
+            self.logger.exception(f'❌ Error in {config.step_description}: {e}')
             step_success = False
             
         if not step_success:
-            if is_fatal:
-                self.logger.error(f'❌ {step_description} failed - stopping pipeline')
+            if config.is_fatal:
+                self.logger.error(f'❌ {config.step_description} failed - stopping pipeline')
                 return False
             else:
-                self.logger.warning(f'⚠️ {step_description} failed - continuing')
+                self.logger.warning(f'⚠️ {config.step_description} failed - continuing')
                 
         # Update pipeline state
-        pipeline_state[step_key] = {'status': 'SUCCESS' if step_success else 'FAILED', 'success': bool(step_success), 'completed': bool(step_success)}
-        self._save_checkpoint(step_key, pipeline_state)
+        config.pipeline_state[config.step_key] = {'status': 'SUCCESS' if step_success else 'FAILED', 'success': bool(step_success), 'completed': bool(step_success)}
+        self._save_checkpoint(config.step_key, config.pipeline_state)
         
         # Run validation
         try:
-            step_validation = await self._run_step_validator(step_key, training_input, pipeline_state)
+            step_validation = await self._run_step_validator(config.step_key, config.training_input, config.pipeline_state)
             if step_validation and step_validation.get('validation_passed', False):
-                self.logger.info(f'🎉 {step_description} completed successfully and validation passed')
+                self.logger.info(f'🎉 {config.step_description} completed successfully and validation passed')
             else:
-                self.logger.warning(f"⚠️ {step_description} validation failed: {step_validation.get('error', 'Unknown error')}")
+                self.logger.warning(f"⚠️ {config.step_description} validation failed: {step_validation.get('error', 'Unknown error')}")
                 self.logger.warning('⚠️ Proceeding anyway (validation is non-blocking)')
         except Exception as e:
-            self.logger.exception(f'❌ {step_description} validator failed: {e}')
-            if is_fatal:
+            self.logger.exception(f'❌ {config.step_description} validator failed: {e}')
+            if config.is_fatal:
                 return False
                 
         return True

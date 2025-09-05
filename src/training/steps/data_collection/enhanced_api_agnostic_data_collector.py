@@ -825,11 +825,6 @@ class EnhancedAPIAgnosticDataCollector:
         """Save collected data to files."""
         try:
             import os
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
             
             # Create data directory
             os.makedirs(data_dir, exist_ok=True)

@@ -31,11 +31,6 @@ class InterpretabilityVisualizer:
         """Check if visualization libraries are available."""
         try:
             import matplotlib
-from typing import Any
-from typing import Dict
-from typing import Optional
-import numpy as np
-import pandas as pd
 
             matplotlib.use('Agg')  # Use non-interactive backend
             self.plt = plt

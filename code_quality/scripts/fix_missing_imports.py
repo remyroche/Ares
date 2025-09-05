@@ -13,6 +13,7 @@ import os
 import pandas as pd
 import time
 import typing
+import re
 
 # Enhanced function to module mappings with comprehensive coverage
 COMMON_IMPORTS = {

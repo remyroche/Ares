@@ -7,6 +7,7 @@ import ast
 import os
 import sys
 from typing import Any
+import re
 
 
 def find_python_files(directory: str, exclude_patterns: list[str] = None) -> list[str]:

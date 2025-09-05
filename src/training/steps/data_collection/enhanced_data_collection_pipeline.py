@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .monitoring.pipeline_monitor
+import numpy as np
+
 """
 Enhanced Data Collection Pipeline
 
@@ -44,8 +47,6 @@ from .utils.data_operations_utils import (
     ValidationError,
     ProcessingError
 )
-from .monitoring.pipeline_monitor import (
-import numpy as np
 import pandas as pd
 import time
 import typing

@@ -13,6 +13,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from .core.decorators import handles_errors, log_execution_time, validates
 from .utils.logger import system_logger
 import numpy as np
+import pandas as pd
 
 try:
     from .advanced_neural_models import NEURAL_MODEL_CONFIGS, NeuralNetworkWrapper, create_neural_model
@@ -23,7 +24,6 @@ except ImportError:
 try:
     from catboost import CatBoostClassifier
 import logging
-import pandas as pd
 import time
 
     CATBOOST_AVAILABLE = True

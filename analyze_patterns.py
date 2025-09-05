@@ -9,6 +9,7 @@ import json
 import re
 from collections import defaultdict, Counter
 from pathlib import Path
+import typing
 
 def analyze_data_flow_patterns():
     """Analyze data flow issues for automation patterns."""

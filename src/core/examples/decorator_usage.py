@@ -30,11 +30,6 @@ def process_user_data(user_id: str, data: dict) -> dict:
 async def fetch_external_data(api_endpoint: str) -> dict:
     """Fetch data from external API with resilience patterns."""
     await asyncio.sleep(0.1)
-    import random
-import logging
-import numpy as np
-import pandas as pd
-
     if random.random() < 0.1:
         msg = 'API unavailable'
         raise ConnectionError(msg)

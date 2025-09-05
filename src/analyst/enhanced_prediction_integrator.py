@@ -8,9 +8,7 @@ import logging
 import json
 import pickle
 from .utils.warning_symbols import error, failed, warning
-import .core.decorators
-import numpy as np
-
+from .core.decorators import (
     ValidationLevel,
     comprehensive_validation,
     intelligent_caching,
@@ -22,12 +20,13 @@ import numpy as np
     traced,
     validates,
 )
+import numpy as np
+from src.utils.decorators.errors import handles_errors
 
 
 class EnhancedPredictionIntegrator:
     """
     Enhanced Prediction Integrator for Analyst that integrates price and confidence predictions
-from src.utils.decorators.errors import handles_errors
 import pandas as pd
 
 from the enhanced training manager steps 6-14.

@@ -4,6 +4,7 @@
 Enhanced trading system protocols with comprehensive type safety (minimal scaffold).
 """
 
+import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -11,8 +12,6 @@ if TYPE_CHECKING:
     from .custom_types.base_types import Symbol, Timestamp
     from .custom_types.ml_types import PredictionResult
     from src.custom_types.trading_types import (
-import logging
-
         PositionInfo,
         RegimeClassification,
         RiskParameters,

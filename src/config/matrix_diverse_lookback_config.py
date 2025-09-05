@@ -19,7 +19,6 @@ def get_matrix_diverse_lookback_config() -> dict[str, Any]:
     """
     return {
         "matrix_diverse_lookback_optimization": {
-            "target_periods_per_feature": 3,
             "min_periods_per_feature": 2,
             "max_periods_per_feature": 3,
             "diversity_threshold": 0.3,

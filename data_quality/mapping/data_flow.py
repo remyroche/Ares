@@ -13,12 +13,14 @@ from typing import Any
 from code_quality.analyzers.data_flow_analyzer import DataFlowAnalyzer
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
+import csv
+
+
 
 def _load_cq_config(config_path: str | None) -> CodeQualityConfig:
     """Load code quality configuration."""
     if config_path:
         return load_config(config_path)
-    return get_default_config()
 
 
 def map_data_flow(
@@ -128,13 +130,13 @@ def _calculate_data_flow_complexity(analysis: dict[str, Any]) -> float:
     # Calculate complexity based on variable usage patterns
     total_variables = len(variables)
     unused_variables = sum(1 for var in variables.values() 
-                          if var.get("assignments", 0) > 0 and var.get("reads", 0) == 0)
+                        if var.get("assignments", 0) > 0 and var.get("reads", 0) == 0)
     
     # Calculate complexity based on function parameter usage
     total_parameters = sum(len(func.get("parameters", [])) for func in functions.values())
     unused_parameters = sum(1 for func in functions.values() 
-                           for param in func.get("parameters", []) 
-                           if not param.get("used", False))
+                        for param in func.get("parameters", [])
+                        if not param.get("used", False))
     
     # Normalize complexity score (0-1, where 1 is most complex)
     variable_complexity = unused_variables / total_variables if total_variables > 0 else 0
@@ -181,7 +183,6 @@ def export_data_flow_mapping(
 
 def _export_data_flow_to_csv(mapping_data: dict[str, Any], output_path: Path) -> None:
     """Export data flow mapping data to CSV format."""
-    import csv
     
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -400,7 +401,7 @@ def track_data_dependencies(
     return {
         "dependency_graph": dependencies,
         "unused_dependencies": [name for name, info in dependencies.items() 
-                               if info["usage_count"] == 0],
+                            if info["usage_count"] == 0],
         "summary": {
             "total_dependencies": len(dependencies),
             "unused_dependencies_count": len([name for name, info in dependencies.items() 

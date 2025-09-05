@@ -1,4 +1,5 @@
 """
+from .step06_feature_engineering import FeatureInteractionEngine
 Market Analysis Step06 Components
 
 This package contains market analysis components for step06 including:
@@ -9,7 +10,6 @@ This package contains market analysis components for step06 including:
 """
 
 try:
-    from .step06_feature_engineering import FeatureInteractionEngine
     FEATURE_ENGINEERING_AVAILABLE = True
 except ImportError:
     FEATURE_ENGINEERING_AVAILABLE = False

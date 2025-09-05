@@ -25,6 +25,9 @@ sys.path.insert(0, str(project_root))
 
 from .config import CONFIG
 
+import asyncio as _asyncio
+
+
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Enhancement."""
@@ -531,7 +534,6 @@ async def run_validator(
 
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
 
     # Example usage
     async def test_validator() -> None:

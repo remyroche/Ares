@@ -186,16 +186,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog="""
 Examples:
   # Run training with 2 years of data
-  python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
+python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
 
   # Run with custom timeframe
-  python scripts/run_enhanced_training.py --symbol BTCUSDT --lookback 365 --timeframe 4h
+python scripts/run_enhanced_training.py --symbol BTCUSDT --lookback 365 --timeframe 4h
 
   # Run efficiency demo
-  python scripts/run_enhanced_training.py --demo
+python scripts/run_enhanced_training.py --demo
 
   # Run checkpoint demo
-  python scripts/run_enhanced_training.py --checkpoint
+python scripts/run_enhanced_training.py --checkpoint
         """,
     )
 

@@ -9,6 +9,9 @@ import optuna
 from .utils.common_operations import ensure_directory, safe_json_dump
 from .utils.logger import system_logger
 from .validation.walk_forward_validator import WalkForwardValidator
+
+from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+
 logger = system_logger.getChild('RegimeParameterOptimizer')
 
 @dataclass
@@ -46,7 +49,6 @@ class RegimeParameterOptimizer:
         self.search_spaces = self._define_search_spaces()
         self.validator = WalkForwardValidator(config)
         self.results_dir = Path(config.get('results_dir', 'optimization_results'))
-        ensure_directory(self.results_dir)
         self.best_parameters = {}
 
     def _define_search_spaces(self) -> Dict[str, Dict[str, Any]]:
@@ -128,7 +130,6 @@ class RegimeParameterOptimizer:
     def _run_strategy_with_params(self, data: pd.DataFrame, params: RegimeParameters) -> Optional[pd.DataFrame]:
         """Run trading strategy with given parameters."""
         try:
-            from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
             labeler = OptimizedTripleBarrierLabeling()
             labeler.profit_target = params.profit_target
@@ -168,16 +169,13 @@ class RegimeParameterOptimizer:
     def _save_regime_results(self, regime: str, params: RegimeParameters) -> None:
         """Save optimization results for a regime."""
         results_file = self.results_dir / f'regime_{regime}_parameters.json'
-        safe_json_dump(params.to_dict(), results_file)
         self.logger.info(f'Saved {regime} regime parameters to {results_file}')
 
     def _save_optimization_results(self, results: Dict[str, RegimeParameters]) -> None:
         """Save final optimization results."""
         final_results = {'timestamp': datetime.now().isoformat(), 'config': self.config, 'parameters': {regime: params.to_dict() for regime, params in results.items()}}
         results_file = self.results_dir / f"optimization_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        safe_json_dump(final_results, results_file)
         latest_file = self.results_dir / 'latest_optimization_results.json'
-        safe_json_dump(final_results, latest_file)
         self.logger.info(f'Saved optimization results to {results_file}')
 
     async def validate_optimized_parameters(self, data: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, Any]:

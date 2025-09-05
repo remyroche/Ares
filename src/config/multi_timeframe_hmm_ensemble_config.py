@@ -173,7 +173,6 @@ def get_default_ensemble_config() -> EnsembleConfig:
         EnsembleConfig: Default ensemble configuration
     """
     return EnsembleConfig(
-        timeframes=get_default_timeframe_configs(),
         meta_learner_type="lgbm",
         enable_dynamic_weighting=True,
         weight_update_frequency=100,

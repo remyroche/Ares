@@ -67,8 +67,8 @@ class EnhancedHMMRegimeOptimizer:
         }
 
     def optimize_parallel(self, data: pd.DataFrame, feature_columns: list[str],
-                         market_condition_columns: list[str], n_trials: int=100,
-                         timeout: int | None = None, study_name: str="enhanced_optimization") -> dict[str, Any]:
+                        market_condition_columns: list[str], n_trials: int=100,
+                        timeout: int | None = None, study_name: str="enhanced_optimization") -> dict[str, Any]:
         """Run parallel optimization with advanced features."""
 
         print("🚀 Starting Enhanced HMM Regime Optimization...")
@@ -148,7 +148,7 @@ class EnhancedHMMRegimeOptimizer:
         )
 
     def _preprocess_data_enhanced(self, data: pd.DataFrame, feature_columns: list[str],
-                                 market_condition_columns: list[str]) -> dict[str, Any]:
+                                market_condition_columns: list[str]) -> dict[str, Any]:
         """Enhanced pre-processing with additional optimizations."""
 
         # Filter valid columns
@@ -199,8 +199,8 @@ class EnhancedHMMRegimeOptimizer:
         return processed_data
 
     def _create_enhanced_objective(self, processed_data: dict[str, Any],
-                                 feature_columns: list[str],
-                                 market_condition_columns: list[str]) -> callable:
+                                feature_columns: list[str],
+                                market_condition_columns: list[str]) -> callable:
         """Create enhanced objective function with cross-validation."""
 
         def objective(trial: optuna.Trial) -> float:

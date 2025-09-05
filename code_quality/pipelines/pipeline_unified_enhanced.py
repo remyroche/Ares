@@ -495,10 +495,14 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
 
-        # Get all Python files
+        # Get all Python files, respecting .gitignore
+        from ..utils.gitignore_parser import filter_ignored_files
         python_files = []
         for pattern in ["**/*.py"]:
             python_files.extend(self.project_root.glob(pattern))
+        
+        # Filter out ignored files
+        python_files = filter_ignored_files(python_files, self.project_root)
 
         fixed_files = []
         failed_files = []
@@ -717,8 +721,10 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         analyzer = MetricsAnalyzer(str(self.project_root))
 
-        # Analyze all Python files
+        # Analyze all Python files, respecting .gitignore
+        from ..utils.gitignore_parser import filter_ignored_files
         python_files = list(self.project_root.rglob("*.py"))
+        python_files = filter_ignored_files(python_files, self.project_root)
         for file_path in python_files:
             analyzer.analyze_file(file_path)
 
@@ -763,8 +769,9 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         detector = CodeSmellDetector(str(self.project_root))
 
-        # Analyze all Python files
+        # Analyze all Python files, respecting .gitignore
         python_files = list(self.project_root.rglob("*.py"))
+        python_files = filter_ignored_files(python_files, self.project_root)
         for file_path in python_files:
             detector.analyze_file(file_path)
 
@@ -787,8 +794,9 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         analyzer = DocumentationAnalyzer(str(self.project_root))
 
-        # Analyze all Python files
+        # Analyze all Python files, respecting .gitignore
         python_files = list(self.project_root.rglob("*.py"))
+        python_files = filter_ignored_files(python_files, self.project_root)
         for file_path in python_files:
             analyzer.analyze_file(file_path)
 
@@ -814,8 +822,9 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         analyzer = PerformanceAnalyzer(str(self.project_root))
 
-        # Analyze all Python files
+        # Analyze all Python files, respecting .gitignore
         python_files = list(self.project_root.rglob("*.py"))
+        python_files = filter_ignored_files(python_files, self.project_root)
         for file_path in python_files:
             analyzer.analyze_file(file_path)
 
@@ -856,8 +865,9 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         analyzer = DataFlowAnalyzer(str(self.project_root))
 
-        # Analyze all Python files
+        # Analyze all Python files, respecting .gitignore
         python_files = list(self.project_root.rglob("*.py"))
+        python_files = filter_ignored_files(python_files, self.project_root)
         for file_path in python_files:
             analyzer.analyze_file(file_path)
 
@@ -1190,10 +1200,13 @@ class UnifiedEnhancedPipeline:
             try:
                 # Create plugin context
                 from plugins.base_plugin import PluginContext
+                from ..utils.gitignore_parser import filter_ignored_files
+                all_files = list(self.project_root.rglob("*.py"))
+                filtered_files = filter_ignored_files(all_files, self.project_root)
                 context = PluginContext(
                     project_root=str(self.project_root),
                     config={},
-                    files=list(self.project_root.rglob("*.py"))
+                    files=filtered_files
                 )
                 
                 # Execute plugin

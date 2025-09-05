@@ -178,7 +178,7 @@ class RiskMetricsCalculator(PnLLossFunctionsBase):
 
             # Calculate portfolio variance
             portfolio_variance = np.dot(portfolio_weights.T, 
-                                      np.dot(asset_covariances, portfolio_weights))
+                                    np.dot(asset_covariances, portfolio_weights))
             portfolio_risk = np.sqrt(portfolio_variance)
 
             # Calculate marginal risk contributions

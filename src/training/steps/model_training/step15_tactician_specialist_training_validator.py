@@ -23,6 +23,9 @@ from .config import CONFIG  # noqa: E402
 from .utils.common_operations import safe_json_load
 import numpy as np
 
+import asyncio as _asyncio
+
+
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
@@ -534,7 +537,6 @@ async def run_validator(
 
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
 
     # Example usage
     async def test_validator() -> None:

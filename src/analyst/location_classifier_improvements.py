@@ -205,7 +205,7 @@ class LocationClassifierEnhancements:
         # 1. Level Spacing Analysis
         if len(support_levels) >= 2:
             support_spacing = [(support_levels[i]['price'] - support_levels[i+1]['price']) / support_levels[i]['price'] 
-                             for i in range(min(4, len(support_levels)-1))]
+                            for i in range(min(4, len(support_levels)-1))]
             features['avg_support_spacing'] = np.mean(support_spacing) if support_spacing else 0.0
             features['support_spacing_std'] = np.std(support_spacing) if support_spacing else 0.0
         else:

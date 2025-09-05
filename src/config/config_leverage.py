@@ -5,7 +5,6 @@ from typing import Any
 @dataclass
 class LeverageConfig:
     """Optimizable leverage parameters."""
-    safe_leverage_multiplier: float = 0.8
     max_leverage: int = 100
     min_leverage: int = 1
     leverage_risk_levels: dict[int, float] = None
@@ -38,4 +37,3 @@ def get_leverage_config() -> LeverageConfig:
 
 def get_leverage_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for leverage optimization."""
-    return {'safe_leverage_multiplier': {'min': 0.5, 'max': 1.0, 'type': 'float'}, 'max_leverage': {'min': 50, 'max': 100, 'type': 'int'}, 'min_leverage': {'min': 1, 'max': 10, 'type': 'int'}, 'volatility_leverage_multiplier': {'min': 0.5, 'max': 2.0, 'type': 'float'}, 'low_volatility_leverage_boost': {'min': 1.0, 'max': 1.5, 'type': 'float'}, 'high_volatility_leverage_reduction': {'min': 0.5, 'max': 0.9, 'type': 'float'}, 'liquidation_buffer': {'min': 0.05, 'max': 0.2, 'type': 'float'}, 'max_liquidation_risk': {'min': 0.02, 'max': 0.1, 'type': 'float'}, 'leverage_decay_rate': {'min': 0.05, 'max': 0.2, 'type': 'float'}, 'leverage_decay_threshold': {'min': 0.7, 'max': 0.9, 'type': 'float'}, 'confidence_leverage_multipliers.low_confidence': {'min': 0.3, 'max': 0.7, 'type': 'float'}, 'confidence_leverage_multipliers.medium_confidence': {'min': 0.6, 'max': 1.0, 'type': 'float'}, 'confidence_leverage_multipliers.high_confidence': {'min': 0.8, 'max': 1.2, 'type': 'float'}, 'confidence_leverage_multipliers.very_high_confidence': {'min': 1.0, 'max': 1.5, 'type': 'float'}}

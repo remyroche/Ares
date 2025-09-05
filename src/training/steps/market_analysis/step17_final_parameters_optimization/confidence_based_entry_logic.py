@@ -14,6 +14,9 @@ from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
 import numpy as np
 
+from .utils.linear_confidence_scaling import LinearConfidenceScaler
+
+
 
 @dataclass
 class BarrierPrediction:
@@ -308,7 +311,6 @@ class ConfidenceBasedEntryLogic:
         selected_barriers = (0.001, 0.0005)  # 50% of analyst barriers
         
         # Calculate position size multiplier using linear confidence scaling
-        from .utils.linear_confidence_scaling import LinearConfidenceScaler
         
         # Create linear scaler with current config
         linear_scaler = LinearConfidenceScaler({

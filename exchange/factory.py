@@ -11,7 +11,6 @@ class ExchangeFactory:
     @staticmethod
     def get_exchange(exchange_name: str):
         name = (exchange_name or "").lower()
-        cfg: dict[str, Any] = get_complete_config()
         env = cfg.get("environment", {})
         exchanges_cfg = cfg.get("exchanges", {})
         ex_cfg = exchanges_cfg.get(name, {})

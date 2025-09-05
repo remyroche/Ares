@@ -17,6 +17,10 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import json
+import asyncio
+
+
 
 
 def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int=30):
@@ -282,7 +286,6 @@ def create_all_mock_data(symbol: str="ETHUSDT", exchange: str="BINANCE", days: i
                 "end_date": unified_df["datetime"].max().isoformat(),
             }
 
-            import json
             config_file=f"data_cache/unified_{exchange}_{symbol}_{timeframe}_config.json"
             with open(config_file, "w") as f:
                 json.dump(config_data, f, indent=2)
@@ -347,5 +350,4 @@ def main():
     print("The enhanced_training_manager can now use this data for steps 1_5, 2, 3, and 4.")
 
 if __name__== "__main__":
-    import asyncio
     asyncio.run(main())

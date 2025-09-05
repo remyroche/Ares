@@ -21,7 +21,6 @@ from .core.decorators.errors import handles_errors
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
 
-@handles_errors(fallback=False)
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],

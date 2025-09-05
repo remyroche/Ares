@@ -287,7 +287,6 @@ async def stop_all_processes() -> Dict:
     return await launcher_integration.stop_all_processes()
 
 
-async def get_process_status() -> Dict:
     """Get process status"""
     return await launcher_integration.get_process_status()
 
@@ -344,4 +343,4 @@ if __name__ == "__main__":
             stop_result = await stop_process(process_key)
             print(f"Stop result: {stop_result}")
     
-    asyncio.run(await test())
+    asyncio.run( test())

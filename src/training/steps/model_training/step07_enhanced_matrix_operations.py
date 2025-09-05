@@ -21,7 +21,6 @@ except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 try:
-    import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -31,6 +30,11 @@ from src.training.base_step import BaseStep
 from src.core.decorators import handles_errors
 from src.training.steps.model_training.matrix_components import MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 from src.utils.logger import system_logger
+
+import pandas as pd
+import numpy as np
+import psutil
+
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""

@@ -29,7 +29,9 @@ class TypedConfigManager:
         Raises:
             RuntimeTypeError: If configuration validation fails
             FileNotFoundError: If configuration file not found
-            json.JSONDecodeError: If configuration file is invalid JSON
+from .exceptions import (
+json.JSONDecodeError: If configuration file is invalid JSON
+)
         """
         path = Path(config_path or self._config_path or 'config.json')
         if not path.exists():
@@ -126,33 +128,27 @@ class TypedConfigManager:
 
     def get_database_config(self) -> DatabaseConfig | None:
         """Get database configuration."""
-        config = self.get_config()
         return config.get('database')
 
     def get_exchange_config(self, exchange_name: str) -> ExchangeConfig | None:
         """Get exchange configuration."""
-        config = self.get_config()
         exchanges = config.get('exchanges', {})
         return exchanges.get(exchange_name)
 
     def get_trading_config(self) -> TradingConfig | None:
         """Get trading configuration."""
-        config = self.get_config()
         return config.get('trading')
 
     def get_ml_config(self) -> MLConfig | None:
         """Get ML configuration."""
-        config = self.get_config()
         return config.get('ml')
 
     def get_monitoring_config(self) -> MonitoringConfig | None:
         """Get monitoring configuration."""
-        config = self.get_config()
         return config.get('monitoring')
 
     def get_system_config(self) -> SystemConfig | None:
         """Get system configuration."""
-        config = self.get_config()
         return config.get('system')
 
     def validate_runtime_config(self, config: dict[str, Any]) -> bool:
@@ -195,10 +191,7 @@ def get_typed_config_manager() -> TypedConfigManager:
 
 async def load_typed_config(config_path: str) -> ConfigDict:
     """Load typed configuration from file."""
-    manager = get_typed_config_manager()
     return await manager.load_config(config_path)
 
 def get_typed_config() -> ConfigDict:
     """Get current typed configuration."""
-    manager = get_typed_config_manager()
-    return manager.get_config()

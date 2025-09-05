@@ -1,274 +1,273 @@
-"""
-File utility functions for code quality tools.
-"""
+#!/usr/bin/env python3
+"""File utility functions for code analysis."""
 
 import ast
-import os
-from fnmatch import fnmatch
+import re
+import shutil
 from pathlib import Path
-from typing import Any
+from typing import List, Optional, Dict, Any
+
+from .gitignore_parser import GitignoreParser, should_ignore_file, filter_ignored_files
 
 
-def find_python_files(directory: str, exclude_patterns: list[str] | None = None) -> list[str]:
-    """
-    Find all Python files in a directory recursively.
-
-    Args:
-        directory: Root directory to search
-        exclude_patterns: Patterns to exclude (e.g., ['__pycache__', '*.pyc'])
-
-    Returns:
-        List of Python file paths
-    """
-    if exclude_patterns is None:
-        exclude_patterns = ["__pycache__", "*.pyc", ".git", "venv", "env"]
-
+def find_python_files(directory: str, exclude_dirs: List[str] = None, respect_gitignore: bool = True) -> List[Path]:
+    """Find all Python files in directory, excluding specified directories and .gitignore patterns."""
+    if exclude_dirs is None:
+        exclude_dirs = ["venv", "__pycache__", ".git", "node_modules", ".pytest_cache"]
+    
+    project_root = Path(directory)
     python_files = []
-    Path(directory)
-
-    for root, dirs, files in os.walk(directory):
-        # Skip excluded directories
-        dirs[:] = [d for d in dirs if not any(fnmatch(d, pattern) for pattern in exclude_patterns)]
-
-        for file in files:
-            if file.endswith(".py"):
-                file_path = os.path.join(root, file)
-                if not any(fnmatch(file_path, pattern) for pattern in exclude_patterns):
-                    python_files.append(file_path)
-
+    
+    for py_file in project_root.rglob("*.py"):
+        # Skip if in excluded directories
+        if any(excluded in py_file.parts for excluded in exclude_dirs):
+            continue
+        
+        # Skip if ignored by .gitignore
+        if respect_gitignore and should_ignore_file(py_file, project_root):
+            continue
+            
+        python_files.append(py_file)
+    
     return python_files
 
 
-def is_valid_python_file(file_path: str) -> bool:
-    """
-    Check if a Python file has valid syntax.
-
-    Args:
-        file_path: Path to the Python file
-
-    Returns:
-        True if the file has valid Python syntax, False otherwise
-    """
+def read_file_safely(file_path: Path) -> Optional[str]:
+    """Read a file with encoding detection and error handling."""
     try:
-        with open(file_path, encoding="utf-8") as f:
-            ast.parse(f.read())
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except UnicodeDecodeError:
+        try:
+            with open(file_path, 'r', encoding='latin-1') as f:
+                return f.read()
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def parse_ast_safely(content: str, file_path: Path) -> Optional[ast.AST]:
+    """Parse AST with error handling."""
+    try:
+        return ast.parse(content, filename=str(file_path))
+    except SyntaxError:
+        return None
+    except Exception:
+        return None
+
+
+def extract_function_name_from_issue(issue) -> Optional[str]:
+    """Extract function name from an issue object."""
+    if hasattr(issue, 'description'):
+        patterns = [
+            r"unused function '([^']+)'",
+            r"function '([^']+)'",
+            r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, issue.description.lower())
+            if match:
+                return match.group(1)
+    return None
+
+
+def get_module_from_file_path(file_path: str) -> Optional[str]:
+    """Extract module name from file path."""
+    try:
+        path_parts = Path(file_path).parts
+        if 'workspace' in path_parts:
+            workspace_idx = path_parts.index('workspace')
+            module_parts = path_parts[workspace_idx + 1:]
+            if module_parts[-1].endswith('.py'):
+                module_parts[-1] = module_parts[-1][:-3]
+            return '.'.join(module_parts)
+    except Exception:
+        pass
+    return None
+
+
+def is_documentation_file(file_path: str) -> bool:
+    """Check if a file is a documentation or config file."""
+    doc_extensions = {'.md', '.rst', '.txt', '.yaml', '.yml', '.json', '.toml', '.ini', '.cfg'}
+    config_keywords = ['config', 'settings', 'example', 'demo', 'test']
+    
+    file_path_str = str(file_path)
+    
+    # Check file extension
+    if any(file_path_str.endswith(ext) for ext in doc_extensions):
         return True
-    except (SyntaxError, UnicodeDecodeError, FileNotFoundError):
-        return False
+    
+    # Check if it's in a config-related directory
+    if any(keyword in file_path_str.lower() for keyword in config_keywords):
+        return True
+    
+    return False
+
+
+def backup_file(file_path: Path) -> Optional[Path]:
+    """Create a backup of a file."""
+    try:
+        backup_path = file_path.with_suffix(file_path.suffix + '.backup')
+        shutil.copy2(file_path, backup_path)
+        return backup_path
+    except Exception:
+        return None
+
+
+def restore_file(backup_path: Path, original_path: Path) -> bool:
+    """Restore a file from backup."""
+    try:
+        shutil.copy2(backup_path, original_path)
+        return True
     except Exception:
         return False
 
 
-def get_file_info(file_path: str) -> dict[str, Any]:
-    """
-    Get comprehensive information about a Python file.
-
-    Args:
-        file_path: Path to the Python file
-
-    Returns:
-        Dictionary containing file information
-    """
+def find_unused_imports(file_path: Path) -> List[str]:
+    """Find unused imports in a Python file."""
     try:
-        with open(file_path, encoding="utf-8") as f:
-            content = f.read()
-
-        # Basic file stats
-        file_info = {
-            "path": file_path,
-            "size": len(content),
-            "lines": len(content.splitlines()),
-            "valid_syntax": True,
-            "encoding": "utf-8",
-        }
-
-        # Parse AST for more detailed info
-        try:
-            tree = ast.parse(content)
-
-            # Count different types of nodes
-            node_counts = {
-                "functions": len([n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]),
-                "classes": len([n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]),
-                "imports": len([n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom)]),
-                "assignments": len([n for n in ast.walk(tree) if isinstance(n, ast.Assign)]),
-                "calls": len([n for n in ast.walk(tree) if isinstance(n, ast.Call)]),
-            }
-
-            file_info.update(node_counts)
-
-        except SyntaxError as e:
-            file_info["valid_syntax"] = False
-            file_info["syntax_error"] = str(e)
-
-        return file_info
-
-    except Exception as e:
-        return {
-            "path": file_path,
-            "error": str(e),
-            "valid_syntax": False,
-        }
-
-
-def get_directory_stats(directory: str, exclude_patterns: list[str] | None = None) -> dict[str, Any]:
-    """
-    Get statistics for all Python files in a directory.
-
-    Args:
-        directory: Directory to analyze
-        exclude_patterns: Patterns to exclude
-
-    Returns:
-        Dictionary containing directory statistics
-    """
-    python_files = find_python_files(directory, exclude_patterns)
-
-    stats = {
-        "total_files": len(python_files),
-        "valid_files": 0,
-        "invalid_files": 0,
-        "total_lines": 0,
-        "total_size": 0,
-        "total_functions": 0,
-        "total_classes": 0,
-        "total_imports": 0,
-        "file_details": [],
-    }
-
-    for file_path in python_files:
-        file_info = get_file_info(file_path)
-        stats["file_details"].append(file_info)
-
-        if file_info.get("valid_syntax", False):
-            stats["valid_files"] += 1
-            stats["total_lines"] += file_info.get("lines", 0)
-            stats["total_size"] += file_info.get("size", 0)
-            stats["total_functions"] += file_info.get("functions", 0)
-            stats["total_classes"] += file_info.get("classes", 0)
-            stats["total_imports"] += file_info.get("imports", 0)
-        else:
-            stats["invalid_files"] += 1
-
-    return stats
-
-
-def backup_file(file_path: str, backup_suffix: str = ".backup") -> str:
-    """
-    Create a backup of a file.
-
-    Args:
-        file_path: Path to the file to backup
-        backup_suffix: Suffix for the backup file
-
-    Returns:
-        Path to the backup file
-    """
-    backup_path = file_path + backup_suffix
-    try:
-        with open(file_path, encoding="utf-8") as src:
-            with open(backup_path, "w", encoding="utf-8") as dst:
-                dst.write(src.read())
-        return backup_path
-    except Exception as e:
-        msg = f"Failed to create backup of {file_path}: {e}"
-        raise RuntimeError(msg)
-
-
-def restore_file(backup_path: str, original_path: str) -> None:
-    """
-    Restore a file from its backup.
-
-    Args:
-        backup_path: Path to the backup file
-        original_path: Path where to restore the file
-    """
-    try:
-        with open(backup_path, encoding="utf-8") as src:
-            with open(original_path, "w", encoding="utf-8") as dst:
-                dst.write(src.read())
-    except Exception as e:
-        msg = f"Failed to restore {original_path} from backup: {e}"
-        raise RuntimeError(msg)
-
-
-def get_file_dependencies(file_path: str) -> dict[str, list[str]]:
-    """
-    Extract import dependencies from a Python file.
-
-    Args:
-        file_path: Path to the Python file
-
-    Returns:
-        Dictionary with 'imports' and 'from_imports' lists
-    """
-    dependencies = {
-        "imports": [],
-        "from_imports": [],
-        "relative_imports": [],
-    }
-
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            content = f.read()
-
-        tree = ast.parse(content)
-
+        content = read_file_safely(file_path)
+        if not content:
+            return []
+        
+        tree = parse_ast_safely(content, file_path)
+        if not tree:
+            return []
+        
+        # Get all import statements
+        imports = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    dependencies["imports"].append(alias.name)
+                    imports.append(alias.name)
             elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                for alias in node.names:
-                    if module.startswith("."):
-                        dependencies["relative_imports"].append(f"{module}.{alias.name}")
-                    else:
-                        dependencies["from_imports"].append(f"{module}.{alias.name}")
-
-    except Exception:
-        pass
-
-    return dependencies
-
-
-def find_unused_imports(file_path: str) -> list[str]:
-    """
-    Find potentially unused imports in a Python file.
-
-    Args:
-        file_path: Path to the Python file
-
-    Returns:
-        List of potentially unused import names
-    """
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            content = f.read()
-
-        tree = ast.parse(content)
-
-        # Get all imported names
-        imported_names = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import | ast.ImportFrom):
-                for alias in node.names:
-                    imported_names.add(alias.asname or alias.name)
-
-        # Get all used names
-        used_names = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name):
-                used_names.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                # Handle attribute access (e.g., module.function)
-                if isinstance(node.value, ast.Name):
-                    used_names.add(node.value.id)
-
-        # Find unused imports
-        unused = imported_names - used_names
-
-        return list(unused)
-
+                if node.module:
+                    for alias in node.names:
+                        imports.append(f"{node.module}.{alias.name}")
+        
+        # Simple check for usage (this is a basic implementation)
+        unused = []
+        for imp in imports:
+            if imp not in content.replace('import', '').replace('from', ''):
+                unused.append(imp)
+        
+        return unused
     except Exception:
         return []
+
+
+def is_valid_python_file(file_path: Path) -> bool:
+    """Check if a file is a valid Python file."""
+    try:
+        if not file_path.suffix == '.py':
+            return False
+        
+        content = read_file_safely(file_path)
+        if not content:
+            return False
+        
+        # Try to parse the file
+        tree = parse_ast_safely(content, file_path)
+        return tree is not None
+    except Exception:
+        return False
+
+
+class FileUtils:
+    """Utility functions for file operations."""
+    
+    @staticmethod
+    def find_python_files_static(directory: str, exclude_dirs: List[str] = None, respect_gitignore: bool = True) -> List[Path]:
+        """Find all Python files in directory, excluding specified directories and .gitignore patterns."""
+        if exclude_dirs is None:
+            exclude_dirs = ["venv", "__pycache__", ".git", "node_modules", ".pytest_cache"]
+        
+        project_root = Path(directory)
+        python_files = []
+        
+        for py_file in project_root.rglob("*.py"):
+            # Skip if in excluded directories
+            if any(excluded in py_file.parts for excluded in exclude_dirs):
+                continue
+            
+            # Skip if ignored by .gitignore
+            if respect_gitignore and should_ignore_file(py_file, project_root):
+                continue
+                
+            python_files.append(py_file)
+        
+        return python_files
+    
+    @staticmethod
+    def read_file_safely(file_path: Path) -> Optional[str]:
+        """Read a file with encoding detection and error handling."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            try:
+                with open(file_path, 'r', encoding='latin-1') as f:
+                    return f.read()
+            except Exception:
+                return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def parse_ast_safely(content: str, file_path: Path) -> Optional[ast.AST]:
+        """Parse AST with error handling."""
+        try:
+            return ast.parse(content, filename=str(file_path))
+        except SyntaxError:
+            return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def extract_function_name_from_issue(issue) -> Optional[str]:
+        """Extract function name from an issue object."""
+        if hasattr(issue, 'description'):
+            patterns = [
+                r"unused function '([^']+)'",
+                r"function '([^']+)'",
+                r"deprecated ([a-zA-Z_][a-zA-Z0-9_]*)",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, issue.description.lower())
+                if match:
+                    return match.group(1)
+        return None
+    
+    @staticmethod
+    def get_module_from_file_path(file_path: str) -> Optional[str]:
+        """Extract module name from file path."""
+        try:
+            path_parts = Path(file_path).parts
+            if 'workspace' in path_parts:
+                workspace_idx = path_parts.index('workspace')
+                module_parts = path_parts[workspace_idx + 1:]
+                if module_parts[-1].endswith('.py'):
+                    module_parts[-1] = module_parts[-1][:-3]
+                return '.'.join(module_parts)
+        except Exception:
+            pass
+        return None
+    
+    @staticmethod
+    def is_documentation_file(file_path: str) -> bool:
+        """Check if a file is a documentation or config file."""
+        doc_extensions = {'.md', '.rst', '.txt', '.yaml', '.yml', '.json', '.toml', '.ini', '.cfg'}
+        config_keywords = ['config', 'settings', 'example', 'demo', 'test']
+        
+        file_path_str = str(file_path)
+        
+        # Check file extension
+        if any(file_path_str.endswith(ext) for ext in doc_extensions):
+            return True
+        
+        # Check if it's in a config-related directory
+        if any(keyword in file_path_str.lower() for keyword in config_keywords):
+            return True
+        
+        return False

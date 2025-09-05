@@ -20,6 +20,12 @@ from .error_handler import handles_errors
 from .logger import system_logger
 import numpy as np
 
+import psycopg2
+import sqlite3
+from pymongo import MongoClient
+import redis
+
+
 class DatabaseType:
     """Database type enumeration."""
     POSTGRESQL = 'postgresql'
@@ -138,7 +144,6 @@ class DatabaseSecurityManager:
     def _create_postgresql_connection(self, params: Dict[str, Any]) -> Any:
         """Create secure PostgreSQL connection."""
         try:
-            import psycopg2
             ssl_params = {}
             if params.get('ssl', False):
                 ssl_params = {'sslmode': 'verify-full', 'sslcert': params.get('sslcert'), 'sslkey': params.get('sslkey'), 'sslrootcert': params.get('sslrootcert')}
@@ -163,7 +168,6 @@ class DatabaseSecurityManager:
     def _create_sqlite_connection(self, params: Dict[str, Any]) -> Any:
         """Create secure SQLite connection."""
         try:
-            import sqlite3
             db_path = params.get('database', params.get('db_path'))
             if not db_path:
                 raise ValueError('SQLite database path not specified')
@@ -182,7 +186,6 @@ class DatabaseSecurityManager:
     def _create_mongodb_connection(self, params: Dict[str, Any]) -> Any:
         """Create secure MongoDB connection."""
         try:
-            from pymongo import MongoClient
             connection_string = f"mongodb://{params['username']}:{params.get('password', '')}@{params['host']}:{params['port']}/{params['database']}"
             client_options = {'serverSelectionTimeoutMS': self.security_policies['connection_timeout'] * 1000, 'maxPoolSize': 10, 'minPoolSize': 1}
             if params.get('ssl', False):
@@ -198,7 +201,6 @@ class DatabaseSecurityManager:
     def _create_redis_connection(self, params: Dict[str, Any]) -> Any:
         """Create secure Redis connection."""
         try:
-            import redis
             
             connection_params = {'host': params['host'], 'port': params['port'], 'db': params.get('database', 0), 'password': params.get('password'), 'socket_timeout': self.security_policies['connection_timeout'], 'socket_connect_timeout': self.security_policies['connection_timeout']}
             if params.get('ssl', False):

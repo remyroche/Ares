@@ -2,7 +2,6 @@
 """
 Multicollinearity Fix Script
 
-This script provides solutions to fix critical multicollinearity issues
 identified in the data quality assessment. It outlines configuration changes
 and code edits to reduce VIF and eliminate redundant features.
 
@@ -176,7 +175,6 @@ class MulticollinearityFixer:
         }
 
 
-@handle_errors(default_return=False, context="multicollinearity_main")
 def main() -> bool:
     """Main function to generate multicollinearity fixes."""
     print("MULTICOLLINEARITY FIX GENERATOR")

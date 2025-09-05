@@ -6,8 +6,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 from .utils.logger import system_logger
+
+import joblib
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType
+
 try:
-    import joblib
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False
@@ -123,8 +127,6 @@ class ModelSerializer:
                 return None
             file_path = save_dir / f'{model_id}.onnx'
             n_features = metadata.get('n_features', 10) if metadata else 10
-            from skl2onnx import convert_sklearn
-            from skl2onnx.common.data_types import FloatTensorType
             initial_type = [('float_input', FloatTensorType([None, n_features]))]
             try:
                 onx = convert_sklearn(model, initial_types=initial_type)

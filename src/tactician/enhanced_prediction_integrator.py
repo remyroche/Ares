@@ -14,7 +14,7 @@ def map_scenario_to_target_probabilities(scenario_analysis: Dict[str, Any]) -> D
     Convert scenario-level probabilities into approximate target-hit probabilities.
 
     Inputs:
-      - scenario_analysis: dict with keys including 'profit_zone_probability' and 'risk_zone_probability'.
+    - scenario_analysis: dict with keys including 'profit_zone_probability' and 'risk_zone_probability'.
 
     Returns a dict of probabilities for 0.25%, 0.5%, 0.75%, 1.0% targets.
     """

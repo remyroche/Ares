@@ -170,9 +170,9 @@ class BasePipeline:
         return self.plugin_registry.get_plugin_info(plugin_name)
     
     def execute_plugins(self, 
-                       plugin_names: Optional[List[str]] = None,
-                       categories: Optional[List[PluginCategory]] = None,
-                       priorities: Optional[List[PluginPriority]] = None) -> Dict[str, Any]:
+                    plugin_names: Optional[List[str]] = None,
+                    categories: Optional[List[PluginCategory]] = None,
+                    priorities: Optional[List[PluginPriority]] = None) -> Dict[str, Any]:
         """Execute plugins based on configuration."""
         # Find target files
         target_files = self._find_python_files()
@@ -372,23 +372,31 @@ class BasePipeline:
             print(f"Error accessing project root {self.project_root}: {e}")
             return False
     
-    def _find_python_files(self, exclude_patterns: Optional[List[str]] = None) -> List[Path]:
-        """Find all Python files in the project root."""
+    def _find_python_files(self, exclude_patterns: Optional[List[str]] = None, respect_gitignore: bool = True) -> List[Path]:
+        """Find all Python files in the project root, respecting .gitignore patterns."""
         if exclude_patterns is None:
             exclude_patterns = ["__pycache__", "*.pyc", ".git", "venv", "env"]
         
         python_files = []
         try:
             for py_file in self.project_root.rglob("*.py"):
-                # Check if file should be excluded
+                # Check if file should be excluded by patterns
                 should_exclude = False
                 for pattern in exclude_patterns:
                     if pattern in str(py_file):
                         should_exclude = True
                         break
                 
-                if not should_exclude:
-                    python_files.append(py_file)
+                if should_exclude:
+                    continue
+                
+                # Check if file should be ignored by .gitignore
+                if respect_gitignore:
+                    from ..utils.gitignore_parser import should_ignore_file
+                    if should_ignore_file(py_file, self.project_root):
+                        continue
+                
+                python_files.append(py_file)
                     
         except Exception as e:
             print(f"Error finding Python files: {e}")

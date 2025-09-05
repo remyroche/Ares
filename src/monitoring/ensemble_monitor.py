@@ -9,9 +9,8 @@ with detailed tracking and analysis.
 
 from collections import defaultdict, deque
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
 
@@ -158,7 +157,7 @@ class EnsembleMonitor:
             return current_weights
     
     def _calculate_performance_based_weights(self, model_performances: Dict[str, Dict[str, float]],
-                                           current_weights: Dict[str, float]) -> Dict[str, float]:
+                                        current_weights: Dict[str, float]) -> Dict[str, float]:
         """Calculate new weights based on model performance metrics."""
         new_weights = {}
         
@@ -221,8 +220,8 @@ class EnsembleMonitor:
         return constrained_weights
     
     async def _update_ensemble_state(self, ensemble_id: str, 
-                                   new_weights: Dict[str, float],
-                                   model_performances: Dict[str, Dict[str, float]]):
+                                new_weights: Dict[str, float],
+                                model_performances: Dict[str, Dict[str, float]]):
         """Update the ensemble state with new weights and performance data."""
         try:
             current_time = datetime.now()
@@ -279,7 +278,7 @@ class EnsembleMonitor:
             self.logger.error(f"Error updating ensemble state for {ensemble_id}: {e}")
     
     def _calculate_weight_stability(self, ensemble_id: str, 
-                                  current_weights: Dict[str, float]) -> float:
+                                current_weights: Dict[str, float]) -> float:
         """Calculate weight stability score for the ensemble."""
         try:
             if ensemble_id not in self.weight_histories or len(self.weight_histories[ensemble_id]) < 2:
@@ -336,7 +335,7 @@ class EnsembleMonitor:
             return "stable"
     
     def _record_weight_history(self, ensemble_id: str, weights: Dict[str, float], 
-                             timestamp: datetime):
+                            timestamp: datetime):
         """Record weight history for the ensemble."""
         self.weight_histories[ensemble_id].append((timestamp, weights.copy()))
     

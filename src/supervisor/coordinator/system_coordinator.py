@@ -138,7 +138,7 @@ class SystemCoordinator:
     async def _setup_circuit_breakers(self) -> None:
         """Set up circuit breakers for each component."""
         component_names = ["analyst", "strategist", "tactician", "sentinel", 
-                          "enhanced_training_manager", "risk_allocator"]
+                        "enhanced_training_manager", "risk_allocator"]
         
         for component in component_names:
             self.circuit_breakers[component] = CircuitBreaker(

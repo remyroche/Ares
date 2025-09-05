@@ -9,6 +9,10 @@ from .config import CONFIG
 from .utils.logger import system_logger
 from .utils.state_manager import StateManager
 
+from .utils.model_manager import ModelManager
+from .sentinel.sentinel import Sentinel
+
+
 class DependencyContainer:
     """
     Dependency injection container for managing component dependencies.
@@ -99,9 +103,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
-            analyst = model_manager.get_analyst()
             if hasattr(analyst, 'exchange'):
                 analyst.exchange = exchange_client
             if hasattr(analyst, 'state_manager'):
@@ -122,9 +124,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
-            strategist = model_manager.get_strategist()
             if hasattr(strategist, 'exchange'):
                 strategist.exchange = exchange_client
             if hasattr(strategist, 'state_manager'):
@@ -146,9 +146,7 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from .utils.model_manager import ModelManager
             model_manager = ModelManager(self.container.config)
-            tactician = model_manager.get_tactician()
             if hasattr(tactician, 'exchange'):
                 tactician.exchange = exchange_client
             if hasattr(tactician, 'state_manager'):
@@ -171,6 +169,5 @@ class ComponentBuilder:
         """
 
         def factory() -> None:
-            from .sentinel.sentinel import Sentinel
             return Sentinel(exchange_client, state_manager)
         return factory

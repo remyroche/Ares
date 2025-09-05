@@ -182,7 +182,7 @@ class InteractionMappingPipeline:
         print("="*60)
         
         try:
-            results = self.call_graph_analyzer.analyze_call_graph(str(self.project_root))
+            results = self.call_graph_analyzer.analyze_directory(str(self.project_root))
             
             # Generate call graph report
             call_graph_report = {
@@ -488,7 +488,7 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["call_graph", "dependencies", "data_flow", "architecture", "visualization"],
+        choices=["call_graph", "dependencies", "data_flow", "architecture", "visualization", "all"],
         default="call_graph",
         help="Type of interaction analysis to perform (default: call_graph)"
     )

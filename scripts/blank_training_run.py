@@ -162,7 +162,6 @@ async def main() -> bool:
     pickle_file=pickle_dir / f"{args.exchange}_{args.symbol}_collected_data.pkl"
     try:
         import pickle  # local import to avoid overhead if unused
-import pandas as pd
 
         with open(pickle_file, "wb") as f:
             pickle.dump({"klines": klines_df}, f)

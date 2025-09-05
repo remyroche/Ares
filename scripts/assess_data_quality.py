@@ -407,9 +407,6 @@ async def main():
             return obj.to_dict()
         return obj
 
-    import json
-import pandas as pd
-
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=convert_numpy_types)
 

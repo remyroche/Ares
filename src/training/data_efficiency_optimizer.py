@@ -441,7 +441,6 @@ class DataEfficiencyOptimizer:
                     )
                     try:
                         import pickle
-import pandas as pd
 
                         with open(data_file, "rb") as f:
                             legacy_data = pickle.load(f)

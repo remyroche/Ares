@@ -1342,8 +1342,6 @@ class EnhancedFeatureSelector:
         """Analyze feature stability across multiple CV folds."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
-import pandas as pd
-import numpy as np
 
         except Exception as e:
             pass  # TODO: Handle exception properly

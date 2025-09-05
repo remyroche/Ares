@@ -168,7 +168,9 @@ class DataCollectionStep(BaseStep):
             Mock DataFrame with OHLCV data
         """
         from .core.decorators.errors import handles_errors
-import pandas as pd
+        import pandas as pd
+        from datetime import datetime, timedelta
+        import numpy as np
 
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)

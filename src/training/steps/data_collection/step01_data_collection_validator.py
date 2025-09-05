@@ -23,6 +23,7 @@ class Step1DataCollectionValidator:
         self.step_name = "step01_data_collection"
         self.config = config
         self.logger = system_logger.getChild("Validator.Step1")
+        self.validation_results: Dict[str, Any] = {}
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_records = 500  # Reduced from 1000 to allow smaller datasets
         self.max_gap_ratio = 0.2  # Allow up to 20% large gaps (increased from 10%)
@@ -100,6 +101,7 @@ class Step1DataCollectionValidator:
                 validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
                 validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
             
+            self.validation_results = validation_result
             return validation_result
 
         # Check for consolidated files in data_cache directory
@@ -136,6 +138,7 @@ class Step1DataCollectionValidator:
         if not validation_result["validation_passed"]:
             self.logger.error("❌ No market data found in state or consolidated files")
 
+        self.validation_results = validation_result
         return validation_result
 
     async def _check_consolidated_files(
@@ -388,6 +391,9 @@ class Step1DataCollectionValidator:
             return False
 
 
+import time
+
+
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
@@ -403,14 +409,15 @@ async def run_validator(
 
     """
     validator = Step1DataCollectionValidator(training_input)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    validation = await validator.validate(training_input, pipeline_state)
+    validator.validation_results = validation
 
     return {
         "step_name": "step01_data_collection",
-        "validation_passed": validation_passed,
+        "validation_passed": bool(validation.get("validation_passed", False)) if isinstance(validation, dict) else bool(validation),
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration
-        "timestamp": asyncio.get_event_loop().time(),
+        "timestamp": time.time(),
     }
 
 

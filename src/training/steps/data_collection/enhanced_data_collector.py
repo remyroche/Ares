@@ -425,4 +425,4 @@ if __name__ == "__main__":
         
         print("Collection Summary:", summary)
     
-    asyncio.run(await test_enhanced_collection())
+    asyncio.run(test_enhanced_collection())

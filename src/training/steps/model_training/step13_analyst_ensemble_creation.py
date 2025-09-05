@@ -1,16 +1,16 @@
 # src/training/steps/step13_analyst_ensemble_creation.py
 
-from .core.decorators import handles_errors
-
 import json
 import os
 from typing import Any, Optional, Tuple
 
 import joblib
+import pandas as pd
 
-from .utils.logger import system_logger
-from .utils.pipeline_standards import PipelineStandards, pipeline_standards
-
+from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.core.decorators import handles_errors
+from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -71,16 +71,16 @@ class AnalystEnsembleCreationStep:
             bool: True if successful
 
         """
-        logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
+        self.logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
             # Check if enhanced HMM models exist from Step 6
             enhanced_models_dir = os.path.join(data_dir, "enhanced_hmm_models")
             if not os.path.exists(enhanced_models_dir):
-                logger.warning(
+                self.logger.warning(
                     f"⚠️ Enhanced HMM models directory not found: {enhanced_models_dir}",
                 )
-                logger.info("📝 Creating placeholder ensemble for Step 7")
+                self.logger.info("📝 Creating placeholder ensemble for Step 7")
                 return self._create_placeholder_ensemble(
                     symbol, exchange, data_dir, training_input,
                 )
@@ -89,7 +89,7 @@ class AnalystEnsembleCreationStep:
             ensemble_models = self._load_enhanced_models(enhanced_models_dir)
 
             if not ensemble_models:
-                logger.warning(
+                self.logger.warning(
                     "⚠️ No enhanced models found, creating placeholder ensemble",
                 )
                 return self._create_placeholder_ensemble(
@@ -104,11 +104,11 @@ class AnalystEnsembleCreationStep:
             # Save ensemble summary
             self._save_ensemble_summary(ensemble_result, symbol, exchange, data_dir)
 
-            logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
+            self.logger.info("✅ Step 7: Analyst Ensemble Creation completed successfully")
             return True
 
         except Exception as e:
-            logger.exception(f"❌ Error in Step 7: {e}")
+            self.logger.exception(f"❌ Error in Step 7: {e}")
             return False
 
     def _load_enhanced_models(self, enhanced_models_dir: str) -> dict[str, Any]:
@@ -132,18 +132,18 @@ class AnalystEnsembleCreationStep:
                                 model = joblib.load(model_path)
                                 model_name = model_file.replace(".joblib", "")
                                 ensemble_models[regime_dir][model_name] = model
-                                logger.info(
+                                self.logger.info(
                                     f"📦 Loaded model: {regime_dir}/{model_name}",
                                 )
                             except Exception as e:
-                                logger.warning(
+                                self.logger.warning(
                                     f"⚠️ Failed to load model {model_path}: {e}",
                                 )
 
             return ensemble_models
 
         except Exception as e:
-            logger.exception(f"❌ Error loading enhanced models: {e}")
+            self.logger.exception(f"❌ Error loading enhanced models: {e}")
             return {}
 
     def _create_ensemble(
@@ -171,17 +171,17 @@ class AnalystEnsembleCreationStep:
                         )
                     )
 
-                    logger.info(
+                    self.logger.info(
                         f"✅ Applied optimized feature selection for ensemble: {features_df.shape[1]} -> {optimized_features.shape[1]} features"
                     )
 
                     # Log performance metrics
                     if "performance_metrics" in selection_metadata:
                         perf_metrics = selection_metadata["performance_metrics"]
-                        logger.info("📊 Ensemble feature selection performance:")
-                        logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
-                        logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
-                        logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
+                        self.logger.info("📊 Ensemble feature selection performance:")
+                        self.logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
+                        self.logger.info(f"   - SHAP analysis: {perf_metrics.get('shap_calculation_time', 0):.2f}s")
+                        self.logger.info(f"   - Total time: {selection_metadata.get('total_time', 0):.2f}s")
 
                     # Store selection metadata
                     ensemble_result: dict[str, Any] = {
@@ -212,7 +212,7 @@ class AnalystEnsembleCreationStep:
                     }
 
             except Exception as e:
-                logger.warning(f"⚠️ Optimized feature selection failed: {e}")
+                self.logger.warning(f"⚠️ Optimized feature selection failed: {e}")
                 ensemble_result = {
                     "ensemble_models": ensemble_models,
                     "ensemble_weights": {},
@@ -233,13 +233,13 @@ class AnalystEnsembleCreationStep:
                         model_name: 1.0 / max(1, len(models)) for model_name in models
                     }
 
-            logger.info(
+            self.logger.info(
                 f"🎯 Created ensemble with {ensemble_result['ensemble_metadata']['model_count']} models",
             )
             return ensemble_result
 
         except Exception as e:
-            logger.exception(f"❌ Error creating ensemble: {e}")
+            self.logger.exception(f"❌ Error creating ensemble: {e}")
             return {}
 
     def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
@@ -267,12 +267,12 @@ class AnalystEnsembleCreationStep:
                     target = labels_df["target"].dropna()
                     features_df = features_df.loc[target.index]
                     return features_df, target
-                logger.warning(f"⚠️ Target 'target' column not found in {labels_file}")
+                self.logger.warning(f"⚠️ Target 'target' column not found in {labels_file}")
 
             return None
 
         except Exception as e:
-            logger.warning(f"⚠️ Failed to get sample data for feature selection: {e}")
+            self.logger.warning(f"⚠️ Failed to get sample data for feature selection: {e}")
             return None
 
     def _create_placeholder_ensemble(
@@ -280,7 +280,7 @@ class AnalystEnsembleCreationStep:
     ) -> bool:
         """Create a placeholder ensemble when no enhanced models are available."""
         try:
-            logger.info("📝 Creating placeholder ensemble for Step 7")
+            self.logger.info("📝 Creating placeholder ensemble for Step 7")
 
             # Create placeholder ensemble structure
             placeholder_ensemble: dict[str, Any] = {
@@ -300,11 +300,11 @@ class AnalystEnsembleCreationStep:
                 placeholder_ensemble, symbol, exchange, data_dir,
             )
 
-            logger.info("✅ Placeholder ensemble created successfully")
+            self.logger.info("✅ Placeholder ensemble created successfully")
             return True
 
         except Exception as e:
-            logger.exception(f"❌ Error creating placeholder ensemble: {e}")
+            self.logger.exception(f"❌ Error creating placeholder ensemble: {e}")
             return False
 
     def _save_ensemble_summary(
@@ -332,10 +332,10 @@ class AnalystEnsembleCreationStep:
             with open(summary_file, "w") as f:
                 json.dump(serializable_result, f, indent=2, default=str)
 
-            logger.info(f"💾 Saved ensemble summary to {summary_file}")
+            self.logger.info(f"💾 Saved ensemble summary to {summary_file}")
 
         except Exception as e:
-            logger.exception(f"❌ Error saving ensemble summary: {e}")
+            self.logger.exception(f"❌ Error saving ensemble summary: {e}")
 
 
 async def step7_analyst_ensemble_creation(

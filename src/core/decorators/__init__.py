@@ -94,6 +94,31 @@ from .validate import (
     validates,
 )
 
+# Function monitoring decorators
+from .function_monitor import (
+    FunctionCallMonitor,
+    FunctionCallMetrics,
+    ExecutionReport,
+    monitor_function_calls,
+    monitor_step03_functions,
+    monitor_critical_functions,
+    monitor_performance_only,
+)
+
+# Enhanced error handling decorators
+from .enhanced_error_handling import (
+    EnhancedErrorHandler,
+    ErrorContext,
+    ErrorReport,
+    ErrorSeverity,
+    ErrorCategory,
+    RecoveryStrategy,
+    handle_errors_enhanced,
+    handle_step03_errors,
+    handle_critical_errors,
+    handle_errors_with_retry,
+)
+
 __all__ = [
     # Compose
     "compose",
@@ -159,4 +184,23 @@ __all__ = [
     "User",
     "PermissionType",
     "AuthProvider",
+    # Function monitoring
+    "FunctionCallMonitor",
+    "FunctionCallMetrics",
+    "ExecutionReport",
+    "monitor_function_calls",
+    "monitor_step03_functions",
+    "monitor_critical_functions",
+    "monitor_performance_only",
+    # Enhanced error handling
+    "EnhancedErrorHandler",
+    "ErrorContext",
+    "ErrorReport",
+    "ErrorSeverity",
+    "ErrorCategory",
+    "RecoveryStrategy",
+    "handle_errors_enhanced",
+    "handle_step03_errors",
+    "handle_critical_errors",
+    "handle_errors_with_retry",
 ]

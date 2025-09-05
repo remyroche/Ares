@@ -1,4 +1,4 @@
-'\nStep6: Feature Interaction Engineering\n\nThis module implements comprehensive feature interaction engineering for the Tactician model.\nIt creates interaction terms between technical indicators, market features, and derived metrics\nto capture non-linear relationships and improve model performance.\n\nKey Features:\n- Integrates with DiverseLookbackOptimizer for optimal period selection\n- Ensures non-correlated lookback periods for each indicator\n- Creates meaningful feature interactions\n- Implements stability analysis for feature selection\n'
+'\nStep6: Feature Interaction Engineering\n\nThis module implements comprehensive feature interaction engineering for the Tactician model.\nIt creates interaction terms between technical indicators, market features, and derived metrics\nto capture non-linear relationships and improve model performance.\n\nKey Features:\n- Integrates with DiverseLookbackOptimizer for optimal period selection\n- Ensures non-correlated lookback periods for each indicator\n- Creates meaningful feature interactions\n- Implements stability analysis for feature selection\n- Comprehensive function call validation and tracking\n- Detailed function completion reports with outcome analysis\n'
 import logging
 from collections import Counter
 from datetime import datetime
@@ -12,6 +12,57 @@ except ImportError:
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.preprocessing import StandardScaler
 from copy import copy
+import sys
+import os
+
+# Add the steps directory to the path to import validation framework
+current_dir = os.path.dirname(os.path.abspath(__file__))
+steps_dir = os.path.join(current_dir, '..')
+sys.path.insert(0, steps_dir)
+
+try:
+    from step06_enhanced_validation_framework import (
+        step06_function_validator,
+        step06_function_tracker,
+        step06_validation_context,
+        get_step06_validation_summary,
+        ValidationLevel,
+        FunctionStatus
+    )
+    VALIDATION_AVAILABLE = True
+except ImportError as e:
+    # Fallback decorators if validation framework is not available
+    logger.warning(f"Step06 validation framework not available: {e}")
+    
+    def step06_function_validator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def step06_function_tracker(func):
+        return func
+    
+    def step06_validation_context(*args, **kwargs):
+        from contextlib import nullcontext
+        return nullcontext()
+    
+    def get_step06_validation_summary():
+        return {"error": "Validation framework not available"}
+    
+    class ValidationLevel:
+        BASIC = "basic"
+        DETAILED = "detailed"
+        COMPREHENSIVE = "comprehensive"
+    
+    class FunctionStatus:
+        PENDING = "pending"
+        IN_PROGRESS = "in_progress"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        TIMEOUT = "timeout"
+    
+    VALIDATION_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class FeatureInteractionEngine:
@@ -74,6 +125,7 @@ class FeatureInteractionEngine:
         self.is_fitted = False
         self._validate_lookback_periods()
 
+    @step06_function_validator(function_type="optimization", validation_level=ValidationLevel.COMPREHENSIVE)
     async def optimize_lookback_periods(self, market_data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None=None) -> dict[str, Any]:
         """
         Optimize lookback periods using DiverseLookbackOptimizer.
@@ -86,6 +138,11 @@ class FeatureInteractionEngine:
         Returns:
             Dictionary with optimized lookback periods
         """
+        with step06_validation_context("optimize_lookback_periods", "optimization"):
+            self.logger.info(f"🎯 Starting lookback period optimization with validation tracking")
+            self.logger.info(f"   Input data shape: {market_data.shape}")
+            self.logger.info(f"   Target shape: {target.shape}")
+            self.logger.info(f"   Regimes provided: {regimes is not None}")
         if not self.use_dynamic_periods:
             self.logger.warning('⚠️ Dynamic period optimization not available, using fallback periods')
             return {'status': 'fallback', 'periods': self.fallback_lookback_periods}
@@ -181,6 +238,7 @@ class FeatureInteractionEngine:
                     else:
                         self.logger.info(f'✅ {indicator}: Selected periods {periods}')
 
+    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.COMPREHENSIVE)
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """
         Extract technical indicators using optimal, non-correlated lookback periods.
@@ -191,6 +249,11 @@ class FeatureInteractionEngine:
         Returns:
             pd.DataFrame: Technical indicators with optimal lookback periods
         """
+        with step06_validation_context("extract_optimal_technical_indicators", "feature_engineering"):
+            self.logger.info(f"🔧 Starting technical indicator extraction with validation tracking")
+            self.logger.info(f"   Input data shape: {market_data.shape}")
+            self.logger.info(f"   Available columns: {list(market_data.columns)}")
+            self.logger.info(f"   Using dynamic periods: {bool(self.dynamic_lookback_periods)}")
         self.logger.info('🔧 Extracting optimal technical indicators with non-correlated lookback periods...')
         periods_to_use = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
         indicators = {}
@@ -304,6 +367,7 @@ class FeatureInteractionEngine:
         self.logger.info(f'✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods')
         return indicators_df
 
+    @step06_function_validator(function_type="data_processing", validation_level=ValidationLevel.COMPREHENSIVE)
     def analyze_feature_correlations(self, features: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze correlations between features to ensure non-correlation.
@@ -314,6 +378,11 @@ class FeatureInteractionEngine:
         Returns:
             Dict with correlation analysis results
         """
+        with step06_validation_context("analyze_feature_correlations", "data_processing"):
+            self.logger.info(f"🔍 Starting correlation analysis with validation tracking")
+            self.logger.info(f"   Input features shape: {features.shape}")
+            self.logger.info(f"   Feature columns: {len(features.columns)}")
+            self.logger.info(f"   Data types: {features.dtypes.value_counts().to_dict()}")
         self.logger.info('🔍 Analyzing feature correlations to ensure non-correlation...')
         correlation_matrix = features.corr()
         high_correlations = []
@@ -338,6 +407,7 @@ class FeatureInteractionEngine:
         self.correlation_analysis_history.append({'timestamp': datetime.now(), 'results': analysis_results})
         return analysis_results
 
+    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.COMPREHENSIVE)
     def extract_interaction_features(self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame) -> np.ndarray:
         """
         Extract comprehensive interaction features.
@@ -350,6 +420,12 @@ class FeatureInteractionEngine:
         Returns:
             np.ndarray: Interaction features
         """
+        with step06_validation_context("extract_interaction_features", "feature_engineering"):
+            self.logger.info(f"🔗 Starting interaction feature extraction with validation tracking")
+            self.logger.info(f"   Input features shape: {features.shape}")
+            self.logger.info(f"   Feature names count: {len(feature_names)}")
+            self.logger.info(f"   Market data shape: {market_data.shape}")
+            self.logger.info(f"   Interaction patterns enabled: {sum(1 for p in self.interaction_patterns.values() if p['enabled'])}")
         try:
             self.logger.info('Extracting feature interactions...')
             basic_interactions = self._create_basic_interactions(features, feature_names)
@@ -369,10 +445,12 @@ class FeatureInteractionEngine:
             self.logger.exception(f'Feature interaction extraction failed: {e}')
             return np.zeros((features.shape[0], 50))
 
+    @step06_function_tracker
     def _create_basic_interactions(self, features: np.ndarray, feature_names: list[str]) -> np.ndarray:
         """
         Create basic pairwise interactions between features.
         """
+        self.logger.debug(f"🔗 Creating basic interactions for {features.shape[0]} samples, {len(feature_names)} features")
         interactions = []
         feature_map = {name: i for i, name in enumerate(feature_names)}
         important_pairs = [('RSI', 'MACD'), ('RSI', 'Volume_Ratio'), ('MACD', 'Volume_Ratio'), ('BB_Position', 'ATR_Normalized'), ('SMA_Ratio', 'EMA_Ratio'), ('Price_Momentum', 'Volume_Ratio'), ('OBV_Normalized', 'Price_Momentum'), ('Stochastic', 'RSI'), ('Williams_R', 'RSI'), ('CCI', 'RSI')]
@@ -387,10 +465,12 @@ class FeatureInteractionEngine:
                 interactions.append(diff_interaction)
         return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
 
+    @step06_function_tracker
     def _create_pattern_interactions(self, features: np.ndarray, feature_names: list[str]) -> np.ndarray:
         """
         Create pattern-based interactions using predefined patterns.
         """
+        self.logger.debug(f"🎯 Creating pattern interactions for {features.shape[0]} samples")
         interactions = []
         feature_map = {name: i for i, name in enumerate(feature_names)}
         for pattern_name, pattern_config in self.interaction_patterns.items():
@@ -435,10 +515,12 @@ class FeatureInteractionEngine:
             interactions.extend([volatility_avg * regime_feature * weight, volatility_avg / (regime_feature + 1e-08) * weight, np.square(volatility_avg) * regime_feature * weight])
         return interactions
 
+    @step06_function_tracker
     def _create_regime_interactions(self, features: np.ndarray, feature_names: list[str], market_data: pd.DataFrame) -> np.ndarray:
         """
         Create regime-dependent interactions.
         """
+        self.logger.debug(f"🏛️ Creating regime interactions for {features.shape[0]} samples")
         interactions = []
         try:
             if 'timestamp' in market_data.columns:
@@ -576,14 +658,126 @@ class FeatureInteractionEngine:
         """
         self.interaction_performance[datetime.now()] = performance_metrics
 
+    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.COMPREHENSIVE)
     def get_feature_importance(self, interactions: np.ndarray, target: np.ndarray) -> np.ndarray:
         """
         Calculate importance of interaction features.
         """
+        with step06_validation_context("get_feature_importance", "feature_engineering"):
+            self.logger.info(f"📊 Starting feature importance calculation with validation tracking")
+            self.logger.info(f"   Interactions shape: {interactions.shape}")
+            self.logger.info(f"   Target shape: {target.shape}")
+            self.logger.info(f"   Target distribution: {np.bincount(target.astype(int))}")
+        
         try:
             mi_scores = mutual_info_classif(interactions, target, random_state=42)
             self.feature_importance_history.append({'timestamp': datetime.now(), 'importance_scores': mi_scores.tolist(), 'mean_importance': np.mean(mi_scores), 'max_importance': np.max(mi_scores)})
+            
+            self.logger.info(f"✅ Feature importance calculation completed")
+            self.logger.info(f"   Mean importance: {np.mean(mi_scores):.4f}")
+            self.logger.info(f"   Max importance: {np.max(mi_scores):.4f}")
+            self.logger.info(f"   Features with importance > 0.1: {np.sum(mi_scores > 0.1)}")
+            
             return mi_scores
         except Exception as e:
             self.logger.exception(f'Feature importance calculation failed: {e}')
             return np.ones(interactions.shape[1])
+    
+    def generate_comprehensive_function_report(self) -> dict[str, Any]:
+        """
+        Generate comprehensive function execution report for step06.
+        
+        Returns:
+            Dictionary with detailed function execution analysis
+        """
+        self.logger.info("📋 Generating comprehensive function execution report...")
+        
+        # Get validation summary if available
+        validation_summary = {}
+        if VALIDATION_AVAILABLE:
+            try:
+                validation_summary = get_step06_validation_summary()
+            except Exception as e:
+                self.logger.warning(f"Could not get validation summary: {e}")
+        
+        # Generate internal statistics
+        internal_stats = {
+            "interaction_patterns": {
+                "total_patterns": len(self.interaction_patterns),
+                "enabled_patterns": sum(1 for p in self.interaction_patterns.values() if p['enabled']),
+                "pattern_details": {name: {"enabled": config['enabled'], "weight": config['weight']} 
+                                  for name, config in self.interaction_patterns.items()}
+            },
+            "lookback_periods": {
+                "using_dynamic": bool(self.dynamic_lookback_periods),
+                "fallback_periods": len(self.fallback_lookback_periods),
+                "optimized_periods": len(self.dynamic_lookback_periods) if self.dynamic_lookback_periods else 0
+            },
+            "feature_engineering_history": {
+                "correlation_analyses": len(self.correlation_analysis_history),
+                "feature_importance_calculations": len(self.feature_importance_history),
+                "selected_interactions": len(self.selected_interactions_history)
+            },
+            "performance_metrics": {
+                "scaler_fitted": self.is_fitted,
+                "interaction_performance_tracked": len(self.interaction_performance)
+            }
+        }
+        
+        # Combine all statistics
+        comprehensive_report = {
+            "timestamp": datetime.now().isoformat(),
+            "validation_summary": validation_summary,
+            "internal_statistics": internal_stats,
+            "recommendations": self._generate_step06_recommendations(internal_stats),
+            "function_call_analysis": self._analyze_function_calls(),
+            "performance_analysis": self._analyze_performance_metrics()
+        }
+        
+        self.logger.info("✅ Comprehensive function execution report generated")
+        return comprehensive_report
+    
+    def _generate_step06_recommendations(self, stats: dict[str, Any]) -> list[str]:
+        """Generate recommendations based on step06 execution statistics."""
+        recommendations = []
+        
+        # Pattern recommendations
+        if stats["interaction_patterns"]["enabled_patterns"] < stats["interaction_patterns"]["total_patterns"]:
+            recommendations.append("Consider enabling more interaction patterns for better feature coverage")
+        
+        # Lookback period recommendations
+        if not stats["lookback_periods"]["using_dynamic"]:
+            recommendations.append("Consider using dynamic lookback period optimization for better performance")
+        
+        # Feature engineering recommendations
+        if stats["feature_engineering_history"]["correlation_analyses"] == 0:
+            recommendations.append("Run correlation analysis to identify redundant features")
+        
+        if stats["feature_engineering_history"]["feature_importance_calculations"] == 0:
+            recommendations.append("Calculate feature importance to identify most valuable features")
+        
+        return recommendations
+    
+    def _analyze_function_calls(self) -> dict[str, Any]:
+        """Analyze function call patterns and performance."""
+        return {
+            "total_correlation_analyses": len(self.correlation_analysis_history),
+            "total_importance_calculations": len(self.feature_importance_history),
+            "total_interaction_selections": len(self.selected_interactions_history),
+            "performance_tracking_entries": len(self.interaction_performance)
+        }
+    
+    def _analyze_performance_metrics(self) -> dict[str, Any]:
+        """Analyze performance metrics and trends."""
+        metrics = {
+            "scaler_status": "fitted" if self.is_fitted else "not_fitted",
+            "interaction_patterns_optimized": len(self.interaction_patterns),
+            "lookback_periods_optimized": len(self.dynamic_lookback_periods) if self.dynamic_lookback_periods else 0
+        }
+        
+        # Add performance trends if available
+        if self.interaction_performance:
+            recent_performance = list(self.interaction_performance.values())[-1]
+            metrics["latest_performance"] = recent_performance
+        
+        return metrics

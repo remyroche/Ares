@@ -24,9 +24,30 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
-from .training.steps.hmm_clustering import run_enhanced_step
-from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+# Import utilities (optional)
+try:
+    from .utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger("Step3HMMClustering")
+
+try:
+    from .training.steps.hmm_clustering import run_enhanced_step
+except ImportError:
+    run_enhanced_step = None
+
+try:
+    from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+except ImportError:
+    run_validator = None
+
+# Import enhanced monitoring decorators
+from src.core.decorators import (
+    monitor_step03_functions,
+    handle_step03_errors,
+    validates,
+    traced
+)
 
 logger = system_logger.getChild("Step3HMMClustering")
 
@@ -36,10 +57,15 @@ class HMMClusteringStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('HMMClusteringStep')
-        self.standards = pipeline_standards
+        from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+        self.standards = _pipeline_standards
         self.start_time = None
         self.step_timings = {}
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @validates()
+    @traced(span_name='initialize_hmm_clustering_step')
     async def initialize(self) -> None:
         """Initialize the HMM clustering step."""
         self.start_time = time.time()
@@ -51,6 +77,10 @@ class HMMClusteringStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         self.logger.info('✅ Enhanced HMM Clustering Step initialized successfully')
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @validates()
+    @traced(span_name='execute_hmm_clustering_step')
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute enhanced HMM regime discovery with full pipeline integration."""
         step_start = time.time()
@@ -146,6 +176,10 @@ class HMMClusteringStep:
             pipeline_state['hmm_clustering_error'] = str(e)
             return pipeline_state
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @validates()
+    @traced(span_name='log_step3_artifacts_to_mlflow')
     async def _log_step3_artifacts_to_mlflow(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> None:
         """Log step 3 artifacts to MLflow with enhanced metadata."""
         try:
@@ -177,6 +211,10 @@ class HMMClusteringStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 3 artifacts to MLflow: {e}')
 
+@monitor_step03_functions
+@handle_step03_errors
+@validates()
+@traced(span_name='run_step03_hmm_clustering')
 async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the enhanced HMM clustering step with full pipeline integration.
 
@@ -197,7 +235,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
         logger = system_logger.getChild('Step3HMMClustering')
         
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+            data_dir = _pipeline_standards.build_path('processed_data', exchange, symbol)
         
         logger.info('=' * 80)
         logger.info('🚀 STEP 3: Enhanced HMM Clustering with Full Pipeline Integration')
@@ -330,4 +369,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the enhanced step 3
-    asyncio.run(await main())
+    asyncio.run(main())

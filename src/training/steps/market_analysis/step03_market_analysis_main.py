@@ -123,4 +123,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the market analysis pipeline
-    asyncio.run(await main())
+    asyncio.run(main())

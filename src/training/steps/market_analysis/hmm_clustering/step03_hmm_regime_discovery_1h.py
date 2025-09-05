@@ -243,4 +243,4 @@ if __name__ == '__main__':
         results = await run_enhanced_regime_discovery(config['symbol'], config['exchange'], config['timeframe'], config['data_dir'], config)
         print(f'Regime discovery completed')
         print(f"Regime statistics: {results['regime_statistics']}")
-    asyncio.run(await main())
+    asyncio.run(main())

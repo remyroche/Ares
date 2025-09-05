@@ -1457,4 +1457,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the data collection pipeline
-    asyncio.run(await main())
+    asyncio.run(main())

@@ -245,4 +245,4 @@ async def main() -> None:
     print(f'Results: {results}')
     print(f'Status: {status}')
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run(main())

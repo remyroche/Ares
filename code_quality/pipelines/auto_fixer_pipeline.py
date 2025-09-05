@@ -188,6 +188,39 @@ class AutoFixerPipeline:
                 print("✅ Auto-detection completed successfully, skipping traditional fixes")
                 results["traditional_import_fixes"] = {"status": "skipped", "reason": "auto_detection_successful"}
             
+            # Import placement correction (run after import fixes)
+            print("🔧 Correcting import placement...")
+            try:
+                from scripts.fix_incorrect_imports import find_incorrect_imports, fix_incorrect_imports
+                
+                # Find files with incorrect import placement
+                files_with_issues = []
+                for file_path in file_paths:
+                    incorrect_imports = find_incorrect_imports(str(file_path))
+                    if incorrect_imports:
+                        files_with_issues.append((str(file_path), incorrect_imports))
+                
+                # Fix incorrect imports
+                placement_fixed = 0
+                for file_path, _ in files_with_issues:
+                    if fix_incorrect_imports(file_path):
+                        placement_fixed += 1
+                
+                results["import_placement_fixes"] = {
+                    "files_with_incorrect_placement": len(files_with_issues),
+                    "files_fixed": placement_fixed,
+                    "status": "success"
+                }
+                
+                if files_with_issues:
+                    print(f"  ✅ Fixed import placement in {placement_fixed} files")
+                else:
+                    print(f"  ✅ No incorrect import placement found")
+                    
+            except Exception as e:
+                print(f"⚠️  Import placement correction failed: {e}")
+                results["import_placement_fixes"] = {"status": "error", "error": str(e)}
+            
             # Circular import detection (always run)
             print("🔄 Detecting circular imports...")
             try:
@@ -204,12 +237,14 @@ class AutoFixerPipeline:
             total_auto_fixed = auto_detection_results.get("fixed", 0)
             total_auto_failed = auto_detection_results.get("failed", 0)
             total_traditional_fixed = results["traditional_import_fixes"].get("fixes_applied", 0) if isinstance(results["traditional_import_fixes"], dict) else 0
+            total_placement_fixed = results["import_placement_fixes"].get("files_fixed", 0) if isinstance(results["import_placement_fixes"], dict) else 0
             total_circular_found = results["circular_import_fixes"].get("circular_imports_found", 0) if isinstance(results["circular_import_fixes"], dict) else 0
             
             print(f"\n📊 Import Fixes Summary:")
             print(f"  ✅ Auto-detection fixes: {total_auto_fixed} files")
             print(f"  ❌ Auto-detection failures: {total_auto_failed} files")
             print(f"  🔧 Traditional fixes: {total_traditional_fixed} files")
+            print(f"  📍 Import placement fixes: {total_placement_fixed} files")
             print(f"  🔄 Circular imports found: {total_circular_found}")
             
             # Show module breakdown for auto-detection
@@ -236,6 +271,7 @@ class AutoFixerPipeline:
                 "auto_detection_fixes": total_auto_fixed,
                 "auto_detection_failures": total_auto_failed,
                 "traditional_import_fixes": total_traditional_fixed,
+                "import_placement_fixes": total_placement_fixed,
                 "circular_imports_found": total_circular_found,
                 "module_breakdown": module_counts,
                 "files_analyzed": len(file_paths),

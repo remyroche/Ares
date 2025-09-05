@@ -375,6 +375,39 @@ class UnifiedEnhancedPipeline:
                 "error": str(e)
             }
 
+        # Import placement correction (run after import fixes)
+        print("\n🔧 Correcting import placement...")
+        try:
+            from scripts.fix_incorrect_imports import find_incorrect_imports, fix_incorrect_imports
+            
+            # Find files with incorrect import placement
+            files_with_issues = []
+            for file_path in self.file_paths:
+                incorrect_imports = find_incorrect_imports(str(file_path))
+                if incorrect_imports:
+                    files_with_issues.append((str(file_path), incorrect_imports))
+            
+            # Fix incorrect imports
+            placement_fixed = 0
+            for file_path, _ in files_with_issues:
+                if fix_incorrect_imports(file_path):
+                    placement_fixed += 1
+            
+            formatted_result["import_placement_fixes"] = {
+                "files_with_incorrect_placement": len(files_with_issues),
+                "files_fixed": placement_fixed,
+                "status": "success"
+            }
+            
+            if files_with_issues:
+                print(f"  ✅ Fixed import placement in {placement_fixed} files")
+            else:
+                print(f"  ✅ No incorrect import placement found")
+                
+        except Exception as e:
+            print(f"⚠️  Import placement correction failed: {e}")
+            formatted_result["import_placement_fixes"] = {"status": "error", "error": str(e)}
+
         # Add to aggregator
         self.report_aggregator.add_import_results(formatted_result)
 

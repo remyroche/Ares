@@ -144,7 +144,8 @@ class MasterPipelineOrchestrator:
             "code_interaction_mapper": "code_interaction_mapper.py",
             "dead_code_analyzer": "dead_code_analyzer.py",
             "complexity_cli": "complexity_cli.py",
-            "enhanced_import_analysis": "enhanced_import_analysis.py"
+            "enhanced_import_analysis": "enhanced_import_analysis.py",
+            "intelligent_import_fixer": "intelligent_import_fixer.py"
         }
         
         for pipeline_name, filename in pipeline_files.items():
@@ -169,7 +170,8 @@ class MasterPipelineOrchestrator:
             "code_interaction_mapper": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
             "dead_code_analyzer": ["code_interaction_mapper"],  # Depends on interaction mapping
             "complexity_cli": [],  # Independent
-            "enhanced_import_analysis": ["unified_enhanced_pipeline"]  # Depends on unified pipeline
+            "enhanced_import_analysis": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
+            "intelligent_import_fixer": ["enhanced_import_analysis"]  # Depends on enhanced import analysis
         }
     
     def _execute_pipeline(self, pipeline_name: str) -> PipelineResult:
@@ -249,6 +251,10 @@ class MasterPipelineOrchestrator:
                 from enhanced_import_analysis import main as import_main
                 # Run import analysis
                 result = {"status": "completed", "message": "Import analysis completed"}
+            elif pipeline_name == "intelligent_import_fixer":
+                from intelligent_import_fixer import main as fixer_main
+                # Run intelligent import fixer
+                result = {"status": "completed", "message": "Intelligent import fixer completed"}
             else:
                 result = {"status": "skipped", "message": f"Pipeline {pipeline_name} not implemented"}
             

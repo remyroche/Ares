@@ -416,57 +416,96 @@ class EnhancedCodeInteractionMapper:
         }
         
         try:
+            # Import analyzers for enhanced analysis
+            from analyzers.call_graph_analyzer import CallGraphAnalyzer
+            from analyzers.dependency_analyzer import DependencyAnalyzer
+            from analyzers.architecture_analyzer import ArchitectureAnalyzer
+            
+            # Initialize analyzers with default config
+            from core.config import get_default_config
+            config = get_default_config()
+            call_analyzer = CallGraphAnalyzer(config)
+            dep_analyzer = DependencyAnalyzer(config)
+            arch_analyzer = ArchitectureAnalyzer(config)
+            
             # Run enhanced analysis
-            self.run()
+            print("Running enhanced call graph analysis...")
+            call_results = call_analyzer.analyze_directory(project_root)
             
-            # Extract enhanced interactions from results
-            if "dead_code" in self.results:
-                dead_code = self.results["dead_code"]
-                for issue in dead_code.get("issues", []):
-                    interaction = {
-                        "type": "dead_code_interaction",
-                        "source": issue.get("function_name", ""),
-                        "target": issue.get("file_path", ""),
-                        "line_number": issue.get("line_number", 0),
-                        "severity": issue.get("severity", "medium"),
-                        "confidence": issue.get("confidence", 0.0),
-                        "complexity": issue.get("complexity", 0)
-                    }
-                    interactions["interactions"].append(interaction)
-                    
-                    # Categorize by complexity
-                    if interaction["complexity"] > 5:
-                        interactions["complex_interactions"].append(interaction)
+            print("Running enhanced dependency analysis...")
+            dep_results = dep_analyzer.analyze_directory(project_root)
             
-            if "file_structure" in self.results:
-                file_structure = self.results["file_structure"]
-                for file_path, file_data in file_structure.get("files", {}).items():
-                    # Check for cross-module interactions
-                    imports = file_data.get("imports", [])
-                    for imp in imports:
-                        if imp.get("is_external", False):
-                            interaction = {
-                                "type": "cross_module_interaction",
-                                "source": file_path,
-                                "target": imp.get("module", ""),
-                                "relationship": "external_import",
-                                "complexity": len(imports)
-                            }
-                            interactions["interactions"].append(interaction)
+            print("Running enhanced architecture analysis...")
+            arch_results = arch_analyzer.analyze_directory(project_root)
+            
+            # Extract function calls with enhanced metrics
+            if "functions" in call_results:
+                for func_name, func_data in call_results["functions"].items():
+                    calls = func_data.get("calls", [])
+                    for call in calls:
+                        interaction = {
+                            "type": "function_call",
+                            "source": func_name,
+                            "target": call,
+                            "source_file": func_data.get("file_path", ""),
+                            "line_number": func_data.get("line_number", 0),
+                            "complexity": len(calls),  # Number of calls as complexity metric
+                            "is_cross_module": "/" in call or "." in call
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["function_calls"].append(interaction)
+                        
+                        # Categorize as complex if high call count
+                        if len(calls) > 10:
+                            interactions["complex_interactions"].append(interaction)
+                        
+                        # Categorize as cross-module if external
+                        if interaction["is_cross_module"]:
                             interactions["cross_module_interactions"].append(interaction)
             
-            if "import_patterns" in self.results:
-                import_patterns = self.results["import_patterns"]
-                for pattern in import_patterns.get("patterns", []):
-                    interaction = {
-                        "type": "import_pattern",
-                        "source": pattern.get("source_file", ""),
-                        "target": pattern.get("target_module", ""),
-                        "pattern_type": pattern.get("pattern_type", ""),
-                        "frequency": pattern.get("frequency", 0)
-                    }
-                    interactions["interactions"].append(interaction)
-                    interactions["import_relationships"].append(interaction)
+            # Extract module dependencies with enhanced metrics
+            if "modules" in dep_results:
+                for module_name, module_data in dep_results["modules"].items():
+                    dependencies = module_data.get("dependencies", [])
+                    for dep in dependencies:
+                        interaction = {
+                            "type": "module_dependency",
+                            "source": module_name,
+                            "target": dep,
+                            "relationship": "imports",
+                            "source_file": module_data.get("file_path", ""),
+                            "complexity": len(dependencies),  # Number of dependencies as complexity
+                            "is_external": not dep.startswith("src/") and not dep.startswith(".")
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["module_dependencies"].append(interaction)
+                        
+                        # Categorize as complex if high dependency count
+                        if len(dependencies) > 15:
+                            interactions["complex_interactions"].append(interaction)
+                        
+                        # Categorize as cross-module if external
+                        if interaction["is_external"]:
+                            interactions["cross_module_interactions"].append(interaction)
+            
+            # Extract class interactions from architecture with enhanced metrics
+            if "components" in arch_results:
+                for component_name, component_data in arch_results["components"].items():
+                    component_interactions = component_data.get("interactions", [])
+                    for interaction in component_interactions:
+                        interaction["type"] = "class_interaction"
+                        interaction["source_file"] = component_data.get("file_path", "")
+                        interaction["complexity"] = len(component_interactions)
+                        interactions["interactions"].append(interaction)
+                        interactions["class_interactions"].append(interaction)
+                        
+                        # Categorize as complex if high interaction count
+                        if len(component_interactions) > 5:
+                            interactions["complex_interactions"].append(interaction)
+            
+            # Store enhanced graphs
+            interactions["call_graph"] = call_results
+            interactions["dependency_graph"] = dep_results
             
             # Calculate enhanced metrics
             interactions["enhanced_metrics"]["total_interactions"] = len(interactions["interactions"])

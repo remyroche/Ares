@@ -2456,54 +2456,77 @@ class CodeInteractionMapper:
         }
         
         try:
-            # Run comprehensive analysis
-            self.run()
+            # Import analyzers
+            from analyzers.call_graph_analyzer import CallGraphAnalyzer
+            from analyzers.dependency_analyzer import DependencyAnalyzer
+            from analyzers.architecture_analyzer import ArchitectureAnalyzer
             
-            # Extract interactions from results
-            if "call_graph" in self.results:
-                call_graph = self.results["call_graph"]
-                for func_name, func_data in call_graph.get("functions", {}).items():
-                    interaction = {
-                        "type": "function_call",
-                        "source": func_name,
-                        "target": func_data.get("file_path", ""),
-                        "line_number": func_data.get("line_number", 0),
-                        "calls": func_data.get("calls", [])
-                    }
-                    interactions["interactions"].append(interaction)
-                    interactions["function_calls"].append(interaction)
+            # Initialize analyzers with default config
+            from core.config import get_default_config
+            config = get_default_config()
+            call_analyzer = CallGraphAnalyzer(config)
+            dep_analyzer = DependencyAnalyzer(config)
+            arch_analyzer = ArchitectureAnalyzer(config)
             
-            if "dependencies" in self.results:
-                deps = self.results["dependencies"]
-                for module_name, module_data in deps.get("modules", {}).items():
+            # Run call graph analysis
+            print("Running call graph analysis...")
+            call_results = call_analyzer.analyze_directory(project_root)
+            
+            # Run dependency analysis
+            print("Running dependency analysis...")
+            dep_results = dep_analyzer.analyze_directory(project_root)
+            
+            # Run architecture analysis
+            print("Running architecture analysis...")
+            arch_results = arch_analyzer.analyze_directory(project_root)
+            
+            # Extract function calls from call graph
+            if "functions" in call_results:
+                for func_name, func_data in call_results["functions"].items():
+                    for call in func_data.get("calls", []):
+                        interaction = {
+                            "type": "function_call",
+                            "source": func_name,
+                            "target": call,
+                            "source_file": func_data.get("file_path", ""),
+                            "line_number": func_data.get("line_number", 0)
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["function_calls"].append(interaction)
+            
+            # Extract module dependencies
+            if "modules" in dep_results:
+                for module_name, module_data in dep_results["modules"].items():
                     for dep in module_data.get("dependencies", []):
                         interaction = {
                             "type": "module_dependency",
                             "source": module_name,
                             "target": dep,
-                            "relationship": "imports"
+                            "relationship": "imports",
+                            "source_file": module_data.get("file_path", "")
                         }
                         interactions["interactions"].append(interaction)
                         interactions["module_dependencies"].append(interaction)
             
-            if "architecture" in self.results:
-                arch = self.results["architecture"]
-                for component_name, component_data in arch.get("components", {}).items():
+            # Extract class interactions from architecture
+            if "components" in arch_results:
+                for component_name, component_data in arch_results["components"].items():
                     for interaction in component_data.get("interactions", []):
                         interaction["type"] = "class_interaction"
+                        interaction["source_file"] = component_data.get("file_path", "")
                         interactions["interactions"].append(interaction)
                         interactions["class_interactions"].append(interaction)
+            
+            # Store full results
+            interactions["call_graph"] = call_results
+            interactions["dependency_graph"] = dep_results
             
             # Update statistics
             interactions["statistics"]["total_interactions"] = len(interactions["interactions"])
             interactions["statistics"]["function_calls"] = len(interactions["function_calls"])
             interactions["statistics"]["class_interactions"] = len(interactions["class_interactions"])
             interactions["statistics"]["module_dependencies"] = len(interactions["module_dependencies"])
-            interactions["statistics"]["files_analyzed"] = self.stats["files_analyzed"]
-            
-            # Store call graph and dependency graph
-            interactions["call_graph"] = self.results.get("call_graph", {})
-            interactions["dependency_graph"] = self.results.get("dependencies", {})
+            interactions["statistics"]["files_analyzed"] = call_results.get("files_analyzed", 0)
             
             print(f"\n✅ Interaction mapping completed:")
             print(f"   - Total interactions: {interactions['statistics']['total_interactions']}")

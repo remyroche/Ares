@@ -630,26 +630,50 @@ class UndefinedNamesAnalyzer:
             errors_by_file[error.file_path].append(error)
         return dict(errors_by_file)
 
-    def save_report(self, output_path: str) -> None:
+    def save_report(self, output_path: str, analysis_results: Dict[str, Any] = None) -> None:
         """Save analysis report to a JSON file."""
-        report = {
-            "timestamp": str(Path().cwd()),
-            "total_errors": len(self.errors),
-            "errors_by_type": {
-                error_type: [error.to_dict() for error in errors]
-                for error_type, errors in self.get_errors_by_type().items()
-            },
-            "errors_by_file": {
-                file_path: [error.to_dict() for error in errors]
-                for file_path, errors in self.get_errors_by_file().items()
-            },
-            "summary": {
-                "total_undefined_names": len([e for e in self.errors if e.error_type == "undefined_name"]),
-                "total_undefined_imports": len([e for e in self.errors if e.error_type == "undefined_import"]),
-                "total_unused_imports": len([e for e in self.errors if e.error_type == "unused_import"]),
-                "total_import_conflicts": len([e for e in self.errors if e.error_type == "import_conflict"]),
+        if analysis_results is None:
+            # Fallback to old behavior for backward compatibility
+            report = {
+                "timestamp": str(Path().cwd()),
+                "total_errors": len(self.errors),
+                "errors_by_type": {
+                    error_type: [error.to_dict() for error in errors]
+                    for error_type, errors in self.get_errors_by_type().items()
+                },
+                "errors_by_file": {
+                    file_path: [error.to_dict() for error in errors]
+                    for file_path, errors in self.get_errors_by_file().items()
+                },
+                "summary": {
+                    "total_undefined_names": len([e for e in self.errors if e.error_type == "undefined_name"]),
+                    "total_undefined_imports": len([e for e in self.errors if e.error_type == "undefined_import"]),
+                    "total_unused_imports": len([e for e in self.errors if e.error_type == "unused_import"]),
+                    "total_import_conflicts": len([e for e in self.errors if e.error_type == "import_conflict"]),
+                }
             }
-        }
+        else:
+            # Use the new analysis results
+            report = {
+                "timestamp": str(Path().cwd()),
+                "total_errors": analysis_results.get("total_errors", 0),
+                "errors_by_type": {},
+                "errors_by_file": {},
+                "summary": analysis_results.get("summary", {})
+            }
+            
+            # Group errors by type and file
+            if "files" in analysis_results:
+                for file_path, file_result in analysis_results["files"].items():
+                    if file_result.get("errors"):
+                        report["errors_by_file"][file_path] = file_result["errors"]
+                        
+                        # Group by error type
+                        for error in file_result["errors"]:
+                            error_type = error.get("error_type", "unknown")
+                            if error_type not in report["errors_by_type"]:
+                                report["errors_by_type"][error_type] = []
+                            report["errors_by_type"][error_type].append(error)
         
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
@@ -689,37 +713,47 @@ def main():
     # Print results
     if results["status"] == "success":
         summary = results.get("summary", {})
+        total_errors = results.get("total_errors", 0)  # Get from top level for individual files
+        
         print(f"\nAnalysis completed successfully!")
         print(f"Total files analyzed: {summary.get('total_files_analyzed', 1)}")
-        print(f"Total errors found: {summary.get('total_errors', 0)}")
-        print(f"Files with errors: {summary.get('files_with_errors', 0)}")
+        print(f"Total errors found: {total_errors}")
+        print(f"Files with errors: {summary.get('files_with_errors', 1 if total_errors > 0 else 0)}")
         
-        if summary.get('total_errors', 0) > 0:
+        if total_errors > 0:
             print(f"\nError breakdown:")
-            print(f"  Undefined names: {summary.get('undefined_names', 0)}")
-            print(f"  Undefined imports: {summary.get('undefined_imports', 0)}")
-            print(f"  Unused imports: {summary.get('unused_imports', 0)}")
-            print(f"  Import conflicts: {summary.get('import_conflicts', 0)}")
+            print(f"  Undefined names: {summary.get('total_undefined_names', 0)}")
+            print(f"  Undefined imports: {summary.get('total_undefined_imports', 0)}")
+            print(f"  Unused imports: {summary.get('total_unused_imports', 0)}")
+            print(f"  Import conflicts: {summary.get('total_import_conflicts', 0)}")
             
             if args.verbose:
                 print(f"\nDetailed errors:")
-                for file_path, file_result in results.get("files", {}).items():
-                    if file_result.get("total_errors", 0) > 0:
-                        print(f"\n{file_path}:")
-                        for error in file_result.get("errors", []):
-                            print(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
-                            if error.get('context'):
-                                print(f"    Context: {error['context']}")
+                # Handle both individual file and directory results
+                if "files" in results:
+                    for file_path, file_result in results.get("files", {}).items():
+                        if file_result.get("total_errors", 0) > 0:
+                            print(f"\n{file_path}:")
+                            for error in file_result.get("errors", []):
+                                print(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
+                                if error.get('context'):
+                                    print(f"    Context: {error['context']}")
+                else:
+                    # Individual file result
+                    for error in results.get("errors", []):
+                        print(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
+                        if error.get('context'):
+                            print(f"    Context: {error['context']}")
     else:
         print(f"Analysis failed: {results.get('error', 'Unknown error')}")
         return 1
 
     # Save report if requested
     if args.output:
-        analyzer.save_report(args.output)
+        analyzer.save_report(args.output, results)
         print(f"\nReport saved to: {args.output}")
 
-    return 0 if summary.get('total_errors', 0) == 0 else 1
+    return 0 if total_errors == 0 else 1
 
 
 if __name__ == "__main__":

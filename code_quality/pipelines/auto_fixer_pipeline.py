@@ -100,6 +100,10 @@ class AutoFixerPipeline:
         self.async_await_fixer = AsyncAwaitFixer(set())  # Empty set for now
         self.async_pattern_fixer = AsyncPatternFixer(str(self.project_root))
         
+        # Initialize missing fixers
+        self.bulk_cleanup = None  # Not implemented yet
+        self.auto_dead_code_fixer = None  # Not implemented yet
+        
         # Initialize comprehensive fixers
         # Note: Some comprehensive fixers may not be available
         
@@ -389,8 +393,12 @@ class AutoFixerPipeline:
             results["advanced_syntax_fixes"] = syntax_results
             
             # Bulk syntax cleanup
-            bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
-            results["bulk_syntax_cleanup"] = bulk_results
+            if self.bulk_cleanup is not None:
+                bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
+                results["bulk_syntax_cleanup"] = bulk_results
+            else:
+                bulk_results = {"fixes_applied": 0, "status": "not_implemented"}
+                results["bulk_syntax_cleanup"] = bulk_results
             
             # Generate syntax fixes report
             syntax_fixes_report = {
@@ -473,7 +481,8 @@ class AutoFixerPipeline:
             results["robust_async_fixes"] = robust_results
             
             # Async/await fixes
-            await_results = self.async_await_fixer.fix_async_await(str(self.project_root))
+            # Use the correct method name
+            await_results = self.async_await_fixer.fix_all_async(dry_run=False)
             results["async_await_fixes"] = await_results
             
             # Generate async fixes report
@@ -508,7 +517,10 @@ class AutoFixerPipeline:
         print("="*60)
         
         try:
-            results = self.auto_dead_code_fixer.auto_fix_dead_code(str(self.project_root))
+            if self.auto_dead_code_fixer is not None:
+                results = self.auto_dead_code_fixer.auto_fix_dead_code(str(self.project_root))
+            else:
+                results = {"fixes_applied": 0, "status": "not_implemented"}
             
             # Generate dead code fixes report
             dead_code_fixes_report = {

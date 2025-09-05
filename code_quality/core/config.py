@@ -3,6 +3,7 @@
 
 from typing import List, Dict, Any
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -60,3 +61,31 @@ class AnalysisConfig:
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'AnalysisConfig':
         """Create configuration from dictionary."""
         return cls(**config_dict)
+
+
+@dataclass
+class CodeQualityConfig:
+    """Main configuration class for code quality analysis."""
+    
+    project_root: str = None
+    analysis_config: AnalysisConfig = None
+    
+    def __post_init__(self):
+        """Initialize default values if not provided."""
+        if self.project_root is None:
+            self.project_root = str(Path.cwd())
+        
+        if self.analysis_config is None:
+            self.analysis_config = AnalysisConfig()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return {
+            "project_root": self.project_root,
+            "analysis_config": self.analysis_config.to_dict()
+        }
+
+
+def get_default_config() -> CodeQualityConfig:
+    """Get default configuration for code quality analysis."""
+    return CodeQualityConfig()

@@ -13,7 +13,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 from .utils.common_operations import safe_json_load
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
@@ -23,6 +22,7 @@ import logging
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
 
+@handles_errors(default_return={"validation_passed": False, "error": "Validator execution failed", "validation_results": {}})
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
@@ -216,6 +216,7 @@ async def run_validator(
 
 
 # Legacy function for backward compatibility
+@handles_errors(default_return={"validation_passed": False, "error": "Validator execution failed", "validation_results": {}})
 async def run_step_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],

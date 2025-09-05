@@ -40,17 +40,6 @@ class QualityLevel:
     POOR = "poor"
     CRITICAL = "critical"
 
-    @staticmethod
-    def get_score(quality: str) -> int:
-        """Get numeric score for quality level."""
-        scores = {
-            QualityLevel.EXCELLENT: 100,
-            QualityLevel.GOOD: 80,
-            QualityLevel.ACCEPTABLE: 60,
-            QualityLevel.POOR: 40,
-            QualityLevel.CRITICAL: 20,
-        }
-        return scores.get(quality, 0)
 
 
 class ComprehensiveQualityAuditor:

@@ -195,7 +195,7 @@ class UnifiedEnhancedPipeline:
                 # Basic analyzers
                 "syntax_validator": SyntaxValidator(config),
                 "linter": LinterAnalyzer(config),
-                "import_analyzer": ImportAnalyzer(config),
+                "import_analyzer": EnhancedImportAnalyzer(config),
                 "undefined_names": UndefinedNamesAnalyzer(config),
                 "type_checker": TypeChecker(config),
                 "static_analysis": StaticAnalysisAnalyzer(config),
@@ -209,7 +209,6 @@ class UnifiedEnhancedPipeline:
                 "concurrency": ConcurrencyAnalyzer(config),
                 "dependency": DependencyAnalyzer(config),
                 "error_handling": ErrorHandlingAnalyzer(config),
-                "signature": SignatureAnalyzer(config),
                 "improved_signature": ImprovedSignatureAnalyzer(config),
                 
                 # Quality analyzers
@@ -222,10 +221,7 @@ class UnifiedEnhancedPipeline:
                 "test_coverage": TestCoverageAnalyzer(config),
                 
                 # Dead code analyzers
-                "dead_code": DeadCodeAnalyzer(config),
-                "improved_dead_code": ImprovedDeadCodeAnalyzer(config),
                 "enhanced_dead_code": EnhancedDeadCodeAnalyzer(config),
-                "simplified_enhanced": SimplifiedEnhancedAnalyzer(config),
             }
             print(f"✓ All {len(self.analyzers)} analyzers initialized successfully")
         except Exception as e:
@@ -235,6 +231,12 @@ class UnifiedEnhancedPipeline:
     def _initialize_visualizers(self):
         """Initialize ALL visualizers for comprehensive visualization."""
         try:
+            from visualizers.dashboard_generator import DashboardGenerator
+            from visualizers.complexity_heatmap import ComplexityHeatmap
+            from visualizers.dependency_graph import DependencyGraph
+            from visualizers.interaction_network import InteractionNetwork
+            from visualizers.code_visualizer import CodeVisualizer
+            
             self.visualizers = {
                 "dashboard": DashboardGenerator(str(self.project_root)),
                 "complexity_heatmap": ComplexityHeatmap(str(self.project_root)),
@@ -945,7 +947,7 @@ class UnifiedEnhancedPipeline:
         print("="*60)
 
         start_time = time.time()
-        analyzer = ImprovedDeadCodeAnalyzer()
+        analyzer = EnhancedDeadCodeAnalyzer()
         result = analyzer.analyze_directory(str(self.project_root))
         
         # Save individual report

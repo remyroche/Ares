@@ -105,6 +105,53 @@ def is_documentation_file(file_path: str) -> bool:
     return False
 
 
+def is_valid_python_file(file_path: Path) -> bool:
+    """Check if a file is a valid Python file."""
+    try:
+        if not file_path.suffix == '.py':
+            return False
+        
+        content = read_file_safely(file_path)
+        if content is None:
+            return False
+        
+        # Try to parse the AST to check for syntax errors
+        ast.parse(content, filename=str(file_path))
+        return True
+    except (SyntaxError, UnicodeDecodeError, Exception):
+        return False
+
+
+def get_directory_stats(directory: str) -> Dict[str, Any]:
+    """Get statistics about a directory."""
+    try:
+        project_root = Path(directory)
+        if not project_root.exists():
+            return {"error": "Directory does not exist"}
+        
+        python_files = find_python_files(directory)
+        total_files = len(python_files)
+        
+        # Count lines of code
+        total_lines = 0
+        for file_path in python_files:
+            content = read_file_safely(file_path)
+            if content:
+                total_lines += len(content.splitlines())
+        
+        # Count directories
+        total_dirs = len([d for d in project_root.rglob("*") if d.is_dir()])
+        
+        return {
+            "total_python_files": total_files,
+            "total_lines": total_lines,
+            "total_directories": total_dirs,
+            "directory_path": str(project_root)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def backup_file(file_path: Path) -> Optional[Path]:
     """Create a backup of a file."""
     try:
@@ -146,32 +193,25 @@ def find_unused_imports(file_path: Path) -> List[str]:
                     for alias in node.names:
                         imports.append(f"{node.module}.{alias.name}")
         
-        # Simple check for usage (this is a basic implementation)
+        # Collect all used names
+        used_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                used_names.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                # Handle attribute access like module.function
+                if isinstance(node.value, ast.Name):
+                    used_names.add(f"{node.value.id}.{node.attr}")
+        
+        # Find unused imports
         unused = []
         for imp in imports:
-            if imp not in content.replace('import', '').replace('from', ''):
+            if imp not in used_names and imp.split('.')[-1] not in used_names:
                 unused.append(imp)
         
         return unused
     except Exception:
         return []
-
-
-def is_valid_python_file(file_path: Path) -> bool:
-    """Check if a file is a valid Python file."""
-    try:
-        if not file_path.suffix == '.py':
-            return False
-        
-        content = read_file_safely(file_path)
-        if not content:
-            return False
-        
-        # Try to parse the file
-        tree = parse_ast_safely(content, file_path)
-        return tree is not None
-    except Exception:
-        return False
 
 
 class FileUtils:

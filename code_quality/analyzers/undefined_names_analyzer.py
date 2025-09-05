@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Enhanced Undefined Names and Variables Analyzer - Detects undefined names, variables, and imports.
 """

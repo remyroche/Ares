@@ -9,6 +9,8 @@ from .base_plugin import (
     BasePlugin, PluginResult, PluginContext, PluginMetadata,
     PluginCategory, PluginPriority, FileProcessorPlugin, DirectoryProcessorPlugin
 )
+from .plugin_manager import PluginManager
+from .plugin_registry import PluginRegistry
 from .exceptions import (
     PluginError, PluginNotFoundError, PluginDependencyError,
     PluginExecutionError, PluginConfigurationError, PluginTimeoutError

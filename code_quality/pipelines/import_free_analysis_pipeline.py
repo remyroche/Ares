@@ -31,9 +31,9 @@ from analyzers.linter_analyzer import LinterAnalyzer
 from analyzers.type_checker import TypeChecker
 
 # Import scripts (ONLY import-free analysis related)
-from scripts.detect_circular_imports import CircularImportDetector
-from extract_non_pandas_tests import ExtractNonPandasTests
-from analyze_undefined_names import AnalyzeUndefinedNames
+from scripts.detect_circular_imports import ImportAnalyzer
+# from extract_non_pandas_tests import ExtractNonPandasTests  # Deleted during cleanup
+# from analyze_undefined_names import AnalyzeUndefinedNames  # Deleted during cleanup
 
 # Import core components
 from core.config import get_default_config

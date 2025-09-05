@@ -6,10 +6,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class YapfFixer(BaseCodeFixer):
+class YapfFixer(BasePlugin):
     """YAPF code formatter plugin."""
 
     def __init__(self, config: dict[str, Any] = None):

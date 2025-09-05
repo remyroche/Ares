@@ -7,10 +7,10 @@ Note: conservative edits based on simple heuristics.
 import ast
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class ImportHygieneFixer(BaseCodeFixer):
+class ImportHygieneFixer(BasePlugin):
     """Apply simple import hygiene transformations."""
 
     def __init__(self, config: dict[str, Any] | None = None):

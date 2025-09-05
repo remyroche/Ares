@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Type Checker - Comprehensive Python type checking and analysis using mypy and advanced type inference.
 """

@@ -30,7 +30,7 @@ from fixers.sequential_fixer_fixed import SequentialFixer
 from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
-from scripts.fix_missing_imports import MissingImportFixer
+from scripts.fix_missing_imports import ImportFixer
 # Note: bulk_syntax_cleanup, apply_all_fixes, and final_code_fixes were removed as redundant
 from scripts.fix_async_await import AsyncAwaitFixer
 
@@ -38,11 +38,8 @@ from scripts.fix_async_await import AsyncAwaitFixer
 from fixers.import_fixers.comprehensive_import_fixer import ComprehensiveImportFixer
 
 # Import undefined names fixers (ONLY auto-fixing related)
-from fixers.undefined_names_fixers.fix_undefined_names import FixUndefinedNames
-from fixers.undefined_names_fixers.fix_common_undefined_names import FixCommonUndefinedNames
-from fixers.undefined_names_fixers.fix_parameter_undefined_names import FixParameterUndefinedNames
-from fixers.undefined_names_fixers.fix_simple_undefined_names import FixSimpleUndefinedNames
-from fixers.undefined_names_fixers.fix_top_undefined_names import FixTopUndefinedNames
+from fixers.undefined_names_fixers.fix_undefined_names import UndefinedNamesFixer
+# Note: Other undefined names fixers were removed as redundant during cleanup
 
 # Import plugin fixers (ONLY auto-fixing related)
 from plugins.black_fixer import BlackFixer

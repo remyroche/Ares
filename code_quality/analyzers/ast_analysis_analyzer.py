@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 AST Analysis Analyzer - Integrates Astroid, Rope, and Jedi for advanced AST-based code analysis.
 """

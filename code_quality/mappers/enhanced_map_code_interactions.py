@@ -48,6 +48,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import our enhanced analyzers
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
+import numpy as np
+
 import time
 
 from core.config import AnalysisConfig

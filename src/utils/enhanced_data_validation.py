@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .utils.common
+import numpy as np
+
 """
 Enhanced Data Validation Utilities
 
@@ -18,8 +21,6 @@ from .core.domain import (
     validate_pipeline_step,
 )
 from .utils.base_validator import BaseValidator
-from .utils.common import (
-import numpy as np
 import pandas as pd
 import typing
 

@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.config import AnalysisConfig, get_default_config
+from core.config import AnalysisConfig, CodeQualityConfig, get_default_config
 
 from utils.file_utils import (
+import re
+
     backup_file,
     find_python_files,
     is_valid_python_file,

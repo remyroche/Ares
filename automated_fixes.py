@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 from typing import List, Dict, Set, Tuple
 import argparse
+import collections
+import numpy as np
 
 class CodeQualityAutoFixer:
     """Automated code quality fixer based on identified patterns."""

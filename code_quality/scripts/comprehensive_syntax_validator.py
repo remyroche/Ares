@@ -26,6 +26,7 @@ import json
 from datetime import datetime
 import numpy as np
 import time
+import re
 
 class ComprehensiveSyntaxValidator:
     """Comprehensive syntax validation with multiple validation methods."""

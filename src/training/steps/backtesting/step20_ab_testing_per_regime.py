@@ -5,12 +5,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 try:
-    import numpy as np
 except ImportError:
     np = None
 
 def _check_numpy_available() -> None:
     """Check if numpy is available and raise informative error if not."""
+import numpy as np
 
     if np is None:
         raise ImportError('numpy is required for this operation but is not available. Please install numpy.')

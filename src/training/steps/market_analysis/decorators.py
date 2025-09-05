@@ -6,6 +6,8 @@ for the labeling step, ensuring robust operation even when dependencies are miss
 import logging
 from functools import wraps
 from typing import Any, Callable, Optional
+import src.utils.enhanced_mlflow_integration
+import pandas as pd
 
 # Try to import centralized decorators
 try:
@@ -22,8 +24,6 @@ except ImportError:
 
 # Try to import enhanced MLflow integration
 try:
-    from src.utils.enhanced_mlflow_integration import (
-import pandas as pd
 
         with_enhanced_mlflow_logging as _with_enhanced_mlflow_logging,
         log_step_report as _log_step_report,

@@ -11,9 +11,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from core.config import AnalysisConfig, get_default_config
+from core.config import AnalysisConfig, CodeQualityConfig, get_default_config
 from utils.file_utils import find_python_files
 import logging
+import re
 
 
 class SyntaxError:

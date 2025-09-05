@@ -11,6 +11,9 @@ from typing import Any, Optional, Callable, Dict, List
 
 
 from .core.decorators.errors import handles_errors
+import pandas as pd
+import src.core.domain
+import numpy as np
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -31,9 +34,6 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
-    from src.core.domain import (
-import numpy as np
-import pandas as pd
 
         guard_dataframe_nulls, 
         secure_file_path, 

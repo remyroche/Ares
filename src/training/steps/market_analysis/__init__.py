@@ -33,6 +33,7 @@ async def run_market_analysis_pipeline(symbol, exchange, timeframe, data_dir, **
     """Run the complete market analysis pipeline with enhanced validation and error handling."""
     try:
         # Use the enhanced orchestrator for comprehensive pipeline execution
+        from .enhanced_market_analysis_orchestrator import MarketAnalysisPipelineOrchestrator
         orchestrator = MarketAnalysisPipelineOrchestrator(config)
         return await orchestrator.execute_pipeline(
             symbol=symbol,

@@ -132,8 +132,9 @@ class MasterPipelineOrchestrator:
     def _discover_pipelines(self):
         """Discover all available pipelines."""
         pipeline_files = {
-            "unified_enhanced_pipeline": "unified_enhanced_pipeline.py",
-            "unified_standalone_pipeline": "unified_standalone_pipeline.py",
+            "unified_enhanced_pipeline": "pipeline_unified_enhanced.py",
+            "testing_pipeline": "testing_pipeline.py",
+            "utility_pipeline": "utility_pipeline.py",
             "sequential_code_fixer": "sequential_code_fixer.py",
             "code_interaction_mapper": "code_interaction_mapper.py",
             "dead_code_analyzer": "dead_code_analyzer.py",
@@ -188,9 +189,17 @@ class MasterPipelineOrchestrator:
             sys.path.insert(0, str(self.pipelines_dir))
             
             if pipeline_name == "unified_enhanced_pipeline":
-                from unified_enhanced_pipeline import UnifiedEnhancedPipeline
+                from pipeline_unified_enhanced import UnifiedEnhancedPipeline
                 pipeline = UnifiedEnhancedPipeline(str(self.project_root))
-                result = pipeline.run_comprehensive_analysis()
+                result = pipeline.run_all()
+            elif pipeline_name == "testing_pipeline":
+                from testing_pipeline import TestingPipeline
+                pipeline = TestingPipeline(str(self.project_root))
+                result = pipeline.run_all_tests()
+            elif pipeline_name == "utility_pipeline":
+                from utility_pipeline import UtilityPipeline
+                pipeline = UtilityPipeline(str(self.project_root))
+                result = pipeline.run_all_utilities()
             elif pipeline_name == "unified_standalone_pipeline":
                 from unified_standalone_pipeline import StandaloneCodeAnalyzer
                 pipeline = StandaloneCodeAnalyzer(str(self.project_root))

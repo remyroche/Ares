@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import .utils.common_operations
 import numpy as np
 
 """
@@ -23,7 +22,7 @@ from src.core.domain.decorators import (
     ensure_data_integrity
 )
 import pandas as pd
-
+from .utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )

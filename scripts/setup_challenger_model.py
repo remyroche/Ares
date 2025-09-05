@@ -25,10 +25,10 @@ from src.config import CONFIG  # noqa: E402
 from src.utils.state_manager import StateManager  # noqa: E402
 from src.utils.warning_symbols import error as error_src_utils_warning_symbols, missing  # noqa: E402
 
-try:
-	import mlflow  # type: ignore
 import logging
 
+try:
+	import mlflow  # type: ignore
 except Exception as e:  # noqa: BLE001
 	mlflow=None  # type: ignore
 	system_logger.warning(f"MLflow not available: {e}")
@@ -191,4 +191,4 @@ def main() -> None:
 
 
 if __name__== "__main__":
-	await main()
+	main()

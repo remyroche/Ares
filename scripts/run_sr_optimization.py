@@ -43,13 +43,13 @@ from optuna.visualization import (
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
+import numpy as np
+
 from src.config_optuna import (  # noqa: E402
     SROptimizationParameters,
     validate_sr_optimization_config,
 )
 from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
-import numpy as np
-
     AdvancedOptunaManager,
     OptimizationResult,
 )

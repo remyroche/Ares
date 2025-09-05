@@ -45,11 +45,11 @@ except ImportError:
     PANDAS_AVAILABLE = False
     print("Warning: pandas not available, some functionality will be limited")
 
+import time
+
 try:
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LinearRegression
-import time
-
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False

@@ -568,6 +568,8 @@ def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from .utils.comprehensive_logger import get_comprehensive_logger
+import numpy as np
+
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:
             initialize_comprehensive_integration()

@@ -34,6 +34,7 @@ from .utils.logger import system_logger
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")

@@ -344,6 +344,8 @@ async def _train_per_regime_ensembles(config: Dict[str, Any], symbol: str, excha
     per_regime_status: dict[str, Any] = {}
     try:
         from .utils.regime_data_access import get_regime_column, get_regime_ids
+import numpy as np
+
         sample_tf = next(iter(regime_forecasting_data.keys())) if regime_forecasting_data else None
         if sample_tf is not None:
             sample_df = regime_forecasting_data[sample_tf]

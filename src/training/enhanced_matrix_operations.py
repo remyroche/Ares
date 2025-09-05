@@ -1516,6 +1516,8 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+import numpy as np
+
         except Exception as e:
             self.logger.warning(f"Failed to import sklearn modules: {e}")
             return {}

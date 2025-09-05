@@ -7,6 +7,7 @@ from .utils.logger import system_logger
 from src.utils.warning_symbols import error, missing, warning
 from .core.decorators.errors import handles_errors
 import pandas as pd
+import numpy as np
 
 class EfficientFeaturesDatabase:
     """

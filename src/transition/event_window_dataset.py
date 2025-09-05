@@ -9,6 +9,7 @@ from typing import Any
 
 from .transition.state_sequence_builder import StateSequenceBuilder
 from .utils.logger import system_logger
+import numpy as np
 
 
 @dataclass

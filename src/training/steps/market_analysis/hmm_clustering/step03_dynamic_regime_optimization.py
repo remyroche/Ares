@@ -339,6 +339,8 @@ class DynamicRegimeCountOptimizer:
     def _calculate_label_consistency(self, labels1: np.ndarray, labels2: np.ndarray) -> float:
         """Calculate consistency between two label assignments."""
         from sklearn.metrics import adjusted_rand_score
+import numpy as np
+
         if len(labels1) != len(labels2):
             return 0.0
         consistency = adjusted_rand_score(labels1, labels2)

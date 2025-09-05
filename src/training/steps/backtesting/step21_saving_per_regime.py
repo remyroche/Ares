@@ -16,6 +16,8 @@ from .core.decorators.errors import handles_errors
 from typing import Any
 from typing import Dict
 from typing import Optional
+import numpy as np
+
 logger = get_logger('Step21SavingPerRegime')
 
 class PerRegimeSavingStep(Step21Saving):

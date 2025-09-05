@@ -117,6 +117,8 @@ class Tactician:
             if self.enable_enhanced_predictions:
                 try:
                     from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+import numpy as np
+
                     self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
                     success = await self.scenario_predictor.initialize()
                     if not success:

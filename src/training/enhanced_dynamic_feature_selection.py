@@ -629,6 +629,7 @@ class EnhancedDynamicFeatureSelection:
 
                 try:
                     from scipy.cluster.hierarchy import fcluster
+import numpy as np
 
                     clusters = fcluster(
                         sample_linkage, n_clusters, criterion="maxclust"

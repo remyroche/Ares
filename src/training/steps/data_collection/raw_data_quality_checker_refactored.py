@@ -7,6 +7,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from .utils.logger import system_logger
 from src.training.steps.data_quality_components import QualityMetricsCalculator, DataIntegrityChecker, AnomalyDetector
+import numpy as np
 
 class RawDataQualityChecker:
     """Refactored raw data quality checker using extracted components.

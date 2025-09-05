@@ -20,6 +20,8 @@ except ImportError:
 try:
     from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
     from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+import numpy as np
+
     TRIPLE_BARRIER_AVAILABLE = True
 except ImportError:
     TRIPLE_BARRIER_AVAILABLE = False

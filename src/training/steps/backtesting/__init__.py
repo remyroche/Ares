@@ -23,6 +23,8 @@ from .utils.base_validator import BaseValidator
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
 from src.utils.trading_decorators import handles_errors, validates, traced, log_execution_time, timeout, error_boundary, compose, validate_data_quality, monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 from typing import Any, Dict
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 class BacktestingPipelineConfig:

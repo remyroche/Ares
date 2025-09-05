@@ -21,6 +21,7 @@ from src.tactician.enhanced_order_manager import EnhancedOrderManager, OrderRequ
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, invalid
 from src.core.decorators import handles_errors
+import numpy as np
 
 class ExecutionStrategy(Enum):
     """Execution strategy types."""

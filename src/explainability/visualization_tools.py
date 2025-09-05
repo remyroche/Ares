@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from .explainability.base_explainer import ExplanationResult, TradeDecisionTrace
 from .utils.logger import system_logger
+import numpy as np
+
 try:
     MATPLOTLIB_AVAILABLE = True
 except ImportError:

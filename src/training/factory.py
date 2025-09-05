@@ -128,6 +128,8 @@ class OptimizedTrainingFactory:
 
         # Add performance expectations
         from src.config.computational_optimization_config import (
+import numpy as np
+
             get_performance_expectations,
         )
 

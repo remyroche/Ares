@@ -235,6 +235,8 @@ class RegimePersistenceForecaster:
         """Integrate with existing analyst forecasting logic."""
         try:
             from .analyst.enhanced_regime_predictor import EnhancedRegimePredictor
+import numpy as np
+
             analyst_config = {'stability_threshold': 0.1, 'min_persistence': 3, 'entropy_percentile': 75, 'confidence_threshold': 0.7}
             analyst_predictor = EnhancedRegimePredictor(analyst_config)
             features = self._prepare_analyst_features(data)

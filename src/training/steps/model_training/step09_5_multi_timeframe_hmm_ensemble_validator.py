@@ -152,6 +152,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                     get_multi_timeframe_hmm_ensemble_config,
                 )
                 from .core.decorators.errors import handles_errors
+import numpy as np
                 
                 config = get_multi_timeframe_hmm_ensemble_config()
                 ensemble_config = config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})

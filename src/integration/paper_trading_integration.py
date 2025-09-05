@@ -91,6 +91,8 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reporting.paper_trading_reporter import (
+import numpy as np
+
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

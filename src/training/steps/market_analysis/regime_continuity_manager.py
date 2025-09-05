@@ -20,6 +20,8 @@ from enum import Enum
 from src.utils.pipeline_standards import pipeline_standards
 from src.utils.logger import get_logger
 from src.utils.decorators import traced
+import numpy as np
+
 logger = get_logger('RegimeContinuityManager')
 
 class RegimeStatus(Enum):

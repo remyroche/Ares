@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 from .config_optuna import HyperparameterOptimizationConfig
+import numpy as np
 
 class RegimeType(Enum):
     """Enum for different regime types."""

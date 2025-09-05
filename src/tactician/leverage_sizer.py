@@ -201,6 +201,8 @@ class LeverageSizer:
         """Adjust leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
             import math
+import numpy as np
+
             epsilon = 1e-08
             log_adjusted = math.log(base_leverage + epsilon)
             if market_health_analysis:

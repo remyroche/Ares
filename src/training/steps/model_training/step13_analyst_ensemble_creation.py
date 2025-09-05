@@ -155,6 +155,8 @@ class AnalystEnsembleCreationStep:
             try:
                 import os
                 from src.training.optimized_feature_selection_manager import (
+import numpy as np
+
                     OptimizedFeatureSelectionManager,
                 )
 

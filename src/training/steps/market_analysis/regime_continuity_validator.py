@@ -10,6 +10,8 @@ from datetime import datetime
 from dataclasses import dataclass
 from .utils.pipeline_standards import pipeline_standards
 from .training.steps.regime_continuity_manager import regime_continuity_manager, RegimeStatus
+import numpy as np
+
 logger = get_logger('RegimeContinuityValidator')
 
 @dataclass

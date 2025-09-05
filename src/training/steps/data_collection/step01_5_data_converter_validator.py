@@ -103,6 +103,8 @@ def validate_environment() -> bool:
         raise ImportError(error_msg)
     if optional_deps:
         import warnings
+import numpy as np
+
         warning_msg = 'Optional dependencies not available (functionality may be limited):\n'
         warning_msg += '\n'.join((f'  - {dep}' for dep in optional_deps))
         warning_msg += '\n\nInstall with: pip install pyarrow fastparquet'

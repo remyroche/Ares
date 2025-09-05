@@ -288,3 +288,4 @@ def fallback(fallback_value: Any | Callable[[], Any], exceptions: tuple[type[Exc
             return fallback_value
     return uniform_wrapper('fallback', sync_handler, async_handler)
 from .compose import compose
+import numpy as np

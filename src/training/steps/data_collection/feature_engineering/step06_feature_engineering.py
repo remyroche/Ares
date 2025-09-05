@@ -57,6 +57,8 @@ except ImportError as e:
 
     def step06_validation_context(*args, **kwargs) -> None:
         from contextlib import nullcontext
+import numpy as np
+
         return nullcontext()
 
     def get_step06_validation_summary() -> Any:

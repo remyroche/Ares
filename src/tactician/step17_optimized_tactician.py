@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
 from .core.decorators.errors import handles_errors
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

@@ -46,6 +46,7 @@ try:
     from .utils.common_operations import get_logger, get_current_datetime, format_datetime
 except ImportError:
     import logging
+import numpy as np
 
     def get_logger(name: Any) -> Any:
         return logging.getLogger(name)

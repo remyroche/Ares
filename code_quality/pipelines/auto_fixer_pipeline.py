@@ -160,35 +160,55 @@ class AutoFixerPipeline:
         try:
             results = {}
             
-            # Enhanced auto-detection import fixes
-            print("🔍 Running enhanced auto-detection for missing imports...")
+            # Get all Python files
             file_paths = list(self.project_root.glob("**/*.py"))
+            print(f"🔍 Analyzing {len(file_paths)} Python files for import issues...")
+            
+            # Enhanced auto-detection import fixes (primary method)
+            print("🚀 Running enhanced auto-detection for missing imports...")
             auto_detection_results = self.missing_import_fixer.auto_fix_all_files(
                 [str(f) for f in file_paths], 
                 dry_run=False
             )
             results["auto_detection_fixes"] = auto_detection_results
             
-            # Traditional missing import fixes (fallback)
-            print("🔧 Running traditional missing import fixes...")
-            missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
-            results["traditional_import_fixes"] = missing_results
+            # Only run traditional fixes if auto-detection found issues or failed
+            auto_fixed = auto_detection_results.get("fixed", 0)
+            auto_failed = auto_detection_results.get("failed", 0)
             
-            # Circular import detection
+            if auto_fixed == 0 and auto_failed > 0:
+                print("🔧 Auto-detection had issues, running traditional missing import fixes...")
+                try:
+                    missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
+                    results["traditional_import_fixes"] = missing_results
+                except Exception as e:
+                    print(f"⚠️  Traditional import fixes also failed: {e}")
+                    results["traditional_import_fixes"] = {"status": "error", "error": str(e)}
+            else:
+                print("✅ Auto-detection completed successfully, skipping traditional fixes")
+                results["traditional_import_fixes"] = {"status": "skipped", "reason": "auto_detection_successful"}
+            
+            # Circular import detection (always run)
             print("🔄 Detecting circular imports...")
-            circular_report = self.circular_import_detector.generate_report()
-            results["circular_import_fixes"] = {
-                "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
-                "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
-            }
+            try:
+                circular_report = self.circular_import_detector.generate_report()
+                results["circular_import_fixes"] = {
+                    "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
+                    "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
+                }
+            except Exception as e:
+                print(f"⚠️  Circular import detection failed: {e}")
+                results["circular_import_fixes"] = {"status": "error", "error": str(e)}
             
             # Enhanced reporting
             total_auto_fixed = auto_detection_results.get("fixed", 0)
-            total_traditional_fixed = missing_results.get("fixes_applied", 0)
-            total_circular_found = results["circular_import_fixes"]["circular_imports_found"]
+            total_auto_failed = auto_detection_results.get("failed", 0)
+            total_traditional_fixed = results["traditional_import_fixes"].get("fixes_applied", 0) if isinstance(results["traditional_import_fixes"], dict) else 0
+            total_circular_found = results["circular_import_fixes"].get("circular_imports_found", 0) if isinstance(results["circular_import_fixes"], dict) else 0
             
             print(f"\n📊 Import Fixes Summary:")
             print(f"  ✅ Auto-detection fixes: {total_auto_fixed} files")
+            print(f"  ❌ Auto-detection failures: {total_auto_failed} files")
             print(f"  🔧 Traditional fixes: {total_traditional_fixed} files")
             print(f"  🔄 Circular imports found: {total_circular_found}")
             
@@ -199,16 +219,27 @@ class AutoFixerPipeline:
                 for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
                     print(f"    {module}: {count} files")
             
+            # Show specific files that were fixed
+            fixed_files = auto_detection_results.get("fixed_files", [])
+            if fixed_files:
+                print(f"\n📁 Files fixed by auto-detection:")
+                for file_path in fixed_files[:10]:  # Show first 10
+                    print(f"    ✓ {file_path}")
+                if len(fixed_files) > 10:
+                    print(f"    ... and {len(fixed_files) - 10} more files")
+            
             # Generate comprehensive import fixes report
             import_fixes_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "enhanced_import_fixes",
                 "project_root": str(self.project_root),
                 "auto_detection_fixes": total_auto_fixed,
+                "auto_detection_failures": total_auto_failed,
                 "traditional_import_fixes": total_traditional_fixed,
                 "circular_imports_found": total_circular_found,
                 "module_breakdown": module_counts,
                 "files_analyzed": len(file_paths),
+                "files_fixed": fixed_files,
                 "results": results
             }
             
@@ -217,14 +248,18 @@ class AutoFixerPipeline:
             with open(report_path, "w") as f:
                 json.dump(import_fixes_report, f, indent=2)
             
+            print(f"\n💾 Report saved to: {report_path}")
+            
             return {
                 "status": "completed",
                 "report_path": str(report_path),
                 "auto_detection_fixes": total_auto_fixed,
+                "auto_detection_failures": total_auto_failed,
                 "traditional_import_fixes": total_traditional_fixed,
                 "circular_imports_found": total_circular_found,
                 "module_breakdown": module_counts,
                 "files_analyzed": len(file_paths),
+                "files_fixed": fixed_files,
                 "results": results
             }
         except Exception as e:
@@ -547,8 +582,7 @@ class AutoFixerPipeline:
         
         total_start = time.time()
         
-        # Run all auto-fixes
-        self.results["enhanced_auto_detection"] = self.run_enhanced_auto_detection(dry_run=False)
+        # Run all auto-fixes (enhanced auto-detection is included in import_fixes)
         self.results["import_fixes"] = self.run_import_fixes()
         self.results["syntax_fixes"] = self.run_syntax_fixes()
         self.results["type_hint_fixes"] = self.run_type_hint_fixes()
@@ -616,9 +650,20 @@ def main():
     parser.add_argument(
         "--fix-type",
         type=str,
-        choices=["imports", "syntax", "type_hints", "async", "dead_code", "all"],
+        choices=["imports", "auto_detection", "syntax", "type_hints", "async", "dead_code", "all"],
         default="imports",
         help="Type of fixes to apply (default: imports)"
+    )
+    parser.add_argument(
+        "--file-pattern",
+        type=str,
+        default="**/*.py",
+        help="File pattern for auto-detection (default: **/*.py)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode (show what would be fixed without making changes)"
     )
     
     args = parser.parse_args()
@@ -634,6 +679,11 @@ def main():
         results = pipeline.run_all_auto_fixes()
     elif args.fix_type == "imports":
         results = pipeline.run_import_fixes()
+    elif args.fix_type == "auto_detection":
+        results = pipeline.run_enhanced_auto_detection(
+            file_pattern=args.file_pattern,
+            dry_run=args.dry_run
+        )
     elif args.fix_type == "syntax":
         results = pipeline.run_syntax_fixes()
     elif args.fix_type == "type_hints":

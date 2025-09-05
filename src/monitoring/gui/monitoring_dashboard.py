@@ -8,6 +8,7 @@ trade decisions, daily summaries, and HMM regime information.
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from .utils.logger import system_logger
+import numpy as np
 
 class MonitoringDashboard:
     """

@@ -9,6 +9,8 @@ from .utils.logger import system_logger
 # DBSCAN clustering for S/R level analysis
 try:
     from sklearn.cluster import DBSCAN
+import numpy as np
+
     DBSCAN_AVAILABLE = True
 except ImportError:
     DBSCAN_AVAILABLE = False

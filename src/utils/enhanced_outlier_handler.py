@@ -269,6 +269,8 @@ class EnhancedOutlierHandler:
         outliers = []
         try:
             from sklearn.neighbors import LocalOutlierFactor
+import numpy as np
+
             X = data[column].values.reshape(-1, 1)
             lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)
             predictions = lof.fit_predict(X)

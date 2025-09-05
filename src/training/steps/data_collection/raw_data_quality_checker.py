@@ -1036,6 +1036,8 @@ class RawDataQualityChecker:
             self.logger.info(f'   Time range: {start_time} to {end_time}')
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
+import numpy as np
+
             success = asyncio.run(download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
             if success:
                 downloaded_data = self._load_downloaded_data(symbol, exchange, timeframe)

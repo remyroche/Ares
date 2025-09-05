@@ -26,6 +26,8 @@ from typing import Dict
 from typing import Optional
 from typing import List
 from typing import Callable
+import numpy as np
+
 logger = system_logger.getChild('EnhancedDataValidation')
 
 class DataType(Enum):

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .utils.logger import system_logger
 from .core.decorators import handles_errors
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 @dataclass
 class TradeAttribution:

@@ -20,6 +20,8 @@ import psutil
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 class MacM1ParallelOptimizer:

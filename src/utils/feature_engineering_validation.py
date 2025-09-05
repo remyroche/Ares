@@ -265,6 +265,8 @@ class FeatureEngineeringValidator:
     def _extract_ma_period(self, ma_column_name: str) -> int:
         """Extract period from MA column name."""
         import re
+import numpy as np
+
         numbers = re.findall('\\d+', ma_column_name)
         return int(numbers[0]) if numbers else 999
 

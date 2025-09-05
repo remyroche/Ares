@@ -14,9 +14,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
     from src.training.steps.data_collection.step02_data_reading import FunctionCallMonitor, FunctionCallStatus, FunctionCallContext, FunctionInteractionReport, comprehensive_function_monitoring
-import collections
-import logging
-
+    import collections
+    import logging
     print('✅ Successfully imported function monitoring components')
 except ImportError as e:
     print(f'❌ Failed to import function monitoring components: {e}')

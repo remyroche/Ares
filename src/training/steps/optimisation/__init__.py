@@ -287,18 +287,18 @@ def load_and_analyze_saved_results(symbol: str, exchange: str, data_dir: str):
         # Load calibration results
         calibration_file = f"models/{symbol}_{exchange}_confidence_calibration.json"
         calibration_results = None
-            
-            if safe_file_exists(calibration_file):
-                try:
-                    calibration_results = safe_json_load(calibration_file)
-                    logger.info(f"✅ Loaded calibration results from: {calibration_file}")
-                    print(f"✅ Loaded calibration results from: {calibration_file}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not load calibration results: {e}")
-                    print(f"⚠️ Could not load calibration results: {e}")
-            else:
-                logger.warning(f"⚠️ Calibration results file not found: {calibration_file}")
-                print(f"⚠️ Calibration results file not found: {calibration_file}")
+        
+        if safe_file_exists(calibration_file):
+            try:
+                calibration_results = safe_json_load(calibration_file)
+                logger.info(f"✅ Loaded calibration results from: {calibration_file}")
+                print(f"✅ Loaded calibration results from: {calibration_file}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load calibration results: {e}")
+                print(f"⚠️ Could not load calibration results: {e}")
+        else:
+            logger.warning(f"⚠️ Calibration results file not found: {calibration_file}")
+            print(f"⚠️ Calibration results file not found: {calibration_file}")
             
             # Load optimization results
             optimization_file = f"{data_dir}/optimization_results/{exchange}_{symbol}_final_parameters_new.json"
@@ -334,10 +334,10 @@ def load_and_analyze_saved_results(symbol: str, exchange: str, data_dir: str):
                 logger.warning("⚠️ No saved results found for analysis")
                 print("⚠️ No saved results found for analysis")
                 log_quality_issue("MISSING_RESULTS", "No saved calibration or optimization results found", "WARNING")
-            
-        except Exception as e:
-            logger.error(f"❌ Error loading and analyzing saved results: {e}")
-            print(f"❌ Error loading and analyzing saved results: {e}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error loading and analyzing saved results: {e}")
+        print(f"❌ Error loading and analyzing saved results: {e}")
         
         print("=" * 60)
     
@@ -348,120 +348,120 @@ def generate_comprehensive_outcome_summary(calibration_results: dict, optimizati
     logger.info(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
     print(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
     print("=" * 80)
+    
+    try:
+        # Overall assessment
+        overall_quality = "UNKNOWN"
+        overall_score = 0.0
+        quality_issues = []
         
+        # Calibration assessment
+        calibration_score = 0.0
+        if calibration_results:
+            calibration_score = calibration_results.get('overall_calibration_performance', 0.0)
+            if calibration_score < 0.6:
+                quality_issues.append(f"Low calibration performance: {calibration_score:.4f}")
+        
+        # Optimization assessment
+        optimization_score = 0.0
+        if optimization_results:
+            successful_categories = 0
+            total_categories = len(optimization_results)
+            total_improvement = 0.0
+            
+            for category, results in optimization_results.items():
+                if results and results.get('improvement', 0) > 0:
+                    successful_categories += 1
+                    total_improvement += results.get('improvement', 0)
+            
+            if total_categories > 0:
+                optimization_score = successful_categories / total_categories
+                avg_improvement = total_improvement / successful_categories if successful_categories > 0 else 0.0
+                
+                if optimization_score < 0.6:
+                    quality_issues.append(f"Low optimization success rate: {optimization_score:.2%}")
+                if avg_improvement < 0.02:
+                    quality_issues.append(f"Low average improvement: {avg_improvement:.4f}")
+        
+        # Calculate overall score
+        if calibration_results and optimization_results:
+            overall_score = (calibration_score + optimization_score) / 2
+        elif calibration_results:
+            overall_score = calibration_score
+        elif optimization_results:
+            overall_score = optimization_score
+        
+        # Determine overall quality
+        if overall_score > 0.8:
+            overall_quality = "EXCELLENT"
+            quality_emoji = "🟢"
+        elif overall_score > 0.6:
+            overall_quality = "GOOD"
+            quality_emoji = "🟡"
+        elif overall_score > 0.4:
+            overall_quality = "FAIR"
+            quality_emoji = "🟠"
+        else:
+            overall_quality = "POOR"
+            quality_emoji = "🔴"
+        
+        # Log comprehensive summary
+        logger.info(f"🎯 Symbol: {symbol}")
+        print(f"🎯 Symbol: {symbol}")
+        logger.info(f"🏢 Exchange: {exchange}")
+        print(f"🏢 Exchange: {exchange}")
+        logger.info(f"📊 Overall Score: {overall_score:.4f}")
+        print(f"📊 Overall Score: {overall_score:.4f}")
+        logger.info(f"{quality_emoji} Overall Quality: {overall_quality}")
+        print(f"{quality_emoji} Overall Quality: {overall_quality}")
+        
+        if calibration_results:
+            logger.info(f"🎯 Calibration Score: {calibration_score:.4f}")
+            print(f"🎯 Calibration Score: {calibration_score:.4f}")
+        
+        if optimization_results:
+            logger.info(f"⚙️ Optimization Score: {optimization_score:.4f}")
+            print(f"⚙️ Optimization Score: {optimization_score:.4f}")
+        
+        # Log quality issues
+        if quality_issues:
+            logger.warning(f"⚠️ Quality Issues Found: {len(quality_issues)}")
+            print(f"⚠️ Quality Issues Found: {len(quality_issues)}")
+            for issue in quality_issues:
+                logger.warning(f"   • {issue}")
+                print(f"   • {issue}")
+                log_quality_issue("OUTCOME_QUALITY", issue, "WARNING")
+        else:
+            logger.info("✅ No quality issues detected")
+            print("✅ No quality issues detected")
+        
+        # Save comprehensive summary
         try:
-            # Overall assessment
-            overall_quality = "UNKNOWN"
-            overall_score = 0.0
-            quality_issues = []
+            summary_file = f"data_cache/optimisation_comprehensive_summary_{symbol}_{exchange}.json"
+            summary_data = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
+                'overall_score': overall_score,
+                'overall_quality': overall_quality,
+                'calibration_score': calibration_score,
+                'optimization_score': optimization_score,
+                'quality_issues': quality_issues,
+                'calibration_results_available': calibration_results is not None,
+                'optimization_results_available': optimization_results is not None
+            }
             
-            # Calibration assessment
-            calibration_score = 0.0
-            if calibration_results:
-                calibration_score = calibration_results.get('overall_calibration_performance', 0.0)
-                if calibration_score < 0.6:
-                    quality_issues.append(f"Low calibration performance: {calibration_score:.4f}")
-            
-            # Optimization assessment
-            optimization_score = 0.0
-            if optimization_results:
-                successful_categories = 0
-                total_categories = len(optimization_results)
-                total_improvement = 0.0
-                
-                for category, results in optimization_results.items():
-                    if results and results.get('improvement', 0) > 0:
-                        successful_categories += 1
-                        total_improvement += results.get('improvement', 0)
-                
-                if total_categories > 0:
-                    optimization_score = successful_categories / total_categories
-                    avg_improvement = total_improvement / successful_categories if successful_categories > 0 else 0.0
-                    
-                    if optimization_score < 0.6:
-                        quality_issues.append(f"Low optimization success rate: {optimization_score:.2%}")
-                    if avg_improvement < 0.02:
-                        quality_issues.append(f"Low average improvement: {avg_improvement:.4f}")
-            
-            # Calculate overall score
-            if calibration_results and optimization_results:
-                overall_score = (calibration_score + optimization_score) / 2
-            elif calibration_results:
-                overall_score = calibration_score
-            elif optimization_results:
-                overall_score = optimization_score
-            
-            # Determine overall quality
-            if overall_score > 0.8:
-                overall_quality = "EXCELLENT"
-                quality_emoji = "🟢"
-            elif overall_score > 0.6:
-                overall_quality = "GOOD"
-                quality_emoji = "🟡"
-            elif overall_score > 0.4:
-                overall_quality = "FAIR"
-                quality_emoji = "🟠"
-            else:
-                overall_quality = "POOR"
-                quality_emoji = "🔴"
-            
-            # Log comprehensive summary
-            logger.info(f"🎯 Symbol: {symbol}")
-            print(f"🎯 Symbol: {symbol}")
-            logger.info(f"🏢 Exchange: {exchange}")
-            print(f"🏢 Exchange: {exchange}")
-            logger.info(f"📊 Overall Score: {overall_score:.4f}")
-            print(f"📊 Overall Score: {overall_score:.4f}")
-            logger.info(f"{quality_emoji} Overall Quality: {overall_quality}")
-            print(f"{quality_emoji} Overall Quality: {overall_quality}")
-            
-            if calibration_results:
-                logger.info(f"🎯 Calibration Score: {calibration_score:.4f}")
-                print(f"🎯 Calibration Score: {calibration_score:.4f}")
-            
-            if optimization_results:
-                logger.info(f"⚙️ Optimization Score: {optimization_score:.4f}")
-                print(f"⚙️ Optimization Score: {optimization_score:.4f}")
-            
-            # Log quality issues
-            if quality_issues:
-                logger.warning(f"⚠️ Quality Issues Found: {len(quality_issues)}")
-                print(f"⚠️ Quality Issues Found: {len(quality_issues)}")
-                for issue in quality_issues:
-                    logger.warning(f"   • {issue}")
-                    print(f"   • {issue}")
-                    log_quality_issue("OUTCOME_QUALITY", issue, "WARNING")
-            else:
-                logger.info("✅ No quality issues detected")
-                print("✅ No quality issues detected")
-            
-            # Save comprehensive summary
-            try:
-                summary_file = f"data_cache/optimisation_comprehensive_summary_{symbol}_{exchange}.json"
-                summary_data = {
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'),
-                    'overall_score': overall_score,
-                    'overall_quality': overall_quality,
-                    'calibration_score': calibration_score,
-                    'optimization_score': optimization_score,
-                    'quality_issues': quality_issues,
-                    'calibration_results_available': calibration_results is not None,
-                    'optimization_results_available': optimization_results is not None
-                }
-                
-                safe_json_dump(summary_data, summary_file, indent=2)
-                logger.info(f"💾 Comprehensive summary saved to: {summary_file}")
-                print(f"💾 Comprehensive summary saved to: {summary_file}")
-            except Exception as save_error:
-                logger.warning(f"⚠️ Could not save comprehensive summary: {save_error}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error generating comprehensive outcome summary: {e}")
-            print(f"❌ Error generating comprehensive outcome summary: {e}")
-        
-        print("=" * 80)
+            safe_json_dump(summary_data, summary_file, indent=2)
+            logger.info(f"💾 Comprehensive summary saved to: {summary_file}")
+            print(f"💾 Comprehensive summary saved to: {summary_file}")
+        except Exception as save_error:
+            logger.warning(f"⚠️ Could not save comprehensive summary: {save_error}")
+    
+    except Exception as e:
+        logger.error(f"❌ Error generating comprehensive outcome summary: {e}")
+        print(f"❌ Error generating comprehensive outcome summary: {e}")
+    
+    print("=" * 80)
     
     @handles_errors(fallback=False, context="optimisation_pipeline_step")
     @traced(span_name="optimisation_pipeline_step")

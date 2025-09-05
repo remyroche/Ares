@@ -21,13 +21,13 @@ from src.tactician.sr_breakout_predictor import (
 )
 from .utils.logger import system_logger
 from src.utils.warning_symbols import (
-import datetime
-import logging
-
     failed,
     invalid,
     warning,
 )
+
+import datetime
+import logging
 
 
 @dataclass

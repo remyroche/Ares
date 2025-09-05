@@ -10,15 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime
 import joblib
 from pathlib import Path
-from .utils.logger import system_logger
-from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
-try:
-    from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
-    from sklearn.preprocessing import StandardScaler
 import json
 import logging
 import time
 
+from .utils.logger import system_logger
+from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
+
+try:
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
+    from sklearn.preprocessing import StandardScaler
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

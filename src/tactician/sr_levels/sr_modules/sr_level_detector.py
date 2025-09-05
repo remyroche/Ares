@@ -16,9 +16,10 @@ except ImportError:
     print("Warning: sklearn not available, DBSCAN clustering will be disabled")
 
 
+import numpy as np
+
 class SRLevelDetector:
     """Detects support and resistance levels using various methods."""
-import numpy as np
     
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize SR level detector."""

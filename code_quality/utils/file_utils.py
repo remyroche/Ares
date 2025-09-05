@@ -6,9 +6,11 @@ import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
+from .gitignore_parser import GitignoreParser, should_ignore_file, filter_ignored_files
 
-def find_python_files(directory: str, exclude_dirs: List[str] = None) -> List[Path]:
-    """Find all Python files in directory, excluding specified directories."""
+
+def find_python_files(directory: str, exclude_dirs: List[str] = None, respect_gitignore: bool = True) -> List[Path]:
+    """Find all Python files in directory, excluding specified directories and .gitignore patterns."""
     if exclude_dirs is None:
         exclude_dirs = ["venv", "__pycache__", ".git", "node_modules", ".pytest_cache"]
     
@@ -16,8 +18,14 @@ def find_python_files(directory: str, exclude_dirs: List[str] = None) -> List[Pa
     python_files = []
     
     for py_file in project_root.rglob("*.py"):
+        # Skip if in excluded directories
         if any(excluded in py_file.parts for excluded in exclude_dirs):
             continue
+        
+        # Skip if ignored by .gitignore
+        if respect_gitignore and should_ignore_file(py_file, project_root):
+            continue
+            
         python_files.append(py_file)
     
     return python_files
@@ -100,8 +108,8 @@ class FileUtils:
     """Utility functions for file operations."""
     
     @staticmethod
-    def find_python_files_static(directory: str, exclude_dirs: List[str] = None) -> List[Path]:
-        """Find all Python files in directory, excluding specified directories."""
+    def find_python_files_static(directory: str, exclude_dirs: List[str] = None, respect_gitignore: bool = True) -> List[Path]:
+        """Find all Python files in directory, excluding specified directories and .gitignore patterns."""
         if exclude_dirs is None:
             exclude_dirs = ["venv", "__pycache__", ".git", "node_modules", ".pytest_cache"]
         
@@ -109,8 +117,14 @@ class FileUtils:
         python_files = []
         
         for py_file in project_root.rglob("*.py"):
+            # Skip if in excluded directories
             if any(excluded in py_file.parts for excluded in exclude_dirs):
                 continue
+            
+            # Skip if ignored by .gitignore
+            if respect_gitignore and should_ignore_file(py_file, project_root):
+                continue
+                
             python_files.append(py_file)
         
         return python_files

@@ -53,14 +53,12 @@ def _lazy_import_reporters():
     return locals()
 
 from .utils.file_utils import (
-    backup_file,
     find_python_files,
-    find_unused_imports,
-    get_directory_stats,
-    get_file_dependencies,
-    get_file_info,
-    is_valid_python_file,
-    restore_file,
+    read_file_safely,
+    parse_ast_safely,
+    extract_function_name_from_issue,
+    get_module_from_file_path,
+    is_documentation_file,
 )
 
 __version__ = "1.0.0"
@@ -69,188 +67,12 @@ __author__ = "Code Quality Tools Team"
 __all__ = [
     # Core configuration
     "AnalysisConfig",
-
-    # Quick access functions
-    "auto_fix",
-    "sequential_fix",
-    "analyze_imports",
-    "analyze_signatures",
-    "analyze_complexity",
-    "analyze_dead_code",
-    "generate_error_report",
-    "generate_html_report",
-    "track_quality_trends",
+    "get_default_config",
+    "find_python_files",
+    "read_file_safely",
+    "parse_ast_safely",
+    "extract_function_name_from_issue",
+    "get_module_from_file_path",
+    "is_documentation_file",
 ]
 
-
-# Quick access functions
-import os
-
-
-def auto_fix(target: str, config: AnalysisConfig = None) -> dict:
-    """
-    Quick auto-fix for Python code.
-
-    Args:
-        target: File or directory path
-        config: Optional configuration
-
-    Returns:
-        Fix results
-    """
-    config = config or AnalysisConfig()
-    AutoFixer, _SequentialFixer = _lazy_import_fixers()
-    fixer = AutoFixer(config)
-
-    if os.path.isfile(target):
-        return fixer.fix_file(target)
-    return fixer.fix_all(target)
-
-
-def sequential_fix(target: str, output_dir: str = None) -> dict:
-    """
-    Run the sequential auto-fix pipeline on a target.
-
-    Args:
-        target: File, directory, or comma-separated list of files
-        output_dir: Optional output directory for reports
-
-    Returns:
-        Pipeline results
-    """
-    _AutoFixer, SequentialFixer = _lazy_import_fixers()
-    fixer = SequentialFixer()
-    return fixer.run_pipeline(target=target, output_dir=output_dir)
-
-
-def analyze_imports(target: str, config: AnalysisConfig = None) -> dict:
-    """
-    Quick import analysis for Python code.
-
-    Args:
-        target: File or directory path
-        config: Optional configuration
-
-    Returns:
-        Import analysis results
-    """
-    config = config or AnalysisConfig()
-    ImportAnalyzer = _lazy_import_analyzers()["ImportAnalyzer"]
-
-    if os.path.isfile(target):
-        return ImportAnalyzer(config).analyze_files([target])
-    return ImportAnalyzer(config).analyze_directory(target)
-
-
-def analyze_signatures(target: str, config: AnalysisConfig = None) -> dict:
-    """
-    Quick function signature analysis for Python code.
-
-    Args:
-        target: File or directory path
-        config: Optional configuration
-
-    Returns:
-        Signature analysis results
-    """
-    config = config or AnalysisConfig()
-    SignatureAnalyzer = _lazy_import_analyzers()["SignatureAnalyzer"]
-
-    if os.path.isfile(target):
-        return SignatureAnalyzer(config).analyze_files([target])
-    return SignatureAnalyzer(config).analyze_directory(target)
-
-
-def analyze_complexity(target: str, config: AnalysisConfig = None) -> dict:
-    """
-    Quick complexity analysis for Python code.
-
-    Args:
-        target: File or directory path
-        config: Optional configuration
-
-    Returns:
-        Complexity analysis results
-    """
-    config = config or AnalysisConfig()
-    ComplexityAnalyzer = _lazy_import_analyzers()["ComplexityAnalyzer"]
-
-    if os.path.isfile(target):
-        return ComplexityAnalyzer(config).analyze_file(target)
-    return ComplexityAnalyzer(config).analyze_directory(target)
-
-
-def analyze_dead_code(target: str, config: AnalysisConfig = None) -> dict:
-    """
-    Quick dead code analysis for Python code.
-
-    Args:
-        target: File or directory path
-        config: Optional configuration
-
-    Returns:
-        Dead code analysis results
-    """
-    config = config or AnalysisConfig()
-    DeadCodeAnalyzer = _lazy_import_analyzers()["DeadCodeAnalyzer"]
-
-    if os.path.isfile(target):
-        return DeadCodeAnalyzer(config).analyze_file(target)
-    return DeadCodeAnalyzer(config).analyze_directory(target)
-
-
-def generate_error_report(analyzers_results: dict, config: AnalysisConfig = None):
-    """
-    Generate comprehensive error report from analyzer results.
-
-    Args:
-        analyzers_results: Results from various analyzers
-        config: Optional configuration
-
-    Returns:
-        ErrorReport object
-    """
-    config = config or AnalysisConfig()
-    ErrorReporter = _lazy_import_reporters()["ErrorReporter"]
-
-    reporter = ErrorReporter(config)
-
-    # Add results from different analyzers
-    if "complexity" in analyzers_results:
-        complexity_issues = analyzers_results["complexity"].get("issues", [])
-        reporter.add_complexity_issues(complexity_issues)
-
-    if "dead_code" in analyzers_results:
-        dead_code_issues = analyzers_results["dead_code"].get("issues", [])
-        reporter.add_dead_code_issues(dead_code_issues)
-
-    return reporter.generate_report()
-
-
-def generate_html_report(analyzers_results: dict, title: str = "Code Quality Report") -> str:
-    """
-    Generate HTML report from analyzer results.
-
-    Args:
-        analyzers_results: Results from various analyzers
-        title: Report title
-
-    Returns:
-        HTML string
-    """
-    HTMLReporter = _lazy_import_reporters()["HTMLReporter"]
-    reporter = HTMLReporter()
-    return reporter.generate_from_analyzer_results(analyzers_results, title)
-
-
-def track_quality_trends(metrics: dict, project_name: str = "default") -> None:
-    """
-    Track code quality metrics for trend analysis.
-
-    Args:
-        metrics: Current quality metrics
-        project_name: Name of the project
-    """
-    TrendReporter = _lazy_import_reporters()["TrendReporter"]
-    reporter = TrendReporter()
-    reporter.add_data_point(metrics, project_name)

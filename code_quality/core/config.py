@@ -98,6 +98,6 @@ class AnalysisConfig:
         return cls(**config_dict)
 
 
-def get_default_config() -> CodeQualityConfig:
-    """Get default configuration for code quality analysis."""
-    return CodeQualityConfig()
+def get_default_config() -> AnalysisConfig:
+    """Get default analysis configuration."""
+    return AnalysisConfig()

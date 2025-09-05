@@ -245,6 +245,121 @@ class DataFlowAnalyzer:
             },
         }
 
+    def analyze_data_flow(self, project_root: str) -> dict[str, Any]:
+        """Analyze data flow across the entire project."""
+        print(f"Analyzing data flow in: {project_root}")
+        
+        project_path = Path(project_root)
+        python_files = list(project_path.rglob("*.py"))
+        
+        # Exclude common directories
+        exclude_dirs = {"venv", "__pycache__", ".git", "node_modules", ".pytest_cache"}
+        python_files = [f for f in python_files if not any(excluded in f.parts for excluded in exclude_dirs)]
+        
+        data_flows = []
+        total_issues = 0
+        total_variables = 0
+        total_validations = 0
+        
+        for file_path in python_files:
+            try:
+                result = self.analyze_file(file_path)
+                if "error" not in result:
+                    total_variables += result.get("variables", 0)
+                    total_validations += result.get("validations", 0)
+                    
+                    # Create data flow entry
+                    data_flow = {
+                        "file_path": str(file_path),
+                        "variables": result.get("variables", 0),
+                        "issues": result.get("issues", 0),
+                        "validations": result.get("validations", 0),
+                        "complexity": self._calculate_data_flow_complexity(file_path)
+                    }
+                    data_flows.append(data_flow)
+                    total_issues += result.get("issues", 0)
+                    
+            except Exception as e:
+                print(f"Error analyzing {file_path}: {e}")
+        
+        # Calculate metrics
+        complex_data_flows = [df for df in data_flows if df["complexity"] > 3]
+        
+        return {
+            "data_flows": data_flows,
+            "total_data_flows": len(data_flows),
+            "complex_data_flows": len(complex_data_flows),
+            "total_issues": total_issues,
+            "total_variables": total_variables,
+            "total_validations": total_validations,
+            "issues_by_type": self._group_issues_by_type(),
+            "validation_coverage": self._calculate_validation_coverage(),
+            "complexity_distribution": self._calculate_complexity_distribution(data_flows),
+            "stats": {
+                "files_analyzed": len(python_files),
+                "files_with_issues": len([df for df in data_flows if df["issues"] > 0]),
+                "files_with_validations": len([df for df in data_flows if df["validations"] > 0]),
+                "avg_issues_per_file": total_issues / len(data_flows) if data_flows else 0,
+                "avg_validations_per_file": total_validations / len(data_flows) if data_flows else 0
+            }
+        }
+    
+    def _calculate_data_flow_complexity(self, file_path: Path) -> int:
+        """Calculate data flow complexity for a file."""
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            lines = content.split('\n')
+            
+            # Simple complexity metrics
+            assignments = sum(1 for line in lines if '=' in line and not line.strip().startswith('#'))
+            function_calls = sum(1 for line in lines if '(' in line and ')' in line and not line.strip().startswith('#'))
+            conditionals = sum(1 for line in lines if any(keyword in line for keyword in ['if', 'elif', 'else', 'while', 'for']))
+            
+            # Weighted complexity score
+            complexity = assignments + function_calls * 2 + conditionals * 3
+            return min(complexity, 10)  # Cap at 10 for simplicity
+            
+        except Exception:
+            return 0
+    
+    def _group_issues_by_type(self) -> dict[str, int]:
+        """Group issues by type."""
+        issue_counts = defaultdict(int)
+        for issue in self.issues:
+            issue_counts[issue.issue_type] += 1
+        return dict(issue_counts)
+    
+    def _calculate_validation_coverage(self) -> dict[str, float]:
+        """Calculate validation coverage metrics."""
+        total_variables = sum(len(vars) for vars in self.file_variables.values())
+        total_validations = sum(len(validations) for validations in self.validations.values())
+        
+        if total_variables == 0:
+            return {"coverage_percentage": 0.0, "validated_variables": 0, "total_variables": 0}
+        
+        coverage_percentage = (total_validations / total_variables) * 100
+        
+        return {
+            "coverage_percentage": coverage_percentage,
+            "validated_variables": total_validations,
+            "total_variables": total_variables
+        }
+    
+    def _calculate_complexity_distribution(self, data_flows: list[dict]) -> dict[str, int]:
+        """Calculate complexity distribution."""
+        distribution = {"low": 0, "medium": 0, "high": 0}
+        
+        for data_flow in data_flows:
+            complexity = data_flow.get("complexity", 0)
+            if complexity <= 2:
+                distribution["low"] += 1
+            elif complexity <= 5:
+                distribution["medium"] += 1
+            else:
+                distribution["high"] += 1
+        
+        return distribution
+
 
 class DataFlowVisitor(ast.NodeVisitor):
     """AST visitor for data flow analysis."""
@@ -521,3 +636,4 @@ class DataFlowVisitor(ast.NodeVisitor):
             line_number < v.line_number <= line_number + distance
             for v in validations
         )
+

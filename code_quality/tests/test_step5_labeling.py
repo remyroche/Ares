@@ -4,6 +4,8 @@ This module tests the labeling functionality of the training pipeline.
 """
 
 import sys
+import pandas as pd
+import numpy as np
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -299,9 +301,6 @@ class TestLabelingIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up test data."""
         import shutil
-import pandas as pd
-import numpy as np
-
         if self.test_data_dir.exists():
             shutil.rmtree(self.test_data_dir)
 

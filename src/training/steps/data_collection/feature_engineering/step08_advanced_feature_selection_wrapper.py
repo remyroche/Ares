@@ -6,10 +6,17 @@ contract used by the pipeline orchestration.
 
 from typing import Any, Dict, Tuple
 
+# Lightweight decorator shims to avoid heavy imports during import time
 try:
-    from src.core.decorators import handles_errors
+    from src.core.decorators import handles_errors as _handles_errors  # type: ignore
 except Exception:
-    from src.utils.decorators import handles_errors  # type: ignore
+    try:
+        from src.utils.decorators.errors import handles_errors as _handles_errors  # type: ignore
+    except Exception:
+        def _handles_errors(*_args, **_kwargs):
+            def _dec(fn):
+                return fn
+            return _dec
 from src.training.base_step import BaseStep
 
 
@@ -39,7 +46,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
                 self.logger.warning(f"Missing training_input key: {key}")
         return len(errors) == 0, errors
 
-    @handles_errors(
+    @_handles_errors(
         exceptions=(Exception,),
         default_return={"success": False},
         context="advanced feature selection execution",

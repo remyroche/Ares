@@ -28,7 +28,7 @@ from analyzers.performance_analyzer import PerformanceAnalyzer
 from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
 from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
-from analyzers.improved_dead_code_analyzer import ImprovedDeadCodeAnalyzer
+# Removed - redundant with enhanced_dead_code_analyzer
 from analyzers.architecture_analyzer import ArchitectureAnalyzer
 from analyzers.call_graph_analyzer import CallGraphAnalyzer
 from analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
@@ -78,6 +78,27 @@ from map_code_interactions import CodeInteractionMapper
 from enhanced_map_code_interactions import EnhancedCodeInteractionMapper
 from visualize_interactions import InteractionVisualizer
 
+# Import standalone scripts that need integration
+from targeted_import_fixer import TargetedImportFixer
+from verify_test_setup import verify_structure
+from verify_test_structure import verify_test_structure
+from quick_start import QuickStart
+from debug_analyzer import DebugAnalyzer
+from merge_conflict_detector import MergeConflictDetector
+from comprehensive_import_fixer import ComprehensiveImportFixer
+from auto_fix_dead_code import AutoFixDeadCode
+from run_enhanced_analysis import run_enhanced_analysis
+from run_enhanced_import_analysis import run_enhanced_import_analysis
+from run_simple_import_analysis import run_simple_import_analysis
+from run_validation import run_validation
+from run_final_tests import run_final_tests
+from run_full_pipeline import run_full_pipeline
+from run_real_subset_tests import run_real_subset_tests
+from run_subset_tests import run_subset_tests
+from run_tests_simple import run_tests_simple
+from run_tests_with_mocks import run_tests_with_mocks
+from run_common_operations_tests import run_common_operations_tests
+
 # Import plugin system
 from plugins.plugin_manager import PluginManager
 from plugins.plugin_registry import PluginRegistry
@@ -85,8 +106,7 @@ from plugins.plugin_registry import PluginRegistry
 # Import utilities
 from utils.report_aggregator import ReportAggregator
 from utils.file_utils import find_python_files
-from ..simple_import_undefined_checker import SimpleImportAndUndefinedChecker
-from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+# Removed - redundant imports
 
 
 class UnifiedEnhancedPipeline:
@@ -245,6 +265,30 @@ class UnifiedEnhancedPipeline:
         except Exception as e:
             print(f"⚠ Warning: Could not initialize some visualizers: {e}")
             self.visualizers = {}
+
+    def run_syntax_validation(self) -> dict[str, Any]:
+        """Run syntax validation."""
+        print("\n" + "="*60)
+        print("Running Syntax Validation")
+        print("="*60)
+        
+        try:
+            results = self.syntax_validator.validate_syntax(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_import_validation(self) -> dict[str, Any]:
+        """Run import validation."""
+        print("\n" + "="*60)
+        print("Running Import Validation")
+        print("="*60)
+        
+        try:
+            results = self.import_analyzer.validate_imports(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def run_syntax_fixes(self) -> dict[str, Any]:
         """Run advanced syntax fixes."""
@@ -1412,6 +1456,146 @@ class UnifiedEnhancedPipeline:
 
         return result
 
+    def run_targeted_import_fixes(self) -> dict[str, Any]:
+        """Run targeted import fixes for remaining issues."""
+        print("\n" + "="*60)
+        print("Running Targeted Import Fixes")
+        print("="*60)
+        
+        try:
+            # Look for import analysis report
+            report_files = list(self.project_root.glob("**/import_analysis_report*.json"))
+            if not report_files:
+                return {"status": "skipped", "message": "No import analysis report found"}
+            
+            latest_report = max(report_files, key=lambda x: x.stat().st_mtime)
+            fixer = TargetedImportFixer(str(self.project_root), str(latest_report))
+            fixer.load_issues()
+            results = fixer.fix_issues()
+            
+            return {
+                "status": "completed",
+                "issues_found": len(fixer.issues),
+                "fixes_applied": len(fixer.fixes_applied),
+                "failed_fixes": len(fixer.failed_fixes),
+                "results": results
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_test_verification(self) -> dict[str, Any]:
+        """Run test setup verification."""
+        print("\n" + "="*60)
+        print("Running Test Verification")
+        print("="*60)
+        
+        try:
+            verify_structure()
+            verify_test_structure()
+            return {"status": "completed", "message": "Test structure verified"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_debug_analysis(self) -> dict[str, Any]:
+        """Run debug analysis."""
+        print("\n" + "="*60)
+        print("Running Debug Analysis")
+        print("="*60)
+        
+        try:
+            debugger = DebugAnalyzer()
+            results = debugger.analyze_project(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_merge_conflict_detection(self) -> dict[str, Any]:
+        """Run merge conflict detection."""
+        print("\n" + "="*60)
+        print("Running Merge Conflict Detection")
+        print("="*60)
+        
+        try:
+            detector = MergeConflictDetector()
+            conflicts = detector.detect_conflicts(str(self.project_root))
+            return {"status": "completed", "conflicts_found": len(conflicts), "conflicts": conflicts}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_comprehensive_import_fixes(self) -> dict[str, Any]:
+        """Run comprehensive import fixes."""
+        print("\n" + "="*60)
+        print("Running Comprehensive Import Fixes")
+        print("="*60)
+        
+        try:
+            fixer = ComprehensiveImportFixer()
+            results = fixer.fix_all_imports(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_auto_dead_code_fixes(self) -> dict[str, Any]:
+        """Run automated dead code fixes."""
+        print("\n" + "="*60)
+        print("Running Automated Dead Code Fixes")
+        print("="*60)
+        
+        try:
+            fixer = AutoFixDeadCode()
+            results = fixer.auto_fix_dead_code(str(self.project_root))
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_enhanced_analysis_integration(self) -> dict[str, Any]:
+        """Run enhanced analysis integration."""
+        print("\n" + "="*60)
+        print("Running Enhanced Analysis Integration")
+        print("="*60)
+        
+        try:
+            results = {
+                "enhanced_analysis": run_enhanced_analysis(),
+                "enhanced_import_analysis": run_enhanced_import_analysis(),
+                "simple_import_analysis": run_simple_import_analysis(),
+            }
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_validation_checks(self) -> dict[str, Any]:
+        """Run validation checks."""
+        print("\n" + "="*60)
+        print("Running Validation Checks")
+        print("="*60)
+        
+        try:
+            results = run_validation()
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def run_test_execution(self) -> dict[str, Any]:
+        """Run test execution."""
+        print("\n" + "="*60)
+        print("Running Test Execution")
+        print("="*60)
+        
+        try:
+            results = {
+                "final_tests": run_final_tests(),
+                "full_pipeline": run_full_pipeline(),
+                "real_subset_tests": run_real_subset_tests(),
+                "subset_tests": run_subset_tests(),
+                "tests_simple": run_tests_simple(),
+                "tests_with_mocks": run_tests_with_mocks(),
+                "common_operations_tests": run_common_operations_tests(),
+            }
+            return {"status": "completed", "results": results}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
     def run_all(self) -> dict[str, Any]:
         """Run the most comprehensive code quality analysis available."""
         print(f"\n{'='*80}")
@@ -1423,12 +1607,11 @@ class UnifiedEnhancedPipeline:
 
         total_start = time.time()
 
-        # Syntax and Imports
-        self.results["syntax_imports"] = {
-            "syntax_fixes": self.run_syntax_fixes(),
-            "import_fixes": self.run_import_fixes(),
+        # Basic Analysis (excluding specialized pipelines)
+        self.results["basic_analysis"] = {
+            "syntax_validation": self.run_syntax_validation(),
+            "import_validation": self.run_import_validation(),
             "circular_imports": self.detect_circular_imports(),
-            "dead_code_fixes": self.run_dead_code_fixes(),
             "comprehensive_import_undefined_check": self.run_comprehensive_import_undefined_check(),
             "enhanced_undefined_names_analysis": self.run_enhanced_undefined_names_analysis(),
         }
@@ -1439,12 +1622,11 @@ class UnifiedEnhancedPipeline:
             "type_hints": self.run_type_hints(),
         }
 
-        # Basic Analysis
-        self.results["basic_analysis"] = {
+        # Core Analysis (excluding specialized pipelines)
+        self.results["core_analysis"] = {
             "enhanced_dependency_analysis": self.run_enhanced_dependency_analysis(),
             "function_validation": self.run_function_validation(),
             "enhanced_validation": self.run_enhanced_validation(),
-            "interaction_mapping": self.run_interaction_mapping(),
             "metrics": self.run_metrics_analysis(),
             "test_coverage": self.run_test_coverage_analysis(),
             "code_smells": self.run_code_smell_detection(),
@@ -1455,20 +1637,14 @@ class UnifiedEnhancedPipeline:
             "ast_analysis": self.run_ast_analysis(),
         }
 
-        # Advanced Analysis
+        # Advanced Analysis (excluding specialized pipelines)
         self.results["advanced_analysis"] = self.run_advanced_analysis()
-
-        # Architecture Analysis
-        self.results["architecture_analysis"] = self.run_architecture_analysis()
 
         # Performance Analysis
         self.results["performance_analysis"] = self.run_performance_analysis()
 
         # Security Analysis
         self.results["security_analysis"] = self.run_security_analysis()
-
-        # Dead Code Analysis
-        self.results["dead_code_analysis"] = self.run_dead_code_analysis()
 
         # Visualization Analysis
         self.results["visualization"] = self.run_visualization_analysis()
@@ -1481,6 +1657,19 @@ class UnifiedEnhancedPipeline:
 
         # Comprehensive Review
         self.results["comprehensive_review"] = self.run_comprehensive_review()
+
+        # Integrated Standalone Scripts
+        self.results["integrated_scripts"] = {
+            "targeted_import_fixes": self.run_targeted_import_fixes(),
+            "test_verification": self.run_test_verification(),
+            "debug_analysis": self.run_debug_analysis(),
+            "merge_conflict_detection": self.run_merge_conflict_detection(),
+            "comprehensive_import_fixes": self.run_comprehensive_import_fixes(),
+            "auto_dead_code_fixes": self.run_auto_dead_code_fixes(),
+            "enhanced_analysis": self.run_enhanced_analysis_integration(),
+            "validation_checks": self.run_validation_checks(),
+            "test_execution": self.run_test_execution(),
+        }
 
         # Generate summary
         self.results["summary"] = self._generate_summary(time.time() - total_start)

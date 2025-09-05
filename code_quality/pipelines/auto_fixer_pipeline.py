@@ -65,17 +65,26 @@ from plugins.plugin_manager import PluginManager
 class AutoFixerPipeline:
     """Specialized pipeline for automated code fixing."""
     
-    def __init__(self, project_root: str = None, enable_plugins: bool = True, conservative: bool = False):
+    def __init__(self, project_root: str = None, enable_plugins: bool = True, conservative: bool = False, balanced: bool = False):
         self.project_root = Path(project_root) if project_root else Path.cwd()
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.results = {}
         self.enable_plugins = enable_plugins
         self.conservative = conservative
+        self.balanced = balanced
         
         # Initialize fixers
         self.config = get_default_config()
         if conservative:
             self.auto_fixer = ConservativeAutoFixer(self.config)
+        elif balanced:
+            # Use regular AutoFixer but with balanced settings
+            self.auto_fixer = AutoFixer(self.config)
+            # Override config for balanced mode
+            self.config.max_fixes_per_file = 10  # Limit fixes per file
+            self.config.skip_complex_files = True  # Skip very complex files
+            self.config.enable_syntax_fixes = True  # Enable syntax fixes
+            self.config.enable_import_fixes = True  # Enable import fixes
         else:
             self.auto_fixer = AutoFixer(self.config)
         
@@ -425,6 +434,7 @@ class AutoFixerPipeline:
         print(f"Project root: {self.project_root}")
         print(f"Timestamp: {self.timestamp}")
         print(f"Conservative mode: {self.conservative}")
+        print(f"Balanced mode: {self.balanced}")
         print(f"Plugins enabled: {self.enable_plugins}")
         
         total_start = time.time()
@@ -446,6 +456,7 @@ class AutoFixerPipeline:
             "total_execution_time": total_time,
             "fix_categories": len(self.results) - 1,  # Exclude summary
             "conservative_mode": self.conservative,
+            "balanced_mode": self.balanced,
             "plugins_enabled": self.enable_plugins,
             "status": "completed"
         }
@@ -489,6 +500,11 @@ def main():
         help="Use conservative auto-fixing (safer but fewer fixes)"
     )
     parser.add_argument(
+        "--balanced",
+        action="store_true",
+        help="Use balanced auto-fixing (moderate safety with more fixes)"
+    )
+    parser.add_argument(
         "--fix-type",
         type=str,
         choices=["imports", "syntax", "type_hints", "async", "dead_code", "all"],
@@ -501,7 +517,8 @@ def main():
     pipeline = AutoFixerPipeline(
         project_root=args.project_root,
         enable_plugins=not args.disable_plugins,
-        conservative=args.conservative
+        conservative=args.conservative,
+        balanced=args.balanced
     )
     
     if args.fix_type == "all":

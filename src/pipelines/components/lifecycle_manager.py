@@ -2,11 +2,13 @@
 Lifecycle manager for pipeline components (minimal scaffold).
 """
 
+from .core.decorators import (
     cached,
     compose,
     handles_errors,
 )
 
+from .core.domain import (
     PerformanceLevel,
     performance_monitor
 )

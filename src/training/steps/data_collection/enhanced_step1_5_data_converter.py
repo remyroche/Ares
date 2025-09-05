@@ -309,9 +309,11 @@ async def run_enhanced_step1_5(training_input: Dict[str, Any], pipeline_state: D
     """
     step1_5 = EnhancedStep1_5DataConverter(config)
     return await step1_5.execute(training_input, pipeline_state)
+
 if __name__ == '__main__':
     import asyncio
-import pandas as pd
+    import pandas as pd
+    import logging
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 

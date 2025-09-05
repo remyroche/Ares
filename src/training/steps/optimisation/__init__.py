@@ -11,6 +11,7 @@ Enhanced with comprehensive logging, progress tracking, and quality monitoring.
 
 from .step16_confidence_calibration_per_regime import ConfidenceCalibrationPerRegimeStep
 from .step17_final_parameters_optimization_new import FinalParametersOptimizationStep
+from .validators.optimisation_validators import (
     ConfidenceCalibrationStepValidator,
     FinalParametersOptimizationStepValidator,
     OptimisationPipelineStepValidator,

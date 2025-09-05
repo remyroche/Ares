@@ -438,8 +438,12 @@ class LabelingStep:
         self.time_barrier_minutes = int(labeling_cfg.get('time_barrier_minutes', 30))
         self.max_lookahead = int(labeling_cfg.get('max_lookahead', 100))
         self.logger.info(f'📋 Labeling configuration loaded')
-            
-            if len(data) > max_length:
+
+def validate_string_field(data: str, max_length: int, context: dict) -> dict:
+    """Validate string field data."""
+    result = {'valid': True, 'errors': []}
+    
+    if len(data) > max_length:
                 result['valid'] = False
                 result['errors'].append(f"String too long (max: {max_length})")
             

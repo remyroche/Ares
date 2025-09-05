@@ -27,6 +27,7 @@ from typing import Optional
 from typing import List
 from typing import Callable
 import numpy as np
+import pandas as pd
 
 logger = system_logger.getChild('EnhancedDataValidation')
 

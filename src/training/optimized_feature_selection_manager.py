@@ -20,6 +20,7 @@ from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
 from .utils.logger import system_logger
+import pandas as pd
 
 class OptimizedFeatureSelectionManager:
     """Optimized Feature Selection Manager for ML Training Steps."

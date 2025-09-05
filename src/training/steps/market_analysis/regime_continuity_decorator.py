@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Callable, Dict, Any
 from .regime_continuity_manager import regime_continuity_manager, RegimeStatus, StepRegimeContext
 from src.utils.logger import get_logger
+import pandas as pd
+
 logger = get_logger('RegimeContinuityDecorator')
 
 def ensure_regime_continuity(step_name: str, per_regime_required: bool=True, regime_aware: bool=True) -> bool:

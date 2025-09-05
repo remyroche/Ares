@@ -9,6 +9,7 @@ from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
 from .utils.logger import system_logger
+import pandas as pd
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
@@ -48,6 +49,7 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         try:
             # Calculate R-squared
             from sklearn.linear_model import LinearRegression
+import numpy as np
             
             model = LinearRegression()
             model.fit(X_clean, y_clean)

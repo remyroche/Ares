@@ -13,6 +13,7 @@ from src.utils.warning_symbols import (
     error,
 )
 import json
+import pandas as pd
 
 class UnifiedDataManager:
     """Unified data management system for the training pipeline."

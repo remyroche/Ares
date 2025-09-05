@@ -2,6 +2,8 @@
 from data_preparation_components import DataFormatConverter, DataValidator, DataCleaner
 from data_quality_components import QualityMetricsCalculator, DataIntegrityChecker, AnomalyDetector
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
 
 def create_sample_data() -> Any:
     """Create sample OHLCV data for testing."""

@@ -9,6 +9,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from .utils.logger import system_logger
 import numpy as np
+import pandas as pd
 
 class MonitoringVisualization:
     """

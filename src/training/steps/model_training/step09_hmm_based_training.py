@@ -37,6 +37,8 @@ from src.training.steps.step04_analyst_labeling_feature_engineering_components.p
 )
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.pipeline_standards import (
+import pandas as pd
+
     PerformanceLevel,
     ValidationLevel,
     adaptive_resource_allocation,

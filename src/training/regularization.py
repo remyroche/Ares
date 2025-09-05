@@ -17,6 +17,7 @@ from .analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEns
 # Ensure these imports are correct relative to the project root
 from .config import CONFIG
 from .utils.logger import system_logger
+import numpy as np
 
 
 class RegularizationManager:

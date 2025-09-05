@@ -9,6 +9,7 @@ from .config import CONFIG
 from .utils.logger import system_logger
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 import numpy as np
+import pandas as pd
 
 
 class RegimePredictiveEnsembles:

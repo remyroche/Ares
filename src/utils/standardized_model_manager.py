@@ -6,6 +6,7 @@ from typing import Any
 import joblib
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
+import numpy as np
 
 class ModelMetadata:
     """Model metadata container."""

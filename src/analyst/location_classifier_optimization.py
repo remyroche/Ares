@@ -1,6 +1,7 @@
 from functools import lru_cache
 import numba
 import numpy as np
+import pandas as pd
 
 class LocationClassifierOptimized:
     """Optimized version of location classifier with caching and vectorization."""

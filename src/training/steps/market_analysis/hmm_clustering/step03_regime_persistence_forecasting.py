@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from scipy.stats import expon, gamma, weibull_min
 from sklearn.ensemble import RandomForestRegressor
 import warnings
+import pandas as pd
+
 warnings.filterwarnings('ignore')
 
 class RegimePersistenceForecaster:

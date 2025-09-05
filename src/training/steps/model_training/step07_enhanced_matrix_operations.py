@@ -2,6 +2,7 @@
 from typing import List
 from typing import Dict
 from typing import Any
+from typing import Tuple
 import pandas as pd
 import numpy as np
 """Step 7: Enhanced Matrix Operations - Refactored to use BaseStep.
@@ -18,7 +19,7 @@ from src.core.decorators import handles_errors
 from src.training.steps.model_training.matrix_components import (
     MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 )
-from src.core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 
 
 class EnhancedMatrixOperationsStep(BaseStep):
@@ -31,6 +32,8 @@ class EnhancedMatrixOperationsStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, "07", "enhanced_matrix_operations")
+        # Initialize logger
+        self.logger = system_logger.getChild("EnhancedMatrixOperationsStep")
         
         # Step-specific configuration
         self.matrix_config = config.get("matrix_operations_config", {
@@ -79,6 +82,30 @@ class EnhancedMatrixOperationsStep(BaseStep):
         except ImportError as e:
             self.logger.warning(f"⚠️ Some matrix components not available: {e}")
             # Will use fallback implementations
+
+    async def initialize(self) -> None:
+        """Initialize the step (BaseStep contract)."""
+        self._initialize_step()
+
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the step (BaseStep contract)."""
+        # Validate inputs if available
+        try:
+            is_valid, errors = self.validate_inputs(training_input, pipeline_state)
+            if not is_valid and errors:
+                self.logger.warning(f"Input validation issues: {errors}")
+        except Exception:
+            pass
+
+        updated_state = await self.execute_logic(training_input, pipeline_state)
+
+        # Ensure completion flag for orchestrators relying on it
+        if isinstance(updated_state, dict):
+            updated_state["step07_enhanced_matrix_operations_completed"] = True
+            return updated_state
+        else:
+            pipeline_state["step07_enhanced_matrix_operations_completed"] = True
+            return pipeline_state
     
     def validate_inputs(
         self, 

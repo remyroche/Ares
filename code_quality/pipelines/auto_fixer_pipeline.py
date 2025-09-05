@@ -151,26 +151,24 @@ class AutoFixerPipeline:
         try:
             results = {}
             
-            # Comprehensive import fixes
-            comprehensive_results = self.comprehensive_import_fixer.fix_all_imports(str(self.project_root))
-            results["comprehensive_import_fixes"] = comprehensive_results
-            
             # Missing import fixes
-            missing_results = self.missing_import_fixer.fix_missing_imports(str(self.project_root))
+            missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
             results["missing_import_fixes"] = missing_results
             
-            # Circular import detection and fixes
-            circular_results = self.circular_import_detector.detect_and_fix_circular_imports(str(self.project_root))
-            results["circular_import_fixes"] = circular_results
+            # Circular import detection
+            circular_report = self.circular_import_detector.generate_report()
+            results["circular_import_fixes"] = {
+                "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
+                "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
+            }
             
             # Generate import fixes report
             import_fixes_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "import_fixes",
                 "project_root": str(self.project_root),
-                "comprehensive_fixes": comprehensive_results.get("fixes_applied", 0),
                 "missing_import_fixes": missing_results.get("fixes_applied", 0),
-                "circular_import_fixes": circular_results.get("fixes_applied", 0),
+                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
                 "results": results
             }
             
@@ -182,9 +180,8 @@ class AutoFixerPipeline:
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "total_import_fixes": (comprehensive_results.get("fixes_applied", 0) + 
-                                     missing_results.get("fixes_applied", 0) + 
-                                     circular_results.get("fixes_applied", 0)),
+                "total_import_fixes": missing_results.get("fixes_applied", 0),
+                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
                 "results": results
             }
         except Exception as e:

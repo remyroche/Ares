@@ -14,8 +14,8 @@ from pathlib import Path
 import time
 import json
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+# Add project root to path (workspace root so `src.*` imports resolve)
+project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator import (

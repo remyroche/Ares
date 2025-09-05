@@ -377,8 +377,11 @@ def create_fallback_decorator() -> Any:
     def decorator(func: Callable) -> None:
         return func
     return decorator
+# Initialize system logger and decorators
 if system_logger is None:
     system_logger = create_fallback_logger()
+
+# Initialize centralized decorators
 if centralized_decorators is None:
     comprehensive_data_validation = create_fallback_decorator()
     handle_errors = create_fallback_decorator()
@@ -400,6 +403,7 @@ else:
     quality_gate = centralized_decorators.quality_gate
     monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
 
+# Initialize MLflow decorators
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report = lambda *args, **kwargs: 'fallback_report'
@@ -427,8 +431,8 @@ class LabelingStep:
         self.start_time = None
         self.step_timings = {}
         
-        # Initialize simplified monitoring systems
-        self.monitor = SimpleMonitor(self.logger)
+        # Initialize monitoring systems (using existing decorators)
+        self.function_monitor = SimpleMonitor(self.logger)
         self.error_handler = SimpleErrorHandler(self.logger)
         self.performance_monitor = SimplePerformanceMonitor(self.logger)
         self.validator = SimpleValidator(self.logger)
@@ -1150,47 +1154,6 @@ def create_fallback_logger() -> Any:
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator() -> Any:
-
-    def decorator(func: Callable) -> None:
-        return func
-    return decorator
-if system_logger is None:
-    system_logger = create_fallback_logger()
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
-    handle_errors = create_fallback_decorator()
-    memory_efficient = create_fallback_decorator()
-    resource_monitor = create_fallback_decorator()
-    secure_data_processing = create_fallback_decorator()
-    validate_data_structure = create_fallback_decorator()
-    with_tracing_span = create_fallback_decorator()
-    quality_gate = create_fallback_decorator()
-    monitor_feature_engineering = create_fallback_decorator()
-else:
-    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
-    handle_errors = centralized_decorators.handle_errors
-    memory_efficient = centralized_decorators.memory_efficient
-    resource_monitor = centralized_decorators.resource_monitor
-    secure_data_processing = centralized_decorators.secure_data_processing
-    validate_data_structure = centralized_decorators.validate_data_structure
-    with_tracing_span = centralized_decorators.with_tracing_span
-    quality_gate = centralized_decorators.quality_gate
-    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_report = lambda *args, **kwargs: 'fallback_report'
-    create_detailed_step_report = lambda *args, **kwargs: {}
-    log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_report = enhanced_mlflow.log_step_report
-    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 logger = system_logger.getChild('Step5Labeling')
 
 class LabelingStep:
@@ -1321,7 +1284,7 @@ class LabelingStep:
         
         return True
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='compute_labeling_fingerprint')
     def _compute_labeling_fingerprint(self, triple_barrier_path: Path) -> Dict[str, Any]:
         """Compute a stable fingerprint of source labeling inputs to ensure idempotence.
 
@@ -1402,14 +1365,11 @@ class LabelingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
-    @comprehensive_validation
-    @performance_monitor
-    @enhanced_error_handler
-    @comprehensive_function_monitor
-    @traced(span_name='execute_labeling')
-    @validates()
-    @handles_errors()
-    @cached()
+    @with_tracing_span(span_name='execute_labeling')
+    @comprehensive_data_validation()
+    @handle_errors()
+    @resource_monitor()
+    @quality_gate()
     @log_execution_time()
     async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
         step_start = time.time()
@@ -1503,7 +1463,7 @@ class LabelingStep:
             
             return False
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='generate_function_call_report')
     async def _generate_and_log_function_call_report(self) -> None:
         """Generate and log comprehensive function call report with detailed analysis."""
         try:
@@ -1542,7 +1502,7 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to generate function call report: {e}')
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='save_function_call_report')
     async def _save_function_call_report(self, report: FunctionCallReport) -> None:
         """Save function call report to file."""
         try:
@@ -1588,7 +1548,7 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to save function call report: {e}')
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='log_function_call_relationships')
     async def _log_function_call_relationships(self) -> None:
         """Log detailed function-to-function call relationships."""
         try:
@@ -1652,7 +1612,7 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log function call relationships: {e}')
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='analyze_function_completion_outcomes')
     async def _analyze_function_completion_outcomes(self) -> Dict[str, Any]:
         """Analyze detailed function completion outcomes with comprehensive metrics."""
         try:
@@ -1796,7 +1756,7 @@ class LabelingStep:
             self.logger.error(f'❌ Failed to analyze function completion outcomes: {e}')
             return {}
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='log_detailed_completion_report')
     async def _log_detailed_completion_report(self, outcome_analysis: Dict[str, Any]) -> None:
         """Log detailed function completion report with comprehensive analysis."""
         try:
@@ -1889,7 +1849,7 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log detailed completion report: {e}')
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='log_step5_artifacts_and_report')
     async def _log_step5_artifacts_and_report(self, symbol: str, exchange: str, timeframe: str, data_dir: str, labeled_data: pd.DataFrame, output_path: Path, metadata_path: Path) -> None:
         """Log step 5 artifacts and create detailed report."""
         try:
@@ -1912,9 +1872,9 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 5 artifacts and reports: {e}')
 
-    @performance_monitor
-    @enhanced_error_handler
-    @comprehensive_function_monitor
+    @resource_monitor()
+    @handle_errors()
+    @with_tracing_span(span_name='generate_comprehensive_labels')
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method."
         
@@ -2065,7 +2025,7 @@ class LabelingStep:
             self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
             return None
 
-    @comprehensive_function_monitor
+    @with_tracing_span(span_name='generate_labels_with_regime_labeler')
     def _generate_labels_with_regime_labeler(self, regime_labeler, data: pd.DataFrame) -> Optional[pd.Series]:
         """Generate labels using the regime labeler."""
         try:
@@ -2086,8 +2046,8 @@ class LabelingStep:
             self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
             return None
 
-    @enhanced_error_handler
-    @comprehensive_function_monitor
+    @handle_errors()
+    @with_tracing_span(span_name='generate_regime_aware_labels')
     async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
         """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
         try:

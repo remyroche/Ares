@@ -405,7 +405,6 @@ class RiskAllocator:
 risk_allocator: RiskAllocator | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_risk_allocator(
     config: dict[str, Any] | None = None,
 ) -> RiskAllocator | None:

@@ -18,6 +18,10 @@ if str(project_root) not in sys.path:
 from .utils.advanced_ml_validation import Alert, AlertConfig, MLValidationResult
 from .utils.logger import system_logger
 
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+
 
 class QualityAlertManager:
     """Manages quality alerts and notifications."""
@@ -105,8 +109,6 @@ class QualityAlertManager:
                     server.starttls()
                 if email_config.get('username') and email_config.get('password'):
                     server.login(email_config['username'], email_config['password'])
-                from email.mime.multipart import MIMEMultipart
-                from email.mime.text import MIMEText
                 msg = MIMEMultipart()
                 msg['From'] = email_config.get('from_email', 'noreply@example.com')
                 msg['To'] = email_config.get('to_email', 'admin@example.com')

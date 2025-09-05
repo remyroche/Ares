@@ -9,6 +9,9 @@ from typing import Any, Dict, Tuple
 from .training.base_step import BaseStep
 from .core.decorators import handles_errors
 
+from .training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
+
+
 
 class DataConverterStep(BaseStep):
     """Step 01_5: Data Converter implemented using BaseStep contract."""
@@ -66,7 +69,6 @@ class DataConverterStep(BaseStep):
 
     def _update_pipeline_state(self, pipeline_state: Dict[str, Any], params: Dict[str, Any], conversion_success: bool):
         """Update pipeline state with conversion results."""
-        from .training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
         
         converter = UnifiedDataConverter({})
         unified_path = converter.get_unified_data_path(params["symbol"], params["exchange"], params["timeframe"])

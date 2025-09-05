@@ -17,6 +17,10 @@ from src.config.config_manager import (
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 
+from .utils.logger import heartbeat
+import yaml
+
+
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
@@ -68,7 +72,6 @@ class FinalParametersOptimizationStepNew:
             data_dir = training_input.get("data_dir", "data/training")
 
             # Load calibration results
-            from .utils.logger import heartbeat
 
             with heartbeat(
                 self.logger,
@@ -977,7 +980,6 @@ class FinalParametersOptimizationStepNew:
                 "src/config/step12_ml_confidence_factors.yaml"
             ]
             
-            import yaml
             
             for path in step12_paths:
                 try:

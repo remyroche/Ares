@@ -15,6 +15,9 @@ from typing import Optional, Any, Callable, Union
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
 
+import uuid
+
+
 # Context variable for current trace
 current_trace_var: ContextVar[Optional["TraceContext"]] = ContextVar(
     "current_trace", default=None
@@ -96,7 +99,6 @@ class TraceContext:
         kind: SpanKind = SpanKind.INTERNAL,
     ) -> Span:
         """Create a new span in this trace."""
-        import uuid
 
         span = Span(
             name=name,
@@ -133,7 +135,6 @@ def set_current_trace(trace: TraceContext) -> None:
 
 def create_trace(trace_id: str | None = None) -> TraceContext:
     """Create a new trace context."""
-    import uuid
 
     if trace_id is None:
         trace_id = str(uuid.uuid4())

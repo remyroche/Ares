@@ -545,4 +545,4 @@ async def example_usage():
         print(f"Failed steps: {result.failed_steps}")
 
 if __name__ == "__main__":
-    asyncio.run(await example_usage())
+    asyncio.run( example_usage())

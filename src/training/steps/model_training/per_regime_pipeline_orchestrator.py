@@ -25,7 +25,6 @@ from .training.steps.regime_handler import regime_handler
 from .core.decorators.errors import handles_errors
 
 
-logger = get_logger('PerRegimePipelineOrchestrator')
 
 
 @dataclass
@@ -385,7 +384,6 @@ class PerRegimePipelineOrchestrator:
             
             # Save execution results
             execution_file = training_dir / f'{exchange}_{symbol}_{timeframe}_pipeline_execution_results.json'
-            safe_json_dump(result_dict, execution_file)
             
             self.logger.info(f"✅ Saved pipeline execution results: {execution_file}")
             
@@ -571,7 +569,6 @@ per_regime_pipeline_orchestrator = PerRegimePipelineOrchestrator()
 
 @traced(span_name='run_per_regime_pipeline')
 @validates()
-@handles_errors
 async def run_per_regime_pipeline(
     symbol: str,
     exchange: str,
@@ -635,4 +632,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime pipeline result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run( test())

@@ -181,8 +181,6 @@ Visualization script for code interactions.
 Run this to generate graphical representations.
 """
 
-import json
-from pathlib import Path
 
 # Data extracted from the analysis
 undefined_functions = {
@@ -230,6 +228,10 @@ print("Example visualization code:")
 print("""
 import matplotlib.pyplot as plt
 
+    import os
+    import asyncio
+
+
 # Bar chart of undefined functions
 funcs = list(undefined_functions.keys())[:10]
 counts = [undefined_functions[f] for f in funcs]
@@ -248,7 +250,6 @@ plt.savefig('undefined_functions.png')
     with open(output_file, "w") as f:
         f.write(script_content)
 
-    import os
     os.chmod(output_file, 0o755)
 
 
@@ -288,5 +289,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

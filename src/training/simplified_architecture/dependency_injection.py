@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from enum import Enum
 
+from .caching import MemoryCache
+
+
 T = TypeVar('T')
 
 class ServiceLifetime(Enum):
@@ -417,7 +420,6 @@ def create_pipeline_container(config: dict) -> DIContainer:
         container.register('logger', ILogger, ConsoleLogger, singleton=True)
     container.register('validator', IDataValidator, lambda logger: DataValidator(logger), singleton=True, dependencies=['logger'])
     if config.get('cache', {}).get('enabled', False):
-        from .caching import MemoryCache
         container.register('cache', MemoryCache, lambda: MemoryCache(config['cache']), singleton=True)
     return container
 if __name__ == '__main__':

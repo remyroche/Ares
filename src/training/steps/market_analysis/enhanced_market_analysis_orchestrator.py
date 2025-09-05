@@ -34,6 +34,9 @@ from .hmm_clustering import run_enhanced_step
 # Import enhanced validators and decorators
 from .enhanced_step_validator import EnhancedStepValidator
 
+import pandas as pd
+
+
 # Import enhanced logging system
 
 
@@ -484,8 +487,6 @@ class MarketAnalysisPipelineOrchestrator:
                 try:
                     # Try to load the regime data for analysis
                     try:
-                        import pandas as pd
-                        from pathlib import Path
                         
                         regime_path = Path(data_dir) / f"regimes_{exchange}_{symbol}_{timeframe}.parquet"
                         if regime_path.exists():
@@ -657,8 +658,6 @@ class MarketAnalysisPipelineOrchestrator:
                 try:
                     # Try to load the engineered features data for analysis
                     try:
-                        import pandas as pd
-                        from pathlib import Path
                         
                         features_path = Path(data_dir) / f"features_{exchange}_{symbol}_{timeframe}.parquet"
                         if features_path.exists():
@@ -773,8 +772,6 @@ class MarketAnalysisPipelineOrchestrator:
     def _log_matrix_operations_metrics(self, data_dir: str, exchange: str, symbol: str, timeframe: str):
         """Log detailed matrix operations metrics."""
         try:
-            import pandas as pd
-            from pathlib import Path
             
             matrix_path = Path(data_dir) / f"matrix_operations_{exchange}_{symbol}_{timeframe}.parquet"
             if not matrix_path.exists():
@@ -907,7 +904,6 @@ class MarketAnalysisPipelineOrchestrator:
                 'timestamp': format_datetime(get_current_datetime()),
             }
             
-            safe_json_dump(pipeline_state, state_file, indent=2)
             self.logger.info(f"💾 Pipeline state saved to: {state_file}")
             
         except Exception as e:

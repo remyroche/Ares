@@ -28,7 +28,7 @@ class PluginRegistry:
         self._dependencies: Dict[str, Set[str]] = {}
     
     def register_plugin(self, plugin_class: Type[BasePlugin], 
-                       instance: Optional[BasePlugin] = None) -> None:
+                    instance: Optional[BasePlugin] = None) -> None:
         """
         Register a plugin class.
         
@@ -251,7 +251,7 @@ class PluginRegistry:
         
         Args:
             plugin_names: Optional list of plugin names to order.
-                         If None, orders all registered plugins.
+                        If None, orders all registered plugins.
         
         Returns:
             List[str]: Plugin names in execution order

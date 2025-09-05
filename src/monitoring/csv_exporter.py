@@ -15,6 +15,9 @@ from typing import Any
 from .core.decorators import handles_errors, log_execution_time
 from .utils.logger import system_logger
 
+import json
+
+
 
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""
@@ -111,7 +114,6 @@ class CSVExporter:
         if include_metadata:
             meta_path = filepath.with_suffix(".json")
             try:
-                import json
 
                 meta = {
                     "exported_at": datetime.now().isoformat(),

@@ -19,7 +19,6 @@ from .utils.pipeline_standards import pipeline_standards
 from .training.steps.regime_continuity_manager import regime_continuity_manager, RegimeStatus
 
 
-logger = get_logger('RegimeContinuityValidator')
 
 
 @dataclass
@@ -718,7 +717,6 @@ class RegimeContinuityValidator:
             
             validation_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_continuity_validation.json'
             
-            safe_json_dump(validation_results, validation_file)
             
             self.logger.info(f"✅ Saved validation results: {validation_file}")
             

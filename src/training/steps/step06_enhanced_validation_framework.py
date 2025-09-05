@@ -28,6 +28,9 @@ from contextlib import contextmanager
 import sys
 import os
 
+import signal
+
+
 
 class ValidationLevel(Enum):
     """Validation levels for function calls."""
@@ -88,7 +91,7 @@ class FunctionCallTracker:
         self._lock = threading.Lock()
     
     def start_call(self, function_name: str, module_name: str, call_id: str, 
-                   args: tuple, kwargs: dict) -> FunctionCallContext:
+                args: tuple, kwargs: dict) -> FunctionCallContext:
         """Start tracking a function call."""
         with self._lock:
             context = FunctionCallContext(
@@ -259,7 +262,7 @@ class Step06Validator:
         }
     
     def validate_function_call(self, context: FunctionCallContext, 
-                             function_type: str = "general") -> Dict[str, Any]:
+                            function_type: str = "general") -> Dict[str, Any]:
         """Validate a function call based on its type."""
         validation_results = {
             "passed": True,
@@ -544,7 +547,7 @@ class Step06Reporter:
                 "active_calls": stats["active_calls"],
                 "functions_with_errors": len(stats["error_stats"]),
                 "most_called_function": max(stats["function_stats"].items(), 
-                                          key=lambda x: x[1]["total_calls"])[0] if stats["function_stats"] else None
+                                        key=lambda x: x[1]["total_calls"])[0] if stats["function_stats"] else None
             },
             "function_statistics": stats["function_stats"],
             "error_statistics": stats["error_stats"],
@@ -616,7 +619,6 @@ def step06_function_validator(
             try:
                 # Execute function with timeout if specified
                 if timeout:
-                    import signal
                     
                     def timeout_handler(signum, frame):
                         raise TimeoutError(f"Function {func.__name__} timed out after {timeout}s")

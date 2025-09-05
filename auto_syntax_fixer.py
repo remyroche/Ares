@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """
-Automated syntax fixer for common Python syntax errors.
 """
 
 import re

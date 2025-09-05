@@ -47,7 +47,6 @@ def process(path: Path) -> bool:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: surgical_pass2.py <target_dir>")
         return 1
     target=Path(sys.argv[1])
     n=0

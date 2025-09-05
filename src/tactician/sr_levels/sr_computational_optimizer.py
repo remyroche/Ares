@@ -23,6 +23,9 @@ from numba import jit, prange
 from .utils.logger import system_logger
 from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
 
+import psutil
+
+
 
 @dataclass
 class ComputationalMetrics:
@@ -553,7 +556,6 @@ class SRComputationalOptimizer:
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
-            import psutil
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
         except ImportError:
@@ -562,7 +564,6 @@ class SRComputationalOptimizer:
     def _get_cpu_utilization(self) -> float:
         """Get current CPU utilization."""
         try:
-            import psutil
             return psutil.cpu_percent()
         except ImportError:
             return 0.0

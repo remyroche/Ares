@@ -24,7 +24,6 @@ from typing import Dict
 from typing import Optional
 
 
-logger = get_logger('Step21SavingPerRegime')
 
 
 class PerRegimeSavingStep(Step21Saving):
@@ -1025,7 +1024,6 @@ class PerRegimeSavingStep(Step21Saving):
 
 @traced(span_name='run_per_regime_saving_step')
 @validates()
-@handles_errors
 async def run_per_regime_step(
     symbol: str,
     exchange: str,
@@ -1088,4 +1086,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime saving result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run( test())

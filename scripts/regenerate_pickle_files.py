@@ -81,7 +81,6 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float=3000.0) -> pd.Da
     return fixed_df
 
 
-@handle_errors(default_return=False, context="create_pickle_from_csv")
 def create_pickle_from_csv(csv_path: str, output_path: str, lookback_days: int=730) -> bool:
     """Create a pickle file from a consolidated CSV file."""
     print(f"\nProcessing: {csv_path}")
@@ -131,7 +130,6 @@ def create_pickle_from_csv(csv_path: str, output_path: str, lookback_days: int=7
     return True
 
 
-@handle_errors(default_return=False, context="regenerate_pickle_main")
 def main() -> bool:
     """Main function to regenerate pickle files."""
     print("Regenerating Pickle Files from Consolidated CSV")

@@ -12,7 +12,6 @@ import functools
 from .training.steps.regime_handler import regime_handler
 
 
-logger = get_logger('RegimeProcessingDecorator')
 
 
 def per_regime_processing(
@@ -141,7 +140,7 @@ def aggregate_regime_results(
             df_copy = df.copy()
             # Add regime-specific suffix to columns
             df_copy.columns = [f"{col}_regime_{regime_id}" if col != 'timestamp' else col 
-                              for col in df_copy.columns]
+                            for col in df_copy.columns]
             
             if base_df is None:
                 base_df = df_copy

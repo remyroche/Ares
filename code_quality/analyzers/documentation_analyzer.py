@@ -461,7 +461,7 @@ class DocstringAnalyzer(ast.NodeVisitor):
         return False
 
     def _add_issue(self, line_number: int, entity_name: str, entity_type: str,
-                   issue_type: str, message: str, severity: str) -> None:
+                issue_type: str, message: str, severity: str) -> None:
         """Add a documentation issue."""
         issue = DocstringIssue(
             file_path=self.file_path,

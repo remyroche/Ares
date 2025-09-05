@@ -10,9 +10,8 @@ and live trading systems to capture comprehensive trade decision data.
 import time
 import uuid
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
 
@@ -61,7 +60,7 @@ class TradingSystemIntegrator:
     
     @handles_errors(default_return=False, context="trading_integration.integrate_backtesting")
     async def integrate_backtesting(self, backtesting_system: Any, 
-                                  system_id: str = "backtesting") -> bool:
+                                system_id: str = "backtesting") -> bool:
         """Integrate monitoring with backtesting system."""
         try:
             if not self.integration_config.enable_monitoring:
@@ -115,7 +114,7 @@ class TradingSystemIntegrator:
     
     @handles_errors(default_return=False, context="trading_integration.integrate_live_trading")
     async def integrate_live_trading(self, live_trading_system: Any, 
-                                   system_id: str = "live_trading") -> bool:
+                                system_id: str = "live_trading") -> bool:
         """Integrate monitoring with live trading system."""
         try:
             if not self.integration_config.enable_monitoring:
@@ -239,7 +238,7 @@ class TradingSystemIntegrator:
     
     @handles_errors(default_return=None, context="trading_integration._capture_trading_decision")
     async def _capture_trading_decision(self, system_id: str, trading_mode: TradingMode,
-                                      *args, **kwargs) -> Optional[TradeDecision]:
+                                    *args, **kwargs) -> Optional[TradeDecision]:
         """Capture a trading decision with full context and explanations."""
         try:
             start_time = time.time()

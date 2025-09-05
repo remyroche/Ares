@@ -135,7 +135,7 @@ class ClassicalSRMethod(BaseSRMethod):
         # Swing highs (resistance)
         for i in range(window, len(data) - window):
             if all(data['high'].iloc[i] >= data['high'].iloc[i-window:i]) and \
-               all(data['high'].iloc[i] >= data['high'].iloc[i+1:i+window+1]):
+            all(data['high'].iloc[i] >= data['high'].iloc[i+1:i+window+1]):
                 levels.append({
                     'price': data['high'].iloc[i],
                     'strength': 0.7,
@@ -146,7 +146,7 @@ class ClassicalSRMethod(BaseSRMethod):
         # Swing lows (support)
         for i in range(window, len(data) - window):
             if all(data['low'].iloc[i] <= data['low'].iloc[i-window:i]) and \
-               all(data['low'].iloc[i] <= data['low'].iloc[i+1:i+window+1]):
+            all(data['low'].iloc[i] <= data['low'].iloc[i+1:i+window+1]):
                 levels.append({
                     'price': data['low'].iloc[i],
                     'strength': 0.7,
@@ -238,8 +238,8 @@ class VolumeProfileSRMethod(BaseSRMethod):
         
         for i in range(1, self.n_bins - 1):
             if volume_profile[i] > threshold and \
-               volume_profile[i] > volume_profile[i-1] and \
-               volume_profile[i] > volume_profile[i+1]:
+            volume_profile[i] > volume_profile[i-1] and \
+            volume_profile[i] > volume_profile[i+1]:
                 
                 price = (bins[i] + bins[i+1]) / 2
                 strength = min(volume_profile[i] / volume_profile.max(), 1.0)
@@ -314,7 +314,7 @@ class FractalSRMethod(BaseSRMethod):
         return levels
     
     def _count_level_touches(self, data: pd.DataFrame, level_price: float, 
-                             level_type: str, start_idx: int) -> int:
+                            level_type: str, start_idx: int) -> int:
         """Count how many times price touched this level."""
         touches = 1  # Initial touch
         threshold = 0.002  # 0.2%

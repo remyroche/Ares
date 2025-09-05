@@ -5,6 +5,9 @@ Script to update imports in all analyzer files to use minimal modules.
 
 from pathlib import Path
 
+import asyncio
+
+
 
 def update_file_imports(file_path: str):
     """Update imports in a single file."""
@@ -13,12 +16,10 @@ def update_file_imports(file_path: str):
 
     # Update the problematic imports
     old_imports = [
-        "from ..core.config import CodeQualityConfig, get_default_config",
         "from ..utils.file_utils import find_python_files",
     ]
 
     new_imports = [
-        "import sys\nsys.path.insert(0, str(Path(__file__).parent.parent.parent))\nfrom minimal_config import CodeQualityConfig, get_default_config",
         "from minimal_file_utils import find_python_files",
     ]
 
@@ -41,5 +42,4 @@ def main():
             update_file_imports(str(analyzer_file))
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

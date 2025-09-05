@@ -18,7 +18,7 @@ from .core.decorators import (
     problem,
     timeout,
     validation_error,
-    warning,
+    warning
 )
 
 

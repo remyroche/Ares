@@ -30,7 +30,6 @@ class ConfidenceThresholdsConfig:
     position_close_threshold: float = 0.3
 
     # ML target update thresholds
-    ml_target_update_threshold: float = 0.5
     emergency_update_threshold: float = 0.02
 
     # Ensemble thresholds

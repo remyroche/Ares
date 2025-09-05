@@ -5,9 +5,12 @@ import logging
 from collections import Counter
 from typing import Any
 
+from prometheus_client import Counter, Gauge, Histogram, generate_latest
+from prometheus_client.exposition import start_http_server
+import socket
+
+
 try:
-    from prometheus_client import Counter, Gauge, Histogram, generate_latest
-    from prometheus_client.exposition import start_http_server
     _PROM_AVAILABLE = True
 except Exception as e:
     Counter = Gauge = Histogram = None
@@ -56,7 +59,6 @@ class PrometheusMetrics:
         """Start the Prometheus metrics server."""
         if not _PROM_AVAILABLE:
             return
-        import socket
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             result = sock.connect_ex(('localhost', self.port))
@@ -138,4 +140,3 @@ def get_metrics() -> Any:
     if _metrics_instance is None:
         _metrics_instance = PrometheusMetrics()
     return _metrics_instance
-metrics = get_metrics()

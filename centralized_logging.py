@@ -199,17 +199,14 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Configured logger instance
     """
-    return _centralized_logger.get_logger(name)
 
 
 def get_run_id() -> str:
     """Get the current run ID."""
-    return _centralized_logger.get_run_id()
 
 
 def get_log_file_path() -> Path:
     """Get the path to the main log file."""
-    return _centralized_logger.get_log_file_path()
 
 
 def set_log_level(level: int):

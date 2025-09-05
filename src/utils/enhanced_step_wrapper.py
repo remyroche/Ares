@@ -18,11 +18,11 @@ class EnhancedStepWrapper:
     """Enhanced step wrapper with comprehensive validation and streaming capabilities."""
     
     def __init__(self, 
-                 step_class: Type,
-                 step_name: str,
-                 enable_streaming: bool = True,
-                 enable_cross_step_validation: bool = True,
-                 enable_advanced_quality: bool = True):
+                step_class: Type,
+                step_name: str,
+                enable_streaming: bool = True,
+                enable_cross_step_validation: bool = True,
+                enable_advanced_quality: bool = True):
         """
         Initialize enhanced step wrapper.
         
@@ -142,7 +142,7 @@ class EnhancedStepWrapper:
                     # Log quality issues
                     if quality_assessment.issues_found > 0:
                         self.logger.warning(f"⚠️ Quality issues detected: {quality_assessment.issues_found} issues, "
-                                          f"{quality_assessment.warnings_found} warnings")
+                                        f"{quality_assessment.warnings_found} warnings")
                         for metric in quality_assessment.metrics:
                             if metric.severity in ['error', 'critical']:
                                 self.logger.warning(f"   - {metric.message}")
@@ -321,11 +321,11 @@ class EnhancedPipelineManager:
         }
     
     def create_enhanced_step(self, 
-                           step_class: Type,
-                           step_name: str,
-                           enable_streaming: bool = True,
-                           enable_cross_step_validation: bool = True,
-                           enable_advanced_quality: bool = True) -> Type:
+                        step_class: Type,
+                        step_name: str,
+                        enable_streaming: bool = True,
+                        enable_cross_step_validation: bool = True,
+                        enable_advanced_quality: bool = True) -> Type:
         """Create enhanced step with all improvements."""
         wrapper = EnhancedStepWrapper(
             step_class, step_name, enable_streaming, 
@@ -393,14 +393,14 @@ class EnhancedPipelineManager:
     def get_pipeline_summary(self) -> Dict[str, Any]:
         """Get comprehensive pipeline enhancement summary."""
         total_executions = sum(wrapper.get_performance_metrics()['executions'] 
-                             for wrapper in self.enhanced_steps.values())
+                            for wrapper in self.enhanced_steps.values())
         total_successful = sum(wrapper.get_performance_metrics()['successful_executions'] 
-                             for wrapper in self.enhanced_steps.values())
+                            for wrapper in self.enhanced_steps.values())
         total_streaming = sum(wrapper.get_performance_metrics()['streaming_used'] 
                             for wrapper in self.enhanced_steps.values())
         
         avg_quality = np.mean([wrapper.get_performance_metrics()['average_quality_score'] 
-                              for wrapper in self.enhanced_steps.values()]) if self.enhanced_steps else 0.0
+                            for wrapper in self.enhanced_steps.values()]) if self.enhanced_steps else 0.0
         
         return {
             'total_steps_enhanced': len(self.enhanced_steps),

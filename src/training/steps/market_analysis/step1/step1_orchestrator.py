@@ -1,7 +1,9 @@
 """Step1 Orchestrator - Coordinates data collection and validation processes.
 
 Coordinates data collection processes for step01. This orchestrator focuses on:
+from .exceptions import (
 1. Detecting missing data gaps (aggtrades, klines, futures)
+)
 2. Validating data quality and format
 3. Preparing data for step1_5_data_converter.py processing
 
@@ -392,8 +394,7 @@ class Step1Orchestrator:
 
 📈 MISSING DATA ANALYSIS:
 • Missing Aggtrades Days: {len(results['missing_data']['missing_aggtrades_days'])}
-• Missing Klines Months: {len(results['missing_data']['missing_klines_months'])}
-• Missing Futures Months: {len(results['missing_data']['missing_futures_months'])}
+)
 
 📥 DOWNLOAD RESULTS:
 """
@@ -405,36 +406,32 @@ class Step1Orchestrator:
                 aggtrades = download_data["download_results"]["aggtrades"]
                 report += f"""
 • Aggtrades Downloads:
-  - Downloaded Days: {aggtrades['downloaded_days']}
-  - Failed Days: {aggtrades['failed_days']}
-  - Total Rows: {aggtrades['total_rows']}
+- Downloaded Days: {aggtrades['downloaded_days']}
+- Total Rows: {aggtrades['total_rows']}
 """
 
             if "klines" in download_data.get("download_results", {}):
                 klines = download_data["download_results"]["klines"]
                 report += f"""
 • Klines Downloads:
-  - Downloaded Months: {klines['downloaded_months']}
-  - Failed Months: {klines['failed_months']}
-  - Total Rows: {klines['total_rows']}
+- Downloaded Months: {klines['downloaded_months']}
+- Total Rows: {klines['total_rows']}
 """
 
             if "futures" in download_data.get("download_results", {}):
                 futures = download_data["download_results"]["futures"]
                 report += f"""
 • Futures Downloads:
-  - Downloaded Months: {futures['downloaded_months']}
-  - Failed Months: {futures['failed_months']}
-  - Total Rows: {futures['total_rows']}
+- Downloaded Months: {futures['downloaded_months']}
+- Total Rows: {futures['total_rows']}
 """
 
             if "gap_filling_results" in download_data:
                 gaps = download_data["gap_filling_results"]
                 report += f"""
 • Gap Filling:
-  - Filled Gaps: {gaps['filled_gaps']}
-  - Failed Gaps: {gaps['failed_gaps']}
-  - Total Rows Added: {gaps['total_rows_added']}
+- Filled Gaps: {gaps['filled_gaps']}
+- Total Rows Added: {gaps['total_rows_added']}
 """
 
         report += f"""
@@ -445,6 +442,7 @@ class Step1Orchestrator:
 • Total Files: {results['aggtrades_validation']['total_files']}
 • Valid Files: {results['aggtrades_validation']['valid_files']}
 • Invalid Files: {results['aggtrades_validation']['invalid_files']}
+)
 • Fixed Files: {results['aggtrades_validation']['fixed_files']}
 
 🔄 RESAMPLING RESULTS:
@@ -457,6 +455,7 @@ class Step1Orchestrator:
 • Compatible: {'✅ YES' if results['step1_5_ready'] else '❌ NO'}
 • Required Files: {len(results.get('step1_5_readiness', {}).get('required_files', []))}
 • Missing Files: {len(results.get('step1_5_readiness', {}).get('missing_files', []))}
+)
 
 """
 
@@ -464,13 +463,13 @@ class Step1Orchestrator:
         if results["errors"]:
             report += f"""
 ❌ ERRORS:
-{chr(10).join(f'• {error}' for error in results['errors'])}
 """
 
         if results["warnings"]:
             report += f"""
 ⚠️ WARNINGS:
 {chr(10).join(f'• {warning}' for warning in results['warnings'])}
+)
 """
 
         # Add detailed missing data
@@ -478,7 +477,7 @@ class Step1Orchestrator:
             report += f"""
 📅 MISSING AGGTRADES DAYS (first 10):
 {chr(10).join(f'• {date}' for date in results['missing_data']['missing_aggtrades_days'][:10])}
-{'  ...' if len(results['missing_data']['missing_aggtrades_days']) > 10 else ''}
+)
 """
 
         # Add data gaps

@@ -11,7 +11,9 @@ from typing import Any, Dict, Optional
 from .monitoring.regime_performance_tracker import RegimePerformanceTracker
 from .utils.common_operations import ensure_directory, safe_json_dump
 from .utils.logger import system_logger
-from pathlib import Path
+
+import websockets
+
 logger = system_logger.getChild('RegimeMonitoring')
 
 @dataclass
@@ -44,7 +46,6 @@ class RegimeMonitoringDashboard:
         self.is_running = False
         self.last_update = {}
         self.dashboard_dir = Path(config.get('dashboard_dir', 'dashboard'))
-        ensure_directory(self.dashboard_dir)
 
     async def start(self) -> None:
         """Start the monitoring dashboard."""
@@ -170,7 +171,6 @@ class RegimeMonitoringDashboard:
             try:
                 state = {'timestamp': datetime.now().isoformat(), 'current_regimes': self.current_regime, 'regime_confidence': self.regime_confidence, 'real_time_metrics': self._serialize_metrics(self.real_time_metrics), 'recent_alerts': [alert.to_dict() for alert in list(self.alerts)[-10:]]}
                 state_file = self.dashboard_dir / 'dashboard_state.json'
-                safe_json_dump(state, state_file)
                 await asyncio.sleep(60)
             except Exception as e:
                 self.logger.error(f'Error saving dashboard state: {e}')
@@ -231,7 +231,6 @@ class RegimeMonitoringWebSocket:
 
     async def start(self) -> None:
         """Start WebSocket server."""
-        import websockets
         await websockets.serve(self.handler, 'localhost', self.port)
         logger.info(f'WebSocket server started on port {self.port}')
 
@@ -247,4 +246,4 @@ if __name__ == '__main__':
     async def main() -> None:
         config = {'symbols': ['BTCUSDT', 'ETHUSDT'], 'update_frequency': 60, 'alert_handlers': ['console', 'file'], 'enable_websocket': True, 'dashboard_dir': 'dashboard', 'data_dir': 'data'}
         await start_regime_monitoring(config)
-    asyncio.run(await main())
+    asyncio.run( main())

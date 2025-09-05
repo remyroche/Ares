@@ -1003,7 +1003,6 @@ class PerformanceReporter:
 performance_reporter: PerformanceReporter | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_performance_reporter(
     config: dict[str, Any] | None = None,
 ) -> PerformanceReporter | None:

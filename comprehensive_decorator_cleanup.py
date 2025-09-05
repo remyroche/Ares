@@ -6,6 +6,9 @@ Comprehensive cleanup script to update ALL old decorator imports to new system.
 import re
 import os
 from pathlib import Path
+import collections
+import pandas as pd
+import typing
 
 
 # Mapping of old decorators to their new locations

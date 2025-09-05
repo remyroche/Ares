@@ -7,6 +7,7 @@ import ast
 import sys
 from pathlib import Path
 import numpy as np
+import typing
 
 
 def check_file_syntax(file_path: str) -> bool:

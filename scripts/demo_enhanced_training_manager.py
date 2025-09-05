@@ -24,6 +24,7 @@ from src.training.enhanced_training_manager_enhanced import (
 )
 from src.utils.logger import system_logger
 import numpy as np
+import logging
 
 
 async def load_config() -> dict[str, Any]:

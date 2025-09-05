@@ -13,6 +13,8 @@ import pandas as pd
 import numpy as np
 from ..decorators import cached, compose, handles_errors, traced, validates
 from ..errors import ValidationError
+import time
+
 F = TypeVar('F', bound=Callable[..., Any])
 
 def validate_ohlcv_data_quality(check_volume: bool=True, min_volume: float=0, price_columns: List[str]=['open', 'high', 'low', 'close']) -> Callable[[F], F]:

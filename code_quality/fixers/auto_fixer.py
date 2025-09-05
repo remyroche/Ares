@@ -26,6 +26,7 @@ from utils.file_utils import (
     restore_file,
 )
 from utils.progress import ProgressManager
+import json
 
 
 class AutoFixer:

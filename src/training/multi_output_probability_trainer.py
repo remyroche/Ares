@@ -22,6 +22,9 @@ except ImportError:
     create_neural_model = None
 try:
     from catboost import CatBoostClassifier
+import logging
+import pandas as pd
+import time
 
     CATBOOST_AVAILABLE = True
 except ImportError:

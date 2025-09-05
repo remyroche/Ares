@@ -25,6 +25,8 @@ ABTestingStep = step20_ab_testing.ABTestingStep
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.logger import get_logger
 from src.utils.decorators import traced, validates, handles_errors
+import logging
+
 logger = get_logger('Step20ABTestingPerRegime')
 
 class PerRegimeABTestingStep(ABTestingStep):

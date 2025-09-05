@@ -8,6 +8,7 @@ Provides comprehensive settings for Metal Performance Shaders (MPS) integration.
 
 from dataclasses import dataclass
 from typing import Any
+import logging
 
 
 @dataclass

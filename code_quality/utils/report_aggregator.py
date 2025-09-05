@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import numpy as np
+import time
 
 
 class ReportAggregator:

@@ -34,6 +34,8 @@ class FeatureEngineeringOrchestrator:
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, 'der_scaler.joblib')
         from .config_optuna import get_parameter_value
+import numpy as np
+import pandas as pd
 
         self.orchestrator_config = config.get('feature_engineering_orchestrator', {})
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)

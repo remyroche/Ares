@@ -21,6 +21,7 @@ from enum import Enum
 import shutil
 from datetime import datetime
 import numpy as np
+import time
 
 
 class ConfidenceLevel(Enum):

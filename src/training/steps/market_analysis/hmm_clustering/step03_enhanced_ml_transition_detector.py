@@ -8,6 +8,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 import joblib
 import warnings
+import json
+import typing
+
 warnings.filterwarnings('ignore')
 
 class EnhancedMLRegimeTransitionDetector:

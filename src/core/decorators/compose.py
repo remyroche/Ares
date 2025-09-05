@@ -9,6 +9,7 @@ preserving signature and metadata.
 import asyncio
 import functools
 from typing import ParamSpec, TypeVar, cast, Callable, Any
+import logging
 
 P = ParamSpec("P")
 R = TypeVar("R")

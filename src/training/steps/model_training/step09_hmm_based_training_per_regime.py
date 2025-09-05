@@ -15,6 +15,8 @@ from ...market_analysis.regime_continuity_decorator import per_regime_step
 from ....utils.pipeline_standards import pipeline_standards
 from ....utils.logger import get_logger
 from ....core.decorators import traced, validates, handles_errors
+import logging
+
 logger = get_logger('Step9HMMBasedTrainingPerRegime')
 
 class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):

@@ -11,6 +11,7 @@ from .training.core.training_manager import create_training_manager
 from .utils.logger import system_logger
 
 import sys
+import logging
 
 
 async def run_basic_training_example() -> None:

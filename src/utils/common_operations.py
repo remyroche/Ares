@@ -43,6 +43,8 @@ except Exception:
     pd = _PDStub()
 try:
     from .logger import log_error_with_context
+import os
+
 except ImportError:
 
     def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:

@@ -12,6 +12,7 @@ from .plugin_registry import PluginRegistry
 from .base_plugin import PluginContext, PluginResult, PluginCategory, PluginPriority
 from .exceptions import PluginExecutionError, PluginTimeoutError
 import numpy as np
+import logging
 
 
 class PluginManager:

@@ -36,6 +36,7 @@ class FeatureIntegrationManager:
             self.logger.info('🚀 Initializing feature integration manager...')
             if self.enable_advanced_features:
                 from .analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+import logging
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(self.config)
                 await self.advanced_feature_engineering.initialize()

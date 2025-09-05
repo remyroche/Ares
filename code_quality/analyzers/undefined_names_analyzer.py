@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Set, Tuple, Optional
 
 from core.config import AnalysisConfig
 from utils.file_utils import find_python_files
+import logging
 
 
 class ScopeContext:

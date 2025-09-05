@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Optional, Tuple
 import numpy as np
+import logging
 
 
 def detect_syntax_error(file_path: Path) -> Optional[Tuple[str, int, str]]:

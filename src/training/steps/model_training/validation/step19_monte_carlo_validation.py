@@ -17,6 +17,8 @@ from ...base_step import BaseStep
 from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 import numpy as np
 import pandas as pd
+import logging
+import time
 
 class MonteCarloValidationStep(BaseStep):
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Type, Union
 from .base_plugin import BasePlugin, PluginCategory, PluginPriority
 from .exceptions import PluginError, PluginNotFoundError
+import logging
 
 
 class PluginRegistry:

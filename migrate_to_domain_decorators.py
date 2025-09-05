@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 
 import asyncio
+import collections
+import typing
 
 
 # Update patterns to replace TODO imports with proper domain imports

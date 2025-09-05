@@ -43,6 +43,9 @@ try:
     import optuna
     from optuna.samplers import TPESampler
     from optuna.pruners import MedianPruner
+import logging
+import typing
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False

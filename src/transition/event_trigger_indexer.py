@@ -12,6 +12,7 @@ import pandas as pd
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+import logging
 
 
 @dataclass

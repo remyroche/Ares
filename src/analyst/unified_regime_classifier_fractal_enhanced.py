@@ -25,6 +25,7 @@ import logging
 import asyncio
 from src.core.decorators import validates as validate_data_quality, traced as with_tracing_span
 from .core.decorators.errors import handles_errors
+import time
 
 class UnifiedRegimeClassifierFractalEnhanced:
     """

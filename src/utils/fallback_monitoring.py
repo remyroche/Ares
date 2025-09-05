@@ -16,6 +16,7 @@ from enum import Enum
 import json
 import threading
 import numpy as np
+import collections
 
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""

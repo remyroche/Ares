@@ -18,6 +18,9 @@ except ImportError:
     pd = None
 try:
     import joblib
+import collections
+import logging
+
 except Exception:
     joblib = None
 

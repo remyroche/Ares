@@ -11,6 +11,7 @@ import numpy as np
 # Optional dependencies with fallback handling
 try:
     import psutil
+import logging
 
     PSUTIL_AVAILABLE = True
 except ImportError:

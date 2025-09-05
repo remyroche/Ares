@@ -23,6 +23,7 @@ from src.utils.logger import system_logger
 from src.utils.statistical_distribution_validation import StatisticalValidator
 import numpy as np
 import pandas as pd
+import logging
 
 logger = system_logger.getChild("EnhancedValidationDemo")
 

@@ -18,6 +18,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
 import numpy as np
+import time
 
 
 class SmallFileAnalyzer:

@@ -6,7 +6,7 @@ that map old decorator signatures to the new core decorators.
 """
 from functools import wraps
 import asyncio
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Tuple, Type
 
 from .decorators.errors import handles_errors as _handles_errors
 
@@ -15,7 +15,7 @@ from .decorators.errors import handles_errors as _handles_errors
 
 def handle_errors(
     *,
-    exceptions: tuple[type[Exception], ...] = (Exception,),
+    exceptions: Tuple[Type[Exception], ...] = (Exception,),
     default_return: Any = None,
     **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -29,7 +29,7 @@ def handle_errors(
 
 def handle_specific_errors(
     *,
-    error_handlers: dict[type[Exception], tuple[Any, str]] | None = None,
+    error_handlers: Dict[Type[Exception], Tuple[Any, str]] | None = None,
     default_return: Any = None,
     **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

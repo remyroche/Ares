@@ -1,0 +1,435 @@
+"""Utility functions and classes for advanced feature engineering."""
+
+import logging
+import numpy as np
+import pandas as pd
+from typing import Any, Dict, List, Optional
+
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
+
+
+class TechnicalIndicatorCalculator:
+    """Collection of technical indicator calculation methods."""
+    
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
+        """Calculate Relative Strength Index."""
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        rsi = 100 - 100 / (1 + rs)
+        return rsi
+
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """Calculate MACD (Moving Average Convergence Divergence)."""
+        ema_fast = prices.ewm(span=fast).mean()
+        ema_slow = prices.ewm(span=slow).mean()
+        macd = ema_fast - ema_slow
+        return macd
+
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate Average True Range (ATR)."""
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=window).mean()
+        return atr
+
+    @staticmethod
+    @handles_errors(fallback=pd.DataFrame())
+    def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
+        """Calculate Bollinger Bands."""
+        sma = prices.rolling(window=window).mean()
+        std = prices.rolling(window=window).std()
+        bb_upper = sma + std * num_std
+        bb_lower = sma - std * num_std
+        bb_width = (bb_upper - bb_lower) / sma
+        bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
+        bb_features = pd.DataFrame({
+            'bb_upper': bb_upper, 
+            'bb_middle': sma, 
+            'bb_lower': bb_lower, 
+            'bb_width': bb_width, 
+            'bb_position': bb_position
+        })
+        return bb_features
+
+    @staticmethod
+    @handles_errors(fallback=pd.Series())
+    def calculate_adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate Average Directional Index (ADX)."""
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        dm_plus = high - high.shift(1)
+        dm_minus = low.shift(1) - low
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        tr_smooth = tr.rolling(window=window).mean()
+        dm_plus_smooth = dm_plus.rolling(window=window).mean()
+        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        di_plus = 100 * (dm_plus_smooth / tr_smooth)
+        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(window=window).mean()
+        return adx
+
+
+class VolatilityCalculator:
+    """Handles volatility calculations and regime detection."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    @handles_errors(fallback=pd.Series())
+    def calculate_parkinson_volatility(self, price_data: pd.DataFrame) -> pd.Series:
+        """Calculate Parkinson volatility estimator."""
+        try:
+            high_low_ratio = np.log(price_data["high"] / price_data["low"]) ** 2
+            parkinson_vol = np.sqrt(high_low_ratio / (4 * np.log(2)))
+            return parkinson_vol.rolling(20).mean()
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.debug(f"Error calculating Parkinson volatility: {e}")
+            return pd.Series()
+
+    @handles_errors(fallback=pd.Series())
+    def calculate_garman_klass_volatility(self, price_data: pd.DataFrame) -> pd.Series:
+        """Calculate Garman-Klass volatility estimator."""
+        try:
+            c = np.log(price_data["close"] / price_data["close"].shift(1))
+            h = np.log(price_data["high"] / price_data["close"].shift(1))
+            l = np.log(price_data["low"] / price_data["close"].shift(1))
+
+            gk_vol = np.sqrt(0.5 * (h - l) ** 2 - (2 * np.log(2) - 1) * c**2)
+            return gk_vol.rolling(20).mean()
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.debug(f"Error calculating Garman-Klass volatility: {e}")
+            return pd.Series()
+
+    def calculate_volatility_regime(self, realized_vol: pd.Series) -> str:
+        """Calculate volatility regime classification."""
+        try:
+            vol_percentile = realized_vol.rank(pct=True).iloc[-1]
+            
+            if vol_percentile > 0.8:
+                return "high"
+            elif vol_percentile < 0.2:
+                return "low"
+            else:
+                return "medium"
+        except Exception as e:
+            self.logger.warning(f"Error calculating volatility regime: {e}")
+            return "medium"
+
+
+class MomentumCalculator:
+    """Handles momentum calculations and analysis."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def calculate_momentum_features(self, price_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate comprehensive momentum features."""
+        try:
+            returns = price_data["close"].pct_change().dropna()
+            
+            # Momentum indicators
+            momentum_5 = returns.rolling(5).mean()
+            momentum_20 = returns.rolling(20).mean()
+            momentum_50 = returns.rolling(50).mean()
+            
+            # Momentum acceleration
+            momentum_accel = momentum_5 - momentum_20
+            
+            # Momentum strength
+            momentum_strength = momentum_5 / momentum_20.std()
+            
+            # Momentum divergence
+            price_momentum = price_data["close"].pct_change(5)
+            volume_momentum = (
+                price_data["volume"].pct_change(5)
+                if "volume" in price_data.columns
+                else pd.Series(0)
+            )
+            momentum_divergence = price_momentum - volume_momentum
+            
+            return {
+                "momentum_5": momentum_5.iloc[-1] if not momentum_5.empty else 0.0,
+                "momentum_20": momentum_20.iloc[-1] if not momentum_20.empty else 0.0,
+                "momentum_50": momentum_50.iloc[-1] if not momentum_50.empty else 0.0,
+                "momentum_acceleration": momentum_accel.iloc[-1] if not momentum_accel.empty else 0.0,
+                "momentum_strength": momentum_strength.iloc[-1] if not momentum_strength.empty else 0.0,
+                "momentum_divergence": momentum_divergence.iloc[-1] if not momentum_divergence.empty else 0.0,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating momentum features: {e}")
+            return {}
+
+
+class LiquidityCalculator:
+    """Handles liquidity calculations and analysis."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def calculate_liquidity_features(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: Optional[pd.DataFrame] = None,
+    ) -> Dict[str, float]:
+        """Calculate comprehensive liquidity features."""
+        try:
+            # Volume-based liquidity measures
+            avg_volume = volume_data["volume"].rolling(20).mean()
+            volume_liquidity = volume_data["volume"] / avg_volume
+            
+            # Price-based liquidity measures
+            price_changes = price_data["close"].pct_change()
+            price_impact = np.abs(price_changes) / volume_data["volume"]
+            price_impact = price_impact.rolling(20).mean()
+            
+            # Spread-based liquidity (if order flow data available)
+            spread_liquidity = 0.0
+            if order_flow_data is not None and "spread" in order_flow_data.columns:
+                spread_liquidity = order_flow_data["spread"].rolling(20).mean().iloc[-1]
+            
+            # Liquidity regime classification
+            liquidity_percentile = volume_liquidity.rank(pct=True).iloc[-1]
+            
+            if liquidity_percentile > 0.8:
+                liquidity_regime = "high"
+            elif liquidity_percentile < 0.2:
+                liquidity_regime = "low"
+            else:
+                liquidity_regime = "medium"
+            
+            return {
+                "volume_liquidity": volume_liquidity.iloc[-1] if not volume_liquidity.empty else 1.0,
+                "price_impact": price_impact.iloc[-1] if not price_impact.empty else 0.0,
+                "spread_liquidity": spread_liquidity,
+                "liquidity_regime": liquidity_regime,
+                "liquidity_percentile": liquidity_percentile,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating liquidity features: {e}")
+            return {}
+
+
+class CorrelationCalculator:
+    """Handles correlation calculations and analysis."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def calculate_correlation_features(self, price_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate correlation features."""
+        try:
+            returns = price_data["close"].pct_change().dropna()
+            
+            # Rolling correlations
+            corr_5 = returns.rolling(5).corr(returns.shift(1))
+            corr_20 = returns.rolling(20).corr(returns.shift(1))
+            
+            # Cross-timeframe correlations
+            returns_5m = returns.resample("5T").last()
+            returns_1h = returns.resample("1H").last()
+            
+            cross_corr = (
+                returns_5m.corr(returns_1h)
+                if len(returns_5m) > 1 and len(returns_1h) > 1
+                else 0.0
+            )
+            
+            return {
+                "autocorrelation_5": corr_5.iloc[-1] if not corr_5.empty else 0.0,
+                "autocorrelation_20": corr_20.iloc[-1] if not corr_20.empty else 0.0,
+                "cross_timeframe_correlation": cross_corr,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating correlation features: {e}")
+            return {}
+
+
+class MicrostructureCalculator:
+    """Handles market microstructure calculations."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def calculate_price_impact(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+    ) -> Dict[str, float]:
+        """Calculate price impact metrics."""
+        try:
+            # Calculate price changes
+            price_changes = price_data["close"].pct_change()
+            
+            # Calculate volume-weighted price impact
+            volume_weighted_impact = (
+                (price_changes * volume_data["volume"]).rolling(20).mean()
+            )
+            
+            # Calculate Kyle's lambda (price impact parameter)
+            kyle_lambda = (
+                np.abs(price_changes).rolling(50).mean()
+                / volume_data["volume"].rolling(50).mean()
+            )
+            
+            # Calculate Amihud illiquidity measure
+            amihud_illiquidity = np.abs(price_changes) / volume_data["volume"]
+            amihud_illiquidity = amihud_illiquidity.rolling(20).mean()
+            
+            return {
+                "price_impact": volume_weighted_impact.iloc[-1]
+                if not volume_weighted_impact.empty
+                else 0.0,
+                "kyle_lambda": kyle_lambda.iloc[-1] if not kyle_lambda.empty else 0.0,
+                "amihud_illiquidity": amihud_illiquidity.iloc[-1]
+                if not amihud_illiquidity.empty
+                else 0.0,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating price impact: {e}")
+            return {}
+
+    def calculate_order_flow_imbalance(
+        self,
+        order_flow_data: pd.DataFrame,
+    ) -> Dict[str, float]:
+        """Calculate order flow imbalance metrics."""
+        try:
+            # Calculate buy/sell pressure
+            buy_volume = order_flow_data.get("buy_volume", pd.Series(0))
+            sell_volume = order_flow_data.get("sell_volume", pd.Series(0))
+            
+            # Order flow imbalance
+            total_volume = buy_volume + sell_volume
+            imbalance = (buy_volume - sell_volume) / total_volume
+            imbalance = imbalance.rolling(20).mean()
+            
+            # Large order detection
+            avg_volume = total_volume.rolling(50).mean()
+            large_order_ratio = (total_volume > 2 * avg_volume).rolling(20).mean()
+            
+            return {
+                "order_flow_imbalance": imbalance.iloc[-1]
+                if not imbalance.empty
+                else 0.0,
+                "large_order_ratio": large_order_ratio.iloc[-1]
+                if not large_order_ratio.empty
+                else 0.0,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating order flow imbalance: {e}")
+            return {}
+
+    def calculate_volume_profile(
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+    ) -> Dict[str, float]:
+        """Calculate volume profile metrics."""
+        try:
+            # Volume-weighted average price (VWAP)
+            vwap = (price_data["close"] * volume_data["volume"]).rolling(
+                20,
+            ).sum() / volume_data["volume"].rolling(20).sum()
+            
+            # Volume price trend (VPT)
+            vpt = (volume_data["volume"] * price_data["close"].pct_change()).cumsum()
+            
+            # Volume rate of change
+            volume_roc = volume_data["volume"].pct_change(5)
+            
+            # Volume moving average ratio
+            volume_ma_ratio = (
+                volume_data["volume"] / volume_data["volume"].rolling(20).mean()
+            )
+            
+            return {
+                "vwap": vwap.iloc[-1]
+                if not vwap.empty
+                else price_data["close"].iloc[-1],
+                "vpt": vpt.iloc[-1] if not vpt.empty else 0.0,
+                "volume_roc": volume_roc.iloc[-1] if not volume_roc.empty else 0.0,
+                "volume_ma_ratio": volume_ma_ratio.iloc[-1]
+                if not volume_ma_ratio.empty
+                else 1.0,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating volume profile: {e}")
+            return {}
+
+
+class AdaptiveIndicatorCalculator:
+    """Handles adaptive technical indicator calculations."""
+    
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def calculate_adaptive_moving_averages(
+        self,
+        price_data: pd.DataFrame,
+    ) -> Dict[str, float]:
+        """Calculate adaptive moving averages based on volatility."""
+        try:
+            # Calculate volatility
+            returns = price_data["close"].pct_change()
+            volatility = returns.rolling(20).std()
+            
+            # Adaptive periods based on volatility
+            base_period = 20
+            volatility_factor = volatility / volatility.rolling(100).mean()
+            adaptive_period = (base_period * volatility_factor).clip(5, 50)
+            
+            # Adaptive SMA
+            adaptive_sma = (
+                price_data["close"].rolling(window=adaptive_period.astype(int)).mean()
+            )
+            
+            # Adaptive EMA
+            adaptive_alpha = 2 / (adaptive_period + 1)
+            adaptive_ema = price_data["close"].ewm(alpha=adaptive_alpha).mean()
+            
+            return {
+                "adaptive_sma": adaptive_sma.iloc[-1]
+                if not adaptive_sma.empty
+                else price_data["close"].iloc[-1],
+                "adaptive_ema": adaptive_ema.iloc[-1]
+                if not adaptive_ema.empty
+                else price_data["close"].iloc[-1],
+                "adaptive_period": adaptive_period.iloc[-1]
+                if not adaptive_period.empty
+                else base_period,
+            }
+        except (KeyError, IndexError, ValueError) as e:
+            self.logger.debug(f"Error calculating adaptive moving averages: {e}")
+            return {}
+
+
+def initialization_error(message: str) -> str:
+    """Format initialization error message."""
+    return f"❌ {message}"
+
+
+def print_message(message: str) -> None:
+    """Print message with proper formatting."""
+    print(message)

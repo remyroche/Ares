@@ -7,7 +7,7 @@ import asyncio
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 from .core.decorators import cached, handles_errors, log_execution_time, traced, validates
 from .core.decorators.errors import handles_errors
 from datetime import datetime
@@ -164,15 +164,30 @@ class DataReadingStep:
         self.logger.info('🔍 Validating data quality...')
         try:
             validation_result = self.standards.validate_data_quality(data, 'unified')
-            validation_results = {'passed': validation_result.passed, 'issues': [issue.message for issue in validation_result.issues], 'warnings': [warning.message for warning in validation_result.warnings], 'data_info': {'rows': len(data) if data is not None else 0, 'columns': list(data.columns) if data is not None else [], 'date_range': {'start': data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None, 'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None}, 'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0}, 'quality_score': validation_result.quality_score}
+            computed_data_info = {
+                'rows': len(data) if data is not None else 0,
+                'columns': list(data.columns) if data is not None else [],
+                'date_range': {
+                    'start': data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None,
+                    'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None,
+                },
+                'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0,
+            }
+            validation_results = {
+                'passed': validation_result.passed,
+                'issues': [issue.message for issue in validation_result.issues],
+                'warnings': [warning.message for warning in validation_result.warnings],
+                'data_info': computed_data_info,
+                'quality_score': validation_result.quality_score,
+            }
             self.logger.info(f'✅ Data quality validation completed')
-            self.logger.info(f"   - Rows: {validation_results['data_info']['rows']}")
-            self.logger.info(f"   - Memory usage: {validation_results['data_info']['memory_usage']:.2f} MB")
+            self.logger.info(f"   - Rows: {computed_data_info['rows']}")
+            self.logger.info(f"   - Memory usage: {computed_data_info['memory_usage']:.2f} MB")
             self.logger.info(f'   - Quality score: {validation_result.quality_score:.2f}')
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
             thresholds = self.config.get('step02_quality_thresholds', {'min_rows': 100000, 'max_null_ratio': 0.01, 'min_quality_score': 0.8})
-            rows = validation_results['data_info']['rows']
+            rows = computed_data_info['rows']
             null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
             quality_score = float(validation_results['quality_score'])
             if rows < thresholds['min_rows'] or null_ratio > thresholds['max_null_ratio'] or quality_score < thresholds['min_quality_score']:

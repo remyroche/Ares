@@ -4,12 +4,13 @@ import pandas as pd
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, Optional
-from .training.steps.market_analysis.step05_labeling import LabelingStep
-from .training.steps.regime_handler import regime_handler
-from src.training.steps.regime_processing_decorator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
+from src.training.steps.market_analysis.step05_labeling import LabelingStep
+from src.training.steps.market_analysis.regime_handler import regime_handler
+from src.training.steps.market_analysis.regime_processing_decorator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
+from src.utils.pipeline_standards import pipeline_standards
+from src.core.decorators import traced, validates
+from src.core.decorators.errors import handles_errors
+from src.utils.common_operations import get_logger
 import logging
 
 logger = get_logger('Step5LabelingPerRegime')
@@ -21,6 +22,24 @@ class PerRegimeLabelingStep(LabelingStep):
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_labeling', True)
         self.regime_specific_params = config.get('regime_specific_params', {})
+
+    async def _apply_labeling_method(self, data: pd.DataFrame, *, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+        """Wrapper to apply the underlying labeling method from the base step.
+        
+        Args:
+            data: Input DataFrame for a single regime
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe string
+        
+        Returns:
+            Labeled DataFrame or None on failure
+        """
+        try:
+            return await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
+        except Exception as e:
+            self.logger.error(f'❌ Error applying labeling method: {e}')
+            return None
 
     @traced(span_name='execute_per_regime_labeling')
     async def execute_per_regime_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False) -> bool:
@@ -88,7 +107,7 @@ class PerRegimeLabelingStep(LabelingStep):
             context_mask = regime_data.get('is_regime_context', pd.Series(False, index=regime_data.index))
             if 'is_regime_context' in regime_data.columns:
                 regime_data = regime_data.drop(columns=['is_regime_context'])
-            labeled_data = await self._apply_labeling_method(regime_data)
+            labeled_data = await self._apply_labeling_method(regime_data, symbol=ctx.symbol, exchange=ctx.exchange, timeframe=ctx.timeframe)
             if labeled_data is None:
                 return None
             labeled_data['labeled_regime_id'] = regime_id
@@ -198,8 +217,11 @@ async def process_labeling_regime(data: pd.DataFrame, regime_id: int, **kwargs) 
         Labeled DataFrame
     """
     config = kwargs.get('config', {})
+    symbol = kwargs.get('symbol')
+    exchange = kwargs.get('exchange')
+    timeframe = kwargs.get('timeframe')
     step = LabelingStep(config)
-    labeled_data = await step._apply_labeling_method(data)
+    labeled_data = await step._generate_comprehensive_labels(data, symbol, exchange, timeframe)
     if labeled_data is not None:
         labeled_data['labeled_regime_id'] = regime_id
     return labeled_data

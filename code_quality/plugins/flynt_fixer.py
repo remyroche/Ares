@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Flynt fixer plugin to convert strings to f-strings where safe.
 """

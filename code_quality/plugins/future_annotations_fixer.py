@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Future annotations injector: add `from __future__ import annotations` at top if missing.
 """

@@ -29,6 +29,8 @@ from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class DeadCodePipeline:
@@ -42,13 +44,11 @@ class DeadCodePipeline:
         
         # Initialize analyzers
         self.config = get_default_config()
-        self.dead_code_analyzer = DeadCodeAnalyzer(self.config)
-        self.enhanced_dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
-        self.import_analyzer = ImportAnalyzer(self.config)
+        self.dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
         self.undefined_names_analyzer = UndefinedNamesAnalyzer(self.config)
         
         # Initialize auto-fixer
-        self.auto_fixer = AutoFixDeadCode()
+        # self.auto_fixer = AutoFixDeadCode()  # Removed during cleanup
         
         # Initialize plugin system
         if self.enable_plugins:

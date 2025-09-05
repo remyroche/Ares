@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 docformatter plugin for formatting docstrings.
 """

@@ -16,6 +16,7 @@ except Exception:
     HAS_MATPLOTLIB = False
 
 try:
+    import networkx as nx
     HAS_NETWORKX = True
 except Exception:
     nx = None  # type: ignore

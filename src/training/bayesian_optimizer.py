@@ -5,6 +5,7 @@ import optuna
 
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 # src/training/bayesian_optimizer.py
 

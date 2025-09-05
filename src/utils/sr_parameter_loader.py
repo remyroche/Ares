@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from .utils.logger import system_logger
+import numpy as np
 
 
 class SRParameterLoader:

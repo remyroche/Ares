@@ -1,14 +1,9 @@
-
 from typing import List
 from typing import Dict
 from typing import Any
 import pandas as pd
 import numpy as np
-"""Matrix operation components for enhanced matrix operations step.
-
-This module contains specialized components for matrix computations,
-GPU acceleration, and optimization.
-"""
+'Matrix operation components for enhanced matrix operations step.\n\nThis module contains specialized components for matrix computations,\nGPU acceleration, and optimization.\n'
 import torch
 from src.utils.logger import system_logger
 
@@ -307,6 +302,6 @@ class MatrixOptimizer:
 
 class MatrixOptimizer:
     """Matrix optimizer class."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         pass

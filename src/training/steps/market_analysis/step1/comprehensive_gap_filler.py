@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 #!/usr/bin/env python3
 
 

@@ -1,26 +1,19 @@
-
 from functools import wraps
 from datetime import datetime
 from typing import Any, Callable
-
 import mlflow
-
-# Simple fallback for missing config
-ARES_VERSION = "1.0.0"
-
+from typing import Dict, List, Optional, Union, Any, Tuple
+ARES_VERSION = '1.0.0'
 from ..core.decorators.errors import handles_errors
 
-# Simple fallback functions for missing common_operations
-def format_datetime(dt=None):
+def format_datetime(dt: Any=None) -> str:
     if dt is None:
         dt = datetime.now()
     return dt.strftime('%Y-%m-%d %H:%M:%S')
 
-def get_current_datetime():
+def get_current_datetime() -> Any:
     return datetime.now()
-
 from .logger import system_logger
-
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.

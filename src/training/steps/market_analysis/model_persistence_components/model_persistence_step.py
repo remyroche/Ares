@@ -12,6 +12,7 @@ from .version_manager import VersionManager
 from .metadata_tracker import MetadataTracker
 from .model_registry import ModelRegistry
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 class ModelPersistenceStep(BaseStep):
     """Step 21: Model Persistence with comprehensive saving and versioning."""

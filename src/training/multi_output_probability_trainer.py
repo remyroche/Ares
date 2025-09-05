@@ -20,6 +20,8 @@ except ImportError:
     create_neural_model = None
 try:
     from catboost import CatBoostClassifier
+import numpy as np
+
     CATBOOST_AVAILABLE = True
 except ImportError:
     CatBoostClassifier = None

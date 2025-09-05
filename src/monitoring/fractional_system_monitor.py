@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from .utils.logger import get_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 class FractionalSystemMonitor:
     """Monitor performance of combined fractional system in production."""

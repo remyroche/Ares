@@ -1,6 +1,8 @@
 '\nProbability Calculation Framework\n\nThis module provides base probability calculation functions for different model types\nand market scenarios. It serves as the foundation for generating the 4 required\nprobability outputs for the Enhanced Prediction Service.\n'
 import logging
 from sklearn.metrics import accuracy_score
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 class BaseProbabilityCalculator:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Monitoring package for data collection pipeline."""
 
+from .performance_monitor import (
     MonitorStatus,
     MetricType,
     MetricData,

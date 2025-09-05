@@ -1,0 +1,16 @@
+{
+  "timestamp": "20250905_140214",
+  "analysis_type": "enhanced_auto_detection",
+  "project_root": "/workspace/src",
+  "file_pattern": "monitoring/surrogate_optimization_monitor.py",
+  "dry_run": true,
+  "files_analyzed": 1,
+  "files_with_missing_imports": 0,
+  "total_imports_to_add": 0,
+  "module_breakdown": {},
+  "results": {
+    "files_to_fix": 0,
+    "imports_to_add": 0,
+    "module_counts": {}
+  }
+}

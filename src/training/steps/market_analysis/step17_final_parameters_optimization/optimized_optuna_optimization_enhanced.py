@@ -27,6 +27,8 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 import optuna
+import numpy as np
+
 try:
     import xgboost as xgb
 except Exception:
@@ -384,6 +386,8 @@ class VectorizedOptunaOptimizer:
                 y = y[idx]
             try:
                 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
+from typing import Any
+
             except Exception as exc:
                 msg = 'scikit-learn is required for ML evaluation'
                 raise RuntimeError(msg) from exc

@@ -3,6 +3,7 @@
 
 import ast
 import re
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -94,6 +95,75 @@ def is_documentation_file(file_path: str) -> bool:
         return True
     
     return False
+
+
+def backup_file(file_path: Path) -> Optional[Path]:
+    """Create a backup of a file."""
+    try:
+        backup_path = file_path.with_suffix(file_path.suffix + '.backup')
+        shutil.copy2(file_path, backup_path)
+        return backup_path
+    except Exception:
+        return None
+
+
+def restore_file(backup_path: Path, original_path: Path) -> bool:
+    """Restore a file from backup."""
+    try:
+        shutil.copy2(backup_path, original_path)
+        return True
+    except Exception:
+        return False
+
+
+def find_unused_imports(file_path: Path) -> List[str]:
+    """Find unused imports in a Python file."""
+    try:
+        content = read_file_safely(file_path)
+        if not content:
+            return []
+        
+        tree = parse_ast_safely(content, file_path)
+        if not tree:
+            return []
+        
+        # Get all import statements
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    for alias in node.names:
+                        imports.append(f"{node.module}.{alias.name}")
+        
+        # Simple check for usage (this is a basic implementation)
+        unused = []
+        for imp in imports:
+            if imp not in content.replace('import', '').replace('from', ''):
+                unused.append(imp)
+        
+        return unused
+    except Exception:
+        return []
+
+
+def is_valid_python_file(file_path: Path) -> bool:
+    """Check if a file is a valid Python file."""
+    try:
+        if not file_path.suffix == '.py':
+            return False
+        
+        content = read_file_safely(file_path)
+        if not content:
+            return False
+        
+        # Try to parse the file
+        tree = parse_ast_safely(content, file_path)
+        return tree is not None
+    except Exception:
+        return False
 
 
 class FileUtils:

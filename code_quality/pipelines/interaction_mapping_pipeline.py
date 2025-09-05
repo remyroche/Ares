@@ -200,6 +200,9 @@ class InteractionMappingPipeline:
             with open(report_path, "w") as f:
                 json.dump(call_graph_report, f, indent=2)
             
+            # Generate interaction analysis data for the summary script
+            self._generate_interaction_analysis_data(results)
+            
             return {
                 "status": "completed",
                 "report_path": str(report_path),
@@ -210,6 +213,28 @@ class InteractionMappingPipeline:
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
+    
+    def _generate_interaction_analysis_data(self, results: Dict[str, Any]) -> None:
+        """Generate interaction analysis data file for the summary script."""
+        try:
+            # Create interaction analysis data structure
+            interaction_data = {
+                "summary": {
+                    "files_processed": results.get("total_functions", 0),
+                    "total_issues": len(results.get("issues", [])),
+                    "undefined_functions": len([i for i in results.get("issues", []) if i.get("type") == "undefined_function"]),
+                    "missing_await": len([i for i in results.get("issues", []) if i.get("type") == "missing_await"])
+                },
+                "issues": results.get("issues", [])
+            }
+            
+            # Save to the expected location
+            interaction_file = Path("/workspace/code_quality/interaction_analysis.json")
+            with open(interaction_file, "w") as f:
+                json.dump(interaction_data, f, indent=2)
+                
+        except Exception as e:
+            print(f"Warning: Could not generate interaction analysis data: {e}")
     
     def run_dependency_analysis(self) -> Dict[str, Any]:
         """Run dependency analysis."""

@@ -48,6 +48,7 @@ from reporters.error_reporter import ErrorReporter
 from reporters.trend_reporter import TrendReporter
 
 # Import core components
+from scripts.robust_async_fixer import RobustAsyncFixer
 from core.config import get_default_config
 
 # Import plugin system

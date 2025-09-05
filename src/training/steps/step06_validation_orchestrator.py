@@ -20,12 +20,36 @@ import pandas as pd
 import numpy as np
 
 # Import the validation framework
-from step06_enhanced_validation_framework import (
-    get_step06_validation_summary,
-    reset_step06_validation_tracking,
-    ValidationLevel,
-    FunctionStatus
-)
+try:
+    from step06_enhanced_validation_framework import (
+        get_step06_validation_summary,
+        reset_step06_validation_tracking,
+        ValidationLevel,
+        FunctionStatus
+    )
+    VALIDATION_FRAMEWORK_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Step06 validation framework not available: {e}")
+    VALIDATION_FRAMEWORK_AVAILABLE = False
+    
+    # Fallback functions
+    def get_step06_validation_summary():
+        return {"error": "Validation framework not available"}
+    
+    def reset_step06_validation_tracking():
+        pass
+    
+    class ValidationLevel:
+        BASIC = "basic"
+        DETAILED = "detailed"
+        COMPREHENSIVE = "comprehensive"
+    
+    class FunctionStatus:
+        PENDING = "pending"
+        IN_PROGRESS = "in_progress"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        TIMEOUT = "timeout"
 
 # Import step06 components
 try:

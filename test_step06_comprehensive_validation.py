@@ -20,7 +20,13 @@ import pandas as pd
 import numpy as np
 
 # Add the src directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(current_dir, 'src')
+sys.path.insert(0, src_dir)
+
+# Add the training steps directory
+training_steps_dir = os.path.join(src_dir, 'training', 'steps')
+sys.path.insert(0, training_steps_dir)
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +47,7 @@ async def test_step06_validation_framework():
     
     try:
         # Import the validation orchestrator
-        from training.steps.step06_validation_orchestrator import run_step06_comprehensive_validation
+        from step06_validation_orchestrator import run_step06_comprehensive_validation
         
         # Test configuration
         config = {
@@ -197,7 +203,7 @@ async def test_individual_components():
     try:
         # Test FeatureInteractionEngine
         logger.info("🔧 Testing FeatureInteractionEngine...")
-        from training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
+        from market_analysis.step06_feature_engineering import FeatureInteractionEngine
         
         config = {"step06_feature_engineering": {}}
         engine = FeatureInteractionEngine(config)
@@ -228,7 +234,7 @@ async def test_individual_components():
     try:
         # Test OptimizedTripleBarrierLabeling
         logger.info("🏷️ Testing OptimizedTripleBarrierLabeling...")
-        from training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+        from step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
         
         labeling = OptimizedTripleBarrierLabeling()
         test_data = generate_comprehensive_test_data()

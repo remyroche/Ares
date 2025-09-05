@@ -16,7 +16,9 @@ import sys
 import os
 
 # Add the steps directory to the path to import validation framework
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'training', 'steps'))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+steps_dir = os.path.join(current_dir, '..')
+sys.path.insert(0, steps_dir)
 
 try:
     from step06_enhanced_validation_framework import (
@@ -28,8 +30,10 @@ try:
         FunctionStatus
     )
     VALIDATION_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     # Fallback decorators if validation framework is not available
+    logger.warning(f"Step06 validation framework not available: {e}")
+    
     def step06_function_validator(*args, **kwargs):
         def decorator(func):
             return func
@@ -44,6 +48,18 @@ except ImportError:
     
     def get_step06_validation_summary():
         return {"error": "Validation framework not available"}
+    
+    class ValidationLevel:
+        BASIC = "basic"
+        DETAILED = "detailed"
+        COMPREHENSIVE = "comprehensive"
+    
+    class FunctionStatus:
+        PENDING = "pending"
+        IN_PROGRESS = "in_progress"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        TIMEOUT = "timeout"
     
     VALIDATION_AVAILABLE = False
 

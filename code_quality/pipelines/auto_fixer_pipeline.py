@@ -28,14 +28,14 @@ from fixers.sequential_fixer_fixed import SequentialFixer
 
 # Import script-based fixers (ONLY auto-fixing related)
 from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
-from scripts.enhanced_type_hints import TypeHintEnhancer
+from scripts.enhanced_type_hints import TypeHintEnhancer, EnhancedTypeHintAdder
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import ImportFixer
-# Note: bulk_syntax_cleanup, apply_all_fixes, and final_code_fixes were removed as redundant
-from scripts.fix_async_await import AsyncAwaitFixer
+from scripts.detect_circular_imports import ImportAnalyzer
+from scripts.fix_async_await import AsyncAwaitFixer, AsyncPatternFixer
 
 # Import comprehensive fixers (ONLY auto-fixing related)
-from fixers.import_fixers.comprehensive_import_fixer import ComprehensiveImportFixer
+# Note: Some comprehensive fixers may not be available
 
 # Import undefined names fixers (ONLY auto-fixing related)
 from fixers.undefined_names_fixers.fix_undefined_names import UndefinedNamesFixer
@@ -58,6 +58,8 @@ from plugins.yesqa_fixer import YesqaFixer
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class AutoFixerPipeline:
@@ -80,26 +82,27 @@ class AutoFixerPipeline:
         self.sequential_fixer = SequentialFixer(self.config)
         
         # Initialize script-based fixers
-        self.syntax_fixer = AdvancedSyntaxFixer()
+        self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))
         self.type_hint_enhancer = TypeHintEnhancer()
-        self.async_fixer = RobustAsyncFixer()
-        self.circular_import_detector = CircularImportDetector()
-        self.type_hint_adder = TypeHintAdder()
-        self.missing_import_fixer = MissingImportFixer()
-        self.bulk_cleanup = BulkSyntaxCleanup()
-        self.apply_all_fixes = ApplyAllFixes()
-        self.final_fixes = FinalCodeFixes()
-        self.async_await_fixer = AsyncAwaitFixer()
+        self.async_fixer = RobustAsyncFixer(str(self.project_root))
+        self.circular_import_detector = ImportAnalyzer(str(self.project_root))
+        self.type_hint_adder = EnhancedTypeHintAdder(str(self.project_root))
+        self.missing_import_fixer = ImportFixer(str(self.project_root))
+        self.async_await_fixer = AsyncAwaitFixer(set())  # Empty set for now
+        self.async_pattern_fixer = AsyncPatternFixer(str(self.project_root))
         
         # Initialize comprehensive fixers
-        self.comprehensive_import_fixer = ComprehensiveImportFixer()
-        self.auto_dead_code_fixer = AutoFixDeadCode()
+        # Note: Some comprehensive fixers may not be available
         
         # Initialize plugin system
         if self.enable_plugins:
-            self.plugin_registry = PluginRegistry()
-            self.plugin_manager = PluginManager(self.plugin_registry)
-            self._register_fixer_plugins()
+            try:
+                self.plugin_registry = PluginRegistry()
+                self.plugin_manager = PluginManager(self.plugin_registry)
+                self._register_fixer_plugins()
+            except Exception as e:
+                print(f"⚠️  Warning: Could not initialize plugin system: {e}")
+                self.enable_plugins = False
         
         # Setup reports directory
         self.reports_dir = self.project_root / "code_quality" / "reports" / "auto_fixer"
@@ -148,26 +151,24 @@ class AutoFixerPipeline:
         try:
             results = {}
             
-            # Comprehensive import fixes
-            comprehensive_results = self.comprehensive_import_fixer.fix_all_imports(str(self.project_root))
-            results["comprehensive_import_fixes"] = comprehensive_results
-            
             # Missing import fixes
-            missing_results = self.missing_import_fixer.fix_missing_imports(str(self.project_root))
+            missing_results = self.missing_import_fixer.fix_all_imports(dry_run=False)
             results["missing_import_fixes"] = missing_results
             
-            # Circular import detection and fixes
-            circular_results = self.circular_import_detector.detect_and_fix_circular_imports(str(self.project_root))
-            results["circular_import_fixes"] = circular_results
+            # Circular import detection
+            circular_report = self.circular_import_detector.generate_report()
+            results["circular_import_fixes"] = {
+                "circular_imports_found": circular_report.get("circular_imports", {}).get("count", 0),
+                "cycles": circular_report.get("circular_imports", {}).get("cycles", [])
+            }
             
             # Generate import fixes report
             import_fixes_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "import_fixes",
                 "project_root": str(self.project_root),
-                "comprehensive_fixes": comprehensive_results.get("fixes_applied", 0),
                 "missing_import_fixes": missing_results.get("fixes_applied", 0),
-                "circular_import_fixes": circular_results.get("fixes_applied", 0),
+                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
                 "results": results
             }
             
@@ -179,9 +180,8 @@ class AutoFixerPipeline:
             return {
                 "status": "completed",
                 "report_path": str(report_path),
-                "total_import_fixes": (comprehensive_results.get("fixes_applied", 0) + 
-                                     missing_results.get("fixes_applied", 0) + 
-                                     circular_results.get("fixes_applied", 0)),
+                "total_import_fixes": missing_results.get("fixes_applied", 0),
+                "circular_imports_found": results["circular_import_fixes"]["circular_imports_found"],
                 "results": results
             }
         except Exception as e:

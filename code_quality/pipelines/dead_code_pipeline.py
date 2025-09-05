@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import dead code analyzers (ONLY dead code-related)
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
@@ -66,11 +67,11 @@ class DeadCodePipeline:
             # Register dead code analysis plugins
             from plugins.autoflake_fixer import AutoflakeFixer
             from plugins.creosote_analyzer import CreosoteAnalyzer
-            from plugins.fawltydeps_analyzer import FawltydepsAnalyzer
+            from plugins.fawltydeps_analyzer import FawltyDepsAnalyzer
             
             self.plugin_registry.register_plugin(AutoflakeFixer)
             self.plugin_registry.register_plugin(CreosoteAnalyzer)
-            self.plugin_registry.register_plugin(FawltydepsAnalyzer)
+            self.plugin_registry.register_plugin(FawltyDepsAnalyzer)
             
             print(f"✅ Registered {len(self.plugin_registry.list_plugins())} dead code plugins")
         except ImportError as e:

@@ -522,7 +522,7 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["syntax", "structure", "patterns"],
+        choices=["syntax", "structure", "patterns", "all"],
         default="syntax",
         help="Type of import-free analysis to perform (default: syntax)"
     )

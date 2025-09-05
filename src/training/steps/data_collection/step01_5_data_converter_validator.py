@@ -1,30 +1,148 @@
-"""Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring."""
+"""Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring.
 
+This module provides comprehensive function call monitoring, detailed outcome reporting,
+and health check mechanisms for the Step 1.5 data converter validator.
+
+Features:
+- Function call entry/exit logging with parameter validation
+- Nested function call stack tracking with depth monitoring
+- Comprehensive performance monitoring (execution time, memory usage)
+- Detailed outcome reporting with success/failure metrics
+- Enhanced error handling with context preservation
+- Complete audit trail system for all function calls
+- Health check mechanisms for system and data integrity
+
+Dependencies:
+=============
+Standard Library:
+- asyncio: Asynchronous programming support
+- functools: Function utilities (wraps decorator)
+- glob: File path pattern matching
+- inspect: Runtime introspection of objects
+- json: JSON data handling
+- os: Operating system interface
+- sys: System-specific parameters and functions
+- threading: Thread-based parallelism
+- time: Time-related functions
+- traceback: Print or retrieve a stack traceback
+- datetime: Date and time handling
+- pathlib: Object-oriented filesystem paths
+- typing: Type hints support
+
+Third-Party:
+- pandas: Data manipulation and analysis
+- psutil: System and process utilities
+
+Local Dependencies:
+- .config: Configuration management
+- .utils.base_validator: Base validator class
+- .utils.common_operations: Common utility functions
+- .utils.logger: Logging system
+
+Installation Requirements:
+=========================
+pip install pandas psutil
+
+Optional Dependencies (for enhanced functionality):
+- numpy: Numerical computing (used by pandas)
+- pyarrow: Fast columnar data processing (for parquet files)
+
+Version Requirements:
+====================
+- Python >= 3.8
+- pandas >= 1.3.0
+- psutil >= 5.8.0
+"""
+
+# Standard library imports
 import asyncio
 import functools
 import glob
 import inspect
+import json
 import os
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Union
-import psutil
-import threading
-import pandas as pd
 
+# Third-party imports
+import pandas as pd
+import psutil
 
 # Add the project root to the Python path (only if not present)
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# Local imports
 from .config import CONFIG
 from .utils.base_validator import BaseValidator
 from .utils.common_operations import safe_json_load
 from .utils.logger import system_logger
+
+
+def check_dependencies():
+    """Check if all required dependencies are available."""
+    missing_deps = []
+    optional_deps = []
+    
+    # Check required dependencies
+    required_modules = {
+        'pandas': 'Data manipulation and analysis',
+        'psutil': 'System and process utilities'
+    }
+    
+    for module, description in required_modules.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing_deps.append(f"{module} ({description})")
+    
+    # Check optional dependencies
+    optional_modules = {
+        'numpy': 'Numerical computing (used by pandas)',
+        'pyarrow': 'Fast parquet file processing',
+        'fastparquet': 'Alternative parquet engine'
+    }
+    
+    for module, description in optional_modules.items():
+        try:
+            __import__(module)
+        except ImportError:
+            optional_deps.append(f"{module} ({description})")
+    
+    return missing_deps, optional_deps
+
+
+def validate_environment():
+    """Validate the environment and dependencies."""
+    missing_deps, optional_deps = check_dependencies()
+    
+    if missing_deps:
+        error_msg = "Missing required dependencies:\n" + "\n".join(f"  - {dep}" for dep in missing_deps)
+        error_msg += "\n\nInstall with: pip install pandas psutil"
+        raise ImportError(error_msg)
+    
+    if optional_deps:
+        import warnings
+        warning_msg = "Optional dependencies not available (functionality may be limited):\n"
+        warning_msg += "\n".join(f"  - {dep}" for dep in optional_deps)
+        warning_msg += "\n\nInstall with: pip install pyarrow fastparquet"
+        warnings.warn(warning_msg, UserWarning)
+    
+    return True
+
+
+# Validate environment on import
+try:
+    validate_environment()
+except ImportError as e:
+    print(f"❌ Environment validation failed: {e}")
+    raise
 
 
 class FunctionCallMonitor:
@@ -1714,9 +1832,6 @@ async def run_validator(
 
 
 if __name__ == "__main__":
-    import asyncio as _asyncio
-    import pandas as pd
-
     # Enhanced test function demonstrating comprehensive function call monitoring
     async def test_enhanced_validator() -> None:
         """Test the enhanced validator with comprehensive function call monitoring."""

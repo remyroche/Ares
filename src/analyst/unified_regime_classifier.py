@@ -27,15 +27,17 @@ try:
     from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 except ImportError:
     SRBreakoutPredictor = None
+import json
+import logging
+import time
+
 try:
     from src.utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger('system')
+
 try:
     from src.utils.warning_symbols import warning
-import json
-import time
-
 except ImportError:
 
     def warning(msg: Any) -> None:

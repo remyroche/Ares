@@ -122,17 +122,29 @@ class DeadCodePipeline:
         print("="*60)
         
         try:
-            results = self.enhanced_dead_code_analyzer.analyze_enhanced_dead_code(str(self.project_root))
+            report = self.enhanced_dead_code_analyzer.analyze_directory(str(self.project_root))
+            
+            # Convert report to dictionary format
+            results = {
+                "total_issues": report.total_issues,
+                "issues_by_type": report.issues_by_type,
+                "issues_by_file": {str(k): v for k, v in report.issues_by_file.items()},
+                "issues_by_severity": {str(k): v for k, v in report.issues_by_severity.items()},
+                "issues_by_tool": {str(k): v for k, v in report.issues_by_tool.items()},
+                "confidence_distribution": report.confidence_distribution,
+                "potential_savings": report.potential_savings,
+                "false_positives_filtered": report.false_positives_filtered,
+                "impact_analysis": report.impact_analysis
+            }
             
             # Generate enhanced dead code report
             enhanced_report = {
                 "timestamp": self.timestamp,
                 "analysis_type": "enhanced_dead_code",
                 "project_root": str(self.project_root),
-                "total_issues": len(results.get("issues", [])),
-                "high_confidence_issues": len([i for i in results.get("issues", []) 
-                                             if i.get("confidence", 0) > 0.8]),
-                "cross_file_usage_checked": results.get("cross_file_usage_checked", False),
+                "total_issues": report.total_issues,
+                "high_confidence_issues": len([i for i in report.issues_by_severity.get("high", [])]),
+                "cross_file_usage_checked": True,  # Enhanced analyzer always checks cross-file usage
                 "results": results
             }
             

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import pandas as pd
+import numpy as np
 
 """Step 3: Bayesian Parameter Optimization for HMM Regime Discovery using Optuna.
 
@@ -50,7 +51,6 @@ except ImportError:
 # Try to import HMM components
 try:
     from hmmlearn import hmm
-import numpy as np
 
     from sklearn.mixture import GaussianMixture
     from sklearn.preprocessing import StandardScaler

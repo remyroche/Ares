@@ -1,451 +1,313 @@
 #!/usr/bin/env python3
 """
-Unified Code Quality Pipeline - Standalone Version
+Unified Standalone Pipeline
 
-This is a standalone version that doesn't require importing other modules.
-It runs all code quality tools using subprocess calls.
+This pipeline can run completely independently without any external imports or dependencies.
+It provides basic code quality analysis using only Python standard library.
+
+Features:
+- No external dependencies required
+- Basic syntax validation
+- Simple import analysis
+- File structure analysis
+- Basic code metrics
+- Standalone execution
 """
 
+import os
+import sys
+import ast
 import json
-import subprocess
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Set
+from dataclasses import dataclass, asdict
 
 
-class UnifiedStandalonePipeline:
-    """Unified pipeline that runs all code quality tools without imports, with plugin support."""
+@dataclass
+class AnalysisResult:
+    """Container for analysis results."""
+    file_path: str
+    line_count: int
+    function_count: int
+    class_count: int
+    import_count: int
+    syntax_errors: List[str]
+    import_issues: List[str]
+    complexity_score: int
+    analysis_time: float
 
-    def __init__(self, project_root: str = "/workspace/src", enable_plugins: bool = True):
+
+class StandaloneCodeAnalyzer:
+    """Standalone code analyzer using only Python standard library."""
+    
+    def __init__(self, project_root: str):
         self.project_root = Path(project_root)
-        self.code_quality_dir = Path("/workspace/code_quality")
-        self.scripts_dir = self.code_quality_dir / "scripts"
-        self.reports_dir = self.code_quality_dir / "reports"
-        self.reports_dir.mkdir(exist_ok=True)
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.enable_plugins = enable_plugins
+        self.results = []
+        self.total_files = 0
+        self.total_errors = 0
         
-        # Initialize plugin system if enabled
-        if self.enable_plugins:
-            self._initialize_plugin_system()
-
-        # Define all tools and their commands
-        self.tools = {
-            "syntax_fixer": {
-                "script": "advanced_syntax_fixer.py",
-                "description": "Advanced Syntax Fixes",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "import_fixer": {
-                "script": "safe_import_fixer.py",
-                "description": "Import Fixes",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "async_fixer": {
-                "script": "robust_async_fixer.py",
-                "description": "Async/Await Fixes",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "type_hints": {
-                "script": "enhanced_type_hints.py",
-                "description": "Type Hint Enhancements",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "bulk_syntax_cleanup": {
-                "script": "bulk_syntax_cleanup.py",
-                "description": "Bulk Syntax Cleanup",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "apply_all_fixes": {
-                "script": "apply_all_fixes.py",
-                "description": "Apply All Fixes",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "fix_missing_imports": {
-                "script": "fix_missing_imports.py",
-                "description": "Fix Missing Imports",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "add_type_hints": {
-                "script": "add_type_hints.py",
-                "description": "Add Type Hints",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "master_code_quality": {
-                "script": "master_code_quality.py",
-                "description": "Master Code Quality",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "circular_imports": {
-                "script": "detect_circular_imports.py",
-                "description": "Circular Import Detection",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "function_validator": {
-                "script": "../function_validator.py",
-                "description": "Function Validation",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "comprehensive_review": {
-                "script": "../comprehensive_code_review.py",
-                "description": "Comprehensive Code Review",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "comprehensive_import_undefined_check": {
-                "script": "../simple_import_undefined_checker.py",
-                "description": "Comprehensive Import and Undefined Checker",
-                "args": ["--project-root", str(self.project_root)],
-            },
-            "enhanced_undefined_names_analysis": {
-                "script": "../analyzers/undefined_names_analyzer.py",
-                "description": "Enhanced Undefined Names Analyzer",
-                "args": ["--target", str(self.project_root)],
-            },
-        }
-
-        self.results = {}
-
-    def run_tool(self, tool_name: str, timeout: int = 300) -> dict[str, Any]:
-        """Run a single tool and capture results."""
-        if tool_name not in self.tools:
-            return {"error": f"Unknown tool: {tool_name}"}
-
-        tool_info = self.tools[tool_name]
-        script_path = self.scripts_dir / tool_info["script"]
-
-        print(f"\n{'='*60}")
-        print(f"Running: {tool_info['description']}")
-        print(f"{'='*60}")
-
-        cmd = ["python3", str(script_path)] + tool_info.get("args", [])
-
+    def analyze_file(self, file_path: Path) -> AnalysisResult:
+        """Analyze a single Python file."""
         start_time = time.time()
+        
         try:
-            result = subprocess.run(
-                cmd,
-                check=False, capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=str(self.code_quality_dir),
-            )
-
-            execution_time = time.time() - start_time
-
-            # Try to find and read the generated report
-            report_data = self._find_latest_report(tool_name)
-
-            return {
-                "tool": tool_name,
-                "description": tool_info["description"],
-                "success": result.returncode == 0,
-                "return_code": result.returncode,
-                "execution_time": execution_time,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "report_data": report_data,
-            }
-
-        except subprocess.TimeoutExpired:
-            return {
-                "tool": tool_name,
-                "description": tool_info["description"],
-                "success": False,
-                "error": f"Timeout after {timeout} seconds",
-                "execution_time": timeout,
-            }
-        except Exception as e:
-            return {
-                "tool": tool_name,
-                "description": tool_info["description"],
-                "success": False,
-                "error": str(e),
-                "execution_time": time.time() - start_time,
-            }
-
-    def _initialize_plugin_system(self):
-        """Initialize the plugin system for standalone execution."""
-        try:
-            # Add the code_quality directory to Python path for plugin imports
-            import sys
-            sys.path.insert(0, str(self.code_quality_dir))
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
             
-            # Import plugin system components
-            from plugins.plugin_registry import PluginRegistry
-            from plugins.plugin_manager import PluginManager
+            # Basic metrics
+            lines = content.split('\n')
+            line_count = len(lines)
             
-            # Initialize plugin system
-            self.plugin_registry = PluginRegistry()
-            self.plugin_manager = PluginManager(self.plugin_registry)
-            
-            # Register available plugins
-            self._register_available_plugins()
-            
-            print("✓ Plugin system initialized successfully")
-        except Exception as e:
-            print(f"⚠ Warning: Could not initialize plugin system: {e}")
-            self.enable_plugins = False
-
-    def _register_available_plugins(self):
-        """Register available plugins for standalone execution."""
-        try:
-            # Register production plugins
-            from plugins.production.syntax_fixer import SyntaxFixerPlugin
-            from plugins.production.import_fixer import ImportFixerPlugin
-            from plugins.production.dead_code_fixer import DeadCodeFixerPlugin
-            from plugins.production.linter_runner import LinterRunnerPlugin
-            from plugins.production.security_scanner import SecurityScannerPlugin
-            
-            # Register code quality plugins
-            from plugins.black_fixer import BlackFixer
-            from plugins.isort_fixer import IsortFixer
-            from plugins.autopep8_fixer import Autopep8Fixer
-            from plugins.autoflake_fixer import AutoflakeFixer
-            from plugins.flake8_analyzer import Flake8Analyzer
-            from plugins.ruff_analyzer import RuffAnalyzer
-            from plugins.ruff_fixer import RuffFixer
-            
-            # Register plugins
-            self.plugin_registry.register_plugin("syntax_fixer", SyntaxFixerPlugin())
-            self.plugin_registry.register_plugin("import_fixer", ImportFixerPlugin())
-            self.plugin_registry.register_plugin("dead_code_fixer", DeadCodeFixerPlugin())
-            self.plugin_registry.register_plugin("linter_runner", LinterRunnerPlugin())
-            self.plugin_registry.register_plugin("security_scanner", SecurityScannerPlugin())
-            self.plugin_registry.register_plugin("black_fixer", BlackFixer())
-            self.plugin_registry.register_plugin("isort_fixer", IsortFixer())
-            self.plugin_registry.register_plugin("autopep8_fixer", Autopep8Fixer())
-            self.plugin_registry.register_plugin("autoflake_fixer", AutoflakeFixer())
-            self.plugin_registry.register_plugin("flake8_analyzer", Flake8Analyzer())
-            self.plugin_registry.register_plugin("ruff_analyzer", RuffAnalyzer())
-            self.plugin_registry.register_plugin("ruff_fixer", RuffFixer())
-            
-            print(f"✓ Registered {len(self.plugin_registry.list_plugins())} plugins")
-        except ImportError as e:
-            print(f"⚠ Warning: Could not register some plugins: {e}")
-
-    def run_plugin_analysis(self) -> dict[str, Any]:
-        """Run plugin-based analysis if plugins are enabled."""
-        if not self.enable_plugins:
-            return {"status": "disabled", "message": "Plugins are disabled"}
-
-        print("\n" + "="*60)
-        print("Running Plugin Analysis")
-        print("="*60)
-
-        start_time = time.time()
-        results = {}
-
-        # Run each registered plugin
-        for plugin_name in self.plugin_registry.list_plugins():
-            print(f"Running plugin: {plugin_name}")
+            # Parse AST
             try:
-                # Create plugin context
-                from plugins.base_plugin import PluginContext
-                context = PluginContext(
-                    project_root=str(self.project_root),
-                    config={},
-                    files=list(self.project_root.rglob("*.py"))
+                tree = ast.parse(content, filename=str(file_path))
+            except SyntaxError as e:
+                return AnalysisResult(
+                    file_path=str(file_path),
+                    line_count=line_count,
+                    function_count=0,
+                    class_count=0,
+                    import_count=0,
+                    syntax_errors=[f"Syntax error at line {e.lineno}: {e.msg}"],
+                    import_issues=[],
+                    complexity_score=0,
+                    analysis_time=time.time() - start_time
                 )
-                
-                # Execute plugin
-                plugin_result = self.plugin_manager.execute_plugin(plugin_name, context)
-                results[plugin_name] = {
-                    "status": "success",
-                    "result": plugin_result.to_dict()
-                }
-            except Exception as e:
-                results[plugin_name] = {
-                    "status": "error",
-                    "error": str(e)
-                }
-
-        results["execution_time"] = time.time() - start_time
-
-        # Save individual report
-        report_path = self.reports_dir / f"plugin_analysis_{self.timestamp}.json"
-        with open(report_path, "w") as f:
-            json.dump(results, f, indent=2)
-
-        return results
-
-    def _find_latest_report(self, tool_name: str) -> dict | None:
-        """Find and read the latest report for a tool."""
-        # Map tool names to report patterns
-        report_patterns = {
-            "syntax_fixer": "syntax_fixes_*.json",
-            "import_fixer": "import_fixes_*.json",
-            "async_fixer": "async_fixes_*.json",
-            "type_hints": "type_hints_*.json",
-            "circular_imports": "circular_imports_*.json",
-            "function_validator": "function_validation_*.json",
-            "comprehensive_review": "comprehensive_review_*.json",
-            "comprehensive_import_undefined_check": "import_undefined_check_report_*.json",
-            "enhanced_undefined_names_analysis": "enhanced_undefined_names_analysis_*.json",
-        }
-
-        pattern = report_patterns.get(tool_name)
-        if not pattern:
-            return None
-
-        # Find matching files
-        matching_files = list(self.reports_dir.glob(pattern))
-        if not matching_files:
-            return None
-
-        # Get the most recent file
-        latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
-
-        try:
-            with open(latest_file) as f:
-                return json.load(f)
-        except Exception:
-            return None
-
-    def run_category(self, category: str) -> dict[str, Any]:
-        """Run all tools in a specific category."""
-        categories = {
-            "syntax_imports": ["syntax_fixer", "import_fixer", "circular_imports", "comprehensive_import_undefined_check", "enhanced_undefined_names_analysis"],
-            "async_types": ["async_fixer", "type_hints"],
-            "consolidated_fixes": ["bulk_syntax_cleanup", "apply_all_fixes", "fix_missing_imports", "add_type_hints", "master_code_quality"],
-            "analysis": ["function_validator", "comprehensive_review"],
-        }
-
-        if category not in categories:
-            return {"error": f"Unknown category: {category}"}
-
-        print(f"\n{'='*80}")
-        print(f"Running {category.upper()} Category")
-        print(f"{'='*80}")
-
-        category_results = {}
-        for tool in categories[category]:
-            category_results[tool] = self.run_tool(tool)
-
-        return category_results
-
-    def run_all(self, categories: list[str] | None = None) -> dict[str, Any]:
-        """Run all tools or specific categories."""
-        print(f"\n{'='*80}")
-        print("UNIFIED CODE QUALITY PIPELINE - STANDALONE")
-        print(f"{'='*80}")
+            
+            # Count functions and classes
+            function_count = len([node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)])
+            class_count = len([node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)])
+            
+            # Analyze imports
+            imports = []
+            import_issues = []
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.append(alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    for alias in node.names:
+                        imports.append(f"{module}.{alias.name}")
+            
+            # Check for common import issues
+            if len(imports) > 20:
+                import_issues.append("Too many imports (>20)")
+            
+            # Simple complexity calculation
+            complexity_score = function_count + class_count + len([node for node in ast.walk(tree) if isinstance(node, (ast.If, ast.For, ast.While, ast.Try))])
+            
+            return AnalysisResult(
+                file_path=str(file_path),
+                line_count=line_count,
+                function_count=function_count,
+                class_count=class_count,
+                import_count=len(imports),
+                syntax_errors=[],
+                import_issues=import_issues,
+                complexity_score=complexity_score,
+                analysis_time=time.time() - start_time
+            )
+            
+        except Exception as e:
+            return AnalysisResult(
+                file_path=str(file_path),
+                line_count=0,
+                function_count=0,
+                class_count=0,
+                import_count=0,
+                syntax_errors=[f"Error reading file: {str(e)}"],
+                import_issues=[],
+                complexity_score=0,
+                analysis_time=time.time() - start_time
+            )
+    
+    def find_python_files(self) -> List[Path]:
+        """Find all Python files in the project."""
+        python_files = []
+        
+        for root, dirs, files in os.walk(self.project_root):
+            # Skip common directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', 'venv', 'env']]
+            
+            for file in files:
+                if file.endswith('.py') and not file.startswith('.'):
+                    python_files.append(Path(root) / file)
+        
+        return python_files
+    
+    def analyze_project(self) -> Dict[str, Any]:
+        """Analyze the entire project."""
+        print("🔍 Standalone Code Quality Analysis")
+        print("=" * 50)
         print(f"Project root: {self.project_root}")
-        print(f"Timestamp: {self.timestamp}")
-
-        all_categories = ["syntax_imports", "async_types", "consolidated_fixes", "analysis"]
-        categories_to_run = categories or all_categories
-
-        # Run each category
-        for category in categories_to_run:
-            self.results[category] = self.run_category(category)
-
-        # Run plugin analysis if enabled
-        if self.enable_plugins:
-            self.results["plugin_analysis"] = self.run_plugin_analysis()
-
-        # Generate summary
-        summary = self._generate_summary()
-        self.results["summary"] = summary
-
-        # Save comprehensive report
-        report_path = self.reports_dir / f"unified_pipeline_{self.timestamp}.json"
-        with open(report_path, "w") as f:
-            json.dump(self.results, f, indent=2)
-
-        # Print summary
-        self._print_summary(summary)
-
-        return self.results
-
-    def _generate_summary(self) -> dict[str, Any]:
-        """Generate summary of all results."""
+        print()
+        
+        # Find all Python files
+        python_files = self.find_python_files()
+        self.total_files = len(python_files)
+        
+        print(f"📁 Found {self.total_files} Python files")
+        print()
+        
+        # Analyze each file
+        for i, file_path in enumerate(python_files, 1):
+            print(f"📄 Analyzing {i}/{self.total_files}: {file_path.relative_to(self.project_root)}")
+            
+            result = self.analyze_file(file_path)
+            self.results.append(result)
+            
+            # Count errors
+            self.total_errors += len(result.syntax_errors) + len(result.import_issues)
+            
+            if result.syntax_errors or result.import_issues:
+                print(f"   ⚠️  Found {len(result.syntax_errors)} syntax errors, {len(result.import_issues)} import issues")
+            else:
+                print(f"   ✅ OK ({result.line_count} lines, {result.function_count} functions, {result.class_count} classes)")
+        
+        return self.generate_summary()
+    
+    def generate_summary(self) -> Dict[str, Any]:
+        """Generate analysis summary."""
+        if not self.results:
+            return {"error": "No files analyzed"}
+        
+        total_lines = sum(r.line_count for r in self.results)
+        total_functions = sum(r.function_count for r in self.results)
+        total_classes = sum(r.class_count for r in self.results)
+        total_imports = sum(r.import_count for r in self.results)
+        total_syntax_errors = sum(len(r.syntax_errors) for r in self.results)
+        total_import_issues = sum(len(r.import_issues) for r in self.results)
+        avg_complexity = sum(r.complexity_score for r in self.results) / len(self.results)
+        total_analysis_time = sum(r.analysis_time for r in self.results)
+        
         summary = {
-            "timestamp": self.timestamp,
             "project_root": str(self.project_root),
-            "categories_run": list(self.results.keys()),
-            "tools_summary": {},
-            "total_execution_time": 0,
-            "successful_tools": 0,
-            "failed_tools": 0,
+            "analysis_timestamp": datetime.now().isoformat(),
+            "total_files": self.total_files,
+            "total_lines": total_lines,
+            "total_functions": total_functions,
+            "total_classes": total_classes,
+            "total_imports": total_imports,
+            "total_syntax_errors": total_syntax_errors,
+            "total_import_issues": total_import_issues,
+            "total_issues": total_syntax_errors + total_import_issues,
+            "average_complexity": round(avg_complexity, 2),
+            "total_analysis_time": round(total_analysis_time, 2),
+            "files_with_issues": len([r for r in self.results if r.syntax_errors or r.import_issues]),
+            "files_clean": len([r for r in self.results if not r.syntax_errors and not r.import_issues])
         }
-
-        for category, tools in self.results.items():
-            if category == "summary":
-                continue
-
-            for tool_name, result in tools.items():
-                summary["tools_summary"][tool_name] = {
-                    "success": result.get("success", False),
-                    "execution_time": result.get("execution_time", 0),
-                    "error": result.get("error"),
-                }
-
-                summary["total_execution_time"] += result.get("execution_time", 0)
-                if result.get("success"):
-                    summary["successful_tools"] += 1
-                else:
-                    summary["failed_tools"] += 1
-
+        
         return summary
-
-    def _print_summary(self, summary: dict[str, Any]):
-        """Print a formatted summary."""
-        print(f"\n{'='*80}")
-        print("PIPELINE SUMMARY")
-        print(f"{'='*80}")
-        print(f"Total execution time: {summary['total_execution_time']:.2f} seconds")
-        print(f"Successful tools: {summary['successful_tools']}")
-        print(f"Failed tools: {summary['failed_tools']}")
-        print("\nTool Results:")
-
-        for tool, info in summary["tools_summary"].items():
-            status = "✓" if info["success"] else "✗"
-            time_str = f"{info['execution_time']:.2f}s"
-            error_str = f" - {info['error']}" if info.get("error") else ""
-            print(f"  {status} {tool}: {time_str}{error_str}")
-
-        print(f"\nReports saved to: {self.reports_dir}")
+    
+    def print_summary(self, summary: Dict[str, Any]):
+        """Print analysis summary."""
+        print("\n" + "=" * 50)
+        print("📊 ANALYSIS SUMMARY")
+        print("=" * 50)
+        print(f"Project: {summary['project_root']}")
+        print(f"Analysis time: {summary['analysis_timestamp']}")
+        print()
+        print(f"📁 Files analyzed: {summary['total_files']}")
+        print(f"📝 Total lines: {summary['total_lines']:,}")
+        print(f"🔧 Functions: {summary['total_functions']}")
+        print(f"🏗️  Classes: {summary['total_classes']}")
+        print(f"📦 Imports: {summary['total_imports']}")
+        print()
+        print(f"❌ Syntax errors: {summary['total_syntax_errors']}")
+        print(f"⚠️  Import issues: {summary['total_import_issues']}")
+        print(f"🚨 Total issues: {summary['total_issues']}")
+        print()
+        print(f"📈 Average complexity: {summary['average_complexity']}")
+        print(f"⏱️  Analysis time: {summary['total_analysis_time']:.2f}s")
+        print()
+        print(f"✅ Clean files: {summary['files_clean']}")
+        print(f"⚠️  Files with issues: {summary['files_with_issues']}")
+        
+        if summary['total_issues'] > 0:
+            print(f"\n🎯 Issues per file: {summary['total_issues'] / summary['total_files']:.2f}")
+        
+        print("\n" + "=" * 50)
+    
+    def save_results(self, output_file: Optional[str] = None) -> str:
+        """Save results to JSON file."""
+        if not output_file:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"standalone_analysis_{timestamp}.json"
+        
+        # Convert results to serializable format
+        serializable_results = {
+            "summary": self.generate_summary(),
+            "files": [asdict(result) for result in self.results]
+        }
+        
+        with open(output_file, 'w') as f:
+            json.dump(serializable_results, f, indent=2)
+        
+        return output_file
 
 
 def main():
-    """Main entry point."""
+    """Main entry point for standalone pipeline."""
     import argparse
-
+    
     parser = argparse.ArgumentParser(
-        description="Run unified code quality pipeline (standalone version)",
+        description="Unified Standalone Pipeline - No external dependencies required",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Analyze current directory
+  python unified_standalone_pipeline.py
+  
+  # Analyze specific directory
+  python unified_standalone_pipeline.py --project-root /path/to/project
+  
+  # Save results to file
+  python unified_standalone_pipeline.py --output results.json
+  
+  # Verbose output
+  python unified_standalone_pipeline.py --verbose
+        """
     )
-    parser.add_argument("--project-root", default="/workspace/src",
-                        help="Project root directory")
-    parser.add_argument("--categories", nargs="+",
-                        choices=["syntax_imports", "async_types", "consolidated_fixes", "analysis"],
-                        help="Specific categories to run")
-    parser.add_argument("--tool", choices=[
-                        "syntax_fixer", "import_fixer", "async_fixer",
-                        "type_hints", "circular_imports", "function_validator",
-                        "comprehensive_review", "comprehensive_import_undefined_check",
-                        "bulk_syntax_cleanup", "apply_all_fixes", "fix_missing_imports",
-                        "add_type_hints", "master_code_quality",
-                        ], help="Run a specific tool only")
-    parser.add_argument("--timeout", type=int, default=300,
-                        help="Timeout for each tool in seconds")
-    parser.add_argument("--no-plugins", action="store_true",
-                        help="Disable plugin system")
-
+    
+    parser.add_argument("--project-root", "-p", 
+                       default=".",
+                       help="Project root directory to analyze (default: current directory)")
+    parser.add_argument("--output", "-o",
+                       help="Output file for results (JSON format)")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                       help="Verbose output")
+    
     args = parser.parse_args()
-
-    pipeline = UnifiedStandalonePipeline(
-        project_root=args.project_root,
-        enable_plugins=not args.no_plugins
-    )
-
-    if args.tool:
-        # Run single tool
-        result = pipeline.run_tool(args.tool, args.timeout)
-        print(json.dumps(result, indent=2))
+    
+    # Initialize analyzer
+    analyzer = StandaloneCodeAnalyzer(args.project_root)
+    
+    # Run analysis
+    summary = analyzer.analyze_project()
+    
+    # Print summary
+    analyzer.print_summary(summary)
+    
+    # Save results
+    if args.output:
+        output_file = analyzer.save_results(args.output)
+        print(f"\n📄 Results saved to: {output_file}")
+    elif args.verbose:
+        output_file = analyzer.save_results()
+        print(f"\n📄 Results saved to: {output_file}")
+    
+    # Exit with error code if issues found
+    if summary.get('total_issues', 0) > 0:
+        print(f"\n⚠️  Found {summary['total_issues']} issues. Consider running full analysis pipeline.")
+        sys.exit(1)
     else:
-        # Run categories or all
-        pipeline.run_all(args.categories)
+        print("\n✅ No issues found!")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()

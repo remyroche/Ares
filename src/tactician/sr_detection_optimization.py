@@ -353,7 +353,7 @@ class SRDetectionOptimizer:
                 raise SROptimizationError(f'Invalid target timeframe: {target_timeframe}')
             
             # Memory monitoring
-            self.await _monitor_memory_usage()
+            await self._monitor_memory_usage()
             
             # Step 1: Computational optimization for efficiency
             if self.computational_optimizer:
@@ -917,7 +917,7 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.warning(f"Cache cleanup failed: {e}")
     
-    def _process_data_in_chunks(self, data: pd.DataFrame, chunk_size: Optional[int] = None) -> List[pd.DataFrame]:
+    async def _process_data_in_chunks(self, data: pd.DataFrame, chunk_size: Optional[int] = None) -> List[pd.DataFrame]:
         """Process data in chunks to manage memory usage."""
         try:
             chunk_size = chunk_size or self._chunk_size
@@ -928,7 +928,7 @@ class SRDetectionOptimizer:
                 chunks.append(chunk)
                 
                 # Monitor memory after each chunk
-                self.await _monitor_memory_usage()
+                await self._monitor_memory_usage()
             
             return chunks
             

@@ -164,4 +164,4 @@ if __name__ == "__main__":
     print("Example: python run_pipeline_with_step08.py BTCUSDT binance step06_feature_engineering")
     print()
     
-    asyncio.run(await main())
+    asyncio.run(main())

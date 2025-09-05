@@ -697,4 +697,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run all pipelines
-    asyncio.run(await main())
+    asyncio.run(main())

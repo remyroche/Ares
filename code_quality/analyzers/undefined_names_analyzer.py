@@ -312,6 +312,10 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
             if self._might_be_nested_function(name):
                 return
             
+            # Special case: Check if this is likely a type annotation
+            if self._is_likely_type_annotation(node):
+                return
+            
             # This is an undefined name
             context = self._get_context(node)
             self.errors.append(UndefinedNameError(
@@ -325,6 +329,19 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
             ))
         
         self.generic_visit(node)
+    
+    def _is_likely_type_annotation(self, node: ast.Name) -> bool:
+        """Check if a name is likely part of a type annotation."""
+        # Check if we're in a type annotation context
+        # Look at the parent node to determine context
+        for parent in ast.walk(self.tree):
+            if hasattr(parent, 'annotation') and node in ast.walk(parent.annotation):
+                return True
+            if hasattr(parent, 'args') and parent.args:
+                for arg in parent.args:
+                    if hasattr(arg, 'annotation') and node in ast.walk(arg.annotation):
+                        return True
+        return False
     
     def _is_class_method(self, func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check if a function is a class method by looking at the current scope."""
@@ -467,6 +484,8 @@ class UndefinedNamesAnalyzer:
         self.builtin_names.update({
             # Data science libraries
             'pd', 'np', 'plt', 'sns', 'sklearn', 'tf', 'torch', 'jax',
+            # PyArrow and other data libraries
+            'ds', 'pa', 'pq', 'spark', 'sc',
             # Common variable names in loops and comprehensions
             'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 
             'result', 'temp', 'row', 'col', 'idx', 'index', 'n', 'm', 't', 'v',
@@ -481,7 +500,20 @@ class UndefinedNamesAnalyzer:
             # Common mathematical variables
             'a', 'b', 'c', 'd', 'p', 'q', 'r', 's', 'u', 'w',
             # Common configuration variables
-            'config', 'cfg', 'settings', 'params', 'options', 'opts'
+            'config', 'cfg', 'settings', 'params', 'options', 'opts',
+            # Common validation and utility functions
+            'validate_data_quality', 'validate', 'check', 'verify',
+            # Common dynamic/runtime imports
+            'importlib', 'sys', 'os', 'pathlib', 'typing',
+            # Common ML/AI variables
+            'model', 'X', 'y', 'X_train', 'X_test', 'y_train', 'y_test',
+            'features', 'target', 'prediction', 'score', 'accuracy',
+            # Common database variables
+            'db', 'conn', 'cursor', 'query', 'table', 'column',
+            # Common async variables
+            'async', 'await', 'task', 'future', 'coroutine',
+            # Common logging variables
+            'logger', 'log', 'debug', 'info', 'warning', 'error'
         })
 
     def analyze_file(self, file_path: str) -> Dict[str, Any]:

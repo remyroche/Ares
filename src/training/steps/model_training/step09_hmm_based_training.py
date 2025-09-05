@@ -8,8 +8,8 @@ method and profit-based feature engineering, with regime-specific optimization.
 import os
 import warnings
 
-from ....core.decorators import handles_errors
-from ....utils.common_operations import (
+from src.core.decorators import handles_errors
+from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_read_parquet, safe_to_parquet, safe_copy
 )
@@ -29,7 +29,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 
 # Multi-output training will be imported when needed
-from ....utils.performance_monitor import (
+from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+    ProfitBasedFeatureEngineering
+)
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.pipeline_standards import (
     PerformanceLevel,
     ValidationLevel,
     adaptive_resource_allocation,
@@ -41,8 +45,8 @@ from ....utils.performance_monitor import (
     pipeline_checkpoint,
     validate_feature_engineering_with_lookahead_bias_detection
 )
-from ....utils.logger import system_logger
-from ....utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
+from src.utils.common_operations import ensure_directory, safe_json_dump
 
 # Suppress warnings
 warnings.filterwarnings("ignore")

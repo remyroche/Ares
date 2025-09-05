@@ -4,6 +4,7 @@ Launch Enhanced Monitoring Dashboard
 A launcher script for the enhanced monitoring dashboard GUI.
 """
 import sys
+import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 from typing import Dict, Any

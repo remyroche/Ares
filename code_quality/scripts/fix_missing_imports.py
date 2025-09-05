@@ -244,6 +244,65 @@ class ImportFixer:
         self.warnings_patterns = {
             'filterwarnings', 'warn', 'warnings'
         }
+        
+        # Additional pattern sets for comprehensive coverage
+        self.datetime_patterns = {
+            'now', 'today', 'timedelta', 'datetime', 'date', 'time', 'utcnow', 'fromtimestamp'
+        }
+        
+        self.time_patterns = {
+            'time', 'sleep', 'monotonic', 'perf_counter', 'process_time'
+        }
+        
+        self.uuid_patterns = {
+            'uuid4', 'uuid1', 'uuid3', 'uuid5', 'uuid'
+        }
+        
+        self.csv_patterns = {
+            'QUOTE_NONNUMERIC', 'QUOTE_ALL', 'QUOTE_MINIMAL', 'QUOTE_NONE',
+            'writer', 'reader', 'DictWriter', 'DictReader'
+        }
+        
+        self.json_patterns = {
+            'dumps', 'loads', 'dump', 'load'
+        }
+        
+        self.logging_patterns = {
+            'getLogger', 'basicConfig', 'info', 'debug', 'warning', 'error', 'critical'
+        }
+        
+        self.typing_patterns = {
+            'List', 'Dict', 'Set', 'Tuple', 'Optional', 'Union', 'Any', 'Callable',
+            'Type', 'Generic', 'TypeVar', 'Protocol', 'Literal', 'Final'
+        }
+        
+        self.collections_patterns = {
+            'defaultdict', 'Counter', 'deque', 'OrderedDict', 'ChainMap', 'namedtuple'
+        }
+        
+        self.copy_patterns = {
+            'deepcopy', 'copy'
+        }
+        
+        self.os_patterns = {
+            'path', 'environ', 'getenv', 'listdir', 'makedirs', 'remove', 'rename'
+        }
+        
+        self.sys_patterns = {
+            'argv', 'exit', 'path', 'version', 'platform', 'stdout', 'stderr'
+        }
+        
+        self.re_patterns = {
+            'match', 'search', 'findall', 'sub', 'compile', 'split'
+        }
+        
+        self.math_patterns = {
+            'sqrt', 'sin', 'cos', 'tan', 'log', 'exp', 'pi', 'e', 'ceil', 'floor'
+        }
+        
+        self.random_patterns = {
+            'random', 'randint', 'choice', 'shuffle', 'uniform', 'gauss'
+        }
 
     def load_issues(self, json_file: str):
         """Load issues from the validation report."""
@@ -318,8 +377,60 @@ class ImportFixer:
                     # Check for warnings functions
                     elif func_name in self.warnings_patterns:
                         missing_imports.add(('warnings', None))
+                    
+                    # Check for datetime functions
+                    elif func_name in self.datetime_patterns:
+                        missing_imports.add(('datetime', None))
+                    
+                    # Check for time functions
+                    elif func_name in self.time_patterns:
+                        missing_imports.add(('time', None))
+                    
+                    # Check for uuid functions
+                    elif func_name in self.uuid_patterns:
+                        missing_imports.add(('uuid', None))
+                    
+                    # Check for json functions
+                    elif func_name in self.json_patterns:
+                        missing_imports.add(('json', None))
+                    
+                    # Check for logging functions
+                    elif func_name in self.logging_patterns:
+                        missing_imports.add(('logging', None))
+                    
+                    # Check for typing functions
+                    elif func_name in self.typing_patterns:
+                        missing_imports.add(('typing', None))
+                    
+                    # Check for collections functions
+                    elif func_name in self.collections_patterns:
+                        missing_imports.add(('collections', None))
+                    
+                    # Check for copy functions
+                    elif func_name in self.copy_patterns:
+                        missing_imports.add(('copy', None))
+                    
+                    # Check for os functions
+                    elif func_name in self.os_patterns:
+                        missing_imports.add(('os', None))
+                    
+                    # Check for sys functions
+                    elif func_name in self.sys_patterns:
+                        missing_imports.add(('sys', None))
+                    
+                    # Check for re functions
+                    elif func_name in self.re_patterns:
+                        missing_imports.add(('re', None))
+                    
+                    # Check for math functions
+                    elif func_name in self.math_patterns:
+                        missing_imports.add(('math', None))
+                    
+                    # Check for random functions
+                    elif func_name in self.random_patterns:
+                        missing_imports.add(('random', None))
                 
-                # Handle attribute access like np.array, pd.DataFrame
+                # Handle attribute access like np.array, pd.DataFrame, datetime.now
                 elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                     if isinstance(node.func.value, ast.Name):
                         module_name = node.func.value.id
@@ -332,8 +443,52 @@ class ImportFixer:
                         # Check for pandas patterns
                         elif module_name == 'pd' and func_name in self.pandas_patterns:
                             missing_imports.add(('pandas', 'pd'))
+                        
+                        # Check for datetime patterns
+                        elif module_name == 'datetime' and func_name in self.datetime_patterns:
+                            missing_imports.add(('datetime', None))
+                        
+                        # Check for time patterns
+                        elif module_name == 'time' and func_name in self.time_patterns:
+                            missing_imports.add(('time', None))
+                        
+                        # Check for uuid patterns
+                        elif module_name == 'uuid' and func_name in self.uuid_patterns:
+                            missing_imports.add(('uuid', None))
+                        
+                        # Check for csv patterns
+                        elif module_name == 'csv' and func_name in self.csv_patterns:
+                            missing_imports.add(('csv', None))
+                        
+                        # Check for json patterns
+                        elif module_name == 'json' and func_name in self.json_patterns:
+                            missing_imports.add(('json', None))
+                        
+                        # Check for logging patterns
+                        elif module_name == 'logging' and func_name in self.logging_patterns:
+                            missing_imports.add(('logging', None))
+                        
+                        # Check for os patterns
+                        elif module_name == 'os' and func_name in self.os_patterns:
+                            missing_imports.add(('os', None))
+                        
+                        # Check for sys patterns
+                        elif module_name == 'sys' and func_name in self.sys_patterns:
+                            missing_imports.add(('sys', None))
+                        
+                        # Check for re patterns
+                        elif module_name == 're' and func_name in self.re_patterns:
+                            missing_imports.add(('re', None))
+                        
+                        # Check for math patterns
+                        elif module_name == 'math' and func_name in self.math_patterns:
+                            missing_imports.add(('math', None))
+                        
+                        # Check for random patterns
+                        elif module_name == 'random' and func_name in self.random_patterns:
+                            missing_imports.add(('random', None))
                 
-                # Handle attribute access without calls like np.inf
+                # Handle attribute access without calls like np.inf, csv.QUOTE_NONNUMERIC
                 elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                     module_name = node.value.id
                     attr_name = node.attr
@@ -341,6 +496,22 @@ class ImportFixer:
                     # Check for numpy constants
                     if module_name == 'np' and attr_name in {'inf', 'nan', 'pi', 'e'}:
                         missing_imports.add(('numpy', 'np'))
+                    
+                    # Check for csv constants
+                    elif module_name == 'csv' and attr_name in {'QUOTE_NONNUMERIC', 'QUOTE_ALL', 'QUOTE_MINIMAL', 'QUOTE_NONE'}:
+                        missing_imports.add(('csv', None))
+                    
+                    # Check for math constants
+                    elif module_name == 'math' and attr_name in {'pi', 'e', 'inf', 'nan'}:
+                        missing_imports.add(('math', None))
+                    
+                    # Check for sys attributes
+                    elif module_name == 'sys' and attr_name in {'stdout', 'stderr', 'stdin', 'argv', 'version', 'platform'}:
+                        missing_imports.add(('sys', None))
+                    
+                    # Check for os attributes
+                    elif module_name == 'os' and attr_name in {'path', 'environ', 'sep', 'linesep'}:
+                        missing_imports.add(('os', None))
             
             # Check existing imports to avoid duplicates
             existing_imports = set()

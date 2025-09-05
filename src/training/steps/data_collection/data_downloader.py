@@ -46,6 +46,7 @@ import json
 import logging
 
             OptimizedDataDownloader,
+            OptimizedDownloadConfig,
         )
 
         opt_cfg = OptimizedDownloadConfig(

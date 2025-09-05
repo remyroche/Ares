@@ -90,7 +90,7 @@ def get_unified_data_loading_code(
     """
 
 
-def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
+def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     """Get step-specific guidance for updating."""
     from src.config.constants import (
         BLANK_TRAINING_LOOKBACK_DAYS,
@@ -98,7 +98,7 @@ def get_step_specific_guidance(step_name: str) -> dict[str, Any]:
 
     # High complexity areas that need special attention
 
-    guidance: dict[str, Any] = {
+    guidance: Dict[str, Any] = {
         "step2_market_regime_classification": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1h",  # Regime classification typically uses 1h

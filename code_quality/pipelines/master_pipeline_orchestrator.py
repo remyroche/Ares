@@ -133,6 +133,11 @@ class MasterPipelineOrchestrator:
         """Discover all available pipelines."""
         pipeline_files = {
             "unified_enhanced_pipeline": "pipeline_unified_enhanced.py",
+            "complexity_pipeline": "complexity_pipeline.py",
+            "dead_code_pipeline": "dead_code_pipeline.py",
+            "auto_fixer_pipeline": "auto_fixer_pipeline.py",
+            "interaction_mapping_pipeline": "interaction_mapping_pipeline.py",
+            "import_free_analysis_pipeline": "import_free_analysis_pipeline.py",
             "testing_pipeline": "testing_pipeline.py",
             "utility_pipeline": "utility_pipeline.py",
             "sequential_code_fixer": "sequential_code_fixer.py",
@@ -200,6 +205,26 @@ class MasterPipelineOrchestrator:
                 from utility_pipeline import UtilityPipeline
                 pipeline = UtilityPipeline(str(self.project_root))
                 result = pipeline.run_all_utilities()
+            elif pipeline_name == "complexity_pipeline":
+                from complexity_pipeline import ComplexityPipeline
+                pipeline = ComplexityPipeline(str(self.project_root))
+                result = pipeline.run_all_complexity_analysis()
+            elif pipeline_name == "dead_code_pipeline":
+                from dead_code_pipeline import DeadCodePipeline
+                pipeline = DeadCodePipeline(str(self.project_root))
+                result = pipeline.run_all_dead_code_analysis()
+            elif pipeline_name == "auto_fixer_pipeline":
+                from auto_fixer_pipeline import AutoFixerPipeline
+                pipeline = AutoFixerPipeline(str(self.project_root))
+                result = pipeline.run_all_auto_fixes()
+            elif pipeline_name == "interaction_mapping_pipeline":
+                from interaction_mapping_pipeline import InteractionMappingPipeline
+                pipeline = InteractionMappingPipeline(str(self.project_root))
+                result = pipeline.run_all_interaction_mapping()
+            elif pipeline_name == "import_free_analysis_pipeline":
+                from import_free_analysis_pipeline import ImportFreeAnalysisPipeline
+                pipeline = ImportFreeAnalysisPipeline(str(self.project_root))
+                result = pipeline.run_all_import_free_analysis()
             elif pipeline_name == "unified_standalone_pipeline":
                 from unified_standalone_pipeline import StandaloneCodeAnalyzer
                 pipeline = StandaloneCodeAnalyzer(str(self.project_root))

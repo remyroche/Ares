@@ -120,3 +120,24 @@ def standardize_price_action_probabilities(probabilities):
             "magnitude_probability": 0.25,
             "barrier_avoidance_probability": 0.25
         }
+
+def safe_to_parquet(df, path):
+    """Safely save DataFrame to parquet file."""
+    try:
+        ensure_directory(os.path.dirname(path))
+        df.to_parquet(path)
+        return True
+    except Exception as e:
+        print(f"Error saving parquet file {path}: {e}")
+        return False
+
+def safe_copy(src, dst):
+    """Safely copy file."""
+    try:
+        import shutil
+        ensure_directory(os.path.dirname(dst))
+        shutil.copy2(src, dst)
+        return True
+    except Exception as e:
+        print(f"Error copying file from {src} to {dst}: {e}")
+        return False

@@ -37,6 +37,7 @@ from scripts.detect_circular_imports import ImportAnalyzer
 
 # Import core components
 from core.config import get_default_config
+import numpy as np
 
 
 class ImportFreeAnalyzer:
@@ -47,13 +48,17 @@ class ImportFreeAnalyzer:
         self.results = {}
     
     def find_python_files(self) -> List[Path]:
-        """Find all Python files in the project."""
+        """Find all Python files in the project, respecting .gitignore patterns."""
+        from ..utils.gitignore_parser import filter_ignored_files
         python_files = []
         for py_file in self.project_root.rglob("*.py"):
             # Skip common directories to avoid
             if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
                 continue
             python_files.append(py_file)
+        
+        # Filter out ignored files
+        python_files = filter_ignored_files(python_files, self.project_root)
         return python_files
     
     def parse_file(self, file_path: Path) -> ast.AST:
@@ -115,26 +120,10 @@ class SyntaxAnalyzer(ImportFreeAnalyzer):
         issues = []
         
         for node in ast.walk(tree):
-            # Check for common issues
+            # Check for common issues (excluding docstring warnings - these are documentation issues, not syntax issues)
             if isinstance(node, ast.FunctionDef):
-                # Check for functions without docstrings
-                if not ast.get_docstring(node):
-                    issues.append({
-                        "file": str(file_path),
-                        "line": node.lineno,
-                        "issue": f"Function '{node.name}' missing docstring",
-                        "severity": "warning"
-                    })
-            
-            elif isinstance(node, ast.ClassDef):
-                # Check for classes without docstrings
-                if not ast.get_docstring(node):
-                    issues.append({
-                        "file": str(file_path),
-                        "line": node.lineno,
-                        "issue": f"Class '{node.name}' missing docstring",
-                        "severity": "warning"
-                    })
+                # Skip docstring checks - these are documentation issues, not syntax issues
+                pass
             
             elif isinstance(node, ast.Import):
                 # Check for wildcard imports
@@ -336,13 +325,23 @@ class PatternAnalyzer(ImportFreeAnalyzer):
             elif isinstance(node, ast.Lambda):
                 patterns["lambda_functions"] += 1
             
-            elif isinstance(node, ast.DecoratorList):
-                patterns["decorators"] += len(node.decorators)
+            elif isinstance(node, ast.FunctionDef):
+                patterns["functions"] += 1
+                # Count decorators on functions
+                patterns["decorators"] += len(node.decorator_list)
+            
+            # Decorators are handled in FunctionDef, ClassDef, and AsyncFunctionDef nodes
+            # No separate DecoratorList node exists in current Python AST
             
             elif isinstance(node, ast.AsyncFunctionDef):
                 patterns["async_functions"] += 1
+                # Count decorators on async functions
+                patterns["decorators"] += len(node.decorator_list)
             
             elif isinstance(node, ast.ClassDef):
+                # Count decorators on classes
+                patterns["decorators"] += len(node.decorator_list)
+                
                 # Check for common class patterns
                 if any(base.id == "Exception" for base in node.bases if isinstance(base, ast.Name)):
                     patterns["exception_classes"] += 1

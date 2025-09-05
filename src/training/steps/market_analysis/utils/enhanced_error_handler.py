@@ -6,6 +6,8 @@ recovery mechanisms, and error pattern tracking.
 import traceback
 from datetime import datetime
 from typing import Any, Dict, List
+import logging
+import time
 
 
 class EnhancedErrorHandler:

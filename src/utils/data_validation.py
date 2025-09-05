@@ -39,7 +39,14 @@ def safe_pct_change(
     """
     try:
         if fill_method:
-            series = series.fillna(method=fill_method, limit=limit)
+            # Use modern pandas fillna syntax
+            if fill_method == "ffill":
+                series = series.ffill(limit=limit)
+            elif fill_method == "bfill":
+                series = series.bfill(limit=limit)
+            else:
+                logger.warning(f"Unsupported fill_method: {fill_method}, using ffill")
+                series = series.ffill(limit=limit)
         s = _coerce_series_numeric(series)
         pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
         inf_count = np.isinf(pct_change).sum()
@@ -69,7 +76,13 @@ def safe_log_returns(
     """
     try:
         if fill_method:
-            series = series.fillna(method=fill_method, limit=limit)
+            if fill_method == "ffill":
+                series = series.ffill(limit=limit)
+            elif fill_method == "bfill":
+                series = series.bfill(limit=limit)
+            else:
+                logger.warning(f"Unsupported fill_method: {fill_method}, using ffill")
+                series = series.ffill(limit=limit)
         s = _coerce_series_numeric(series)
         pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
         log_returns = np.log1p(pct_change)
@@ -99,8 +112,24 @@ def validate_dataframe_for_ml(
     - Replace infinite values with 0
     - Optionally clip extreme absolute values
     - Fill NaN values with 0
+    
+    Args:
+        df: DataFrame to validate and clean
+        context: Description of the data context for logging
+        clip_extreme_values: Whether to clip extreme values
+        max_abs_value: Maximum absolute value for clipping (must be positive)
+    
+    Returns:
+        Cleaned DataFrame
     """
     try:
+        # Validate parameters
+        if not isinstance(context, str):
+            context = str(context)
+        if not isinstance(clip_extreme_values, bool):
+            raise ValueError("clip_extreme_values must be a boolean")
+        if not isinstance(max_abs_value, (int, float)) or max_abs_value <= 0:
+            raise ValueError("max_abs_value must be a positive number")
         df_clean = df.copy()
         numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) == 0:
@@ -173,8 +202,22 @@ def safe_division(
     """
     Perform safe division handling zero and tiny denominators with fill_value fallback.
     Preserves type where possible (Series -> Series, ndarray -> ndarray, scalar -> float).
+    
+    Args:
+        numerator: Numerator values
+        denominator: Denominator values
+        fill_value: Value to use when division is invalid (must be finite)
+        context: Description of the operation context for logging
+    
+    Returns:
+        Division result with same type as numerator where possible
     """
     try:
+        # Validate parameters
+        if not isinstance(fill_value, (int, float)) or not np.isfinite(fill_value):
+            raise ValueError("fill_value must be a finite number")
+        if not isinstance(context, str):
+            context = str(context)
         # Series / Series
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
             with np.errstate(divide="ignore", invalid="ignore"):

@@ -9,6 +9,7 @@ optimizes the optimization process itself using RF, SHAP, MI, and multi-objectiv
 """
 
 from typing import Any
+import os
 
 
 def get_enhanced_feature_optimization_config() -> dict[str, Any]:

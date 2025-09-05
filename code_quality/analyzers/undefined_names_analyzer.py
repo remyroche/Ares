@@ -10,9 +10,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional
-
 from core.config import AnalysisConfig, get_default_config
 from utils.file_utils import find_python_files
+import logging
 
 
 class ScopeContext:
@@ -304,7 +304,8 @@ class ScopeTrackingVisitor(ast.NodeVisitor):
                 return
             
             # Skip common variable names that are often used in loops/comprehensions
-            if name in {'i', 'j', 'k', 'x', 'y', 'z', 'item', 'value', 'key', 'val', 'data', 'result', 'temp'}:
+            # But be more aggressive about detecting undefined names
+            if name in {'i', 'j', 'k', 'x', 'y', 'z'}:
                 # Only flag if it's not in a loop or comprehension context
                 if not self._is_in_loop_context(node):
                     return
@@ -457,8 +458,8 @@ class UndefinedNamesAnalyzer:
     - Context-aware error reporting
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
-        self.config = config or get_default_config()
+    def __init__(self, config: AnalysisConfig | None = None):
+        self.config = config or AnalysisConfig()
         self.errors: List[UndefinedNameError] = []
         self.builtin_names: Set[str] = set()
         self._init_builtin_names()
@@ -641,7 +642,7 @@ class UndefinedNamesAnalyzer:
         print(f"Analyzing undefined names in directory: {directory_path}")
         
         # Find all Python files
-        python_files = find_python_files(directory_path, self.config.analysis.exclude_patterns)
+        python_files = find_python_files(directory_path, self.config.analysis_config.exclude_patterns)
         
         if not python_files:
             return {
@@ -675,7 +676,7 @@ class UndefinedNamesAnalyzer:
             # Each file gets its own fresh analyzer instance to ensure complete isolation
             file_analyzer = UndefinedNamesAnalyzer(self.config)
             file_result = file_analyzer.analyze_file(file_path)
-            files_results[file_path] = file_result
+            files_results[str(file_path)] = file_result
             
             if file_result["status"] == "success":
                 file_errors = file_result["total_errors"]

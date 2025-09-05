@@ -6,6 +6,7 @@ from sklearn.ensemble import VotingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 class EnsembleCreator:
     """Handles ensemble creation from enhanced analyst models."""

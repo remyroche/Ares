@@ -6,14 +6,13 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 try:
-    try:
     import talib
-except ImportError:
-    talib = None
 except ImportError:
     talib = None
 if TYPE_CHECKING:
     from datetime import datetime
+import os
+
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

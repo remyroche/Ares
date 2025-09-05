@@ -31,6 +31,9 @@ from src.training.steps.data_preparation_components.training_validation_config i
 )
 from src.utils.error_handler import handle_errors
 from src.utils.logger import setup_logging, system_logger
+import pandas as pd
+import json
+import logging
 
 # Ensure project root in path
 project_root=Path(__file__).parent.parent
@@ -162,8 +165,6 @@ async def main() -> bool:
     pickle_file=pickle_dir / f"{args.exchange}_{args.symbol}_collected_data.pkl"
     try:
         import pickle  # local import to avoid overhead if unused
-import pandas as pd
-
         with open(pickle_file, "wb") as f:
             pickle.dump({"klines": klines_df}, f)
         logger.info(f"Created pickle file: {pickle_file}")
@@ -199,4 +200,4 @@ import pandas as pd
 
 
 if __name__== "__main__":
-    asyncio.run(await main())
+    asyncio.run(main())

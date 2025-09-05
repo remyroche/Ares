@@ -8,6 +8,8 @@ from .core.decorators import handles_errors
 from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
+import logging
+import time
 
 class TimeframeRelevanceAnalyzer:
     """

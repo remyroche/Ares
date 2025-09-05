@@ -19,6 +19,8 @@ import optuna
 from optuna.pruners import HyperbandPruner, MedianPruner
 from optuna.samplers import CmaEsSampler, TPESampler
 from sklearn.model_selection import TimeSeriesSplit
+import numpy as np
+import pandas as pd
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")

@@ -4,6 +4,7 @@ Monitoring manager for pipeline components (minimal scaffold).
 
 from typing import Any
 
+from .core.decorators import (
     handles_errors,
     cached,
     retry_on_failure,
@@ -12,6 +13,7 @@ from typing import Any
 from .core.domain import PerformanceLevel
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 
 class MonitoringManager:

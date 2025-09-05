@@ -7,6 +7,7 @@ The actual implementation is now split across modules in src/supervisor/coordina
 
 
 # Import all the components from the new structure
+from .supervisor.components import (
     CircuitBreaker,
     ComponentMonitor,
     HealthMonitor,

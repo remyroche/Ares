@@ -13,6 +13,7 @@ found in the repository scan, including:
 import logging
 import os
 import re
+import typing
 
 # Setup logging
 logging.basicConfig(

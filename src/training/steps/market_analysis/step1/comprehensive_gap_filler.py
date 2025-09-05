@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 #!/usr/bin/env python3
 
 
@@ -21,6 +23,8 @@ import aiohttp
 import certifi
 
 from .utils.logger import system_logger
+import logging
+import time
 
 
 # Add project root to path

@@ -2,11 +2,13 @@
 Lifecycle manager for pipeline components (minimal scaffold).
 """
 
+from .core.decorators import (
     cached,
     compose,
     handles_errors,
 )
 
+from .core.domain import (
     PerformanceLevel,
     performance_monitor
 )
@@ -14,6 +16,7 @@ Lifecycle manager for pipeline components (minimal scaffold).
 from typing import Any
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 class LifecycleManager:
     def __init__(self, config: dict[str, Any]) -> None:

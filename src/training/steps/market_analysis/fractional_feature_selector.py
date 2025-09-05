@@ -1,3 +1,6 @@
+import .utils.validation
+import numpy as np
+
 # src/training/steps/fractional_feature_selector.py
 
 """Fractional Feature Selector: Intelligent feature selection for Step 7.
@@ -16,7 +19,8 @@ from sklearn.feature_selection import (
 from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
-from .utils.validation import (
+import pandas as pd
+
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

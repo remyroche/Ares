@@ -7,6 +7,10 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from torch import nn
+import numpy as np
+import collections
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 class TemporalConvNet(nn.Module):

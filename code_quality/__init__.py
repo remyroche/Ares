@@ -4,7 +4,6 @@ Code Quality Tools - Comprehensive Python code analysis and fixing suite.
 
 from .core.config import (
     AnalysisConfig,
-    get_default_config,
 )
 
 # Delayed imports for optional components to avoid heavy dependencies at import time
@@ -69,8 +68,6 @@ __all__ = [
     # Core configuration
     "AnalysisConfig",
     "get_default_config",
-
-    # Utility functions
     "find_python_files",
     "read_file_safely",
     "parse_ast_safely",
@@ -79,5 +76,3 @@ __all__ = [
     "is_documentation_file",
 ]
 
-
-# Quick access functions removed due to missing config classes

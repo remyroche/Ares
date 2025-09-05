@@ -15,6 +15,8 @@ from sqlalchemy.orm import sessionmaker
 
 
 from src.utils.logger import system_logger
+import pandas as pd
+
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -25,6 +27,9 @@ from .core.decorators import handles_errors
 from .database.sqlite_manager import SQLiteManager
 import pickle
 import ast
+import numpy as np
+import json
+import logging
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."
@@ -441,7 +446,6 @@ class DataEfficiencyOptimizer:
                     )
                     try:
                         import pickle
-import pandas as pd
 
                         with open(data_file, "rb") as f:
                             legacy_data = pickle.load(f)

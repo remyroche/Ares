@@ -1,6 +1,9 @@
 
 
 from src.utils.error_handler import handles_errors
+import numpy as np
+import pandas as pd
+
 """Wavelet Feature Selection Workflow."
 
 This module implements a comprehensive workflow using the two-model strategy:
@@ -35,6 +38,8 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import logging
+
     error,
     failed,
     initialization_error,
@@ -1101,7 +1106,5 @@ class WaveletFeatureSelectionWorkflow:
         except ImportError:
             # Fallback to old import path
             from shap import TreeExplainer
-        import pandas as pd
-        import numpy as np
 
-return TreeExplainer(model)
+        return TreeExplainer(model)

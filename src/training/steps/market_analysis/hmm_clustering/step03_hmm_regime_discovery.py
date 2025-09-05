@@ -1,110 +1,138 @@
-
-"""Step 3: HMM Regime Discovery with Standardized Data Quality Management.
-
-This module performs Hidden Markov Model (HMM) regime discovery with standardized
-data quality checks and automatic data preparation using step01/step1_5 components.
-"""
+from typing import Optional
+from typing import Any
+from typing import Dict
+from typing import Dict, List, Optional, Union, Any, Tuple
+'Step 3: HMM Regime Discovery with Standardized Data Quality Management.\n\nThis module performs Hidden Markov Model (HMM) regime discovery with standardized\ndata quality checks and automatic data preparation using step01/step1_5 components.\n'
 import asyncio
+import gc
 import json
 import logging
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, List, Dict, Optional
+from typing import Any, Callable, List
 import numpy as np
 import pandas as pd
-
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
-# Import decorators safely
 try:
-    from src.utils.centralized_decorators import (
-        handles_errors, monitor_feature_engineering, validates, 
-        traced, log_execution_time, cached, ensure_data_integrity,
-        monitor_step_execution, secure_step_execution
-    )
+    from src.utils.centralized_decorators import handles_errors, monitor_feature_engineering, validates, traced, log_execution_time, cached, ensure_data_integrity, monitor_step_execution, secure_step_execution
+import os
+
 except ImportError:
-    # Fallback decorators if centralized_decorators is not available
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def monitor_feature_engineering(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def validates(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def traced(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def log_execution_time(func):
-        return func
-    
-    def cached(func):
-        return func
-    
-    def ensure_data_integrity(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def monitor_step_execution(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def secure_step_execution(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-# Import utility functions and classes
-from .hmm_utils import (
-    TechnicalIndicators, FeatureCalculator, RegimeAnalyzer,
-    create_fallback_logger, ensure_directory, safe_json_dump
-)
 
-# Establish required modules list and dependency status using PipelineStandards
-REQUIRED_MODULES = [
-    'pandas',
-    'numpy',
-    'psutil',
-    'src.utils.logger',
-]
+    def handles_errors(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def monitor_feature_engineering(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def validates(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def traced(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def log_execution_time(func: Callable) -> None:
+        return func
+
+    def cached(func: Callable) -> None:
+        return func
+
+    def ensure_data_integrity(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def monitor_step_execution(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+
+    def secure_step_execution(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
+            return func
+        return decorator
+REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.logger']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-
-# Safe import of optional components
 sr_breakout_predictor = PipelineStandards.safe_import('src.tactician.sr_breakout_predictor', None)
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 import psutil
-
-# Define PSUTIL_AVAILABLE for memory monitoring
+import numpy
+import pandas
 PSUTIL_AVAILABLE = psutil is not None
 
+def create_fallback_logger() -> Any:
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator() -> Any:
+
+    def decorator(*args, **kwargs) -> None:
+
+        def inner_decorator(func: Callable) -> Callable:
+            return func
+        return inner_decorator
+    return decorator
+
+def ensure_directory(path: Path) -> Path:
+    """Ensure directory exists and return the path."""
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
+    """Safely dump data to JSON file."""
+    with open(file_path, 'w') as f:
+        json.dump(data, f, **kwargs)
 if system_logger is None:
     system_logger = create_fallback_logger()
-
-# MLflow logging functions
+comprehensive_data_validation = create_fallback_decorator()
+handle_errors = create_fallback_decorator()
+memory_efficient = create_fallback_decorator()
+resource_monitor = create_fallback_decorator()
+secure_data_processing = create_fallback_decorator()
+validate_data_structure = create_fallback_decorator()
+with_tracing_span = create_fallback_decorator()
+quality_gate = create_fallback_decorator()
+monitor_feature_engineering = create_fallback_decorator()
+ensure_data_integrity = create_fallback_decorator()
+monitor_step_execution = create_fallback_decorator()
+secure_step_execution = create_fallback_decorator()
+validate_pipeline_step = create_fallback_decorator()
+validates = create_fallback_decorator()
+cached = create_fallback_decorator()
+traced = create_fallback_decorator()
+handles_errors = create_fallback_decorator()
+log_execution_time = create_fallback_decorator()
 if enhanced_mlflow is None:
-    def log_step_artifact(*args, **kwargs): return 'fallback_artifact'
-    def log_step_dataframe(*args, **kwargs): return 'fallback_dataframe'
-    def log_step_dataframe_with_standardized_name(*args, **kwargs): return 'fallback_dataframe'
-    def log_step_report(*args, **kwargs): return 'fallback_report'
-    def log_step_artifact_with_standardized_name(*args, **kwargs): return 'fallback_artifact'
-    def log_step_metrics(*args, **kwargs): return 'fallback_metrics'
-    def log_step_model(*args, **kwargs): return 'fallback_model'
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_artifact = lambda *args, **kwargs: 'fallback_artifact'
+    log_step_dataframe = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
+    log_step_report = lambda *args, **kwargs: 'fallback_report'
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
+    log_step_metrics = lambda *args, **kwargs: 'fallback_metrics'
+    log_step_model = lambda *args, **kwargs: 'fallback_model'
 else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_artifact = enhanced_mlflow.log_step_artifact
     log_step_dataframe = enhanced_mlflow.log_step_dataframe
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
@@ -112,7 +140,6 @@ else:
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
     log_step_metrics = enhanced_mlflow.log_step_metrics
     log_step_model = enhanced_mlflow.log_step_model
-
 logger = system_logger.getChild('Step3HMMRegimeDiscovery')
 
 class HMMRegimeDiscoveryStep:
@@ -125,11 +152,6 @@ class HMMRegimeDiscoveryStep:
         self.start_time = None
         self.step_timings = {}
         self.data_quality_manager = None
-        
-        # Initialize utility classes
-        self.feature_calculator = FeatureCalculator(self.logger)
-        self.regime_analyzer = RegimeAnalyzer(self.logger)
-        
         self._validate_environment()
         self._initialize_components()
 
@@ -146,11 +168,8 @@ class HMMRegimeDiscoveryStep:
     def _initialize_components(self) -> None:
         """Initialize HMM and data quality components."""
         self.logger.info('🔧 Initializing HMM regime discovery components...')
-        # Ensure a data quality manager is available
         try:
-            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import (
-                EnhancedDataQualityManager,
-            )
+            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
             self.data_quality_manager = EnhancedDataQualityManager()
         except Exception as e:
             self.logger.warning(f'⚠️ Data quality manager unavailable: {e}')
@@ -229,7 +248,7 @@ class HMMRegimeDiscoveryStep:
             if not data_ready:
                 self.logger.error('❌ Data not ready for HMM regime discovery')
                 pipeline_state['hmm_regime_discovery_completed'] = False
-                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False
                 pipeline_state['regime_discovery_error'] = 'Data quality check failed'
                 return pipeline_state
             self.logger.info('=' * 60)
@@ -244,7 +263,7 @@ class HMMRegimeDiscoveryStep:
                 error_msg = data_loaded.get('error', 'Unknown error')
                 self.logger.error(f'   Error details: {error_msg}')
                 pipeline_state['hmm_regime_discovery_completed'] = False
-                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False
                 pipeline_state['regime_discovery_error'] = f'Data loading failed: {error_msg}'
                 return pipeline_state
             symbol = training_input.get('symbol', 'ETHUSDT')
@@ -278,7 +297,7 @@ class HMMRegimeDiscoveryStep:
             if regime_results.get('success', False):
                 self.logger.info('✅ HMM regime discovery completed successfully')
                 pipeline_state['hmm_regime_discovery_completed'] = True
-                pipeline_state['step03_hmm_regime_discovery_completed'] = True  # For SimplifiedTrainingManager
+                pipeline_state['step03_hmm_regime_discovery_completed'] = True
                 pipeline_state['regime_states'] = regime_results.get('regime_states', [])
                 pipeline_state['regime_transitions'] = regime_results.get('regime_transitions', {})
                 pipeline_state['regime_metrics'] = regime_results.get('metrics', {})
@@ -299,12 +318,12 @@ class HMMRegimeDiscoveryStep:
                 error_msg = regime_results.get('error', 'Unknown error')
                 self.logger.error(f'   Error details: {error_msg}')
                 pipeline_state['hmm_regime_discovery_completed'] = False
-                pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
+                pipeline_state['step03_hmm_regime_discovery_completed'] = False
                 pipeline_state['regime_discovery_error'] = error_msg
         except Exception as e:
             self.logger.exception(f'❌ Unexpected error during HMM regime discovery: {e}')
             pipeline_state['hmm_regime_discovery_completed'] = False
-            pipeline_state['step03_hmm_regime_discovery_completed'] = False  # For SimplifiedTrainingManager
+            pipeline_state['step03_hmm_regime_discovery_completed'] = False
             pipeline_state['regime_discovery_error'] = str(e)
         total_elapsed = time.time() - step_start
         self.logger.info('=' * 60)
@@ -530,10 +549,223 @@ class HMMRegimeDiscoveryStep:
     @validates()
     @monitor_feature_engineering()
     @handles_errors(fallback=pd.DataFrame())
-    async def _prepare_hmm_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare comprehensive features for HMM regime discovery."""
-        return self.feature_calculator.prepare_hmm_features(df)
+    async def _prepare_hmm_features(self, df: Any) -> Any:
+        """Prepare comprehensive features for HMM regime discovery including momentum, S/R, volume, and volatility."""
+        try:
+            self.logger.info('🔧 Starting comprehensive feature preparation for HMM...')
+            df = df.copy()
+            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                self.logger.info('🕒 Converting timestamp to datetime...')
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            self.logger.info('📅 Sorting data by timestamp...')
+            df = df.sort_values('timestamp').reset_index(drop=True)
+            self.logger.info('📊 Calculating comprehensive features for HMM...')
+            features = pd.DataFrame()
+            features['timestamp'] = df['timestamp']
+            self.logger.info('🚀 Calculating momentum features...')
+            self.logger.info('   - Price momentum (5, 10, 20 periods)...')
+            features['price_momentum_5'] = df['close'].pct_change(5)
+            features['price_momentum_10'] = df['close'].pct_change(10)
+            features['price_momentum_20'] = df['close'].pct_change(20)
+            self.logger.info('   - Volume momentum...')
+            features['volume_momentum_5'] = df['volume'].pct_change(5)
+            features['volume_momentum_10'] = df['volume'].pct_change(10)
+            features['volume_momentum_20'] = df['volume'].pct_change(20)
+            self.logger.info('   - RSI momentum...')
+            features['rsi'] = self._calculate_rsi(df['close'])
+            features['rsi_momentum'] = features['rsi'].diff(5)
+            self.logger.info('   - MACD momentum...')
+            features['macd'] = self._calculate_macd(df['close'])
+            features['macd_momentum'] = features['macd'].diff(5)
+            self.logger.info('📈 Calculating volatility features...')
+            self.logger.info('   - Multi-timeframe volatility...')
+            features['volatility_5'] = df['close'].pct_change().rolling(window=5).std()
+            features['volatility_10'] = df['close'].pct_change().rolling(window=10).std()
+            features['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
+            self.logger.info('   - EWMA volatility...')
+            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span=20).std()
+            self.logger.info('   - Volatility acceleration and momentum...')
+            features['volatility_acceleration'] = features['volatility_20'].diff()
+            features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
+            self.logger.info('   - ATR volatility...')
+            features['atr'] = self._calculate_atr(df)
+            features['atr_normalized'] = features['atr'] / df['close']
+            self.logger.info('📊 Calculating volume features...')
+            self.logger.info('   - Volume ratios...')
+            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window=5).mean()
+            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window=10).mean()
+            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window=20).mean()
+            self.logger.info('   - Volume change...')
+            features['volume_change'] = df['volume'].pct_change()
+            self.logger.info('   - Volume-price relationship...')
+            features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
+            features['volume_price_trend_ratio'] = features['volume_price_trend'] / features['volume_price_trend'].rolling(20).mean()
+            self.logger.info('🎯 Calculating support/resistance features...')
+            self.logger.info('   - Pivot points...')
+            features['pivot_point'] = (df['high'] + df['low'] + df['close']) / 3
+            features['support_1'] = 2 * features['pivot_point'] - df['high']
+            features['resistance_1'] = 2 * features['pivot_point'] - df['low']
+            self.logger.info('   - Distance to S/R levels...')
+            features['distance_to_support'] = (df['close'] - features['support_1']) / df['close']
+            features['distance_to_resistance'] = (features['resistance_1'] - df['close']) / df['close']
+            self.logger.info('   - S/R strength indicators...')
+            features['sr_strength'] = self._calculate_sr_strength(df)
+            self.logger.info('   - Bollinger Bands...')
+            bb_features = self._calculate_bollinger_bands(df['close'])
+            features = pd.concat([features, bb_features], axis=1)
+            self.logger.info('🔧 Calculating additional technical features...')
+            self.logger.info('   - Moving averages...')
+            features['sma_20'] = df['close'].rolling(window=20).mean()
+            features['sma_50'] = df['close'].rolling(window=50).mean()
+            features['ema_12'] = df['close'].ewm(span=12).mean()
+            features['ema_26'] = df['close'].ewm(span=26).mean()
+            self.logger.info('   - Price position relative to MAs...')
+            features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
+            features['price_vs_sma50'] = (df['close'] - features['sma_50']) / features['sma_50']
+            self.logger.info('   - ADX trend strength...')
+            features['adx'] = self._calculate_adx(df)
+            self.logger.info('🔄 Calculating feature interactions...')
+            self.logger.info('   - Momentum × Volume interactions...')
+            features['momentum_volume_interaction'] = features['price_momentum_10'] * features['volume_ratio_10']
+            self.logger.info('   - Volatility × Volume interactions...')
+            features['volatility_volume_interaction'] = features['volatility_20'] * features['volume_ratio_20']
+            self.logger.info('   - RSI × Momentum interactions...')
+            features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_10']
+            self.logger.info('🧹 Cleaning and validating features...')
+            hmm_features = features.drop('timestamp', axis=1)
+            initial_rows = len(hmm_features)
+            self.logger.info(f'   - Initial rows: {initial_rows:,}')
+            technical_cols = ['rsi', 'macd', 'adx', 'bb_position', 'bb_width']
+            for col in technical_cols:
+                if col in hmm_features.columns:
+                    hmm_features[col] = hmm_features[col].ffill()
+            hmm_features = hmm_features.fillna(0)
+            final_rows = len(hmm_features)
+            removed_rows = initial_rows - final_rows
+            self.logger.info(f'✅ Comprehensive feature preparation completed:')
+            self.logger.info(f'   - Initial rows: {initial_rows:,}')
+            self.logger.info(f'   - Final rows: {final_rows:,}')
+            self.logger.info(f'   - Removed rows: {removed_rows:,} ({removed_rows / initial_rows * 100:.1f}%)')
+            self.logger.info(f'   - Features created: {len(hmm_features.columns)}')
+            self._log_feature_categories(hmm_features)
+            return hmm_features
+        except Exception as e:
+            self.logger.exception(f'❌ Error preparing HMM features: {e}')
+            raise
 
+    @handles_errors(fallback=pd.Series())
+    def _calculate_rsi(self, prices: Any, window: int=14) -> Any:
+        """Calculate Relative Strength Index."""
+        self.logger.debug(f'Calculating RSI with window {window}...')
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        rsi = 100 - 100 / (1 + rs)
+        return rsi
+
+    @handles_errors(fallback=pd.Series())
+    def _calculate_macd(self, prices: Any, fast: int=12, slow: int=26, signal: int=9) -> Any:
+        """Calculate MACD (Moving Average Convergence Divergence)."""
+        self.logger.debug(f'Calculating MACD (fast={fast}, slow={slow}, signal={signal})...')
+        ema_fast = prices.ewm(span=fast).mean()
+        ema_slow = prices.ewm(span=slow).mean()
+        macd = ema_fast - ema_slow
+        return macd
+
+    @handles_errors(fallback=pd.Series())
+    def _calculate_atr(self, df: Any, window: int=14) -> Any:
+        """Calculate Average True Range (ATR)."""
+        self.logger.debug(f'Calculating ATR with window {window}...')
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=window).mean()
+        return atr
+
+    @handles_errors(fallback=pd.Series())
+    def _calculate_bollinger_bands(self, prices: Any, window: int=20, num_std: float=2) -> Any:
+        """Calculate Bollinger Bands."""
+        self.logger.debug(f'Calculating Bollinger Bands (window={window}, std={num_std})...')
+        sma = prices.rolling(window=window).mean()
+        std = prices.rolling(window=window).std()
+        bb_upper = sma + std * num_std
+        bb_lower = sma - std * num_std
+        bb_width = (bb_upper - bb_lower) / sma
+        bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
+        bb_features = pd.DataFrame({'bb_upper': bb_upper, 'bb_middle': sma, 'bb_lower': bb_lower, 'bb_width': bb_width, 'bb_position': bb_position})
+        return bb_features
+
+    @handles_errors(fallback=pd.Series())
+    def _calculate_adx(self, df: Any, window: int=14) -> Any:
+        """Calculate Average Directional Index (ADX)."""
+        self.logger.debug(f'Calculating ADX with window {window}...')
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        dm_plus = high - high.shift(1)
+        dm_minus = low.shift(1) - low
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        tr_smooth = tr.rolling(window=window).mean()
+        dm_plus_smooth = dm_plus.rolling(window=window).mean()
+        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        di_plus = 100 * (dm_plus_smooth / tr_smooth)
+        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(window=window).mean()
+        return adx
+
+    @handles_errors(fallback=pd.Series())
+    def _calculate_sr_strength(self, df: Any, window: int=20) -> Any:
+        """Calculate support/resistance strength indicator."""
+        self.logger.debug(f'Calculating S/R strength with window {window}...')
+        high_swing = df['high'].rolling(window=window, center=True).max()
+        low_swing = df['low'].rolling(window=window, center=True).min()
+        current_price = df['close']
+        high_strength = (high_swing - current_price) / high_swing
+        low_strength = (current_price - low_swing) / low_swing
+        sr_strength = (high_strength + low_strength) / 2
+        return sr_strength
+
+    @handles_errors(fallback=None)
+    def _log_feature_categories(self, features: Any) -> None:
+        """Log feature categories for analysis."""
+        try:
+            feature_categories = {'momentum': [], 'volatility': [], 'volume': [], 'support_resistance': [], 'technical': [], 'interactions': []}
+            for col in features.columns:
+                if 'momentum' in col.lower():
+                    feature_categories['momentum'].append(col)
+                elif 'volatility' in col.lower():
+                    feature_categories['volatility'].append(col)
+                elif 'volume' in col.lower():
+                    feature_categories['volume'].append(col)
+                elif any((sr_term in col.lower() for sr_term in ['support', 'resistance', 'pivot', 'sr_', 'bb_'])):
+                    feature_categories['support_resistance'].append(col)
+                elif any((tech_term in col.lower() for tech_term in ['rsi', 'macd', 'adx', 'atr', 'sma', 'ema'])):
+                    feature_categories['technical'].append(col)
+                elif 'interaction' in col.lower():
+                    feature_categories['interactions'].append(col)
+                else:
+                    feature_categories['technical'].append(col)
+            self.logger.info('📊 Feature categories:')
+            for category, cols in feature_categories.items():
+                if cols:
+                    self.logger.info(f'   - {category.capitalize()}: {len(cols)} features')
+                    if len(cols) <= 5:
+                        self.logger.info(f'     {cols}')
+                    else:
+                        self.logger.info(f'     {cols[:3]} ... {cols[-2:]}')
+        except Exception as e:
+            self.logger.warning(f'Could not log feature categories: {e}')
 
     @traced(span_name='perform_hmm_regime_discovery')
     @log_execution_time
@@ -732,13 +964,89 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in simple regime discovery: {e}')
             return {'success': False, 'error': str(e)}
 
-    def _interpret_hmm_states(self, features: pd.DataFrame, state_sequence: np.ndarray, state_probs: np.ndarray) -> Dict[str, Any]:
+    @handles_errors(default_return={'state_to_regime_map': {}, 'state_analysis': {}}, context='interpret_hmm_states')
+    def _interpret_hmm_states(self, features: Any, state_sequence: Any, state_probs: Any) -> dict[str, Any]:
         """Interpret HMM states based on feature characteristics."""
-        return self.regime_analyzer.interpret_hmm_states(features, state_sequence, state_probs)
+        try:
+            self.logger.info('🔍 Interpreting HMM states...')
+            state_analysis = {}
+            state_to_regime_map = {}
+            unique_states = sorted(set(state_sequence))
+            for state in unique_states:
+                state_mask = state_sequence == state
+                state_data = features[state_mask]
+                if len(state_data) == 0:
+                    continue
+                state_char = {'count': len(state_data), 'percentage': len(state_data) / len(features) * 100}
+                key_features = ['price_momentum_10', 'volatility_20', 'volume_ratio_10', 'rsi', 'adx', 'bb_position']
+                for feature in key_features:
+                    if feature in state_data.columns:
+                        feature_data = state_data[feature].dropna()
+                        if len(feature_data) > 0:
+                            state_char[f'{feature}_mean'] = feature_data.mean()
+                            state_char[f'{feature}_std'] = feature_data.std()
+                state_analysis[state] = state_char
+                regime_name = self._map_state_to_regime(state_char)
+                state_to_regime_map[state] = regime_name
+                self.logger.info(f"   State {state} → {regime_name}: {len(state_data)} periods ({state_char['percentage']:.1f}%)")
+            return {'state_to_regime_map': state_to_regime_map, 'state_analysis': state_analysis}
+        except Exception as e:
+            self.logger.exception(f'❌ Error interpreting HMM states: {e}')
+            return {'state_to_regime_map': {}, 'state_analysis': {}}
 
-    def _calculate_regime_transitions(self, regimes: List[str]) -> Dict[str, Any]:
+    @handles_errors(fallback='unknown_regime')
+    def _map_state_to_regime(self, state_char: dict[str, Any]) -> str:
+        """Map state characteristics to regime name."""
+        try:
+            momentum = state_char.get('price_momentum_10_mean', 0)
+            volatility = state_char.get('volatility_20_mean', 0)
+            volume_ratio = state_char.get('volume_ratio_10_mean', 1)
+            rsi = state_char.get('rsi_mean', 50)
+            adx = state_char.get('adx_mean', 25)
+            if volatility > 0.02:
+                if momentum > 0.001:
+                    return 'high_volatility_bull'
+                elif momentum < -0.001:
+                    return 'high_volatility_bear'
+                else:
+                    return 'high_volatility_neutral'
+            elif volatility < 0.01:
+                if momentum > 0.001:
+                    return 'low_volatility_bull'
+                elif momentum < -0.001:
+                    return 'low_volatility_bear'
+                else:
+                    return 'low_volatility_neutral'
+            elif momentum > 0.001:
+                return 'medium_volatility_bull'
+            elif momentum < -0.001:
+                return 'medium_volatility_bear'
+            else:
+                return 'medium_volatility_neutral'
+        except Exception as e:
+            self.logger.warning(f'Error mapping state to regime: {e}')
+            return 'unknown_regime'
+
+    @handles_errors
+    def _calculate_regime_transitions(self, regimes: List[str]) -> dict[str, Any]:
         """Calculate regime transition probabilities."""
-        return self.regime_analyzer.calculate_regime_transitions(regimes)
+        self.logger.info('🔄 Calculating regime transition probabilities...')
+        transitions = {}
+        for i in range(len(regimes) - 1):
+            current_regime = regimes[i]
+            next_regime = regimes[i + 1]
+            if current_regime not in transitions:
+                transitions[current_regime] = {}
+            if next_regime not in transitions[current_regime]:
+                transitions[current_regime][next_regime] = 0
+            transitions[current_regime][next_regime] += 1
+        self.logger.info('📊 Converting transition counts to probabilities...')
+        for current_regime in transitions:
+            total = sum(transitions[current_regime].values())
+            for next_regime in transitions[current_regime]:
+                transitions[current_regime][next_regime] /= total
+        self.logger.info(f'✅ Transition matrix calculated for {len(transitions)} regimes')
+        return transitions
 
     @handles_errors(default_return={'success': False, 'error': 'Enhanced regime change detection failed'}, context='enhanced_regime_change_detection')
     def _detect_regime_changes_advanced(self, hmm_probs: np.ndarray, hmm_states: np.ndarray, threshold: float=0.1, min_persistence: int=3) -> dict[str, Any]:

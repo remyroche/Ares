@@ -1,9 +1,11 @@
 from .core.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
-
 from typing import Optional
 from typing import Dict
 import pandas as pd
 from typing import Any
+from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 'Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.\n\nThis step trains a multi-timeframe HMM cluster ensemble system that combines\npredictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)\nto improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.\n\nThe ensemble predicts REGIME TRANSITIONS only, not price direction.\nPrice direction predictions are made in other components.\n'
 import os
 import time
@@ -12,6 +14,8 @@ from .training.steps.multi_timeframe_hmm_ensemble import MultiTimeframeHMMEnsemb
 from .config.multi_timeframe_hmm_ensemble_config import get_multi_timeframe_hmm_ensemble_config
 from .utils.logger import system_logger
 from .utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
+import json
+import logging
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
@@ -328,9 +332,7 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
             return {'status': 'FAILED', 'error': 'ensemble_training_failed', 'success': False}
         per_regime_status: dict[str, Any] = {}
         if per_regime_enabled:
-            per_regime_status = await self._train_per_regime_ensembles(
-                config, symbol, exchange, regime_forecasting_data, regime_list, logger
-            )
+            per_regime_status = await self._train_per_regime_ensembles(config, symbol, exchange, regime_forecasting_data, regime_list, logger)
         ensemble_status = ensemble.get_ensemble_status()
         training_time = time.time() - start_time
         logger.info(f'✅ Multi-timeframe HMM ensemble training completed successfully')
@@ -341,13 +343,12 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
         logger.exception(f'❌ Multi-timeframe HMM ensemble training failed: {e}')
         return {'status': 'FAILED', 'error': str(e), 'success': False}
 
-async def _train_per_regime_ensembles(config, symbol, exchange, regime_forecasting_data, regime_list, logger):
+async def _train_per_regime_ensembles(config: Dict[str, Any], symbol: str, exchange: str, regime_forecasting_data: Any, regime_list: List[Any], logger: logging.Logger) -> None:
     """Train per-regime ensembles with proper error handling."""
     per_regime_status: dict[str, Any] = {}
-    
-    # Use shared regime accessor to robustly determine regimes present
     try:
         from .utils.regime_data_access import get_regime_column, get_regime_ids
+
         sample_tf = next(iter(regime_forecasting_data.keys())) if regime_forecasting_data else None
         if sample_tf is not None:
             sample_df = regime_forecasting_data[sample_tf]
@@ -356,20 +357,15 @@ async def _train_per_regime_ensembles(config, symbol, exchange, regime_forecasti
                 regime_list = get_regime_ids(sample_df, regime_col)
     except Exception:
         pass
-    
     for regime_name in regime_list:
         try:
             logger.info(f'🎯 Training per-regime ensemble for regime {regime_name}')
             regime_ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange, regime_name=regime_name)
             regime_success = regime_ensemble.train_ensemble(regime_forecasting_data)
-            per_regime_status[regime_name] = {
-                'success': bool(regime_success), 
-                'models_dir': regime_ensemble.models_dir
-            }
+            per_regime_status[regime_name] = {'success': bool(regime_success), 'models_dir': regime_ensemble.models_dir}
         except Exception as e:
             logger.warning(f'⚠️ Failed per-regime ensemble training for {regime_name}: {e}')
             per_regime_status[regime_name] = {'success': False, 'error': str(e)}
-    
     return per_regime_status
 
 @handles_errors(exceptions=(Exception,), default_return={'status': 'FAILED', 'error': 'Unknown error'}, context='multi-timeframe HMM ensemble validation')

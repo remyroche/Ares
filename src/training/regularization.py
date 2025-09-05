@@ -7,6 +7,7 @@ import optuna
 from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import cross_val_score
 from torch import nn
+import pandas as pd
 
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
@@ -16,6 +17,8 @@ from .analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEns
 # Ensure these imports are correct relative to the project root
 from .config import CONFIG
 from .utils.logger import system_logger
+import numpy as np
+import logging
 
 
 class RegularizationManager:
@@ -322,10 +325,7 @@ class RegularizationManager:
 
                     # Convert to tensors for PyTorch model
                     import torch
-import pandas as pd
 
-                except Exception as e:
-                    pass  # TODO: Handle exception
                 except Exception as e:
                     pass  # TODO: Handle exception properly
                     X_tensor = torch.FloatTensor(X_scaled)

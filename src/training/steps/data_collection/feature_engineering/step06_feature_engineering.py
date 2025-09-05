@@ -1,161 +1,114 @@
-
 from typing import List
 from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Tuple
-"""Step 6: Feature Engineering - Refactored to use BaseStep.
+from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
 
-This module implements comprehensive feature engineering including technical indicators,
-interaction terms, and regime-aware features.
-"""
-
+'Step 6: Feature Engineering - Refactored to use BaseStep.\n\nThis module implements comprehensive feature engineering including technical indicators,\ninteraction terms, and regime-aware features.\n'
 from pathlib import Path
 import json
 import logging
-
 from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
-# Import feature components with fallback
 try:
-    from src.training.steps.data_collection.feature_engineering.feature_components import (
-        TechnicalIndicatorEngine,
-        FeatureInteractionEngine,
-        RegimeAwareFeatureEngine
-    )
+    from src.training.steps.data_collection.feature_engineering.feature_components import TechnicalIndicatorEngine, FeatureInteractionEngine, RegimeAwareFeatureEngine
 except ImportError:
+
     class TechnicalIndicatorEngine:
-        def __init__(self, config):
+
+        def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
-    
+
     class FeatureInteractionEngine:
-        def __init__(self, config):
+
+        def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
-        async def create_interactions(self, data):
+
+        async def create_interactions(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> Any:
             return data
-    
+
     class RegimeAwareFeatureEngine:
-        def __init__(self, config):
+
+        def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Tuple
-
-# Import step06 validation framework
 import sys
 import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..', '..')
 sys.path.insert(0, steps_dir)
-
 try:
-    from step06_enhanced_validation_framework import (
-        step06_function_validator,
-        step06_function_tracker,
-        step06_validation_context,
-        get_step06_validation_summary,
-        ValidationLevel,
-        FunctionStatus
-    )
+    from step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
+import datetime
+import time
+
     VALIDATION_AVAILABLE = True
 except ImportError as e:
-    # Fallback decorators if validation framework is not available
-    print(f"Warning: Step06 validation framework not available: {e}")
-    
-    def step06_function_validator(*args, **kwargs):
-        def decorator(func):
+    print(f'Warning: Step06 validation framework not available: {e}')
+
+    def step06_function_validator(*args, **kwargs) -> None:
+
+        def decorator(func: Callable) -> None:
             return func
         return decorator
-    
-    def step06_function_tracker(func):
-        return func
-    
-    def step06_validation_context(*args, **kwargs):
-        from contextlib import nullcontext
-        return nullcontext()
-    
-    def get_step06_validation_summary():
-        return {"error": "Validation framework not available"}
-    
-    class ValidationLevel:
-        BASIC = "basic"
-        DETAILED = "detailed"
-        COMPREHENSIVE = "comprehensive"
-    
-    class FunctionStatus:
-        PENDING = "pending"
-        IN_PROGRESS = "in_progress"
-        COMPLETED = "completed"
-        FAILED = "failed"
-        TIMEOUT = "timeout"
-    
-    VALIDATION_AVAILABLE = False
 
+    def step06_function_tracker(func: Callable) -> None:
+        return func
+
+    def step06_validation_context(*args, **kwargs) -> None:
+        from contextlib import nullcontext
+
+        return nullcontext()
+
+    def get_step06_validation_summary() -> Any:
+        return {'error': 'Validation framework not available'}
+
+    class ValidationLevel:
+        BASIC = 'basic'
+        DETAILED = 'detailed'
+        COMPREHENSIVE = 'comprehensive'
+
+    class FunctionStatus:
+        PENDING = 'pending'
+        IN_PROGRESS = 'in_progress'
+        COMPLETED = 'completed'
+        FAILED = 'failed'
+        TIMEOUT = 'timeout'
+    VALIDATION_AVAILABLE = False
 
 class FeatureEngineeringStep(BaseStep):
     """Step 6: Feature Engineering using standardized base class."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize feature engineering step.
         
         Args:
             config: Configuration dictionary
         """
-        super().__init__(config, "06", "feature_engineering")
-        
-        # Step-specific configuration
-        self.feature_config = config.get("feature_engineering_config", {
-            "use_technical_indicators": True,
-            "use_interaction_features": True,
-            "use_regime_features": True,
-            "use_dynamic_lookback": True,
-            "lookback_periods": {
-                "short": [5, 10, 20],
-                "medium": [50, 100],
-                "long": [200]
-            },
-            "feature_selection": {
-                "enabled": True,
-                "max_features": 100,
-                "importance_threshold": 0.01
-            }
-        })
-        
-        # Components
+        super().__init__(config, '06', 'feature_engineering')
+        self.feature_config = config.get('feature_engineering_config', {'use_technical_indicators': True, 'use_interaction_features': True, 'use_regime_features': True, 'use_dynamic_lookback': True, 'lookback_periods': {'short': [5, 10, 20], 'medium': [50, 100], 'long': [200]}, 'feature_selection': {'enabled': True, 'max_features': 100, 'importance_threshold': 0.01}})
         self.technical_engine = None
         self.interaction_engine = None
         self.regime_engine = None
-        
+
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         try:
-            # Initialize technical indicator engine
-            self.technical_engine = TechnicalIndicatorEngine(
-                self.feature_config.get("lookback_periods", {})
-            )
-            
-            # Initialize interaction engine
-            if self.feature_config.get("use_interaction_features", True):
-                self.interaction_engine = FeatureInteractionEngine(
-                    self.feature_config
-                )
-            
-            # Initialize regime-aware feature engine
-            if self.feature_config.get("use_regime_features", True):
+            self.technical_engine = TechnicalIndicatorEngine(self.feature_config.get('lookback_periods', {}))
+            if self.feature_config.get('use_interaction_features', True):
+                self.interaction_engine = FeatureInteractionEngine(self.feature_config)
+            if self.feature_config.get('use_regime_features', True):
                 self.regime_engine = RegimeAwareFeatureEngine()
-            
-            self.logger.info("✅ Feature engineering components initialized")
-            
+            self.logger.info('✅ Feature engineering components initialized')
         except ImportError as e:
-            self.logger.warning(f"⚠️ Some feature components not available: {e}")
-            # Will use basic feature engineering
-    
-    def validate_inputs(
-        self, 
-        training_input: Dict[str, Any], 
-        pipeline_state: Dict[str, Any]
-    ) -> Tuple[bool, list]:
+            self.logger.warning(f'⚠️ Some feature components not available: {e}')
+
+    def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
         
         Args:
@@ -166,40 +119,24 @@ class FeatureEngineeringStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check for labeled data
-        if "labeled_data" not in pipeline_state:
-            # Check for split data with labels
-            if not all(f"{split}_data" in pipeline_state for split in ["train", "val", "test"]):
-                errors.append("No labeled data from step 5")
-        
-        # Check for regime information if regime features are enabled
-        if self.feature_config.get("use_regime_features", True):
-            if "regime_labels" not in pipeline_state:
-                self.logger.warning("Regime labels not available, will skip regime features")
-        
-        # Basic schema/index checks on input data
-        df = pipeline_state.get("labeled_data") or pipeline_state.get("train_data")
+        if 'labeled_data' not in pipeline_state:
+            if not all((f'{split}_data' in pipeline_state for split in ['train', 'val', 'test'])):
+                errors.append('No labeled data from step 5')
+        if self.feature_config.get('use_regime_features', True):
+            if 'regime_labels' not in pipeline_state:
+                self.logger.warning('Regime labels not available, will skip regime features')
+        df = pipeline_state.get('labeled_data') or pipeline_state.get('train_data')
         if isinstance(df, pd.DataFrame):
             if not isinstance(df.index, pd.DatetimeIndex):
-                self.logger.warning("Input index is not DatetimeIndex; time features may be limited")
-            for col in ["open", "high", "low", "close"]:
+                self.logger.warning('Input index is not DatetimeIndex; time features may be limited')
+            for col in ['open', 'high', 'low', 'close']:
                 if col not in df.columns:
-                    self.logger.warning(f"Missing expected price column: {col}")
-        
-        return len(errors) == 0, errors
-    
-    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.COMPREHENSIVE)
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return={"success": False},
-        context="feature engineering execution"
-    )
-    async def execute_logic(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+                    self.logger.warning(f'Missing expected price column: {col}')
+        return (len(errors) == 0, errors)
+
+    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.COMPREHENSIVE)
+    @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='feature engineering execution')
+    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute feature engineering logic.
         
         Args:
@@ -209,79 +146,37 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Updated pipeline state
         """
-        with step06_validation_context("execute_logic", "feature_engineering"):
-            self.logger.info(f"🔧 Starting feature engineering with comprehensive validation tracking")
-            self.logger.info(f"   Training input keys: {list(training_input.keys())}")
-            self.logger.info(f"   Pipeline state keys: {list(pipeline_state.keys())}")
-            self.logger.info(f"   Feature config: {self.feature_config}")
-            self.logger.info(f"   Validation framework available: {VALIDATION_AVAILABLE}")
-        
-        self.logger.info("🔧 Starting feature engineering...")
-        
-        # Get data to process
+        with step06_validation_context('execute_logic', 'feature_engineering'):
+            self.logger.info(f'🔧 Starting feature engineering with comprehensive validation tracking')
+            self.logger.info(f'   Training input keys: {list(training_input.keys())}')
+            self.logger.info(f'   Pipeline state keys: {list(pipeline_state.keys())}')
+            self.logger.info(f'   Feature config: {self.feature_config}')
+            self.logger.info(f'   Validation framework available: {VALIDATION_AVAILABLE}')
+        self.logger.info('🔧 Starting feature engineering...')
         data_dict = self._get_data_to_process(pipeline_state)
-        
-        # Process each data split
         engineered_data = {}
         feature_statistics = {}
-        
         for split_name, data in data_dict.items():
-            self.logger.info(f"📊 Engineering features for {split_name} split...")
-            
-            # Apply feature engineering
-            engineered_split = await self._engineer_features_for_split(
-                data, 
-                pipeline_state
-            )
-            self.logger.info(
-                f"✅ Engineered split '{split_name}': shape={engineered_split.shape}"
-            )
-            
-            # Calculate feature statistics
+            self.logger.info(f'📊 Engineering features for {split_name} split...')
+            engineered_split = await self._engineer_features_for_split(data, pipeline_state)
+            self.logger.info(f"✅ Engineered split '{split_name}': shape={engineered_split.shape}")
             stats = self._calculate_feature_statistics(engineered_split)
-            
             engineered_data[split_name] = engineered_split
             feature_statistics[split_name] = stats
-        
-        # Perform feature selection if enabled
-        if self.feature_config.get("feature_selection", {}).get("enabled", True):
-            self.logger.info("🎯 Performing feature selection...")
-            engineered_data, selected_features = await self._perform_feature_selection(
-                engineered_data,
-                feature_statistics
-            )
-            self.logger.info(
-                f"✅ Feature selection complete: selected={len(selected_features)}"
-            )
+        if self.feature_config.get('feature_selection', {}).get('enabled', True):
+            self.logger.info('🎯 Performing feature selection...')
+            engineered_data, selected_features = await self._perform_feature_selection(engineered_data, feature_statistics)
+            self.logger.info(f'✅ Feature selection complete: selected={len(selected_features)}')
         else:
             selected_features = self._get_all_feature_columns(engineered_data)
-        
-        # Generate reports
-        reports = self._generate_feature_reports(
-            engineered_data,
-            feature_statistics,
-            selected_features
-        )
-        
-        # Update pipeline state
-        pipeline_state.update({
-            "engineered_data": engineered_data,
-            "feature_statistics": feature_statistics,
-            "selected_features": selected_features,
-            "feature_reports": reports,
-            "feature_config": self.feature_config
-        })
-        
-        # Update individual splits if they exist
-        for split in ["train", "val", "test"]:
-            if split in engineered_data and f"{split}_data" in pipeline_state:
-                pipeline_state[f"{split}_data"] = engineered_data[split]
-        
-        # Save outputs
+        reports = self._generate_feature_reports(engineered_data, feature_statistics, selected_features)
+        pipeline_state.update({'engineered_data': engineered_data, 'feature_statistics': feature_statistics, 'selected_features': selected_features, 'feature_reports': reports, 'feature_config': self.feature_config})
+        for split in ['train', 'val', 'test']:
+            if split in engineered_data and f'{split}_data' in pipeline_state:
+                pipeline_state[f'{split}_data'] = engineered_data[split]
         await self._save_outputs(training_input, pipeline_state)
-        
         return pipeline_state
-    
+
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step outputs.
         
@@ -292,40 +187,29 @@ class FeatureEngineeringStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        
-        # Check if engineered data exists
-        if "engineered_data" not in pipeline_state:
-            errors.append("No engineered data in pipeline state")
-            return False, errors
-        
-        engineered_data = pipeline_state["engineered_data"]
-        
-        # Check if features were added
+        if 'engineered_data' not in pipeline_state:
+            errors.append('No engineered data in pipeline state')
+            return (False, errors)
+        engineered_data = pipeline_state['engineered_data']
         total_features = 0
         for split_name, data in engineered_data.items():
             if isinstance(data, pd.DataFrame):
-                feature_cols = [col for col in data.columns if col.startswith("feature_")]
+                feature_cols = [col for col in data.columns if col.startswith('feature_')]
                 total_features += len(feature_cols)
-        
         if total_features == 0:
-            errors.append("No features were engineered")
-        
-        # Check selected features
-        if "selected_features" in pipeline_state:
-            selected = pipeline_state["selected_features"]
+            errors.append('No features were engineered')
+        if 'selected_features' in pipeline_state:
+            selected = pipeline_state['selected_features']
             if len(selected) == 0:
-                errors.append("No features were selected")
-            
-            # Check if selected features exist in data
+                errors.append('No features were selected')
             for split_data in engineered_data.values():
                 if isinstance(split_data, pd.DataFrame):
                     missing_features = set(selected) - set(split_data.columns)
                     if missing_features:
-                        errors.append(f"Selected features missing from data: {missing_features}")
+                        errors.append(f'Selected features missing from data: {missing_features}')
                     break
-        
-        return len(errors) == 0, errors
-    
+        return (len(errors) == 0, errors)
+
     def _get_data_to_process(self, pipeline_state: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         """Get data splits to process.
         
@@ -336,24 +220,15 @@ class FeatureEngineeringStep(BaseStep):
             Dictionary of data splits
         """
         data_dict = {}
-        
-        # Check for individual splits first
-        for split in ["train", "val", "test"]:
-            if f"{split}_data" in pipeline_state:
-                data_dict[split] = pipeline_state[f"{split}_data"].copy()
-        
-        # If no splits, use labeled data
-        if not data_dict and "labeled_data" in pipeline_state:
-            data_dict["all"] = pipeline_state["labeled_data"].copy()
-        
+        for split in ['train', 'val', 'test']:
+            if f'{split}_data' in pipeline_state:
+                data_dict[split] = pipeline_state[f'{split}_data'].copy()
+        if not data_dict and 'labeled_data' in pipeline_state:
+            data_dict['all'] = pipeline_state['labeled_data'].copy()
         return data_dict
-    
+
     @step06_function_tracker
-    async def _engineer_features_for_split(
-        self,
-        data: pd.DataFrame,
-        pipeline_state: Dict[str, Any]
-    ) -> pd.DataFrame:
+    async def _engineer_features_for_split(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
         """Engineer features for a single data split.
         
         Args:
@@ -363,38 +238,25 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Data with engineered features
         """
-        # Start with original data
         engineered = data.copy()
-        
-        # Apply technical indicators
-        if self.feature_config.get("use_technical_indicators", True):
+        if self.feature_config.get('use_technical_indicators', True):
             if self.technical_engine:
                 engineered = self.technical_engine.apply_indicators(engineered)
             else:
                 engineered = self._apply_basic_indicators(engineered)
-        
-        # Apply interaction features
-        if self.feature_config.get("use_interaction_features", True):
+        if self.feature_config.get('use_interaction_features', True):
             if self.interaction_engine:
                 engineered = await self.interaction_engine.create_interactions(engineered)
             else:
                 engineered = self._create_basic_interactions(engineered)
-        
-        # Apply regime-aware features
-        if self.feature_config.get("use_regime_features", True) and "regime_labels" in data.columns:
+        if self.feature_config.get('use_regime_features', True) and 'regime_labels' in data.columns:
             if self.regime_engine:
-                engineered = self.regime_engine.create_regime_features(
-                    engineered,
-                    pipeline_state.get("regime_characteristics", {})
-                )
+                engineered = self.regime_engine.create_regime_features(engineered, pipeline_state.get('regime_characteristics', {}))
             else:
                 engineered = self._create_basic_regime_features(engineered)
-        
-        # Add time-based features
         engineered = self._add_time_features(engineered)
-        
         return engineered
-    
+
     @step06_function_tracker
     def _apply_basic_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic technical indicators.
@@ -405,34 +267,24 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Data with indicators
         """
-        # Simple moving averages
         for period in [10, 20, 50]:
-            data[f"feature_sma_{period}"] = data["close"].rolling(period).mean()
-            data[f"feature_sma_{period}_ratio"] = data["close"] / data[f"feature_sma_{period}"]
-        
-        # RSI
-        delta = data["close"].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            data[f'feature_sma_{period}'] = data['close'].rolling(period).mean()
+            data[f'feature_sma_{period}_ratio'] = data['close'] / data[f'feature_sma_{period}']
+        delta = data['close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss
-        data["feature_rsi"] = 100 - (100 / (1 + rs))
-        
-        # Bollinger Bands
-        sma = data["close"].rolling(20).mean()
-        std = data["close"].rolling(20).std()
-        data["feature_bb_upper"] = sma + 2 * std
-        data["feature_bb_lower"] = sma - 2 * std
-        data["feature_bb_position"] = (data["close"] - data["feature_bb_lower"]) / (
-            data["feature_bb_upper"] - data["feature_bb_lower"]
-        )
-        
-        # Volume features
-        if "volume" in data.columns:
-            data["feature_volume_sma"] = data["volume"].rolling(20).mean()
-            data["feature_volume_ratio"] = data["volume"] / data["feature_volume_sma"]
-        
+        data['feature_rsi'] = 100 - 100 / (1 + rs)
+        sma = data['close'].rolling(20).mean()
+        std = data['close'].rolling(20).std()
+        data['feature_bb_upper'] = sma + 2 * std
+        data['feature_bb_lower'] = sma - 2 * std
+        data['feature_bb_position'] = (data['close'] - data['feature_bb_lower']) / (data['feature_bb_upper'] - data['feature_bb_lower'])
+        if 'volume' in data.columns:
+            data['feature_volume_sma'] = data['volume'].rolling(20).mean()
+            data['feature_volume_ratio'] = data['volume'] / data['feature_volume_sma']
         return data
-    
+
     def _create_basic_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create basic feature interactions.
         
@@ -442,28 +294,15 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Data with interaction features
         """
-        feature_cols = [col for col in data.columns if col.startswith("feature_")]
-        
-        # Price-volume interactions
-        if "feature_volume_ratio" in data.columns and "feature_returns" in data.columns:
-            data["feature_price_volume_interaction"] = (
-                data["feature_returns"] * data["feature_volume_ratio"]
-            )
-        
-        # RSI-BB interactions
-        if "feature_rsi" in data.columns and "feature_bb_position" in data.columns:
-            data["feature_rsi_bb_interaction"] = (
-                data["feature_rsi"] * data["feature_bb_position"]
-            )
-        
-        # Momentum interactions
-        if "feature_sma_10_ratio" in data.columns and "feature_sma_50_ratio" in data.columns:
-            data["feature_momentum_interaction"] = (
-                data["feature_sma_10_ratio"] - data["feature_sma_50_ratio"]
-            )
-        
+        feature_cols = [col for col in data.columns if col.startswith('feature_')]
+        if 'feature_volume_ratio' in data.columns and 'feature_returns' in data.columns:
+            data['feature_price_volume_interaction'] = data['feature_returns'] * data['feature_volume_ratio']
+        if 'feature_rsi' in data.columns and 'feature_bb_position' in data.columns:
+            data['feature_rsi_bb_interaction'] = data['feature_rsi'] * data['feature_bb_position']
+        if 'feature_sma_10_ratio' in data.columns and 'feature_sma_50_ratio' in data.columns:
+            data['feature_momentum_interaction'] = data['feature_sma_10_ratio'] - data['feature_sma_50_ratio']
         return data
-    
+
     def _create_basic_regime_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create basic regime-aware features.
         
@@ -473,26 +312,13 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Data with regime features
         """
-        if "regime_label" in data.columns:
-            # One-hot encode regimes
-            regime_dummies = pd.get_dummies(
-                data["regime_label"], 
-                prefix="feature_regime"
-            )
+        if 'regime_label' in data.columns:
+            regime_dummies = pd.get_dummies(data['regime_label'], prefix='feature_regime')
             data = pd.concat([data, regime_dummies], axis=1)
-            
-            # Regime transition features
-            data["feature_regime_changed"] = (
-                data["regime_label"] != data["regime_label"].shift(1)
-            ).astype(int)
-            
-            # Time in regime
-            data["feature_time_in_regime"] = data.groupby(
-                (data["regime_label"] != data["regime_label"].shift()).cumsum()
-            ).cumcount()
-        
+            data['feature_regime_changed'] = (data['regime_label'] != data['regime_label'].shift(1)).astype(int)
+            data['feature_time_in_regime'] = data.groupby((data['regime_label'] != data['regime_label'].shift()).cumsum()).cumcount()
         return data
-    
+
     def _add_time_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add time-based features.
         
@@ -503,20 +329,16 @@ class FeatureEngineeringStep(BaseStep):
             Data with time features
         """
         if hasattr(data.index, 'hour'):
-            # Intraday features
-            data["feature_hour"] = data.index.hour
-            data["feature_minute"] = data.index.minute
-            data["feature_hour_sin"] = np.sin(2 * np.pi * data.index.hour / 24)
-            data["feature_hour_cos"] = np.cos(2 * np.pi * data.index.hour / 24)
-        
+            data['feature_hour'] = data.index.hour
+            data['feature_minute'] = data.index.minute
+            data['feature_hour_sin'] = np.sin(2 * np.pi * data.index.hour / 24)
+            data['feature_hour_cos'] = np.cos(2 * np.pi * data.index.hour / 24)
         if hasattr(data.index, 'dayofweek'):
-            # Day of week features
-            data["feature_dayofweek"] = data.index.dayofweek
-            data["feature_is_monday"] = (data.index.dayofweek == 0).astype(int)
-            data["feature_is_friday"] = (data.index.dayofweek == 4).astype(int)
-        
+            data['feature_dayofweek'] = data.index.dayofweek
+            data['feature_is_monday'] = (data.index.dayofweek == 0).astype(int)
+            data['feature_is_friday'] = (data.index.dayofweek == 4).astype(int)
         return data
-    
+
     def _calculate_feature_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate statistics for engineered features.
         
@@ -526,48 +348,27 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Feature statistics
         """
-        feature_cols = [col for col in data.columns if col.startswith("feature_")]
-        
-        stats = {
-            "n_features": len(feature_cols),
-            "feature_names": feature_cols,
-            "missing_values": {},
-            "zero_variance": [],
-            "high_correlation_pairs": []
-        }
-        
-        # Check missing values
+        feature_cols = [col for col in data.columns if col.startswith('feature_')]
+        stats = {'n_features': len(feature_cols), 'feature_names': feature_cols, 'missing_values': {}, 'zero_variance': [], 'high_correlation_pairs': []}
         for col in feature_cols:
             missing_pct = data[col].isna().sum() / len(data) * 100
             if missing_pct > 0:
-                stats["missing_values"][col] = missing_pct
-        
-        # Check zero variance features
+                stats['missing_values'][col] = missing_pct
         for col in feature_cols:
             if data[col].std() < 1e-10:
-                stats["zero_variance"].append(col)
-        
-        # Check high correlations (sample for efficiency)
+                stats['zero_variance'].append(col)
         if len(feature_cols) > 1:
             sample_size = min(1000, len(data))
             sample_data = data[feature_cols].sample(n=sample_size)
             corr_matrix = sample_data.corr()
-            
             for i in range(len(feature_cols)):
                 for j in range(i + 1, len(feature_cols)):
                     if abs(corr_matrix.iloc[i, j]) > 0.95:
-                        stats["high_correlation_pairs"].append(
-                            (feature_cols[i], feature_cols[j], corr_matrix.iloc[i, j])
-                        )
-        
+                        stats['high_correlation_pairs'].append((feature_cols[i], feature_cols[j], corr_matrix.iloc[i, j]))
         return stats
-    
-    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.DETAILED)
-    async def _perform_feature_selection(
-        self,
-        engineered_data: Dict[str, pd.DataFrame],
-        feature_statistics: Dict[str, Dict[str, Any]]
-    ) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
+
+    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.DETAILED)
+    async def _perform_feature_selection(self, engineered_data: Dict[str, pd.DataFrame], feature_statistics: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
         """Perform feature selection.
         
         Args:
@@ -577,49 +378,28 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Tuple of (filtered data, selected features)
         """
-        # Use training data for feature selection
-        train_data = engineered_data.get("train", next(iter(engineered_data.values())))
-        
-        # Get all feature columns
-        all_features = [col for col in train_data.columns if col.startswith("feature_")]
-        
-        # Remove zero variance features
+        train_data = engineered_data.get('train', next(iter(engineered_data.values())))
+        all_features = [col for col in train_data.columns if col.startswith('feature_')]
         zero_var_features = set()
         for stats in feature_statistics.values():
-            zero_var_features.update(stats.get("zero_variance", []))
-        
+            zero_var_features.update(stats.get('zero_variance', []))
         valid_features = [f for f in all_features if f not in zero_var_features]
-        
-        # Remove highly correlated features
         to_remove = set()
         for stats in feature_statistics.values():
-            for feat1, feat2, corr in stats.get("high_correlation_pairs", []):
-                # Remove the second feature in the pair
+            for feat1, feat2, corr in stats.get('high_correlation_pairs', []):
                 to_remove.add(feat2)
-        
         valid_features = [f for f in valid_features if f not in to_remove]
-        
-        # Apply max features limit
-        max_features = self.feature_config.get("feature_selection", {}).get("max_features", 100)
+        max_features = self.feature_config.get('feature_selection', {}).get('max_features', 100)
         if len(valid_features) > max_features:
-            # Simple selection: take first max_features
-            # In practice, you might want to use importance scores
             valid_features = valid_features[:max_features]
-        
-        self.logger.info(
-            f"✅ Selected {len(valid_features)} features from {len(all_features)} total"
-        )
-        
-        # Filter all data splits to selected features
+        self.logger.info(f'✅ Selected {len(valid_features)} features from {len(all_features)} total')
         selected_data = {}
-        base_columns = [col for col in train_data.columns if not col.startswith("feature_")]
+        base_columns = [col for col in train_data.columns if not col.startswith('feature_')]
         selected_columns = base_columns + valid_features
-        
         for split_name, data in engineered_data.items():
             selected_data[split_name] = data[selected_columns]
-        
-        return selected_data, valid_features
-    
+        return (selected_data, valid_features)
+
     def _get_all_feature_columns(self, engineered_data: Dict[str, pd.DataFrame]) -> List[str]:
         """Get all feature columns from engineered data.
         
@@ -632,17 +412,11 @@ class FeatureEngineeringStep(BaseStep):
         all_features = set()
         for data in engineered_data.values():
             if isinstance(data, pd.DataFrame):
-                features = [col for col in data.columns if col.startswith("feature_")]
+                features = [col for col in data.columns if col.startswith('feature_')]
                 all_features.update(features)
-        
         return sorted(list(all_features))
-    
-    def _generate_feature_reports(
-        self,
-        engineered_data: Dict[str, pd.DataFrame],
-        feature_statistics: Dict[str, Dict[str, Any]],
-        selected_features: List[str]
-    ) -> Dict[str, str]:
+
+    def _generate_feature_reports(self, engineered_data: Dict[str, pd.DataFrame], feature_statistics: Dict[str, Dict[str, Any]], selected_features: List[str]) -> Dict[str, str]:
         """Generate feature engineering reports.
         
         Args:
@@ -654,28 +428,11 @@ class FeatureEngineeringStep(BaseStep):
             Dictionary of reports
         """
         reports = {}
-        
-        # Summary report
-        summary_lines = [
-            "Feature Engineering Summary",
-            "=" * 40,
-            f"Total features created: {len(selected_features)}",
-            "",
-            "Data splits:"
-        ]
-        
+        summary_lines = ['Feature Engineering Summary', '=' * 40, f'Total features created: {len(selected_features)}', '', 'Data splits:']
         for split_name, data in engineered_data.items():
             if isinstance(data, pd.DataFrame):
-                summary_lines.append(
-                    f"  {split_name}: {data.shape[0]} rows × {data.shape[1]} columns"
-                )
-        
-        # Feature types breakdown
-        feature_types = {
-            "sma": 0, "rsi": 0, "bb": 0, "volume": 0, 
-            "regime": 0, "interaction": 0, "time": 0, "other": 0
-        }
-        
+                summary_lines.append(f'  {split_name}: {data.shape[0]} rows × {data.shape[1]} columns')
+        feature_types = {'sma': 0, 'rsi': 0, 'bb': 0, 'volume': 0, 'regime': 0, 'interaction': 0, 'time': 0, 'other': 0}
         for feat in selected_features:
             categorized = False
             for key in feature_types:
@@ -684,94 +441,62 @@ class FeatureEngineeringStep(BaseStep):
                     categorized = True
                     break
             if not categorized:
-                feature_types["other"] += 1
-        
-        summary_lines.extend([
-            "",
-            "Feature types:"
-        ])
+                feature_types['other'] += 1
+        summary_lines.extend(['', 'Feature types:'])
         for feat_type, count in feature_types.items():
             if count > 0:
-                summary_lines.append(f"  {feat_type}: {count}")
-        
-        reports["summary"] = "\n".join(summary_lines)
-        
-        # Statistics report
-        stats_lines = ["Feature Statistics", "=" * 40]
-        
+                summary_lines.append(f'  {feat_type}: {count}')
+        reports['summary'] = '\n'.join(summary_lines)
+        stats_lines = ['Feature Statistics', '=' * 40]
         for split_name, stats in feature_statistics.items():
-            stats_lines.extend([
-                "",
-                f"{split_name.upper()} split:",
-                f"  Total features: {stats.get('n_features', 0)}",
-                f"  Features with missing values: {len(stats.get('missing_values', {}))}",
-                f"  Zero variance features: {len(stats.get('zero_variance', []))}",
-                f"  High correlation pairs: {len(stats.get('high_correlation_pairs', []))}"
-            ])
-        
-        reports["statistics"] = "\n".join(stats_lines)
-        
+            stats_lines.extend(['', f'{split_name.upper()} split:', f"  Total features: {stats.get('n_features', 0)}", f"  Features with missing values: {len(stats.get('missing_values', {}))}", f"  Zero variance features: {len(stats.get('zero_variance', []))}", f"  High correlation pairs: {len(stats.get('high_correlation_pairs', []))}"])
+        reports['statistics'] = '\n'.join(stats_lines)
         return reports
-    
-    async def _save_outputs(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> None:
+
+    async def _save_outputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> None:
         """Save step outputs to disk.
         
         Args:
             training_input: Training input parameters
             pipeline_state: Pipeline state with results
         """
-        output_dir = Path(training_input.get("output_dir", "output")) / "step06_feature_engineering"
+        output_dir = Path(training_input.get('output_dir', 'output')) / 'step06_feature_engineering'
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save engineered data
-        if "engineered_data" in pipeline_state:
-            for split_name, data in pipeline_state["engineered_data"].items():
+        if 'engineered_data' in pipeline_state:
+            for split_name, data in pipeline_state['engineered_data'].items():
                 if isinstance(data, pd.DataFrame):
-                    file_path = output_dir / f"{split_name}_engineered.parquet"
+                    file_path = output_dir / f'{split_name}_engineered.parquet'
                     data.to_parquet(file_path)
-                    self.logger.info(f"💾 Saved {split_name} engineered data to {file_path}")
-        
-        # Save selected features
-        if "selected_features" in pipeline_state:
-            features_path = output_dir / "selected_features.json"
+                    self.logger.info(f'💾 Saved {split_name} engineered data to {file_path}')
+        if 'selected_features' in pipeline_state:
+            features_path = output_dir / 'selected_features.json'
             with open(features_path, 'w') as f:
-                json.dump(pipeline_state["selected_features"], f, indent=2)
-            self.logger.info(f"💾 Saved selected features to {features_path}")
-        
-        # Save feature statistics
-        if "feature_statistics" in pipeline_state:
-            stats_path = output_dir / "feature_statistics.json"
+                json.dump(pipeline_state['selected_features'], f, indent=2)
+            self.logger.info(f'💾 Saved selected features to {features_path}')
+        if 'feature_statistics' in pipeline_state:
+            stats_path = output_dir / 'feature_statistics.json'
             with open(stats_path, 'w') as f:
-                json.dump(pipeline_state["feature_statistics"], f, indent=2)
-            self.logger.info(f"💾 Saved feature statistics to {stats_path}")
-        
-        # Save reports
-        if "feature_reports" in pipeline_state:
-            for report_name, content in pipeline_state["feature_reports"].items():
-                report_path = output_dir / f"{report_name}_report.txt"
+                json.dump(pipeline_state['feature_statistics'], f, indent=2)
+            self.logger.info(f'💾 Saved feature statistics to {stats_path}')
+        if 'feature_reports' in pipeline_state:
+            for report_name, content in pipeline_state['feature_reports'].items():
+                report_path = output_dir / f'{report_name}_report.txt'
                 with open(report_path, 'w') as f:
                     f.write(content)
-                self.logger.info(f"💾 Saved {report_name} report")
-    
+                self.logger.info(f'💾 Saved {report_name} report')
+
     def get_required_inputs(self) -> list:
         """Get list of required inputs for this step."""
-        return ["labeled_data or split data with labels"]
-    
+        return ['labeled_data or split data with labels']
+
     def get_produced_outputs(self) -> list:
         """Get list of outputs produced by this step."""
-        return [
-            "engineered_data", "feature_statistics", 
-            "selected_features", "feature_reports"
-        ]
-    
+        return ['engineered_data', 'feature_statistics', 'selected_features', 'feature_reports']
+
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
-        return ["05_labeling"]
-    
+        return ['05_labeling']
+
     def generate_comprehensive_step06_report(self) -> Dict[str, Any]:
         """
         Generate comprehensive function execution report for step06 feature engineering.
@@ -779,110 +504,43 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Dictionary with detailed function execution analysis
         """
-        self.logger.info("📋 Generating comprehensive step06 feature engineering report...")
-        
-        # Get validation summary if available
+        self.logger.info('📋 Generating comprehensive step06 feature engineering report...')
         validation_summary = {}
         if VALIDATION_AVAILABLE:
             try:
                 validation_summary = get_step06_validation_summary()
             except Exception as e:
-                self.logger.warning(f"Could not get validation summary: {e}")
-        
-        # Generate internal statistics
-        internal_stats = {
-            "feature_engineering_config": {
-                "use_technical_indicators": self.feature_config.get("use_technical_indicators", True),
-                "use_interaction_features": self.feature_config.get("use_interaction_features", True),
-                "use_regime_features": self.feature_config.get("use_regime_features", True),
-                "use_dynamic_lookback": self.feature_config.get("use_dynamic_lookback", True),
-                "feature_selection_enabled": self.feature_config.get("feature_selection", {}).get("enabled", True)
-            },
-            "component_availability": {
-                "technical_engine": self.technical_engine is not None,
-                "interaction_engine": self.interaction_engine is not None,
-                "regime_engine": self.regime_engine is not None
-            },
-            "validation_status": {
-                "validation_framework_available": VALIDATION_AVAILABLE,
-                "comprehensive_validation_enabled": True
-            }
-        }
-        
-        # Combine all statistics
-        comprehensive_report = {
-            "timestamp": datetime.now().isoformat(),
-            "validation_summary": validation_summary,
-            "internal_statistics": internal_stats,
-            "recommendations": self._generate_step06_feature_recommendations(internal_stats),
-            "function_call_analysis": self._analyze_step06_function_calls(),
-            "performance_analysis": self._analyze_step06_performance()
-        }
-        
-        self.logger.info("✅ Comprehensive step06 feature engineering report generated")
+                self.logger.warning(f'Could not get validation summary: {e}')
+        internal_stats = {'feature_engineering_config': {'use_technical_indicators': self.feature_config.get('use_technical_indicators', True), 'use_interaction_features': self.feature_config.get('use_interaction_features', True), 'use_regime_features': self.feature_config.get('use_regime_features', True), 'use_dynamic_lookback': self.feature_config.get('use_dynamic_lookback', True), 'feature_selection_enabled': self.feature_config.get('feature_selection', {}).get('enabled', True)}, 'component_availability': {'technical_engine': self.technical_engine is not None, 'interaction_engine': self.interaction_engine is not None, 'regime_engine': self.regime_engine is not None}, 'validation_status': {'validation_framework_available': VALIDATION_AVAILABLE, 'comprehensive_validation_enabled': True}}
+        comprehensive_report = {'timestamp': datetime.now().isoformat(), 'validation_summary': validation_summary, 'internal_statistics': internal_stats, 'recommendations': self._generate_step06_feature_recommendations(internal_stats), 'function_call_analysis': self._analyze_step06_function_calls(), 'performance_analysis': self._analyze_step06_performance()}
+        self.logger.info('✅ Comprehensive step06 feature engineering report generated')
         return comprehensive_report
-    
+
     def _generate_step06_feature_recommendations(self, stats: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on step06 feature engineering execution statistics."""
         recommendations = []
-        
-        # Configuration recommendations
-        if not stats["feature_engineering_config"]["use_technical_indicators"]:
-            recommendations.append("Enable technical indicators for better feature coverage")
-        
-        if not stats["feature_engineering_config"]["use_interaction_features"]:
-            recommendations.append("Enable interaction features to capture non-linear relationships")
-        
-        if not stats["feature_engineering_config"]["use_regime_features"]:
-            recommendations.append("Enable regime features for regime-aware modeling")
-        
-        if not stats["feature_engineering_config"]["use_dynamic_lookback"]:
-            recommendations.append("Enable dynamic lookback optimization for better performance")
-        
-        # Component recommendations
-        if not stats["component_availability"]["technical_engine"]:
-            recommendations.append("Initialize technical indicator engine for advanced features")
-        
-        if not stats["component_availability"]["interaction_engine"]:
-            recommendations.append("Initialize interaction engine for feature interactions")
-        
-        if not stats["component_availability"]["regime_engine"]:
-            recommendations.append("Initialize regime engine for regime-aware features")
-        
-        # Validation recommendations
-        if not stats["validation_status"]["validation_framework_available"]:
-            recommendations.append("Enable validation framework for better error tracking and reporting")
-        
+        if not stats['feature_engineering_config']['use_technical_indicators']:
+            recommendations.append('Enable technical indicators for better feature coverage')
+        if not stats['feature_engineering_config']['use_interaction_features']:
+            recommendations.append('Enable interaction features to capture non-linear relationships')
+        if not stats['feature_engineering_config']['use_regime_features']:
+            recommendations.append('Enable regime features for regime-aware modeling')
+        if not stats['feature_engineering_config']['use_dynamic_lookback']:
+            recommendations.append('Enable dynamic lookback optimization for better performance')
+        if not stats['component_availability']['technical_engine']:
+            recommendations.append('Initialize technical indicator engine for advanced features')
+        if not stats['component_availability']['interaction_engine']:
+            recommendations.append('Initialize interaction engine for feature interactions')
+        if not stats['component_availability']['regime_engine']:
+            recommendations.append('Initialize regime engine for regime-aware features')
+        if not stats['validation_status']['validation_framework_available']:
+            recommendations.append('Enable validation framework for better error tracking and reporting')
         return recommendations
-    
+
     def _analyze_step06_function_calls(self) -> Dict[str, Any]:
         """Analyze function call patterns for step06 feature engineering."""
-        return {
-            "main_execution_method": "execute_logic",
-            "feature_engineering_methods": [
-                "_engineer_features_for_split",
-                "_apply_basic_indicators",
-                "_create_basic_interactions",
-                "_create_basic_regime_features",
-                "_add_time_features"
-            ],
-            "feature_selection_methods": [
-                "_perform_feature_selection",
-                "_calculate_feature_statistics"
-            ],
-            "validation_methods": [
-                "validate_inputs",
-                "validate_outputs"
-            ]
-        }
-    
+        return {'main_execution_method': 'execute_logic', 'feature_engineering_methods': ['_engineer_features_for_split', '_apply_basic_indicators', '_create_basic_interactions', '_create_basic_regime_features', '_add_time_features'], 'feature_selection_methods': ['_perform_feature_selection', '_calculate_feature_statistics'], 'validation_methods': ['validate_inputs', 'validate_outputs']}
+
     def _analyze_step06_performance(self) -> Dict[str, Any]:
         """Analyze performance metrics for step06 feature engineering."""
-        return {
-            "step_type": "feature_engineering",
-            "base_class": "BaseStep",
-            "async_execution": True,
-            "comprehensive_validation": True,
-            "error_handling": True,
-            "feature_selection": self.feature_config.get("feature_selection", {}).get("enabled", True)
-        }
+        return {'step_type': 'feature_engineering', 'base_class': 'BaseStep', 'async_execution': True, 'comprehensive_validation': True, 'error_handling': True, 'feature_selection': self.feature_config.get('feature_selection', {}).get('enabled', True)}

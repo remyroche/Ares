@@ -11,6 +11,7 @@ Enhanced with comprehensive logging, progress tracking, and quality monitoring.
 
 from .step16_confidence_calibration_per_regime import ConfidenceCalibrationPerRegimeStep
 from .step17_final_parameters_optimization_new import FinalParametersOptimizationStep
+from .validators.optimisation_validators import (
     ConfidenceCalibrationStepValidator,
     FinalParametersOptimizationStepValidator,
     OptimisationPipelineStepValidator,
@@ -29,12 +30,17 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
     - 📈 Performance metrics tracking
     - 🛡️ Data quality monitoring throughout the process
     """
+    from .utils.common_operations import (
         format_datetime, get_current_datetime, safe_file_exists, 
         ensure_directory, safe_json_dump, safe_json_load, safe_sleep
     )
     from .utils.data_quality_framework import DataQualityFramework
     from .utils.logger import system_logger
     import time
+import collections
+import json
+import logging
+import pandas as pd
     
     logger = system_logger.getChild('OptimisationPipeline')
     

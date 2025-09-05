@@ -12,6 +12,7 @@ from .voting_mechanism import VotingMechanism
 from .weight_optimizer import WeightOptimizer
 from .ensemble_evaluator import EnsembleEvaluator
 from .core.decorators.errors import handles_errors
+import logging
 
 class AnalystEnsembleCreationStep(BaseStep):
     """Step 13: Analyst Ensemble Creation with advanced voting mechanisms."""

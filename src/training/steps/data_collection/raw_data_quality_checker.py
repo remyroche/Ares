@@ -8,8 +8,14 @@ import os
 import warnings
 from datetime import datetime, timedelta
 from typing import Any
+import numpy as np
+
 warnings.filterwarnings('ignore')
 from .utils.logger import system_logger
+import pandas as pd
+import json
+import logging
+import time
 
 class RawDataQualityChecker:
     """Comprehensive raw data quality checker for early detection of issues."
@@ -1036,6 +1042,7 @@ class RawDataQualityChecker:
             self.logger.info(f'   Time range: {start_time} to {end_time}')
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
+
             success = asyncio.run(download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
             if success:
                 downloaded_data = self._load_downloaded_data(symbol, exchange, timeframe)

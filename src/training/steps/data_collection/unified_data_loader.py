@@ -31,6 +31,10 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
+    from src.core.domain import (
+import numpy as np
+import pandas as pd
+
         guard_dataframe_nulls, 
         secure_file_path, 
         validate_dataframe_schema, 

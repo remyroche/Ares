@@ -6,11 +6,10 @@ from typing import Any, Dict, List
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 
-from sklearn.cluster import DBSCAN
-
-
 # DBSCAN clustering for S/R level analysis
 try:
+    from sklearn.cluster import DBSCAN
+
     DBSCAN_AVAILABLE = True
 except ImportError:
     DBSCAN_AVAILABLE = False
@@ -19,6 +18,7 @@ except ImportError:
 
 class SRLevelDetector:
     """Detects support and resistance levels using various methods."""
+import numpy as np
     
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize SR level detector."""

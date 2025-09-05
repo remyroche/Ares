@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Data Quality Assessment Script
 
@@ -27,6 +29,10 @@ src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+import numpy as np
+import datetime
+import logging
+import os
 
 
 class EnhancedDataQualityAnalyzer:
@@ -407,36 +413,35 @@ async def main():
             return obj.to_dict()
         return obj
 
-    import json
-import pandas as pd
+import json
 
-    with open(output_file, "w") as f:
-        json.dump(results, f, indent=2, default=convert_numpy_types)
+with open(output_file, "w") as f:
+    json.dump(results, f, indent=2, default=convert_numpy_types)
 
-    print(f"✅ Data quality report saved to: {output_file}")
+print(f"✅ Data quality report saved to: {output_file}")
 
-    # Print summary
-    summary=results["summary"]
-    print("\n📊 Data Quality Summary:")
-    print(f"Total features: {summary['total_features']}")
-    print(f"Total samples: {summary['total_samples']}")
-    print(f"Critical issues: {len(summary['critical_issues'])}")
-    print(f"Warnings: {len(summary['warnings'])}")
+# Print summary
+summary=results["summary"]
+print("\n📊 Data Quality Summary:")
+print(f"Total features: {summary['total_features']}")
+print(f"Total samples: {summary['total_samples']}")
+print(f"Critical issues: {len(summary['critical_issues'])}")
+print(f"Warnings: {len(summary['warnings'])}")
 
-    if summary["critical_issues"]:
-        print("\n🚨 Critical Issues:")
-        for issue in summary["critical_issues"]:
-            print(f"  - {issue}")
+if summary["critical_issues"]:
+    print("\n🚨 Critical Issues:")
+    for issue in summary["critical_issues"]:
+        print(f"  - {issue}")
 
-    if summary["warnings"]:
-        print("\n⚠️ Warnings:")
-        for warning in summary["warnings"]:
-            print(f"  - {warning}")
+if summary["warnings"]:
+    print("\n⚠️ Warnings:")
+    for warning in summary["warnings"]:
+        print(f"  - {warning}")
 
-    if summary["recommendations"]:
-        print("\n💡 Recommendations:")
-        for rec in summary["recommendations"]:
-            print(f"  - {rec}")
+if summary["recommendations"]:
+    print("\n💡 Recommendations:")
+    for rec in summary["recommendations"]:
+        print(f"  - {rec}")
 
 
 if __name__== "__main__":

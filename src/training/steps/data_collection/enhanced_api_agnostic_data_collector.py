@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced API-Agnostic Data Collector
 
@@ -29,6 +31,10 @@ sys.path.insert(0, str(project_root))
 
 from .utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
+import logging
+import numpy as np
+import typing
+
     DataType, EnhancedDataValidator, get_validator, ValidationSeverity
 )
 
@@ -823,12 +829,6 @@ class EnhancedAPIAgnosticDataCollector:
         """Save collected data to files."""
         try:
             import os
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
-import pandas as pd
             
             # Create data directory
             os.makedirs(data_dir, exist_ok=True)

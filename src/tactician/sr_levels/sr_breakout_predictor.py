@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 """Refactored SR Breakout Predictor using modular components."""
 
 from datetime import datetime
@@ -12,10 +14,8 @@ from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
 
 # Import modular components
 from .sr_modules import SRFeatureExtractor, SRLevelDetector, SRMetricsCalculator
-
-from .sr_modules import SRReportGenerator
-from .sr_modules import SRAnalyzer
-
+import logging
+import time
 
 
 class SRBreakoutPredictor:
@@ -83,11 +83,14 @@ class SRBreakoutPredictor:
             
             # Initialize optional components
             try:
+                from .sr_modules import SRReportGenerator
                 self.report_generator = SRReportGenerator(self.config)
             except ImportError:
                 self.logger.warning("Report generator not available")
             
             try:
+                from .sr_modules import SRAnalyzer
+
                 self.analyzer = SRAnalyzer(self.config)
             except ImportError:
                 self.logger.warning("SR analyzer not available")

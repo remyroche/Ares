@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import numpy as np
+import src.utils.pipeline_standards
+import pandas as pd
+
 """Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic.
 
 This module extends the existing HMM-based training to support intelligent
@@ -34,7 +38,7 @@ from src.training.steps.step04_analyst_labeling_feature_engineering_components.p
     ProfitBasedFeatureEngineering
 )
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.pipeline_standards import (
+
     PerformanceLevel,
     ValidationLevel,
     adaptive_resource_allocation,
@@ -1533,6 +1537,7 @@ async def run_enhanced_step(
         try:
             from .utils.regime_data_access import get_regime_column, split_train_val_test_by_regime
             from .core.decorators.errors import handles_errors
+
             regime_col = get_regime_column(data)
             if regime_col is not None:
                 logger.info(f"🔁 Running per-regime enhanced training based on '{regime_col}'")

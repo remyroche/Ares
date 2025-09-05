@@ -7,15 +7,15 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 try:
-    try:
     import talib
-except ImportError:
-    talib = None
 except ImportError:
     talib = None
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
 from .core.decorators.errors import handles_errors
+import os
+import time
+
 logger = logging.getLogger(__name__)
 
 def handle_errors(func: Callable) -> None:

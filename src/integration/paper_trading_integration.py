@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Paper Trading Integration Module
 
@@ -30,6 +32,8 @@ from .paper_trader import PaperTrader, setup_paper_trader
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from .reports.paper_trading_reporter import PaperTradingReporter
+import logging
+import time
 
 class PaperTradingIntegration:
     """
@@ -91,6 +95,7 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reporting.paper_trading_reporter import (
+
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

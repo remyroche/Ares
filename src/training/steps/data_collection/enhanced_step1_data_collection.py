@@ -12,6 +12,9 @@ import sys
 import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+import pandas as pd
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
@@ -19,6 +22,8 @@ try:
     from .utils.logger import system_logger
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
+import typing
+
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1')
@@ -259,10 +264,6 @@ async def run_enhanced_step1(training_input: Dict[str, Any], pipeline_state: Dic
     return await step01.execute(training_input, pipeline_state)
 if __name__ == '__main__':
     import asyncio
-    import pandas as pd
-    from typing import Dict, Any, Optional
-    import numpy as np
-    import logging
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 

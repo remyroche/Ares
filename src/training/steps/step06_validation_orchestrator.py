@@ -43,10 +43,11 @@ except ImportError as e:
         COMPLETED = 'completed'
         FAILED = 'failed'
         TIMEOUT = 'timeout'
-try:
-    from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
+
 import time
 
+try:
+    from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
     COMPONENTS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f'FeatureInteractionEngine not available: {e}')

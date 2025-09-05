@@ -41,252 +41,252 @@ import collections
 import json
 import logging
 import pandas as pd
+
+logger = system_logger.getChild('OptimisationPipeline')
+
+# Initialize comprehensive logging and progress tracking
+pipeline_start_time = time.time()
+step_count = 0
+total_steps = 2  # Confidence calibration + Parameter optimization
+error_count = 0
+warning_count = 0
+quality_issues = []
+
+def log_progress(step_name: str, step_number: int, total_steps: int, status: str = "STARTING"):
+    """Log progress with emojis and detailed information."""
+    progress_pct = (step_number / total_steps) * 100
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
     
-    logger = system_logger.getChild('OptimisationPipeline')
+    if status == "STARTING":
+        logger.info(f"🚀 [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name}")
+        print(f"🚀 [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name}")
+    elif status == "COMPLETED":
+        logger.info(f"✅ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} COMPLETED")
+        print(f"✅ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} COMPLETED")
+    elif status == "FAILED":
+        logger.error(f"❌ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} FAILED")
+        print(f"❌ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} FAILED")
+    elif status == "WARNING":
+        logger.warning(f"⚠️ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} WARNING")
+        print(f"⚠️ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} WARNING")
+
+def log_quality_issue(issue_type: str, description: str, severity: str = "WARNING"):
+    """Log data quality issues with detailed reporting."""
+    global quality_issues
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
     
-    # Initialize comprehensive logging and progress tracking
-    pipeline_start_time = time.time()
-    step_count = 0
-    total_steps = 2  # Confidence calibration + Parameter optimization
-    error_count = 0
-    warning_count = 0
-    quality_issues = []
+    issue = {
+        'timestamp': timestamp,
+        'type': issue_type,
+        'description': description,
+        'severity': severity
+    }
+    quality_issues.append(issue)
     
-    def log_progress(step_name: str, step_number: int, total_steps: int, status: str = "STARTING"):
-        """Log progress with emojis and detailed information."""
-        progress_pct = (step_number / total_steps) * 100
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
-        
-        if status == "STARTING":
-            logger.info(f"🚀 [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name}")
-            print(f"🚀 [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name}")
-        elif status == "COMPLETED":
-            logger.info(f"✅ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} COMPLETED")
-            print(f"✅ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} COMPLETED")
-        elif status == "FAILED":
-            logger.error(f"❌ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} FAILED")
-            print(f"❌ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} FAILED")
-        elif status == "WARNING":
-            logger.warning(f"⚠️ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} WARNING")
-            print(f"⚠️ [{timestamp}] STEP {step_number}/{total_steps} ({progress_pct:.1f}%) - {step_name} WARNING")
+    if severity == "ERROR":
+        logger.error(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+        print(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+    elif severity == "WARNING":
+        logger.warning(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+        print(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+    else:
+        logger.info(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+        print(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+
+def log_performance_metrics(step_name: str, duration: float, memory_usage: float = None):
+    """Log performance metrics for optimization steps."""
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    logger.info(f"📊 [{timestamp}] PERFORMANCE - {step_name}: {duration:.2f}s")
+    print(f"📊 [{timestamp}] PERFORMANCE - {step_name}: {duration:.2f}s")
+    if memory_usage:
+        logger.info(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
+        print(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
+
+def log_calibration_outcomes(calibration_results: dict, symbol: str, exchange: str):
+    """Log detailed calibration outcomes and metrics."""
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
     
-    def log_quality_issue(issue_type: str, description: str, severity: str = "WARNING"):
-        """Log data quality issues with detailed reporting."""
-        global quality_issues
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
-        
-        issue = {
-            'timestamp': timestamp,
-            'type': issue_type,
-            'description': description,
-            'severity': severity
-        }
-        quality_issues.append(issue)
-        
-        if severity == "ERROR":
-            logger.error(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
-            print(f"🔴 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
-        elif severity == "WARNING":
-            logger.warning(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
-            print(f"🟡 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
-        else:
-            logger.info(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
-            print(f"🔵 [{timestamp}] QUALITY ISSUE - {issue_type}: {description}")
+    logger.info(f"🎯 [{timestamp}] CALIBRATION OUTCOMES ANALYSIS")
+    print(f"🎯 [{timestamp}] CALIBRATION OUTCOMES ANALYSIS")
+    print("=" * 60)
     
-    def log_performance_metrics(step_name: str, duration: float, memory_usage: float = None):
-        """Log performance metrics for optimization steps."""
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
-        logger.info(f"📊 [{timestamp}] PERFORMANCE - {step_name}: {duration:.2f}s")
-        print(f"📊 [{timestamp}] PERFORMANCE - {step_name}: {duration:.2f}s")
-        if memory_usage:
-            logger.info(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
-            print(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
+    if not calibration_results:
+        logger.warning(f"⚠️ [{timestamp}] No calibration results available")
+        print(f"⚠️ [{timestamp}] No calibration results available")
+        return
     
-    def log_calibration_outcomes(calibration_results: dict, symbol: str, exchange: str):
-        """Log detailed calibration outcomes and metrics."""
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    # Extract key calibration metrics
+    try:
+        # Overall calibration performance
+        overall_performance = calibration_results.get('overall_calibration_performance', 0.0)
+        logger.info(f"📈 Overall Calibration Performance: {overall_performance:.4f}")
+        print(f"📈 Overall Calibration Performance: {overall_performance:.4f}")
         
-        logger.info(f"🎯 [{timestamp}] CALIBRATION OUTCOMES ANALYSIS")
-        print(f"🎯 [{timestamp}] CALIBRATION OUTCOMES ANALYSIS")
-        print("=" * 60)
+        # Calibration methods used
+        calibration_methods = calibration_results.get('calibration_methods_used', set())
+        if calibration_methods:
+            methods_str = ", ".join(calibration_methods)
+            logger.info(f"🔧 Calibration Methods Used: {methods_str}")
+            print(f"🔧 Calibration Methods Used: {methods_str}")
         
-        if not calibration_results:
-            logger.warning(f"⚠️ [{timestamp}] No calibration results available")
-            print(f"⚠️ [{timestamp}] No calibration results available")
-            return
-        
-        # Extract key calibration metrics
-        try:
-            # Overall calibration performance
-            overall_performance = calibration_results.get('overall_calibration_performance', 0.0)
-            logger.info(f"📈 Overall Calibration Performance: {overall_performance:.4f}")
-            print(f"📈 Overall Calibration Performance: {overall_performance:.4f}")
+        # Specialist calibration results
+        calibrated_specialists = calibration_results.get('calibrated_specialists', {})
+        if calibrated_specialists:
+            logger.info(f"👥 Specialists Calibrated: {len(calibrated_specialists)}")
+            print(f"👥 Specialists Calibrated: {len(calibrated_specialists)}")
             
-            # Calibration methods used
-            calibration_methods = calibration_results.get('calibration_methods_used', set())
-            if calibration_methods:
-                methods_str = ", ".join(calibration_methods)
-                logger.info(f"🔧 Calibration Methods Used: {methods_str}")
-                print(f"🔧 Calibration Methods Used: {methods_str}")
-            
-            # Specialist calibration results
-            calibrated_specialists = calibration_results.get('calibrated_specialists', {})
-            if calibrated_specialists:
-                logger.info(f"👥 Specialists Calibrated: {len(calibrated_specialists)}")
-                print(f"👥 Specialists Calibrated: {len(calibrated_specialists)}")
+            for specialist_type, specialist_data in calibrated_specialists.items():
+                specialist_performance = specialist_data.get('calibration_performance', {})
+                accuracy_improvement = specialist_performance.get('accuracy_improvement', 0.0)
+                confidence_improvement = specialist_performance.get('confidence_improvement', 0.0)
                 
-                for specialist_type, specialist_data in calibrated_specialists.items():
-                    specialist_performance = specialist_data.get('calibration_performance', {})
-                    accuracy_improvement = specialist_performance.get('accuracy_improvement', 0.0)
-                    confidence_improvement = specialist_performance.get('confidence_improvement', 0.0)
-                    
-                    logger.info(f"   • {specialist_type}: Accuracy +{accuracy_improvement:.4f}, Confidence +{confidence_improvement:.4f}")
-                    print(f"   • {specialist_type}: Accuracy +{accuracy_improvement:.4f}, Confidence +{confidence_improvement:.4f}")
-            
-            # Regime-specific results
-            regime_results = calibration_results.get('regime_specific_results', {})
-            if regime_results:
-                logger.info(f"🎭 Regime-Specific Calibrations: {len(regime_results)} regimes")
-                print(f"🎭 Regime-Specific Calibrations: {len(regime_results)} regimes")
-                
-                for regime_id, regime_data in regime_results.items():
-                    regime_performance = regime_data.get('regime_calibration_performance', 0.0)
-                    logger.info(f"   • Regime {regime_id}: Performance {regime_performance:.4f}")
-                    print(f"   • Regime {regime_id}: Performance {regime_performance:.4f}")
-            
-            # Calibration quality assessment
-            calibration_quality = "EXCELLENT" if overall_performance > 0.8 else "GOOD" if overall_performance > 0.6 else "FAIR" if overall_performance > 0.4 else "POOR"
-            quality_emoji = "🟢" if overall_performance > 0.8 else "🟡" if overall_performance > 0.6 else "🟠" if overall_performance > 0.4 else "🔴"
-            
-            logger.info(f"{quality_emoji} Calibration Quality: {calibration_quality} ({overall_performance:.4f})")
-            print(f"{quality_emoji} Calibration Quality: {calibration_quality} ({overall_performance:.4f})")
-            
-            # Log quality issues if any
-            if overall_performance < 0.6:
-                log_quality_issue("CALIBRATION_QUALITY", f"Low calibration performance: {overall_performance:.4f}", "WARNING")
-            
-        except Exception as e:
-            logger.error(f"❌ Error analyzing calibration outcomes: {e}")
-            print(f"❌ Error analyzing calibration outcomes: {e}")
+                logger.info(f"   • {specialist_type}: Accuracy +{accuracy_improvement:.4f}, Confidence +{confidence_improvement:.4f}")
+                print(f"   • {specialist_type}: Accuracy +{accuracy_improvement:.4f}, Confidence +{confidence_improvement:.4f}")
         
-        print("=" * 60)
+        # Regime-specific results
+        regime_results = calibration_results.get('regime_specific_results', {})
+        if regime_results:
+            logger.info(f"🎭 Regime-Specific Calibrations: {len(regime_results)} regimes")
+            print(f"🎭 Regime-Specific Calibrations: {len(regime_results)} regimes")
+            
+            for regime_id, regime_data in regime_results.items():
+                regime_performance = regime_data.get('regime_calibration_performance', 0.0)
+                logger.info(f"   • Regime {regime_id}: Performance {regime_performance:.4f}")
+                print(f"   • Regime {regime_id}: Performance {regime_performance:.4f}")
+        
+        # Calibration quality assessment
+        calibration_quality = "EXCELLENT" if overall_performance > 0.8 else "GOOD" if overall_performance > 0.6 else "FAIR" if overall_performance > 0.4 else "POOR"
+        quality_emoji = "🟢" if overall_performance > 0.8 else "🟡" if overall_performance > 0.6 else "🟠" if overall_performance > 0.4 else "🔴"
+        
+        logger.info(f"{quality_emoji} Calibration Quality: {calibration_quality} ({overall_performance:.4f})")
+        print(f"{quality_emoji} Calibration Quality: {calibration_quality} ({overall_performance:.4f})")
+        
+        # Log quality issues if any
+        if overall_performance < 0.6:
+            log_quality_issue("CALIBRATION_QUALITY", f"Low calibration performance: {overall_performance:.4f}", "WARNING")
+        
+    except Exception as e:
+        logger.error(f"❌ Error analyzing calibration outcomes: {e}")
+        print(f"❌ Error analyzing calibration outcomes: {e}")
     
-    def log_optimization_outcomes(optimization_results: dict, symbol: str, exchange: str):
-        """Log detailed parameter optimization outcomes and metrics."""
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    print("=" * 60)
+
+def log_optimization_outcomes(optimization_results: dict, symbol: str, exchange: str):
+    """Log detailed parameter optimization outcomes and metrics."""
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    
+    logger.info(f"⚙️ [{timestamp}] OPTIMIZATION OUTCOMES ANALYSIS")
+    print(f"⚙️ [{timestamp}] OPTIMIZATION OUTCOMES ANALYSIS")
+    print("=" * 60)
+    
+    if not optimization_results:
+        logger.warning(f"⚠️ [{timestamp}] No optimization results available")
+        print(f"⚠️ [{timestamp}] No optimization results available")
+        return
+    
+    try:
+        # Overall optimization summary
+        categories_optimized = list(optimization_results.keys())
+        logger.info(f"📊 Categories Optimized: {len(categories_optimized)}")
+        print(f"📊 Categories Optimized: {len(categories_optimized)}")
         
-        logger.info(f"⚙️ [{timestamp}] OPTIMIZATION OUTCOMES ANALYSIS")
-        print(f"⚙️ [{timestamp}] OPTIMIZATION OUTCOMES ANALYSIS")
-        print("=" * 60)
+        total_improvement = 0.0
+        successful_categories = 0
         
-        if not optimization_results:
-            logger.warning(f"⚠️ [{timestamp}] No optimization results available")
-            print(f"⚠️ [{timestamp}] No optimization results available")
-            return
-        
-        try:
-            # Overall optimization summary
-            categories_optimized = list(optimization_results.keys())
-            logger.info(f"📊 Categories Optimized: {len(categories_optimized)}")
-            print(f"📊 Categories Optimized: {len(categories_optimized)}")
+        # Analyze each optimization category
+        for category, results in optimization_results.items():
+            if not results:
+                logger.warning(f"⚠️ No results for category: {category}")
+                print(f"⚠️ No results for category: {category}")
+                continue
             
-            total_improvement = 0.0
-            successful_categories = 0
+            # Extract optimization metrics
+            best_value = results.get('best_value', 0.0)
+            n_trials = results.get('n_trials', 0)
+            improvement = results.get('improvement', 0.0)
+            optimization_time = results.get('optimization_time', 0.0)
             
-            # Analyze each optimization category
-            for category, results in optimization_results.items():
-                if not results:
-                    logger.warning(f"⚠️ No results for category: {category}")
-                    print(f"⚠️ No results for category: {category}")
-                    continue
+            # Log category results
+            logger.info(f"🔧 {category.upper()}:")
+            print(f"🔧 {category.upper()}:")
+            logger.info(f"   • Best Value: {best_value:.6f}")
+            print(f"   • Best Value: {best_value:.6f}")
+            logger.info(f"   • Trials: {n_trials}")
+            print(f"   • Trials: {n_trials}")
+            logger.info(f"   • Improvement: {improvement:.4f}")
+            print(f"   • Improvement: {improvement:.4f}")
+            logger.info(f"   • Time: {optimization_time:.2f}s")
+            print(f"   • Time: {optimization_time:.2f}s")
+            
+            # Check for optimization quality
+            if improvement > 0:
+                successful_categories += 1
+                total_improvement += improvement
                 
-                # Extract optimization metrics
-                best_value = results.get('best_value', 0.0)
-                n_trials = results.get('n_trials', 0)
-                improvement = results.get('improvement', 0.0)
-                optimization_time = results.get('optimization_time', 0.0)
-                
-                # Log category results
-                logger.info(f"🔧 {category.upper()}:")
-                print(f"🔧 {category.upper()}:")
-                logger.info(f"   • Best Value: {best_value:.6f}")
-                print(f"   • Best Value: {best_value:.6f}")
-                logger.info(f"   • Trials: {n_trials}")
-                print(f"   • Trials: {n_trials}")
-                logger.info(f"   • Improvement: {improvement:.4f}")
-                print(f"   • Improvement: {improvement:.4f}")
-                logger.info(f"   • Time: {optimization_time:.2f}s")
-                print(f"   • Time: {optimization_time:.2f}s")
-                
-                # Check for optimization quality
-                if improvement > 0:
-                    successful_categories += 1
-                    total_improvement += improvement
-                    
-                    if improvement > 0.1:
-                        logger.info(f"   ✅ Excellent improvement: +{improvement:.4f}")
-                        print(f"   ✅ Excellent improvement: +{improvement:.4f}")
-                    elif improvement > 0.05:
-                        logger.info(f"   ✅ Good improvement: +{improvement:.4f}")
-                        print(f"   ✅ Good improvement: +{improvement:.4f}")
-                    else:
-                        logger.info(f"   ⚠️ Modest improvement: +{improvement:.4f}")
-                        print(f"   ⚠️ Modest improvement: +{improvement:.4f}")
+                if improvement > 0.1:
+                    logger.info(f"   ✅ Excellent improvement: +{improvement:.4f}")
+                    print(f"   ✅ Excellent improvement: +{improvement:.4f}")
+                elif improvement > 0.05:
+                    logger.info(f"   ✅ Good improvement: +{improvement:.4f}")
+                    print(f"   ✅ Good improvement: +{improvement:.4f}")
                 else:
-                    logger.warning(f"   ❌ No improvement or degradation: {improvement:.4f}")
-                    print(f"   ❌ No improvement or degradation: {improvement:.4f}")
-                    log_quality_issue("OPTIMIZATION_DEGRADATION", f"{category} showed no improvement", "WARNING")
-            
-            # Overall optimization assessment
-            success_rate = successful_categories / len(categories_optimized) if categories_optimized else 0.0
-            avg_improvement = total_improvement / successful_categories if successful_categories > 0 else 0.0
-            
-            logger.info(f"📈 Optimization Success Rate: {success_rate:.2%}")
-            print(f"📈 Optimization Success Rate: {success_rate:.2%}")
-            logger.info(f"📈 Average Improvement: {avg_improvement:.4f}")
-            print(f"📈 Average Improvement: {avg_improvement:.4f}")
-            
-            # Quality assessment
-            if success_rate > 0.8 and avg_improvement > 0.05:
-                quality = "EXCELLENT"
-                quality_emoji = "🟢"
-            elif success_rate > 0.6 and avg_improvement > 0.02:
-                quality = "GOOD"
-                quality_emoji = "🟡"
-            elif success_rate > 0.4:
-                quality = "FAIR"
-                quality_emoji = "🟠"
+                    logger.info(f"   ⚠️ Modest improvement: +{improvement:.4f}")
+                    print(f"   ⚠️ Modest improvement: +{improvement:.4f}")
             else:
-                quality = "POOR"
-                quality_emoji = "🔴"
-            
-            logger.info(f"{quality_emoji} Optimization Quality: {quality}")
-            print(f"{quality_emoji} Optimization Quality: {quality}")
-            
-            # Log quality issues if any
-            if success_rate < 0.6:
-                log_quality_issue("OPTIMIZATION_QUALITY", f"Low optimization success rate: {success_rate:.2%}", "WARNING")
-            if avg_improvement < 0.02:
-                log_quality_issue("OPTIMIZATION_IMPROVEMENT", f"Low average improvement: {avg_improvement:.4f}", "WARNING")
-            
-        except Exception as e:
-            logger.error(f"❌ Error analyzing optimization outcomes: {e}")
-            print(f"❌ Error analyzing optimization outcomes: {e}")
+                logger.warning(f"   ❌ No improvement or degradation: {improvement:.4f}")
+                print(f"   ❌ No improvement or degradation: {improvement:.4f}")
+                log_quality_issue("OPTIMIZATION_DEGRADATION", f"{category} showed no improvement", "WARNING")
         
-        print("=" * 60)
+        # Overall optimization assessment
+        success_rate = successful_categories / len(categories_optimized) if categories_optimized else 0.0
+        avg_improvement = total_improvement / successful_categories if successful_categories > 0 else 0.0
+        
+        logger.info(f"📈 Optimization Success Rate: {success_rate:.2%}")
+        print(f"📈 Optimization Success Rate: {success_rate:.2%}")
+        logger.info(f"📈 Average Improvement: {avg_improvement:.4f}")
+        print(f"📈 Average Improvement: {avg_improvement:.4f}")
+        
+        # Quality assessment
+        if success_rate > 0.8 and avg_improvement > 0.05:
+            quality = "EXCELLENT"
+            quality_emoji = "🟢"
+        elif success_rate > 0.6 and avg_improvement > 0.02:
+            quality = "GOOD"
+            quality_emoji = "🟡"
+        elif success_rate > 0.4:
+            quality = "FAIR"
+            quality_emoji = "🟠"
+        else:
+            quality = "POOR"
+            quality_emoji = "🔴"
+        
+        logger.info(f"{quality_emoji} Optimization Quality: {quality}")
+        print(f"{quality_emoji} Optimization Quality: {quality}")
+        
+        # Log quality issues if any
+        if success_rate < 0.6:
+            log_quality_issue("OPTIMIZATION_QUALITY", f"Low optimization success rate: {success_rate:.2%}", "WARNING")
+        if avg_improvement < 0.02:
+            log_quality_issue("OPTIMIZATION_IMPROVEMENT", f"Low average improvement: {avg_improvement:.4f}", "WARNING")
+        
+    except Exception as e:
+        logger.error(f"❌ Error analyzing optimization outcomes: {e}")
+        print(f"❌ Error analyzing optimization outcomes: {e}")
     
-    def load_and_analyze_saved_results(symbol: str, exchange: str, data_dir: str):
-        """Load and analyze saved optimization results for comprehensive outcome reporting."""
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
-        
-        logger.info(f"📊 [{timestamp}] LOADING SAVED RESULTS FOR ANALYSIS")
-        print(f"📊 [{timestamp}] LOADING SAVED RESULTS FOR ANALYSIS")
-        print("=" * 60)
-        
-        try:
-            # Load calibration results
-            calibration_file = f"models/{symbol}_{exchange}_confidence_calibration.json"
-            calibration_results = None
+    print("=" * 60)
+    
+def load_and_analyze_saved_results(symbol: str, exchange: str, data_dir: str):
+    """Load and analyze saved optimization results for comprehensive outcome reporting."""
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    
+    logger.info(f"📊 [{timestamp}] LOADING SAVED RESULTS FOR ANALYSIS")
+    print(f"📊 [{timestamp}] LOADING SAVED RESULTS FOR ANALYSIS")
+    print("=" * 60)
+    
+    try:
+        # Load calibration results
+        calibration_file = f"models/{symbol}_{exchange}_confidence_calibration.json"
+        calibration_results = None
             
             if safe_file_exists(calibration_file):
                 try:
@@ -341,13 +341,13 @@ import pandas as pd
         
         print("=" * 60)
     
-    def generate_comprehensive_outcome_summary(calibration_results: dict, optimization_results: dict, symbol: str, exchange: str):
-        """Generate a comprehensive summary of all optimization outcomes."""
-        timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
-        
-        logger.info(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
-        print(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
-        print("=" * 80)
+def generate_comprehensive_outcome_summary(calibration_results: dict, optimization_results: dict, symbol: str, exchange: str):
+    """Generate a comprehensive summary of all optimization outcomes."""
+    timestamp = format_datetime(get_current_datetime(), '%H:%M:%S')
+    
+    logger.info(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
+    print(f"📋 [{timestamp}] COMPREHENSIVE OUTCOME SUMMARY")
+    print("=" * 80)
         
         try:
             # Overall assessment

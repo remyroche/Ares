@@ -14,10 +14,10 @@ else:
     # Runtime implementation
     pass
 
-try:
-    import pytorch_lightning as pl
 import logging
 
+try:
+    import pytorch_lightning as pl
 except Exception:
     pl = None
 with contextlib.suppress(Exception):

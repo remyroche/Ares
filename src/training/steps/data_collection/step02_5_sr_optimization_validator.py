@@ -32,6 +32,7 @@ from src.utils.trading_decorators import (
     validate_pipeline_step,
     quality_gate
 )
+from src.utils.decorators.errors import handles_errors
 from .utils.logger import system_logger
 from .utils.common_operations import safe_json_load
 

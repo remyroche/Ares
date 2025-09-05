@@ -6,21 +6,62 @@ Includes comprehensive function call validation, tracking, and detailed outcome 
 import os
 import time
 import traceback
-import psutil
 import gc
+import functools
+import inspect
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
-import functools
-import inspect
+
+# Optional dependencies with fallback handling
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    from sklearn.feature_selection import mutual_info_classif
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    mutual_info_classif = None
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    lgb = None
+
+try:
+    from scipy.stats import rankdata
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    rankdata = None
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 from .utils.common_operations import ensure_directory, safe_json_dump
 from .core.decorators import CachePolicy, cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
 from .utils.pipeline_standards import PipelineStandards, pipeline_standards
-REQUIRED_MODULES = ['pandas', 'numpy', 'src.training.enhanced_matrix_operations', 'src.utils.error_handler', 'src.utils.logger', 'src.training.feature_engineering_optimizer', 'src.training.timeframe_relevance_analyzer', 'src.utils.training_pipeline_decorators', 'src.utils.enhanced_mlflow_integration']
+REQUIRED_MODULES = [
+    'pandas', 'numpy', 'psutil', 'sklearn', 'scipy', 'lightgbm',
+    'src.training.enhanced_matrix_operations', 'src.utils.error_handler', 
+    'src.utils.logger', 'src.training.feature_engineering_optimizer', 
+    'src.training.timeframe_relevance_analyzer', 'src.utils.training_pipeline_decorators', 
+    'src.utils.enhanced_mlflow_integration'
+]
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 enhanced_matrix_operations = PipelineStandards.safe_import('src.training.enhanced_matrix_operations', None)
 error_handler = PipelineStandards.safe_import('src.utils.error_handler', None)
@@ -432,19 +473,32 @@ class PerformanceMonitor:
         self.performance_metrics = {}
         self.resource_usage = {}
         self.start_time = time.time()
-        self.process = psutil.Process()
+        
+        # Handle psutil availability
+        if PSUTIL_AVAILABLE:
+            self.process = psutil.Process()
+            self.psutil_available = True
+        else:
+            self.process = None
+            self.psutil_available = False
+            self.logger.warning("⚠️ psutil not available - limited performance monitoring")
     
     def start_monitoring(self, function_name: str) -> Dict[str, Any]:
         """Start monitoring performance for a function."""
-        initial_memory = self.process.memory_info().rss / 1024 / 1024  # MB
-        initial_cpu = self.process.cpu_percent()
+        if self.psutil_available:
+            initial_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            initial_cpu = self.process.cpu_percent()
+        else:
+            initial_memory = 0.0
+            initial_cpu = 0.0
         
         metrics = {
             'function_name': function_name,
             'start_time': time.time(),
             'initial_memory_mb': initial_memory,
             'initial_cpu_percent': initial_cpu,
-            'initial_gc_count': gc.get_count()
+            'initial_gc_count': gc.get_count(),
+            'psutil_available': self.psutil_available
         }
         
         self.performance_metrics[function_name] = metrics
@@ -461,8 +515,14 @@ class PerformanceMonitor:
         
         # Calculate performance metrics
         duration = end_time - metrics['start_time']
-        final_memory = self.process.memory_info().rss / 1024 / 1024  # MB
-        final_cpu = self.process.cpu_percent()
+        
+        if self.psutil_available:
+            final_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+            final_cpu = self.process.cpu_percent()
+        else:
+            final_memory = 0.0
+            final_cpu = 0.0
+        
         final_gc_count = gc.get_count()
         
         # Update metrics
@@ -480,24 +540,41 @@ class PerformanceMonitor:
         # Log performance summary
         self.logger.info(f"📊 Performance metrics for {function_name}:")
         self.logger.info(f"   Duration: {duration:.3f}s")
-        self.logger.info(f"   Memory delta: {metrics['memory_delta_mb']:.1f} MB")
-        self.logger.info(f"   CPU delta: {metrics['cpu_delta_percent']:.1f}%")
+        if self.psutil_available:
+            self.logger.info(f"   Memory delta: {metrics['memory_delta_mb']:.1f} MB")
+            self.logger.info(f"   CPU delta: {metrics['cpu_delta_percent']:.1f}%")
+        else:
+            self.logger.info("   Memory/CPU monitoring: Not available (psutil missing)")
         self.logger.info(f"   GC delta: {metrics['gc_delta']}")
         
         return metrics
     
     def get_system_resources(self) -> Dict[str, Any]:
         """Get current system resource usage."""
-        return {
-            'cpu_percent': psutil.cpu_percent(interval=1),
-            'memory_percent': psutil.virtual_memory().percent,
-            'memory_available_gb': psutil.virtual_memory().available / 1024 / 1024 / 1024,
-            'disk_usage_percent': psutil.disk_usage('/').percent,
-            'process_memory_mb': self.process.memory_info().rss / 1024 / 1024,
-            'process_cpu_percent': self.process.cpu_percent(),
-            'open_files': len(self.process.open_files()),
-            'threads': self.process.num_threads()
-        }
+        if self.psutil_available:
+            return {
+                'cpu_percent': psutil.cpu_percent(interval=1),
+                'memory_percent': psutil.virtual_memory().percent,
+                'memory_available_gb': psutil.virtual_memory().available / 1024 / 1024 / 1024,
+                'disk_usage_percent': psutil.disk_usage('/').percent,
+                'process_memory_mb': self.process.memory_info().rss / 1024 / 1024,
+                'process_cpu_percent': self.process.cpu_percent(),
+                'open_files': len(self.process.open_files()),
+                'threads': self.process.num_threads(),
+                'psutil_available': True
+            }
+        else:
+            return {
+                'cpu_percent': 0.0,
+                'memory_percent': 0.0,
+                'memory_available_gb': 0.0,
+                'disk_usage_percent': 0.0,
+                'process_memory_mb': 0.0,
+                'process_cpu_percent': 0.0,
+                'open_files': 0,
+                'threads': 0,
+                'psutil_available': False
+            }
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary."""
@@ -649,8 +726,11 @@ class Step7EnhancedMatrixOperations:
                     y_regime = y[regime_mask]
                     
                     # Fast MI calculation per regime
-                    from sklearn.feature_selection import mutual_info_classif
-                    mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                    if SKLEARN_AVAILABLE:
+                        mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                    else:
+                        self.logger.warning("⚠️ sklearn not available, using variance-based importance")
+                        mi_scores = X_regime.var().values
                     regime_importances[f'regime_{regime}'] = mi_scores
                 
                 # Aggregate importance across regimes (keep features important in ANY regime)
@@ -660,12 +740,15 @@ class Step7EnhancedMatrixOperations:
                 )
             else:
                 # Calculate MI for all data
-                from sklearn.feature_selection import mutual_info_classif
-                aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
+                if SKLEARN_AVAILABLE:
+                    aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
+                else:
+                    self.logger.warning("⚠️ sklearn not available, using variance-based importance")
+                    aggregated_importance = features_df.var().values
             
             # 2. Quick SHAP sampling (subsample for speed)
             shap_importance = None
-            if self.enable_shap_filtering and lgb is not None:
+            if self.enable_shap_filtering and LIGHTGBM_AVAILABLE:
                 self.logger.info("🔮 Calculating SHAP-based importance (sampled)...")
                 try:
                     # Subsample for efficiency
@@ -694,14 +777,20 @@ class Step7EnhancedMatrixOperations:
                     self.logger.warning(f"⚠️ SHAP calculation failed, using MI only: {e}")
             
             # 3. Combined scoring
-            from scipy.stats import rankdata
-            mi_rank = rankdata(aggregated_importance)
-            
-            if shap_importance is not None:
-                shap_rank = rankdata(shap_importance)
-                combined_rank = (mi_rank + shap_rank) / 2
+            if SCIPY_AVAILABLE:
+                mi_rank = rankdata(aggregated_importance)
+                
+                if shap_importance is not None:
+                    shap_rank = rankdata(shap_importance)
+                    combined_rank = (mi_rank + shap_rank) / 2
+                else:
+                    combined_rank = mi_rank
             else:
-                combined_rank = mi_rank
+                self.logger.warning("⚠️ scipy not available, using simple sorting")
+                # Simple ranking without scipy
+                sorted_indices = np.argsort(aggregated_importance)
+                combined_rank = np.zeros_like(aggregated_importance)
+                combined_rank[sorted_indices] = np.arange(len(aggregated_importance))
             
             # 4. Remove bottom features, ensure minimum target
             n_features_to_keep = max(self.target_features, int(len(combined_rank) * (1 - self.removal_fraction)))

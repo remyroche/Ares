@@ -1,6 +1,8 @@
 
 from typing import Any
 import pandas as pd
+import numpy as np
+
 # TPSL OPTIMIZER - TEMPORARILY DISABLED
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
@@ -28,9 +30,6 @@ from .config import CONFIG
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, failed, initialization_error, warning
 
-from .analyst.meta_labeling_system import MetaLabelingSystem
-
-
 class RegimeSpecificTPSLOptimizer:
     """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes."
 
@@ -52,6 +51,7 @@ class RegimeSpecificTPSLOptimizer:
         
         # Initialize meta labeling system (optional, for backward compatibility)
         try:
+            from .analyst.meta_labeling_system import MetaLabelingSystem
             self.meta_labeling_system = MetaLabelingSystem(config)
         except ImportError:
             self.logger.warning('MetaLabelingSystem not available, will use HMM regimes only')
@@ -114,6 +114,8 @@ class RegimeSpecificTPSLOptimizer:
         try:
             results_file = os.path.join(self.model_dir, 'optimization_results.json')
             if os.path.exists(results_file):
+                import json
+
                 with open(results_file) as f:
                     self.optimization_results = json.load(f)
                     self.logger.info(f'✅ Loaded {len(self.optimization_results)} regime optimization results')

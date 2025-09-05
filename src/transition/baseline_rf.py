@@ -11,6 +11,8 @@ from .utils.logger import system_logger
 
 try:
     import shap  # type: ignore
+import numpy as np
+
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
 

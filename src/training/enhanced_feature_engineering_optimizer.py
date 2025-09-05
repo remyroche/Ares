@@ -1,12 +1,7 @@
-"""
-Enhanced Feature Engineering Optimizer
+import numpy as np
+import pandas as pd
 
-This module optimizes the period optimization process itself using:
-1. Random Forest + SHAP for meta-optimization
-2. Mutual Information for parameter space reduction
-3. Adaptive parameter sampling based on performance
-4. Multi-objective optimization considering multiple metrics
-"""
+'\nEnhanced Feature Engineering Optimizer\n\nThis module optimizes the period optimization process itself using:\n1. Random Forest + SHAP for meta-optimization\n2. Mutual Information for parameter space reduction\n3. Adaptive parameter sampling based on performance\n4. Multi-objective optimization considering multiple metrics\n'
 import json
 from datetime import datetime
 from pathlib import Path
@@ -388,8 +383,7 @@ class EnhancedFeatureEngineeringOptimizer:
     def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
         """Generate all parameter combinations."""
         import itertools
-        import numpy as np
-        import pandas as pd
+        from .core.decorators.errors import handles_errors
 
         param_names = list(params.keys())
         param_values = list(params.values())

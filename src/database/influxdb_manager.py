@@ -9,6 +9,7 @@ from src.config import (
     INFLUXDB_URL,
 )
 from .utils.logger import logger
+import pandas as pd
 
 # src/database/influxdb_manager.py
 

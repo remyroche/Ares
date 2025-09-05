@@ -1,3 +1,5 @@
+import numpy as np
+
 # src/training/enhanced_matrix_operations.py
 
 from src.utils.decorators import (
@@ -39,6 +41,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 from .utils.logger import system_logger
+import pandas as pd
 
 try:
 
@@ -977,41 +980,42 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Quality assurance failed: {e}")
             return {"error": str(e), "passed": False}
 
+    @dataclass
+    class FeatureSelectionConfig:
+        """Configuration for feature selection."""
+        features_df: pd.DataFrame
+        target: pd.Series
+        symbol: str
+        exchange: str
+        data_dir: str
+        use_autoencoder_features: bool = True
+        use_regularization: bool = True
+
     @handles_errors(
         Exception,
         fallback=(pd.DataFrame(), {}),
     )
     def select_features_step2(
         self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        symbol: str,
-        exchange: str,
-        data_dir: str,
-        use_autoencoder_features: bool = True,
-        use_regularization: bool = True,
+        config: FeatureSelectionConfig,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Multi-stage feature selection to reduce features to target count with autoencoder features and regularization."
 
         Args:
-            features_df: Input features DataFrame
-            target: Target variable series
-            symbol: Trading symbol
-            exchange: Exchange name
-            data_dir: Data directory for saving metadata
-            use_autoencoder_features: Whether to include autoencoder features
-            use_regularization: Whether to use regularization-aware selection
+            config: FeatureSelectionConfig containing all feature selection parameters
 
         Returns:
             Tuple of (selected_features_df, selection_metadata)
 
         """
         try:
-            self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
+            self.logger.info(f"🔍 Starting enhanced feature selection: {config.features_df.shape[1]} -> {self.target_features} features")
+            
+            features_df = config.features_df.copy()
             
             # Stage 0: Add autoencoder features if enabled
-            if use_autoencoder_features:
-                features_df, stage0_metadata = self._stage0_autoencoder_features(features_df, target)
+            if config.use_autoencoder_features:
+                features_df, stage0_metadata = self._stage0_autoencoder_features(features_df, config.target)
             else:
                 stage0_metadata = {"autoencoder_features_added": 0}
 
@@ -1025,23 +1029,23 @@ class EnhancedMatrixOperations:
             features_df, stage3_metadata = self._stage3_correlation_filtering(features_df)
 
             # Stage 4: Mutual information ranking
-            features_df, stage4_metadata = self._stage4_mutual_info_ranking(features_df, target)
+            features_df, stage4_metadata = self._stage4_mutual_info_ranking(features_df, config.target)
 
             # Stage 5: Domain-specific selection
-            features_df, stage5_metadata = self._stage5_domain_specific_selection(features_df, target)
+            features_df, stage5_metadata = self._stage5_domain_specific_selection(features_df, config.target)
 
             # Stage 6: Regularization-aware selection (if enabled)
-            if use_regularization:
-                features_df, stage6_metadata = self._stage6_regularization_aware_selection(features_df, target)
+            if config.use_regularization:
+                features_df, stage6_metadata = self._stage6_regularization_aware_selection(features_df, config.target)
             else:
                 stage6_metadata = {"regularization_applied": False}
 
             # Stage 7: Final ranking and selection
-            features_df, stage7_metadata = self._stage7_final_selection(features_df, target)
+            features_df, stage7_metadata = self._stage7_final_selection(features_df, config.target)
 
             # Compile metadata
             selection_metadata = {
-                "original_features": len(features_df.columns),
+                "original_features": len(config.features_df.columns),
                 "final_features": len(features_df.columns),
                 "target_features": self.target_features,
                 "stages": {
@@ -1056,12 +1060,12 @@ class EnhancedMatrixOperations:
                 },
                 "feature_categories": self._categorize_features(features_df.columns),
                 "selection_timestamp": datetime.now().isoformat(),
-                "symbol": symbol,
-                "exchange": exchange,
+                "symbol": config.symbol,
+                "exchange": config.exchange,
             }
 
             # Save selection metadata
-            self._save_selection_metadata(selection_metadata, symbol, exchange, data_dir)
+            self._save_selection_metadata(selection_metadata, config.symbol, config.exchange, config.data_dir)
 
             self.logger.info(f"✅ Feature selection completed: {len(features_df.columns)} features selected")
             return features_df, selection_metadata
@@ -1516,6 +1520,7 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+
         except Exception as e:
             self.logger.warning(f"Failed to import sklearn modules: {e}")
             return {}

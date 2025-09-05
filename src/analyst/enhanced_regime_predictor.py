@@ -17,6 +17,8 @@ from .core.decorators import handles_errors
 from .core.domain import with_tracing_span
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
+import pandas as pd
 
 class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""

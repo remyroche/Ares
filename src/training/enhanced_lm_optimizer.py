@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 # src/training/enhanced_lm_optimizer.py
 
 """Enhanced LM Model Optimizer for Step6, Step6_5, and Step9."

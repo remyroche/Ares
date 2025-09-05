@@ -539,15 +539,14 @@ class AdvancedQualityMetrics:
                         message=f'Constant values in {col}',
                         suggested_action='Check for data collection issues'
                     ))
-        
-        except Exception as e:
-            metrics.append(QualityMetric(
-                name='statistical_consistency_error',
-                value=0.0,
-                threshold=1.0,
-                severity='warning',
-                message=f'Statistical consistency check failed: {str(e)}'
-            ))
+            except Exception as e:
+                metrics.append(QualityMetric(
+                    name='statistical_consistency_error',
+                    value=0.0,
+                    threshold=1.0,
+                    severity='warning',
+                    message=f'Statistical consistency check failed: {str(e)}'
+                ))
         
         return metrics
     

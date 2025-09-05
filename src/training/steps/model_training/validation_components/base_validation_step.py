@@ -1,6 +1,7 @@
 """Base validation step using BaseStep pattern."""
 from abc import abstractmethod
 from .training.base_step import BaseStep
+import pandas as pd
 
 class BaseValidationStep(BaseStep):
     """Base class for all validation steps."""

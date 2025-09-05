@@ -1,5 +1,8 @@
 
 from src.utils.error_handler import handles_errors
+import numpy as np
+import pandas as pd
+
 '\nFeature Engineering Optimization Module\n\nThis module optimizes feature engineering parameters using:\n1. Random Forest + SHAP for correlation analysis\n2. Mutual importance matrix for feature parameter selection\n3. Regime-specific optimization for each HMM regime\n4. Top 3 parameter selection based on correlation, multicollinearity, and mutual information\n5. Feature Interaction Engineering for capturing non-linear relationships\n'
 import json
 from datetime import datetime

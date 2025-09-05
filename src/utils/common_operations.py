@@ -1,3 +1,8 @@
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Common Operations Utility Module with Comprehensive Error Handling
 
@@ -18,31 +23,28 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
-
 try:
-    import numpy as np
-except Exception:  # pragma: no cover - environment without numpy
-    np = None  # type: ignore
+except Exception:
+    np = None
 try:
-    import pandas as pd
-except Exception:  # pragma: no cover - environment without pandas
-    class _PDStub:  # minimal stubs to allow import-only checks
-        class DataFrame:  # type: ignore
-            pass
-        class Series:  # type: ignore
-            pass
-    pd = _PDStub()  # type: ignore
+except Exception:
 
-# Import enhanced logging functions
+    class _PDStub:
+
+        class DataFrame:
+            pass
+
+        class Series:
+            pass
+    pd = _PDStub()
 try:
     from .logger import log_error_with_context
 except ImportError:
-    # Fallback if imports fail
-    def log_error_with_context(logger, error, context=None, operation="", recovery_attempted=False):
-        logger.error(f"Error in {operation}: {error}")
 
-# Step10-specific functions for unified regime intelligence
-def safe_json_load(path): 
+    def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:
+        logger.error(f'Error in {operation}: {error}')
+
+def safe_json_load(path: Union[str, Path]) -> None:
     """Safely load JSON file."""
     try:
         with open(path, 'r') as f:
@@ -50,7 +52,7 @@ def safe_json_load(path):
     except Exception:
         return {}
 
-def safe_json_dump(data, path, indent=2):
+def safe_json_dump(data: Union[pd.DataFrame, Dict[str, Any]], path: Union[str, Path], indent: Any=2) -> bool:
     """Safely dump JSON data."""
     try:
         ensure_directory(os.path.dirname(path))
@@ -58,37 +60,36 @@ def safe_json_dump(data, path, indent=2):
             json.dump(data, f, indent=indent)
         return True
     except Exception as e:
-        print(f"Error saving JSON to {path}: {e}")
+        print(f'Error saving JSON to {path}: {e}')
         return False
 
-def safe_read_parquet(path):
+def safe_read_parquet(path: Union[str, Path]) -> None:
     """Safely read parquet file."""
     try:
         if os.path.exists(path):
             return pd.read_parquet(path)
         else:
-            print(f"Parquet file not found: {path}")
+            print(f'Parquet file not found: {path}')
             return pd.DataFrame()
     except Exception as e:
-        print(f"Error reading parquet file {path}: {e}")
+        print(f'Error reading parquet file {path}: {e}')
         return pd.DataFrame()
 
-def ensure_directory(path):
+def ensure_directory(path: Union[str, Path]) -> bool:
     """Ensure directory exists."""
     try:
         if path:
             Path(path).mkdir(parents=True, exist_ok=True)
             return True
     except Exception as e:
-        print(f"Error creating directory {path}: {e}")
+        print(f'Error creating directory {path}: {e}')
     return False
 
-def validate_dataframe_schema(df, schema):
+def validate_dataframe_schema(df: pd.DataFrame, schema: Any) -> bool:
     """Validate dataframe schema."""
     try:
         if df is None or df.empty:
             return False
-        # Basic schema validation
         for col in schema.get('required_columns', []):
             if col not in df.columns:
                 return False
@@ -96,67 +97,50 @@ def validate_dataframe_schema(df, schema):
     except Exception:
         return False
 
-def validate_data_quality(df, thresholds):
+def validate_data_quality(df: pd.DataFrame, thresholds: List[Any]) -> bool:
     """Validate data quality."""
     try:
         if df is None or df.empty:
             return False
-        
-        # Check for minimum rows
         min_rows = thresholds.get('min_rows', 0)
         if len(df) < min_rows:
             return False
-            
-        # Check for null ratio
         max_null_ratio = thresholds.get('max_null_ratio', 0.5)
         null_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
         if null_ratio > max_null_ratio:
             return False
-            
         return True
     except Exception:
         return False
 
-def standardize_price_action_probabilities(probabilities):
+def standardize_price_action_probabilities(probabilities: np.ndarray) -> None:
     """Standardize price action probabilities to ensure they sum to 1 and are non-negative."""
     try:
         if not isinstance(probabilities, dict):
             return probabilities
-            
-        # Ensure all values are non-negative
         standardized = {k: max(0.0, float(v)) for k, v in probabilities.items()}
-        
-        # Normalize to sum to 1
         total = sum(standardized.values())
         if total > 0:
             standardized = {k: v / total for k, v in standardized.items()}
         else:
-            # If all probabilities are 0, set equal probabilities
             n = len(standardized)
             standardized = {k: 1.0 / n for k in standardized.keys()}
-            
         return standardized
     except Exception as e:
-        print(f"Error standardizing probabilities: {e}")
-        # Return default probabilities
-        return {
-            "triple_barrier_probability": 0.25,
-            "direction_probability": 0.25,
-            "magnitude_probability": 0.25,
-            "barrier_avoidance_probability": 0.25
-        }
+        print(f'Error standardizing probabilities: {e}')
+        return {'triple_barrier_probability': 0.25, 'direction_probability': 0.25, 'magnitude_probability': 0.25, 'barrier_avoidance_probability': 0.25}
 
-def safe_to_parquet(df, path):
+def safe_to_parquet(df: pd.DataFrame, path: Union[str, Path]) -> bool:
     """Safely save DataFrame to parquet file."""
     try:
         ensure_directory(os.path.dirname(path))
         df.to_parquet(path)
         return True
     except Exception as e:
-        print(f"Error saving parquet file {path}: {e}")
+        print(f'Error saving parquet file {path}: {e}')
         return False
 
-def safe_copy(src, dst):
+def safe_copy(src: Any, dst: Any) -> bool:
     """Safely copy file."""
     try:
         import shutil
@@ -164,26 +148,20 @@ def safe_copy(src, dst):
         shutil.copy2(src, dst)
         return True
     except Exception as e:
-        print(f"Error copying file from {src} to {dst}: {e}")
+        print(f'Error copying file from {src} to {dst}: {e}')
         return False
-
-# Main branch functions (keeping existing functionality)
 logger = logging.getLogger(__name__)
 
 def get_current_datetime() -> datetime.datetime:
     """Get current datetime with comprehensive error handling."""
     try:
-        logger.debug("🕐 Getting current datetime")
+        logger.debug('🕐 Getting current datetime')
         result = datetime.datetime.now()
-        logger.debug(f"✅ Current datetime: {result}")
+        logger.debug(f'✅ Current datetime: {result}')
         return result
     except Exception as e:
-        logger.error(f"❌ Failed to get current datetime: {e}")
-        log_error_with_context(
-            logger, e,
-            operation="get_current_datetime"
-        )
-        # Return a fallback datetime
+        logger.error(f'❌ Failed to get current datetime: {e}')
+        log_error_with_context(logger, e, operation='get_current_datetime')
         return datetime.datetime(1970, 1, 1)
 
 def get_today() -> datetime.date:
@@ -195,736 +173,485 @@ def get_today() -> datetime.date:
         return result
     except Exception as e:
         logger.error(f"❌ Failed to get today's date: {e}")
-        log_error_with_context(
-            logger, e,
-            operation="get_today"
-        )
-        # Return a fallback date
+        log_error_with_context(logger, e, operation='get_today')
         return datetime.date(1970, 1, 1)
 
 def format_datetime(dt: datetime.datetime, fmt: str='%Y-%m-%d %H:%M:%S') -> str:
     """Format datetime to string with comprehensive error handling."""
     try:
-        logger.debug(f"🔧 Formatting datetime with format: {fmt}")
-        
+        logger.debug(f'🔧 Formatting datetime with format: {fmt}')
         if not isinstance(dt, datetime.datetime):
-            raise ValueError(f"Expected datetime.datetime, got {type(dt)}")
-        
+            raise ValueError(f'Expected datetime.datetime, got {type(dt)}')
         if not fmt or not isinstance(fmt, str):
-            raise ValueError(f"Invalid format string: {fmt}")
-        
+            raise ValueError(f'Invalid format string: {fmt}')
         result = dt.strftime(fmt)
-        logger.debug(f"✅ Formatted datetime: {result}")
+        logger.debug(f'✅ Formatted datetime: {result}')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to format datetime: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"datetime": str(dt), "format": fmt},
-            operation="format_datetime"
-        )
-        # Return a fallback formatted string
-        return "1970-01-01 00:00:00"
+        logger.error(f'❌ Failed to format datetime: {e}')
+        log_error_with_context(logger, e, context={'datetime': str(dt), 'format': fmt}, operation='format_datetime')
+        return '1970-01-01 00:00:00'
 
 def parse_datetime(date_string: str, fmt: str='%Y-%m-%d %H:%M:%S') -> datetime.datetime:
     """Parse string to datetime with comprehensive error handling."""
     try:
-        logger.debug(f"🔍 Parsing datetime string: {date_string} with format: {fmt}")
-        
+        logger.debug(f'🔍 Parsing datetime string: {date_string} with format: {fmt}')
         if not date_string or not isinstance(date_string, str):
-            raise ValueError(f"Invalid date string: {date_string}")
-        
+            raise ValueError(f'Invalid date string: {date_string}')
         if not fmt or not isinstance(fmt, str):
-            raise ValueError(f"Invalid format string: {fmt}")
-        
+            raise ValueError(f'Invalid format string: {fmt}')
         result = datetime.datetime.strptime(date_string, fmt)
-        logger.debug(f"✅ Parsed datetime: {result}")
+        logger.debug(f'✅ Parsed datetime: {result}')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to parse datetime: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"date_string": date_string, "format": fmt},
-            operation="parse_datetime"
-        )
-        # Return a fallback datetime
+        logger.error(f'❌ Failed to parse datetime: {e}')
+        log_error_with_context(logger, e, context={'date_string': date_string, 'format': fmt}, operation='parse_datetime')
         return datetime.datetime(1970, 1, 1)
 
-def create_empty_dataframe(columns: list[str]):
+def create_empty_dataframe(columns: list[str]) -> pd.DataFrame:
     """Create an empty DataFrame with specified columns and comprehensive error handling."""
     try:
-        logger.debug(f"📊 Creating empty DataFrame with {len(columns)} columns")
-        
+        logger.debug(f'📊 Creating empty DataFrame with {len(columns)} columns')
         if not isinstance(columns, (list, tuple)):
-            raise ValueError(f"Columns must be a list or tuple, got {type(columns)}")
-        
+            raise ValueError(f'Columns must be a list or tuple, got {type(columns)}')
         if not columns:
-            logger.warning("⚠️ Creating DataFrame with no columns")
-        
-        # Validate column names
+            logger.warning('⚠️ Creating DataFrame with no columns')
         for i, col in enumerate(columns):
             if not isinstance(col, str):
-                logger.warning(f"⚠️ Column {i} is not a string: {col}")
-        
-        # If pandas is unavailable, return a simple dict as a stub
+                logger.warning(f'⚠️ Column {i} is not a string: {col}')
         if hasattr(pd, 'DataFrame'):
-            result = pd.DataFrame(columns=columns)  # type: ignore
+            result = pd.DataFrame(columns=columns)
         else:
             result = {c: [] for c in columns}
-        # Only log if there are issues or debugging is needed
         if not columns:
-            logger.warning("⚠️ Created DataFrame with no columns")
+            logger.warning('⚠️ Created DataFrame with no columns')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to create empty DataFrame: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"columns": columns, "column_count": len(columns) if columns else 0},
-            operation="create_empty_dataframe"
-        )
-        # Return a fallback empty DataFrame
+        logger.error(f'❌ Failed to create empty DataFrame: {e}')
+        log_error_with_context(logger, e, context={'columns': columns, 'column_count': len(columns) if columns else 0}, operation='create_empty_dataframe')
         return pd.DataFrame()
 
-def safe_fillna(df, value: Any=0):
+def safe_fillna(df: pd.DataFrame, value: Any=0) -> None:
     """Safely fill NaN values in a DataFrame with comprehensive error handling."""
     try:
-        logger.debug(f"🔧 Filling NaN values in DataFrame with value: {value}")
-        
-        if hasattr(pd, 'DataFrame') and not isinstance(df, pd.DataFrame):  # type: ignore
-            raise ValueError(f"Expected pandas.DataFrame, got {type(df)}")
-        
+        logger.debug(f'🔧 Filling NaN values in DataFrame with value: {value}')
+        if hasattr(pd, 'DataFrame') and (not isinstance(df, pd.DataFrame)):
+            raise ValueError(f'Expected pandas.DataFrame, got {type(df)}')
         if hasattr(df, 'empty') and getattr(df, 'empty', False):
-            logger.warning("⚠️ DataFrame is empty, returning as-is")
+            logger.warning('⚠️ DataFrame is empty, returning as-is')
             return df
-        
-        # Count NaN values before filling
         try:
-            nan_count = df.isnull().sum().sum()  # type: ignore[attr-defined]
+            nan_count = df.isnull().sum().sum()
         except Exception:
             nan_count = 0
-        logger.debug(f"📊 Found {nan_count} NaN values to fill")
-        
+        logger.debug(f'📊 Found {nan_count} NaN values to fill')
         try:
-            result = df.fillna(value)  # type: ignore[attr-defined]
+            result = df.fillna(value)
         except Exception:
             result = df
-        
-        # Verify the operation
         try:
-            remaining_nans = result.isnull().sum().sum()  # type: ignore[attr-defined]
+            remaining_nans = result.isnull().sum().sum()
         except Exception:
             remaining_nans = 0
         if remaining_nans > 0:
-            logger.warning(f"⚠️ {remaining_nans} NaN values remain after filling")
+            logger.warning(f'⚠️ {remaining_nans} NaN values remain after filling')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to fill NaN values: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"value": str(value), "dataframe_shape": df.shape if hasattr(df, 'shape') else 'unknown'},
-            operation="safe_fillna"
-        )
-        # Return original DataFrame as fallback
+        logger.error(f'❌ Failed to fill NaN values: {e}')
+        log_error_with_context(logger, e, context={'value': str(value), 'dataframe_shape': df.shape if hasattr(df, 'shape') else 'unknown'}, operation='safe_fillna')
         return df
 
-def safe_rolling(df, window: int, min_periods: int=1):
+def safe_rolling(df: pd.DataFrame, window: int, min_periods: int=1) -> None:
     """Create a rolling window object safely with comprehensive error handling."""
     try:
-        logger.debug(f"🔄 Creating rolling window with window={window}, min_periods={min_periods}")
-        
-        if hasattr(pd, 'DataFrame') and not isinstance(df, pd.DataFrame):  # type: ignore
-            raise ValueError(f"Expected pandas.DataFrame, got {type(df)}")
-        
+        logger.debug(f'🔄 Creating rolling window with window={window}, min_periods={min_periods}')
+        if hasattr(pd, 'DataFrame') and (not isinstance(df, pd.DataFrame)):
+            raise ValueError(f'Expected pandas.DataFrame, got {type(df)}')
         if df.empty:
-            raise ValueError("Cannot create rolling window on empty DataFrame")
-        
+            raise ValueError('Cannot create rolling window on empty DataFrame')
         if window <= 0:
-            raise ValueError(f"Window size must be positive, got {window}")
-        
+            raise ValueError(f'Window size must be positive, got {window}')
         if min_periods < 0:
-            raise ValueError(f"min_periods must be non-negative, got {min_periods}")
-        
+            raise ValueError(f'min_periods must be non-negative, got {min_periods}')
         if window > len(df):
-            logger.warning(f"⚠️ Window size ({window}) is larger than DataFrame length ({len(df)})")
-        
-        result = df.rolling(window=window, min_periods=min_periods)  # type: ignore[attr-defined]
+            logger.warning(f'⚠️ Window size ({window}) is larger than DataFrame length ({len(df)})')
+        result = df.rolling(window=window, min_periods=min_periods)
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to create rolling window: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"window": window, "min_periods": min_periods, "dataframe_shape": df.shape if hasattr(df, 'shape') else 'unknown'},
-            operation="safe_rolling"
-        )
+        logger.error(f'❌ Failed to create rolling window: {e}')
+        log_error_with_context(logger, e, context={'window': window, 'min_periods': min_periods, 'dataframe_shape': df.shape if hasattr(df, 'shape') else 'unknown'}, operation='safe_rolling')
         raise
 
-def safe_mean(values) -> float:
+def safe_mean(values: List[Any]) -> float:
     """Calculate mean safely, handling empty inputs with comprehensive error handling."""
     try:
-        logger.debug(f"📊 Calculating mean for {type(values).__name__}")
-        
+        logger.debug(f'📊 Calculating mean for {type(values).__name__}')
         if values is None:
-            raise ValueError("Values cannot be None")
-        
-        # Convert to numpy array if needed
+            raise ValueError('Values cannot be None')
         if isinstance(values, (list, tuple)):
             if not values:
-                logger.warning("⚠️ Empty list provided, returning 0.0")
+                logger.warning('⚠️ Empty list provided, returning 0.0')
                 return 0.0
             values = np.array(values)
-        elif hasattr(pd, 'Series') and isinstance(values, pd.Series):  # type: ignore
+        elif hasattr(pd, 'Series') and isinstance(values, pd.Series):
             if values.empty:
-                logger.warning("⚠️ Empty Series provided, returning 0.0")
+                logger.warning('⚠️ Empty Series provided, returning 0.0')
                 return 0.0
             values = values.values
-        
         if np is None:
-            # Fallback pure Python mean
             try:
                 return sum(values) / len(values)
             except Exception:
                 return 0.0
         if not isinstance(values, np.ndarray):
-            raise ValueError(f"Unsupported type for mean calculation: {type(values)}")
-        
+            raise ValueError(f'Unsupported type for mean calculation: {type(values)}')
         if values.size == 0:
-            logger.warning("⚠️ Empty array provided, returning 0.0")
+            logger.warning('⚠️ Empty array provided, returning 0.0')
             return 0.0
-        
-        # Check for all NaN values
         if np.all(np.isnan(values)):
-            logger.warning("⚠️ All values are NaN, returning 0.0")
+            logger.warning('⚠️ All values are NaN, returning 0.0')
             return 0.0
-        
         result = np.nanmean(values)
-        logger.debug(f"✅ Calculated mean: {result}")
+        logger.debug(f'✅ Calculated mean: {result}')
         return float(result)
-        
     except Exception as e:
-        logger.error(f"❌ Failed to calculate mean: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"values_type": type(values).__name__, "values_length": len(values) if hasattr(values, '__len__') else 'unknown'},
-            operation="safe_mean"
-        )
-        # Return 0.0 as fallback
+        logger.error(f'❌ Failed to calculate mean: {e}')
+        log_error_with_context(logger, e, context={'values_type': type(values).__name__, 'values_length': len(values) if hasattr(values, '__len__') else 'unknown'}, operation='safe_mean')
         return 0.0
 
-def safe_std(values) -> float:
+def safe_std(values: List[Any]) -> float:
     """Calculate standard deviation safely with comprehensive error handling."""
     try:
-        logger.debug(f"📊 Calculating standard deviation for {type(values).__name__}")
-        
+        logger.debug(f'📊 Calculating standard deviation for {type(values).__name__}')
         if values is None:
-            raise ValueError("Values cannot be None")
-        
-        # Convert to numpy array if needed
+            raise ValueError('Values cannot be None')
         if isinstance(values, (list, tuple)):
             if not values:
-                logger.warning("⚠️ Empty list provided, returning 0.0")
+                logger.warning('⚠️ Empty list provided, returning 0.0')
                 return 0.0
             values = np.array(values)
-        elif hasattr(pd, 'Series') and isinstance(values, pd.Series):  # type: ignore
+        elif hasattr(pd, 'Series') and isinstance(values, pd.Series):
             if values.empty:
-                logger.warning("⚠️ Empty Series provided, returning 0.0")
+                logger.warning('⚠️ Empty Series provided, returning 0.0')
                 return 0.0
             values = values.values
-        
         if np is None:
-            # Fallback: simple population std
             try:
                 mu = safe_mean(values)
-                return (sum((float(x)-mu)**2 for x in values) / len(values)) ** 0.5 if len(values) else 0.0
+                return (sum(((float(x) - mu) ** 2 for x in values)) / len(values)) ** 0.5 if len(values) else 0.0
             except Exception:
                 return 0.0
         if not isinstance(values, np.ndarray):
-            raise ValueError(f"Unsupported type for std calculation: {type(values)}")
-        
+            raise ValueError(f'Unsupported type for std calculation: {type(values)}')
         if values.size == 0:
-            logger.warning("⚠️ Empty array provided, returning 0.0")
+            logger.warning('⚠️ Empty array provided, returning 0.0')
             return 0.0
-        
-        # Check for all NaN values
         if np.all(np.isnan(values)):
-            logger.warning("⚠️ All values are NaN, returning 0.0")
+            logger.warning('⚠️ All values are NaN, returning 0.0')
             return 0.0
-        
         result = np.nanstd(values)
-        logger.debug(f"✅ Calculated standard deviation: {result}")
+        logger.debug(f'✅ Calculated standard deviation: {result}')
         return float(result)
-        
     except Exception as e:
-        logger.error(f"❌ Failed to calculate standard deviation: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"values_type": type(values).__name__, "values_length": len(values) if hasattr(values, '__len__') else 'unknown'},
-            operation="safe_std"
-        )
-        # Return 0.0 as fallback
+        logger.error(f'❌ Failed to calculate standard deviation: {e}')
+        log_error_with_context(logger, e, context={'values_type': type(values).__name__, 'values_length': len(values) if hasattr(values, '__len__') else 'unknown'}, operation='safe_std')
         return 0.0
 
 def ensure_directory(path: str | Path) -> Path:
     """Ensure a directory exists, creating it if necessary with comprehensive error handling."""
     try:
-        logger.debug(f"📁 Ensuring directory exists: {path}")
-        
+        logger.debug(f'📁 Ensuring directory exists: {path}')
         if not path:
-            raise ValueError("Path cannot be empty")
-        
+            raise ValueError('Path cannot be empty')
         path_obj = Path(path)
-        
-        # Check if it already exists
         if path_obj.exists():
             if path_obj.is_dir():
-                logger.debug(f"✅ Directory already exists: {path_obj}")
+                logger.debug(f'✅ Directory already exists: {path_obj}')
                 return path_obj
             else:
-                raise ValueError(f"Path exists but is not a directory: {path_obj}")
-        
-        # Create the directory
+                raise ValueError(f'Path exists but is not a directory: {path_obj}')
         path_obj.mkdir(parents=True, exist_ok=True)
-        # Only log if there are issues - directory creation is normal
         return path_obj
-        
     except Exception as e:
-        logger.error(f"❌ Failed to ensure directory exists: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"path": str(path)},
-            operation="ensure_directory"
-        )
+        logger.error(f'❌ Failed to ensure directory exists: {e}')
+        log_error_with_context(logger, e, context={'path': str(path)}, operation='ensure_directory')
         raise
 
 def safe_file_exists(path: str | Path) -> bool:
     """Check if a file exists safely with comprehensive error handling."""
     try:
-        logger.debug(f"🔍 Checking if file exists: {path}")
-        
+        logger.debug(f'🔍 Checking if file exists: {path}')
         if not path:
-            logger.warning("⚠️ Empty path provided")
+            logger.warning('⚠️ Empty path provided')
             return False
-        
         path_obj = Path(path)
         exists = path_obj.exists()
-        
         if exists:
             if path_obj.is_file():
-                logger.debug(f"✅ File exists: {path_obj}")
+                logger.debug(f'✅ File exists: {path_obj}')
             else:
-                logger.debug(f"📁 Path exists but is not a file: {path_obj}")
+                logger.debug(f'📁 Path exists but is not a file: {path_obj}')
         else:
-            logger.debug(f"❌ File does not exist: {path_obj}")
-        
+            logger.debug(f'❌ File does not exist: {path_obj}')
         return exists
-        
     except Exception as e:
-        logger.error(f"❌ Error checking file existence: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"path": str(path)},
-            operation="safe_file_exists"
-        )
+        logger.error(f'❌ Error checking file existence: {e}')
+        log_error_with_context(logger, e, context={'path': str(path)}, operation='safe_file_exists')
         return False
 
 def safe_json_dump(data: Any, file_path: str | Path, **kwargs) -> None:
     """Safely dump data to JSON file with comprehensive error handling."""
     try:
-        logger.debug(f"💾 Saving data to JSON file: {file_path}")
-        
+        logger.debug(f'💾 Saving data to JSON file: {file_path}')
         if not file_path:
-            raise ValueError("File path cannot be empty")
-        
+            raise ValueError('File path cannot be empty')
         path_obj = Path(file_path)
-        
-        # Ensure parent directory exists
         if path_obj.parent:
             ensure_directory(path_obj.parent)
-        
-        # Write the JSON file
         with open(path_obj, 'w') as f:
             json.dump(data, f, **kwargs)
-        
-        # Verify the file was created
         if path_obj.exists():
             _ = path_obj.stat().st_size
         else:
-            logger.error(f"❌ JSON file was not created: {path_obj}")
-            raise RuntimeError("File was not created")
-        
+            logger.error(f'❌ JSON file was not created: {path_obj}')
+            raise RuntimeError('File was not created')
     except Exception as e:
-        logger.error(f"❌ Failed to save JSON file: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"file_path": str(file_path), "data_type": type(data).__name__},
-            operation="safe_json_dump"
-        )
+        logger.error(f'❌ Failed to save JSON file: {e}')
+        log_error_with_context(logger, e, context={'file_path': str(file_path), 'data_type': type(data).__name__}, operation='safe_json_dump')
         raise
 
 def safe_json_load(file_path: str | Path) -> Any:
     """Safely load data from JSON file with comprehensive error handling."""
     try:
-        logger.debug(f"📂 Loading data from JSON file: {file_path}")
-        
+        logger.debug(f'📂 Loading data from JSON file: {file_path}')
         if not file_path:
-            raise ValueError("File path cannot be empty")
-        
+            raise ValueError('File path cannot be empty')
         path_obj = Path(file_path)
-        
-        # Check if file exists
         if not path_obj.exists():
-            raise FileNotFoundError(f"JSON file not found: {path_obj}")
-        
+            raise FileNotFoundError(f'JSON file not found: {path_obj}')
         if not path_obj.is_file():
-            raise ValueError(f"Path is not a file: {path_obj}")
-        
-        # Check file size
+            raise ValueError(f'Path is not a file: {path_obj}')
         file_size = path_obj.stat().st_size
         if file_size == 0:
-            logger.warning(f"⚠️ JSON file is empty: {path_obj}")
+            logger.warning(f'⚠️ JSON file is empty: {path_obj}')
             return {}
-        
-        # Load the JSON file
         with open(path_obj, 'r') as f:
             data = json.load(f)
-        
-        # Only log if there are issues - file loading is normal
         return data
-        
     except Exception as e:
-        logger.error(f"❌ Failed to load JSON file: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"file_path": str(file_path)},
-            operation="safe_json_load"
-        )
+        logger.error(f'❌ Failed to load JSON file: {e}')
+        log_error_with_context(logger, e, context={'file_path': str(file_path)}, operation='safe_json_load')
         raise
 
 async def safe_sleep(seconds: float) -> None:
     """Async sleep wrapper with comprehensive error handling."""
     try:
-        logger.debug(f"⏰ Sleeping for {seconds} seconds")
-        
+        logger.debug(f'⏰ Sleeping for {seconds} seconds')
         if seconds < 0:
-            raise ValueError(f"Sleep duration cannot be negative: {seconds}")
-        
-        if seconds > 3600:  # 1 hour
-            logger.warning(f"⚠️ Long sleep duration: {seconds} seconds")
-        
+            raise ValueError(f'Sleep duration cannot be negative: {seconds}')
+        if seconds > 3600:
+            logger.warning(f'⚠️ Long sleep duration: {seconds} seconds')
         await asyncio.sleep(seconds)
-        logger.debug(f"✅ Sleep completed: {seconds} seconds")
-        
+        logger.debug(f'✅ Sleep completed: {seconds} seconds')
     except Exception as e:
-        logger.error(f"❌ Error during sleep: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"seconds": seconds},
-            operation="safe_sleep"
-        )
+        logger.error(f'❌ Error during sleep: {e}')
+        log_error_with_context(logger, e, context={'seconds': seconds}, operation='safe_sleep')
         raise
 
 async def safe_gather(*coroutines, return_exceptions: bool=True) -> list:
     """Safely gather multiple coroutines with comprehensive error handling."""
     try:
-        logger.debug(f"🔄 Gathering {len(coroutines)} coroutines")
-        
+        logger.debug(f'🔄 Gathering {len(coroutines)} coroutines')
         if not coroutines:
-            logger.warning("⚠️ No coroutines provided to gather")
+            logger.warning('⚠️ No coroutines provided to gather')
             return []
-        
-        # Validate coroutines
         for i, coro in enumerate(coroutines):
             if not asyncio.iscoroutine(coro):
-                logger.warning(f"⚠️ Item {i} is not a coroutine: {type(coro)}")
-        
+                logger.warning(f'⚠️ Item {i} is not a coroutine: {type(coro)}')
         results = await asyncio.gather(*coroutines, return_exceptions=return_exceptions)
-        
-        # Check for exceptions in results
-        exception_count = sum(1 for r in results if isinstance(r, Exception))
+        exception_count = sum((1 for r in results if isinstance(r, Exception)))
         if exception_count > 0:
-            logger.warning(f"⚠️ {exception_count} coroutines raised exceptions")
-        
-        logger.info(f"✅ Gathered {len(coroutines)} coroutines successfully")
+            logger.warning(f'⚠️ {exception_count} coroutines raised exceptions')
+        logger.info(f'✅ Gathered {len(coroutines)} coroutines successfully')
         return results
-        
     except Exception as e:
-        logger.error(f"❌ Error gathering coroutines: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"coroutine_count": len(coroutines), "return_exceptions": return_exceptions},
-            operation="safe_gather"
-        )
+        logger.error(f'❌ Error gathering coroutines: {e}')
+        log_error_with_context(logger, e, context={'coroutine_count': len(coroutines), 'return_exceptions': return_exceptions}, operation='safe_gather')
         raise
 
 def create_async_task(coroutine: Any) -> asyncio.Task:
     """Create an async task safely with comprehensive error handling."""
     try:
-        logger.debug(f"🎯 Creating async task for coroutine: {type(coroutine).__name__}")
-        
+        logger.debug(f'🎯 Creating async task for coroutine: {type(coroutine).__name__}')
         if not asyncio.iscoroutine(coroutine):
-            raise ValueError(f"Expected coroutine, got {type(coroutine)}")
-        
+            raise ValueError(f'Expected coroutine, got {type(coroutine)}')
         loop = asyncio.get_event_loop()
         task = loop.create_task(coroutine)
-        
-        logger.info(f"✅ Created async task: {task.get_name()}")
+        logger.info(f'✅ Created async task: {task.get_name()}')
         return task
-        
     except Exception as e:
-        logger.error(f"❌ Failed to create async task: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"coroutine_type": type(coroutine).__name__},
-            operation="create_async_task"
-        )
+        logger.error(f'❌ Failed to create async task: {e}')
+        log_error_with_context(logger, e, context={'coroutine_type': type(coroutine).__name__}, operation='create_async_task')
         raise
 
 def safe_append(lst: list[Any], item: Any) -> list[Any]:
     """Safely append to a list with comprehensive error handling."""
     try:
-        logger.debug(f"📝 Appending item to list: {type(item).__name__}")
-        
+        logger.debug(f'📝 Appending item to list: {type(item).__name__}')
         if lst is None:
-            logger.debug("🔄 Creating new list (input was None)")
+            logger.debug('🔄 Creating new list (input was None)')
             lst = []
-        
         if not isinstance(lst, list):
-            logger.warning(f"⚠️ Expected list, got {type(lst)}, converting")
+            logger.warning(f'⚠️ Expected list, got {type(lst)}, converting')
             lst = list(lst)
-        
         lst.append(item)
-        logger.debug(f"✅ Appended item, list length: {len(lst)}")
+        logger.debug(f'✅ Appended item, list length: {len(lst)}')
         return lst
-        
     except Exception as e:
-        logger.error(f"❌ Failed to append to list: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"list_type": type(lst).__name__, "item_type": type(item).__name__},
-            operation="safe_append"
-        )
-        # Return a new list with the item as fallback
+        logger.error(f'❌ Failed to append to list: {e}')
+        log_error_with_context(logger, e, context={'list_type': type(lst).__name__, 'item_type': type(item).__name__}, operation='safe_append')
         return [item]
 
 def safe_extend(lst: list[Any], items: list[Any]) -> list[Any]:
     """Safely extend a list with comprehensive error handling."""
     try:
-        logger.debug(f"📝 Extending list with {len(items) if items else 0} items")
-        
+        logger.debug(f'📝 Extending list with {(len(items) if items else 0)} items')
         if lst is None:
-            logger.debug("🔄 Creating new list (input was None)")
+            logger.debug('🔄 Creating new list (input was None)')
             lst = []
-        
         if not isinstance(lst, list):
-            logger.warning(f"⚠️ Expected list, got {type(lst)}, converting")
+            logger.warning(f'⚠️ Expected list, got {type(lst)}, converting')
             lst = list(lst)
-        
         if items is None:
-            logger.warning("⚠️ Items to extend with is None, skipping")
+            logger.warning('⚠️ Items to extend with is None, skipping')
             return lst
-        
         if not isinstance(items, (list, tuple, set)):
-            logger.warning(f"⚠️ Expected iterable, got {type(items)}, converting to list")
+            logger.warning(f'⚠️ Expected iterable, got {type(items)}, converting to list')
             items = [items]
-        
         lst.extend(items)
-        logger.debug(f"✅ Extended list, new length: {len(lst)}")
+        logger.debug(f'✅ Extended list, new length: {len(lst)}')
         return lst
-        
     except Exception as e:
-        logger.error(f"❌ Failed to extend list: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"list_type": type(lst).__name__, "items_type": type(items).__name__},
-            operation="safe_extend"
-        )
-        # Return original list as fallback
+        logger.error(f'❌ Failed to extend list: {e}')
+        log_error_with_context(logger, e, context={'list_type': type(lst).__name__, 'items_type': type(items).__name__}, operation='safe_extend')
         return lst if lst is not None else []
 
 def safe_dict_get(d: dict[Any, Any], key: Any, default: Any=None) -> Any:
     """Safely get value from dictionary with comprehensive error handling."""
     try:
-        logger.debug(f"🔍 Getting value from dictionary for key: {key}")
-        
+        logger.debug(f'🔍 Getting value from dictionary for key: {key}')
         if d is None:
-            logger.debug("⚠️ Dictionary is None, returning default")
+            logger.debug('⚠️ Dictionary is None, returning default')
             return default
-        
         if not isinstance(d, dict):
-            logger.warning(f"⚠️ Expected dict, got {type(d)}")
+            logger.warning(f'⚠️ Expected dict, got {type(d)}')
             return default
-        
         result = d.get(key, default)
-        logger.debug(f"✅ Retrieved value: {type(result).__name__}")
+        logger.debug(f'✅ Retrieved value: {type(result).__name__}')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to get value from dictionary: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"dict_type": type(d).__name__, "key": str(key)},
-            operation="safe_dict_get"
-        )
+        logger.error(f'❌ Failed to get value from dictionary: {e}')
+        log_error_with_context(logger, e, context={'dict_type': type(d).__name__, 'key': str(key)}, operation='safe_dict_get')
         return default
 
 def safe_dict_items(d: dict[Any, Any]) -> list[tuple]:
     """Safely get items from dictionary with comprehensive error handling."""
     try:
-        logger.debug(f"📋 Getting items from dictionary")
-        
+        logger.debug(f'📋 Getting items from dictionary')
         if d is None:
-            logger.debug("⚠️ Dictionary is None, returning empty list")
+            logger.debug('⚠️ Dictionary is None, returning empty list')
             return []
-        
         if not isinstance(d, dict):
-            logger.warning(f"⚠️ Expected dict, got {type(d)}")
+            logger.warning(f'⚠️ Expected dict, got {type(d)}')
             return []
-        
         items = list(d.items())
-        logger.debug(f"✅ Retrieved {len(items)} items from dictionary")
+        logger.debug(f'✅ Retrieved {len(items)} items from dictionary')
         return items
-        
     except Exception as e:
-        logger.error(f"❌ Failed to get items from dictionary: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"dict_type": type(d).__name__},
-            operation="safe_dict_items"
-        )
+        logger.error(f'❌ Failed to get items from dictionary: {e}')
+        log_error_with_context(logger, e, context={'dict_type': type(d).__name__}, operation='safe_dict_items')
         return []
 
 def safe_lower(s: str) -> str:
     """Safely convert string to lowercase with comprehensive error handling."""
     try:
-        logger.debug(f"🔤 Converting string to lowercase")
-        
+        logger.debug(f'🔤 Converting string to lowercase')
         if s is None:
-            logger.debug("⚠️ String is None, returning empty string")
+            logger.debug('⚠️ String is None, returning empty string')
             return ''
-        
         result = str(s).lower()
-        logger.debug(f"✅ Converted to lowercase: {result[:50]}{'...' if len(result) > 50 else ''}")
+        logger.debug(f"✅ Converted to lowercase: {result[:50]}{('...' if len(result) > 50 else '')}")
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to convert string to lowercase: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"string_type": type(s).__name__},
-            operation="safe_lower"
-        )
+        logger.error(f'❌ Failed to convert string to lowercase: {e}')
+        log_error_with_context(logger, e, context={'string_type': type(s).__name__}, operation='safe_lower')
         return ''
 
 def safe_upper(s: str) -> str:
     """Safely convert string to uppercase with comprehensive error handling."""
     try:
-        logger.debug(f"🔤 Converting string to uppercase")
-        
+        logger.debug(f'🔤 Converting string to uppercase')
         if s is None:
-            logger.debug("⚠️ String is None, returning empty string")
+            logger.debug('⚠️ String is None, returning empty string')
             return ''
-        
         result = str(s).upper()
-        logger.debug(f"✅ Converted to uppercase: {result[:50]}{'...' if len(result) > 50 else ''}")
+        logger.debug(f"✅ Converted to uppercase: {result[:50]}{('...' if len(result) > 50 else '')}")
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to convert string to uppercase: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"string_type": type(s).__name__},
-            operation="safe_upper"
-        )
+        logger.error(f'❌ Failed to convert string to uppercase: {e}')
+        log_error_with_context(logger, e, context={'string_type': type(s).__name__}, operation='safe_upper')
         return ''
 
 def safe_join(separator: str, items: list[Any]) -> str:
     """Safely join items into a string with comprehensive error handling."""
     try:
-        logger.debug(f"🔗 Joining {len(items) if items else 0} items with separator: '{separator}'")
-        
+        logger.debug(f"🔗 Joining {(len(items) if items else 0)} items with separator: '{separator}'")
         if separator is None:
-            logger.warning("⚠️ Separator is None, using empty string")
+            logger.warning('⚠️ Separator is None, using empty string')
             separator = ''
-        
         if items is None:
-            logger.debug("⚠️ Items is None, returning empty string")
+            logger.debug('⚠️ Items is None, returning empty string')
             return ''
-        
         if not isinstance(items, (list, tuple, set)):
-            logger.warning(f"⚠️ Expected iterable, got {type(items)}, converting to list")
+            logger.warning(f'⚠️ Expected iterable, got {type(items)}, converting to list')
             items = [items]
-        
-        # Convert all items to strings
         str_items = [str(item) for item in items]
         result = separator.join(str_items)
-        
-        logger.debug(f"✅ Joined items, result length: {len(result)}")
+        logger.debug(f'✅ Joined items, result length: {len(result)}')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to join items: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"separator": str(separator), "items_type": type(items).__name__},
-            operation="safe_join"
-        )
+        logger.error(f'❌ Failed to join items: {e}')
+        log_error_with_context(logger, e, context={'separator': str(separator), 'items_type': type(items).__name__}, operation='safe_join')
         return ''
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance with comprehensive error handling."""
     try:
-        logger.debug(f"🔧 Getting logger instance: {name}")
-        
+        logger.debug(f'🔧 Getting logger instance: {name}')
         if not name or not isinstance(name, str):
-            raise ValueError(f"Logger name must be a non-empty string, got: {name}")
-        
+            raise ValueError(f'Logger name must be a non-empty string, got: {name}')
         result = logging.getLogger(name)
-        logger.debug(f"✅ Retrieved logger: {name}")
+        logger.debug(f'✅ Retrieved logger: {name}')
         return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to get logger: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"name": str(name)},
-            operation="get_logger"
-        )
-        # Return root logger as fallback
+        logger.error(f'❌ Failed to get logger: {e}')
+        log_error_with_context(logger, e, context={'name': str(name)}, operation='get_logger')
         return logging.getLogger()
 
 def setup_basic_logging(level: int=logging.INFO) -> None:
     """Setup basic logging configuration with comprehensive error handling."""
     try:
-        logger.info(f"🔧 Setting up basic logging with level: {level}")
-        
+        logger.info(f'🔧 Setting up basic logging with level: {level}')
         if not isinstance(level, int):
-            raise ValueError(f"Log level must be an integer, got: {type(level)}")
-        
+            raise ValueError(f'Log level must be an integer, got: {type(level)}')
         if level < 0 or level > 50:
-            logger.warning(f"⚠️ Unusual log level: {level}")
-        
-        # Configure basic logging
-        logging.basicConfig(
-            level=level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        logger.info(f"✅ Basic logging configured with level: {level}")
-        
+            logger.warning(f'⚠️ Unusual log level: {level}')
+        logging.basicConfig(level=level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        logger.info(f'✅ Basic logging configured with level: {level}')
     except Exception as e:
-        logger.error(f"❌ Failed to setup basic logging: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"level": level},
-            operation="setup_basic_logging"
-        )
+        logger.error(f'❌ Failed to setup basic logging: {e}')
+        log_error_with_context(logger, e, context={'level': level}, operation='setup_basic_logging')
         raise
-
 
 def get_common_operations_health_status() -> Dict[str, Any]:
     """
@@ -934,125 +661,59 @@ def get_common_operations_health_status() -> Dict[str, Any]:
         Dict[str, Any]: Health status information
     """
     try:
-        logger.info("🏥 Getting CommonOperations health status")
-        
-        # Test key functions
-        health_tests = {
-            "datetime_operations": {
-                "get_current_datetime": get_current_datetime(),
-                "get_today": get_today(),
-                "format_datetime": format_datetime(datetime.datetime.now()),
-                "parse_datetime": parse_datetime("2023-01-01 00:00:00")
-            },
-            "dataframe_operations": {
-                "create_empty_dataframe": create_empty_dataframe(["test"]),
-                "safe_mean": safe_mean([1, 2, 3, 4, 5]),
-                "safe_std": safe_std([1, 2, 3, 4, 5])
-            },
-            "file_operations": {
-                "safe_file_exists": safe_file_exists("/tmp"),
-                "safe_lower": safe_lower("TEST"),
-                "safe_upper": safe_upper("test"),
-                "safe_join": safe_join(",", ["a", "b", "c"])
-            },
-            "list_operations": {
-                "safe_append": safe_append([], "test"),
-                "safe_extend": safe_extend([], ["a", "b"]),
-                "safe_dict_get": safe_dict_get({"key": "value"}, "key"),
-                "safe_dict_items": safe_dict_items({"a": 1, "b": 2})
-            }
-        }
-        
-        # Count successful operations
+        logger.info('🏥 Getting CommonOperations health status')
+        health_tests = {'datetime_operations': {'get_current_datetime': get_current_datetime(), 'get_today': get_today(), 'format_datetime': format_datetime(datetime.datetime.now()), 'parse_datetime': parse_datetime('2023-01-01 00:00:00')}, 'dataframe_operations': {'create_empty_dataframe': create_empty_dataframe(['test']), 'safe_mean': safe_mean([1, 2, 3, 4, 5]), 'safe_std': safe_std([1, 2, 3, 4, 5])}, 'file_operations': {'safe_file_exists': safe_file_exists('/tmp'), 'safe_lower': safe_lower('TEST'), 'safe_upper': safe_upper('test'), 'safe_join': safe_join(',', ['a', 'b', 'c'])}, 'list_operations': {'safe_append': safe_append([], 'test'), 'safe_extend': safe_extend([], ['a', 'b']), 'safe_dict_get': safe_dict_get({'key': 'value'}, 'key'), 'safe_dict_items': safe_dict_items({'a': 1, 'b': 2})}}
         total_operations = 0
         successful_operations = 0
-        
         for category, operations in health_tests.items():
             for operation_name, result in operations.items():
                 total_operations += 1
                 if result is not None:
                     successful_operations += 1
-        
-        success_rate = (successful_operations / total_operations) * 100 if total_operations > 0 else 0
-        
-        # Determine overall health status
+        success_rate = successful_operations / total_operations * 100 if total_operations > 0 else 0
         if success_rate >= 95:
-            status = "excellent"
+            status = 'excellent'
         elif success_rate >= 85:
-            status = "good"
+            status = 'good'
         elif success_rate >= 70:
-            status = "fair"
+            status = 'fair'
         else:
-            status = "poor"
-        
-        health_info = {
-            "status": status,
-            "success_rate": success_rate,
-            "total_operations": total_operations,
-            "successful_operations": successful_operations,
-            "failed_operations": total_operations - successful_operations,
-            "test_results": health_tests,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        
-        logger.info(f"✅ CommonOperations health check completed: {status} ({success_rate:.1f}%)")
+            status = 'poor'
+        health_info = {'status': status, 'success_rate': success_rate, 'total_operations': total_operations, 'successful_operations': successful_operations, 'failed_operations': total_operations - successful_operations, 'test_results': health_tests, 'timestamp': datetime.datetime.now().isoformat()}
+        logger.info(f'✅ CommonOperations health check completed: {status} ({success_rate:.1f}%)')
         return health_info
-        
     except Exception as e:
-        logger.error(f"❌ Error getting CommonOperations health status: {e}")
-        log_error_with_context(
-            logger, e,
-            operation="get_common_operations_health_status"
-        )
-        return {
-            "status": "error",
-            "success_rate": 0,
-            "error": str(e),
-            "timestamp": datetime.datetime.now().isoformat()
-        }
+        logger.error(f'❌ Error getting CommonOperations health status: {e}')
+        log_error_with_context(logger, e, operation='get_common_operations_health_status')
+        return {'status': 'error', 'success_rate': 0, 'error': str(e), 'timestamp': datetime.datetime.now().isoformat()}
 
 def create_argument_parser(description: str) -> argparse.ArgumentParser:
     """Create an argument parser with comprehensive error handling."""
     try:
-        logger.debug(f"🔧 Creating argument parser: {description}")
-        
+        logger.debug(f'🔧 Creating argument parser: {description}')
         if not description or not isinstance(description, str):
-            raise ValueError(f"Description must be a non-empty string, got: {description}")
-        
+            raise ValueError(f'Description must be a non-empty string, got: {description}')
         parser = argparse.ArgumentParser(description=description)
-        logger.info(f"✅ Created argument parser: {description}")
+        logger.info(f'✅ Created argument parser: {description}')
         return parser
-        
     except Exception as e:
-        logger.error(f"❌ Failed to create argument parser: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"description": str(description)},
-            operation="create_argument_parser"
-        )
+        logger.error(f'❌ Failed to create argument parser: {e}')
+        log_error_with_context(logger, e, context={'description': str(description)}, operation='create_argument_parser')
         raise
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to parser with comprehensive error handling."""
     try:
-        logger.debug("🔧 Adding common arguments to parser")
-        
+        logger.debug('🔧 Adding common arguments to parser')
         if not isinstance(parser, argparse.ArgumentParser):
-            raise ValueError(f"Expected ArgumentParser, got {type(parser)}")
-        
+            raise ValueError(f'Expected ArgumentParser, got {type(parser)}')
         parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
         parser.add_argument('--config', type=str, default='config.json', help='Configuration file path')
         parser.add_argument('--output', '-o', type=str, help='Output file path')
-        
-        logger.info("✅ Added common arguments to parser")
-        
+        logger.info('✅ Added common arguments to parser')
     except Exception as e:
-        logger.error(f"❌ Failed to add common arguments: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"parser_type": type(parser).__name__},
-            operation="add_common_arguments"
-        )
+        logger.error(f'❌ Failed to add common arguments: {e}')
+        log_error_with_context(logger, e, context={'parser_type': type(parser).__name__}, operation='add_common_arguments')
         raise
 
 def safe_exception_handler(func: Callable) -> Callable:
@@ -1060,102 +721,74 @@ def safe_exception_handler(func: Callable) -> Callable:
 
     def wrapper(*args, **kwargs) -> Any:
         try:
-            logger.debug(f"🛡️ Executing function with exception handler: {func.__name__}")
+            logger.debug(f'🛡️ Executing function with exception handler: {func.__name__}')
             result = func(*args, **kwargs)
-            logger.debug(f"✅ Function executed successfully: {func.__name__}")
+            logger.debug(f'✅ Function executed successfully: {func.__name__}')
             return result
         except Exception as e:
-            logger.error(f"❌ Error in {func.__name__}: {e}")
-            log_error_with_context(
-                logger, e,
-                context={"function": func.__name__, "module": func.__module__},
-                operation="safe_exception_handler"
-            )
+            logger.error(f'❌ Error in {func.__name__}: {e}')
+            log_error_with_context(logger, e, context={'function': func.__name__, 'module': func.__module__}, operation='safe_exception_handler')
             return None
     return wrapper
 
 def safe_float(value: Any, default: float=0.0) -> float:
     """Safely convert to float with comprehensive error handling."""
     try:
-        logger.debug(f"🔢 Converting to float: {value}")
-        
+        logger.debug(f'🔢 Converting to float: {value}')
         if value is None:
-            logger.debug("⚠️ Value is None, returning default")
+            logger.debug('⚠️ Value is None, returning default')
             return default
-        
         result = float(value)
-        logger.debug(f"✅ Converted to float: {result}")
+        logger.debug(f'✅ Converted to float: {result}')
         return result
-        
     except (TypeError, ValueError) as e:
-        logger.warning(f"⚠️ Failed to convert to float: {e}, using default: {default}")
+        logger.warning(f'⚠️ Failed to convert to float: {e}, using default: {default}')
         return default
     except Exception as e:
-        logger.error(f"❌ Unexpected error converting to float: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"value": str(value), "default": default},
-            operation="safe_float"
-        )
+        logger.error(f'❌ Unexpected error converting to float: {e}')
+        log_error_with_context(logger, e, context={'value': str(value), 'default': default}, operation='safe_float')
         return default
 
 def safe_int(value: Any, default: int=0) -> int:
     """Safely convert to int with comprehensive error handling."""
     try:
-        logger.debug(f"🔢 Converting to int: {value}")
-        
+        logger.debug(f'🔢 Converting to int: {value}')
         if value is None:
-            logger.debug("⚠️ Value is None, returning default")
+            logger.debug('⚠️ Value is None, returning default')
             return default
-        
         result = int(value)
-        logger.debug(f"✅ Converted to int: {result}")
+        logger.debug(f'✅ Converted to int: {result}')
         return result
-        
     except (TypeError, ValueError) as e:
-        logger.warning(f"⚠️ Failed to convert to int: {e}, using default: {default}")
+        logger.warning(f'⚠️ Failed to convert to int: {e}, using default: {default}')
         return default
     except Exception as e:
-        logger.error(f"❌ Unexpected error converting to int: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"value": str(value), "default": default},
-            operation="safe_int"
-        )
+        logger.error(f'❌ Unexpected error converting to int: {e}')
+        log_error_with_context(logger, e, context={'value': str(value), 'default': default}, operation='safe_int')
         return default
 
 def suggest_float_uniform(trial: Any, name: str, low: float, high: float) -> float:
     """Wrapper for Optuna's suggest_float with comprehensive error handling."""
     try:
-        logger.debug(f"🎯 Suggesting float uniform: {name} in range [{low}, {high}]")
-        
+        logger.debug(f'🎯 Suggesting float uniform: {name} in range [{low}, {high}]')
         if not isinstance(name, str):
-            raise ValueError(f"Name must be a string, got: {type(name)}")
-        
+            raise ValueError(f'Name must be a string, got: {type(name)}')
         if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
-            raise ValueError(f"Low and high must be numbers, got: {type(low)}, {type(high)}")
-        
+            raise ValueError(f'Low and high must be numbers, got: {type(low)}, {type(high)}')
         if low >= high:
-            raise ValueError(f"Low must be less than high, got: {low} >= {high}")
-        
+            raise ValueError(f'Low must be less than high, got: {low} >= {high}')
         if hasattr(trial, 'suggest_float'):
             result = trial.suggest_float(name, low, high)
-            logger.debug(f"✅ Optuna suggested float: {result}")
+            logger.debug(f'✅ Optuna suggested float: {result}')
             return result
         else:
             import random
             result = random.uniform(low, high)
-            logger.debug(f"✅ Random suggested float: {result}")
+            logger.debug(f'✅ Random suggested float: {result}')
             return result
-        
     except Exception as e:
-        logger.error(f"❌ Failed to suggest float uniform: {e}")
-        log_error_with_context(
-            logger, e,
-            context={"name": name, "low": low, "high": high},
-            operation="suggest_float_uniform"
-        )
-        # Return midpoint as fallback
+        logger.error(f'❌ Failed to suggest float uniform: {e}')
+        log_error_with_context(logger, e, context={'name': name, 'low': low, 'high': high}, operation='suggest_float_uniform')
         return (low + high) / 2
 
 def suggest_int_uniform(trial: Any, name: str, low: int, high: int) -> int:
@@ -1193,24 +826,23 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = df[col].astype(np.float32)
     return df
 
-def safe_read_parquet(file_path: str | Path, columns: list[str] | None=None):
+def safe_read_parquet(file_path: str | Path, columns: list[str] | None=None) -> None:
     """Safely read parquet file with error handling."""
     try:
         if hasattr(pd, 'read_parquet'):
-            return pd.read_parquet(file_path, columns=columns)  # type: ignore[attr-defined]
+            return pd.read_parquet(file_path, columns=columns)
         return {}
     except Exception as e:
         logger = get_logger(__name__)
         logger.exception(f'Failed to read parquet file {file_path}: {e}')
         return pd.DataFrame()
 
-def safe_to_parquet(df, file_path: str | Path, **kwargs) -> bool:
+def safe_to_parquet(df: pd.DataFrame, file_path: str | Path, **kwargs) -> bool:
     """Safely write DataFrame to parquet with error handling."""
     try:
         if hasattr(df, 'to_parquet'):
-            df.to_parquet(file_path, **kwargs)  # type: ignore[attr-defined]
+            df.to_parquet(file_path, **kwargs)
             return True
-        # If pandas missing, write JSON as a fallback stub
         try:
             safe_json_dump({'note': 'parquet unavailable; wrote stub json'}, file_path)
         except Exception:
@@ -1414,7 +1046,6 @@ def safe_log_artifact(file_path: str | Path) -> None:
             mlflow.log_artifact(str(file_path))
     except Exception:
         pass
-
 __all__ = ['get_current_datetime', 'get_today', 'format_datetime', 'parse_datetime', 'create_empty_dataframe', 'safe_fillna', 'safe_rolling', 'safe_copy', 'safe_deepcopy', 'safe_resample', 'align_dataframes', 'safe_mean', 'safe_std', 'ensure_directory', 'safe_file_exists', 'safe_json_dump', 'safe_json_load', 'safe_glob', 'list_files', 'get_latest_file', 'safe_read_parquet', 'safe_to_parquet', 'list_parquet_files', 'generate_hash', 'generate_cache_key', 'safe_sleep', 'safe_gather', 'create_async_task', 'safe_append', 'safe_extend', 'safe_dict_get', 'safe_dict_items', 'safe_defaultdict', 'safe_counter', 'safe_deque', 'safe_lower', 'safe_upper', 'safe_join', 'get_logger', 'setup_basic_logging', 'create_argument_parser', 'add_common_arguments', 'safe_exception_handler', 'safe_float', 'safe_int', 'suggest_float_uniform', 'suggest_int_uniform', 'validate_dataframe', 'validate_numeric_range', 'validate_dataframe_schema', 'validate_data_quality', 'optimize_dataframe_dtypes', 'timed_operation', 'format_bytes', 'chunked_iterable', 'parallel_map', 'safe_log_metric', 'safe_log_params', 'safe_log_artifact']
 
 def standardize_price_action_probabilities(probabilities: dict) -> dict:
@@ -1437,5 +1068,3 @@ def standardize_price_action_probabilities(probabilities: dict) -> dict:
             val_f = 1.0
         out[key] = val_f
     return out
-
- 

@@ -9,6 +9,8 @@ from src.utils.warning_symbols import error, failed, initialization_error, inval
 from src.utils.tracing import with_tracing_span
 
 import pandas as pd
+import numpy as np
+
 DEFAULT_SUPERVISOR_CONFIG = {'supervisor': {'supervision_interval': 60, 'max_history': 100}}
 
 class CircuitBreaker:
@@ -342,6 +344,7 @@ class SystemCoordinator:
         """
         try:
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
+
             enhanced_manager = EnhancedExecutionManager(self.config)
             analyst_decision = analyst_signals.get('analyst_decision', {})
             if not analyst_decision.get('should_enter_position', False):

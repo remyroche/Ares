@@ -11,6 +11,7 @@ from dataclasses_json import dataclass_json
 from .utils.logger import system_logger
 from .utils.warning_symbols import missing
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 class TradeStatus(Enum):
     """Trade status enumeration."""

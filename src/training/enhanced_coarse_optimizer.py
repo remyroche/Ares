@@ -10,6 +10,8 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import TimeSeriesSplit
+import numpy as np
+
 try:
     from pytorch_tabnet.tab_model import TabNetClassifier
     TABNET_AVAILABLE = True
@@ -31,6 +33,7 @@ except ImportError:
 from .database.sqlite_manager import SQLiteManager
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, failed, warning
+import pandas as pd
 
 class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"
@@ -194,6 +197,7 @@ class EnhancedCoarseOptimizer:
                     from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
+
                 except Exception as e:
                     pass
                 explainer = TreeExplainer(model)

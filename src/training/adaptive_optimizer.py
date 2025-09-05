@@ -2,6 +2,7 @@ from typing import Any
 import optuna
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 class MarketRegime:
     """Represents a market regime with specific characteristics."""

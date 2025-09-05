@@ -25,7 +25,7 @@ from typing import Any, Dict, Callable
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.trading_decorators import (
+from src.core.domain import (
     handle_errors,
     monitor_step_execution,
     secure_step_execution,

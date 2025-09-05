@@ -19,117 +19,29 @@ from typing import Any, Dict, Optional, Callable
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import required libraries with fallbacks
-try:
-    import pandas as pd
-except ImportError:
-    # Create a minimal pandas-like fallback
-    class MockDataFrame:
-        def __init__(self, data=None):
-            self.data = data or {}
-            self.columns = list(self.data.keys()) if isinstance(self.data, dict) else []
-        
-        def __len__(self):
-            return len(list(self.data.values())[0]) if self.data else 0
-        
-        def __getitem__(self, key):
-            if isinstance(key, tuple):
-                # Handle iloc-style indexing like df.iloc[1:3]
-                return self
-            elif isinstance(key, list):
-                # Handle list indexing (column selection)
-                return MockDataFrame({col: self.data.get(col, []) for col in key})
-            elif key in self.data:
-                return MockSeries(self.data[key])
-            return MockSeries([])
-        
-        def to_parquet(self, path, index=False):
-            pass
-        
-        @property
-        def iloc(self):
-            # Return an object that supports indexing
-            return self
-    
-    class MockSeries:
-        def __init__(self, data=None):
-            self.data = data or []
-        
-        def __len__(self):
-            return len(self.data)
-        
-        def __getitem__(self, key):
-            # Handle slicing and indexing
-            return MockSeries(self.data[key] if isinstance(key, slice) else [self.data[key]])
-        
-        @property
-        def iloc(self):
-            # Return an object that supports indexing
-            return self
-    
-    pd = type('MockPandas', (), {
-        'DataFrame': MockDataFrame,
-        'Series': MockSeries,
-        'read_parquet': lambda path: MockDataFrame(),
-        'concat': lambda dfs, **kwargs: MockDataFrame()
-    })()
+# Import required libraries - these are MANDATORY dependencies
+import pandas as pd
+import numpy as np
+import joblib
+import optuna
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+import lightgbm as lgb
+import xgboost as xgb
 
-try:
-    import numpy as np
-except ImportError:
-    np = None
-
-try:
-    import joblib
-except ImportError:
-    joblib = None
-
-try:
-    import optuna
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-except ImportError:
-    optuna = None
-
-try:
-    import torch
-    from torch import nn, optim
-    from torch.utils.data import DataLoader, TensorDataset
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
-    nn = None
-    optim = None
-
-try:
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.metrics import accuracy_score
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    RandomForestClassifier = None
-    accuracy_score = None
-
-try:
-    import lightgbm as lgb
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
-    lgb = None
-
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
-    xgb = None
-
+# Optional dependencies
 try:
     import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
     shap = None
+
+# Suppress Optuna's verbose logging
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Create fallback decorators
 def handles_errors(exceptions=(Exception,), default_return=None, context=None):
@@ -212,7 +124,7 @@ class pipeline_standards:
     def build_path(path_type, exchange, symbol):
         return f"data/{path_type}/{exchange}/{symbol}"
 
-# Required modules for this step
+# Required modules for this step - MANDATORY dependencies
 REQUIRED_MODULES = [
     "numpy",
     "pandas", 
@@ -221,13 +133,61 @@ REQUIRED_MODULES = [
     "lightgbm",
     "xgboost",
     "optuna",
-    "joblib",
-    "src.utils.logger",
-    "src.utils.error_handler"
+    "joblib"
 ]
 
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Check if all mandatory dependencies are available
+def validate_mandatory_dependencies():
+    """Validate that all mandatory ML dependencies are available."""
+    missing_deps = []
+    
+    try:
+        import pandas
+    except ImportError:
+        missing_deps.append("pandas")
+    
+    try:
+        import numpy
+    except ImportError:
+        missing_deps.append("numpy")
+    
+    try:
+        import torch
+    except ImportError:
+        missing_deps.append("torch")
+    
+    try:
+        import sklearn
+    except ImportError:
+        missing_deps.append("sklearn")
+    
+    try:
+        import lightgbm
+    except ImportError:
+        missing_deps.append("lightgbm")
+    
+    try:
+        import xgboost
+    except ImportError:
+        missing_deps.append("xgboost")
+    
+    try:
+        import optuna
+    except ImportError:
+        missing_deps.append("optuna")
+    
+    try:
+        import joblib
+    except ImportError:
+        missing_deps.append("joblib")
+    
+    if missing_deps:
+        raise ImportError(f"Missing mandatory dependencies for Step 11: {', '.join(missing_deps)}. Please install them using: pip install {' '.join(missing_deps)}")
+    
+    return True
 
 
 class AnalystCreationStep:
@@ -243,6 +203,9 @@ class AnalystCreationStep:
         Args:
             config (Dict[str, Any]): Configuration dictionary for the step.
         """
+        # Validate mandatory dependencies first
+        validate_mandatory_dependencies()
+        
         self.config = config
         self.standards = pipeline_standards
         self.logger = system_logger
@@ -588,10 +551,6 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create a LightGBM model."""
         try:
-            if not LIGHTGBM_AVAILABLE:
-                self.logger.warning("⚠️ LightGBM not available, skipping model creation")
-                return {"model": None, "accuracy": 0.0, "error": "LightGBM not available"}
-
             # Basic LightGBM parameters
             params = {
                 'objective': 'binary',
@@ -621,7 +580,7 @@ class AnalystCreationStep:
             # Evaluate
             val_pred = model.predict(X_val)
             val_pred_binary = (val_pred > 0.5).astype(int)
-            accuracy = accuracy_score(y_val, val_pred_binary) if accuracy_score else 0.5
+            accuracy = accuracy_score(y_val, val_pred_binary)
 
             return {
                 "model": model,
@@ -633,17 +592,13 @@ class AnalystCreationStep:
 
         except Exception as e:
             self.logger.exception(f"❌ Error creating LightGBM model: {e}")
-            return {"model": None, "accuracy": 0.0, "error": str(e)}
+            raise RuntimeError(f"Failed to create LightGBM model: {e}")
 
     async def _create_xgboost_model(
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
     ) -> dict[str, Any]:
         """Create an XGBoost model."""
         try:
-            if not XGBOOST_AVAILABLE:
-                self.logger.warning("⚠️ XGBoost not available, skipping model creation")
-                return {"model": None, "accuracy": 0.0, "error": "XGBoost not available"}
-
             # Basic XGBoost parameters
             params = {
                 'objective': 'binary:logistic',
@@ -661,7 +616,7 @@ class AnalystCreationStep:
 
             # Evaluate
             val_pred = model.predict(X_val)
-            accuracy = accuracy_score(y_val, val_pred) if accuracy_score else 0.5
+            accuracy = accuracy_score(y_val, val_pred)
 
             return {
                 "model": model,
@@ -673,17 +628,13 @@ class AnalystCreationStep:
 
         except Exception as e:
             self.logger.exception(f"❌ Error creating XGBoost model: {e}")
-            return {"model": None, "accuracy": 0.0, "error": str(e)}
+            raise RuntimeError(f"Failed to create XGBoost model: {e}")
 
     async def _create_random_forest_model(
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
     ) -> dict[str, Any]:
         """Create a Random Forest model."""
         try:
-            if not SKLEARN_AVAILABLE:
-                self.logger.warning("⚠️ Scikit-learn not available, skipping Random Forest model creation")
-                return {"model": None, "accuracy": 0.0, "error": "Scikit-learn not available"}
-
             # Basic Random Forest parameters
             params = {
                 'n_estimators': 100,
@@ -699,7 +650,7 @@ class AnalystCreationStep:
 
             # Evaluate
             val_pred = model.predict(X_val)
-            accuracy = accuracy_score(y_val, val_pred) if accuracy_score else 0.5
+            accuracy = accuracy_score(y_val, val_pred)
 
             return {
                 "model": model,
@@ -711,17 +662,13 @@ class AnalystCreationStep:
 
         except Exception as e:
             self.logger.exception(f"❌ Error creating Random Forest model: {e}")
-            return {"model": None, "accuracy": 0.0, "error": str(e)}
+            raise RuntimeError(f"Failed to create Random Forest model: {e}")
 
     async def _create_neural_network_model(
         self, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
     ) -> dict[str, Any]:
         """Create a neural network model."""
         try:
-            if not TORCH_AVAILABLE:
-                self.logger.warning("⚠️ PyTorch not available, skipping Neural Network model creation")
-                return {"model": None, "accuracy": 0.0, "error": "PyTorch not available"}
-
             # Convert to tensors
             X_train_tensor = torch.FloatTensor(X_train.values)
             y_train_tensor = torch.FloatTensor(y_train.values)
@@ -759,7 +706,7 @@ class AnalystCreationStep:
             with torch.no_grad():
                 val_outputs = model(X_val_tensor.to(self.device))
                 val_pred = (val_outputs.squeeze() > 0.5).float()
-                accuracy = accuracy_score(y_val_tensor.cpu().numpy(), val_pred.cpu().numpy()) if accuracy_score else 0.5
+                accuracy = accuracy_score(y_val_tensor.cpu().numpy(), val_pred.cpu().numpy())
 
             return {
                 "model": model,
@@ -771,7 +718,7 @@ class AnalystCreationStep:
 
         except Exception as e:
             self.logger.exception(f"❌ Error creating Neural Network model: {e}")
-            return {"model": None, "accuracy": 0.0, "error": str(e)}
+            raise RuntimeError(f"Failed to create Neural Network model: {e}")
 
     async def _save_analyst_models(self, created_models: dict[str, dict[str, Any]], models_dir: str) -> None:
         """Save created analyst models."""
@@ -784,11 +731,8 @@ class AnalystCreationStep:
                     if model_data.get("model") is not None:
                         model_file = os.path.join(regime_dir, f"{model_name}.joblib")
                         
-                        # Save model if joblib is available
-                        if joblib:
-                            joblib.dump(model_data["model"], model_file)
-                        else:
-                            self.logger.warning(f"⚠️ Joblib not available, skipping model save for {model_name}")
+                        # Save model using joblib
+                        joblib.dump(model_data["model"], model_file)
                         
                         # Save metadata
                         metadata_file = os.path.join(regime_dir, f"{model_name}_metadata.json")
@@ -807,6 +751,7 @@ class AnalystCreationStep:
 
         except Exception as e:
             self.logger.exception(f"❌ Error saving analyst models: {e}")
+            raise RuntimeError(f"Failed to save analyst models: {e}")
 
 
 @handles_errors(

@@ -86,6 +86,11 @@ class MasterPipelineOrchestrator:
                     "priority": 1,
                     "timeout": 1800
                 },
+                "unified_standalone_pipeline": {
+                    "enabled": True,
+                    "priority": 1,
+                    "timeout": 600
+                },
                 "sequential_code_fixer": {
                     "enabled": True,
                     "priority": 2,
@@ -128,6 +133,7 @@ class MasterPipelineOrchestrator:
         """Discover all available pipelines."""
         pipeline_files = {
             "unified_enhanced_pipeline": "unified_enhanced_pipeline.py",
+            "unified_standalone_pipeline": "unified_standalone_pipeline.py",
             "sequential_code_fixer": "sequential_code_fixer.py",
             "code_interaction_mapper": "code_interaction_mapper.py",
             "dead_code_analyzer": "dead_code_analyzer.py",
@@ -152,6 +158,7 @@ class MasterPipelineOrchestrator:
         """Setup pipeline dependencies."""
         self.pipeline_dependencies = {
             "unified_enhanced_pipeline": [],  # No dependencies
+            "unified_standalone_pipeline": [],  # No dependencies, can run independently
             "sequential_code_fixer": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
             "code_interaction_mapper": ["unified_enhanced_pipeline"],  # Depends on unified pipeline
             "dead_code_analyzer": ["code_interaction_mapper"],  # Depends on interaction mapping
@@ -184,6 +191,10 @@ class MasterPipelineOrchestrator:
                 from unified_enhanced_pipeline import UnifiedEnhancedPipeline
                 pipeline = UnifiedEnhancedPipeline(str(self.project_root))
                 result = pipeline.run_comprehensive_analysis()
+            elif pipeline_name == "unified_standalone_pipeline":
+                from unified_standalone_pipeline import StandaloneCodeAnalyzer
+                pipeline = StandaloneCodeAnalyzer(str(self.project_root))
+                result = pipeline.analyze_project()
             elif pipeline_name == "sequential_code_fixer":
                 from sequential_code_fixer import SequentialFixer
                 pipeline = SequentialFixer(str(self.project_root))

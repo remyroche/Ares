@@ -1,276 +1,216 @@
 # Code Quality Pipelines
 
-This directory contains the main pipeline scripts for comprehensive code quality analysis. The pipelines are organized to provide different levels of analysis and fixing capabilities.
+This directory contains the main pipeline scripts for comprehensive code quality analysis. The pipelines are organized into focused, specialized tools plus one overall orchestrator.
 
 ## Pipeline Overview
 
-### Core Pipelines
+### Focused Pipelines
 
-#### 1. Unified Enhanced Pipeline (`unified_enhanced_pipeline.py`)
-**Purpose**: The most comprehensive code quality analysis pipeline
+#### 1. Complexity Pipeline (`complexity_pipeline.py`)
+**Purpose**: Code complexity analysis with focus on cyclomatic complexity
 **Features**:
-- All analyzers, visualizers, and fix scripts
-- Plugin system integration
-- Complete code quality assessment
-- Advanced reporting and visualization
+- Cyclomatic complexity analysis
+- Cognitive complexity analysis
+- Maintainability metrics
+- Code metrics analysis
 
 **Usage**:
 ```bash
-python unified_enhanced_pipeline.py --project-root /path/to/project
+python pipelines/complexity_pipeline.py --analysis-type cyclomatic
+python pipelines/complexity_pipeline.py --analysis-type cognitive
+python pipelines/complexity_pipeline.py --analysis-type maintainability
+python pipelines/complexity_pipeline.py --analysis-type metrics
 ```
 
-#### 2. Sequential Code Fixer (`sequential_code_fixer.py`)
-**Purpose**: Sequential auto-fix pipeline for code issues
+#### 2. Dead Code Pipeline (`dead_code_pipeline.py`)
+**Purpose**: Dead code detection and removal
 **Features**:
-- Syntax fixing and style issues
-- Linter analysis and error reporting
-- AST parsing and compilation validation
-- Import conflict analysis
-- Comprehensive static analysis
-
-**Usage**:
-```bash
-python sequential_code_fixer.py --target /path/to/code
-```
-
-#### 3. Code Interaction Mapper (`code_interaction_mapper.py`)
-**Purpose**: Maps code interactions and dependencies
-**Features**:
-- Dependency analysis
-- Call graph analysis
-- Architecture analysis
-- Import analysis
-- Enhanced dead code analysis with cross-file checking
-
-**Usage**:
-```bash
-python code_interaction_mapper.py --project-root /path/to/project
-```
-
-#### 4. Dead Code Analyzer (`dead_code_analyzer.py`)
-**Purpose**: Detects and analyzes dead code
-**Features**:
-- Unused code detection
-- Dead import identification
+- Enhanced dead code analysis
+- Automatic dead code removal
+- Unused imports detection
 - Unreachable code detection
-- Deprecated code analysis
-- Vulture library integration
 
 **Usage**:
 ```bash
-python dead_code_analyzer.py --target /path/to/code
+python pipelines/dead_code_pipeline.py --analysis-type enhanced --auto-fix
 ```
 
-#### 5. Complexity CLI (`complexity_cli.py`)
-**Purpose**: Code complexity analysis
+#### 3. Auto Fixer Pipeline (`auto_fixer_pipeline.py`)
+**Purpose**: Automatic code fixing with conservative approach
 **Features**:
-- PyExamine, Radon, and Xenon integration
-- Complexity metrics calculation
-- Detailed complexity reporting
-- Multiple output formats
+- Import fixes
+- Syntax fixes
+- Type hint fixes
+- Conservative auto-fixing
 
 **Usage**:
 ```bash
-python complexity_cli.py analyze /path/to/code
+python pipelines/auto_fixer_pipeline.py --fix-type imports --conservative
 ```
 
-#### 6. Enhanced Import Analysis (`enhanced_import_analysis.py`)
-**Purpose**: Comprehensive import analysis
+#### 4. Interaction Mapping Pipeline (`interaction_mapping_pipeline.py`)
+**Purpose**: Code interaction and dependency analysis
 **Features**:
-- Import dependency mapping
-- Circular dependency detection
-- Unused import identification
-- Import conflict resolution
-- Import optimization suggestions
+- Call graph analysis
+- Dependency mapping
+- Data flow analysis
+- Architecture analysis
 
 **Usage**:
 ```bash
-python enhanced_import_analysis.py --target /path/to/code
+python pipelines/interaction_mapping_pipeline.py --analysis-type call_graph
 ```
 
-#### 7. Intelligent Import Fixer (`intelligent_import_fixer.py`)
-**Purpose**: Automatic fixing of import issues with confidence-based actions
+#### 5. Import-Free Analysis Pipeline (`import_free_analysis_pipeline.py`)
+**Purpose**: Code analysis without import dependencies
 **Features**:
-- High confidence (95%): Auto-fix immediately
-- Medium confidence (4%): Auto-fix with user confirmation
-- Low confidence (1%): Flag for manual review only
-- Safety scoring and validation
+- Syntax analysis
+- Structure analysis
+- Pattern detection
+- AST-based analysis
+
+**Usage**:
+```bash
+python pipelines/import_free_analysis_pipeline.py --analysis-type syntax
+```
+
+#### 6. Unified Enhanced Pipeline (`pipeline_unified_enhanced.py`)
+**Purpose**: Comprehensive analysis with imports
+**Features**:
+- Complete code quality assessment
+- Import analysis integration
+- Advanced reporting
+- Plugin system integration
+
+**Usage**:
+```bash
+python pipelines/pipeline_unified_enhanced.py
+```
+
+### Master Orchestrator
+
+#### Overall Pipeline (`overall_pipeline.py`)
+**Purpose**: Master orchestrator for all pipelines
+**Features**:
+- Run all pipelines or specific subsets
 - Comprehensive reporting
-
-**Usage**:
-```bash
-python intelligent_import_fixer.py --target /path/to/code
-```
-
-### Specialized Components
-
-#### Enhanced Import Analyzer Plugin (`enhanced_import_analyzer_plugin.py`)
-**Purpose**: Plugin for enhanced import analysis
-**Features**:
-- Plugin architecture integration
-- Comprehensive import analysis
-- Optimization suggestions
-- Detailed reporting
-
-#### Script Integration Manager (`script_integration_manager.py`)
-**Purpose**: Manages integration of all scripts into pipelines
-**Features**:
-- Script discovery and categorization
-- Integration status checking
-- Pipeline organization planning
-- Comprehensive reporting
-
-#### Master Pipeline Orchestrator (`master_pipeline_orchestrator.py`)
-**Purpose**: Orchestrates all pipelines
-**Features**:
-- Pipeline discovery and registration
-- Dependency management
-- Execution scheduling
+- Pipeline coordination
 - Result aggregation
-- Configuration management
 
 **Usage**:
 ```bash
-python master_pipeline_orchestrator.py --project-root /path/to/project
+python pipelines/overall_pipeline.py --all
+python pipelines/overall_pipeline.py --pipelines complexity,dead_code,auto_fixer
+```
+
+## Quick Start
+
+### Run All Pipelines
+```bash
+# Run all pipelines with default settings
+python pipelines/overall_pipeline.py --all
+
+# Run on specific project
+python pipelines/overall_pipeline.py --project-root /path/to/project --all
+```
+
+### Run Specific Pipelines
+```bash
+# Run individual pipelines
+python pipelines/complexity_pipeline.py --analysis-type cyclomatic
+python pipelines/dead_code_pipeline.py --analysis-type enhanced --auto-fix
+python pipelines/auto_fixer_pipeline.py --fix-type imports --conservative
+python pipelines/interaction_mapping_pipeline.py --analysis-type call_graph
+python pipelines/import_free_analysis_pipeline.py --analysis-type syntax
+python pipelines/pipeline_unified_enhanced.py
+
+# Run subset of pipelines
+python pipelines/overall_pipeline.py --pipelines complexity,dead_code,auto_fixer
+```
+
+### List Available Pipelines
+```bash
+python pipelines/overall_pipeline.py --list
 ```
 
 ## Pipeline Dependencies
 
-The pipelines have the following dependency structure:
+All pipelines are designed to be independent and can be run standalone:
 
 ```
-unified_enhanced_pipeline (no dependencies)
-├── sequential_code_fixer
-├── code_interaction_mapper
-│   └── dead_code_analyzer
-└── enhanced_import_analysis
-    └── intelligent_import_fixer
-
-complexity_cli (independent)
+overall_pipeline (orchestrator)
+├── complexity_pipeline (independent)
+├── dead_code_pipeline (independent)
+├── auto_fixer_pipeline (independent)
+├── interaction_mapping_pipeline (independent)
+├── import_free_analysis_pipeline (independent)
+└── pipeline_unified_enhanced (independent)
 ```
 
 ## Configuration
 
 ### Pipeline Configuration
-Each pipeline can be configured through the master orchestrator:
+Each pipeline can be configured through command-line arguments:
 
-```json
-{
-  "pipeline_configs": {
-    "unified_enhanced_pipeline": {
-      "enabled": true,
-      "priority": 1,
-      "timeout": 1800
-    },
-    "sequential_code_fixer": {
-      "enabled": true,
-      "priority": 2,
-      "timeout": 1200
-    }
-  }
-}
+```bash
+# Complexity analysis with custom settings
+python pipelines/complexity_pipeline.py --analysis-type cyclomatic --project-root /path/to/project
+
+# Dead code analysis with auto-fix
+python pipelines/dead_code_pipeline.py --analysis-type enhanced --auto-fix
+
+# Conservative auto-fixing
+python pipelines/auto_fixer_pipeline.py --fix-type imports --conservative
 ```
 
 ### Global Configuration
-```json
-{
-  "parallel_execution": false,
-  "max_parallel_pipelines": 4,
-  "timeout_seconds": 3600,
-  "retry_failed": true,
-  "max_retries": 2,
-  "output_formats": ["json", "html", "markdown"]
-}
-```
+The overall pipeline supports global configuration:
 
-## Usage Examples
-
-### Run All Pipelines
 ```bash
-# Run all pipelines with default settings
-python master_pipeline_orchestrator.py
+# Run all pipelines with custom project root
+python pipelines/overall_pipeline.py --all --project-root /path/to/project
 
-# Run with custom project root
-python master_pipeline_orchestrator.py --project-root /path/to/project
-
-# Run with custom configuration
-python master_pipeline_orchestrator.py --config custom_config.json
-```
-
-### Run Specific Pipelines
-```bash
-# Run only specific pipelines
-python master_pipeline_orchestrator.py --pipelines unified_enhanced_pipeline,sequential_code_fixer
-
-# Run individual pipeline
-python unified_enhanced_pipeline.py --project-root /path/to/project
-```
-
-### Integration Analysis
-```bash
-# Analyze script integration status
-python script_integration_manager.py --output integration_report.txt
-
-# Generate comprehensive integration report
-python script_integration_manager.py --verbose
+# Run specific pipelines with custom arguments
+python pipelines/overall_pipeline.py --pipelines complexity,dead_code --custom-args complexity:--analysis-type,metrics
 ```
 
 ## Output and Reports
 
 ### Report Locations
-- **Master Reports**: `/workspace/code_quality/reports/master_pipeline_results_*.json`
-- **Individual Pipeline Reports**: `/workspace/code_quality/reports/[pipeline_name]_*.json`
-- **Integration Reports**: `/workspace/code_quality/reports/integration_report.txt`
+- **Overall Pipeline Reports**: `overall_pipeline_results_*.json`
+- **Individual Pipeline Reports**: Generated by each pipeline
+- **Master Orchestrator Reports**: `master_pipeline_results_*.json`
 
 ### Report Formats
 - **JSON**: Machine-readable results
-- **HTML**: Interactive web reports
-- **Markdown**: Human-readable documentation
-- **Text**: Console-friendly summaries
+- **Console**: Human-readable summaries
+- **Logs**: Detailed execution information
 
-## Plugin System
+## Examples
 
-The pipelines support a comprehensive plugin system:
+### Basic Usage
+```bash
+# Run complexity analysis
+python pipelines/complexity_pipeline.py --analysis-type cyclomatic
 
-### Available Plugins
-- **Production Plugins**: Syntax fixer, import fixer, dead code fixer, linter runner, security scanner
-- **Code Quality Plugins**: Black, isort, autopep8, flake8, ruff, and more
-- **Custom Plugins**: Enhanced import analyzer, script integration manager
+# Run dead code analysis with auto-fix
+python pipelines/dead_code_pipeline.py --analysis-type enhanced --auto-fix
 
-### Plugin Integration
-```python
-from enhanced_import_analyzer_plugin import EnhancedImportAnalyzerPlugin
-
-# Register plugin
-plugin = EnhancedImportAnalyzerPlugin()
-plugin_registry.register_plugin("enhanced_import_analyzer", plugin)
+# Run conservative import fixes
+python pipelines/auto_fixer_pipeline.py --fix-type imports --conservative
 ```
 
-## Error Handling and Fallbacks
+### Advanced Usage
+```bash
+# Run all pipelines on specific project
+python pipelines/overall_pipeline.py --all --project-root /path/to/project
 
-### Mock Implementations
-- **Vulture Library**: Graceful fallback when not available
-- **External Tools**: Try-catch blocks around tool imports
-- **Configuration**: Default configurations when custom configs unavailable
+# Run subset with custom arguments
+python pipelines/overall_pipeline.py --pipelines complexity,dead_code --custom-args complexity:--analysis-type,metrics
 
-### Fallback Mechanisms
-- **Tool Availability**: Automatic detection and fallback
-- **Analysis Degradation**: Simplified analysis when advanced tools unavailable
-- **Error Recovery**: Retry mechanisms and error reporting
-
-## Performance Considerations
-
-### Optimization Features
-- **Parallel Execution**: Experimental parallel pipeline execution
-- **Caching**: Result caching for repeated analyses
-- **Timeout Management**: Configurable timeouts for each pipeline
-- **Resource Management**: Memory and CPU usage optimization
-
-### Monitoring
-- **Execution Time**: Detailed timing information
-- **Resource Usage**: Memory and CPU monitoring
-- **Progress Tracking**: Real-time progress updates
-- **Error Reporting**: Comprehensive error logging
+# Run individual pipeline with verbose output
+python pipelines/complexity_pipeline.py --analysis-type cyclomatic --verbose
+```
 
 ## Troubleshooting
 
@@ -278,38 +218,38 @@ plugin_registry.register_plugin("enhanced_import_analyzer", plugin)
 
 1. **Import Errors**: Ensure all dependencies are installed
 2. **Permission Issues**: Check file permissions for output directories
-3. **Timeout Issues**: Increase timeout values in configuration
-4. **Memory Issues**: Reduce parallel execution or increase system memory
+3. **Pipeline Not Found**: Use `--list` to see available pipelines
+4. **Custom Arguments**: Use proper format: `pipeline:arg1,arg2`
 
 ### Debug Mode
 ```bash
 # Enable verbose output
-python master_pipeline_orchestrator.py --verbose
+python pipelines/overall_pipeline.py --all --verbose
 
-# Enable debug information
-python script_integration_manager.py --verbose
+# List available pipelines
+python pipelines/overall_pipeline.py --list
 ```
 
 ## Contributing
 
 ### Adding New Pipelines
 1. Create pipeline script in this directory
-2. Add to pipeline registry in master orchestrator
-3. Define dependencies and configuration
-4. Update documentation
-
-### Plugin Development
-1. Inherit from base plugin class
-2. Implement required methods
-3. Add to plugin registry
+2. Add to `overall_pipeline.py` available_pipelines dictionary
+3. Update this README
 4. Test integration
+
+### Pipeline Development
+1. Follow the existing pipeline structure
+2. Implement proper argument parsing
+3. Add comprehensive error handling
+4. Include detailed documentation
 
 ## Support
 
 For issues and questions:
-1. Check the integration report for script status
-2. Review pipeline execution logs
-3. Consult the mock implementation review
+1. Check pipeline execution logs
+2. Use `--list` to verify available pipelines
+3. Review individual pipeline documentation
 4. Check configuration settings
 
 ## License

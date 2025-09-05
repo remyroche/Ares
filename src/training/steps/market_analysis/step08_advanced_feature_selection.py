@@ -60,6 +60,13 @@ try:
 except ImportError:
     LIME_AVAILABLE = False
     warnings.warn("LIME not available - interpretability features will be limited")
+    
+try:
+    import lightgbm as lgb
+    LGB_AVAILABLE = True
+except ImportError:
+    LGB_AVAILABLE = False
+    warnings.warn("LightGBM not available - using RandomForest fallback for importance")
 
 try:
     from src.core.decorators import handles_errors
@@ -70,7 +77,6 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import pipeline_standards
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
-import lightgbm as lgb
 
 
 # Numba-optimized functions for performance
@@ -666,23 +672,34 @@ class Step08AdvancedFeatureSelection:
             self.logger.info(f"   Boruta confirmed {len(confirmed_features)} features")
             
         else:
-            # Fallback: Use LightGBM importance
-            self.logger.warning("⚠️ Boruta not available, using LightGBM importance")
-            
-            lgb_model = lgb.LGBMClassifier(
-                n_estimators=200,
-                max_depth=10,
-                random_state=42,
-                n_jobs=-1,
-                verbose=-1
-            )
-            lgb_model.fit(X, y)
-            
-            feature_importance = pd.Series(
-                lgb_model.feature_importances_,
-                index=X.columns
-            ).sort_values(ascending=False)
-            
+            # Fallback: Use LightGBM importance if available, else RandomForest
+            if LGB_AVAILABLE:
+                self.logger.warning("⚠️ Boruta not available, using LightGBM importance")
+                lgb_model = lgb.LGBMClassifier(
+                    n_estimators=200,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1,
+                    verbose=-1
+                )
+                lgb_model.fit(X, y)
+                feature_importance = pd.Series(
+                    lgb_model.feature_importances_,
+                    index=X.columns
+                ).sort_values(ascending=False)
+            else:
+                self.logger.warning("⚠️ Boruta and LightGBM not available, using RandomForest importance fallback")
+                rf = RandomForestClassifier(
+                    n_estimators=200,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1
+                )
+                rf.fit(X, y)
+                feature_importance = pd.Series(
+                    rf.feature_importances_,
+                    index=X.columns
+                ).sort_values(ascending=False)
             # Consider top 80% as "confirmed"
             threshold = feature_importance.quantile(0.2)
             confirmed_features = feature_importance[feature_importance > threshold].index.tolist()

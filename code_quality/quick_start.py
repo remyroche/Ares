@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-from function_validator import FunctionValidator
+from validators.function_validator import FunctionValidator
 import asyncio
 
 

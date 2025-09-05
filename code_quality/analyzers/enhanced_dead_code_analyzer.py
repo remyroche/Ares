@@ -46,7 +46,7 @@ except ImportError:
     NETWORKX_AVAILABLE = False
     print("Warning: NetworkX not available. Install with: pip install networkx")
 
-from core.config import AnalysisConfig
+from core.config import AnalysisConfig, CodeQualityConfig
 from utils.file_utils import find_python_files
 from typing import Set
 from typing import Any

@@ -42,6 +42,45 @@ class CodeQualityConfig:
 
 
 @dataclass
+class ReportingConfig:
+    """Configuration for reporting options."""
+    
+    # Report formats
+    generate_html: bool = True
+    generate_json: bool = True
+    generate_text: bool = True
+    generate_csv: bool = False
+    
+    # Report content
+    include_metrics: bool = True
+    include_visualizations: bool = True
+    include_recommendations: bool = True
+    
+    # Output options
+    output_directory: str = "reports"
+    report_filename: str = "code_quality_report"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return {
+            "generate_html": self.generate_html,
+            "generate_json": self.generate_json,
+            "generate_text": self.generate_text,
+            "generate_csv": self.generate_csv,
+            "include_metrics": self.include_metrics,
+            "include_visualizations": self.include_visualizations,
+            "include_recommendations": self.include_recommendations,
+            "output_directory": self.output_directory,
+            "report_filename": self.report_filename
+        }
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ReportingConfig':
+        """Create configuration from dictionary."""
+        return cls(**config_dict)
+
+
+@dataclass
 class AnalysisConfig:
     """Configuration for code analysis operations."""
     
@@ -101,3 +140,24 @@ class AnalysisConfig:
 def get_default_config() -> AnalysisConfig:
     """Get default analysis configuration."""
     return AnalysisConfig()
+
+
+def load_config(config_file: str) -> CodeQualityConfig:
+    """Load configuration from a YAML or JSON file."""
+    import yaml
+    import json
+    from pathlib import Path
+    
+    config_path = Path(config_file)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_file}")
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        if config_path.suffix.lower() in ['.yaml', '.yml']:
+            config_dict = yaml.safe_load(f)
+        elif config_path.suffix.lower() == '.json':
+            config_dict = json.load(f)
+        else:
+            raise ValueError(f"Unsupported configuration file format: {config_path.suffix}")
+    
+    return CodeQualityConfig.from_dict(config_dict)

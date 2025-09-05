@@ -1058,8 +1058,7 @@ async def test():
     await step.initialize()
     
     # Create mock data for testing
-    import pandas as pd
-    import numpy as np
+    # pandas and numpy are already imported at the top of the file
     
     # Generate mock OHLCV data
     np.random.seed(42)

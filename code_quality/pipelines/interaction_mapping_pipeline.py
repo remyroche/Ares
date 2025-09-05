@@ -460,9 +460,9 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["basic", "enhanced", "call_graph", "dependencies", "data_flow", "architecture", "visualization", "all"],
-        default="all",
-        help="Specific interaction analysis to run (default: all)"
+        choices=["call_graph", "dependencies", "data_flow", "architecture", "visualization"],
+        default="call_graph",
+        help="Type of interaction analysis to perform (default: call_graph)"
     )
     
     args = parser.parse_args()

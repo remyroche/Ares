@@ -2,12 +2,14 @@
 """
 Complexity Analysis Pipeline
 
-Specialized pipeline for code complexity analysis including:
-- Cyclomatic complexity
-- Cognitive complexity
-- Maintainability index
-- Code metrics analysis
-- Complexity visualization
+Specialized pipeline for code complexity analysis with focus on cyclomatic complexity.
+Supports multiple analysis types: cyclomatic, cognitive, maintainability, metrics.
+
+Usage:
+    python pipelines/complexity_pipeline.py --analysis-type cyclomatic
+    python pipelines/complexity_pipeline.py --analysis-type cognitive
+    python pipelines/complexity_pipeline.py --analysis-type maintainability
+    python pipelines/complexity_pipeline.py --analysis-type metrics
 """
 
 import sys

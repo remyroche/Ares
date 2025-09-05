@@ -281,9 +281,8 @@ class StreamingDataProcessor:
             import pyarrow.parquet as pq_mod
         except Exception as e:
             pass
-        from .core.decorators.errors import handles_errors
-import pandas as pd
-import numpy as np
+        import pandas as pd
+        import numpy as np
 
         writer = None
         for df in chunks_iter:

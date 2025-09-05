@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 
 from .training.steps.step11_analyst_creation import Step11AnalystCreation
+from .training.steps.regime_processing_utils import (
     per_regime_processing,
     aggregate_regime_results,
     RegimeProcessingContext
@@ -16,7 +17,6 @@ from .training.steps.step11_analyst_creation import Step11AnalystCreation
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step11AnalystCreationPerRegime')
@@ -868,4 +868,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime analyst creation result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

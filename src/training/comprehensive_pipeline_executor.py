@@ -1,4 +1,9 @@
-'\nComprehensive Pipeline Executor with Integrated Data Quality Management.\n\nThis script provides a complete execution framework for steps 1-7 of the enhanced training pipeline,\nwith integrated data quality monitoring, compatibility validation, format verification, and proper indexing.\n'
+"""
+Comprehensive Pipeline Executor with Integrated Data Quality Management.
+
+This script provides a complete execution framework for steps 1-7 of the enhanced training pipeline,
+with integrated data quality monitoring, compatibility validation, format verification, and proper indexing.
+"""
 import asyncio
 import sys
 import time
@@ -191,9 +196,7 @@ async def main() -> None:
     except Exception as e:
         print(f'❌ Pipeline execution failed: {e}')
         import traceback
-from typing import List
-import numpy as np
-
         traceback.print_exc()
+
 if __name__ == '__main__':
     asyncio.run(main())

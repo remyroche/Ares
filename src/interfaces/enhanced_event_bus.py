@@ -21,7 +21,7 @@ from src.utils.warning_symbols import (
     ErrorLevel,
 )
 from .utils.logger import system_logger
-
+from .core.exceptions import (
     error,
     failed,
     initialization_error,

@@ -40,8 +40,7 @@ def create_fastapi_exception_handler() -> Any:
 
     async def handle_app_error(request: Any, error: AppError) -> Any:
         from fastapi.responses import JSONResponse
-import typing
-
+        
         response_data = error.to_dict()
         return JSONResponse(status_code=error.status_code, content=response_data)
     return handle_app_error

@@ -3,11 +3,10 @@
 
 """Data structure type definitions for market data and trading information."""
 
+import logging
 from typing import Literal, TypedDict
 
 from .base_types import (
-import logging
-
     OrderId,
     PositionId,
     Price,

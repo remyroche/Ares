@@ -30,6 +30,8 @@ class Step1DataCollectionValidator:
         self.max_gap_hours = 48  # Increased from 24 hours
         self.price_tolerance = 0.001  # Allow very small negative prices due to precision
         self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
+        # Container for last validation result (consumed by orchestrator wrappers)
+        self.validation_results: Dict[str, Any] = {}
 
     async def validate(
         self,
@@ -101,6 +103,7 @@ class Step1DataCollectionValidator:
                 validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
                 validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
             
+            # Store results for external access
             self.validation_results = validation_result
             return validation_result
 
@@ -138,8 +141,98 @@ class Step1DataCollectionValidator:
         if not validation_result["validation_passed"]:
             self.logger.error("❌ No market data found in state or consolidated files")
 
+        # Store results for external access
         self.validation_results = validation_result
         return validation_result
+
+    def validate_dataframe_quality(
+        self,
+        df: pd.DataFrame,
+        min_rows: int,
+        required_columns: List[str],
+        check_data_types: bool = True,
+        check_value_ranges: bool = True,
+        check_duplicates: bool = True,
+        check_temporal_consistency: bool = True,
+    ) -> tuple[bool, Dict[str, Any]]:
+        """Basic DataFrame quality validation used by this validator.
+
+        Returns (is_valid, metrics_dict).
+        """
+        is_valid = True
+        metrics: Dict[str, Any] = {
+            "row_count": int(len(df)) if df is not None else 0,
+            "required_columns": required_columns,
+            "missing_required_columns": [],
+            "duplicate_rows": 0,
+            "data_quality_issues": [],
+            "critical_issues": [],
+        }
+
+        try:
+            # Existence and size
+            if df is None or df.empty:
+                is_valid = False
+                metrics["critical_issues"].append("DataFrame is None or empty")
+                return is_valid, metrics
+            if len(df) < min_rows:
+                is_valid = False
+                metrics["critical_issues"].append(f"Too few rows: {len(df)} < {min_rows}")
+
+            # Required columns
+            missing_cols = [c for c in required_columns if c not in df.columns]
+            if missing_cols:
+                is_valid = False
+                metrics["missing_required_columns"] = missing_cols
+                metrics["critical_issues"].append(f"Missing required columns: {missing_cols}")
+
+            # Data types (best-effort)
+            if check_data_types:
+                numeric_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                for col in numeric_cols:
+                    try:
+                        _ = pd.to_numeric(df[col], errors="coerce")
+                    except Exception:
+                        metrics["data_quality_issues"].append(f"Column not numeric: {col}")
+
+            # Value ranges (lightweight sanity checks)
+            if check_value_ranges:
+                if "volume" in df.columns:
+                    try:
+                        min_volume = float(pd.to_numeric(df["volume"], errors="coerce").min())
+                        if min_volume < -self.volume_tolerance:
+                            metrics["data_quality_issues"].append(
+                                f"Volume has unrealistic negative values (min={min_volume})"
+                            )
+                    except Exception:
+                        metrics["data_quality_issues"].append("Failed to evaluate volume range")
+
+            # Duplicates
+            if check_duplicates:
+                try:
+                    dup_count = int(df.duplicated().sum())
+                    metrics["duplicate_rows"] = dup_count
+                    if dup_count > 0:
+                        metrics["data_quality_issues"].append(f"Found {dup_count} duplicate rows")
+                except Exception:
+                    metrics["data_quality_issues"].append("Failed to compute duplicates")
+
+            # Temporal consistency
+            if check_temporal_consistency and "timestamp" in df.columns:
+                try:
+                    ts = pd.to_datetime(df["timestamp"], errors="coerce")
+                    if ts.isnull().any():
+                        metrics["data_quality_issues"].append("Null timestamps detected")
+                    if not ts.is_monotonic_increasing:
+                        metrics["data_quality_issues"].append("Timestamps are not monotonically increasing")
+                except Exception:
+                    metrics["data_quality_issues"].append("Failed to validate temporal consistency")
+
+        except Exception as e:
+            is_valid = False
+            metrics["critical_issues"].append(f"Validation error: {e}")
+
+        return is_valid, metrics
 
     async def _check_consolidated_files(
         self,
@@ -409,13 +502,14 @@ async def run_validator(
 
     """
     validator = Step1DataCollectionValidator(training_input)
-    validation = await validator.validate(training_input, pipeline_state)
-    validator.validation_results = validation
+    result = await validator.validate(training_input, pipeline_state)
+    # Ensure attribute is populated for orchestrators that expect it
+    validator.validation_results = result
 
     return {
         "step_name": "step01_data_collection",
-        "validation_passed": bool(validation.get("validation_passed", False)) if isinstance(validation, dict) else bool(validation),
-        "validation_results": validator.validation_results,
+        "validation_passed": bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result),
+        "validation_results": result if isinstance(result, dict) else {"result": result},
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": time.time(),
     }

@@ -1,14 +1,13 @@
 
-from typing import Dict
-import pandas as pd
-from typing import Any
 """HMM-Based Training Step Validator"""
 
+from typing import Dict, Any
+import pandas as pd
 from pathlib import Path
 
-from .core.decorators import handles_errors, validates, log_call, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ....core.decorators import handles_errors, validates, log_call, traced
+from ....utils.logger import system_logger
+from ....utils.common_operations import safe_file_exists, validate_dataframe_schema
 
 class HMMTrainingValidator:
     """Validator for HMM-based training step."""
@@ -18,7 +17,7 @@ class HMMTrainingValidator:
         self.logger = system_logger.getChild('HMMTrainingValidator')
         self.validation_results: Dict[str, Any] = {}
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
     @validates(strict=True)
     @log_call
     @traced
@@ -71,7 +70,7 @@ class HMMTrainingValidator:
             validation_result['errors'].append(f"Validation error: {e}")
             return validation_result
 
-    @handles_errors(Exception, fallback={'success': False, 'errors': ['Input validation failed']}, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), default_return={'success': False, 'errors': ['Input validation failed']}, log_level="ERROR")
     async def _validate_inputs(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, Any]:
         """Validate input parameters."""
         errors = []
@@ -103,7 +102,7 @@ class HMMTrainingValidator:
             'warnings': warnings
         }
 
-    @handles_errors(Exception, fallback={'success': False, 'errors': ['Configuration validation failed']}, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), default_return={'success': False, 'errors': ['Configuration validation failed']}, log_level="ERROR")
     async def _validate_configuration(self) -> Dict[str, Any]:
         """Validate training configuration."""
         errors = []
@@ -130,7 +129,7 @@ class HMMTrainingValidator:
             'warnings': warnings
         }
 
-    @handles_errors(Exception, fallback={'success': False, 'errors': ['Data validation failed']}, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), default_return={'success': False, 'errors': ['Data validation failed']}, log_level="ERROR")
     async def _validate_data_availability(self, symbol: str, exchange: str, data_dir: str) -> Dict[str, Any]:
         """Validate data availability and quality."""
         errors = []

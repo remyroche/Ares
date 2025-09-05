@@ -43,6 +43,7 @@ async def download_all_data_with_consolidation(
     try:
         from src.backtesting.ares_data_downloader_optimized import (
             OptimizedDataDownloader,
+            OptimizedDownloadConfig,
         )
 
         opt_cfg = OptimizedDownloadConfig(

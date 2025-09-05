@@ -66,15 +66,15 @@ class ValidatorOrchestrator:
             status = 'SUCCESS' if passed else 'FAILED'
             failure_reason = self._extract_failure_reason(result)
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status=status)
+                self.metrics.record_step_execution(step_name=step_name, duration=duration, status=status)
             except Exception:
                 self.logger.debug('Metrics recording for step execution failed', exc_info=True)
             if passed:
-                metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=True, reason='Step validation completed successfully')
+                self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=True, reason='Step validation completed successfully')
                 self.logger.info(f'✅ Validator for {step_name} completed in {duration:.3f}s: passed=True')
             else:
                 self.logger.error(f'❌ Validator failed for {step_name} in {duration:.3f}s: {failure_reason}')
-                metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=failure_reason)
+                self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=failure_reason)
             return result
         except Exception as e:
             duration = max(0.0, time.perf_counter() - start_perf)
@@ -82,10 +82,10 @@ class ValidatorOrchestrator:
             error_result = {'step_name': step_name, 'validation_passed': False, 'error': str(e), 'duration': duration, 'timestamp': time.time()}
             self.validation_results[step_name] = error_result
             try:
-                metrics.record_step_execution(step_name=step_name, duration=duration, status='EXCEPTION')
+                self.metrics.record_step_execution(step_name=step_name, duration=duration, status='EXCEPTION')
             except Exception:
                 self.logger.debug('Metrics recording for exception failed', exc_info=True)
-            metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=f'Validator execution error: {str(e)}')
+            self.metrics.record_validation_result(step_name=step_name, validation_type='step_validation', passed=False, reason=f'Validator execution error: {str(e)}')
             return error_result
 
     async def _run_pre_validation_checks(self, step_name: str, training_input: dict[str, Any], pipeline_state: dict[str, Any], config: dict[str, Any], validation_level: str) -> dict[str, Any]:

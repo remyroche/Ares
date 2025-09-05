@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any, Callable
 
 from .utils.logger import system_logger
+from .core.exceptions import (
     error,
     failed,
     initialization_error,
@@ -14,7 +15,6 @@ from .utils.logger import system_logger
     missing,
 )
 from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
 
 # src/interfaces/event_bus.py
 

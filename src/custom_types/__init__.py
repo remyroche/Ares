@@ -5,6 +5,7 @@ This module provides comprehensive type coverage to eliminate Any types
 and improve type safety throughout the codebase.
 """
 
+from .core.exceptions import (
     connection_error,
     critical,
     error,

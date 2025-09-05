@@ -322,10 +322,7 @@ class RegularizationManager:
 
                     # Convert to tensors for PyTorch model
                     import torch
-import pandas as pd
 
-                except Exception as e:
-                    pass  # TODO: Handle exception
                 except Exception as e:
                     pass  # TODO: Handle exception properly
                     X_tensor = torch.FloatTensor(X_scaled)

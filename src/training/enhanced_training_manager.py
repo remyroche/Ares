@@ -1477,32 +1477,39 @@ class TrainingManager:
             # Placeholder for saving step
             return True
         except Exception as e:
+            self.logger.exception(f'Saving step failed: {e}')
+            return False
+
     @handles_errors(exceptions=(Exception,), default_return=False, context='optimized tools initialization')
-                        self.logger.error('❌ Step 2.5 dependencies not met, stopping pipeline')
-                        return False
-                    step_start_2_5 = time.time()
-                    try:
-                        from .training.steps import step2_5_sr_optimization
-                        step2_5_success = await step2_5_sr_optimization.run_step(config=self.config)
-                    except Exception as e:
-                        self.logger.exception(f'❌ Error in Step 2.5: {e}')
-                        step2_5_success = False
-                    if not step2_5_success:
-                        self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=False)
-                        return False
-                    self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=True)
-                    pipeline_state['sr_optimization'] = {'status': 'SUCCESS' if step2_5_success else 'FAILED', 'success': bool(step2_5_success), 'completed': bool(step2_5_success)}
-                    self._save_checkpoint('step02_5_sr_optimization', pipeline_state)
-                if not step2_5_success:
-                    return False
-                self.logger.info('➡️ Proceeding to Step 3: Enhanced HMM Clustering')
-                step3_args = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'lookback_days': self.lookback_days, 'force_rerun': self.force_rerun}
-                from .training.steps.market_analysis.step03_hmm_clustering import run_step as step3_run_step
-                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=step3_run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
-                if not step3_success:
-                    return False
-                self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
-                self._heartbeat('Step 4: Regime Data Splitting')
+    async def _run_step_2_5(self, context: dict[str, Any]) -> bool:
+        """Execute step 2.5 SR optimization."""
+        try:
+            if not self._check_step_2_5_dependencies():
+                self.logger.error('❌ Step 2.5 dependencies not met, stopping pipeline')
+                return False
+            step_start_2_5 = time.time()
+            try:
+                from .training.steps import step2_5_sr_optimization
+                step2_5_success = await step2_5_sr_optimization.run_step(config=self.config)
+            except Exception as e:
+                self.logger.exception(f'❌ Error in Step 2.5: {e}')
+                step2_5_success = False
+            if not step2_5_success:
+                self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=False)
+                return False
+            self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=True)
+            pipeline_state['sr_optimization'] = {'status': 'SUCCESS' if step2_5_success else 'FAILED', 'success': bool(step2_5_success), 'completed': bool(step2_5_success)}
+            self._save_checkpoint('step02_5_sr_optimization', pipeline_state)
+            if not step2_5_success:
+                return False
+            self.logger.info('➡️ Proceeding to Step 3: Enhanced HMM Clustering')
+            step3_args = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'lookback_days': self.lookback_days, 'force_rerun': self.force_rerun}
+            from .training.steps.market_analysis.step03_hmm_clustering import run_step as step3_run_step
+            step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=step3_run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
+            if not step3_success:
+                return False
+            self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
+            self._heartbeat('Step 4: Regime Data Splitting')
                 should_run_step4 = _should_run('step04_regime_data_splitting')
                 step_start_4 = time.time()
                 if not should_run_step4:

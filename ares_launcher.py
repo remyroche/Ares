@@ -1464,100 +1464,31 @@ class AresLauncher:
             return False
 
         try:
-            # Run the enhanced data collection pipeline
-            print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}...")
-            
             # Set up environment with correct Python path and enhanced logging
             import os
-            env = os.environ.copy()
-            env['PYTHONPATH'] = str(project_root)
-            env['DATA_COLLECTION_MODE'] = 'enhanced'
-            env['SYMBOL'] = symbol
-            env['EXCHANGE'] = exchange
+            additional_env = {
+                'PYTHONPATH': str(project_root),
+                'DATA_COLLECTION_MODE': 'enhanced',
+            }
             
-            process=subprocess.Popen(
-                [
-                    sys.executable,
-                    "standalone_data_collection.py",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
-                text=True,
-                bufsize=1,  # Line buffered
-                universal_newlines=True,
-                env=env,
-                cwd=str(project_root)
+            print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}...")
+            
+            success = self._execute_pipeline_subprocess(
+                "standalone_data_collection.py",
+                symbol,
+                exchange,
+                additional_env,
+                monitoring_mode="enhanced"
             )
-            self.processes.append(process)
 
-            # Enhanced real-time output monitoring with progress tracking
-            line_count = 0
-            error_count = 0
-            warning_count = 0
-            success_count = 0
-            progress_indicators = []
-            
-            print("📊 Monitoring pipeline execution...")
-            print("=" * 80)
-            
-            while True:
-                output=process.stdout.readline()
-                if output== "" and process.poll() is not None:
-                    break
-                if output:
-                    line_count += 1
-                    output_stripped = output.strip()
-                    
-                    # Monitor for different types of messages
-                    if "ERROR" in output_stripped or "❌" in output_stripped:
-                        error_count += 1
-                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
-                        warning_count += 1
-                    elif "SUCCESS" in output_stripped or "✅" in output_stripped:
-                        success_count += 1
-                    elif "Progress:" in output_stripped:
-                        progress_indicators.append(output_stripped)
-                    
-                    print(output_stripped)  # Print to terminal in real-time
-                    self.logger.info(output_stripped)  # Also log it
-                    
-                    # Progress indicator every 25 lines
-                    if line_count % 25 == 0:
-                        print(f"📊 Progress: {line_count} lines processed, {success_count} successes, {warning_count} warnings, {error_count} errors")
-
-            # Get the final return code
-            return_code=process.poll()
-            
-            # Enhanced result reporting
-            print("=" * 80)
-            print("📊 DATA COLLECTION PIPELINE RESULTS")
-            print("=" * 80)
-            print(f"ℹ️ Total lines processed: {line_count}")
-            print(f"✅ Total successes: {success_count}")
-            print(f"⚠️ Total warnings: {warning_count}")
-            print(f"❌ Total errors: {error_count}")
-            print(f"ℹ️ Return code: {return_code}")
-            print("=" * 80)
-
-            if return_code== 0:
+            if success:
                 self.logger.info("✅ Enhanced data collection pipeline completed successfully")
                 print("✅ Enhanced data collection pipeline completed successfully")
                 print("🎉 All data collection steps completed with validation!")
-                
-                # Show final progress summary
-                if progress_indicators:
-                    print("📊 Final Progress Summary:")
-                    for indicator in progress_indicators[-3:]:  # Show last 3 progress indicators
-                        print(f"   {indicator}")
-                
                 return True
             else:
-                self.logger.error(
-                    f"❌ Enhanced data collection pipeline failed with return code: {return_code}",
-                )
-                print(f"❌ Enhanced data collection pipeline failed with return code: {return_code}")
-                if error_count > 0:
-                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                self.logger.error("❌ Enhanced data collection pipeline failed")
+                print("❌ Enhanced data collection pipeline failed")
                 return False
 
         except Exception as e:
@@ -1710,7 +1641,12 @@ class AresLauncher:
             return False
 
         try:
-            # Run the model training pipeline with enhanced monitoring
+            # Set environment variables for enhanced pipeline
+            import os
+            additional_env = {
+                'MODEL_TRAINING_MODE': 'enhanced',
+            }
+            
             print(f"🚀 Starting model training pipeline for {symbol} on {exchange}...")
             print("📊 COMPREHENSIVE LOGGING & PROGRESS TRACKING ENABLED")
             print("🔍 Quality monitoring and issue flagging active")
@@ -1718,73 +1654,15 @@ class AresLauncher:
             print("🧠 Memory monitoring and optimization alerts enabled")
             print("=" * 80)
             
-            # Set environment variables for enhanced pipeline
-            import os
-            os.environ["MODEL_TRAINING_MODE"] = "enhanced"
-            os.environ["SYMBOL"] = symbol
-            os.environ["EXCHANGE"] = exchange
-            
-            process=subprocess.Popen(
-                [
-                    sys.executable,
-                    "src/training/steps/model_training/step09_model_training_main.py",
-                    "--symbol", symbol,
-                    "--exchange", exchange,
-                    "--enhanced-mode"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
-                text=True,
-                bufsize=1,  # Line buffered
-                universal_newlines=True,
-                env=dict(os.environ, MODEL_TRAINING_MODE="enhanced", SYMBOL=symbol, EXCHANGE=exchange),
+            success = self._execute_pipeline_subprocess(
+                "src/training/steps/model_training/step09_model_training_main.py",
+                symbol,
+                exchange,
+                additional_env,
+                monitoring_mode="enhanced"
             )
-            self.processes.append(process)
 
-            # Read output in real-time with enhanced monitoring
-            line_count = 0
-            error_count = 0
-            warning_count = 0
-            progress_indicators = 0
-            
-            while True:
-                output=process.stdout.readline()
-                if output== "" and process.poll() is not None:
-                    break
-                if output:
-                    line_count += 1
-                    output_stripped = output.strip()
-                    
-                    # Monitor for errors and warnings
-                    if "ERROR" in output_stripped or "❌" in output_stripped:
-                        error_count += 1
-                    elif "WARNING" in output_stripped or "⚠️" in output_stripped:
-                        warning_count += 1
-                    elif "Progress:" in output_stripped or "📊" in output_stripped:
-                        progress_indicators += 1
-                    
-                    print(output_stripped)  # Print to terminal in real-time
-                    self.logger.info(output_stripped)  # Also log it
-                    
-                    # Progress indicator every 50 lines
-                    if line_count % 50 == 0:
-                        print(f"📊 Progress: {line_count} lines processed, {error_count} errors, {warning_count} warnings, {progress_indicators} progress updates")
-
-            # Get the final return code
-            return_code=process.poll()
-            
-            # Enhanced result reporting
-            print("=" * 80)
-            print("📊 MODEL TRAINING PIPELINE RESULTS")
-            print("=" * 80)
-            print(f"📈 Total lines processed: {line_count}")
-            print(f"❌ Total errors: {error_count}")
-            print(f"⚠️ Total warnings: {warning_count}")
-            print(f"📊 Progress updates: {progress_indicators}")
-            print(f"🔢 Return code: {return_code}")
-            print("=" * 80)
-
-            if return_code== 0:
+            if success:
                 self.logger.info("✅ Model training pipeline completed successfully")
                 print("✅ Model training pipeline completed successfully")
                 print("🎉 All model training steps completed with validation!")
@@ -1809,12 +1687,8 @@ class AresLauncher:
                 
                 return True
             else:
-                self.logger.error(
-                    f"❌ Model training pipeline failed with return code: {return_code}",
-                )
-                print(f"❌ Model training pipeline failed with return code: {return_code}")
-                if error_count > 0:
-                    print(f"💥 Pipeline encountered {error_count} errors during execution")
+                self.logger.error("❌ Model training pipeline failed")
+                print("❌ Model training pipeline failed")
                 print("🔍 Troubleshooting suggestions:")
                 print("   • Check data file integrity and availability")
                 print("   • Verify previous steps completed successfully")
@@ -2355,21 +2229,8 @@ class AresLauncher:
             self.logger.exception(f"❌ Failed to run backtesting pipeline: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="run_all_pipelines",
-    )
-    def run_all_pipelines(
-        self,
-        symbol: str,
-        exchange: str,
-        with_gui: bool=False,
-    ):
-        """Run all pipelines in sequence with organized report management."""
-        self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
-
-        # Initialize report manager and collector for this run
+    def _initialize_report_management(self, symbol: str, exchange: str):
+        """Initialize report manager and collector for pipeline execution."""
         try:
             from src.utils.report_manager import initialize_report_manager
             from src.utils.report_collector import initialize_report_collector
@@ -2384,63 +2245,164 @@ class AresLauncher:
             self.logger.info(f"📁 Report collector initialized: {report_collector.get_run_directory()}")
             print(f"📁 Report directory: {report_manager.get_run_directory()}")
             print(f"📁 Report collector: {report_collector.get_run_directory()}")
+            
+            return report_manager, report_collector
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize report manager/collector: {e}")
+            return None, None
 
-        if with_gui and not self.launch_gui("all-pipelines", symbol, exchange):
-            return False
-
+    def _execute_pipeline_subprocess(self, script_path: str, symbol: str, exchange: str, 
+                                   additional_env: dict = None, monitoring_mode: str = "basic") -> bool:
+        """Execute a pipeline subprocess with real-time output monitoring.
+        
+        Args:
+            script_path: Path to the script to execute
+            symbol: Trading symbol
+            exchange: Exchange name
+            additional_env: Additional environment variables
+            monitoring_mode: "basic" for simple monitoring, "enhanced" for detailed monitoring
+        """
+        import os
+        
+        # Set up environment variables
+        env = os.environ.copy()
+        env.update({
+            'SYMBOL': symbol,
+            'EXCHANGE': exchange,
+        })
+        if additional_env:
+            env.update(additional_env)
+        
         try:
-            # Run the all pipelines orchestrator
-            print(f"🚀 Starting all pipelines for {symbol} on {exchange}...")
-            print(f"📊 All reports will be organized in: {report_manager.get_run_directory()}")
-            
-            # Set environment variables for report management
-            import os
-            env = os.environ.copy()
-            env['SYMBOL'] = symbol
-            env['EXCHANGE'] = exchange
-            env['REPORT_RUN_TIMESTAMP'] = report_manager.get_run_timestamp()
-            
-            process=subprocess.Popen(
-                [
-                    sys.executable,
-                    "src/training/steps/run_all_pipelines.py",
-                ],
+            process = subprocess.Popen(
+                [sys.executable, script_path],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1,  # Line buffered
+                bufsize=1,
                 universal_newlines=True,
                 env=env,
             )
             self.processes.append(process)
 
-            # Read output in real-time
-            while True:
-                output=process.stdout.readline()
-                if output== "" and process.poll() is not None:
-                    break
-                if output:
-                    print(output.strip())  # Print to terminal in real-time
-                    self.logger.info(output.strip())  # Also log it
-
-            # Get the final return code
-            return_code=process.poll()
-
-            if return_code== 0:
-                self.logger.info("✅ All pipelines completed successfully")
-                print("✅ All pipelines completed successfully")
-                return True
-            self.logger.error(
-                f"❌ All pipelines failed with return code: {return_code}",
-            )
-            print(f"❌ All pipelines failed with return code: {return_code}")
-            return False
+            if monitoring_mode == "enhanced":
+                return self._monitor_subprocess_enhanced(process, symbol, exchange)
+            else:
+                return self._monitor_subprocess_basic(process)
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to run all pipelines: {e}")
+            self.logger.exception(f"❌ Failed to execute pipeline subprocess: {e}")
             return False
+
+    def _monitor_subprocess_basic(self, process) -> bool:
+        """Basic subprocess monitoring with simple output display."""
+        while True:
+            output = process.stdout.readline()
+            if output == "" and process.poll() is not None:
+                break
+            if output:
+                print(output.strip())
+                self.logger.info(output.strip())
+
+        return_code = process.poll()
+        return return_code == 0
+
+    def _monitor_subprocess_enhanced(self, process, symbol: str, exchange: str) -> bool:
+        """Enhanced subprocess monitoring with detailed progress tracking."""
+        line_count = 0
+        error_count = 0
+        warning_count = 0
+        success_count = 0
+        progress_indicators = []
+        
+        print("📊 Monitoring pipeline execution...")
+        print("=" * 80)
+        
+        while True:
+            output = process.stdout.readline()
+            if output == "" and process.poll() is not None:
+                break
+            if output:
+                line_count += 1
+                output_stripped = output.strip()
+                
+                # Monitor for different types of messages
+                if "ERROR" in output_stripped or "❌" in output_stripped:
+                    error_count += 1
+                elif "WARNING" in output_stripped or "⚠️" in output_stripped:
+                    warning_count += 1
+                elif "SUCCESS" in output_stripped or "✅" in output_stripped:
+                    success_count += 1
+                elif "Progress:" in output_stripped:
+                    progress_indicators.append(output_stripped)
+                
+                print(output_stripped)
+                self.logger.info(output_stripped)
+                
+                # Progress indicator every 25 lines
+                if line_count % 25 == 0:
+                    print(f"📊 Progress: {line_count} lines processed, {success_count} successes, {warning_count} warnings, {error_count} errors")
+
+        return_code = process.poll()
+        
+        # Enhanced result reporting
+        print("=" * 80)
+        print("📊 PIPELINE EXECUTION RESULTS")
+        print("=" * 80)
+        print(f"ℹ️ Total lines processed: {line_count}")
+        print(f"✅ Total successes: {success_count}")
+        print(f"⚠️ Total warnings: {warning_count}")
+        print(f"❌ Total errors: {error_count}")
+        print(f"ℹ️ Return code: {return_code}")
+        print("=" * 80)
+        
+        return return_code == 0
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="run_all_pipelines",
+    )
+    def run_all_pipelines(
+        self,
+        symbol: str,
+        exchange: str,
+        with_gui: bool=False,
+    ):
+        """Run all pipelines in sequence with organized report management."""
+        self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
+
+        # Initialize report management
+        report_manager, report_collector = self._initialize_report_management(symbol, exchange)
+
+        if with_gui and not self.launch_gui("all-pipelines", symbol, exchange):
+            return False
+
+        # Prepare environment variables for report management
+        additional_env = {}
+        if report_manager:
+            additional_env['REPORT_RUN_TIMESTAMP'] = report_manager.get_run_timestamp()
+
+        # Execute the all pipelines orchestrator
+        print(f"🚀 Starting all pipelines for {symbol} on {exchange}...")
+        if report_manager:
+            print(f"📊 All reports will be organized in: {report_manager.get_run_directory()}")
+        
+        success = self._execute_pipeline_subprocess(
+            "src/training/steps/run_all_pipelines.py",
+            symbol,
+            exchange,
+            additional_env
+        )
+
+        if success:
+            self.logger.info("✅ All pipelines completed successfully")
+            print("✅ All pipelines completed successfully")
+        else:
+            self.logger.error("❌ All pipelines failed")
+            print("❌ All pipelines failed")
+
+        return success
 
 
 

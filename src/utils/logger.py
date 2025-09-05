@@ -16,11 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
 import numpy as np
+import pandas as pd
 
 try:
     from src.utils.pipeline_standards import PipelineStandards
 import collections
-import pandas as pd
 
 except ImportError:
     PipelineStandards = None

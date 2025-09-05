@@ -4,6 +4,8 @@ from typing import Any
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 try:
     from src.utils.centralized_decorators import validates
 except ImportError:
@@ -18,7 +20,6 @@ try:
 except ImportError:
     import logging
 import datetime
-import numpy as np
 
     system_logger = logging.getLogger(__name__)
 

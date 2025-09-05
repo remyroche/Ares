@@ -1,3 +1,4 @@
+import pandas as pd
 
 """
 Request and DTO validation decorators.
@@ -20,7 +21,6 @@ import pandas as pd
 
 # Try to import optional validation libraries
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     pd = None

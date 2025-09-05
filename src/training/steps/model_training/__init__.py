@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """Model Training Package for Trading Pipeline.
 
 This package contains all the components for model training:
@@ -38,8 +41,6 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             import gc
 import json
 import logging
-import numpy as np
-import pandas as pd
 import time
 
             memory_info = psutil.virtual_memory()

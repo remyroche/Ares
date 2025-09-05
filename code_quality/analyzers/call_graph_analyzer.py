@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Set, Tuple
 from collections import defaultdict, deque
 from .base_analyzer import BaseAnalyzer
+import numpy as np
 
 
 class CallGraphAnalyzer(BaseAnalyzer):

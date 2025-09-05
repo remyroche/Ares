@@ -2,6 +2,8 @@ import logging
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+import numpy as np
+import pandas as pd
 
 def cached(chunk_size: Any=10000, streaming_processing: Any=True, memory_pool: Any=True, cleanup_frequency: Any=25) -> None:
 
@@ -46,7 +48,6 @@ def handles_errors(exceptions: List[Any]=(Exception,), default_return: Any=None,
         return wrapper
     return decorator
 try:
-    import numpy as np
 import time
 
 except ImportError:
@@ -61,7 +62,6 @@ except ImportError:
             return lambda *args, **kwargs: 0
     np = FallbackNumpy()
 try:
-    import pandas as pd
 except ImportError:
 
     class FallbackPandas:

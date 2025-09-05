@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import pandas as pd
+import pandas as pd
 
 """
 Enhanced Trading Launcher
@@ -20,7 +21,6 @@ import json
 import os
 
 try:
-    import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
         pass

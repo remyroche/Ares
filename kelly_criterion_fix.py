@@ -1,5 +1,5 @@
-import numpy as np
 import typing
+import numpy as np
 
 # kelly_criterion_fix.py
 """

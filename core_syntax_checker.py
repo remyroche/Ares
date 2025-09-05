@@ -6,6 +6,7 @@ Focused syntax checker for core directories (src/, analysis/).
 import ast
 import sys
 from pathlib import Path
+import re
 
 
 def check_syntax(file_path):

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import requests
 import numpy as np
+import pandas as pd
 
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
@@ -22,7 +23,6 @@ from .utils.logger import system_logger
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
-import pandas as pd
 import time
 import typing
 

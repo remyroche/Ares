@@ -4,6 +4,7 @@ from typing import Tuple
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+import pandas as pd
 
 '\nEnhanced Logging and Metrics System for Market Analysis Pipeline\n\nThis module provides comprehensive logging with emojis and detailed metrics\nfor troubleshooting and monitoring the market analysis pipeline.\n'
 import logging
@@ -48,7 +49,6 @@ try:
     from .utils.common_operations import get_logger, get_current_datetime, format_datetime
 except ImportError:
     import logging
-import pandas as pd
 
     def get_logger(name: Any) -> Any:
         return logging.getLogger(name)

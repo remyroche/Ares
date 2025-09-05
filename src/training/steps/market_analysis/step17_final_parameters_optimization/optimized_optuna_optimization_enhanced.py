@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import optuna
 import numpy as np
+import pandas as pd
 
 try:
     import xgboost as xgb
@@ -48,7 +49,6 @@ except Exception:
     prange = range
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
-import pandas as pd
 
 try:
     import psutil

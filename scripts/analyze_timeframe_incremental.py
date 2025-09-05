@@ -30,6 +30,9 @@ from typing import Any
 from src.utils.error_handler import handle_errors
 from src.utils.logger import setup_logging
 from src.utils.validation_decorators import validate_dataframe_operation
+import numpy as np
+import pandas as pd
+import time
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent.parent

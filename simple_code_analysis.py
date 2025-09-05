@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+import numpy as np
 
 
 def run_flake8(directory):

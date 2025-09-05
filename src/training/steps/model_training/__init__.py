@@ -36,6 +36,12 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         try:
             import psutil
             import gc
+import json
+import logging
+import numpy as np
+import pandas as pd
+import time
+
             memory_info = psutil.virtual_memory()
             process = psutil.Process()
             process_memory = process.memory_info()

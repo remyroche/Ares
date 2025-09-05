@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."""
 try:
     from src.utils.decorators.errors import handles_errors
@@ -27,8 +30,6 @@ import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 try:
-    import pandas as pd
-    import numpy as np
 except ImportError:
 
     class MockDataFrame:

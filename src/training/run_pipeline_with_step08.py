@@ -8,6 +8,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .training.enhanced_training_manager import EnhancedTrainingManager
 from .utils.logger import system_logger
+import logging
 
 async def run_pipeline_with_step08(symbol: str='BTCUSDT', exchange: str='binance', timeframe: str='1m', start_step: str='step06_feature_engineering') -> Any:
     """

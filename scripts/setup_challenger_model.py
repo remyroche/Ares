@@ -27,6 +27,8 @@ from src.utils.warning_symbols import error as error_src_utils_warning_symbols, 
 
 try:
 	import mlflow  # type: ignore
+import logging
+
 except Exception as e:  # noqa: BLE001
 	mlflow=None  # type: ignore
 	system_logger.warning(f"MLflow not available: {e}")

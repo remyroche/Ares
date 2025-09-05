@@ -6,10 +6,13 @@ for all functions and operations.
 import time
 import gc
 from typing import Any, Dict
+import numpy as np
 
 # Optional dependencies with fallback handling
 try:
     import psutil
+import logging
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False

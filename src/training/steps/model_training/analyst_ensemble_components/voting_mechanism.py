@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from sklearn.ensemble import VotingClassifier
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 class VotingMechanism:
     """Handles different voting mechanisms for ensemble creation."""

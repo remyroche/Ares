@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import psutil
+import numpy as np
+
 from fastapi import (
     BackgroundTasks,
     FastAPI,
@@ -43,6 +45,7 @@ try:
     from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
+
     ares_config = AresConfig()
     print("Successfully imported Ares modules.")
 except ImportError as e:

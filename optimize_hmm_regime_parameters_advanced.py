@@ -23,6 +23,8 @@ from optuna.pruners import MedianPruner
 from optuna.samplers import CmaEsSampler, NSGAIISampler, TPESampler
 from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import TimeSeriesSplit
+import numpy as np
+import pandas as pd
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")

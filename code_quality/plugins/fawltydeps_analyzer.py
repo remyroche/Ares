@@ -12,6 +12,7 @@ import subprocess
 import time
 
 from .base_plugin import BasePlugin, PluginContext, PluginResult, PluginMetadata, PluginCategory, PluginPriority
+import logging
 
 
 class FawltyDepsAnalyzer(BasePlugin):

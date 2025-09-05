@@ -17,6 +17,8 @@ project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.warning_symbols import missing as missing_src_utils_warning_symbols, warning  # noqa: E402
+import logging
+import typing
 
 
 def get_warning_symbol_function(message: str) -> str:

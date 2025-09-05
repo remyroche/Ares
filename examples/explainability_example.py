@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import src.explainability
+import numpy as np
+
 """Example usage of the explainability system.
 
 This example demonstrates how to use the explainability framework to:
@@ -14,7 +17,8 @@ import yaml
 from pathlib import Path
 
 # Import explainability components
-from src.explainability import (
+import pandas as pd
+
     ExplainabilityOrchestrator,
     TacticianExplainer,
     HMMExplainer,

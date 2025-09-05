@@ -16,6 +16,7 @@ from .utils.logger import system_logger
 if TYPE_CHECKING:
     from datetime import datetime
 from .core.decorators.errors import handles_errors
+import logging
 
 
 class ReportType(Enum):

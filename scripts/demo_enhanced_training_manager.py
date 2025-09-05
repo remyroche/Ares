@@ -23,6 +23,8 @@ from src.training.enhanced_training_manager_enhanced import (
     create_enhanced_training_manager_with_reporting,
 )
 from src.utils.logger import system_logger
+import numpy as np
+import logging
 
 
 async def load_config() -> dict[str, Any]:

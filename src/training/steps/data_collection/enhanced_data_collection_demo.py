@@ -24,6 +24,8 @@ from src.utils.enhanced_data_validation import DataType, get_validator, validate
 from .exchange_field_mappings import get_exchange_mapper, list_supported_exchanges
 from .enhanced_api_agnostic_data_collector import EnhancedAPIAgnosticDataCollector, collect_data_for_period, collect_incremental_data, detect_and_fill_gaps
 from .core.decorators.errors import handles_errors
+import logging
+
 logger = system_logger.getChild('EnhancedDataCollectionDemo')
 
 class EnhancedDataCollectionDemo:

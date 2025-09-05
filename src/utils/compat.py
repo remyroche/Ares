@@ -1,3 +1,4 @@
+import typing
 
 """Compatibility shims to forward legacy decorators to core equivalents.
 from functools import wraps

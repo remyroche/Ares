@@ -6,6 +6,10 @@ Counts the specific number of syntax errors in each listed file.
 
 import ast
 import os
+import numpy as np
+import collections
+import logging
+import typing
 
 
 class SyntaxErrorCounter:

@@ -5,6 +5,8 @@ Simulation script to test regime merging parameters using existing HMM data
 
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+import numpy as np
+import pandas as pd
 
 
 

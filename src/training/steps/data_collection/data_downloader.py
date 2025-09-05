@@ -42,7 +42,11 @@ async def download_all_data_with_consolidation(
     # Preferred path: optimized downloader
     try:
         from src.backtesting.ares_data_downloader_optimized import (
+import json
+import logging
+
             OptimizedDataDownloader,
+            OptimizedDownloadConfig,
         )
 
         opt_cfg = OptimizedDownloadConfig(

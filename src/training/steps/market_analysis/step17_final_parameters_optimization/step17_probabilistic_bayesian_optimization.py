@@ -27,6 +27,8 @@ try:
 except ImportError:
     pass
 from .optimized_optuna_optimization import AdvancedOptunaManager
+import time
+
 try:
     MLFLOW_AVAILABLE = True
 except ImportError:

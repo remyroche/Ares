@@ -42,6 +42,8 @@ class IntegratedDataQualityPipeline:
         """Initialize all pipeline components."""
         try:
             from .step01.enhanced_data_quality_manager import EnhancedDataQualityManager
+import logging
+
             self.enhanced_quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized")
         except ImportError as e:

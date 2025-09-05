@@ -5,6 +5,8 @@ This script will automatically fix some code quality issues.
 """
 
 import re
+import logging
+import time
 
 
 def cleanup_file(file_path: str):

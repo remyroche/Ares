@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+import numpy as np
 
 
 class SecretType(Enum):

@@ -15,6 +15,8 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
     MATPLOTLIB_AVAILABLE = False
+    nx = None
+    plt = None
     print("Warning: NetworkX/matplotlib not available - dependency graph visualization will be limited")
 
 
@@ -27,6 +29,8 @@ class DependencyGraphVisualizer(CodeVisualizer):
         
     def create_dependency_graph(self, dependencies: Dict[str, List[str]], 
                               title: str = "Code Dependencies") -> Tuple[Any, Dict[str, Any]]:
+        if not NETWORKX_AVAILABLE or not MATPLOTLIB_AVAILABLE:
+            return None, {"error": "NetworkX/matplotlib not available"}
         """
         Create a dependency graph visualization.
         
@@ -230,7 +234,7 @@ class DependencyGraphVisualizer(CodeVisualizer):
         
         return fig
     
-    def _calculate_layout(self, graph: nx.DiGraph) -> Dict:
+    def _calculate_layout(self, graph) -> Dict:
         """Calculate optimal layout for the graph."""
         # Try different layouts and choose the best
         layouts = {
@@ -273,7 +277,7 @@ class DependencyGraphVisualizer(CodeVisualizer):
         
         return levels
     
-    def _plot_dependency_stats(self, ax: plt.Axes, in_degrees: Dict[str, int], 
+    def _plot_dependency_stats(self, ax, in_degrees: Dict[str, int], 
                               out_degrees: Dict[str, int]):
         """Plot dependency statistics."""
         # Top 10 most dependent modules

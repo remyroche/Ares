@@ -20,22 +20,17 @@ from typing import Any, Dict, List
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import dead code analyzers
-from analyzers.dead_code_analyzer import DeadCodeAnalyzer
+# Import dead code analyzers (ONLY dead code-related)
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
-from analyzers.import_analyzer import ImportAnalyzer
 from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
 
-# Import auto-fixers
-from auto_fix_dead_code import AutoFixDeadCode
-
-# Import plugin system
-from plugins.plugin_manager import PluginManager
-from plugins.plugin_registry import PluginRegistry
-from plugins.base_plugin import PluginCategory, PluginPriority
+# Note: AutoFixDeadCode and DeadCodeAnalyzer were removed as they were redundant
+# The enhanced_dead_code_analyzer provides all necessary functionality
 
 # Import core components
 from core.config import get_default_config
+from plugins.plugin_registry import PluginRegistry
+from plugins.plugin_manager import PluginManager
 
 
 class DeadCodePipeline:
@@ -49,13 +44,11 @@ class DeadCodePipeline:
         
         # Initialize analyzers
         self.config = get_default_config()
-        self.dead_code_analyzer = DeadCodeAnalyzer(self.config)
-        self.enhanced_dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
-        self.import_analyzer = ImportAnalyzer(self.config)
+        self.dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
         self.undefined_names_analyzer = UndefinedNamesAnalyzer(self.config)
         
         # Initialize auto-fixer
-        self.auto_fixer = AutoFixDeadCode()
+        # self.auto_fixer = AutoFixDeadCode()  # Removed during cleanup
         
         # Initialize plugin system
         if self.enable_plugins:

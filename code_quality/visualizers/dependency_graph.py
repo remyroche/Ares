@@ -4,7 +4,18 @@ Dependency Graph Visualizer
 Creates visual representations of module and package dependencies.
 """
 
+from typing import Optional, Dict, List, Any, Tuple
 from .code_visualizer import CodeVisualizer
+
+try:
+    import networkx as nx
+    import matplotlib.pyplot as plt
+    NETWORKX_AVAILABLE = True
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    NETWORKX_AVAILABLE = False
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: NetworkX/matplotlib not available - dependency graph visualization will be limited")
 
 
 class DependencyGraphVisualizer(CodeVisualizer):
@@ -12,10 +23,10 @@ class DependencyGraphVisualizer(CodeVisualizer):
     
     def __init__(self, output_dir: Optional[str] = None):
         super().__init__(output_dir)
-        self.graph = nx.DiGraph()
+        self.graph = nx.DiGraph() if NETWORKX_AVAILABLE else None
         
     def create_dependency_graph(self, dependencies: Dict[str, List[str]], 
-                              title: str = "Code Dependencies") -> Tuple[plt.Figure, Dict[str, Any]]:
+                              title: str = "Code Dependencies") -> Tuple[Any, Dict[str, Any]]:
         """
         Create a dependency graph visualization.
         
@@ -90,7 +101,7 @@ class DependencyGraphVisualizer(CodeVisualizer):
         return fig, metadata
     
     def create_circular_dependency_visualization(self, cycles: List[List[str]], 
-                                               title: str = "Circular Dependencies") -> plt.Figure:
+                                               title: str = "Circular Dependencies") -> Any:
         """
         Visualize circular dependencies.
         
@@ -152,7 +163,7 @@ class DependencyGraphVisualizer(CodeVisualizer):
         return fig
     
     def create_module_hierarchy(self, dependencies: Dict[str, List[str]], 
-                              title: str = "Module Hierarchy") -> plt.Figure:
+                              title: str = "Module Hierarchy") -> Any:
         """
         Create a hierarchical view of modules.
         

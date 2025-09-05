@@ -14,8 +14,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 # Import plugin system
-from typing import List, Optional
-from ..plugins import (
+from typing import List, Optional, Dict, Any
+from plugins import (
     PluginManager, PluginRegistry, PluginContext, PluginResult,
     PluginCategory, PluginPriority, BasePlugin
 )

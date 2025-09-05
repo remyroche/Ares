@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 AST Analysis Analyzer - Integrates Astroid, Rope, and Jedi for advanced AST-based code analysis.
 """
@@ -8,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from ..core.config import CodeQualityConfig
+from core.config import CodeQualityConfig
 
 try:
     import astroid

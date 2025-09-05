@@ -1,13 +1,14 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Future annotations injector: add `from __future__ import annotations` at top if missing.
 """
 
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class FutureAnnotationsFixer(BaseCodeFixer):
+class FutureAnnotationsFixer(BasePlugin):
     """Ensure `from __future__ import annotations` is present when enabled."""
 
     def __init__(self, config: dict[str, Any] | None = None):

@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Ruff fixer plugin (format + check --fix).
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class RuffFixer(BaseCodeFixer):
+class RuffFixer(BasePlugin):
     """Ruff formatter and linter auto-fix plugin."""
 
     def __init__(self, config: dict[str, Any] | None = None):

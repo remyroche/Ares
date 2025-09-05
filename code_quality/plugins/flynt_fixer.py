@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Flynt fixer plugin to convert strings to f-strings where safe.
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class FlyntFixer(BaseCodeFixer):
+class FlyntFixer(BasePlugin):
     """Run flynt to modernize string formatting to f-strings."""
 
     def __init__(self, config: dict[str, Any] | None = None):

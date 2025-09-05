@@ -176,4 +176,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(await main())
+    import asyncio
+    asyncio.run(main())

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ..core.config import ReportingConfig
+from core.config import ReportingConfig
 
 
 @dataclass

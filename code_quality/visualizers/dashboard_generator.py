@@ -7,6 +7,7 @@ Creates interactive HTML dashboards for code quality metrics.
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, Dict, List, Any
 
 
 class DashboardGenerator:

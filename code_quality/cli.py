@@ -8,17 +8,17 @@ import os
 import sys
 from pathlib import Path
 
-from .analyzers.call_graph_analyzer import CallGraphAnalyzer
-from .analyzers.dependency_analyzer import DependencyAnalyzer
-from .analyzers.import_analyzer import ImportAnalyzer
-from .analyzers.linter_analyzer import LinterAnalyzer
-from .analyzers.signature_analyzer import SignatureAnalyzer
-from .analyzers.syntax_validator import SyntaxValidator
-from .core.config import get_default_config, load_config
-from .fixers.auto_fixer import AutoFixer
-from .fixers.sequential_fixer import SequentialFixer
-from .merge_conflict_detector import MergeConflictDetector
-from .reporters.quality_reporter import QualityReporter
+from analyzers.call_graph_analyzer import CallGraphAnalyzer
+from analyzers.dependency_analyzer import DependencyAnalyzer
+# from analyzers.import_analyzer import ImportAnalyzer  # Deleted during cleanup
+from analyzers.linter_analyzer import LinterAnalyzer
+# from analyzers.signature_analyzer import SignatureAnalyzer  # Deleted during cleanup
+from analyzers.syntax_validator import SyntaxValidator
+from core.config import get_default_config, load_config
+from fixers.auto_fixer import AutoFixer
+from fixers.sequential_fixer_fixed import SequentialFixer
+# from .merge_conflict_detector import MergeConflictDetector  # Deleted during cleanup
+from reporters.quality_reporter import QualityReporter
 
 
 def _run_auto_fix(args, config):
@@ -392,4 +392,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(await main())
+    import asyncio
+    asyncio.run(main())

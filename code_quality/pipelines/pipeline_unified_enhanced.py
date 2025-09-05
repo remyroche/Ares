@@ -18,86 +18,37 @@ from typing import Any
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import ALL analyzers for comprehensive analysis
+# Import analyzers for comprehensive analysis (ONLY comprehensive analysis related)
+from analyzers.enhanced_import_analysis import EnhancedImportAnalyzer
+from analyzers.intelligent_import_fixer import IntelligentImportFixer
 from analyzers.code_smell_detector import CodeSmellDetector
 from analyzers.configuration_analyzer import ConfigurationAnalyzer
-from analyzers.data_flow_analyzer import DataFlowAnalyzer
 from analyzers.documentation_analyzer import DocumentationAnalyzer
-from analyzers.metrics_analyzer import MetricsAnalyzer
 from analyzers.performance_analyzer import PerformanceAnalyzer
 from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
-from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
-from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
-# Removed - redundant with enhanced_dead_code_analyzer
-from analyzers.architecture_analyzer import ArchitectureAnalyzer
-from analyzers.call_graph_analyzer import CallGraphAnalyzer
-from analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
-from analyzers.complexity_analyzer import ComplexityAnalyzer
 from analyzers.concurrency_analyzer import ConcurrencyAnalyzer
-from analyzers.dependency_analyzer import DependencyAnalyzer
 from analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
-from analyzers.type_checker import TypeChecker
-from analyzers.import_analyzer import ImportAnalyzer
-from analyzers.linter_analyzer import LinterAnalyzer
-from analyzers.syntax_validator import SyntaxValidator
-from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
-from analyzers.dead_code_analyzer import DeadCodeAnalyzer
-from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
-from analyzers.signature_analyzer import SignatureAnalyzer
+from analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
 from analyzers.improved_signature_analyzer import ImprovedSignatureAnalyzer
-from analyzers.simplified_enhanced_analyzer import SimplifiedEnhancedAnalyzer
 
-# Import ALL fixers and scripts
-from fixers.sequential_fixer import SequentialFixer
-from fixers.auto_fixer import AutoFixer
-from fixers.conservative_auto_fixer import ConservativeAutoFixer
-from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
-from scripts.enhanced_type_hints import TypeHintEnhancer
-from scripts.robust_async_fixer import RobustAsyncFixer
-from scripts.detect_circular_imports import CircularImportDetector
-from scripts.add_type_hints import TypeHintAdder
-from scripts.fix_missing_imports import MissingImportFixer
-from scripts.bulk_syntax_cleanup import BulkSyntaxCleanup
-from scripts.apply_all_fixes import ApplyAllFixes
-from scripts.master_code_quality import MasterCodeQuality
-from scripts.final_code_fixes import FinalCodeFixes
-from scripts.fix_async_await import AsyncAwaitFixer
+# Import comprehensive analysis components (ONLY comprehensive analysis related)
+from comprehensive_code_review import CodeQualityReviewer
+# from script_integration_analysis import ScriptIntegrationAnalyzer  # Deleted during cleanup
+# from merge_conflict_detector import MergeConflictDetector  # Deleted during cleanup
 
-# Import ALL visualizers
-from visualizers.dashboard_generator import DashboardGenerator
-from visualizers.complexity_heatmap import ComplexityHeatmap
-from visualizers.dependency_graph import DependencyGraph
-from visualizers.interaction_network import InteractionNetwork
-from visualizers.code_visualizer import CodeVisualizer
+# Import validators (ONLY comprehensive analysis related)
+from validators.enhanced_validator import EnhancedValidator
+from validators.function_validator import FunctionValidator
+from validators.integrated_validator import IntegratedValidator
+
+# Import reporters (ONLY comprehensive analysis related)
+from reporters.quality_reporter import QualityReporter
+from reporters.html_reporter import HTMLReporter
+from reporters.error_reporter import ErrorReporter
+from reporters.trend_reporter import TrendReporter
 
 # Import core components
-from comprehensive_code_review import CodeQualityReviewer
-from enhanced_validator import EnhancedValidator
-from function_validator import FunctionValidator
-from map_code_interactions import CodeInteractionMapper
-from enhanced_map_code_interactions import EnhancedCodeInteractionMapper
-from visualize_interactions import InteractionVisualizer
-
-# Import standalone scripts that need integration
-from targeted_import_fixer import TargetedImportFixer
-from verify_test_setup import verify_structure
-from verify_test_structure import verify_test_structure
-from quick_start import QuickStart
-from debug_analyzer import DebugAnalyzer
-from merge_conflict_detector import MergeConflictDetector
-from comprehensive_import_fixer import ComprehensiveImportFixer
-from auto_fix_dead_code import AutoFixDeadCode
-from run_enhanced_analysis import run_enhanced_analysis
-from run_enhanced_import_analysis import run_enhanced_import_analysis
-from run_simple_import_analysis import run_simple_import_analysis
-from run_validation import run_validation
-from run_final_tests import run_final_tests
-from run_full_pipeline import run_full_pipeline
-from run_real_subset_tests import run_real_subset_tests
-from run_subset_tests import run_subset_tests
-from run_tests_simple import run_tests_simple
-from run_tests_with_mocks import run_tests_with_mocks
-from run_common_operations_tests import run_common_operations_tests
+from core.config import get_default_config
 
 # Import plugin system
 from plugins.plugin_manager import PluginManager

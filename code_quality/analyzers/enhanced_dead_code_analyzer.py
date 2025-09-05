@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Enhanced Dead Code Analyzer
 
@@ -33,8 +34,15 @@ except ImportError:
     DEADCODE_AVAILABLE = False
     print("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
 
-from ..core.config import AnalysisConfig
-from ..utils.file_utils import find_python_files
+try:
+    import networkx as nx
+    NETWORKX_AVAILABLE = True
+except ImportError:
+    NETWORKX_AVAILABLE = False
+    print("Warning: NetworkX not available. Install with: pip install networkx")
+
+from core.config import AnalysisConfig
+from utils.file_utils import find_python_files
 from typing import Set
 from typing import Any
 from typing import Dict
@@ -81,8 +89,8 @@ class EnhancedDeadCodeReport:
     issues_by_tool: Dict[str, List[EnhancedDeadCodeIssue]]
     confidence_distribution: Dict[str, int]
     potential_savings: Dict[str, int]
-    call_graph: nx.DiGraph = field(default_factory=nx.DiGraph)
-    dependency_graph: nx.DiGraph = field(default_factory=nx.DiGraph)
+    call_graph: Any = field(default_factory=lambda: nx.DiGraph() if NETWORKX_AVAILABLE else None)
+    dependency_graph: Any = field(default_factory=lambda: nx.DiGraph() if NETWORKX_AVAILABLE else None)
     false_positives_filtered: int = 0
     impact_analysis: Dict[str, Any] = field(default_factory=dict)
 

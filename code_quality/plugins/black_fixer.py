@@ -1,3 +1,4 @@
+from typing import Set, List, Dict, Any, Optional
 """
 Black code formatter plugin for code quality tools.
 """
@@ -6,10 +7,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class BlackFixer(BaseCodeFixer):
+class BlackFixer(BasePlugin):
     """Black code formatter plugin."""
 
     def __init__(self, config: dict[str, Any] = None):

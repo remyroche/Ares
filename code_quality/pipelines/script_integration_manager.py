@@ -2,13 +2,14 @@
 """
 Script Integration Manager
 
-This script ensures all scripts in the code_quality directory and its sub-folders
-are properly integrated into the pipeline system. It provides:
+This script ensures all scripts in the entire repository are properly integrated 
+into the pipeline system. It provides:
 
-1. Script discovery and categorization
-2. Integration status checking
+1. Script discovery and categorization across the whole repo
+2. Integration status checking for all Python files
 3. Automatic integration suggestions
 4. Pipeline organization management
+5. Cross-repository script analysis
 """
 
 import os
@@ -23,10 +24,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class ScriptIntegrationManager:
-    """Manages integration of all scripts into the pipeline system."""
+    """Manages integration of all scripts into the pipeline system across the entire repository."""
     
-    def __init__(self, code_quality_root: str = "/workspace/code_quality"):
-        self.code_quality_root = Path(code_quality_root)
+    def __init__(self, repo_root: str = "/workspace"):
+        self.repo_root = Path(repo_root)
+        self.code_quality_root = self.repo_root / "code_quality"
         self.pipelines_dir = self.code_quality_root / "pipelines"
         self.scripts_dir = self.code_quality_root / "scripts"
         
@@ -40,7 +42,12 @@ class ScriptIntegrationManager:
             "utilities": [],
             "standalone": [],
             "integration": [],
-            "testing": []
+            "testing": [],
+            "code_quality": [],
+            "source_code": [],
+            "data_processing": [],
+            "models": [],
+            "configuration": []
         }
         
         # Integration status
@@ -52,16 +59,21 @@ class ScriptIntegrationManager:
         }
     
     def discover_all_scripts(self) -> Dict[str, List[Path]]:
-        """Discover all Python scripts in the code_quality directory."""
+        """Discover all Python scripts in the entire repository."""
         scripts = {}
         
-        # Find all Python files
-        for py_file in self.code_quality_root.rglob("*.py"):
+        # Find all Python files in the entire repository
+        for py_file in self.repo_root.rglob("*.py"):
             # Skip backup files, test files, and reports
             if (py_file.name.endswith(".backup") or 
                 "test" in py_file.name.lower() or
                 "reports" in str(py_file) or
-                "tests" in str(py_file)):
+                "tests" in str(py_file) or
+                "__pycache__" in str(py_file) or
+                ".git" in str(py_file) or
+                "venv" in str(py_file) or
+                "env" in str(py_file) or
+                "node_modules" in str(py_file)):
                 continue
             
             # Categorize the script
@@ -90,6 +102,16 @@ class ScriptIntegrationManager:
             return "utilities"
         elif "plugins" in path_str:
             return "utilities"
+        elif "code_quality" in path_str:
+            return "code_quality"
+        elif "src" in path_str:
+            return "source_code"
+        elif "data" in path_str:
+            return "data_processing"
+        elif "models" in path_str:
+            return "models"
+        elif "config" in path_str:
+            return "configuration"
         
         # Check name-based categorization
         if any(keyword in name for keyword in ["analyzer", "analysis"]):

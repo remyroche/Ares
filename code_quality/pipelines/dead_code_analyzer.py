@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 
 try:
     from vulture.core import Vulture
@@ -25,8 +26,15 @@ except ImportError:
         def scavenge(self, *args, **kwargs):
             pass
 
-from ..core.config import AnalysisConfig
-from ..utils.file_utils import find_python_files
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.config import AnalysisConfig
+from utils.file_utils import find_python_files
+from script_integration_manager import ScriptIntegrationManager
 
 
 @dataclass
@@ -86,14 +94,16 @@ class DeadCodeAnalyzer:
     - Conditional dead code
     """
 
-    def __init__(self, config: AnalysisConfig | None = None):
+    def __init__(self, config: AnalysisConfig | None = None, repo_root: str = "/workspace"):
         """
         Initialize the dead code analyzer.
 
         Args:
             config: Analysis configuration
+            repo_root: Root directory of the repository
         """
         self.config = config or AnalysisConfig()
+        self.repo_root = Path(repo_root)
         self.confidence_threshold = getattr(self.config, "confidence_threshold", 80.0)
         self.ignore_patterns = getattr(self.config, "ignore_patterns", [])
         self.whitelist = getattr(self.config, "whitelist", [])
@@ -101,6 +111,9 @@ class DeadCodeAnalyzer:
         # Initialize Vulture with custom configuration
         self.vulture = Vulture()
         self._configure_vulture()
+        
+        # Initialize script integration manager for repository-wide analysis
+        self.script_integration_manager = ScriptIntegrationManager(str(self.repo_root))
 
     def _configure_vulture(self):
         """Configure Vulture with custom settings."""
@@ -246,6 +259,85 @@ class DeadCodeAnalyzer:
         report.impact_analysis["removal_plan"] = removal_plan
         
         return report
+
+    def analyze_repository_integration(self) -> dict[str, Any]:
+        """
+        Analyze repository-wide script integration status and identify integration issues.
+        
+        Returns:
+            Dictionary containing integration analysis results
+        """
+        print("🔍 Analyzing repository-wide script integration...")
+        
+        # Run script integration analysis
+        integration_results = self.script_integration_manager.run_full_analysis()
+        
+        # Analyze integration issues that might indicate dead code
+        integration_issues = []
+        
+        # Check for scripts that are not integrated (potential dead code)
+        not_integrated = integration_results["status"]["not_integrated"]
+        if isinstance(not_integrated, int):
+            not_integrated = []
+        for script in not_integrated:
+            integration_issues.append({
+                "type": "not_integrated_script",
+                "file": script,
+                "description": "Script is not integrated into any pipeline",
+                "severity": "medium",
+                "suggestion": "Consider integrating into appropriate pipeline or removing if unused"
+            })
+        
+        # Check for partially integrated scripts
+        partially_integrated = integration_results["status"]["partially_integrated"]
+        if isinstance(partially_integrated, int):
+            partially_integrated = []
+        for script in partially_integrated:
+            integration_issues.append({
+                "type": "partially_integrated_script",
+                "file": script,
+                "description": "Script is only partially integrated",
+                "severity": "low",
+                "suggestion": "Complete integration or review for potential removal"
+            })
+        
+        # Check for scripts that need review
+        needs_review = integration_results["status"]["needs_review"]
+        if isinstance(needs_review, int):
+            needs_review = []
+        for script in needs_review:
+            integration_issues.append({
+                "type": "needs_review_script",
+                "file": script,
+                "description": "Script needs manual review for integration status",
+                "severity": "low",
+                "suggestion": "Review script and determine if it should be integrated or removed"
+            })
+        
+        # Generate integration analysis report
+        integration_analysis = {
+            "timestamp": datetime.now().isoformat(),
+            "total_scripts": integration_results["status"]["total_scripts"],
+            "integration_summary": {
+                "integrated": integration_results["status"]["integrated"],
+                "partially_integrated": integration_results["status"]["partially_integrated"],
+                "not_integrated": integration_results["status"]["not_integrated"],
+                "needs_review": integration_results["status"]["needs_review"]
+            },
+            "integration_issues": integration_issues,
+            "consolidation_opportunities": integration_results.get("plan", {}).get("consolidation_opportunities", []),
+            "recommendations": integration_results.get("plan", {}).get("recommendations", [])
+        }
+        
+        print(f"📊 Integration Analysis Complete:")
+        print(f"   Total scripts: {integration_analysis['total_scripts']}")
+        print(f"   Integrated: {integration_analysis['integration_summary']['integrated']}")
+        print(f"   Partially integrated: {integration_analysis['integration_summary']['partially_integrated']}")
+        print(f"   Not integrated: {integration_analysis['integration_summary']['not_integrated']}")
+        print(f"   Needs review: {integration_analysis['integration_summary']['needs_review']}")
+        print(f"   Integration issues found: {len(integration_issues)}")
+        
+        return integration_analysis
 
     def analyze_files(self, file_paths: list[str | Path]) -> DeadCodeReport:
         """
@@ -1662,45 +1754,89 @@ class DeadCodeAnalyzer:
         
         return phases
 
-    def _assess_removal_risks(self, dependency_analysis: dict[str, Any]) -> dict[str, Any]:
-        """Assess risks associated with removing dead code."""
-        risky_removals = dependency_analysis.get("risky_removals", [])
-        
-        return {
-            "total_risks": len(risky_removals),
-            "high_risk_count": len([r for r in risky_removals if r.get("risk_level") == "high"]),
-            "medium_risk_count": len([r for r in risky_removals if r.get("risk_level") == "medium"]),
-            "low_risk_count": len([r for r in risky_removals if r.get("risk_level") == "low"]),
-            "dependency_chains": len(dependency_analysis.get("dependency_chains", [])),
-            "recommended_approach": "incremental" if len(risky_removals) > 5 else "aggressive",
-        }
 
-    def _generate_removal_recommendations(self, impact_analysis: dict[str, Any], 
-                                         dependency_analysis: dict[str, Any]) -> list[str]:
-        """Generate recommendations for removing dead code."""
-        recommendations = []
-        
-        # Basic recommendations
-        total_issues = sum(len(issues) for issues in impact_analysis.values() if isinstance(issues, list))
-        if total_issues > 0:
-            recommendations.append(f"Start with {len(impact_analysis.get('low_impact', []))} low-impact issues for quick wins")
-        
-        # Dependency-based recommendations
-        dependency_chains = dependency_analysis.get("dependency_chains", [])
-        if dependency_chains:
-            recommendations.append(f"Address {len(dependency_chains)} dependency chains carefully")
-        
-        # Risk-based recommendations
-        risky_removals = dependency_analysis.get("risky_removals", [])
-        if risky_removals:
-            recommendations.append(f"Review {len(risky_removals)} potentially risky removals before proceeding")
-        
-        # General recommendations
-        recommendations.extend([
-            "Run tests after each removal phase",
-            "Use version control to track changes",
-            "Consider gradual removal over multiple commits",
-            "Document removal decisions for future reference",
-        ])
-        
-        return recommendations
+def main():
+    """Main entry point for the dead code analyzer with integration analysis."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Dead Code Analyzer with Repository Integration Analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Analyze dead code in a directory
+  python dead_code_analyzer.py --target /path/to/code
+  
+  # Analyze repository integration status
+  python dead_code_analyzer.py --integration-analysis
+  
+  # Run both dead code and integration analysis
+  python dead_code_analyzer.py --target /path/to/code --integration-analysis
+  
+  # Analyze entire repository
+  python dead_code_analyzer.py --repo-root /workspace --integration-analysis
+        """
+    )
+    
+    parser.add_argument("--target", "-t", help="Target file or directory to analyze")
+    parser.add_argument("--repo-root", "-r", default="/workspace", help="Repository root directory")
+    parser.add_argument("--integration-analysis", "-i", action="store_true", 
+                       help="Run repository integration analysis")
+    parser.add_argument("--output", "-o", help="Output file for results")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    
+    args = parser.parse_args()
+    
+    # Initialize analyzer
+    analyzer = DeadCodeAnalyzer(repo_root=args.repo_root)
+    
+    results = {}
+    
+    # Run dead code analysis if target specified
+    if args.target:
+        print("🔍 Running dead code analysis...")
+        if Path(args.target).is_file():
+            issues = analyzer.analyze_file(args.target)
+            results["dead_code_analysis"] = {
+                "target": args.target,
+                "issues": [issue.__dict__ for issue in issues],
+                "total_issues": len(issues)
+            }
+        else:
+            report = analyzer.analyze_directory(args.target)
+            results["dead_code_analysis"] = {
+                "target": args.target,
+                "report": report.__dict__,
+                "total_issues": len(report.issues)
+            }
+    
+    # Run integration analysis if requested
+    if args.integration_analysis:
+        print("🔍 Running repository integration analysis...")
+        integration_results = analyzer.analyze_repository_integration()
+        results["integration_analysis"] = integration_results
+    
+    # Print summary
+    if "dead_code_analysis" in results:
+        print(f"\n📊 Dead Code Analysis Summary:")
+        print(f"   Total issues found: {results['dead_code_analysis']['total_issues']}")
+    
+    if "integration_analysis" in results:
+        print(f"\n📊 Integration Analysis Summary:")
+        summary = results["integration_analysis"]["integration_summary"]
+        print(f"   Total scripts: {results['integration_analysis']['total_scripts']}")
+        print(f"   Integrated: {summary['integrated']}")
+        print(f"   Partially integrated: {summary['partially_integrated']}")
+        print(f"   Not integrated: {summary['not_integrated']}")
+        print(f"   Needs review: {summary['needs_review']}")
+    
+    # Save results
+    if args.output:
+        import json
+        with open(args.output, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+        print(f"\n📄 Results saved to: {args.output}")
+
+
+if __name__ == "__main__":
+    main()

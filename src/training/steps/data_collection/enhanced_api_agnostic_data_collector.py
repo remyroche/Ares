@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced API-Agnostic Data Collector
 
@@ -828,7 +830,6 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
-import pandas as pd
             
             # Create data directory
             os.makedirs(data_dir, exist_ok=True)

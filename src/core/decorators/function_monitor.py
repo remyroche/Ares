@@ -24,6 +24,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
+import numpy as np
+
 function_call_stack: ContextVar[List[str]] = ContextVar('function_call_stack', default=[])
 execution_report: ContextVar[Dict[str, Any]] = ContextVar('execution_report', default={})
 
@@ -215,7 +217,6 @@ class FunctionCallMonitor:
                 report_file = Path(self.report_file_path) / f'execution_report_{execution_id}.json'
                 report_file.parent.mkdir(parents=True, exist_ok=True)
                 import json
-import numpy as np
 
                 with open(report_file, 'w') as f:
                     json.dump(report_data, f, indent=2, default=str)

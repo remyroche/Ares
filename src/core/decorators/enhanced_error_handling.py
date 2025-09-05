@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
+import numpy as np
+
 error_context: ContextVar[Dict[str, Any]] = ContextVar('error_context', default={})
 error_history: ContextVar[List[Dict[str, Any]]] = ContextVar('error_history', default=[])
 
@@ -305,7 +307,6 @@ class EnhancedErrorHandler:
                 report_file = Path(self.error_report_path) / f'error_report_{error_context.error_id}.json'
                 report_file.parent.mkdir(parents=True, exist_ok=True)
                 import json
-import numpy as np
 
                 report_data = {'report_id': report.report_id, 'start_time': report.start_time.isoformat(), 'total_errors': report.total_errors, 'errors_by_category': report.errors_by_category, 'errors_by_severity': report.errors_by_severity, 'error_patterns': report.error_patterns, 'detailed_errors': [{'error_id': e.error_id, 'timestamp': e.timestamp.isoformat(), 'function_name': e.function_name, 'module_name': e.module_name, 'error_type': e.error_type, 'error_message': e.error_message, 'error_category': e.error_category.value, 'severity': e.severity.value, 'recovery_strategy': e.recovery_strategy.value if e.recovery_strategy else None, 'recovery_successful': e.recovery_successful} for e in report.detailed_errors]}
                 with open(report_file, 'w') as f:

@@ -1,3 +1,4 @@
+import numpy as np
 
 '\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
 
@@ -265,7 +266,6 @@ class FeatureEngineeringValidator:
     def _extract_ma_period(self, ma_column_name: str) -> int:
         """Extract period from MA column name."""
         import re
-import numpy as np
 
         numbers = re.findall('\\d+', ma_column_name)
         return int(numbers[0]) if numbers else 999

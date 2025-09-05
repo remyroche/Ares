@@ -14,6 +14,8 @@ logger = system_logger.getChild('RegimeParameterOptimizer')
 @dataclass
 class RegimeParameters:
     """Parameters specific to a market regime."""
+import numpy as np
+
     regime: str
     profit_target: float
     stop_loss: float
@@ -127,7 +129,6 @@ class RegimeParameterOptimizer:
         """Run trading strategy with given parameters."""
         try:
             from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-import numpy as np
 
             labeler = OptimizedTripleBarrierLabeling()
             labeler.profit_target = params.profit_target

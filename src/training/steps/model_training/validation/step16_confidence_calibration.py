@@ -9,8 +9,10 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score, f1_score
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
+import numpy as np
+import pandas as pd
+
 try:
-    import pandas as pd
 except ImportError:
     pd = None
 try:
@@ -413,7 +415,6 @@ class _PrefitWrapper:
         return proba
 import os
 from .core.decorators.errors import handles_errors
-import numpy as np
 
 @deterministic_seed(42)
 @idempotent_step(step_key='step11_confidence_calibration')

@@ -1,3 +1,5 @@
+import numpy as np
+
 '\nRetry, timeout, and circuit breaker decorators.\n\nProvides resilience patterns for handling transient failures,\ntimeouts, and cascading failures.\n'
 import asyncio
 import random
@@ -288,4 +290,3 @@ def fallback(fallback_value: Any | Callable[[], Any], exceptions: tuple[type[Exc
             return fallback_value
     return uniform_wrapper('fallback', sync_handler, async_handler)
 from .compose import compose
-import numpy as np

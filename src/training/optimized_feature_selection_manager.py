@@ -7,6 +7,7 @@ import time
 import warnings
 from datetime import datetime
 from typing import Any
+import numpy as np
 
 
 warnings.filterwarnings("ignore")
@@ -296,7 +297,6 @@ class OptimizedFeatureSelectionManager:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
         from .core.decorators.errors import handles_errors
-import numpy as np
         
         vif_scores = []
         for i, _col in enumerate(features_df.columns):

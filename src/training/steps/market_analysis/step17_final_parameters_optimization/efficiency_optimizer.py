@@ -1,5 +1,7 @@
 
 from typing import Any
+import numpy as np
+
 """Efficiency Optimizer for Hyperparameter Optimization.
 
 This module implements various computational efficiency improvements to speed up
@@ -417,7 +419,6 @@ class EfficiencyOptimizer:
         """Get current memory usage in MB."""
         try:
             import psutil
-import numpy as np
 
             process = psutil.Process()
             memory_info = process.memory_info()

@@ -1,5 +1,8 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Common Operations Utility Module with Comprehensive Error Handling
 
@@ -21,11 +24,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 try:
-    import numpy as np
 except Exception:
     np = None
 try:
-    import pandas as pd
 except Exception:
 
     class _PDStub:

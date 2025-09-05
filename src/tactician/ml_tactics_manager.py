@@ -7,6 +7,8 @@ from .core.decorators import validates
 from .utils.logger import system_logger
 from .utils.warning_symbols import invalid, warning
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 try:
     from src.training.steps.model_persistence_components.model_serializer import ModelSerializer
     from src.training.steps.model_persistence_components.version_manager import VersionManager
@@ -56,7 +58,6 @@ class MLTacticsManager:
             self.models = [m for m in models if hasattr(m, 'predict_proba')]
 
         def predict_proba(self, X: Union[pd.DataFrame, np.ndarray]) -> Any:
-            import numpy as np
             if not self.models:
                 if hasattr(X, 'shape') and len(getattr(X, 'shape', [])) > 0:
                     n = X.shape[0]

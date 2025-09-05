@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from .error_handler import handles_errors
 from .logger import system_logger
+import numpy as np
 
 class DatabaseType:
     """Database type enumeration."""
@@ -198,7 +199,6 @@ class DatabaseSecurityManager:
         """Create secure Redis connection."""
         try:
             import redis
-import numpy as np
             
             connection_params = {'host': params['host'], 'port': params['port'], 'db': params.get('database', 0), 'password': params.get('password'), 'socket_timeout': self.security_policies['connection_timeout'], 'socket_connect_timeout': self.security_policies['connection_timeout']}
             if params.get('ssl', False):

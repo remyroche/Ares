@@ -1,8 +1,9 @@
 from typing import Dict
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 try:
-    import pandas as pd
 except ImportError:
     pd = None
 

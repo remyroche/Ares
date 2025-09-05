@@ -1,6 +1,7 @@
 # src/analyst/advanced_feature_engineering.py
 
 from .core.decorators import handles_errors
+import numpy as np
 
 """
 Advanced Feature Engineering for enhanced financial performance.
@@ -1271,7 +1272,6 @@ class AdvancedFeatureEngineering:
             if self.enable_meta_labeling:
                 try:
                     from .analyst.meta_labeling_system import MetaLabelingSystem
-import numpy as np
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()

@@ -24,6 +24,7 @@ from .utils.base_validator import BaseValidator
 
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
+import numpy as np
 
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
@@ -491,7 +492,6 @@ async def run_validator(
 if __name__ == "__main__":
     import asyncio as _asyncio
     from .core.decorators.errors import handles_errors
-import numpy as np
 
     # Example usage
     async def test_validator() -> None:

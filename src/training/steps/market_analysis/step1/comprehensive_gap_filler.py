@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 #!/usr/bin/env python3
 
 
@@ -928,7 +930,6 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from .utils.logger import system_logger
-import numpy as np
 
         logger = system_logger.getChild("ComprehensiveGapFiller")
         

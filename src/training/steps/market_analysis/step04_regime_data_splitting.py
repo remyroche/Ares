@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
 This module creates a unified dataset with regime labels for regime-aware processing.
@@ -48,8 +51,6 @@ except Exception:
         def _decorator(func: Callable) -> None:
             return func
         return _decorator
-import pandas as pd
-import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump

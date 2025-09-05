@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Enhanced Step 1: Data Collection with Real-time Validation
 
@@ -362,7 +365,6 @@ class EnhancedDataCollectionStep:
         """Save validated data to files."""
         try:
             import os
-            import pandas as pd
             
             self.logger.info('💾 Saving validated data...')
             
@@ -412,10 +414,8 @@ class EnhancedDataCollectionStep:
                 self.logger.info(f'🔍 Validating {data_type} file: {os.path.basename(filepath)}')
                 
                 try:
-                    import pandas as pd
 from typing import Any
 from typing import Dict
-import numpy as np
 from typing import List
 
                     df = pd.read_parquet(filepath)

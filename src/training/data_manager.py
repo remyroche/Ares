@@ -7,6 +7,8 @@ from typing import Any
 
 
 from .utils.logger import system_logger
+import numpy as np
+
 from src.utils.warning_symbols import (
     error,
 )
@@ -481,7 +483,6 @@ class UnifiedDataManager:
 
         # Save metadata
         import json
-import numpy as np
 
         with open(self.metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)

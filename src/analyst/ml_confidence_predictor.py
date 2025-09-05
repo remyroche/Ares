@@ -12,6 +12,7 @@ import logging
 from src.tactician.enhanced_order_manager import OrderSide
 from .utils.logger import system_logger
 from .utils.warning_symbols import error, warning, failed, missing, validation_error, initialization_error, execution_error
+import numpy as np
 
 class MLConfidencePredictor:
     """
@@ -1363,7 +1364,6 @@ class MLConfidencePredictor:
                 return {'success': False, 'error': 'Async order executor not available', 'execution_id': None}
             from src.tactician.enhanced_order_manager import ExecutionRequest, ExecutionStrategy, OrderSide, OrderType
             from .core.decorators.errors import handles_errors
-import numpy as np
 
             order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
             order_type = OrderType.LIMIT if price else OrderType.MARKET

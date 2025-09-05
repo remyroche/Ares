@@ -3,7 +3,9 @@
 This module implements regime detection at multiple timeframes (5m, 15m, 30m, 1h)
 with hierarchical alignment and cross-timeframe validation.
 """
+import numpy as np
 import warnings
+
 warnings.filterwarnings('ignore')
 
 class HierarchicalRegimeDetector:
@@ -109,7 +111,6 @@ class HierarchicalRegimeDetector:
         except Exception as e:
             print(f'Error in HMM regime detection: {e}')
             from sklearn.cluster import KMeans
-import numpy as np
 
             kmeans = KMeans(n_clusters=n_regimes, random_state=42)
             regimes = kmeans.fit_predict(features.reshape(-1, 1))

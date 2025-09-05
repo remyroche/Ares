@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import warnings
+
 """Step 5: Labeling with Standardized Data Quality Management.
 
 This module creates comprehensive labels for the training data, combining triple barrier
@@ -56,7 +58,6 @@ from collections import defaultdict, Counter
 import threading
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import warnings
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump

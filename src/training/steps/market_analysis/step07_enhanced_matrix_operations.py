@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 """Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
 
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
@@ -21,7 +23,6 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -61,7 +62,6 @@ training_pipeline_decorators = PipelineStandards.safe_import('src.utils.training
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 numpy = PipelineStandards.safe_import('numpy', None)
 pandas = PipelineStandards.safe_import('pandas', None)
-import pandas as pd
 
 def create_fallback_logger() -> Any:
     import logging

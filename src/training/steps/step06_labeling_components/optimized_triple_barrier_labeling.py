@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, steps_dir)
@@ -421,7 +423,6 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     parallel_time = time.time() - start_time
     return {'original_time': original_time, 'vectorized_time': vectorized_time, 'parallel_time': parallel_time, 'vectorized_speedup': original_time / vectorized_time, 'parallel_speedup': original_time / parallel_time}
 if __name__ == '__main__':
-    import numpy as np
     dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
     data = pd.DataFrame({'open': np.random.uniform(100, 110, 1000), 'high': np.random.uniform(105, 115, 1000), 'low': np.random.uniform(95, 105, 1000), 'close': np.random.uniform(100, 110, 1000), 'volume': np.random.uniform(1000, 10000, 1000)}, index=dates)
     optimizer = OptimizedTripleBarrierLabeling()

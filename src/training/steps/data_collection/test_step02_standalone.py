@@ -15,6 +15,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 import functools
+import numpy as np
 
 class FunctionCallStatus(Enum):
     """Status of function calls."""
@@ -80,7 +81,6 @@ class FunctionCallMonitor:
         """Setup performance monitoring capabilities."""
         try:
             import psutil
-import numpy as np
 
             self.psutil_available = True
             self.process = psutil.Process()

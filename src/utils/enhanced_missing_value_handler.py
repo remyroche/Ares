@@ -11,6 +11,7 @@ This module provides sophisticated missing value handling including:
 from enum import Enum
 from .error_handler import handles_errors
 from .logger import system_logger
+import numpy as np
 
 class GapType(Enum):
     """Types of data gaps."""
@@ -229,7 +230,6 @@ class EnhancedMissingValueHandler:
             self.logger.info(f'Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}')
             if exchange.lower() == 'binance':
                 from .training.steps.data_downloader import DataDownloader
-import numpy as np
                 
                 downloader = DataDownloader()
                 downloaded_data = downloader.download_klines(symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt)

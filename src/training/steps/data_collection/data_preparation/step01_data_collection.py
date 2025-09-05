@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 from .core.decorators import handles_errors
 from .training.base_step import BaseStep
+import pandas as pd
 
 class DataCollectionStep(BaseStep):
     """Step 1: Data Collection using standardized base class."""
@@ -168,7 +169,6 @@ class DataCollectionStep(BaseStep):
             Mock DataFrame with OHLCV data
         """
         from .core.decorators.errors import handles_errors
-import pandas as pd
 
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)

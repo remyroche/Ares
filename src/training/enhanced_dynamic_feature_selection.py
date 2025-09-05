@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
 from .utils.logger import system_logger
+import numpy as np
 
 # src/training/enhanced_dynamic_feature_selection.py
 
@@ -629,7 +630,6 @@ class EnhancedDynamicFeatureSelection:
 
                 try:
                     from scipy.cluster.hierarchy import fcluster
-import numpy as np
 
                     clusters = fcluster(
                         sample_linkage, n_clusters, criterion="maxclust"

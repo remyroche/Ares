@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 """Regime Persistence & Forecasting.
 
 This module implements regime persistence modeling and forecasting capabilities,
@@ -235,7 +237,6 @@ class RegimePersistenceForecaster:
         """Integrate with existing analyst forecasting logic."""
         try:
             from .analyst.enhanced_regime_predictor import EnhancedRegimePredictor
-import numpy as np
 
             analyst_config = {'stability_threshold': 0.1, 'min_persistence': 3, 'entropy_percentile': 75, 'confidence_threshold': 0.7}
             analyst_predictor = EnhancedRegimePredictor(analyst_config)

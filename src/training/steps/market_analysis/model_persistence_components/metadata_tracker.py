@@ -2,6 +2,8 @@ from typing import Dict
 from src.utils.error_handler import handles_errors
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 'Metadata tracker component for model persistence.'
 import hashlib
 import json
@@ -139,7 +141,6 @@ class MetadataTracker:
         """Get versions of key packages."""
         try:
             import pkg_resources
-import numpy as np
 
             key_packages = ['numpy', 'pandas', 'scikit-learn', 'lightgbm', 'xgboost', 'torch']
             packages = {}

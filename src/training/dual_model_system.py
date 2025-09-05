@@ -7,6 +7,8 @@ from typing import Any
 
 # Import ML Confidence Predictor
 from .analyst.ml_confidence_predictor import MLConfidencePredictor
+import pandas as pd
+
 from src.utils.decorators import (
     cached,
     circuit_breaker,
@@ -434,7 +436,6 @@ class DualModelSystem:
 
             if os.path.exists(tactician_model_path):
                 import pickle
-import pandas as pd
 
                 with open(tactician_model_path, "rb") as f:
                     self.tactician_model = pickle.load(f)

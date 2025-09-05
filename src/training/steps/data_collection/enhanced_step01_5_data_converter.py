@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Step 1.5: Data Converter with Real-time Validation
 
@@ -180,7 +182,6 @@ class EnhancedUnifiedDataConverter:
         """Load and validate source data for conversion."""
         try:
             import os
-            import pandas as pd
             
             self.logger.info('📖 Loading and validating source data...')
             
@@ -539,7 +540,6 @@ class EnhancedUnifiedDataConverter:
                 return False
             
             # Load and validate unified data
-            import pandas as pd
 from datetime import datetime
 
             df = pd.read_parquet(unified_filepath)

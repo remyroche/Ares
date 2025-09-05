@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Data Collection Integration
 
@@ -350,7 +352,6 @@ async def demonstrate_enhanced_validation():
     logger.info("📋 Example 3: Testing different data types")
     
     from .enhanced_data_validation_framework import get_validator
-import pandas as pd
 from typing import Any
 from typing import Dict
     

@@ -7,6 +7,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 import psutil
+import numpy as np
+import pandas as pd
+
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -282,8 +285,6 @@ class StreamingDataProcessor:
         except Exception as e:
             pass
         from .core.decorators.errors import handles_errors
-import pandas as pd
-import numpy as np
 
         writer = None
         for df in chunks_iter:

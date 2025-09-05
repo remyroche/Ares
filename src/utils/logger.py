@@ -15,6 +15,8 @@ import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
+import numpy as np
+
 try:
     from src.utils.pipeline_standards import PipelineStandards
 except ImportError:
@@ -568,7 +570,6 @@ def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""
     try:
         from .utils.comprehensive_logger import get_comprehensive_logger
-import numpy as np
 
         comprehensive_logger = get_comprehensive_logger()
         if comprehensive_logger:

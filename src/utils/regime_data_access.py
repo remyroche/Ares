@@ -19,10 +19,10 @@ except Exception:  # pragma: no cover - fallback
     import logging
     system_logger = logging.getLogger(__name__)
 
-try:
-    from .utils.hmm_composite_manager import get_hmm_composite_manager
 import numpy as np
 
+try:
+    from .utils.hmm_composite_manager import get_hmm_composite_manager
 except Exception:  # pragma: no cover - fallback
     get_hmm_composite_manager = None  # type: ignore
 

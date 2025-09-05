@@ -29,7 +29,6 @@ from .core.decorators.errors import handles_errors
 
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
-import numpy as np
 
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)

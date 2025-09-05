@@ -635,4 +635,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime pipeline result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run( test())

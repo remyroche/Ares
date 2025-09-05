@@ -396,4 +396,4 @@ if __name__ == '__main__':
         
         print(f"\n✅ Regime data verified: {verified}")
         
-    asyncio.run(await test())
+    asyncio.run( test())

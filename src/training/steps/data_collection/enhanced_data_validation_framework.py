@@ -820,4 +820,4 @@ if __name__ == "__main__":
         # Print validation summary
         print("Validation Summary:", validator.get_validation_summary())
     
-    asyncio.run(await test_validation())
+    asyncio.run( test_validation())

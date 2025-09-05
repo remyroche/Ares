@@ -184,4 +184,4 @@ if __name__ == '__main__':
         await tracker.track_trade(trade)
         report = await tracker.generate_regime_report('BTCUSDT')
         print(json.dumps(report, indent=2))
-    asyncio.run(await main())
+    asyncio.run( main())

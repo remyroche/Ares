@@ -363,4 +363,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime labeling result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run( test())

@@ -325,4 +325,4 @@ if __name__ == '__main__':
             await asyncio.sleep(float('inf'))
         except KeyboardInterrupt:
             await dashboard.stop_dashboard()
-    asyncio.run(await main())
+    asyncio.run( main())

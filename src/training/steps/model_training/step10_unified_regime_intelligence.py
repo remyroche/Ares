@@ -54,16 +54,16 @@ from datetime import datetime
 from pathlib import Path
 
 # Common utilities
-from .utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
+from src.utils.common_operations import ensure_directory, safe_json_dump, standardize_price_action_probabilities
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent
 import sys
 
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from .utils.pipeline_standards import PipelineStandards
+from src.utils.pipeline_standards import PipelineStandards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -95,6 +95,9 @@ sklearn = PipelineStandards.safe_import("sklearn", None)
 # Import torch components if available
 if torch is not None:
     from torch.utils.data import DataLoader, TensorDataset
+    import torch.nn as nn
+    import torch.nn.functional as F
+    import torch.nn.utils.prune as prune
 else:
     nn = None
     F = None
@@ -150,6 +153,23 @@ else:
 warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
+
+# Check for required modules
+if torch is None:
+    logger.error("❌ PyTorch is required but not available")
+    raise ImportError("PyTorch is required for step10_unified_regime_intelligence")
+
+if sklearn is None:
+    logger.error("❌ Scikit-learn is required but not available")
+    raise ImportError("Scikit-learn is required for step10_unified_regime_intelligence")
+
+if numpy is None:
+    logger.error("❌ NumPy is required but not available")
+    raise ImportError("NumPy is required for step10_unified_regime_intelligence")
+
+if pandas is None:
+    logger.error("❌ Pandas is required but not available")
+    raise ImportError("Pandas is required for step10_unified_regime_intelligence")
 
 
 class MultiTimeframeHMMEncoder(nn.Module):
@@ -297,6 +317,11 @@ class UnifiedRegimeIntelligenceStep:
         self.hmm_states_per_tf = config.get("hmm_states_per_tf", 5)
         self.sequence_length = config.get("sequence_length", 20)
         self.num_regimes = None  # Will be determined dynamically from step1_7 data
+        
+        # Data path configuration
+        self.data_dir = config.get("data_dir", "data")
+        self.symbol = config.get("symbol", "ETHUSDT")
+        self.exchange = config.get("exchange", "BINANCE")
 
         # Training configuration
         self.learning_rate = config.get("learning_rate", 0.0001)
@@ -386,6 +411,64 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
             return "cpu"
 
+    def _validate_required_data_files(self) -> bool:
+        """Validate that all required data files exist."""
+        try:
+            required_files = []
+            for tf in self.timeframes:
+                hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
+                intensity_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_intensity_{tf}.parquet"
+                required_files.extend([hmm_file, intensity_file])
+            
+            missing_files = [f for f in required_files if not os.path.exists(f)]
+            if missing_files:
+                self.logger.error(f"❌ Missing required data files: {missing_files}")
+                return False
+            
+            self.logger.info("✅ All required data files found")
+            return True
+        except Exception as e:
+            self.logger.exception(f"🚨 Error validating data files: {e}")
+            return False
+
+    def _validate_data_quality(self, data: dict[str, pd.DataFrame]) -> bool:
+        """Validate input data quality."""
+        try:
+            # Check combined features if provided
+            combined_features = data.get("combined_features", pd.DataFrame())
+            if not combined_features.empty:
+                # Check for null values
+                null_ratio = combined_features.isnull().sum().sum() / (
+                    float(combined_features.shape[0]) * float(combined_features.shape[1])
+                )
+                if null_ratio > 0.5:  # More than 50% null values
+                    self.logger.warning(f"⚠️ High null ratio in combined features: {null_ratio:.3f}")
+                    return False
+                
+                # Check minimum rows
+                if len(combined_features) < 100:
+                    self.logger.warning(f"⚠️ Insufficient data in combined features: {len(combined_features)} rows")
+                    return False
+            
+            # Validate HMM data files
+            for tf in self.timeframes:
+                hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
+                if os.path.exists(hmm_file):
+                    hmm_data = pd.read_parquet(hmm_file)
+                    if hmm_data.empty:
+                        self.logger.error(f"❌ Empty HMM data file: {hmm_file}")
+                        return False
+                    
+                    if "composite_cluster_id" not in hmm_data.columns:
+                        self.logger.error(f"❌ Missing composite_cluster_id column in {hmm_file}")
+                        return False
+            
+            self.logger.info("✅ Data quality validation passed")
+            return True
+        except Exception as e:
+            self.logger.exception(f"🚨 Data quality validation failed: {e}")
+            return False
+
     @handles_errors(
         exceptions=(Exception,),
         default_return=False,
@@ -396,6 +479,11 @@ class UnifiedRegimeIntelligenceStep:
         try:
             self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
 
+            # Validate required data files
+            if not self._validate_required_data_files():
+                self.logger.error("❌ Required data files validation failed")
+                return False
+
             # Initialize model
             self.model = MultiTimeframeHMMEncoder(self.config)
 
@@ -405,11 +493,14 @@ class UnifiedRegimeIntelligenceStep:
             self.label_encoders["tpsl"] = LabelEncoder()
 
             # Initialize SRBreakoutPredictor
-            sr_init_success = await self.sr_predictor.initialize()
-            if not sr_init_success:
-                self.logger.warning(
-                    "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
-                )
+            if self.sr_predictor is not None:
+                sr_init_success = await self.sr_predictor.initialize()
+                if not sr_init_success:
+                    self.logger.warning(
+                        "⚠️ Failed to initialize SRBreakoutPredictor, continuing without S/R analysis",
+                    )
+            else:
+                self.logger.warning("⚠️ SRBreakoutPredictor not available, continuing without S/R analysis")
 
             self.logger.info(
                 "✅ Unified Regime Intelligence Step initialized successfully",
@@ -432,36 +523,39 @@ class UnifiedRegimeIntelligenceStep:
         try:
             self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
+            # Validate input data quality
+            if not self._validate_data_quality(data):
+                self.logger.error("❌ Input data quality validation failed")
+                return False
+
             # Enhanced optimization for step6_5
-            if self.enhanced_lm_optimizer is None:
-                msg = "Enhanced LM optimizer is required but not initialized"
-                raise RuntimeError(msg)
+            if self.enhanced_lm_optimizer is not None:
+                # Initialize the optimizer if not already done
+                if not getattr(self.enhanced_lm_optimizer, "initialization_status", None):
+                    await self.enhanced_lm_optimizer.initialize()
 
-            # Initialize the optimizer if not already done
-            if not getattr(self.enhanced_lm_optimizer, "initialization_status", None):
-                await self.enhanced_lm_optimizer.initialize()
+                self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
 
-            self.logger.info("🔧 Enhanced LM optimization enabled: starting comprehensive optimization...")
+                # Prepare data for optimization
+                optimization_data = await self._prepare_optimization_data(data)
+                if optimization_data:
+                    optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
+                        step_name="step6_5",
+                        features_df=optimization_data["features"],
+                        target=optimization_data["target"],
+                        model_type="classification",
+                        architecture="Transformer",
+                    )
 
-            # Prepare data for optimization
-            optimization_data = await self._prepare_optimization_data(data)
-            if not optimization_data:
-                msg = "Failed to prepare optimization data"
-                raise RuntimeError(msg)
-
-            optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
-                step_name="step6_5",
-                features_df=optimization_data["features"],
-                target=optimization_data["target"],
-                model_type="classification",
-                architecture="Transformer",
-            )
-
-            self.logger.info("✅ Enhanced optimization completed for step6_5")
-            # Store optimization results
-            if not hasattr(self, "enhancement_results"):
-                self.enhancement_results = {}
-            self.enhancement_results["enhanced_optimization"] = optimization_results
+                    self.logger.info("✅ Enhanced optimization completed for step6_5")
+                    # Store optimization results
+                    if not hasattr(self, "enhancement_results"):
+                        self.enhancement_results = {}
+                    self.enhancement_results["enhanced_optimization"] = optimization_results
+                else:
+                    self.logger.warning("⚠️ Failed to prepare optimization data, skipping optimization")
+            else:
+                self.logger.warning("⚠️ Enhanced LM optimizer not available, skipping optimization")
 
             # Check if HPO is enabled
             if self.hpo_enabled:
@@ -524,7 +618,7 @@ class UnifiedRegimeIntelligenceStep:
             # Load HMM composite data for each timeframe
             hmm_data: dict[str, pd.DataFrame] = {}
             for tf in self.timeframes:
-                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+                hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
                     self.logger.info(
@@ -576,7 +670,7 @@ class UnifiedRegimeIntelligenceStep:
             # Load HMM composite data for each timeframe
             hmm_data: dict[str, pd.DataFrame] = {}
             for tf in self.timeframes:
-                hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+                hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
                     self.logger.info(
@@ -619,9 +713,7 @@ class UnifiedRegimeIntelligenceStep:
             # Load intensity data from step1_7
             intensity_data: dict[str, pd.DataFrame] = {}
             for tf in self.timeframes:
-                intensity_file = (
-                    f"data/BINANCE_ETHUSDT_hmm_composite_intensity_{tf}.parquet"
-                )
+                intensity_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_intensity_{tf}.parquet"
                 if os.path.exists(intensity_file):
                     intensity_data[tf] = pd.read_parquet(intensity_file)
                     self.logger.info(
@@ -632,7 +724,10 @@ class UnifiedRegimeIntelligenceStep:
                         f"⚠️ Intensity data not found for {tf}, generating from HMM states",
                     )
                     # Generate intensity scores from HMM states (fallback)
-                    intensity_data[tf] = self._generate_intensity_scores(hmm_data[tf])
+                    if tf in hmm_data:
+                        intensity_data[tf] = self._generate_intensity_scores(hmm_data[tf])
+                    else:
+                        self.logger.error(f"❌ Cannot generate intensity data for {tf}: HMM data not available")
 
             # Load combined features
             combined_features = data.get("combined_features", pd.DataFrame())
@@ -1328,25 +1423,31 @@ class UnifiedRegimeIntelligenceStep:
         try:
             # Apply model-specific pruning for Step 6.5
             if "features" in train_data and len(train_data["features"]) > 0:
-                from .training.model_specific_pruning import ModelSpecificPruning
-                pruning_manager = ModelSpecificPruning(self.config)
+                try:
+                    # Try to import model-specific pruning if available
+                    from src.training.model_specific_pruning import ModelSpecificPruning
+                    pruning_manager = ModelSpecificPruning(self.config)
 
-                # Convert features to DataFrame for pruning
-                features_df = pd.DataFrame(train_data["features"].numpy())
-                # Use real target labels for pruning, not a dummy target.
-                # The target should be available in `train_data`.
-                if "labels" not in train_data or "regime" not in train_data["labels"]:
-                    msg = "Target labels are required for feature pruning but not found in train_data."
-                    raise ValueError(msg)
-                target_series = pd.Series(train_data["labels"]["regime"].numpy())
+                    # Convert features to DataFrame for pruning
+                    features_df = pd.DataFrame(train_data["features"].numpy())
+                    # Use real target labels for pruning, not a dummy target.
+                    # The target should be available in `train_data`.
+                    if "labels" not in train_data or "regime" not in train_data["labels"]:
+                        msg = "Target labels are required for feature pruning but not found in train_data."
+                        raise ValueError(msg)
+                    target_series = pd.Series(train_data["labels"]["regime"].numpy())
 
-                pruned_features, pruning_metadata = pruning_manager.prune_for_step6_5_unified_regime(
-                    features_df, target_series,
-                )
+                    pruned_features, pruning_metadata = pruning_manager.prune_for_step6_5_unified_regime(
+                        features_df, target_series,
+                    )
 
-                # Update features with pruned version
-                train_data["features"] = torch.FloatTensor(pruned_features.values)
-                self.logger.info(f"✅ Applied model-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
+                    # Update features with pruned version
+                    train_data["features"] = torch.FloatTensor(pruned_features.values)
+                    self.logger.info(f"✅ Applied model-specific pruning: {features_df.shape[1]} -> {pruned_features.shape[1]} features")
+                except ImportError:
+                    self.logger.warning("⚠️ Model-specific pruning not available, skipping feature pruning")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Feature pruning failed: {e}, continuing without pruning")
 
             # Split data
             num_samples: int = int(train_data["num_sequences"])
@@ -1902,7 +2003,6 @@ class UnifiedRegimeIntelligenceStep:
         """
         try:
             import optuna  # type: ignore
-            from .core.decorators.errors import handles_errors
         except Exception as ex:
             self.logger.warning(
                 f"⚠️ Optuna not available for HPO ({ex}); skipping optimization",
@@ -2153,6 +2253,11 @@ async def run_step(
                 )
                 return True
 
+            # Add symbol and exchange to config
+            uri_config["symbol"] = symbol
+            uri_config["exchange"] = exchange
+            uri_config["timeframe"] = timeframe
+
             logger.info(f"✅ Configuration loaded: {len(uri_config)} parameters")
             step_phases["configuration"] = True
         except Exception as e:
@@ -2183,6 +2288,11 @@ async def run_step(
             # Validate data
             if data["combined_features"].empty:
                 logger.warning("⚠️ No combined features provided, using HMM data only")
+
+            # Check if required data files exist
+            if not step._validate_required_data_files():
+                logger.error("❌ Required data files validation failed")
+                return False
 
             logger.info(f"✅ Data loaded: {len(data)} data sources")
             step_phases["data_loading"] = True
@@ -2215,8 +2325,26 @@ async def run_step(
 
         total_time = time.time() - step_start_time
         logger.info(f"🎉 Step 5_5 completed in {total_time:.2f}s")
+        
+        # Log completion summary
+        completed_phases = sum(1 for phase, status in step_phases.items() if status)
+        logger.info(f"📊 Completed {completed_phases}/{len(step_phases)} phases successfully")
+        
         return True
 
+    except FileNotFoundError as e:
+        logger.error(f"🚨 File not found error: {e}")
+        logger.error("💡 Check that required data files exist in the correct location")
+        return False
+    except ImportError as e:
+        logger.error(f"🚨 Import error: {e}")
+        logger.error("💡 Check that all required modules are installed and import paths are correct")
+        return False
+    except MemoryError as e:
+        logger.error(f"🚨 Memory error: {e}")
+        logger.error("💡 Consider reducing batch size or sequence length")
+        return False
     except Exception as e:
         logger.exception(f"🚨 Unified Regime Intelligence Step encountered a critical error: {e}")
+        logger.error("💡 Check logs for detailed error information")
         return False

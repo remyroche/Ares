@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import time
+import logging
 
 # Add local bin to PATH
 os.environ["PATH"] = f"/home/ubuntu/.local/bin:{os.environ['PATH']}"

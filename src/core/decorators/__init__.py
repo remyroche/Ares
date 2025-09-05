@@ -46,6 +46,8 @@ from .cache import (
 
 # Error handling decorators
 from .errors import (
+import pandas as pd
+
     converts_errors,
     error_boundary,
     handles_errors,

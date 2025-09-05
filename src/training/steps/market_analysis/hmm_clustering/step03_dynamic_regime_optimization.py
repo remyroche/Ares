@@ -9,6 +9,9 @@ This module automatically determines the optimal number of regimes based on mult
 """
 import numpy as np
 import warnings
+import os
+import pandas as pd
+import typing
 
 warnings.filterwarnings('ignore')
 

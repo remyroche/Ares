@@ -17,11 +17,11 @@ from functools import partial, wraps
 from typing import TYPE_CHECKING
 
 import psutil
+import numpy as np
+import pandas as pd
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-import numpy as np
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 

@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from map_code_interactions import CodeInteractionMapper
+import numpy as np
 
 
 def create_demo_codebase():

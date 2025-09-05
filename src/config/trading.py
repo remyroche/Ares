@@ -5,6 +5,9 @@ from .environment import get_environment_settings
 
 # src/config/trading.py
 
+# Get environment settings
+settings = get_environment_settings()
+
 
 def get_trading_config() -> dict[str, Any]:
     """Get the complete trading configuration.
@@ -166,6 +169,7 @@ def get_exchange_config(exchange_name: str) -> dict[str, Any]:
         dict: Exchange configuration
 
     """
+    trading_config = get_trading_config()
     exchanges = trading_config.get("exchanges", {})
     return exchanges.get(exchange_name.lower(), {})
 
@@ -177,6 +181,7 @@ def get_risk_management_config() -> dict[str, Any]:
         dict: Risk management configuration
 
     """
+    trading_config = get_trading_config()
     return trading_config.get("risk_management", {})
 
 
@@ -187,6 +192,7 @@ def get_position_sizing_config() -> dict[str, Any]:
         dict: Position sizing configuration
 
     """
+    risk_config = get_risk_management_config()
     return risk_config.get("position_sizing", {})
 
 
@@ -197,6 +203,7 @@ def get_stop_loss_config() -> dict[str, Any]:
         dict: Stop loss configuration
 
     """
+    trading_config = get_trading_config()
     return trading_config.get("stop_loss", {})
 
 
@@ -207,6 +214,7 @@ def get_take_profit_config() -> dict[str, Any]:
         dict: Take profit configuration
 
     """
+    trading_config = get_trading_config()
     return trading_config.get("take_profit", {})
 
 
@@ -217,4 +225,5 @@ def get_time_based_exit_config() -> dict[str, Any]:
         dict: Time-based exit configuration
 
     """
+    trading_config = get_trading_config()
     return trading_config.get("time_based_exit", {})

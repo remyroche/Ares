@@ -6,6 +6,8 @@ from typing import Optional
 import numpy as np
 'Tactician model explainer for SHAP and LIME integration.\n\nThis module provides explainability for Tactician ML models, enabling\ntraceability of trading decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
+import logging
+
 try:
     SHAP_AVAILABLE = True
 except ImportError:

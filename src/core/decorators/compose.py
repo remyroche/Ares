@@ -9,6 +9,7 @@ preserving signature and metadata.
 import asyncio
 import functools
 from typing import ParamSpec, TypeVar, cast, Callable, Any
+import logging
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -124,6 +125,7 @@ def ensure_async(func: Callable[P, R]) -> Callable[P, R | Callable[..., R]]:
     @functools.wraps(func)
     async def async_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         # Run sync function in executor to avoid blocking
+        loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, functools.partial(func, *args, **kwargs)
         )

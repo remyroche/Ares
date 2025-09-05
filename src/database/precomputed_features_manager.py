@@ -7,6 +7,7 @@ from .utils.logger import system_logger
 from .core.decorators import handles_errors
 
 from .database.influxdb_manager import InfluxDBManager
+import time
 
 try:
     INFLUXDB_AVAILABLE = True

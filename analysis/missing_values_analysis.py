@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import src.utils.warning_symbols
+import numpy as np
+
 """
 Missing Values Analysis Report
 Analyzes the extent, patterns, and causes of missing values in the financial dataset.
@@ -7,7 +10,8 @@ Analyzes the extent, patterns, and causes of missing values in the financial dat
 import warnings
 import matplotlib.pyplot as plt
 
-from src.utils.warning_symbols import (
+import pandas as pd
+
     missing,
     warning,
 )

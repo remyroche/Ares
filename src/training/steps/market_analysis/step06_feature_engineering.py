@@ -34,6 +34,8 @@ steps_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, steps_dir)
 try:
     from step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
+import time
+
     VALIDATION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f'Step06 validation framework not available: {e}')

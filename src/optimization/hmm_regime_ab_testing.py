@@ -12,6 +12,8 @@ from typing import Dict
 import numpy as np
 from typing import Optional
 from datetime import datetime
+import logging
+import time
 
 @dataclass
 class HMMRegimeABTestResult:

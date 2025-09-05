@@ -9,6 +9,8 @@ import hashlib
 import json
 from datetime import datetime
 from .utils.logger import system_logger
+import logging
+import time
 
 class MetadataTracker:
     """Handles comprehensive metadata tracking for models."""

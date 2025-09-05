@@ -22,6 +22,8 @@ try:
     from .utils.logger import system_logger
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
+import typing
+
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1')

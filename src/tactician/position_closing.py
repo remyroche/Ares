@@ -1,6 +1,9 @@
 
 
 from src.utils.error_handler import handles_errors
+import src.utils.warning_symbols
+import numpy as np
+
 # src/tactician/position_closing.py
 
 
@@ -12,10 +15,8 @@ from datetime import datetime
 from typing import Any
 
 
-import numpy as np
-
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
+
     failed,
     invalid,
 )

@@ -40,6 +40,8 @@ from .utils.logger import system_logger
 # Import Pydantic configuration
 try:
     from src.training.enhanced_lm_config import (
+import logging
+
         DEFAULT_CONFIG,
         EnhancedLMOptimizerConfig,
     )

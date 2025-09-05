@@ -15,6 +15,10 @@ from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDat
 try:
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
     from sklearn.preprocessing import StandardScaler
+import json
+import logging
+import time
+
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

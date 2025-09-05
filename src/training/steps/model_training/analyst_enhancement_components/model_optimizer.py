@@ -7,6 +7,8 @@ from typing import Dict
 from sklearn.metrics import accuracy_score
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import collections
+import logging
 
 class ModelOptimizer:
     """Handles model-specific optimizations for analyst models."""

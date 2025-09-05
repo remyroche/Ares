@@ -42,6 +42,11 @@ class InterpretabilityReporter:
         try:
             # Use report manager for standardized report organization
             from .utils.report_manager import get_report_manager
+import json
+import logging
+import time
+import typing
+
             report_manager = get_report_manager()
             
             # Generate different report formats using report manager

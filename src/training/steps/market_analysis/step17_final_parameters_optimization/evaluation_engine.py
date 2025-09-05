@@ -1,3 +1,5 @@
+import src.utils.warning_symbols
+import numpy as np
 
 # src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
 
@@ -13,11 +15,10 @@ from typing import Any
 
 
 from .utils.logger import system_logger
-from src.utils.warning_symbols import (
+
     error,
     warning,
 )
-import numpy as np
 
 
 @dataclass

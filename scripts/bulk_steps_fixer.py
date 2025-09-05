@@ -14,6 +14,7 @@ Fixes:
 import re
 import sys
 from pathlib import Path
+import logging
 
 
 def fix_line_assignments(line: str) -> str:

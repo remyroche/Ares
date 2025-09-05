@@ -9,6 +9,8 @@ from collections import defaultdict
 from typing import Any, NamedTuple
 
 from core.config import CodeQualityConfig
+import numpy as np
+import pandas as pd
 
 
 class FunctionSignature(NamedTuple):

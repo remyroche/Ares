@@ -22,20 +22,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Optional dependencies
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
+# Required dependencies
+import pandas as pd
+import numpy as np
 
 class ReportFormat(Enum):
     """Report output formats."""
@@ -925,7 +914,7 @@ class Step03ExecutionReporter:
         csv_dir.mkdir(exist_ok=True)
         
         # Function calls CSV
-        if report.function_calls and PANDAS_AVAILABLE:
+        if report.function_calls:
             calls_df = pd.DataFrame([
                 {
                     'function_name': call.function_name,
@@ -948,8 +937,7 @@ class Step03ExecutionReporter:
             calls_df.to_csv(csv_dir / "function_calls.csv", index=False)
         
         # Performance metrics CSV
-        if PANDAS_AVAILABLE:
-            perf_df = pd.DataFrame([{
+        perf_df = pd.DataFrame([{
             'metric': 'total_execution_time',
             'value': report.performance_metrics.total_execution_time
         }, {
@@ -965,11 +953,10 @@ class Step03ExecutionReporter:
             'metric': 'overall_performance_score',
             'value': report.performance_metrics.overall_performance_score
         }])
-            perf_df.to_csv(csv_dir / "performance_metrics.csv", index=False)
+        perf_df.to_csv(csv_dir / "performance_metrics.csv", index=False)
         
         # Quality metrics CSV
-        if PANDAS_AVAILABLE:
-            quality_df = pd.DataFrame([{
+        quality_df = pd.DataFrame([{
             'metric': 'data_quality_score',
             'value': report.quality_metrics.data_quality_score
         }, {
@@ -985,7 +972,7 @@ class Step03ExecutionReporter:
             'metric': 'overall_quality_score',
             'value': report.quality_metrics.overall_quality_score
         }])
-            quality_df.to_csv(csv_dir / "quality_metrics.csv", index=False)
+        quality_df.to_csv(csv_dir / "quality_metrics.csv", index=False)
         
         self.logger.info(f"📄 CSV data saved to: {csv_dir}")
         return csv_dir

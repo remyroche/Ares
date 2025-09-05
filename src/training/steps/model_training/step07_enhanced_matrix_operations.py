@@ -1,13 +1,16 @@
 
-from typing import List
-from typing import Dict
-from typing import Any
+from typing import List, Dict, Any, Tuple, Optional
 import pandas as pd
 import numpy as np
+import time
+import traceback
+import functools
+import inspect
 """Step 7: Enhanced Matrix Operations - Refactored to use BaseStep.
 
 This module performs advanced matrix operations for comprehensive data analysis
 after feature engineering, with GPU/MPS acceleration support.
+Includes comprehensive function call validation, tracking, and detailed outcome reporting.
 """
 
 from pathlib import Path
@@ -20,6 +23,194 @@ from src.training.steps.model_training.matrix_components import (
 )
 from src.core.decorators.errors import handles_errors
 
+class FunctionCallTracker:
+    """Comprehensive function call tracking and validation system."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.call_stack = []
+        self.function_calls = {}
+        self.function_to_function_calls = {}
+        self.completion_reports = {}
+        self.start_time = time.time()
+    
+    def track_function_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None):
+        """Track function call initiation."""
+        call_id = f"{func_name}_{len(self.call_stack)}_{int(time.time() * 1000)}"
+        call_info = {
+            'call_id': call_id,
+            'function_name': func_name,
+            'caller': caller,
+            'args_count': len(args),
+            'kwargs_count': len(kwargs),
+            'start_time': time.time(),
+            'args_types': [type(arg).__name__ for arg in args],
+            'kwargs_keys': list(kwargs.keys())
+        }
+        
+        self.call_stack.append(call_id)
+        self.function_calls[call_id] = call_info
+        
+        # Track function-to-function calls
+        if caller:
+            if caller not in self.function_to_function_calls:
+                self.function_to_function_calls[caller] = []
+            self.function_to_function_calls[caller].append({
+                'called_function': func_name,
+                'call_id': call_id,
+                'timestamp': time.time()
+            })
+        
+        self.logger.debug(f"🔍 Function call initiated: {func_name} (ID: {call_id})")
+        return call_id
+    
+    def track_function_completion(self, call_id: str, result: Any = None, error: Exception = None):
+        """Track function call completion with detailed outcome."""
+        if call_id not in self.function_calls:
+            self.logger.warning(f"⚠️ Unknown call ID: {call_id}")
+            return
+        
+        call_info = self.function_calls[call_id]
+        end_time = time.time()
+        duration = end_time - call_info['start_time']
+        
+        completion_report = {
+            'call_id': call_id,
+            'function_name': call_info['function_name'],
+            'caller': call_info['caller'],
+            'duration_seconds': duration,
+            'success': error is None,
+            'error': str(error) if error else None,
+            'error_type': type(error).__name__ if error else None,
+            'result_type': type(result).__name__ if result is not None else None,
+            'result_size': self._get_result_size(result),
+            'end_time': end_time,
+            'stack_depth': len(self.call_stack)
+        }
+        
+        self.completion_reports[call_id] = completion_report
+        
+        # Remove from call stack
+        if call_id in self.call_stack:
+            self.call_stack.remove(call_id)
+        
+        # Log completion
+        status = "✅" if error is None else "❌"
+        self.logger.info(f"{status} Function completed: {call_info['function_name']} "
+                        f"(ID: {call_id}, Duration: {duration:.3f}s)")
+        
+        if error:
+            self.logger.error(f"❌ Function error: {call_info['function_name']} - {error}")
+            self.logger.debug(f"Error traceback: {traceback.format_exc()}")
+        
+        return completion_report
+    
+    def _get_result_size(self, result: Any) -> str:
+        """Get human-readable size of result."""
+        if result is None:
+            return "None"
+        elif isinstance(result, (list, tuple)):
+            return f"len={len(result)}"
+        elif isinstance(result, dict):
+            return f"keys={len(result)}"
+        elif isinstance(result, np.ndarray):
+            return f"shape={result.shape}"
+        elif isinstance(result, pd.DataFrame):
+            return f"shape={result.shape}"
+        else:
+            return f"type={type(result).__name__}"
+    
+    def get_call_summary(self) -> Dict[str, Any]:
+        """Get comprehensive call summary."""
+        total_calls = len(self.function_calls)
+        successful_calls = len([r for r in self.completion_reports.values() if r['success']])
+        failed_calls = total_calls - successful_calls
+        
+        total_duration = sum(r['duration_seconds'] for r in self.completion_reports.values())
+        
+        return {
+            'total_function_calls': total_calls,
+            'successful_calls': successful_calls,
+            'failed_calls': failed_calls,
+            'success_rate': successful_calls / total_calls if total_calls > 0 else 0,
+            'total_duration_seconds': total_duration,
+            'average_duration_seconds': total_duration / total_calls if total_calls > 0 else 0,
+            'function_to_function_calls': len(self.function_to_function_calls),
+            'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default=0),
+            'session_duration_seconds': time.time() - self.start_time
+        }
+
+def comprehensive_function_tracker(logger):
+    """Decorator for comprehensive function call tracking."""
+    def decorator(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Get caller information
+            frame = inspect.currentframe().f_back
+            caller_name = frame.f_code.co_name if frame else "unknown"
+            
+            # Get tracker from self if available
+            tracker = None
+            if args and hasattr(args[0], 'call_tracker'):
+                tracker = args[0].call_tracker
+            
+            if tracker is None:
+                # Create temporary tracker
+                tracker = FunctionCallTracker(logger)
+            
+            call_id = tracker.track_function_call(
+                func.__name__, 
+                args, 
+                kwargs, 
+                caller_name
+            )
+            
+            try:
+                if inspect.iscoroutinefunction(func):
+                    result = await func(*args, **kwargs)
+                else:
+                    result = func(*args, **kwargs)
+                
+                tracker.track_function_completion(call_id, result)
+                return result
+                
+            except Exception as e:
+                tracker.track_function_completion(call_id, error=e)
+                raise
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Get caller information
+            frame = inspect.currentframe().f_back
+            caller_name = frame.f_code.co_name if frame else "unknown"
+            
+            # Get tracker from self if available
+            tracker = None
+            if args and hasattr(args[0], 'call_tracker'):
+                tracker = args[0].call_tracker
+            
+            if tracker is None:
+                # Create temporary tracker
+                tracker = FunctionCallTracker(logger)
+            
+            call_id = tracker.track_function_call(
+                func.__name__, 
+                args, 
+                kwargs, 
+                caller_name
+            )
+            
+            try:
+                result = func(*args, **kwargs)
+                tracker.track_function_completion(call_id, result)
+                return result
+                
+            except Exception as e:
+                tracker.track_function_completion(call_id, error=e)
+                raise
+        
+        return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+    return decorator
 
 class EnhancedMatrixOperationsStep(BaseStep):
     """Step 7: Enhanced Matrix Operations using standardized base class."""
@@ -31,6 +222,10 @@ class EnhancedMatrixOperationsStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, "07", "enhanced_matrix_operations")
+        
+        # Initialize comprehensive function call tracker
+        self.call_tracker = FunctionCallTracker(self.logger)
+        self.logger.info("🔍 Initialized comprehensive function call tracking system")
         
         # Step-specific configuration
         self.matrix_config = config.get("matrix_operations_config", {
@@ -123,6 +318,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         return len(errors) == 0, errors
     
+    @comprehensive_function_tracker(None)  # Will use self.logger
     @handles_errors(
         exceptions=(Exception,),
         default_return={"success": False},
@@ -212,6 +408,24 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         # Save outputs
         await self._save_outputs(training_input, pipeline_state)
+        
+        # Generate comprehensive function call summary
+        call_summary = self.call_tracker.get_call_summary()
+        self.logger.info("📊 COMPREHENSIVE FUNCTION CALL SUMMARY:")
+        self.logger.info(f"   Total function calls: {call_summary['total_function_calls']}")
+        self.logger.info(f"   Successful calls: {call_summary['successful_calls']}")
+        self.logger.info(f"   Failed calls: {call_summary['failed_calls']}")
+        self.logger.info(f"   Success rate: {call_summary['success_rate']:.2%}")
+        self.logger.info(f"   Total duration: {call_summary['total_duration_seconds']:.3f}s")
+        self.logger.info(f"   Average duration: {call_summary['average_duration_seconds']:.3f}s")
+        self.logger.info(f"   Function-to-function calls: {call_summary['function_to_function_calls']}")
+        self.logger.info(f"   Max stack depth: {call_summary['max_stack_depth']}")
+        self.logger.info(f"   Session duration: {call_summary['session_duration_seconds']:.3f}s")
+        
+        # Add call summary to pipeline state
+        pipeline_state["function_call_summary"] = call_summary
+        pipeline_state["function_completion_reports"] = self.call_tracker.completion_reports
+        pipeline_state["function_to_function_calls"] = self.call_tracker.function_to_function_calls
         
         return pipeline_state
     
@@ -313,6 +527,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 "method": "default"
             }
     
+    @comprehensive_function_tracker(None)
     async def _compute_matrices(
         self,
         data: pd.DataFrame,
@@ -425,6 +640,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         return transition_matrix
     
+    @comprehensive_function_tracker(None)
     async def _analyze_feature_importance(
         self,
         data_dict: Dict[str, pd.DataFrame],

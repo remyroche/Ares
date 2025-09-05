@@ -39,6 +39,8 @@ from src.training.steps.step17_final_parameters_optimization.optimized_optuna_op
     AdvancedOptunaManager,
 )
 from src.utils.logger import setup_logging  # noqa: E402
+import numpy as np
+import pandas as pd
 
 # Initialize logging and suppress noisy warnings
 setup_logging()

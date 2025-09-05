@@ -7,6 +7,7 @@ import ast
 import json
 from collections import defaultdict
 from pathlib import Path
+import numpy as np
 
 # Enhanced function to module mappings with comprehensive coverage
 COMMON_IMPORTS = {

@@ -10,6 +10,8 @@ from pathlib import Path
 
 
 from src.utils.logger import setup_logging, system_logger
+import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 

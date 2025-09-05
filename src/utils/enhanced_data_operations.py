@@ -31,6 +31,8 @@ from .utils.data_utils import (
     safe_std,
 )
 from .utils.enhanced_data_validation import DataAccessValidator, DataQualityValidator, EnhancedDataFormatter
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

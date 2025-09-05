@@ -45,6 +45,9 @@ except ImportError:
 try:
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LinearRegression
+import numpy as np
+import pandas as pd
+
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False

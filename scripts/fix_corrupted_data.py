@@ -17,6 +17,7 @@ from typing import Any
 
 
 from src.utils.logger import setup_logging, system_logger
+import pandas as pd
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent

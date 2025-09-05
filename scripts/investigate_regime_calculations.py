@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Investigate Regime Calculation Issues
 Analyzes why regime features may have zero variance and provides fixes.
@@ -14,6 +17,8 @@ from typing import Any
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 
@@ -286,8 +291,6 @@ class RegimeCalculationInvestigator:
         return {
             "trend_regime": (
                 '''
-import numpy as np
-import pandas as pd
 
 def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate trend regime with improved logic."""

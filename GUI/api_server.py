@@ -43,6 +43,8 @@ try:
     from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
+import numpy as np
+
     ares_config = AresConfig()
     print("Successfully imported Ares modules.")
 except ImportError as e:

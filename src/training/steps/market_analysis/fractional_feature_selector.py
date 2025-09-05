@@ -17,6 +17,9 @@ from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
 from .utils.validation import (
+import numpy as np
+import pandas as pd
+
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

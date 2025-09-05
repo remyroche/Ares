@@ -24,6 +24,8 @@ ROPE_AVAILABLE = False
 
 try:
     import jedi
+import numpy as np
+
     JEDI_AVAILABLE = True
 except ImportError:
     JEDI_AVAILABLE = False

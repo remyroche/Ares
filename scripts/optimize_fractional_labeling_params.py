@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import random
+import numpy as np
 
 
 # Add project root to path

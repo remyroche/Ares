@@ -24,6 +24,7 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 )
 from src.utils.logger import system_logger
 import pandas as pd
+import numpy as np
 
 # Add the src directory to the path
 sys.path.append(str(Path(__file__).parent.parent))

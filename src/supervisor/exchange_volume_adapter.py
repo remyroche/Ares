@@ -21,6 +21,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 
 class ExchangeVolumeAdapter:

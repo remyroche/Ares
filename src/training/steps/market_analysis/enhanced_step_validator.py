@@ -32,6 +32,7 @@ from .utils.logger import (
     get_logger,
 )
 from .utils.data_quality_framework import DataQualityFramework
+import pandas as pd
 
 
 class EnhancedStepValidator:

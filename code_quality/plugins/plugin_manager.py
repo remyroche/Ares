@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 from .plugin_registry import PluginRegistry
 from .base_plugin import PluginContext, PluginResult, PluginCategory, PluginPriority
 from .exceptions import PluginExecutionError, PluginTimeoutError
+import numpy as np
 
 
 class PluginManager:

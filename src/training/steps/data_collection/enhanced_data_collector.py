@@ -24,6 +24,9 @@ sys.path.insert(0, str(project_root))
 from typing import Any, Dict, List
 from .utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
+import numpy as np
+import pandas as pd
+
     DataType, EnhancedDataValidator, get_validator, 
     ValidationSeverity, ValidationError
 )

@@ -12,6 +12,7 @@ from datetime import datetime
 import logging
 from typing import Any
 from typing import Dict
+import numpy as np
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

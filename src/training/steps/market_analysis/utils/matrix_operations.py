@@ -4,17 +4,17 @@ This module provides comprehensive matrix operations including standard operatio
 SR-specific analysis, and enhanced SR analysis.
 """
 from typing import Any, Dict, List
+import numpy as np
+import pandas as pd
 
 # Optional dependencies with fallback handling
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False

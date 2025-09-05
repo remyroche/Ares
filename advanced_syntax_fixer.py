@@ -4,6 +4,7 @@
 import re
 from pathlib import Path
 import subprocess
+import numpy as np
 
 
 def get_syntax_error_details(file_path: Path) -> Optional[dict]:

@@ -22,6 +22,7 @@ from src.training.steps.step06_labeling_components.fractional_triple_barrier_lab
     FractionalTripleBarrierLabeling
 )
 from .training.steps.fractional_differentiation import FractionalFeatureGenerator
+import numpy as np
 
 
 class HMMFractionalIntegration:

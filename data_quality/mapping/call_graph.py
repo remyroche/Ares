@@ -14,6 +14,7 @@ from code_quality.analyzers.call_graph_analyzer import CallGraphAnalyzer
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
 import csv
+import numpy as np
 
 
 

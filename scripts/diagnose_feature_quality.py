@@ -20,7 +20,10 @@ try:
     from src.utils.logger import system_logger  # noqa: E402
 except ImportError:
     import logging
-    system_logger = logging.getLogger(__name__)
+import numpy as np
+import pandas as pd
+
+system_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

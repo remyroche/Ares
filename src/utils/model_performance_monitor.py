@@ -26,6 +26,7 @@ from src.core.domain import (
     validate_pipeline_step
 )
 from .utils.logger import system_logger
+import numpy as np
 
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""

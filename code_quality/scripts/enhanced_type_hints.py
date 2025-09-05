@@ -7,6 +7,7 @@ import ast
 import json
 import re
 from pathlib import Path
+import numpy as np
 
 
 class TypeHintEnhancer(ast.NodeTransformer):

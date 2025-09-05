@@ -21,6 +21,7 @@ from src.monitoring.enhanced_ml_monitoring import (
     EnsembleDecision, TradeDecision, TradingMode, ModelType
 )
 from .monitoring.explainability_integration import ExplainabilityIntegrator
+import numpy as np
 
 
 @dataclass

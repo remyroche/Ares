@@ -14,6 +14,7 @@ from code_quality.analyzers.data_flow_analyzer import DataFlowAnalyzer
 from code_quality.core.config import CodeQualityConfig, get_default_config, load_config
 
 import csv
+import numpy as np
 
 
 

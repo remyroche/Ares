@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """Step 3: Bayesian Parameter Optimization for HMM Regime Discovery using Optuna.
 
 This module replaces the grid search optimization with Bayesian optimization
@@ -48,6 +50,8 @@ except ImportError:
 # Try to import HMM components
 try:
     from hmmlearn import hmm
+import numpy as np
+
     from sklearn.mixture import GaussianMixture
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score

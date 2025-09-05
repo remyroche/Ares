@@ -35,6 +35,9 @@ from .core.decorators import (
 from .utils.logger import system_logger
 from .core.decorators import handles_errors, traced, timeout
 from .utils.enhanced_mlflow_integration import (
+import numpy as np
+import pandas as pd
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,

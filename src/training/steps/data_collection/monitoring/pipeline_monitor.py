@@ -16,6 +16,8 @@ from enum import Enum
 import psutil
 
 from .utils.common_operations import (
+import numpy as np
+
     get_current_datetime,
     format_datetime,
 )

@@ -10,6 +10,8 @@ from .code_visualizer import CodeVisualizer
 try:
     import networkx as nx
     import matplotlib.pyplot as plt
+import numpy as np
+
     NETWORKX_AVAILABLE = True
     MATPLOTLIB_AVAILABLE = True
 except ImportError:

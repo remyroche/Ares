@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Setup Script for Step06 Enhanced Validation Framework
 
@@ -178,8 +181,6 @@ def create_test_data():
     print("📊 Creating test data...")
     
     try:
-        import pandas as pd
-        import numpy as np
         
         # Generate test data
         np.random.seed(42)

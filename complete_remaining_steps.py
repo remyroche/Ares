@@ -5,6 +5,7 @@ Comprehensive script to complete the integration of the remaining 16 steps.
 
 import re
 from pathlib import Path
+import numpy as np
 
 # Steps that need full integration
 

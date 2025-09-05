@@ -9,15 +9,18 @@ from dataclasses import dataclass, asdict
 import optuna
 import json
 import warnings
-warnings.filterwarnings('ignore')
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-try:
-    import numba
 import logging
 import os
 import time
+import warnings
 
+warnings.filterwarnings('ignore')
+
+from .core.decorators import handles_errors, traced
+from .utils.logger import system_logger
+
+try:
+    import numba
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False

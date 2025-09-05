@@ -7,15 +7,14 @@ from .core.decorators import validates
 from .utils.logger import system_logger
 from .utils.warning_symbols import invalid, warning
 from typing import Dict, List, Optional, Union, Any, Tuple
+import json
+import logging
+import time
 import numpy as np
 
 try:
     from src.training.steps.model_persistence_components.model_serializer import ModelSerializer
     from src.training.steps.model_persistence_components.version_manager import VersionManager
-import json
-import logging
-import time
-
     _PERSISTENCE_AVAILABLE = True
 except Exception:
     _PERSISTENCE_AVAILABLE = False

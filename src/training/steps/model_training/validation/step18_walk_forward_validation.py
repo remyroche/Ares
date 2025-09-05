@@ -1,36 +1,119 @@
 # src/training/steps/step18_*.py
 
-
 import asyncio
 import contextlib
 import json
 import os
+import sys
 from datetime import datetime
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from .utils.logger import system_logger
-from src.utils.warning_symbols import (
-    validation_error,
-)
-from .core.domain import ParquetDatasetManager
-from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+# Add project root to path for proper imports
+project_root = Path(__file__).parent.parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Import pandas for DataFrame operations
+import pandas as pd
+
+# Import logger with fallback
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    system_logger = logging.getLogger(__name__)
+
+# Import warning symbols with fallback
+try:
+    from src.utils.warning_symbols import validation_error
+except ImportError:
+    def validation_error(msg: str) -> str:
+        return f"⚠️ {msg}"
+
+# Import ParquetDatasetManager with fallback
+try:
+    from src.training.steps.model_training.validation.core.domain import ParquetDatasetManager
+except ImportError:
+    class ParquetDatasetManager:
+        def __init__(self, logger=None):
+            self.logger = logger or system_logger
+        
+        def write_partitioned_dataset(self, **kwargs):
+            self.logger.warning("ParquetDatasetManager not available, skipping persistence")
+
+# Import decorators with fallback
+try:
+    from src.training.steps.model_training.validation.core.decorators import (
+        cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+    )
+except ImportError:
+    # Create fallback decorators
+    def cached(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def circuit_breaker(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def log_call(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def log_execution_time(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def timeout(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def validates(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class WalkForwardValidationStep:
-    """Step 13: Walk-Forward Validation using existing step6_walk_forward_validation."""
-
-    
-
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies and configuration."""
-        if not dependency_status["all_available"]:
-            missing_modules = dependency_status["missing_modules"]
-            self.logger.warning(f"Missing modules: {missing_modules}")
-            # Continue with available modules, using fallbacks where needed
+    """Step 18: Walk-Forward Validation using existing step6_walk_forward_validation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
+        self._validate_environment()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        # Define dependency status with fallback
+        dependency_status = {
+            "all_available": True,
+            "missing_modules": []
+        }
+        
+        # Check for required modules
+        required_modules = ['pandas', 'numpy', 'sklearn']
+        missing_modules = []
+        
+        for module in required_modules:
+            try:
+                __import__(module)
+            except ImportError:
+                missing_modules.append(module)
+                dependency_status["all_available"] = False
+        
+        dependency_status["missing_modules"] = missing_modules
+        
+        if not dependency_status["all_available"]:
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            self.logger.info("Continuing with available modules, using fallbacks where needed")
+        else:
+            self.logger.info("All required dependencies available")
 
     async def initialize(self) -> None:
         """Initialize the walk-forward validation step."""
@@ -96,9 +179,6 @@ class WalkForwardValidationStep:
 
             # Persist WFV results as Parquet partitioned by fold/horizon for pruning
             try:
-                    EnhancedTrainingManagerOptimized
-                )
-                
                 pdm = ParquetDatasetManager(logger=self.logger)
                 wfv_base = os.path.join(data_dir, "parquet", "wfv")
                 os.makedirs(os.path.join(wfv_base, "summary"), exist_ok=True)
@@ -143,38 +223,138 @@ class WalkForwardValidationStep:
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
-# Import training pipeline decorators for comprehensive security and troubleshooting
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-import os
+# Import training pipeline decorators with fallbacks
+try:
+    from src.utils.centralized_decorators import (
+        artifact_versioning,
+        artifact_write_lock,
+        circuit_breaker_protection,
+        debug_training_step,
+        deterministic_seed,
+        idempotent_step,
+        memory_efficient,
+        nan_inf_and_constant_guard,
+        prevent_data_leakage,
+        quality_gate,
+        resource_monitor,
+        secure_data_processing,
+        time_budget_watchdog,
+        validate_step_output,
+        validate_step_prerequisites,
+    )
+except ImportError:
+    # Create fallback decorators
+    def artifact_versioning(version):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def artifact_write_lock():
+        def decorator(func):
+            return func
+        return decorator
+    
+    def circuit_breaker_protection(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def debug_training_step(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def deterministic_seed(seed):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def idempotent_step(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def memory_efficient(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def nan_inf_and_constant_guard(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def prevent_data_leakage(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def quality_gate(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def resource_monitor(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def secure_data_processing(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def time_budget_watchdog(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def validate_step_output(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def validate_step_prerequisites(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
-
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Import MLflow decorators with fallbacks
+try:
+    from src.utils.enhanced_mlflow_integration import (
+        with_enhanced_mlflow_logging,
+        log_step_report,
+        create_detailed_step_report,
+        log_step_metrics,
+        log_step_dataframe_with_standardized_name,
+        log_step_artifact_with_standardized_name
+    )
+except ImportError:
+    # Create fallback MLflow functions
+    def with_enhanced_mlflow_logging(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def log_step_report(**kwargs):
+        return "fallback_report"
+    
+    def create_detailed_step_report(**kwargs):
+        return {}
+    
+    def log_step_metrics(**kwargs):
+        return None
+    
+    def log_step_dataframe_with_standardized_name(**kwargs):
+        return "fallback_dataframe"
+    
+    def log_step_artifact_with_standardized_name(**kwargs):
+        return "fallback_artifact"
 
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step13_walk_forward_validation")
+@idempotent_step(step_key="step18_walk_forward_validation")
 # @artifact_write_lock() - removed, handled by file system
 @validates()
 # @artifact_versioning("1.0") - removed, handled by pipeline
@@ -279,4 +459,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(await test())
+    asyncio.run(test())

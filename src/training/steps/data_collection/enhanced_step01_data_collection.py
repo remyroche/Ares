@@ -412,12 +412,6 @@ class EnhancedDataCollectionStep:
                 self.logger.info(f'🔍 Validating {data_type} file: {os.path.basename(filepath)}')
                 
                 try:
-                    import pandas as pd
-from typing import Any
-from typing import Dict
-import numpy as np
-from typing import List
-
                     df = pd.read_parquet(filepath)
                     
                     # Basic quality checks

@@ -47,7 +47,7 @@ from .cache import (
 )
 
 # Error handling decorators
-from .error_handling import (
+from .errors import (
     converts_errors,
     error_boundary,
     handles_errors,

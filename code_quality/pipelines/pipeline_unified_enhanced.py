@@ -921,11 +921,11 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
         from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
         checker = UndefinedNamesAnalyzer(self.config)
-        result = checker.run_comprehensive_check(str(self.project_root))
+        result = checker.analyze_directory(str(self.project_root))
         result["execution_time"] = time.time() - start_time
 
         # Add to aggregator
-        self.report_aggregator.add_comprehensive_checker_results(result)
+        self.report_aggregator.add_comprehensive_review_results(result)
 
         # Save individual report
         report_path = self.reports_dir / f"comprehensive_import_undefined_check_{self.timestamp}.json"
@@ -1396,7 +1396,8 @@ class UnifiedEnhancedPipeline:
         print("="*60)
 
         start_time = time.time()
-        analyzer = UndefinedNamesAnalyzer()
+        from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+        analyzer = UndefinedNamesAnalyzer(self.config)
         result = analyzer.analyze_directory(str(self.project_root))
         result["execution_time"] = time.time() - start_time
 

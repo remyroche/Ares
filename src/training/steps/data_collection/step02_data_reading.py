@@ -832,10 +832,8 @@ class DataReadingStep:
                 unified_data = pd.concat(dataframes, ignore_index=True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop=True)
                 
-                # Apply data quality fixes
-                from src.utils.data_quality_fixer import DataQualityFixer
-                quality_fixer = DataQualityFixer()
-                unified_data, fix_report = quality_fixer.fix_data_quality_issues(unified_data, 'timestamp')
+                # Apply data quality fixes using pipeline standards
+                unified_data = self._apply_pipeline_standards_fixes(unified_data)
                 
                 validation_result = self.standards.validate_data_quality(unified_data, 'unified')
                 if validation_result.passed:
@@ -951,6 +949,64 @@ class DataReadingStep:
                 'quality_score': 0.0
             }
         return validation_results
+    
+    def _apply_pipeline_standards_fixes(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply data quality fixes using pipeline standards.
+        
+        Args:
+            data: DataFrame to fix
+            
+        Returns:
+            Fixed DataFrame
+        """
+        self.logger.info("🔧 Applying pipeline standards fixes...")
+        
+        # Validate data quality
+        validation_result = self.standards.validate_data_quality(data, 'unified')
+        
+        if not validation_result.passed:
+            self.logger.warning(f"⚠️ Data quality issues detected: {validation_result.quality_score:.2f}")
+            for issue in validation_result.issues:
+                self.logger.warning(f"   - {issue.message}")
+        
+        # Apply fixes
+        fixed_data = data.copy()
+        
+        # Fix duplicate timestamps
+        if 'timestamp' in fixed_data.columns:
+            duplicate_count = fixed_data['timestamp'].duplicated().sum()
+            if duplicate_count > 0:
+                self.logger.info(f"🗑️ Removing {duplicate_count} duplicate timestamps")
+                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+        
+        # Fix non-monotonic index
+        if 'timestamp' in fixed_data.columns:
+            if not fixed_data['timestamp'].is_monotonic_increasing:
+                self.logger.info("📈 Sorting data by timestamp")
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+        
+        # Enforce schema using pipeline standards
+        try:
+            fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
+            self.logger.info("✅ Applied schema enforcement")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Schema enforcement failed: {e}")
+        
+        # Set datetime index
+        if 'timestamp' in fixed_data.columns and not isinstance(fixed_data.index, pd.DatetimeIndex):
+            try:
+                fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
+                fixed_data = fixed_data.set_index('timestamp')
+                self.logger.info("📅 Set datetime index")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not set datetime index: {e}")
+        
+        # Final validation
+        final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
+        self.logger.info(f"✅ Final data quality score: {final_validation.quality_score:.2f}")
+        
+        return fixed_data
 
     @comprehensive_function_monitoring(
         validate_inputs=True,

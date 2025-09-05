@@ -21,6 +21,7 @@ from src.utils.warning_symbols import (
 )
 
 # Import specific types from each module
+from .interval import (
     Interval,
     Percentage,
     Price,

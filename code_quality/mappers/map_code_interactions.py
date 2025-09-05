@@ -2430,6 +2430,101 @@ class CodeInteractionMapper:
 """
         return html
 
+    def map_interactions(self, project_root: str) -> dict:
+        """Map code interactions across the project."""
+        print(f"\n{'='*60}")
+        print("MAPPING CODE INTERACTIONS")
+        print(f"{'='*60}")
+        print(f"Project root: {project_root}")
+        
+        # Initialize results
+        interactions = {
+            "interactions": [],
+            "module_dependencies": [],
+            "function_calls": [],
+            "class_interactions": [],
+            "import_relationships": [],
+            "call_graph": {},
+            "dependency_graph": {},
+            "statistics": {
+                "total_interactions": 0,
+                "function_calls": 0,
+                "class_interactions": 0,
+                "module_dependencies": 0,
+                "files_analyzed": 0
+            }
+        }
+        
+        try:
+            # Run comprehensive analysis
+            self.run()
+            
+            # Extract interactions from results
+            if "call_graph" in self.results:
+                call_graph = self.results["call_graph"]
+                for func_name, func_data in call_graph.get("functions", {}).items():
+                    interaction = {
+                        "type": "function_call",
+                        "source": func_name,
+                        "target": func_data.get("file_path", ""),
+                        "line_number": func_data.get("line_number", 0),
+                        "calls": func_data.get("calls", [])
+                    }
+                    interactions["interactions"].append(interaction)
+                    interactions["function_calls"].append(interaction)
+            
+            if "dependencies" in self.results:
+                deps = self.results["dependencies"]
+                for module_name, module_data in deps.get("modules", {}).items():
+                    for dep in module_data.get("dependencies", []):
+                        interaction = {
+                            "type": "module_dependency",
+                            "source": module_name,
+                            "target": dep,
+                            "relationship": "imports"
+                        }
+                        interactions["interactions"].append(interaction)
+                        interactions["module_dependencies"].append(interaction)
+            
+            if "architecture" in self.results:
+                arch = self.results["architecture"]
+                for component_name, component_data in arch.get("components", {}).items():
+                    for interaction in component_data.get("interactions", []):
+                        interaction["type"] = "class_interaction"
+                        interactions["interactions"].append(interaction)
+                        interactions["class_interactions"].append(interaction)
+            
+            # Update statistics
+            interactions["statistics"]["total_interactions"] = len(interactions["interactions"])
+            interactions["statistics"]["function_calls"] = len(interactions["function_calls"])
+            interactions["statistics"]["class_interactions"] = len(interactions["class_interactions"])
+            interactions["statistics"]["module_dependencies"] = len(interactions["module_dependencies"])
+            interactions["statistics"]["files_analyzed"] = self.stats["files_analyzed"]
+            
+            # Store call graph and dependency graph
+            interactions["call_graph"] = self.results.get("call_graph", {})
+            interactions["dependency_graph"] = self.results.get("dependencies", {})
+            
+            print(f"\n✅ Interaction mapping completed:")
+            print(f"   - Total interactions: {interactions['statistics']['total_interactions']}")
+            print(f"   - Function calls: {interactions['statistics']['function_calls']}")
+            print(f"   - Class interactions: {interactions['statistics']['class_interactions']}")
+            print(f"   - Module dependencies: {interactions['statistics']['module_dependencies']}")
+            print(f"   - Files analyzed: {interactions['statistics']['files_analyzed']}")
+            
+            return interactions
+            
+        except Exception as e:
+            print(f"❌ Error in interaction mapping: {e}")
+            return {
+                "error": str(e),
+                "interactions": [],
+                "module_dependencies": [],
+                "function_calls": [],
+                "class_interactions": [],
+                "statistics": {"total_interactions": 0}
+            }
+
 
 def main():
     """Main entry point for code interaction mapping."""

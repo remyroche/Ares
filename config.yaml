@@ -8,7 +8,7 @@ analyst:
   # Triple Barrier System Configuration
   triple_barrier:
     profit_take_multiplier: 0.0028  # 0.28% (0.2% + 0.08% fee)
-    stop_loss_multiplier: 0.0018    # 0.18% (0.1% + 0.08% fee)
+    stop_loss_multiplier: 0.0025    # 0.25% (0.17% + 0.08% fee) - Increased for crypto volatility
     confidence_threshold: 0.6       # 60% threshold for green light
     time_barrier_minutes: 30        # Time barrier for triple barrier method
     max_lookahead: 100              # Maximum lookahead for barrier calculation
@@ -48,7 +48,7 @@ tactician:
   # Triple Barrier System Configuration (inherited from Analyst)
   triple_barrier:
     profit_take_multiplier: 0.0028  # 0.28% (0.2% + 0.08% fee)
-    stop_loss_multiplier: 0.0018    # 0.18% (0.1% + 0.08% fee)
+    stop_loss_multiplier: 0.0025    # 0.25% (0.17% + 0.08% fee) - Increased for crypto volatility
     confidence_threshold: 0.6       # 60% threshold for green light
     time_barrier_minutes: 30        # Time barrier for triple barrier method
 
@@ -216,7 +216,7 @@ ab_testing:
     # Conservative Regime Configs (Step17 Optimizable)
     conservative_regime_configs:
       profit_take_multiplier: 0.0018  # 0.18% (0.1% + 0.08% fee)
-      stop_loss_multiplier: 0.0013    # 0.13% (0.05% + 0.08% fee)
+      stop_loss_multiplier: 0.0020    # 0.20% (0.12% + 0.08% fee) - Increased for crypto volatility
       confidence_threshold: 0.7
       timeframe_weights:
         "5m": 0.2
@@ -227,7 +227,7 @@ ab_testing:
     # Aggressive Regime Configs (Step17 Optimizable)
     aggressive_regime_configs:
       profit_take_multiplier: 0.0038  # 0.38% (0.3% + 0.08% fee)
-      stop_loss_multiplier: 0.0028    # 0.28% (0.2% + 0.08% fee)
+      stop_loss_multiplier: 0.0030    # 0.30% (0.22% + 0.08% fee) - Increased for crypto volatility
       confidence_threshold: 0.5
       timeframe_weights:
         "5m": 0.4
@@ -248,7 +248,7 @@ ml_optimized_barriers:
   # Optimization Bounds (Step17 Optimizable)
   optimization_bounds:
     profit_take_multiplier: [0.0013, 0.0058]  # 0.13% to 0.58% (0.05%+fee to 0.5%+fee)
-    stop_loss_multiplier: [0.0010, 0.0038]    # 0.10% to 0.38% (0.02%+fee to 0.3%+fee)
+    stop_loss_multiplier: [0.0020, 0.0038]    # 0.20% to 0.38% (0.12%+fee to 0.3%+fee) - Updated for crypto volatility
     confidence_threshold: [0.4, 0.8]
 
   # Trading Fee Integration
@@ -480,7 +480,7 @@ step17_optimization:
     # Conservative regime configs for 20 HMM clusters
     conservative_regime_configs:
       profit_take_multiplier: 0.0018  # Range: [0.0013, 0.0028] - Conservative profit take
-      stop_loss_multiplier: 0.0013    # Range: [0.0010, 0.0023] - Conservative stop loss
+      stop_loss_multiplier: 0.0020    # Range: [0.0020, 0.0025] - Conservative stop loss - Updated for crypto volatility
       confidence_threshold: 0.7       # Range: [0.6, 0.8] - Conservative confidence
       timeframe_weights:
         "5m": 0.2                     # Range: [0.1, 0.3] - 5m weight
@@ -491,7 +491,7 @@ step17_optimization:
     # Aggressive regime configs for 20 HMM clusters
     aggressive_regime_configs:
       profit_take_multiplier: 0.0038  # Range: [0.0028, 0.0058] - Aggressive profit take
-      stop_loss_multiplier: 0.0028    # Range: [0.0023, 0.0038] - Aggressive stop loss
+      stop_loss_multiplier: 0.0030    # Range: [0.0025, 0.0038] - Aggressive stop loss - Updated for crypto volatility
       confidence_threshold: 0.5       # Range: [0.4, 0.6] - Aggressive confidence
       timeframe_weights:
         "5m": 0.4                     # Range: [0.3, 0.5] - 5m weight
@@ -508,7 +508,7 @@ step17_optimization:
 
     optimization_bounds:
       profit_take_multiplier: [0.0013, 0.0058]  # Range bounds for profit take
-      stop_loss_multiplier: [0.0010, 0.0038]    # Range bounds for stop loss
+      stop_loss_multiplier: [0.0020, 0.0038]    # Range bounds for stop loss - Updated for crypto volatility
       confidence_threshold: [0.4, 0.8]          # Range bounds for confidence
 
   # Performance Attribution

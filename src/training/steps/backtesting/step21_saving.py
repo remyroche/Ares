@@ -435,6 +435,7 @@ class SavingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from .core.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -556,4 +557,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(await test())
+    asyncio.run(test())

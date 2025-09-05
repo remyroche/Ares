@@ -33,8 +33,8 @@ This document summarizes the comprehensive enhancements made to the code quality
 
 ### 2. **Comprehensive Analysis Pipeline**
 
-#### **New Pipeline: `pipeline_comprehensive_analysis.py`**
-- **Most comprehensive code quality analysis available**
+#### **Upgraded Pipeline: `pipeline_unified_enhanced.py`**
+- **Now the most comprehensive code quality analysis available**
 - **Includes ALL analyzers, visualizers, and tools:**
   - 20+ analyzers covering all aspects of code quality
   - 5+ visualizers for code visualization
@@ -46,12 +46,17 @@ This document summarizes the comprehensive enhancements made to the code quality
 
 #### **Categories of Analysis:**
 1. **Syntax & Imports** - Basic syntax and import fixes
-2. **Advanced Analysis** - Architecture, complexity, design patterns
-3. **Dead Code Analysis** - Comprehensive dead code detection
-4. **Visualization** - Code interaction mapping and visualization
-5. **Consolidated Fixes** - All fix scripts in one place
-6. **Plugin Analysis** - Plugin-based analysis
-7. **Comprehensive Review** - Full code review
+2. **Async & Types** - Async/await and type hint fixes
+3. **Basic Analysis** - Core code quality analysis
+4. **Advanced Analysis** - Architecture, complexity, design patterns
+5. **Architecture Analysis** - System architecture and design
+6. **Performance Analysis** - Performance and optimization analysis
+7. **Security Analysis** - Security and vulnerability analysis
+8. **Dead Code Analysis** - Comprehensive dead code detection
+9. **Visualization** - Code interaction mapping and visualization
+10. **Consolidated Fixes** - All fix scripts in one place
+11. **Plugin Analysis** - Plugin-based analysis
+12. **Comprehensive Review** - Full code review
 
 ### 3. **Consolidated Fix Scripts Integration**
 
@@ -129,13 +134,16 @@ This document summarizes the comprehensive enhancements made to the code quality
 ### **1. Comprehensive Analysis Pipeline**
 ```bash
 # Run complete comprehensive analysis
-python code_quality/pipelines/pipeline_comprehensive_analysis.py
+python code_quality/pipelines/pipeline_unified_enhanced.py
 
-# Run specific categories
-python code_quality/pipelines/pipeline_comprehensive_analysis.py --categories syntax_imports,advanced_analysis
+# Run on specific project directory
+python code_quality/pipelines/pipeline_unified_enhanced.py --project-root /path/to/project
 
 # Disable plugins
-python code_quality/pipelines/pipeline_comprehensive_analysis.py --no-plugins
+python code_quality/pipelines/pipeline_unified_enhanced.py --no-plugins
+
+# Skip specific categories
+python code_quality/pipelines/pipeline_unified_enhanced.py --skip-syntax --skip-async
 ```
 
 ### **2. Enhanced Sequential Fixer**
@@ -188,7 +196,7 @@ python code_quality/pipelines/pipeline_unified_standalone.py --categories syntax
 Use the **Enhanced Sequential Fixer** for fast, comprehensive fixes and basic analysis.
 
 ### **For Deep Analysis:**
-Use the **Comprehensive Analysis Pipeline** for the most thorough code quality assessment.
+Use the **Enhanced Unified Pipeline** (`pipeline_unified_enhanced.py`) for the most thorough code quality assessment.
 
 ### **For Import-Free Environments:**
 Use the **Enhanced Standalone Pipeline** for environments where imports are restricted.

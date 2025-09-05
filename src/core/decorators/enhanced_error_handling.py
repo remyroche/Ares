@@ -280,8 +280,6 @@ class EnhancedErrorHandler:
             import psutil
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
-        except ImportError:
-            return 0.0
         except Exception:
             return 0.0
     
@@ -291,8 +289,6 @@ class EnhancedErrorHandler:
             import psutil
             process = psutil.Process()
             return process.cpu_percent()
-        except ImportError:
-            return 0.0
         except Exception:
             return 0.0
     

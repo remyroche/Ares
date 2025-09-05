@@ -1,34 +1,21 @@
 # Requirements for Step03 Enhanced Monitoring System
-# Core dependencies for the comprehensive monitoring and reporting system
+# REQUIRED dependencies for the comprehensive monitoring and reporting system
 
-# Core Python packages
-asyncio>=3.4.3
-functools>=3.2.0
-inspect>=3.2.0
-logging>=0.4.9.6
-sys>=3.2.0
-time>=3.2.0
-traceback>=3.2.0
-uuid>=1.30
-contextvars>=3.7.0
-datetime>=3.2.0
-typing>=3.7.0
-dataclasses>=3.7.0
-enum34>=1.1.10
-pathlib>=1.0.1
+# Core Python packages (built-in)
+# asyncio, functools, inspect, logging, sys, time, traceback, uuid, contextvars, datetime, typing, dataclasses, enum, pathlib
 
-# System monitoring
+# REQUIRED: System monitoring
 psutil>=5.9.0
 
-# Data processing and analysis
+# REQUIRED: Data processing and analysis
 pandas>=1.5.0
 numpy>=1.21.0
 
-# JSON handling
-json>=2.0.9
+# JSON handling (built-in)
+# json
 
-# File I/O
-pathlib>=1.0.1
+# File I/O (built-in)
+# pathlib
 
 # Optional: For enhanced reporting
 matplotlib>=3.5.0

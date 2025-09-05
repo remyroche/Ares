@@ -39,7 +39,10 @@ def safe_pct_change(
     """
     try:
         if fill_method:
-            series = series.fillna(method=fill_method, limit=limit)
+            if fill_method == "ffill":
+                series = series.ffill(limit=limit)
+            elif fill_method == "bfill":
+                series = series.bfill(limit=limit)
         s = _coerce_series_numeric(series)
         pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
         inf_count = np.isinf(pct_change).sum()
@@ -69,7 +72,10 @@ def safe_log_returns(
     """
     try:
         if fill_method:
-            series = series.fillna(method=fill_method, limit=limit)
+            if fill_method == "ffill":
+                series = series.ffill(limit=limit)
+            elif fill_method == "bfill":
+                series = series.bfill(limit=limit)
         s = _coerce_series_numeric(series)
         pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
         log_returns = np.log1p(pct_change)

@@ -101,10 +101,21 @@ class TripleBarrierMethodStep:
             if not data_files:
                 self.logger.error(f'❌ No parquet files found in {unified_data_path}')
                 return False
-            latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
-            self.logger.info(f'📁 Loading data from {latest_file}')
-            data = pd.read_parquet(latest_file)
-            self.logger.info(f'✅ Loaded data with shape: {data.shape}')
+            self.logger.info(f'📁 Loading and concatenating {len(data_files)} files from {unified_data_path}')
+            data_frames = []
+            for fp in sorted(data_files):
+                try:
+                    df = pd.read_parquet(fp)
+                    data_frames.append(df)
+                except Exception as read_err:
+                    self.logger.warning(f'⚠️ Failed to read {fp}: {read_err}')
+            if not data_frames:
+                self.logger.error('❌ No data could be loaded from unified parquet files')
+                return False
+            data = pd.concat(data_frames, ignore_index=True)
+            if 'timestamp' in data.columns:
+                data = data.sort_values('timestamp').reset_index(drop=True)
+            self.logger.info(f'✅ Loaded concatenated data with shape: {data.shape}')
             if self.triple_barrier_labeler:
                 labeled_data = await self._apply_optimized_triple_barrier(data)
             else:
@@ -236,21 +247,23 @@ class TripleBarrierMethodStep:
             taker_fee_bps = self.config.get('triple_barrier', {}).get('taker_fee_bps', 2.0)
             slippage_bps = self.config.get('triple_barrier', {}).get('slippage_bps', 1.0)
             total_cost_pct = (2.0 * taker_fee_bps + 2.0 * slippage_bps) / 10000.0
+            # Use cost-adjusted price barriers to reflect net outcomes
             effective_profit_take_multiplier = profit_take_multiplier + total_cost_pct
+            effective_stop_loss_multiplier = max(stop_loss_multiplier - total_cost_pct, 0.0)
             labels = np.zeros(len(close_prices), dtype=np.int8)
             profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
             for i in range(len(close_prices) - 1):
                 entry_price = close_prices[i]
                 profit_barrier = entry_price * (1 + effective_profit_take_multiplier)
-                stop_barrier = entry_price * (1 - stop_loss_multiplier)
+                stop_barrier = entry_price * (1 - effective_stop_loss_multiplier)
                 for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
                     if high_prices[j] >= profit_barrier:
                         labels[i] = 1
-                        profit_pcts[i] = effective_profit_take_multiplier
+                        profit_pcts[i] = max(profit_take_multiplier - total_cost_pct, 0.0)
                         break
                     elif low_prices[j] <= stop_barrier:
                         labels[i] = -1
-                        profit_pcts[i] = -stop_loss_multiplier
+                        profit_pcts[i] = -(stop_loss_multiplier + total_cost_pct)
                         break
             result_data = pd.DataFrame({'triple_barrier_label': labels, 'potential_profit_pct': profit_pcts})
             return result_data

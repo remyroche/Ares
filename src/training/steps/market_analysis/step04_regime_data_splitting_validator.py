@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Validator for Step 4: Regime Data Splitting.
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
@@ -49,6 +49,38 @@ class BaseValidator:
     def __init__(self, step_name: str, config: dict) -> None:
         self.step_name = step_name
         self.config = config
+    
+    def validate_file_exists(self, file_path: str, description: str='file') -> Tuple[bool, Dict[str, Any]]:
+        try:
+            path = Path(file_path)
+            exists = path.exists()
+            size = path.stat().st_size if exists else 0
+            return exists and size > 0, {'path': str(path), 'exists': exists, 'size_bytes': size, 'description': description}
+        except Exception as e:
+            return False, {'path': file_path, 'exists': False, 'error': str(e), 'description': description}
+    
+    def validate_dataframe_quality(self, df: 'pd.DataFrame', min_rows: int=100, required_columns: Optional[List[str]]=None, check_data_types: bool=False, check_value_ranges: bool=False, check_duplicates: bool=False, check_temporal_consistency: bool=False) -> Tuple[bool, Dict[str, Any]]:
+        metrics: Dict[str, Any] = {'row_count': int(len(df)), 'columns': list(df.columns)}
+        if required_columns:
+            missing = [c for c in required_columns if c not in df.columns]
+            metrics['missing_required_columns'] = missing
+            if missing:
+                return False, metrics
+        if len(df) < min_rows:
+            metrics['too_few_rows'] = True
+            return False, metrics
+        if check_duplicates and 'timestamp' in df.columns:
+            dup_count = int(df['timestamp'].duplicated().sum())
+            metrics['duplicate_timestamps'] = dup_count
+            if dup_count > 0:
+                return False, metrics
+        if check_temporal_consistency and 'timestamp' in df.columns:
+            try:
+                is_monotonic = df['timestamp'].is_monotonic_increasing
+                metrics['timestamps_monotonic'] = bool(is_monotonic)
+            except Exception:
+                metrics['timestamps_monotonic'] = False
+        return True, metrics
 logger = system_logger.getChild('Step4RegimeDataSplittingValidator')
 
 class Step4RegimeDataSplittingValidator(BaseValidator):
@@ -87,7 +119,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             for regime_file in regime_files:
                 if not await self._validate_regime_file(regime_file):
                     return False
-            stats_file = regime_splits_dir / f'{exchange}_{symbol}_1m_regime_statistics.json'
+            timeframe = training_input.get('timeframe', '1m')
+            stats_file = regime_splits_dir / f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
             if not stats_file.exists():
                 self.logger.warning(f'⚠️ Regime statistics file not found: {stats_file}')
                 return False
@@ -143,7 +176,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 if not isinstance(stats, dict):
                     self.logger.warning(f'⚠️ Invalid statistics format for regime {regime_id}')
                     return False
-                basic_fields = ['count', 'percentage', 'mean_volatility', 'mean_momentum']
+                # Updated fields expected after Step04 stats enhancement
+                basic_fields = ['count', 'percentage', 'mean_volatility', 'mean_momentum', 'duration_minutes']
                 missing_basic = [field for field in basic_fields if field not in stats]
                 if missing_basic:
                     self.logger.warning(f'⚠️ Missing basic statistics for regime {regime_id}: {missing_basic}')

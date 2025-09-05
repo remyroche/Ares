@@ -376,10 +376,35 @@ class RegimeDataSplittingStep:
             merged_data = pd.merge(unified_df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
             try:
                 retention_ratio = len(merged_data) / max(len(unified_df), 1) if len(unified_df) else 0.0
-                self.logger.info(f'📈 Merge retention ratio: {retention_ratio:.3f}')
+                self.logger.info(f'📈 Merge retention ratio (inner): {retention_ratio:.3f}')
                 min_retention = float(self.config.get('regime_merge_min_retention', 0.8))
                 if retention_ratio < min_retention:
-                    self.logger.warning(f'⚠️ Low retention after regime merge: {retention_ratio:.3f} (< {min_retention:.2f}). Check timestamp alignment and data coverage.')
+                    self.logger.warning(f'⚠️ Low retention after inner merge: {retention_ratio:.3f} (< {min_retention:.2f}). Attempting merge_asof fallback...')
+                    # Attempt merge_asof with tolerance
+                    try:
+                        unified_sorted = unified_df.sort_values('timestamp')
+                        regime_sorted = regime_df.sort_values('timestamp')
+                        is_dt_unified = pd.api.types.is_datetime64_any_dtype(unified_sorted['timestamp'])
+                        is_dt_regime = pd.api.types.is_datetime64_any_dtype(regime_sorted['timestamp'])
+                        if is_dt_unified and is_dt_regime:
+                            tol_minutes = float(self.config.get('regime_merge_tolerance_minutes', 1.0))
+                            tolerance = pd.Timedelta(minutes=tol_minutes)
+                            merged_asof = pd.merge_asof(unified_sorted, regime_sorted[['timestamp', 'composite_cluster_id']], on='timestamp', direction='nearest', tolerance=tolerance)
+                        else:
+                            tol_minutes = float(self.config.get('regime_merge_tolerance_minutes', 1.0))
+                            tolerance_ms = int(tol_minutes * 60_000)
+                            merged_asof = pd.merge_asof(unified_sorted, regime_sorted[['timestamp', 'composite_cluster_id']], on='timestamp', direction='nearest', tolerance=tolerance_ms)
+                        # Keep only rows where we found a nearby regime label
+                        merged_asof_non_null = merged_asof.dropna(subset=['composite_cluster_id'])
+                        asof_retention = len(merged_asof_non_null) / max(len(unified_df), 1)
+                        self.logger.info(f'📈 Merge retention ratio (asof): {asof_retention:.3f} (tolerance ~{tol_minutes} min)')
+                        if asof_retention < min_retention:
+                            self.logger.error(f'❌ Retention remains too low after merge_asof: {asof_retention:.3f} (< {min_retention:.2f}). Failing step to avoid biased dataset.')
+                            return None
+                        merged_data = merged_asof_non_null
+                    except Exception as merge_asof_error:
+                        self.logger.exception(f'❌ merge_asof fallback failed: {merge_asof_error}')
+                        return None
             except Exception:
                 pass
             self.logger.info(f'✅ Loaded {len(merged_data)} data points with regime information')
@@ -451,10 +476,18 @@ class RegimeDataSplittingStep:
         """Calculate simple per-regime statistics compatible with tests."""
         try:
             stats: Dict[int, Dict[str, Any]] = {}
+            total_rows = int(len(data)) if data is not None else 0
             for regime_id in regime_ids:
                 regime_data = data[data['composite_cluster_id'] == regime_id]
                 if len(regime_data) == 0:
-                    stats[int(regime_id)] = {'count': 0, 'duration_minutes': 0, 'mean_volume': 0.0}
+                    stats[int(regime_id)] = {
+                        'count': 0,
+                        'percentage': 0.0,
+                        'duration_minutes': 0,
+                        'mean_volume': 0.0,
+                        'mean_volatility': 0.0,
+                        'mean_momentum': 0.0
+                    }
                     continue
                 start_ts = regime_data['timestamp'].min()
                 end_ts = regime_data['timestamp'].max()
@@ -463,7 +496,26 @@ class RegimeDataSplittingStep:
                 except Exception:
                     duration_minutes = int((pd.to_datetime(end_ts) - pd.to_datetime(start_ts)).total_seconds() / 60)
                 mean_volume = float(regime_data['volume'].mean()) if 'volume' in regime_data.columns else 0.0
-                stats[int(regime_id)] = {'count': int(len(regime_data)), 'duration_minutes': duration_minutes, 'mean_volume': mean_volume}
+                percentage = float(len(regime_data)) / max(total_rows, 1)
+                if 'close' in regime_data.columns:
+                    try:
+                        returns = regime_data['close'].pct_change().dropna()
+                        mean_volatility = float(returns.std()) if len(returns) > 0 else 0.0
+                        mean_momentum = float(returns.mean()) if len(returns) > 0 else 0.0
+                    except Exception:
+                        mean_volatility = 0.0
+                        mean_momentum = 0.0
+                else:
+                    mean_volatility = 0.0
+                    mean_momentum = 0.0
+                stats[int(regime_id)] = {
+                    'count': int(len(regime_data)),
+                    'percentage': percentage,
+                    'duration_minutes': duration_minutes,
+                    'mean_volume': mean_volume,
+                    'mean_volatility': mean_volatility,
+                    'mean_momentum': mean_momentum
+                }
             return stats
         except Exception as e:
             self.logger.exception(f'❌ Error calculating regime statistics: {e}')

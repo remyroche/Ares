@@ -27,11 +27,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 try:
+    import numpy as np
 except Exception:
     np = None
 
 try:
+    import pandas as pd
 except Exception:
+    pd = None
 
     class _PDStub:
 
@@ -41,10 +44,11 @@ except Exception:
         class Series:
             pass
     pd = _PDStub()
-try:
-    from .logger import log_error_with_context
+
 import os
 
+try:
+    from .logger import log_error_with_context
 except ImportError:
 
     def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:

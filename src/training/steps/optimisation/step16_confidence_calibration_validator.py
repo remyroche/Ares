@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.utils.warning_symbols import (
 import logging
 
+from src.utils.warning_symbols import (
     missing,
 )
 

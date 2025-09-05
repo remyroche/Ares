@@ -44,10 +44,10 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
     handlers = error_handlers or {}
 
     def _log_error(err: BaseException, fn_name: str) -> None:
+        import logging
+        
         try:
             from src.utils.logger import system_logger
-import logging
-
             if system_logger is not None:
                 prefix = f'Error in {fn_name}'
                 if context:

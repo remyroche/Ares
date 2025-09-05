@@ -10,11 +10,10 @@ from sklearn.metrics import classification_report
 from .utils.logger import system_logger
 import numpy as np
 import pandas as pd
+import logging
 
 try:
     import shap  # type: ignore
-import logging
-
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
 

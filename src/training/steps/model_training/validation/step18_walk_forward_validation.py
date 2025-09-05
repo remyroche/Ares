@@ -4,80 +4,32 @@ import asyncio
 import contextlib
 import json
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Add project root to path for proper imports
-project_root = Path(__file__).parent.parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+# Import core decorators
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
 # Import pandas for DataFrame operations
 import pandas as pd
 
-# Import logger with fallback
-try:
-    from src.utils.logger import system_logger
-except ImportError:
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    system_logger = logging.getLogger(__name__)
+# Import logger
+from src.utils.logger import system_logger
 
-# Import warning symbols with fallback
-try:
-    from src.utils.warning_symbols import validation_error
-except ImportError:
-    def validation_error(msg: str) -> str:
-        return f"⚠️ {msg}"
+# Import warning symbols
+from src.utils.warning_symbols import validation_error
 
-# Import ParquetDatasetManager with fallback
+# Import ParquetDatasetManager - check if it exists in the expected location
 try:
     from src.training.steps.model_training.validation.core.domain import ParquetDatasetManager
 except ImportError:
+    # If not found, create a simple implementation
     class ParquetDatasetManager:
         def __init__(self, logger=None):
             self.logger = logger or system_logger
         
         def write_partitioned_dataset(self, **kwargs):
             self.logger.warning("ParquetDatasetManager not available, skipping persistence")
-
-# Import decorators with fallback
-try:
-    from src.training.steps.model_training.validation.core.decorators import (
-        cached, circuit_breaker, log_call, log_execution_time, timeout, validates
-    )
-except ImportError:
-    # Create fallback decorators
-    def cached(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def circuit_breaker(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def log_call(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def log_execution_time(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def timeout(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def validates(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
 
 
 class WalkForwardValidationStep:
@@ -223,15 +175,17 @@ class WalkForwardValidationStep:
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
 
-# Import training pipeline decorators with fallbacks
+# Import training pipeline decorators
+from src.core.domain import idempotent_step
+from src.core.domain.decorators_extended import deterministic_seed
+
+# Import additional decorators that may be needed
 try:
     from src.utils.centralized_decorators import (
         artifact_versioning,
         artifact_write_lock,
         circuit_breaker_protection,
         debug_training_step,
-        deterministic_seed,
-        idempotent_step,
         memory_efficient,
         nan_inf_and_constant_guard,
         prevent_data_leakage,
@@ -243,7 +197,7 @@ try:
         validate_step_prerequisites,
     )
 except ImportError:
-    # Create fallback decorators
+    # These decorators may not exist, create simple fallbacks
     def artifact_versioning(version):
         def decorator(func):
             return func
@@ -260,16 +214,6 @@ except ImportError:
         return decorator
     
     def debug_training_step(**kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def deterministic_seed(seed):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def idempotent_step(**kwargs):
         def decorator(func):
             return func
         return decorator
@@ -319,7 +263,7 @@ except ImportError:
             return func
         return decorator
 
-# Import MLflow decorators with fallbacks
+# Import MLflow decorators with fallback
 try:
     from src.utils.enhanced_mlflow_integration import (
         with_enhanced_mlflow_logging,
@@ -329,7 +273,8 @@ try:
         log_step_dataframe_with_standardized_name,
         log_step_artifact_with_standardized_name
     )
-except ImportError:
+except ImportError as e:
+    print(f"Warning: MLflow integration not available: {e}")
     # Create fallback MLflow functions
     def with_enhanced_mlflow_logging(**kwargs):
         def decorator(func):

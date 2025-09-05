@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..core.config import CodeQualityConfig, load_config
+from core.config import CodeQualityConfig, load_config
 
-from ..utils.file_utils import (
+from utils.file_utils import (
     backup_file,
     find_python_files,
     is_valid_python_file,

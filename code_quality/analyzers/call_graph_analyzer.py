@@ -57,8 +57,8 @@ except Exception:
             # Return items() like networkx.degree()
             return list(degree_map.items())
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..utils.file_utils import find_python_files, get_file_dependencies
+from core.config import CodeQualityConfig, get_default_config
+from utils.file_utils import find_python_files, get_file_dependencies
 
 
 class CallNode:
@@ -320,7 +320,7 @@ class CallGraphAnalyzer:
             self._add_import_relationship(file_path, imported_name, alias.name)
 
     def _analyze_import_from(self, node: ast.ImportFrom, file_path: str, module_name: str) -> None:
-        """Analyze from ... import statements."""
+        """Analyze from . import statements."""
         module = node.module or ""
         for alias in node.names:
             imported_name = alias.asname or alias.name
@@ -626,7 +626,7 @@ def main():
 
     # Load configuration
     if args.config:
-        from ..core.config import load_config
+        from core.config import load_config
         config = load_config(args.config)
     else:
         config = get_default_config()

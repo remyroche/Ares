@@ -16,10 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from enhanced_validator import EnhancedValidator
+from .enhanced_validator import EnhancedValidator
 
 # Import both validators
-from function_validator import FunctionValidator
+from .function_validator import FunctionValidator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -306,4 +306,5 @@ def main():
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

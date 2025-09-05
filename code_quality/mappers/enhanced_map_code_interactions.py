@@ -41,12 +41,13 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 # Add code_quality to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import our enhanced analyzers
-from analyzers.simplified_enhanced_analyzer import SimplifiedEnhancedDeadCodeAnalyzer
+from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 from core.config import AnalysisConfig
 
 # Setup logging
@@ -93,7 +94,7 @@ class EnhancedCodeInteractionMapper:
         print("\n[1/4] Analyzing dead code and unused imports...")
         
         try:
-            analyzer = SimplifiedEnhancedDeadCodeAnalyzer(self.config)
+            analyzer = EnhancedDeadCodeAnalyzer(self.config)
             report = analyzer.analyze_directory(self.project_root)
             
             self.results["dead_code"] = {
@@ -406,4 +407,5 @@ def main():
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

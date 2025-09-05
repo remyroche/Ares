@@ -10,8 +10,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..utils.file_utils import find_python_files
+from core.config import CodeQualityConfig, get_default_config
+from utils.file_utils import find_python_files
 
 
 class ScopeContext:
@@ -696,7 +696,7 @@ def main():
 
     # Load configuration
     if args.config:
-        from ..core.config import load_config
+        from core.config import load_config
         config = load_config(args.config)
     else:
         config = get_default_config()

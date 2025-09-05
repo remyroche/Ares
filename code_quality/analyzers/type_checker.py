@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..utils.file_utils import find_python_files
+from core.config import CodeQualityConfig, get_default_config
+from utils.file_utils import find_python_files
 
 
 class TypeIssue:

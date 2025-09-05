@@ -8,13 +8,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..analyzers.call_graph_analyzer import CallGraphAnalyzer
-from ..analyzers.dependency_analyzer import DependencyAnalyzer
-from ..analyzers.linter_analyzer import LinterAnalyzer
-from ..analyzers.syntax_validator import SyntaxValidator
-from ..core.config import CodeQualityConfig, get_default_config
-from ..fixers.auto_fixer import AutoFixer
-from ..utils.file_utils import get_directory_stats
+from analyzers.call_graph_analyzer import CallGraphAnalyzer
+from analyzers.dependency_analyzer import DependencyAnalyzer
+from analyzers.linter_analyzer import LinterAnalyzer
+from analyzers.syntax_validator import SyntaxValidator
+from core.config import CodeQualityConfig, get_default_config
+from fixers.auto_fixer import AutoFixer
+from utils.file_utils import get_directory_stats
 
 
 class QualityReporter:
@@ -542,7 +542,7 @@ def main():
 
     # Load configuration
     if args.config:
-        from ..core.config import load_config
+        from core.config import load_config
         config = load_config(args.config)
     else:
         config = get_default_config()
@@ -558,4 +558,5 @@ def main():
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

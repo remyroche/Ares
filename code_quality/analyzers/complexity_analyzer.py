@@ -38,8 +38,8 @@ except ImportError:
         def __init__(self):
             pass
 
-from ..core.config import AnalysisConfig
-from ..utils.file_utils import find_python_files
+from core.config import AnalysisConfig
+from utils.file_utils import find_python_files
 
 
 @dataclass

@@ -7,6 +7,13 @@ Creates heatmap visualizations of code complexity metrics.
 from typing import Dict, List, Optional, Tuple, Any
 from .code_visualizer import CodeVisualizer
 
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: matplotlib not available - heatmap visualization will be limited")
+
 
 class ComplexityHeatmapVisualizer(CodeVisualizer):
     """Visualizes code complexity metrics as heatmaps."""
@@ -15,7 +22,7 @@ class ComplexityHeatmapVisualizer(CodeVisualizer):
         super().__init__(output_dir)
         
     def create_complexity_heatmap(self, complexity_data: Dict[str, Dict[str, float]], 
-                                title: str = "Code Complexity Heatmap") -> Tuple[plt.Figure, Dict[str, Any]]:
+                                title: str = "Code Complexity Heatmap") -> Tuple[Any, Dict[str, Any]]:
         """
         Create a heatmap of code complexity metrics.
         

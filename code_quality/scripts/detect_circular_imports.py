@@ -40,7 +40,7 @@ class ImportAnalyzer:
 
                         if node.level == 1:  # from . import
                             base = ".".join(module_parts)
-                        else:  # from .. import
+                        else:  # from  import
                             base = ".".join(module_parts[:-(node.level-1)])
 
                         if base and node.module:
@@ -357,4 +357,5 @@ def main():
 
 
 if __name__ == "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

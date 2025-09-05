@@ -9,7 +9,8 @@ from pathlib import Path
 from src.utils.common_operations import ensure_directory
 import time
 from datetime import datetime
-from src.core.decorators import handles_errors, traced, validates
+from src.utils.decorators.errors import handles_errors
+from src.core.decorators import traced, validates
 import numpy as np
 import pandas as pd
 project_root = Path(__file__).parent.parent.parent
@@ -85,7 +86,6 @@ class TripleBarrierMethodStep:
     @traced(span_name='execute_triple_barrier_method')
     @validates(min_quality_score=0.7, max_correlation=0.95, required_grade='C')
     @handles_errors()
-    @validates()
     async def execute_triple_barrier_method(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
         """Execute the triple barrier method step."""
         step_start = time.time()
@@ -113,9 +113,14 @@ class TripleBarrierMethodStep:
             output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
             ensure_directory(output_path.parent)
             result_data = data.copy()
-            result_data['label'] = labeled_data['label']
+            # Align indices explicitly and map to canonical column names
+            labels_aligned = labeled_data['label'].reindex(result_data.index)
+            result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
             if 'potential_profit_pct' in labeled_data.columns:
-                result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
+                profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
+                result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+                fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+                result_data['potential_profit_net_pct'] = (result_data['potential_profit_pct'] - (2.0 * fee_per_side)).astype(np.float64)
             result_data.to_parquet(output_path)
             self.logger.info(f'✅ Triple barrier labels saved to {output_path}')
             self._log_step_timing('Triple Barrier Method', step_start)
@@ -128,7 +133,9 @@ class TripleBarrierMethodStep:
     @with_tracing_span('step04_5_triple_barrier_execute')
     @handles_errors()
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
-        labels = labeled_data.get('label')
+        labels = labeled_data.get('triple_barrier_label')
+        if labels is None:
+            labels = labeled_data.get('label')
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
         return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
@@ -142,8 +149,9 @@ class TripleBarrierMethodStep:
 
     async def _apply_triple_barrier(self, data: pd.DataFrame, profit_target: float, stop_loss: float, max_holding: int) -> Optional[pd.DataFrame]:
         try:
-            if getattr(self, 'triple_barrier_labeler', None) is not None and hasattr(self.triple_barrier_labeler, 'label_data'):
-                labeled = await self.triple_barrier_labeler.label_data(data, profit_target, stop_loss, max_holding)
+            # Prefer optimized vectorized labeler when available
+            if getattr(self, 'triple_barrier_labeler', None) is not None and hasattr(self.triple_barrier_labeler, 'apply_triple_barrier_labeling_vectorized'):
+                labeled = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(data)
                 return labeled
             close_prices = data['close'].values
             high_prices = data['high'].values
@@ -184,15 +192,30 @@ class TripleBarrierMethodStep:
             data = await self._load_data(str(latest_file))
             if data is None:
                 return {'success': False, 'error': 'data_load_failed'}
-            labeled = await self._apply_triple_barrier(data, self.config.get('PROFIT_TARGET', 0.02), self.config.get('STOP_LOSS', 0.01), self.config.get('MAX_HOLDING_PERIOD', 100))
+            # Use the same logic as execute_triple_barrier_method for consistency
+            if self.triple_barrier_labeler:
+                labeled = await self._apply_optimized_triple_barrier(data)
+            else:
+                labeled = await self._apply_basic_triple_barrier(data)
             if labeled is None:
                 return {'success': False, 'error': 'labeling_failed'}
             output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-            saved = await self._save_labeled_data(labeled, output_path)
-            stats = self._calculate_label_statistics(pd.concat([data.reset_index(drop=True), labeled.reset_index(drop=True)], axis=1))
+            # Merge aligned columns and save canonical outputs
+            result_data = data.copy()
+            labels_aligned = labeled['label'].reindex(result_data.index)
+            result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
+            if 'potential_profit_pct' in labeled.columns:
+                profit_aligned = labeled['potential_profit_pct'].reindex(result_data.index)
+                result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+                fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+                result_data['potential_profit_net_pct'] = (result_data['potential_profit_pct'] - (2.0 * fee_per_side)).astype(np.float64)
+            ensure_directory(output_path.parent)
+            result_data.to_parquet(output_path)
+            saved = True
+            stats = self._calculate_label_statistics(result_data)
             log_step_report(config=self.config, step_name='step04_5_triple_barrier_method', report_data={'stats': stats})
             log_step_metrics(config=self.config, step_name='step04_5_triple_barrier_method', metrics={'total_labels': stats.get('total_labels', 0)})
-            return {'success': bool(saved), 'labeled_data': labeled, 'label_stats': stats}
+            return {'success': bool(saved), 'labeled_data': result_data, 'label_stats': stats}
         except Exception as e:
             self.logger.exception(f'❌ Execute failed: {e}')
             return {'success': False, 'error': str(e)}

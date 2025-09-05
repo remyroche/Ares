@@ -245,6 +245,52 @@ class ReportAggregator:
         self.overall_summary["issue_breakdown"]["undeclared_dependencies"] = len(undeclared_deps)
         self.overall_summary["issue_breakdown"]["unused_dependencies"] = len(unused_deps)
 
+    def add_undefined_names_results(self, results: dict[str, Any]):
+        """Add enhanced undefined names analysis results."""
+        if results.get("status") != "success":
+            return
+            
+        files = results.get("files", {})
+        summary = results.get("summary", {})
+        
+        # Add to overall summary
+        self.overall_summary["issue_breakdown"]["undefined_names"] = summary.get("undefined_names", 0)
+        self.overall_summary["issue_breakdown"]["undefined_imports"] = summary.get("undefined_imports", 0)
+        self.overall_summary["issue_breakdown"]["unused_imports"] = summary.get("unused_imports", 0)
+        self.overall_summary["issue_breakdown"]["import_conflicts"] = summary.get("import_conflicts", 0)
+        
+        # Process each file
+        for file_path, file_result in files.items():
+            if file_result.get("status") != "success":
+                continue
+                
+            normalized_path = self._normalize_path(file_path)
+            file_issues = self.file_issues[normalized_path]
+            
+            # Add undefined name issues
+            for error in file_result.get("errors", []):
+                if error.get("error_type") == "undefined_name":
+                    file_issues["import_issues"].append({
+                        "line": error.get("line", 0),
+                        "column": error.get("column", 0),
+                        "message": f"Undefined name: {error.get('name', 'unknown')}",
+                        "context": error.get("context", ""),
+                        "severity": error.get("severity", "error"),
+                        "source": "undefined_names_analyzer",
+                    })
+                elif error.get("error_type") == "undefined_import":
+                    file_issues["import_issues"].append({
+                        "line": error.get("line", 0),
+                        "column": error.get("column", 0),
+                        "message": f"Undefined import: {error.get('name', 'unknown')}",
+                        "context": error.get("context", ""),
+                        "severity": error.get("severity", "error"),
+                        "source": "undefined_names_analyzer",
+                    })
+            
+            # Update file totals
+            file_issues["total_issues"] += file_result.get("total_errors", 0)
+
     def _normalize_path(self, path: Any) -> str:
         """Normalize file path for consistency."""
         if isinstance(path, dict):

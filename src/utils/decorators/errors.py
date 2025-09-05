@@ -119,4 +119,3 @@ def handles_errors(
     if callable(func):
         return _decorate(func)
     return _decorate
-

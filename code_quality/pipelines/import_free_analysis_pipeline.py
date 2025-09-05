@@ -47,13 +47,17 @@ class ImportFreeAnalyzer:
         self.results = {}
     
     def find_python_files(self) -> List[Path]:
-        """Find all Python files in the project."""
+        """Find all Python files in the project, respecting .gitignore patterns."""
+        from ..utils.gitignore_parser import filter_ignored_files
         python_files = []
         for py_file in self.project_root.rglob("*.py"):
             # Skip common directories to avoid
             if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
                 continue
             python_files.append(py_file)
+        
+        # Filter out ignored files
+        python_files = filter_ignored_files(python_files, self.project_root)
         return python_files
     
     def parse_file(self, file_path: Path) -> ast.AST:

@@ -203,7 +203,7 @@ def get_training_pipeline_config() -> dict[str, Any]:
         dict: Training pipeline configuration
 
     """
-    return training_config.get("training_pipeline", {})
+    return get_training_config().get("training_pipeline", {})
 
 
 def get_model_training_config() -> dict[str, Any]:
@@ -213,7 +213,7 @@ def get_model_training_config() -> dict[str, Any]:
         dict: Model training configuration
 
     """
-    return training_config.get("MODEL_TRAINING", {})
+    return get_training_config().get("MODEL_TRAINING", {})
 
 
 def get_data_config() -> dict[str, Any]:
@@ -223,7 +223,7 @@ def get_data_config() -> dict[str, Any]:
         dict: Data configuration
 
     """
-    return training_config.get("DATA_CONFIG", {})
+    return get_training_config().get("DATA_CONFIG", {})
 
 
 def get_enhanced_training_config() -> dict[str, Any]:
@@ -233,7 +233,7 @@ def get_enhanced_training_config() -> dict[str, Any]:
         dict: Enhanced training configuration
 
     """
-    return training_config.get("ENHANCED_TRAINING", {})
+    return get_training_config().get("ENHANCED_TRAINING", {})
 
 
 def get_hmm_lm_config() -> dict[str, Any]:
@@ -243,7 +243,7 @@ def get_hmm_lm_config() -> dict[str, Any]:
         dict: HMM-LM model configuration
 
     """
-    return training_config.get("HMM_LM", {})
+    return get_training_config().get("HMM_LM", {})
 
 
 def get_feature_engineering_config() -> dict[str, Any]:
@@ -253,7 +253,7 @@ def get_feature_engineering_config() -> dict[str, Any]:
         dict: Feature engineering configuration
 
     """
-    return training_config.get("FEATURE_ENGINEERING", {})
+    return get_training_config().get("FEATURE_ENGINEERING", {})
 
 
 def get_validation_config() -> dict[str, Any]:
@@ -263,4 +263,4 @@ def get_validation_config() -> dict[str, Any]:
         dict: Validation configuration
 
     """
-    return training_config.get("VALIDATION", {})
+    return get_training_config().get("VALIDATION", {})

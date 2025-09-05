@@ -169,7 +169,6 @@ def run_parameter_sweep():
         )
 
     # Find results in target range (70-80%)
-    target_results=[r for r in results if 70 <= r["top_20_concentration"] <= 80]
 
     print("\n" + "=" * 80)
     print("🎯 TARGET RANGE (70-80%):")

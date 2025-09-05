@@ -31,8 +31,8 @@ class LossCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_trading_loss(self, predictions: np.ndarray, 
-                              actuals: np.ndarray,
-                              costs: np.ndarray = None) -> Dict[str, float]:
+                            actuals: np.ndarray,
+                            costs: np.ndarray = None) -> Dict[str, float]:
         """
         Calculate trading-specific loss metrics.
 
@@ -144,8 +144,8 @@ class LossCalculator(PnLLossFunctionsBase):
         default_return={},
     )
     def calculate_regime_aware_loss(self, predictions: np.ndarray,
-                                   actuals: np.ndarray,
-                                   regimes: np.ndarray) -> Dict[str, Any]:
+                                actuals: np.ndarray,
+                                regimes: np.ndarray) -> Dict[str, Any]:
         """
         Calculate regime-aware loss metrics.
 

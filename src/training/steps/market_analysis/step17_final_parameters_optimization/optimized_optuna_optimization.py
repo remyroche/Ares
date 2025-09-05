@@ -158,7 +158,7 @@ class AdvancedOptunaManager:
             cv_folds (int): Number of folds for cross-validation.
             early_stopping_patience (Optional[int]): Patience for early stopping callback.
             subsample_fraction (Optional[float]): Fraction of data to use for each trial
-                                                  to speed up optimization. If None, uses all data.
+                                                to speed up optimization. If None, uses all data.
 
         Returns:
             A dictionary summarizing the results of the optimization study.

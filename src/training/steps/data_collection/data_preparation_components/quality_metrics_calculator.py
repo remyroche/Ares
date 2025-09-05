@@ -13,6 +13,9 @@ from scipy import stats
 from .utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 
+import json
+
+
 
 class QualityMetricsCalculator:
     """Calculates comprehensive quality metrics for market data."""
@@ -624,7 +627,6 @@ class QualityMetricsCalculator:
                 return metrics
             
             elif output_format == "json":
-                import json
                 return json.dumps(metrics, indent=2, default=str)
             
             elif output_format == "html":

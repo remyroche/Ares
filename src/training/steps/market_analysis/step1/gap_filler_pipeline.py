@@ -210,4 +210,4 @@ async def run_gap_filling_pipeline(symbol: str='ETHUSDT', exchange: str='BINANCE
     gap_filler = GapFillerPipeline(data_cache_path)
     return await gap_filler.run_pipeline(symbol, exchange)
 if __name__ == '__main__':
-    asyncio.run(await run_gap_filling_pipeline())
+    asyncio.run( run_gap_filling_pipeline())

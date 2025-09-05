@@ -15,10 +15,8 @@ def debug_triple_barrier():
     print(f"Total movement: {((test_data.price.max() - test_data.price.min()) / test_data.price.min() * 100):.2f}%")
 
     # Test parameters
-    target_pct=0.4  # 0.4%
     stop_pct = 0.1    # 0.1%
 
-    print(f"\nTesting: Target {target_pct}%, Stop {stop_pct}%")
 
     prices=test_data["price"].values
     timestamps = test_data["timestamp"].values
@@ -33,13 +31,9 @@ def debug_triple_barrier():
         print(f"\nStarting from price ${start_price:.2f} at {start_time}")
 
         # Calculate target and stop prices
-        up_target=start_price * (1 + target_pct / 100)
-        down_target=start_price * (1 - target_pct / 100)
         up_stop=start_price * (1 + stop_pct / 100)
         down_stop=start_price * (1 - stop_pct / 100)
 
-        print(f"  Up target: ${up_target:.2f} (${start_price:.2f} + {target_pct}%)")
-        print(f"  Down target: ${down_target:.2f} (${start_price:.2f} - {target_pct}%)")
         print(f"  Up stop: ${up_stop:.2f} (${start_price:.2f} + {stop_pct}%)")
         print(f"  Down stop: ${down_stop:.2f} (${start_price:.2f} - {stop_pct}%)")
 

@@ -50,5 +50,5 @@ if __name__ == "__main__":
     exchange = sys.argv[2]
     timeframe = sys.argv[3] if len(sys.argv) > 3 else "1m"
     
-    success = asyncio.run(await run_feature_pipeline(symbol, exchange, timeframe))
+    success = asyncio.run( run_feature_pipeline(symbol, exchange, timeframe))
     sys.exit(0 if success else 1)

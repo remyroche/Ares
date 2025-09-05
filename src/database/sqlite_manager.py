@@ -661,7 +661,6 @@ class SQLiteManager:
             self.print(error('Error stopping SQLite manager: {e}'))
 sqlite_manager: SQLiteManager | None = None
 
-@handles_errors(fallback=None)
 async def setup_sqlite_manager(config: dict[str, Any] | None=None) -> SQLiteManager | None:
     """
     Setup global SQLite manager.

@@ -19,6 +19,9 @@ from .feature_engineering_utils import (
 )
 from .candlestick_pattern_analyzer import CandlestickPatternAnalyzer
 
+from .analyst.meta_labeling_system import MetaLabelingSystem
+
+
 
 
     @handles_errors(
@@ -1256,7 +1259,6 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 try:
-                    from .analyst.meta_labeling_system import MetaLabelingSystem
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()

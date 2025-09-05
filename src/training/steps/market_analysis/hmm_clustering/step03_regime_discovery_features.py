@@ -220,9 +220,27 @@ class RegimeDiscoveryFeatureEngineer:
     
     def _create_regime_strength_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Create regime strength features using vectorized operations."""
-        return RegimeFeatureUtils.calculate_regime_strength_features(
-            self.volatility_20, self.volume_mean_20, self.momentum_10
-        )
+        features = {}
+        
+        # Regime strength indicators (vectorized)
+        volatility_trend = self.volatility_20.rolling(10).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+        vol_of_vol = self.volatility_20.rolling(20).std()
+        features['regime_strength_volatility'] = 1 / (1 + vol_of_vol)
+        
+        volume_consistency = 1 / (1 + df['volume'].rolling(20).std() / df['volume'].rolling(20).mean())
+        features['regime_strength_volume'] = volume_consistency
+        
+        momentum_consistency = 1 / (1 + self.momentum_10.rolling(20).std())
+        features['regime_strength_momentum'] = momentum_consistency
+        
+        # Regime confidence score (vectorized)
+        confidence = (features['regime_strength_volatility'] + 
+                    features['regime_strength_volume'] +
+                    features['regime_strength_momentum']) / 3
+        features['regime_confidence_score'] = confidence
+        
+        return features
+
     
     def _create_regime_change_warning_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Create regime change warning features using vectorized operations."""

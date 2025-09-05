@@ -9,6 +9,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 
+import math
+
+
 
 class DashboardGenerator:
     """Generates interactive HTML dashboards for code quality visualization."""
@@ -24,8 +27,8 @@ class DashboardGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
     def generate_quality_dashboard(self, 
-                                 analysis_results: Dict[str, Any],
-                                 project_name: str = "Code Quality Dashboard") -> str:
+                                analysis_results: Dict[str, Any],
+                                project_name: str = "Code Quality Dashboard") -> str:
         """
         Generate a comprehensive code quality dashboard.
         
@@ -53,7 +56,6 @@ class DashboardGenerator:
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        {self._get_dashboard_css()}
     </style>
 </head>
 <body>
@@ -147,8 +149,6 @@ class DashboardGenerator:
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        {self._get_dashboard_css()}
-        {self._get_comparison_css()}
     </style>
 </head>
 <body>
@@ -535,7 +535,6 @@ class DashboardGenerator:
             severity_class = f"severity-{issue.get('severity', 'low').lower()}"
             table_html += f"""
                 <tr>
-                    <td>{self._format_path(issue.get('file', 'Unknown'))}</td>
                     <td>{issue.get('message', 'No description')}</td>
                     <td class="{severity_class}">{issue.get('severity', 'Low')}</td>
                     <td>{issue.get('line', '-')}</td>
@@ -681,7 +680,6 @@ class DashboardGenerator:
         }
         
         # Simple circular layout
-        import math
         n = len(nodes)
         for i in range(n):
             angle = 2 * math.pi * i / n
@@ -820,8 +818,8 @@ class DashboardGenerator:
         """
     
     def _generate_comparison_javascript(self, current: Dict[str, Any], 
-                                      previous: Dict[str, Any], 
-                                      changes: Dict[str, Any]) -> str:
+                                    previous: Dict[str, Any],
+                                    changes: Dict[str, Any]) -> str:
         """Generate JavaScript for comparison charts."""
         return f"""
         // Complexity Trends

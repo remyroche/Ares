@@ -12,6 +12,10 @@ from .analyst.unified_regime_classifier_sr_focused import UnifiedRegimeClassifie
 from .analyst.sr_relevance_optimizer import SRRelevanceOptimizer
 import asyncio
 
+import json
+import os
+
+
 
 class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
     """
@@ -286,8 +290,6 @@ class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
     
     def _save_optimized_weights(self):
         """Save optimized weights to file."""
-        import json
-        import os
         
         weights_file = os.path.join(
             self.config.get('model_dir', 'models'),
@@ -315,8 +317,6 @@ class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
     
     def _load_optimized_weights(self):
         """Load previously optimized weights if available."""
-        import json
-        import os
         
         weights_file = os.path.join(
             self.config.get('model_dir', 'models'),

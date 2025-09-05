@@ -15,10 +15,9 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
 
+from .utils.common_operations import (
     get_current_datetime,
     format_datetime,
-    safe_json_dump,
-    safe_json_load
 )
 
 
@@ -408,7 +407,6 @@ class PipelineMonitor:
         try:
             metrics = self.get_pipeline_metrics()
             metrics_dict = asdict(metrics)
-            safe_json_dump(metrics_dict, self.monitoring_file)
             self.logger.info(f"Pipeline metrics saved to: {self.monitoring_file}")
         except Exception as e:
             self.logger.exception(f"Error saving pipeline metrics: {e}")
@@ -452,11 +450,11 @@ class PipelineMonitor:
                 }.get(step.status, "❓")
                 
                 print(f"  {status_icon} {step.step_name}: {step.duration:.1f}s | "
-                      f"Memory: {step.memory_peak:.1f}% | "
-                      f"CPU: {step.cpu_peak:.1f}% | "
-                      f"Data: {step.data_processed:,} bytes | "
-                      f"Errors: {step.errors} | "
-                      f"Warnings: {step.warnings}")
+                    f"Memory: {step.memory_peak:.1f}% | "
+                    f"CPU: {step.cpu_peak:.1f}% | "
+                    f"Data: {step.data_processed:,} bytes | "
+                    f"Errors: {step.errors} | "
+                    f"Warnings: {step.warnings}")
         
         print("="*80)
 

@@ -39,6 +39,29 @@ class AdvancedSyntaxFixer:
         except Exception as e:
             return {"type": "Unknown", "msg": str(e), "line": 0}
 
+    def fix_syntax_issues(self, directory: str = None) -> dict:
+        """Main method called by the pipeline to fix syntax issues."""
+        if directory is None:
+            directory = str(self.project_root)
+        
+        directory_path = Path(directory)
+        python_files = list(directory_path.rglob("*.py"))
+        
+        results = {
+            "fixed_files": [],
+            "failed_files": [],
+            "total_files": len(python_files),
+            "syntax_errors": dict(self.syntax_errors)
+        }
+        
+        for file_path in python_files:
+            if self.fix_common_syntax_errors(str(file_path)):
+                results["fixed_files"].append(str(file_path))
+            else:
+                results["failed_files"].append(str(file_path))
+        
+        return results
+
     def fix_common_syntax_errors(self, file_path: str) -> bool:
         """Apply common syntax fixes to a file."""
         try:

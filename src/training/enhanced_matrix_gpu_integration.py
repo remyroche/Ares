@@ -567,4 +567,4 @@ async def demonstrate_gpu_integration() -> None:
 
 if __name__ == "__main__":
     # Run GPU integration demonstration
-    asyncio.run(await demonstrate_gpu_integration())
+    asyncio.run( demonstrate_gpu_integration())

@@ -20,6 +20,9 @@ from src.training.step_config import (
 from ..utils.logger import system_logger
 from ..utils.step_dependency_validator import StepDependencyValidator
 
+import importlib
+
+
 
 class SimplifiedTrainingManager:
     """Simplified training manager for orchestrating the training pipeline.
@@ -310,7 +313,6 @@ class SimplifiedTrainingManager:
         """
         try:
             # Import the module
-            import importlib
             module = importlib.import_module(step_config.module_path)
             
             # Get the class

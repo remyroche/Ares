@@ -8,7 +8,9 @@ Features:
 - Nested function call stack tracking with depth monitoring
 - Comprehensive performance monitoring (execution time, memory usage)
 - Detailed outcome reporting with success/failure metrics
+from .exceptions import (
 - Enhanced error handling with context preservation
+)
 - Complete audit trail system for all function calls
 - Health check mechanisms for system and data integrity
 
@@ -84,6 +86,9 @@ from .utils.base_validator import BaseValidator
 from .utils.common_operations import safe_json_load
 from .utils.logger import system_logger
 
+import warnings
+
+
 
 def check_dependencies():
     """Check if all required dependencies are available."""
@@ -128,7 +133,6 @@ def validate_environment():
         raise ImportError(error_msg)
     
     if optional_deps:
-        import warnings
         warning_msg = "Optional dependencies not available (functionality may be limited):\n"
         warning_msg += "\n".join(f"  - {dep}" for dep in optional_deps)
         warning_msg += "\n\nInstall with: pip install pyarrow fastparquet"
@@ -1890,8 +1894,8 @@ if __name__ == "__main__":
         print("\n📊 TEST SUMMARY")
         print("=" * 80)
         total_calls = (result1['function_call_summary'].get('total_calls', 0) + 
-                      result2['function_call_summary'].get('total_calls', 0) + 
-                      result3['function_call_summary'].get('total_calls', 0))
+                    result2['function_call_summary'].get('total_calls', 0) +
+                    result3['function_call_summary'].get('total_calls', 0))
         total_duration = result1['duration'] + result2['duration'] + result3['duration']
         
         print(f"📈 Total function calls across all tests: {total_calls}")
@@ -1904,8 +1908,8 @@ if __name__ == "__main__":
         for i, result in enumerate([result1, result2, result3], 1):
             perf = result.get('performance_breakdown', {})
             print(f"   Test {i}: Init={perf.get('initialization_time', 0):.4f}s, "
-                  f"Validation={perf.get('validation_time', 0):.4f}s, "
-                  f"Total={perf.get('total_time', 0):.4f}s")
+                f"Validation={perf.get('validation_time', 0):.4f}s, "
+                f"Total={perf.get('total_time', 0):.4f}s")
         
         print("\n🎉 ENHANCED VALIDATOR TESTING COMPLETED")
         print("=" * 80)

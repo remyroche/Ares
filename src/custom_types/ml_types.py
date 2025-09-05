@@ -79,7 +79,6 @@ class TrainingData(TypedDict):
     X_val: FeatureArray
     y_val: TargetArray
     feature_names: list[str]
-    target_name: str
     data_split_info: dict[str, str | int | float]
 
 

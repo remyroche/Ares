@@ -342,8 +342,8 @@ class ReportAggregator:
 
             # Update issue breakdown
             for issue_type in ["syntax_errors", "import_issues", "async_issues",
-                             "type_issues", "function_issues", "circular_imports",
-                             "security_issues", "performance_issues"]:
+                            "type_issues", "function_issues", "circular_imports",
+                            "security_issues", "performance_issues"]:
                 count = len(issues[issue_type])
                 if count > 0:
                     self.directory_summary[dir_path]["issue_breakdown"][issue_type] += count
@@ -458,8 +458,8 @@ class ReportAggregator:
 
             # Issue details
             for issue_type in ["syntax_errors", "import_issues", "async_issues",
-                             "type_issues", "function_issues", "circular_imports",
-                             "security_issues", "performance_issues"]:
+                            "type_issues", "function_issues", "circular_imports",
+                            "security_issues", "performance_issues"]:
                 if details[issue_type]:
                     md.append(f"\n**{issue_type.replace('_', ' ').title()}:**")
                     for _i, issue in enumerate(details[issue_type][:3]):  # First 3 issues

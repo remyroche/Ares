@@ -7,6 +7,9 @@ This script addresses the specific patterns that were broken by replacing commas
 import re
 import os
 
+import asyncio
+
+
 def fix_type_annotations(content):
     """Fix broken type annotations"""
     # Fix dict type annotations
@@ -98,5 +101,4 @@ def main():
     print("✅ All files processed!")
 
 if __name__== "__main__":
-    import asyncio
     asyncio.run(main())

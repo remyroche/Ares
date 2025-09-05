@@ -130,9 +130,9 @@ class TransitionInferenceCombiner:
     ) -> dict[str, Any]:
         """
         Conservative exit logic:
-          - Compute exit_bias = P(reversal) - max(P(continuation), P(beginning_of_trend)) using 1m probabilities (reliability-adjusted)
-          - If P(reversal) > 0.40, recommend exit immediately
-          - exit_flag True if reversal>0.40 or exit_bias>0
+        - Compute exit_bias = P(reversal) - max(P(continuation), P(beginning_of_trend)) using 1m probabilities (reliability-adjusted)
+        - If P(reversal) > 0.40, recommend exit immediately
+        - exit_flag True if reversal>0.40 or exit_bias>0
         """
         # Reliability-adjusted 1m
         r_cont = self._apply_reliability(

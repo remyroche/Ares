@@ -16,7 +16,7 @@ class ConcurrencyIssue:
     """Container for concurrency issue information."""
 
     def __init__(self, issue_type: str, description: str, line: int,
-                 severity: str = "warning", details: dict[str, Any] = None):
+                severity: str = "warning", details: dict[str, Any] = None):
         self.issue_type = issue_type
         self.description = description
         self.line = line
@@ -38,7 +38,7 @@ class ConcurrencyPattern:
     """Container for concurrency pattern information."""
 
     def __init__(self, pattern_type: str, description: str, line: int,
-                 quality_score: float, details: dict[str, Any] = None):
+                quality_score: float, details: dict[str, Any] = None):
         self.pattern_type = pattern_type
         self.description = description
         self.line = line

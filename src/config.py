@@ -7,7 +7,6 @@ from typing import Any
 
 
 from logger import system_logger
-__all__ = ['get_complete_config', 'get_environment_config', 'get_system_config_section', 'get_trading_config_section', 'get_training_config_section', 'get_lookback_window', 'AresConfig', 'CONFIG', 'get_dual_model_config', 'get_ml_confidence_predictor_config', 'get_position_sizing_config', 'get_leverage_sizing_config', 'get_position_closing_config', 'get_position_division_config', 'get_position_monitoring_config', 'get_enhanced_training_config']
 
 def get_config() -> dict[str, Any]:
     """
@@ -303,7 +302,6 @@ class ConfigurationManager:
         """Get complete configuration."""
         return get_complete_config()
 
-@handles_errors(default_return=None, context='configuration manager setup')
 async def setup_configuration_manager(config: dict[str, Any] | None=None) -> ConfigurationManager | None:
     """
     Setup and return a configured ConfigurationManager instance.

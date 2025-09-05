@@ -10,6 +10,9 @@ from pathlib import Path
 from .training.core.training_manager import create_training_manager
 from .utils.logger import system_logger
 
+import sys
+
+
 async def run_basic_training_example() -> None:
     """Run a basic training pipeline example."""
     logger = system_logger.getChild('TrainingExample')
@@ -114,7 +117,6 @@ async def inspect_pipeline_state() -> None:
 
 def main() -> None:
     """Main entry point for examples."""
-    import sys
     examples = {'basic': run_basic_training_example, 'partial': run_partial_pipeline_example, 'custom': run_custom_step_example, 'inspect': inspect_pipeline_state}
     example_name = sys.argv[1] if len(sys.argv) > 1 else 'basic'
     if example_name in examples:

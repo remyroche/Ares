@@ -9,6 +9,10 @@ from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 
+from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
+
+
 
 class OutlierSeverity(Enum):
     """Outlier severity levels."""
@@ -237,7 +241,6 @@ class EnhancedOutlierHandler:
         """Detect outliers using Isolation Forest method."""
         outliers = []
         try:
-            from sklearn.ensemble import IsolationForest
             X = data[column].values.reshape(-1, 1)
             iso_forest = IsolationForest(contamination=0.1, random_state=42)
             predictions = iso_forest.fit_predict(X)
@@ -268,7 +271,6 @@ class EnhancedOutlierHandler:
         """Detect outliers using Local Outlier Factor method."""
         outliers = []
         try:
-            from sklearn.neighbors import LocalOutlierFactor
             X = data[column].values.reshape(-1, 1)
             lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)
             predictions = lof.fit_predict(X)

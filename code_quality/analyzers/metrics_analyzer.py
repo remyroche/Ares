@@ -164,8 +164,8 @@ class MetricsAnalyzer:
         }
 
     def _calculate_file_maintainability_index(self,
-                                             functions: list[FunctionMetrics],
-                                             source_lines: int) -> float:
+                                            functions: list[FunctionMetrics],
+                                            source_lines: int) -> float:
         """Calculate maintainability index for entire file."""
         if not functions or source_lines == 0:
             return 0
@@ -211,8 +211,6 @@ class MetricsAnalyzer:
                 path: self._file_metrics_to_dict(metrics)
                 for path, metrics in self.file_metrics.items()
             },
-            "high_complexity_functions": self._get_high_complexity_functions(),
-            "low_maintainability_functions": self._get_low_maintainability_functions(),
         }
 
     def _file_metrics_to_dict(self, metrics: FileMetrics) -> dict[str, Any]:

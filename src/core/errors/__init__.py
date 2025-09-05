@@ -1,9 +1,6 @@
 
 """
-Core errors package.
 
-Provides a structured error hierarchy with consistent
-error handling across different transports.
 """
 
 # Base error types

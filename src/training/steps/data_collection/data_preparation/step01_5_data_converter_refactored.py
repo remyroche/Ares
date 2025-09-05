@@ -110,8 +110,6 @@ class UnifiedDataConverter:
         self.data_cache_dir = "data_cache"
         self.unified_dir = os.path.join(self.data_cache_dir, "unified")
         self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
-        ensure_directory(self.unified_dir)
-        ensure_directory(self.backup_dir)
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -294,7 +292,6 @@ class UnifiedDataConverter:
             base_dir = os.path.join(
                 self.unified_dir, exchange.lower(), symbol, timeframe
             )
-            ensure_directory(base_dir)
             
             # Write partitioned dataset using DataFormatConverter
             self.logger.info(f"💾 Writing unified data to: {base_dir}")
@@ -328,7 +325,6 @@ class UnifiedDataConverter:
                     "end": str(data.index.max()) if isinstance(data.index, pd.DatetimeIndex) else None,
                 }
             }
-            safe_json_dump(config_data, config_path, indent=2)
             
             self.logger.info(
                 f"✅ Successfully saved unified data: {len(data):,} rows"

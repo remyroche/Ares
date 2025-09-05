@@ -21,6 +21,9 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import psutil
+
+
 T = TypeVar('T')
 DataType = Union[pd.DataFrame, np.ndarray, Dict[str, Any]]
 
@@ -420,7 +423,6 @@ class BasePipelineStep(IPipelineStep):
             result.end_time = datetime.now()
             # Add resource usage metrics if available
             try:
-                import psutil
                 process = psutil.Process()
                 result.memory_usage_mb = process.memory_info().rss / 1024 / 1024
                 result.cpu_usage_percent = process.cpu_percent()
@@ -491,7 +493,6 @@ class BasePipelineStep(IPipelineStep):
     def _get_resource_usage(self) -> Dict[str, Any]:
         """Get current resource usage."""
         try:
-            import psutil
             process = psutil.Process()
             return {
                 "memory_mb": process.memory_info().rss / 1024 / 1024,

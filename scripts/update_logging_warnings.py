@@ -2,7 +2,6 @@
 """
 Script to update logging messages in training step files with warning symbols.
 
-This script automatically adds warning symbols to error and warning messages
 throughout the training step files to make issues more visible.
 """
 

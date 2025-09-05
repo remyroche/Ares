@@ -485,7 +485,6 @@ async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_async_utils(
     config: dict[str, Any] | None = None,
 ) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:

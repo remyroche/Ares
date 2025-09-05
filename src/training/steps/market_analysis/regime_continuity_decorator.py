@@ -17,7 +17,9 @@ from .regime_continuity_manager import (
 
 from src.utils.logger import get_logger
 
-logger = get_logger('RegimeContinuityDecorator')
+import json
+
+
 
 
 def ensure_regime_continuity(
@@ -295,7 +297,6 @@ async def _aggregate_regime_results(
                 'successful_regimes': len([r for r in regime_results.values() if r is not None])
             }
             
-            import json
             aggregated_json_path = training_dir / f'{exchange}_{symbol}_{timeframe}_{step_name}_aggregated.json'
             with open(aggregated_json_path, 'w') as f:
                 json.dump(aggregated_dict, f, indent=2, default=str)

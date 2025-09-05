@@ -6,4 +6,4 @@ class SROptimizationParameters:
 
 def validate_sr_optimization_config(config):
     """Validate S/R optimization config."""
-        return True
+    return True

@@ -73,9 +73,9 @@ class MonitoringVisualization:
         if 'action' in self.trade_data.columns:
             action_counts = self.trade_data['action'].value_counts()
             colors = ['green' if action == 'buy' else 'red' if action == 'sell' else 'gray' 
-                     for action in action_counts.index]
+                    for action in action_counts.index]
             ax2.pie(action_counts.values, labels=action_counts.index, autopct='%1.1f%%', 
-                   colors=colors, startangle=90)
+                colors=colors, startangle=90)
             ax2.set_title('Trade Action Distribution')
         
         # Plot 3: Confidence distribution
@@ -86,7 +86,7 @@ class MonitoringVisualization:
             ax3.set_xlabel('Confidence')
             ax3.set_ylabel('Frequency')
             ax3.axvline(self.trade_data['overall_confidence'].mean(), color='red', 
-                       linestyle='--', label=f'Mean: {self.trade_data["overall_confidence"].mean():.3f}')
+                    linestyle='--', label=f'Mean: {self.trade_data["overall_confidence"].mean():.3f}')
             ax3.legend()
         
         # Plot 4: Risk score distribution
@@ -97,7 +97,7 @@ class MonitoringVisualization:
             ax4.set_xlabel('Risk Score')
             ax4.set_ylabel('Frequency')
             ax4.axvline(self.trade_data['overall_risk_score'].mean(), color='red', 
-                       linestyle='--', label=f'Mean: {self.trade_data["overall_risk_score"].mean():.3f}')
+                    linestyle='--', label=f'Mean: {self.trade_data["overall_risk_score"].mean():.3f}')
             ax4.legend()
         
         self.canvas.draw()
@@ -122,7 +122,7 @@ class MonitoringVisualization:
         ax1 = self.fig.add_subplot(gs[0, 0])
         regime_counts = self.trade_data['hmm_regime_id'].value_counts()
         bars = ax1.bar(regime_counts.index, regime_counts.values, 
-                      color=plt.cm.Set3(np.linspace(0, 1, len(regime_counts))))
+                    color=plt.cm.Set3(np.linspace(0, 1, len(regime_counts))))
         ax1.set_title('Regime Distribution')
         ax1.set_xlabel('Regime ID')
         ax1.set_ylabel('Number of Trades')
@@ -138,7 +138,7 @@ class MonitoringVisualization:
         if 'hmm_regime_probability' in self.trade_data.columns:
             regime_probs = self.trade_data.groupby('hmm_regime_id')['hmm_regime_probability'].mean()
             bars = ax2.bar(regime_probs.index, regime_probs.values,
-                          color=plt.cm.Set2(np.linspace(0, 1, len(regime_probs))))
+                        color=plt.cm.Set2(np.linspace(0, 1, len(regime_probs))))
             ax2.set_title('Average Regime Probability')
             ax2.set_xlabel('Regime ID')
             ax2.set_ylabel('Average Probability')
@@ -149,7 +149,7 @@ class MonitoringVisualization:
         if 'hmm_regime_stability_score' in self.trade_data.columns:
             regime_stability = self.trade_data.groupby('hmm_regime_id')['hmm_regime_stability_score'].mean()
             bars = ax3.bar(regime_stability.index, regime_stability.values,
-                          color=plt.cm.viridis(np.linspace(0, 1, len(regime_stability))))
+                        color=plt.cm.viridis(np.linspace(0, 1, len(regime_stability))))
             ax3.set_title('Average Regime Stability')
             ax3.set_xlabel('Regime ID')
             ax3.set_ylabel('Average Stability Score')
@@ -160,7 +160,7 @@ class MonitoringVisualization:
         if 'hmm_regime_duration' in self.trade_data.columns:
             regime_duration = self.trade_data.groupby('hmm_regime_id')['hmm_regime_duration'].mean()
             bars = ax4.bar(regime_duration.index, regime_duration.values,
-                          color=plt.cm.plasma(np.linspace(0, 1, len(regime_duration))))
+                        color=plt.cm.plasma(np.linspace(0, 1, len(regime_duration))))
             ax4.set_title('Average Regime Duration')
             ax4.set_xlabel('Regime ID')
             ax4.set_ylabel('Average Duration (periods)')
@@ -197,13 +197,13 @@ class MonitoringVisualization:
             for i, pnl in enumerate(self.daily_summary_data['total_pnl']):
                 color = 'green' if pnl > 0 else 'red'
                 ax1.scatter(self.daily_summary_data['date_parsed'].iloc[i], pnl, 
-                           color=color, s=30, alpha=0.7)
+                        color=color, s=30, alpha=0.7)
         
         # Plot 2: Daily Trade Count
         ax2 = self.fig.add_subplot(gs[0, 1])
         if 'total_trades' in self.daily_summary_data.columns:
             ax2.bar(self.daily_summary_data['date_parsed'], self.daily_summary_data['total_trades'],
-                   color='skyblue', alpha=0.7, edgecolor='black')
+                color='skyblue', alpha=0.7, edgecolor='black')
             ax2.set_title('Daily Trade Count')
             ax2.set_xlabel('Date')
             ax2.set_ylabel('Number of Trades')
@@ -228,15 +228,15 @@ class MonitoringVisualization:
             width = 0.35
             x = np.arange(len(self.daily_summary_data))
             ax4.bar(x - width/2, self.daily_summary_data['long_trades'], width, 
-                   label='Long Trades', color='green', alpha=0.7)
+                label='Long Trades', color='green', alpha=0.7)
             ax4.bar(x + width/2, self.daily_summary_data['short_trades'], width,
-                   label='Short Trades', color='red', alpha=0.7)
+                label='Short Trades', color='red', alpha=0.7)
             ax4.set_title('Long vs Short Trades')
             ax4.set_xlabel('Date')
             ax4.set_ylabel('Number of Trades')
             ax4.set_xticks(x)
             ax4.set_xticklabels([d.strftime('%m-%d') for d in self.daily_summary_data['date_parsed']], 
-                               rotation=45)
+                            rotation=45)
             ax4.legend()
         
         self.canvas.draw()
@@ -341,7 +341,7 @@ class MonitoringVisualization:
         for i in range(len(numerical_cols)):
             for j in range(len(numerical_cols)):
                 text = ax.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
-                             ha="center", va="center", color="black", fontsize=8)
+                            ha="center", va="center", color="black", fontsize=8)
         
         # Add colorbar
         cbar = self.fig.colorbar(im, ax=ax)
@@ -410,14 +410,14 @@ class VisualizationControlPanel:
         button_frame.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Button(button_frame, text="Trade Performance", 
-                  command=self.visualization.plot_trade_performance).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.plot_trade_performance).pack(side=tk.LEFT, padx=2)
         ttk.Button(button_frame, text="Regime Analysis", 
-                  command=self.visualization.plot_regime_analysis).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.plot_regime_analysis).pack(side=tk.LEFT, padx=2)
         ttk.Button(button_frame, text="Daily Summary", 
-                  command=self.visualization.plot_daily_summary).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.plot_daily_summary).pack(side=tk.LEFT, padx=2)
         ttk.Button(button_frame, text="Cumulative Performance", 
-                  command=self.visualization.plot_cumulative_performance).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.plot_cumulative_performance).pack(side=tk.LEFT, padx=2)
         ttk.Button(button_frame, text="Correlation Matrix", 
-                  command=self.visualization.plot_correlation_matrix).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.plot_correlation_matrix).pack(side=tk.LEFT, padx=2)
         ttk.Button(button_frame, text="Clear", 
-                  command=self.visualization.clear_plot).pack(side=tk.LEFT, padx=2)
+                command=self.visualization.clear_plot).pack(side=tk.LEFT, padx=2)

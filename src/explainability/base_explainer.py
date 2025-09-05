@@ -20,9 +20,12 @@ import json
 
 from .utils.logger import system_logger
 
+import shap
+from lime.lime_tabular import LimeTabularExplainer
+
+
 # SHAP imports with fallback
 try:
-    import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
@@ -30,7 +33,6 @@ except ImportError:
 
 # LIME imports with fallback
 try:
-    from lime.lime_tabular import LimeTabularExplainer
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False
@@ -388,7 +390,7 @@ class TradeDecisionTracer:
         
         # Collect factors from all explanations
         for explanation in [trace.tactician_explanation, trace.hmm_explanation, 
-                          trace.sr_explanation, trace.analyst_explanation]:
+                        trace.sr_explanation, trace.analyst_explanation]:
             if explanation is None:
                 continue
                 

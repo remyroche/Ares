@@ -9,6 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import random
+
+
 # Add project root to path
 project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -52,7 +55,6 @@ class FractionalLabelingOptimizer:
         Returns:
             Dictionary with test data
         """
-        import random
 
         random.seed(42)
 
@@ -303,7 +305,7 @@ class FractionalLabelingOptimizer:
 
         # Analyze parameter importance
         param_names=["distance_weight", "time_weight", "volatility_weight",
-                      "min_confidence_threshold", "max_confidence_threshold"]
+                    "min_confidence_threshold", "max_confidence_threshold"]
 
         for param in param_names:
             values=[]

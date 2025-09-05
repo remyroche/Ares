@@ -343,4 +343,4 @@ async def example_usage() -> None:
     await data_step.cleanup()
     await labeling_step.cleanup()
 if __name__ == '__main__':
-    asyncio.run(await example_usage())
+    asyncio.run( example_usage())

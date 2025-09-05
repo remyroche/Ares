@@ -7,6 +7,11 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import brier_score_loss, log_loss
 from .base_validation_step import BaseValidationStep
 
+from sklearn.model_selection import TimeSeriesSplit
+from scipy.optimize import minimize
+from .core.decorators.errors import handles_errors
+
+
 class ConfidenceCalibrationStep(BaseValidationStep):
     """Step 16: Confidence Calibration for model predictions."""
 
@@ -51,7 +56,6 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         models = self._get_models_for_validation(pipeline_state)
         
         # Calibrate each model using time-aware CV (TimeSeriesSplit)
-        from sklearn.model_selection import TimeSeriesSplit
         tscv = TimeSeriesSplit(n_splits=max(2, int(self.calibration_config["cv_folds"])) )
         for model_name, model in models.items():
             if not hasattr(model, 'predict_proba'):
@@ -182,8 +186,6 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         Returns:
             Optimal temperature value
         """
-        from scipy.optimize import minimize
-        from .core.decorators.errors import handles_errors
 
         def temperature_loss(t: Any) -> None:
             scaled_probs = predictions / t

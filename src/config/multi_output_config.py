@@ -87,7 +87,6 @@ def get_multi_output_config() -> dict[str, Any]:
         },
         # Enhanced data-driven feature selection configuration
         "feature_reduction": {
-            "target_features": 100,
             "vif_threshold": 10.0,
             "mi_threshold": 0.01,
             "correlation_threshold": 0.95,
@@ -210,7 +209,6 @@ def get_multi_output_model_config(model_type: str = "LightGBM") -> dict[str, Any
     Returns:
         Model-specific configuration
     """
-    base_config = get_multi_output_config()
 
     if model_type == "LightGBM":
         model_config = {
@@ -255,7 +253,6 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
     Returns:
         Enhanced training pipeline configuration
     """
-    multi_output_config = get_multi_output_config()
 
     return {
         # Pipeline configuration
@@ -334,7 +331,6 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
 # Example usage and testing
 if __name__ == "__main__":
     # Test configuration
-    config = get_multi_output_config()
     print("Multi-output configuration:")
     print(f"  - Enable multi-output: {config['enable_multi_output']}")
     print(f"  - Model type: {config['multi_output_models']['model_type']}")
@@ -346,13 +342,11 @@ if __name__ == "__main__":
     validate_multi_output_config(config)
 
     # Test model-specific configuration
-    lightgbm_config = get_multi_output_model_config("LightGBM")
     print("\nLightGBM configuration:")
     print(f"  - N estimators: {lightgbm_config['model_config']['n_estimators']}")
     print(f"  - Learning rate: {lightgbm_config['model_config']['learning_rate']}")
 
     # Test enhanced pipeline configuration
-    pipeline_config = get_enhanced_training_pipeline_config()
     print("\nEnhanced pipeline configuration:")
     print(
         f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}"

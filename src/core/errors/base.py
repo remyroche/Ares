@@ -1,4 +1,3 @@
-'\nBase error hierarchy with codes and status mapping.\n\nProvides a structured error system with machine-readable codes,\nHTTP/gRPC status mappings, and rich context.\n'
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any

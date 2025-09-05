@@ -240,7 +240,6 @@ class StateManager:
 state_manager: StateManager | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_state_manager(
     config: dict[str, Any] | None = None,
 ) -> StateManager | None:

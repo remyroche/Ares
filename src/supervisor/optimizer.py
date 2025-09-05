@@ -263,7 +263,6 @@ class Optimizer:
 optimizer: Optimizer | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
     try:
         global optimizer

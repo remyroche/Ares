@@ -390,4 +390,4 @@ if __name__ == '__main__':
             print(report)
         else:
             print('❌ Optimization failed')
-    asyncio.run(await main())
+    asyncio.run( main())

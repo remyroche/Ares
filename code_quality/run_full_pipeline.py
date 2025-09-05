@@ -14,6 +14,10 @@ import sys
 import argparse
 from datetime import datetime
 
+import subprocess
+import asyncio
+
+
 # Since we demonstrated the simplified version works, this documents how 
 # the full pipeline would work with all dependencies installed
 
@@ -171,7 +175,6 @@ def main():
         print("Running simple pipeline test...")
         print("(This uses the simplified version without external dependencies)")
         print()
-        import subprocess
         subprocess.run([sys.executable, "code_quality/test_pipeline_simple.py"])
     else:
         # Show information
@@ -200,5 +203,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

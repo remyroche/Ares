@@ -27,10 +27,10 @@ class PathClassConfig:
 class PathTargetEngineer:
     """
     Compute path-class targets from post-event sequences:
-      - beginning_of_trend
-      - continuation
-      - reversal
-      - end_of_trend
+    - beginning_of_trend
+    - continuation
+    - reversal
+    - end_of_trend
     Precedence: beginning_of_trend > continuation > reversal > end_of_trend
     """
 

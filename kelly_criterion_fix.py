@@ -6,7 +6,6 @@ Kelly Criterion calculation utilities for position sizing.
 
 
 def calculate_correct_kelly_position_size(
-    price_target_confidences: Dict[str, float],
     adversarial_confidences: Dict[str, float],
     kelly_multiplier: float = 0.25,
     min_position_size: float = 0.01,
@@ -16,7 +15,6 @@ def calculate_correct_kelly_position_size(
     Calculate position size using Kelly Criterion based on ML confidence scores.
     
     Args:
-        price_target_confidences: Dictionary of price target levels to confidence scores
         adversarial_confidences: Dictionary of adversarial movement levels to risk scores
         kelly_multiplier: Kelly fraction multiplier (fractional Kelly)
         min_position_size: Minimum position size
@@ -28,7 +26,6 @@ def calculate_correct_kelly_position_size(
     try:
         # Extract average win probability from price target confidences
         if price_target_confidences:
-            win_probs = list(price_target_confidences.values())
             p = np.mean(win_probs) if win_probs else 0.5
         else:
             p = 0.5

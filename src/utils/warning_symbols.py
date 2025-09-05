@@ -1,10 +1,5 @@
 """Warning symbols and constants."""
 
-critical = "🚨"
-error = "❌"
-failed = "💥"
 warning = "⚠️"
-initialization_error = "🚫"
 invalid = "❌"
 missing = "❓"
-validation_error = "❌"

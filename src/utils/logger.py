@@ -8,6 +8,7 @@ import sys as _sys
 import threading
 import time
 from contextlib import contextmanager
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
@@ -1021,6 +1022,4 @@ def log_data_quality_check(check: dict):
     """Log data quality check."""
     system_logger.info(f"Data quality check: {check}")
 
-def setup_logging():
-    """Setup logging configuration."""
-    pass
+# Note: setup_logging is already defined above; avoid redefining it here

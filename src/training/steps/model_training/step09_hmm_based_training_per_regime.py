@@ -8,15 +8,14 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Tuple
 import json
+import pandas as pd
+import numpy as np
 
-from .training.steps.step09_hmm_based_training import EnhancedHMMBasedTrainingStep
-    per_regime_processing,
-    aggregate_regime_results,
-    RegimeProcessingContext
-)
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
+from ..step09_hmm_based_training import EnhancedHMMBasedTrainingStep
+from ...market_analysis.regime_continuity_decorator import per_regime_step
+from ....utils.pipeline_standards import pipeline_standards
+from ....utils.logger import get_logger
+from ....core.decorators import traced, validates, handles_errors
 
 
 logger = get_logger('Step9HMMBasedTrainingPerRegime')
@@ -450,7 +449,9 @@ class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):
             Model results or None
         """
         try:
+            import lightgbm as lgb
             from sklearn.model_selection import train_test_split
+            from sklearn.metrics import accuracy_score
             
             # Split data
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -564,6 +565,7 @@ class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):
         """
         try:
             import torch
+            import torch.nn as nn
             from sklearn.model_selection import train_test_split
             from sklearn.metrics import accuracy_score
             from sklearn.preprocessing import StandardScaler
@@ -905,4 +907,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime HMM training result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

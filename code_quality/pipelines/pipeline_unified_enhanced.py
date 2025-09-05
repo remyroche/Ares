@@ -86,6 +86,7 @@ from plugins.plugin_registry import PluginRegistry
 from utils.report_aggregator import ReportAggregator
 from utils.file_utils import find_python_files
 from ..simple_import_undefined_checker import SimpleImportAndUndefinedChecker
+from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
 
 
 class UnifiedEnhancedPipeline:
@@ -1390,12 +1391,26 @@ class UnifiedEnhancedPipeline:
 
         results["execution_time"] = time.time() - start_time
 
-        # Save individual report
-        report_path = self.reports_dir / f"comprehensive_review_{self.timestamp}.json"
-        with open(report_path, "w") as f:
-            json.dump(results, f, indent=2)
+    def run_enhanced_undefined_names_analysis(self) -> dict[str, Any]:
+        """Run the enhanced undefined names analyzer."""
+        print("\n" + "="*60)
+        print("Running Enhanced Undefined Names Analyzer")
+        print("="*60)
 
-        return results
+        start_time = time.time()
+        analyzer = UndefinedNamesAnalyzer()
+        result = analyzer.analyze_directory(str(self.project_root))
+        result["execution_time"] = time.time() - start_time
+
+        # Add to aggregator
+        self.report_aggregator.add_undefined_names_results(result)
+
+        # Save individual report
+        report_path = self.reports_dir / f"enhanced_undefined_names_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+        return result
 
     def run_all(self) -> dict[str, Any]:
         """Run the most comprehensive code quality analysis available."""
@@ -1415,6 +1430,7 @@ class UnifiedEnhancedPipeline:
             "circular_imports": self.detect_circular_imports(),
             "dead_code_fixes": self.run_dead_code_fixes(),
             "comprehensive_import_undefined_check": self.run_comprehensive_import_undefined_check(),
+            "enhanced_undefined_names_analysis": self.run_enhanced_undefined_names_analysis(),
         }
 
         # Async and Types

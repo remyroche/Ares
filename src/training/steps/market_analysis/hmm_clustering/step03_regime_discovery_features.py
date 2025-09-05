@@ -104,9 +104,9 @@ class RegimeDiscoveryFeatureEngineer:
         features['hour_cos'] = np.cos(2 * np.pi * hour / 24)
         features['day_sin'] = np.sin(2 * np.pi * day_of_week / 7)
         features['day_cos'] = np.cos(2 * np.pi * day_of_week / 7)
-        vol_factor = 1 / (1 + self.volatility_20 / self.volatility_20.rolling(50).mean())
-        vol_factor = 1 / (1 + self.volume_mean_20 / self.volume_mean_20.rolling(50).mean())
-        features['regime_duration_forecast'] = vol_factor * vol_factor * 20
+        vol_factor = 1 / (1 + self.volatility_20 / self.volatility_20.rolling(50, min_periods=1).mean())
+        volume_factor = 1 / (1 + self.volume_mean_20 / self.volume_mean_20.rolling(50, min_periods=1).mean())
+        features['regime_duration_forecast'] = vol_factor * volume_factor * 20
         session = np.zeros(len(df))
         session[hour < 8] = 1
         session[(hour >= 8) & (hour < 16)] = 2
@@ -210,10 +210,10 @@ class RegimeDiscoveryFeatureEngineer:
     def _create_regime_change_warning_features_vectorized(self, df: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Create regime change warning features using vectorized operations."""
         features = {}
-        vol_change_prob = self._calculate_regime_change_probability_vectorized(self.volatility_20, window=10)
-        vol_change_prob = self._calculate_regime_change_probability_vectorized(self.volume_mean_20, window=10)
+        vol_change_prob_volatility = self._calculate_regime_change_probability_vectorized(self.volatility_20, window=10)
+        vol_change_prob_volume = self._calculate_regime_change_probability_vectorized(self.volume_mean_20, window=10)
         mom_change_prob = self._calculate_regime_change_probability_vectorized(self.momentum_10, window=10)
-        early_warning = (vol_change_prob + vol_change_prob + mom_change_prob) / 3
+        early_warning = (vol_change_prob_volatility + vol_change_prob_volume + mom_change_prob) / 3
         features['regime_change_early_warning'] = early_warning
         regime_strength = features.get('regime_confidence_score', np.zeros(len(df)))
         weakening = np.diff(regime_strength) < 0
@@ -474,9 +474,9 @@ class RegimeDiscoveryFeatureEngineer:
         """Forecast regime duration based on current market conditions."""
         volatility = df['close'].pct_change().rolling(20).std()
         volume = df['volume'].rolling(20).mean()
-        vol_factor = 1 / (1 + volatility / volatility.rolling(50).mean())
-        vol_factor = 1 / (1 + volume / volume.rolling(50).mean())
-        duration_forecast = vol_factor * vol_factor * 20
+        vol_factor = 1 / (1 + volatility / volatility.rolling(50, min_periods=1).mean())
+        volume_factor = 1 / (1 + volume / volume.rolling(50, min_periods=1).mean())
+        duration_forecast = vol_factor * volume_factor * 20
         return duration_forecast.fillna(20)
 
     def _calculate_time_based_volatility(self, df: pd.DataFrame) -> pd.Series:
@@ -717,9 +717,9 @@ class RegimeDiscoveryFeatureEngineer:
     def _calculate_regime_confidence_score(self, df: pd.DataFrame) -> pd.Series:
         """Calculate regime confidence score."""
         vol_strength = self._calculate_regime_strength_volatility(df)
-        vol_strength = self._calculate_regime_strength_volume(df)
+        volume_strength = self._calculate_regime_strength_volume(df)
         mom_strength = self._calculate_regime_strength_momentum(df)
-        confidence = (vol_strength + vol_strength + mom_strength) / 3
+        confidence = (vol_strength + volume_strength + mom_strength) / 3
         return confidence.fillna(0)
 
     def _calculate_regime_coherence_score(self, df: pd.DataFrame) -> pd.Series:
@@ -738,10 +738,10 @@ class RegimeDiscoveryFeatureEngineer:
 
     def _calculate_regime_change_early_warning(self, df: pd.DataFrame) -> pd.Series:
         """Calculate early warning for regime changes."""
-        vol_change_prob = self._calculate_regime_change_probability(df['close'].pct_change().rolling(20).std(), window=10)
-        vol_change_prob = self._calculate_regime_change_probability(df['volume'].rolling(20).mean(), window=10)
+        vol_change_prob_volatility = self._calculate_regime_change_probability(df['close'].pct_change().rolling(20).std(), window=10)
+        vol_change_prob_volume = self._calculate_regime_change_probability(df['volume'].rolling(20).mean(), window=10)
         mom_change_prob = self._calculate_regime_change_probability(df['close'].pct_change(10), window=10)
-        early_warning = (vol_change_prob + vol_change_prob + mom_change_prob) / 3
+        early_warning = (vol_change_prob_volatility + vol_change_prob_volume + mom_change_prob) / 3
         return early_warning.fillna(0)
 
     def _calculate_regime_weakening_indicator(self, df: pd.DataFrame) -> pd.Series:

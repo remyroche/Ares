@@ -215,11 +215,8 @@ class LabelingStep(BaseStep):
                     label_info.append({'index': i, 'exit_index': j, 'return': return_pct, 'reason': 'stop_loss'})
                     break
                 elif j == min(i + max_holding, len(data) - 1):
-                    if return_pct > 0:
-                        labels[i] = 1
-                    else:
-                        labels[i] = -1
-                    label_info.append({'index': i, 'exit_index': j, 'return': return_pct, 'reason': 'max_holding'})
+                    labels[i] = 0
+                    label_info.append({'index': i, 'exit_index': j, 'return': return_pct, 'reason': 'max_holding_neutral'})
                     break
         data['triple_barrier_label'] = labels
         data['label_binary'] = (labels > 0).astype(int)

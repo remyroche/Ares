@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
 try:
     from .logger import log_error_with_context
-import numpy as np
 
 except ImportError:
 
@@ -33,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class DecoratorMetadata:
     """Metadata for a registered decorator with comprehensive error handling."""
+import numpy as np
 
     def __init__(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool=False) -> None:
         try:

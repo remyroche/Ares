@@ -9,12 +9,13 @@ import json
 from src.training.steps.market_analysis.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.pipeline_standards import pipeline_standards
+import numpy as np
+
 try:
     from src.core.decorators import traced, validates, handles_errors
 except Exception:
     from src.utils.decorators import traced, validates, handles_errors
 from src.utils.logger import get_logger
-import numpy as np
 
 logger = get_logger('Step8AdvancedFeatureSelectionPerRegime')
 

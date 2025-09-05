@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .utils.common_operations
+import numpy as np
+
 """
 Common Utilities for Data Operations
 
@@ -16,8 +19,6 @@ from enum import Enum
 import pickle
 
 
-from .utils.common_operations import (
-import numpy as np
 import pandas as pd
 
     get_current_datetime,

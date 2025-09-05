@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 'Validator for Step 4: Triple Barrier Method.\n\nThis module validates the triple barrier method step outputs.\n'
 import asyncio
 import sys

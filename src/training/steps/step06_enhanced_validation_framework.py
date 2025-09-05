@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Enhanced Validation Framework for Step06
 
@@ -18,8 +21,6 @@ import traceback
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-import pandas as pd
-import numpy as np
 from dataclasses import dataclass, field
 from enum import Enum
 import json

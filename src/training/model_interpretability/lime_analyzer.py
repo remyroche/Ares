@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """LIME Analyzer for Model Interpretability.
 
 This module provides LIME (Local Interpretable Model-agnostic Explanations) analysis
@@ -34,8 +37,6 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
-import numpy as np
-import pandas as pd
 
             self.lime = lime
             self.lime_tabular = lime.lime_tabular

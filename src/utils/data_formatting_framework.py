@@ -12,7 +12,7 @@ This module provides standardized data formatting including:
 from enum import Enum
 from .core.decorators import handles_errors, validates, log_call, traced
 from .logger import system_logger
-from .utils.data_utils import (
+import .utils.data_utils
 import pandas as pd
 
     safe_copy, validate_dataframe_schema, validate_data_quality,

@@ -5,12 +5,13 @@ for S/R level detection with advanced performance metrics.
 """
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
+import numpy as np
 import warnings
+
 warnings.filterwarnings('ignore')
 from .core.decorators import handles_errors, traced
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
-import numpy as np
 
 @dataclass
 class ValidationResult:

@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import psutil
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 try:
     import pyarrow.parquet as pq
 except ImportError:
@@ -30,8 +33,6 @@ from .utils.cross_step_validation import CrossStepValidator
 from .utils.statistical_distribution_validation import StatisticalValidator
 from .utils.feature_engineering_validation import FeatureEngineeringValidator
 from .utils.common_operations import format_datetime, get_current_datetime
-import pandas as pd
-import numpy as np
 
 def _is_relative_to(path: Path, base: Path) -> bool:
     """Return True if path is within base when resolved; False otherwise."""

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """Regenerate Timeframe Files.
 
 This script regenerates all timeframe files (5m, 15m, 30m, 1h, 4h) from the base 1m data
@@ -22,7 +24,6 @@ if str(project_root) not in sys.path:
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import validate_dataframe_operation
-import pandas as pd
 
 logger=system_logger.getChild("TimeframeRegenerator")
 

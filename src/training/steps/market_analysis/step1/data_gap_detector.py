@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .missing_data_downloader_and_gap_filler
+import pandas as pd
+
 """Data Gap Detector for Step1.
 
 Detects missing data gaps in aggtrades, klines, and futures files.
@@ -34,8 +37,6 @@ class DataGapDetector:
 
         # Import the gap filler for immediate gap filling
         try:
-            from .missing_data_downloader_and_gap_filler import (
-import pandas as pd
 
                 MissingDataDownloaderAndGapFiller,
             )

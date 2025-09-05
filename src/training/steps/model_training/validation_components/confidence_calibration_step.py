@@ -1,6 +1,7 @@
-import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 'Step 16: Confidence Calibration - Updated to use BaseStep pattern.'
 from typing import Any, Dict, List, Optional, Tuple
 from sklearn.calibration import CalibratedClassifierCV

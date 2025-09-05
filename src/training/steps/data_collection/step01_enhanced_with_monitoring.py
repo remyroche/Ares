@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Enhanced Step 1: Data Collection with Comprehensive Function Call Monitoring
 
@@ -17,8 +20,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 try:
-    import pandas as pd
-    import numpy as np
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False

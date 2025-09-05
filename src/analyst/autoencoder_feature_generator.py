@@ -7,6 +7,7 @@ import yaml
 from .utils.logger import system_logger
 import time
 import numpy as np
+import pandas as pd
 
 try:
     import optuna
@@ -27,7 +28,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
 import sys
-import pandas as pd
 
 sys.path.insert(0, str(project_root))
 

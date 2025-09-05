@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 """Step 15: Tactician Specialist Training - Per-Regime Implementation.
 
 This module provides per-HMM regime tactician specialist training functionality, ensuring that
@@ -46,7 +48,6 @@ try:
 except ImportError:
     pipeline_standards = None
 import logging
-import numpy as np
 
 logger = logging.getLogger('Step15TacticianSpecialistTrainingPerRegime')
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import .utils.common_operations
+import numpy as np
+
 """
 Comprehensive Pipeline Monitoring System
 
@@ -15,8 +18,6 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
 
-from .utils.common_operations import (
-import numpy as np
 
     get_current_datetime,
     format_datetime,

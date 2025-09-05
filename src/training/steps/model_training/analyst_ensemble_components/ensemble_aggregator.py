@@ -8,6 +8,7 @@ from sklearn.ensemble import StackingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import logging
 
 class EnsembleAggregator:
     """Handles ensemble aggregation strategies."""

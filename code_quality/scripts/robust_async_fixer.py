@@ -7,6 +7,9 @@ import ast
 import json
 import re
 from pathlib import Path
+import pandas as pd
+import time
+import typing
 
 
 class RobustAsyncFixer:

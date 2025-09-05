@@ -31,6 +31,8 @@ from .utils.performance_monitor import PerformanceMonitor
 from .utils.matrix_operations import MatrixOperations
 from .utils.quality_metrics import QualityMetricsCalculator
 from .utils.feature_filtering import FeatureFiltering
+import collections
+import json
 
 # Optional dependencies with fallback handling
 REQUIRED_MODULES = [

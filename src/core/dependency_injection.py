@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from typing import TypeVar, Any, Callable
 from src.interfaces import IAnalyst, IStrategist, ISupervisor, ITactician
 from ..utils.logger import system_logger
+import logging
+import time
+
 T = TypeVar('T')
 
 class ServiceLifetime:

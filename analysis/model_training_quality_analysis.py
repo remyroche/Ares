@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import src.utils.warning_symbols
+import numpy as np
+
 """
 Model Training Quality Analysis Report
 Analyzes the quality of model training, performance metrics, and training stability.
@@ -11,7 +14,8 @@ import pickle
 import warnings
 
 
-from src.utils.warning_symbols import (
+import pandas as pd
+
     warning,
 )
 

@@ -8,7 +8,9 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass
-from .core.interfaces import (
+import .core.interfaces
+import pandas as pd
+
     BasePipelineStep, IDataStep, StepResult, StepStatus, StepConfig
 )
 

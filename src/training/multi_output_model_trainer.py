@@ -47,6 +47,7 @@ except ImportError:
     PROFIT_FEATURES_AVAILABLE = False
     ProfitBasedFeatureEngineering = None
 from src.utils.logger import system_logger
+import logging
 
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""

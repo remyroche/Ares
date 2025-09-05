@@ -27,6 +27,8 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
     MultiTimeframeTrainingManager,
 )
 from src.utils.error_handler import handle_errors
+import logging
+import time
 
 
 async def run_multi_timeframe_training(

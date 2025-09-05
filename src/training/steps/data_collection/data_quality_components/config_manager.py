@@ -3,6 +3,7 @@ Manages configuration for quality checks and data processing.
 Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional
+import numpy as np
 
 
 class QualityCheckConfig:

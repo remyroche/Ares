@@ -48,6 +48,10 @@ Key Features:
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
 """
 import os
+import collections
+import json
+import typing
+
 import pickle
 import re
 import time

@@ -20,6 +20,9 @@ except ImportError:
     print('Warning: SHAP not available, SHAP explanations disabled')
 try:
     from lime.lime_tabular import LimeTabularExplainer
+import logging
+import time
+
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False

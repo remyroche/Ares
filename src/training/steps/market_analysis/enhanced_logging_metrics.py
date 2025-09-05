@@ -3,6 +3,8 @@ from typing import Dict
 from typing import Tuple
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+
 '\nEnhanced Logging and Metrics System for Market Analysis Pipeline\n\nThis module provides comprehensive logging with emojis and detailed metrics\nfor troubleshooting and monitoring the market analysis pipeline.\n'
 import logging
 import time
@@ -44,10 +46,9 @@ except ImportError:
                 return len(x) if hasattr(x, '__len__') else 1
 try:
     from .utils.common_operations import get_logger, get_current_datetime, format_datetime
-    import numpy as np
 except ImportError:
     import logging
-    import numpy as np
+import pandas as pd
 
     def get_logger(name: Any) -> Any:
         return logging.getLogger(name)

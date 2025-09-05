@@ -12,6 +12,8 @@ from typing import Dict
 import numpy as np
 from typing import Optional
 from src.utils.logger import system_logger
+import logging
+
 logger = system_logger
 
 class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):

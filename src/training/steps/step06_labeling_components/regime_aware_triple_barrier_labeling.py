@@ -1,6 +1,7 @@
 
 from typing import Dict
 import numpy as np
+import pandas as pd
 
 """
 Regime-Aware Triple Barrier Labeling
@@ -22,7 +23,7 @@ from .core.decorators import handles_errors, traced
 from .utils.logger import get_logger
 try:
     import numba
-    import pandas as pd
+
 except Exception:
     numba = None
 if 'numba' in globals() and numba is not None:

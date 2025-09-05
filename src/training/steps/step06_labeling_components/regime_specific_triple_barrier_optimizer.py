@@ -1,5 +1,7 @@
 
 import pandas as pd
+import numpy as np
+
 '\nRegime-Specific Triple Barrier Optimizer\n\nThis module implements regime-specific optimization for the triple barrier method,\ncreating separate optimizers for each HMM regime to allow different barrier parameters\nfor different market conditions.\n\nThis optimizer is used by the triple barrier labeler to optimize parameters\nbefore ML training begins, ensuring optimal trading parameters for each regime.\n\nKey Features:\n- Separate optimization for each HMM regime (bull, bear, sideways, etc.)\n- Regime-specific barrier parameters (upper, lower, timeout, confidence)\n- Regime-aware parameter validation and constraints\n- Integration with triple barrier labeler\n- MLflow tracking for regime-specific experiments\n'
 import json
 import logging
@@ -20,7 +22,8 @@ except ImportError:
 try:
     from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
     from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
-    import numpy as np
+import time
+
     TRIPLE_BARRIER_AVAILABLE = True
 except ImportError:
     TRIPLE_BARRIER_AVAILABLE = False

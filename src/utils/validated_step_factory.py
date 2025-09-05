@@ -8,6 +8,7 @@ import traceback
 from datetime import datetime
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, ValidationResult
+import logging
 
 class ValidatedStepFactory:
     """Factory for creating validated steps with consistent pipeline standards validation."""

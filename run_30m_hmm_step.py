@@ -10,6 +10,7 @@ from pathlib import Path
 
 from src.training.steps.step3_hmm_regime_discovery import run_step
 from src.utils.logger import system_logger
+import logging
 
 # Add the project root to the path
 project_root = Path(__file__).parent

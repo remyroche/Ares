@@ -1,3 +1,6 @@
+import numpy as np
+import typing
+
 # kelly_criterion_fix.py
 """
 Kelly Criterion calculation utilities for position sizing.

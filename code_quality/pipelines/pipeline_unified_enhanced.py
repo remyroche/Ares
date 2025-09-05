@@ -48,6 +48,8 @@ from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 
 # Import enhanced analyzers for false positive reduction
 from analyzers.enhanced_fallback_detector import EnhancedFallbackDetector, analyze_fallback_patterns
+import numpy as np
+
 from analyzers.enhanced_security_analyzer import EnhancedSecurityAnalyzer, analyze_security_issues
 from analyzers.enhanced_dynamic_import_analyzer import EnhancedDynamicImportAnalyzer, analyze_dynamic_imports
 from analyzers.stub_object_analyzer import StubObjectAnalyzer, analyze_stub_objects

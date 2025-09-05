@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """
 Step06 Validation Orchestrator
 
@@ -16,8 +19,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-import pandas as pd
-import numpy as np
 try:
     from step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
     VALIDATION_FRAMEWORK_AVAILABLE = True
@@ -44,6 +45,8 @@ except ImportError as e:
         TIMEOUT = 'timeout'
 try:
     from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
+import time
+
     COMPONENTS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f'FeatureInteractionEngine not available: {e}')

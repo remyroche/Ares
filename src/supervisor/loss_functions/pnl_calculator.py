@@ -14,6 +14,7 @@ from .core.decorators import handles_errors
 from .base import PnLLossFunctionsBase
 from .core.decorators.errors import handles_errors
 import numpy as np
+import logging
 
 
 class PnLCalculator(PnLLossFunctionsBase):

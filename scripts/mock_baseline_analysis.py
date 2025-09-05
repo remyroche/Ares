@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import time
 
 
 def create_mock_baseline_metrics() -> dict[str, Any]:

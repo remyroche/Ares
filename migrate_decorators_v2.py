@@ -6,6 +6,9 @@ Improved script to migrate from old decorators to new core decorators.
 import re
 import os
 from pathlib import Path
+import collections
+import pandas as pd
+import typing
 
 # Mapping of old decorator imports to new ones
 DECORATOR_MAPPING = {

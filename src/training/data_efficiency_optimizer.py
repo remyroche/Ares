@@ -28,6 +28,8 @@ from .database.sqlite_manager import SQLiteManager
 import pickle
 import ast
 import numpy as np
+import json
+import logging
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."

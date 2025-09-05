@@ -5,6 +5,7 @@
 import re
 import sys
 from pathlib import Path
+import typing
 
 
 def fix_import_statements(content: str) -> str:

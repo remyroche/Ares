@@ -155,4 +155,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(await main())
+    sys.exit(main())

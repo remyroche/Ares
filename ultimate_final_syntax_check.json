@@ -1,0 +1,5689 @@
+{
+  "summary": {
+    "total_files": 1136,
+    "valid_files": 1136,
+    "invalid_files": 0
+  },
+  "results": [
+    {
+      "file": "./step_formatter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_test_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./kelly_criterion_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_trade_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_regime_splits.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_30m_hmm_artifacts.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_monitoring_dependencies.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_analysis_core.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_step04_test.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_steps_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./validate_step06_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./verify_fixes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./targeted_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_decorator_cleanup.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./quick_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simulate_regime_merging_from_existing_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standardize_utility_modules.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./steps_5_7_regime_implementation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_sequential_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./update_all_steps_mlflow_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./centralized_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./migrate_to_domain_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_merge.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./validate_advanced_sr_methods.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./auto_fix_syntax.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_30m_hmm_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_quality_auditor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./ares_launcher.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./model_training_pipeline_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyze_strict_thresholds.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./consolidate_aggtrades.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./check_existing_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./automated_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_syntax_check.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./advanced_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standalone_analyzers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./verify_step03_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyze_patterns.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./systematic_code_improver.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_syntax_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_16_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_step2_direct.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./core_syntax_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./minimal_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters_advanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_conservative_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./step07_import_verification.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./create_correct_mock_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_syntax_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./update_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./auto_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./manual_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./consolidate_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyst_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analyze_validation_issues.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./cleanup_script.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./regime_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./migrate_decorators_v2.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./batch_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_fixed_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./setup_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./convert_csv_to_parquet.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./validate_fixes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_enhanced_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_repo_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_code_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./update_pipeline_for_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standardize_remaining_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simple_import_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./style_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./automated_fixes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./syntax_error_count_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./simulate_regime_merging_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./conservative_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./optimize_hmm_regime_parameters_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./multi_objective_hmm_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./complete_remaining_steps.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./syntax_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./standalone_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_sequential_fixer_simple.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./setup_step06_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./cleanup_actions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./minimal_file_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_gap_filler_v2.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./run_pipeline_simple.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./comprehensive_code_quality_assessment.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_fractional_differentiation_params.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/verify_timeframe_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/update_entire_repository_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_sr_position.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/diagnose_feature_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/verify_feature_calculations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_advanced_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/unified_optuna_optimization_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_enhanced_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/setup_challenger_model.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/post_steps_cleaner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/training_cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/train_multi_timeframe_hmm_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/assess_data_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/validate_multicollinearity_fix.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/compare_agg_trades_formats.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/demo_enhanced_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_multicollinearity_issue.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/regenerate_timeframes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/universal_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/download_missing_timeframes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/update_logging_warnings.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/debug_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_with_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/blank_training_run.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/show_timeframe_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_timeframe_incremental.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_consolidated_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_sr_position_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/launch_portfolio_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_scans.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/investigate_high_vif_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_fractional_labeling_params.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_corrupted_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/database_migration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/consolidate_binance_15m.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/configure_optimization_settings.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/advanced_syntax_repair.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_timeframe.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/validate_fractional_differentiation_performance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_hmm_regimes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/regenerate_pickle_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_multi_timeframe_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/fix_multicollinearity.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_partitions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/analyze_small_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/download_mexc_agg_trades.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/migrate_parquet_datasets.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/demo_enhanced_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/surgical_pass2.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/resume_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_feature_diagnostic.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/run_sr_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/optimize_combined_parameters.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/bot_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/mock_baseline_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/syntax_error_scanner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/check_notifications.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/bulk_steps_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/rename_data_files.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/investigate_regime_calculations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./scripts/establish_baseline_performance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/test_pipeline_basic.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/run_full_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/simple_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/comprehensive_code_review.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/quick_start.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/test_pipelines.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_async_await.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/extract_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/master_code_quality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/comprehensive_syntax_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/robust_async_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/detect_circular_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/advanced_syntax_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/enhanced_type_hints.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/safe_indentation_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/auto_dependency_installer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_missing_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/fix_incorrect_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/scripts/interaction_summary.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/text_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/trend_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/error_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/quality_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/html_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/reporters/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/simple_enhanced_dead_code_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/auto_fixer_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/dead_code_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/pipeline_unified_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/complexity_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/overall_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/truly_enhanced_dead_code_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/import_free_analysis_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/base_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/pipelines/interaction_mapping_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/flynt_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/autoflake_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/docformatter_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/isort_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/unify_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/plugin_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/base_plugin.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/import_hygiene_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/ruff_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/fawltydeps_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/pyupgrade_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/pyre_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/ruff_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/black_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/yesqa_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/plugin_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/creosote_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/flake8_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/yapf_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/future_annotations_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/exceptions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/plugins/autopep8_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/mappers/visualize_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/mappers/enhanced_map_code_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/mappers/map_code_interactions_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/mappers/map_code_interactions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/mappers/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/conservative_auto_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/sequential_fixer_fixed.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/auto_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/import_fixers/comprehensive_import_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/fixers/undefined_names_fixers/fix_undefined_names.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/run_all_step_tests.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/test_enhanced_pipelines.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/verify_test_structure.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/tests/test_common_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/base_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/documentation_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/type_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/intelligent_import_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_fallback_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/syntax_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/error_handling_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/data_flow_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/truly_enhanced_dead_code_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/improved_signature_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/code_smell_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/call_graph_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_dependency_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_security_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/code_duplication_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/architecture_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/complexity_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/advanced_ast_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/import_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/performance_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_dead_code_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/simple_complexity_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/ast_analysis_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/undefined_names_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_import_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/test_coverage_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/static_analysis_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/configuration_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_dynamic_import_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/concurrency_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/enhanced_function_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/metrics_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/secrets_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/stub_object_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/linter_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/analyzers/dependency_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/dashboard_generator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/interaction_network.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/chart_generator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/complexity_heatmap.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/code_visualizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/dependency_graph.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/visualizers/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/example_usage_extended.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/enhanced_visualization_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/visual_mapping_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/enhanced_dead_code_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/example_validation_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/examples/example_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/validators/enhanced_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/validators/integrated_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/validators/function_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/validators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/plugins.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/progress.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/gitignore_parser.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/dependency_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/dependency_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/file_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/report_aggregator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./code_quality/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tasks.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/ares_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config_optuna.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/paper_trader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/error_detection_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/tracking_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/trading_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/correlation_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/csv_export_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/report_scheduler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/fractional_system_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/enhanced_ml_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/performance_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/ensemble_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/integration_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/surrogate_optimization_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/metrics_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/explainability_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/monitoring_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/example_enhanced_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/regime_performance_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/fractional_performance_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/enhanced_ml_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/csv_exporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/regime_sr_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/regime_monitoring_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/advanced_tracer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/trade_conditions_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/example_mode_specific_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/example_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/ml_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/daily_summary_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/gui/enhanced_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/gui/launch_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/gui/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/gui/monitoring_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/monitoring/gui/data_visualization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/ares_launcher_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/command_handlers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/configuration_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/enhanced_trading_launcher.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/step_orchestrator_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/pipeline_managers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/validation_utilities.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/launcher/gui_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_analyst.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_supervisor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/components/modular_strategist.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/event_bus.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/base_interfaces.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/interfaces/enhanced_event_bus.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/live_wavelet_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/live_wavelet_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/live_wavelet_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/trading/sr_trading_intelligence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/dependency_container.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/enhanced_prediction_service.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/global_portfolio_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/performance_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/dynamic_weighter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/system_coordinator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/enhanced_model_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/exchange_volume_adapter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/risk_allocator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/pnl_loss_functions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/model_behavior_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/optimization_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/pnl_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/pnl_aware.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/loss_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/risk_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/loss_functions/performance_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/health_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/component_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/online_learning_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/circuit_breaker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/recovery_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/system_coordinator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/supervisor/coordinator/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/live_trading_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/improved_pipeline_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/base_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/monitoring_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/lifecycle_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/pipelines/components/data_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/sentinel/sentinel.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/sentinel/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/seq2seq_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/combined_features_builder.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/baseline_rf.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/inference_combiner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/rolling_inference.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/event_trigger_indexer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/multitask_rf.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/rolling_window_dataset.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/path_targets.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/state_sequence_builder.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/transition/event_window_dataset.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/base_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/config_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/trading_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/ml_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/protocol_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/custom_types/data_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/optimization/ml_optimized_barriers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/optimization/regime_parameter_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/optimization/hmm_regime_ab_testing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/reports/paper_trading_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analytics/bayesian_probability_updates.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analytics/copula_dependency_models.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analytics/limited_microstructure_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analytics/performance_attribution.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/protocols/trading_protocols.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/integration/paper_trading_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/base_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/analyst_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/sr_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/visualization_tools.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/tactician_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/hmm_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/integration_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/explainability_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/explainability/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/position_sizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/position_closing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/ml_target_updater.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/position_division_strategy.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/enhanced_prediction_integrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/comprehensive_enhanced_scenario_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/enhanced_execution_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/tactics_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/position_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/enhanced_order_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/dynamic_barrier_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/scenario_based_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/leverage_sizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/step17_optimized_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/enhanced_scenario_based_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_detection_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/ml_target_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/async_order_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/ml_tactics_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/fully_migrated_tactician.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_ml_enhancer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_weight_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/enhanced_sr_confluence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_comprehensive_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_computational_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/enhanced_sr_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_data_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_context_aware_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_parameter_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_ensemble_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_levels_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_strength_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/enhanced_sr_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/enhanced_sr_detection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_breakout_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_regime_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_breakout_predictor_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_modules/sr_feature_extractor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_modules/sr_probability_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_modules/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_modules/sr_metrics_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tactician/sr_levels/sr_modules/sr_level_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/tracking/trade_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_lm_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_cleaning.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/run_pipeline_with_step08.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_dynamic_feature_selection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/base_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_output_probability_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/run_feature_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_access_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/gpu_acceleration_m1.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/regularization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/feature_engineering_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/feature_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_feature_engineering_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_matrix_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_saving_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/probabilistic_model_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_lm_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/step_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_training_manager_optimized.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/early_stage_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_objective_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_sharing_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/bayesian_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/memory_profiler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/matrix_diverse_lookback_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/unified_data_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/timeframe_relevance_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_sr_training_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/dual_model_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps_1_7_comprehensive_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/adaptive_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimized_feature_selection_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/feature_selection_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/progress_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_pipeline_executor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/multi_output_model_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/calibration_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_probability_generator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/training_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/advanced_neural_models.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/comprehensive_feature_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_specific_pruning.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/matrix_enhancement_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/factory.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_matrix_gpu_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_coarse_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/hmm_regime_barrier_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/ensemble_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_quality_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_training_integrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/di_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/cleanup_duplicates.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/step_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/probability_calculators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/wavelet_feature_selection_workflow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_efficiency_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/optimization_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/tpsl_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/vectorized_training_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_optimization_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/enhanced_multi_timeframe_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/data_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/probabilistic_bayesian_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/diverse_lookback_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/wavelet_caching_workflow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_enhanced_validation_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step5_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step05_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/vectorized_advanced_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/precompute_wavelet_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step08_regime_data_splitting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/unified_data_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/run_all_pipelines.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting_with_cached_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_validation_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/standalone_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_api_agnostic_data_collector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_data_validation_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_data_collector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_step01_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/test_step02_simple.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_data_collection_demo.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_step1_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step02_5_sr_optimization_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_step01_5_data_converter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_downloader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/raw_data_quality_checker_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/standalone_enhanced_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/setup_step01_5_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_enhanced_with_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/test_step02_enhanced_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step02_data_reading_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_validation_framework_with_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/unified_data_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step02_data_reading.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_5_data_converter_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_data_collection_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/test_step02_standalone.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/raw_data_quality_checker_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_data_collection_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/integrated_data_quality_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_step1_5_data_converter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/raw_data_quality_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_comprehensive_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/step01_data_collection_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/exchange_field_mappings.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/enhanced_data_collection_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/error_handling/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/error_handling/enhanced_error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/monitoring/pipeline_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/monitoring/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/decorators/step_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/decorators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/step08_advanced_feature_selection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/feature_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/step08_advanced_feature_selection_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/step06_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/step06_advanced_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/feature_engineering/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step01_5_data_converter_refactored.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step01_5_data_converter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step02_5_sr_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step03_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step01_data_collection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step02_data_reading.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation/step01_5_data_converter_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/validators/pipeline_validators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/validators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/anomaly_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/data_downloader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/quality_metrics_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/config_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/validation_strategies.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/data_preprocessor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/data_integrity_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/validation_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/data_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_quality_components/result_builder.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/aggtrades_data_formatting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/quality_metrics_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/data_integrity_checker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/data_cleaner.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/training_validation_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/data_preparation_components/data_format_converter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/utils/data_operations_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/data_collection/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step20_ab_testing_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step18_walk_forward_validation_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step18_walk_forward_validation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step19_monte_carlo_validation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/comprehensive_reporting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step21_saving.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/enhanced_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step18_backtesting_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step21_saving_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step21_saving_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step19_monte_carlo_validation_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/step20_ab_testing_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/backtesting/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/feature_engineering/step06_advanced_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/feature_engineering/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step_validators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/optimisation_pipeline_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step17_final_parameters_optimization_new.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step17_final_parameters_optimization_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step16_confidence_calibration_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step17_enhanced_multi_objective_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step17_parameter_optimization_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step16_optimisation_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step16_confidence_calibration_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/step17_final_parameters_optimization_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/optimisation/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/optimized_triple_barrier_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/regime_specific_triple_barrier_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/regime_aware_triple_barrier_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/profit_based_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/step06_labeling_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/integrate_regime_processing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step08_advanced_feature_selection_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/fractional_feature_selector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step07_enhanced_matrix_operations_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step07_enhanced_matrix_operations_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/enhanced_step_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_feature_enhancer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step03_market_analysis_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/regime_continuity_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/labeling_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/enhanced_market_analysis_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step06_feature_engineering_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step04_5_triple_barrier_method_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step03_hmm_clustering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/regime_processing_decorator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step04_regime_data_splitting_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step05_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/combined_fractional_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step08_advanced_feature_selection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/vectorized_advanced_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/enhanced_logging_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/precompute_wavelet_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/regime_continuity_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step07_enhanced_matrix_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/cross_timeframe_interaction_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/enhanced_pipeline_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/vectorized_labelling_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step06_feature_engineering_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step04_regime_data_splitting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/dependencies.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step06_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/regime_continuity_decorator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/progress_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/regime_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step05_labeling_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/fractional_differentiation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step07_enhanced_matrix_operations_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step05_labeling_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/evaluation_engine.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/triple_barrier_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/confidence_based_entry_logic.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/optimized_optuna_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/hyperparameter_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/sr_optuna_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/monitoring/function_call_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/monitoring/performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/monitoring/error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/monitoring/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/monitoring/validation_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/missing_data_downloader_and_gap_filler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/data_quality_dashboard.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/validate_and_fix_aggtrades_format.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/comprehensive_gap_filler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/step1_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/data_resampler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/run_step1.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/gap_filler_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/data_gap_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/data_quality_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/step1/enhanced_data_quality_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/multi_timeframe_training/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/model_serializer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/version_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/model_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/model_persistence_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/model_persistence_components/metadata_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_regime_discovery_features.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_bayesian_parameter_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_ml_transition_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_memory_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_streaming_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_enhanced_bayesian_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_hmm_regime_discovery_1h.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_optimized_bayesian_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_hmm_regime_discovery_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_imports.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_dimensionality_reduction.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_dynamic_regime_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_economic_significance_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_regime_persistence_forecasting.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_hierarchical_regime_detection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_ensemble_clustering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_parameter_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_microservices_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_5_final_regime_clustering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/hmm_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_realtime_streaming_pipeline.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_advanced_ensemble_clustering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_advanced_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_technical_indicators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_enhanced_ml_transition_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/hmm_clustering/step03_enhanced_hmm_regime_discovery.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/matrix_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/function_call_tracker.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/comprehensive_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/feature_filtering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/quality_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/market_analysis/utils/enhanced_error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step04_common_types.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/multi_timeframe_hmm_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/update_steps_for_unified_data.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step13_analyst_ensemble_creation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step14_tactician_labeling_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step10_unified_regime_intelligence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step14_tactician_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_5_multi_timeframe_hmm_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step11_analyst_creation_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_5_multi_timeframe_hmm_ensemble_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/hmm_training_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/labeling_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_hmm_based_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step10_unified_regime_intelligence_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step15_tactician_specialist_training_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_hmm_based_training_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step05_labeling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_model_training_main.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/per_regime_pipeline_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_5_hmm_lm_generalist_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step10_unified_regime_intelligence_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step07_enhanced_matrix_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step14_tactician_labeling_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step11_analyst_creation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step12_analyst_enhancement_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_hmm_based_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/per_regime_pipeline_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step13_analyst_ensemble_creation_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step09_5_hmm_lm_generalist_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/sr_outcome_model_trainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step12_analyst_enhancement.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/matrix_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step15_tactician_specialist_training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step12_analyst_enhancement_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step11_analyst_creation_per_regime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step15_tactician_specialist_training_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/test_refactored_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step13_analyst_ensemble_creation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/feature_selector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/ensemble_creator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/hyperparameter_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/model_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_enhancement_components/analyst_enhancement_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/tests/test_step11_analyst_creation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/tests/test_step12_analyst_enhancement.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_training_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/analyst_ensemble_creation_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/weight_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/voting_mechanism.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/ensemble_aggregator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/analyst_ensemble_components/ensemble_evaluator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/monte_carlo_validation_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/confidence_calibration_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/walk_forward_validation_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/ab_testing_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/base_validation_step.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation_components/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/step20_ab_testing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/step16_confidence_calibration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/step19_monte_carlo_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/step17_final_parameters_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/step18_walk_forward_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/steps/model_training/validation/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/examples/simplified_pipeline_example.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/lime_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/interpretability_visualizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/model_explainer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/interpretability_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/model_interpretability/shap_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/core/training_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/utils/feature_calculators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/utils/regime_feature_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/enhanced_config_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/integrated_example.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/config_driven_architecture.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/modular_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/enhanced_pipeline_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/dependency_injection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/standard_interfaces.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/example_new_exchange.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/enhanced_interfaces.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/tests/test_migrated_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/training/simplified_architecture/migrated_components/data_components.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/exchange/binance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/sr_error_handlers.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/di_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/injectable_base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/di_launcher.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/enhanced_factories.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/generic_base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/service_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/enhanced_dependency_injection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/domain.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/dependency_injection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/config_service.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/base.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/mapping.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/errors/handlers/http.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/domain/decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/domain/decorators_extended.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/domain/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/cache.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/retry_timeout.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/trace.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/compose.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/validate.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/function_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/enhanced_error_handling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/decorators/auth.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/reporting/step03_execution_reporter.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/reporting/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/core/examples/decorator_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/sr_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/training_modes.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/fractional_implementations_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/constants.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/computational_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/environment.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/label_model_mapping.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_confidence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/multi_timeframe_hmm_ensemble_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_feature_selection_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/m1_gpu_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_tpsl.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_regime_transitions.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_position_sizing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_multi_timeframe_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/typed_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_sr.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/matrix_diverse_lookback_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/diverse_lookback_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/computational_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_intensity.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/multi_output_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_signal_aggregation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_two_tier.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/sr_config_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_technical_indicators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_reporting_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_system_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/training.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_matrix_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_prediction_service_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_training_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/feature_engineering_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_leverage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/sr_comprehensive_config_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/enhanced_feature_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/regime_specific_optimization_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/trading.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/config/config_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/function_call_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/observability.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_dependency_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_validation_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_quality_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/vif_calculator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/fallback_monitoring.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/model_performance_monitor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/regime_data_access.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/performance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/state_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/statistical_distribution_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/structured_logging.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/async_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_config_management.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/simple_signal_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/logging_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/time_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_preprocessing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/feature_output_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/intelligent_feature_cache.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/tracing.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/parallel_processing_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/function_validation_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_validation_initializer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_memory_management.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/standardized_model_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/error_prevention_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorator_config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/cross_step_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/standardized_config_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/common_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/report_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_mlflow_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/purged_kfold.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/warning_symbols.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/config_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validation_decorators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_streaming_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/sr_parameter_loader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/pipeline_enhancement_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/parquet_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/comprehensive_logger.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_data_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validator_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/hmm_composite_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/signal_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/report_collector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_quality_fixer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/graceful_module_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/error_handling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/configuration_security.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/security_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_missing_value_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_formatting_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/compat.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/linear_confidence_scaling.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_data_quality_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/quality_alert_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/mlflow_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_access_protection.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_validation_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/base_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_step_wrapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/feature_engineering_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/confidence.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/pipeline_standards.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/caching.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/validated_step_factory.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/prometheus_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorator_registry.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/steps_1_7_compatibility_framework.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/model_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_data_operations.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/database_security.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_outlier_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/enhanced_error_handler.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/advanced_quality_metrics.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/logger.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/lookahead_bias_detector.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/cross_step_validation.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/data_type_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/step_validation_updater.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorators/errors.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/utils/decorators/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/config.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/enhanced_regime_classifier.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/strategist.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/strategist/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/validation/critical_path_validators.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/validation/walk_forward_validator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/order_book_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/advanced_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier_sr_focused.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/feature_engineering_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/meta_labeling_system.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/location_classifier_optimization.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/autoencoder_feature_generator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/enhanced_prediction_integrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/regime_runtime.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/liquidation_risk_model.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/multi_timeframe_feature_engineering.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/dynamic_regime_mapper.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/candlestick_pattern_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/enhanced_regime_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/location_classifier_improvements.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/market_health_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier_fractal_enhanced.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/sr_relevance_optimizer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/data_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/feature_engineering_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/regime_expert_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier_fractal_simplified.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/meta_label_relevance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/ml_confidence_predictor.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/di_analyst.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/unified_regime_classifier_sr_optimized.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/analyst.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/ensemble_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/efficient_features_database.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/influxdb_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/precomputed_features_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/migration_utils.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/firestore_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./src/database/sqlite_manager.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/model_training_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/missing_values_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/data_collection_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./analysis/data_preparation_quality_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/verify_gui_workflow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/launcher_integration.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/api_server.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/test_full_functionality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/test_gui.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./GUI/api_server_simple.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./examples/explainability_example.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/data_downloader.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/data_analyzer.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./crypto_analysis/run_analysis.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/test_directory_functionality.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/generate_unified_report.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/simple_quality_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/example_usage.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/unified_quality_orchestrator.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/data_flow.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/call_graph.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/cli.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/dead_code.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/dependency_graph.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./data_quality/mapping/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/mexc_optimized.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/okx.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/gateio.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/mexc.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/factory.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/__init__.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/binance.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./exchange/base_exchange.py",
+      "valid": true,
+      "errors": []
+    },
+    {
+      "file": "./tools/import_smoke_test.py",
+      "valid": true,
+      "errors": []
+    }
+  ]
+}

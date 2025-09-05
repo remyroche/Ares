@@ -19,10 +19,11 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-try:
-    from .utils.logger import system_logger
+
 import numpy as np
 
+try:
+    from .utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger('EnhancedMemoryManagement')
 

@@ -509,31 +509,33 @@ class ArchitectureAnalyzer:
         total_architecture_score = 0.0
         successful_files = 0
 
+
         for file_path in python_files:
-            try:
-                result = self.analyze_file(str(file_path))
-                if result["status"] == "success":
-                    total_issues += result["issues_found"]
-                    total_architecture_score += result["architecture_score"]
-                    successful_files += 1
-            except Exception as e:
-                logging.exception(f"Error processing {file_path}: {e}")
-
-        avg_architecture_score = total_architecture_score / successful_files if successful_files > 0 else 0.0
-
+            content = self._read_file_safely(file_path)
+            if not content:
+                continue
+            
+            tree = self._parse_ast_safely(content, file_path)
+            if not tree:
+                continue
+            
+            component_info = self._analyze_component(tree, file_path)
+            if component_info:
+                components[str(file_path)] = component_info
+            
+            self.stats["files_analyzed"] += 1
+        
         return {
-            "status": "success",
-            "total_files": len(python_files),
-            "successful_files": successful_files,
-            "total_issues": total_issues,
-            "average_architecture_score": avg_architecture_score,
-            "file_stats": self.file_stats,
+            "components": components,
+            "layers": layers,
+            "total_components": len(components),
+            "stats": self.stats
         }
-
-    def can_analyze(self, file_path: str) -> bool:
-        """Check if this analyzer can analyze the given file."""
-        return file_path.endswith(".py")
-
-    def analyze(self, file_path: str) -> dict[str, Any]:
-        """Analyze the given file (alias for analyze_file)."""
-        return self.analyze_file(file_path)
+    
+    def _analyze_component(self, tree, file_path):
+        """Analyze a single component."""
+        return {
+            "type": "module",
+            "dependencies": [],
+            "file_path": str(file_path)
+        }

@@ -116,8 +116,12 @@ class EnhancedDeadCodeAnalyzer:
         self.deadcode_available = DEADCODE_AVAILABLE
         
         # Analysis results storage
-        self.call_graph = nx.DiGraph()
-        self.dependency_graph = nx.DiGraph()
+        if NETWORKX_AVAILABLE:
+            self.call_graph = nx.DiGraph()
+            self.dependency_graph = nx.DiGraph()
+        else:
+            self.call_graph = None
+            self.dependency_graph = None
         self.all_issues = []
         
         # Configuration

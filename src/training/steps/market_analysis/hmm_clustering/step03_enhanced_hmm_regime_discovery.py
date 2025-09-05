@@ -35,6 +35,14 @@ sys.path.insert(0, str(project_root))
 from .core.decorators import validates, handles_errors, traced
 from .utils.logger import system_logger
 
+# Import enhanced monitoring decorators
+from ...core.decorators import (
+    monitor_step03_functions,
+    handle_step03_errors,
+    validates as enhanced_validates,
+    traced as enhanced_traced
+)
+
 # Import our new modules
 from .step03_optimized_bayesian_optimization import OptimizedBayesianParameterOptimization
 from .step03_regime_discovery_features import RegimeDiscoveryFeatureEngineer
@@ -78,6 +86,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         self.logger.info('✅ All enhanced components initialized successfully')
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='initialize_enhanced_hmm_regime_discovery')
     @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM regime discovery step."""
@@ -89,6 +101,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         self.logger.info('✅ Enhanced HMM Regime Discovery Step initialized successfully')
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='execute_enhanced_hmm_regime_discovery')
     @validates()
     @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
     @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
@@ -234,6 +250,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         return pipeline_state
 
+    @monitor_step03_functions
+    @handle_step03_errors
+    @enhanced_validates()
+    @enhanced_traced(span_name='load_and_prepare_data')
     @traced(span_name='load_and_prepare_data')
     @handles_errors(fallback={'success': False, 'error': 'Data loading failed'})
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
@@ -734,6 +754,10 @@ class EnhancedHMMRegimeDiscoveryStep:
         return bb_features
 
 
+@monitor_step03_functions
+@handle_step03_errors
+@enhanced_validates()
+@enhanced_traced(span_name='run_enhanced_step')
 @monitor_step_execution
 @secure_step_execution
 @validates()

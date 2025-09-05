@@ -31,7 +31,7 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
-    from src.domain.data_quality import (
+    from src.core.domain import (
         guard_dataframe_nulls, 
         secure_file_path, 
         validate_dataframe_schema, 

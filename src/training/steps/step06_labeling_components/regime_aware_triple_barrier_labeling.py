@@ -22,8 +22,7 @@ from .core.decorators import handles_errors, traced
 from .utils.logger import get_logger
 try:
     import numba
-import pandas as pd
-
+    import pandas as pd
 except Exception:
     numba = None
 if 'numba' in globals() and numba is not None:

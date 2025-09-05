@@ -5,17 +5,17 @@ feature selection algorithms including MI, SHAP, and regime-specific analysis.
 """
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
+import numpy as np
+import pandas as pd
 
 # Optional dependencies with fallback handling
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -37,6 +37,9 @@ except ImportError:
 
 try:
     from scipy.stats import rankdata
+import logging
+import time
+
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False

@@ -3,6 +3,7 @@ from typing import Any
 'BaseValidationStep wrapper for Step 20 A/B Testing.'
 from .core.decorators import handles_errors
 from .base_validation_step import BaseValidationStep
+import logging
 
 class ABTestingStep(BaseValidationStep):
     """Step 20: A/B Testing using BaseValidationStep contract."""

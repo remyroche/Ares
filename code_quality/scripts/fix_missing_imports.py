@@ -7,6 +7,12 @@ import ast
 import json
 from collections import defaultdict
 from pathlib import Path
+import numpy as np
+import logging
+import os
+import pandas as pd
+import time
+import typing
 
 # Enhanced function to module mappings with comprehensive coverage
 COMMON_IMPORTS = {
@@ -110,20 +116,57 @@ COMMON_IMPORTS = {
     "Union": ("typing", None),
     "Any": ("typing", None),
 
-    # Logging operations
+    # Logging operations - Enhanced coverage
     "getLogger": ("logging", None),
+    "info": ("logging", None),
+    "debug": ("logging", None),
+    "warning": ("logging", None),
+    "error": ("logging", None),
+    "critical": ("logging", None),
+    "basicConfig": ("logging", None),
+    "setLevel": ("logging", None),
+    "Logger": ("logging", None),
+    "StreamHandler": ("logging", None),
+    "FileHandler": ("logging", None),
+    "Formatter": ("logging", None),
 
-    # JSON operations
+    # JSON operations - Enhanced coverage
     "dumps": ("json", None),
     "loads": ("json", None),
+    "dump": ("json", None),
+    "load": ("json", None),
 
-    # Other common operations
+    # Other common operations - Enhanced coverage
     "ArgumentParser": ("argparse", None),
     "defaultdict": ("collections", None),
     "Counter": ("collections", None),
     "deque": ("collections", None),
+    "OrderedDict": ("collections", None),
+    "namedtuple": ("collections", None),
     "deepcopy": ("copy", None),
     "copy": ("copy", None),
+    
+    # OS operations - Enhanced coverage
+    "listdir": ("os", None),
+    "makedirs": ("os", None),
+    "remove": ("os", None),
+    "rmdir": ("os", None),
+    "getcwd": ("os", None),
+    "chdir": ("os", None),
+    "path": ("os", None),
+    "environ": ("os", None),
+    "system": ("os", None),
+    "popen": ("os", None),
+    
+    # Time operations - Enhanced coverage
+    "sleep": ("time", None),
+    "time": ("time", None),
+    "ctime": ("time", None),
+    "gmtime": ("time", None),
+    "localtime": ("time", None),
+    "strftime": ("time", None),
+    "strptime": ("time", None),
+    "mktime": ("time", None),
     
     # Additional common functions that are often missing
     "filterwarnings": ("warnings", None),  # Common missing import
@@ -294,12 +337,22 @@ class ImportFixer:
 
     def auto_detect_missing_imports(self, file_path: str) -> set:
         """Automatically detect missing imports by analyzing the file content."""
+        missing_imports = set()  # Initialize outside try block
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             tree = ast.parse(content)
-            missing_imports = set()
+            
+            # Get existing imports to avoid duplicates
+            existing_imports = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        existing_imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        existing_imports.add(node.module.split('.')[0])
             
             # Find all function calls and attribute access
             for node in ast.walk(tree):
@@ -307,8 +360,14 @@ class ImportFixer:
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     
+                    # Check for common imports first
+                    if func_name in COMMON_IMPORTS and COMMON_IMPORTS[func_name]:
+                        module, alias = COMMON_IMPORTS[func_name]
+                        if module not in existing_imports:
+                            missing_imports.add((module, alias))
+                    
                     # Check for numpy functions
-                    if func_name in self.numpy_patterns:
+                    elif func_name in self.numpy_patterns:
                         missing_imports.add(('numpy', 'np'))
                     
                     # Check for pandas functions
@@ -472,21 +531,180 @@ class ImportFixer:
             
             return filtered_imports
             
+        except SyntaxError as e:
+            print(f"Syntax error in {file_path}: {e}")
+            return set()
+        except IndentationError as e:
+            print(f"Indentation error in {file_path}: {e}")
+            return set()
+        except ImportError as e:
+            print(f"Import error in {file_path}: {e}")
+            return set()
+        except Exception as e:
+            print(f"Unknown error analyzing {file_path}: {e}")
+            return set()
+
+    def add_common_missing_imports(self, file_path: str) -> set:
+        """Add the most common missing imports based on usage patterns."""
+        missing_imports = set()  # Initialize outside try block
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content)
+            
+            # Get existing imports
+            existing_imports = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        existing_imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        existing_imports.add(node.module.split('.')[0])
+            
+            # Check for common patterns that indicate missing imports
+            content_lower = content.lower()
+            
+            # Check for numpy usage patterns
+            if any(pattern in content_lower for pattern in ['np.', 'numpy.', 'array(', 'zeros(', 'ones(', 'mean(', 'std(', 'sum(']):
+                if 'numpy' not in existing_imports:
+                    missing_imports.add(('numpy', 'np'))
+            
+            # Check for pandas usage patterns
+            if any(pattern in content_lower for pattern in ['pd.', 'pandas.', 'dataframe', 'series', 'read_csv', 'read_parquet']):
+                if 'pandas' not in existing_imports:
+                    missing_imports.add(('pandas', 'pd'))
+            
+            # Check for logging usage patterns
+            if any(pattern in content_lower for pattern in ['logger.', 'logging.', 'info(', 'debug(', 'warning(', 'error(', 'critical(']):
+                if 'logging' not in existing_imports:
+                    missing_imports.add(('logging', None))
+            
+            # Check for datetime usage patterns
+            if any(pattern in content_lower for pattern in ['datetime.', 'now()', 'today()', 'timedelta']):
+                if 'datetime' not in existing_imports:
+                    missing_imports.add(('datetime', None))
+            
+            # Check for os usage patterns
+            if any(pattern in content_lower for pattern in ['os.', 'listdir', 'makedirs', 'getcwd', 'chdir']):
+                if 'os' not in existing_imports:
+                    missing_imports.add(('os', None))
+            
+            # Check for time usage patterns
+            if any(pattern in content_lower for pattern in ['time.', 'sleep(', 'time()']):
+                if 'time' not in existing_imports:
+                    missing_imports.add(('time', None))
+            
+            # Check for collections usage patterns
+            if any(pattern in content_lower for pattern in ['defaultdict', 'counter', 'deque', 'ordereddict']):
+                if 'collections' not in existing_imports:
+                    missing_imports.add(('collections', None))
+            
+            # Check for json usage patterns
+            if any(pattern in content_lower for pattern in ['json.', 'dumps(', 'loads(', 'dump(', 'load(']):
+                if 'json' not in existing_imports:
+                    missing_imports.add(('json', None))
+            
+            # Check for typing usage patterns
+            if any(pattern in content_lower for pattern in ['list[', 'dict[', 'set[', 'tuple[', 'optional[', 'union[']):
+                if 'typing' not in existing_imports:
+                    missing_imports.add(('typing', None))
+            
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}")
-            return set()
+            
+        return missing_imports
+
+    def analyze_file_with_categorization(self, file_path: str) -> dict:
+        """Analyze a file and return categorized results."""
+        result = {
+            "file_path": file_path,
+            "status": "success",
+            "error_type": None,
+            "error_message": None,
+            "missing_imports": set(),
+            "syntax_valid": False,
+            "can_parse_ast": False
+        }
+        
+        try:
+            # First check if file has valid Python syntax
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Test basic Python syntax
+            try:
+                compile(content, file_path, 'exec')
+                result["syntax_valid"] = True
+            except SyntaxError as e:
+                result["status"] = "syntax_error"
+                result["error_type"] = "syntax_error"
+                result["error_message"] = f"Syntax error: {e.msg} (line {e.lineno})"
+                return result
+            except IndentationError as e:
+                result["status"] = "indentation_error"
+                result["error_type"] = "indentation_error"
+                result["error_message"] = f"Indentation error: {e.msg} (line {e.lineno})"
+                return result
+            
+            # Test AST parsing
+            try:
+                tree = ast.parse(content)
+                result["can_parse_ast"] = True
+                
+                # Now analyze for missing imports using enhanced detection
+                missing_imports = self.auto_detect_missing_imports(file_path)
+                common_missing = self.add_common_missing_imports(file_path)
+                
+                # Combine both sets
+                all_missing_imports = missing_imports.union(common_missing)
+                result["missing_imports"] = all_missing_imports
+                
+            except SyntaxError as e:
+                result["status"] = "ast_parse_error"
+                result["error_type"] = "ast_parse_error"
+                result["error_message"] = f"AST parse error: {e.msg} (line {e.lineno})"
+                return result
+            except Exception as e:
+                result["status"] = "ast_parse_error"
+                result["error_type"] = "ast_parse_error"
+                result["error_message"] = f"AST parse error: {str(e)}"
+                return result
+                
+        except FileNotFoundError:
+            result["status"] = "file_not_found"
+            result["error_type"] = "file_not_found"
+            result["error_message"] = "File not found"
+            return result
+        except PermissionError:
+            result["status"] = "permission_error"
+            result["error_type"] = "permission_error"
+            result["error_message"] = "Permission denied"
+            return result
+        except Exception as e:
+            result["status"] = "unknown_error"
+            result["error_type"] = "unknown_error"
+            result["error_message"] = f"Unknown error: {str(e)}"
+            return result
+        
+        return result
 
     def auto_fix_file_imports(self, file_path: str) -> bool:
         """Automatically detect and fix missing imports in a file."""
         try:
-            # Auto-detect missing imports
+            # Auto-detect missing imports using both methods
             missing_imports = self.auto_detect_missing_imports(file_path)
+            common_missing = self.add_common_missing_imports(file_path)
             
-            if not missing_imports:
+            # Combine both sets
+            all_missing_imports = missing_imports.union(common_missing)
+            
+            if not all_missing_imports:
                 return False
             
             # Fix the imports
-            return self.fix_file_imports(file_path, missing_imports)
+            return self.fix_file_imports(file_path, all_missing_imports)
             
         except Exception as e:
             print(f"Error auto-fixing {file_path}: {e}")
@@ -634,34 +852,18 @@ class ImportFixer:
         return {"fixed": fixed, "failed": failed}
 
     def auto_fix_all_files(self, file_paths: list, dry_run: bool = True):
-        """Automatically detect and fix missing imports in all files."""
+        """Automatically detect and fix missing imports in all files with categorization."""
+        # Categorize all files first
+        categorized_results = self.categorize_all_files(file_paths)
+        
         if dry_run:
-            print("\nAUTO-DETECTION DRY RUN - Missing imports that would be added:")
+            print("\nAUTO-DETECTION DRY RUN - Categorized Analysis:")
             print("=" * 70)
             
-            total_files = 0
-            total_imports = 0
-            module_counts = defaultdict(int)
+            # Print categorized results
+            self._print_categorized_results(categorized_results)
             
-            for file_path in file_paths:
-                missing_imports = self.auto_detect_missing_imports(file_path)
-                if missing_imports:
-                    total_files += 1
-                    total_imports += len(missing_imports)
-                    print(f"\n{file_path}:")
-                    for module, alias in missing_imports:
-                        import_str = f"import {module} as {alias}" if alias else f"import {module}"
-                        print(f"  + {import_str}")
-                        module_counts[module] += 1
-            
-            print(f"\nSUMMARY:")
-            print(f"  Files with missing imports: {total_files}")
-            print(f"  Total imports to add: {total_imports}")
-            print(f"\nBy module:")
-            for module, count in sorted(module_counts.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {module}: {count} files")
-            
-            return {"files_to_fix": total_files, "imports_to_add": total_imports, "module_counts": dict(module_counts)}
+            return categorized_results
         
         # Actually fix the files
         fixed = 0
@@ -678,6 +880,112 @@ class ImportFixer:
         
         print(f"\nAuto-fixed {fixed} files, {failed} failures")
         return {"fixed": fixed, "failed": failed, "fixed_files": self.fixed_files, "failed_files": self.failed_files}
+
+    def categorize_all_files(self, file_paths: list) -> dict:
+        """Categorize all files by their analysis results."""
+        results = {
+            "total_files": len(file_paths),
+            "syntax_errors": [],
+            "indentation_errors": [],
+            "ast_parse_errors": [],
+            "file_not_found": [],
+            "permission_errors": [],
+            "unknown_errors": [],
+            "successful_analysis": [],
+            "files_with_missing_imports": [],
+            "error_counts": {
+                "syntax_errors": 0,
+                "indentation_errors": 0,
+                "ast_parse_errors": 0,
+                "file_not_found": 0,
+                "permission_errors": 0,
+                "unknown_errors": 0,
+                "successful_analysis": 0,
+                "files_with_missing_imports": 0
+            }
+        }
+        
+        for file_path in file_paths:
+            analysis = self.analyze_file_with_categorization(file_path)
+            
+            if analysis["status"] == "success":
+                results["successful_analysis"].append(analysis)
+                results["error_counts"]["successful_analysis"] += 1
+                
+                if analysis["missing_imports"]:
+                    results["files_with_missing_imports"].append(analysis)
+                    results["error_counts"]["files_with_missing_imports"] += 1
+                    
+            elif analysis["error_type"] == "syntax_error":
+                results["syntax_errors"].append(analysis)
+                results["error_counts"]["syntax_errors"] += 1
+                
+            elif analysis["error_type"] == "indentation_error":
+                results["indentation_errors"].append(analysis)
+                results["error_counts"]["indentation_errors"] += 1
+                
+            elif analysis["error_type"] == "ast_parse_error":
+                results["ast_parse_errors"].append(analysis)
+                results["error_counts"]["ast_parse_errors"] += 1
+                
+            elif analysis["error_type"] == "file_not_found":
+                results["file_not_found"].append(analysis)
+                results["error_counts"]["file_not_found"] += 1
+                
+            elif analysis["error_type"] == "permission_error":
+                results["permission_errors"].append(analysis)
+                results["error_counts"]["permission_errors"] += 1
+                
+            else:
+                results["unknown_errors"].append(analysis)
+                results["error_counts"]["unknown_errors"] += 1
+        
+        return results
+
+    def _print_categorized_results(self, results: dict):
+        """Print categorized analysis results."""
+        print(f"\n📊 CATEGORIZED ANALYSIS RESULTS:")
+        print(f"Total files analyzed: {results['total_files']}")
+        print()
+        
+        # Print each category
+        categories = [
+            ("syntax_errors", "🔴 Syntax Errors", "Files with invalid Python syntax"),
+            ("indentation_errors", "🟠 Indentation Errors", "Files with indentation issues"),
+            ("ast_parse_errors", "🟡 AST Parse Errors", "Files that can't be parsed by AST (semantic issues)"),
+            ("file_not_found", "🔵 File Not Found", "Files that don't exist"),
+            ("permission_errors", "🟣 Permission Errors", "Files with permission issues"),
+            ("unknown_errors", "⚫ Unknown Errors", "Files with unexpected errors"),
+            ("successful_analysis", "✅ Successful Analysis", "Files that parsed successfully"),
+            ("files_with_missing_imports", "📦 Missing Imports", "Files needing import fixes")
+        ]
+        
+        for category, title, description in categories:
+            count = results["error_counts"][category]
+            if count > 0:
+                print(f"{title}: {count} files")
+                print(f"  {description}")
+                
+                # Show first few examples
+                if category in results and results[category]:
+                    examples = results[category][:3]  # Show first 3 examples
+                    for example in examples:
+                        if isinstance(example, dict) and "file_path" in example:
+                            file_path = example["file_path"]
+                            if "error_message" in example and example["error_message"]:
+                                print(f"    - {file_path}: {example['error_message']}")
+                            else:
+                                print(f"    - {file_path}")
+                print()
+        
+        # Summary
+        total_errors = sum(results["error_counts"][cat] for cat in ["syntax_errors", "indentation_errors", "ast_parse_errors", "file_not_found", "permission_errors", "unknown_errors"])
+        print(f"📈 SUMMARY:")
+        print(f"  ✅ Files with valid syntax: {results['error_counts']['successful_analysis']}")
+        print(f"  ❌ Files with issues: {total_errors}")
+        print(f"  📦 Files needing import fixes: {results['error_counts']['files_with_missing_imports']}")
+        print(f"  🔴 Real syntax errors: {results['error_counts']['syntax_errors'] + results['error_counts']['indentation_errors']}")
+        print(f"  🟡 Semantic/AST issues: {results['error_counts']['ast_parse_errors']}")
 
 
 def main():

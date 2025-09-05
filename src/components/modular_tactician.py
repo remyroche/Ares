@@ -9,6 +9,7 @@ from .utils.warning_symbols import initialization_error, invalid, missing
 from logging import error
 # src/components/modular_tactician.py
 from .core.decorators.errors import handles_errors
+import time
 
 
 class ModularTactician:

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Validation Issues Analyzer
 Extracts detailed information about feature validation issues from logs
@@ -184,8 +187,6 @@ Feature-Specific Validation Analysis
 Run this to get detailed information about specific features
 """
 
-import pandas as pd
-import numpy as np
 from pathlib import Path
 
 def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str]) -> Dict[str, Any]:

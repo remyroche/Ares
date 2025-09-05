@@ -26,6 +26,7 @@ from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
 import pandas as pd
 import numpy as np
+import logging
 
 # Add project root to path
 project_root=Path(__file__).parent.parent

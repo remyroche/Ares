@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Universal Repository Checker for Ares
 
@@ -31,6 +33,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+import pandas as pd
 
 # --------------------------------------------------------------------------------------
 # Logging

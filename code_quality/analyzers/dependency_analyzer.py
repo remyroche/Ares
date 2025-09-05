@@ -5,6 +5,7 @@ import ast
 from pathlib import Path
 from typing import Dict, List, Any
 from .base_analyzer import BaseAnalyzer
+import numpy as np
 
 
 class DependencyAnalyzer(BaseAnalyzer):

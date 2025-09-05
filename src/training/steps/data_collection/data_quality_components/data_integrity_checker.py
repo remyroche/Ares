@@ -6,6 +6,8 @@ from typing import Any, Optional, Tuple
 from datetime import timedelta
 from .utils.logger import system_logger
 import numpy as np
+import logging
+import pandas as pd
 
 class DataIntegrityChecker:
     """Validates data integrity and logical consistency of market data.

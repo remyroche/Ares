@@ -25,6 +25,7 @@ from .training.steps.market_analysis.pipeline_orchestrator import (
 )
 from .training.steps.market_analysis.enhanced_logging_metrics import enhanced_logger
 from .training.steps.market_analysis.progress_monitor import progress_monitor
+import logging
 
 async def main():
     """Main function to run market analysis pipeline with enhanced logging."""

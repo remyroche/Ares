@@ -4,6 +4,8 @@ from celery import Celery
 from celery.schedules import crontab
 from ares_pipeline import AresPipeline
 from sqlite_manager import SQLiteManager
+from src.training.managers.training_manager import TrainingManager
+from src.config.environment import get_environment_settings
 app = Celery('ares_tasks', broker='redis://localhost:6379/0')
 
 @app.task

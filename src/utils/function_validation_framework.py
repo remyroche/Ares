@@ -20,6 +20,7 @@ from datetime import datetime
 import os
 import pathlib
 import numpy as np
+import time
 
 class ValidationSeverity(Enum):
     """Severity levels for validation issues."""

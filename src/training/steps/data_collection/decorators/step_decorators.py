@@ -24,6 +24,10 @@ from .data_quality_decorators import (
     quality_gate
 )
 from .utils.common_operations import (
+import numpy as np
+import pandas as pd
+import typing
+
     get_current_datetime,
     format_datetime,
     safe_file_exists,

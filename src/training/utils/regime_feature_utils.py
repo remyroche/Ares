@@ -5,9 +5,9 @@ This module contains vectorized calculations and helper functions
 for regime discovery features to reduce complexity in the main class.
 """
 
-import pandas as pd
-import numpy as np
 from typing import Dict, Any, Optional
+import numpy as np
+import pandas as pd
 
 
 class RegimeFeatureUtils:

@@ -13,6 +13,7 @@ from sklearn.cluster import KMeans
 from .utils.logger import system_logger
 
 from hmmlearn import hmm
+import logging
 
 
 class HMMRegimeAnalyzer:

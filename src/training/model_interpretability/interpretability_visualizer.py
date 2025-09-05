@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """Interpretability Visualizer for Model Analysis.
 
 This module provides visualization capabilities for model interpretability results
@@ -31,6 +34,9 @@ class InterpretabilityVisualizer:
         """Check if visualization libraries are available."""
         try:
             import matplotlib
+from typing import Any
+from typing import Dict
+from typing import Optional
 
             matplotlib.use('Agg')  # Use non-interactive backend
             self.plt = plt

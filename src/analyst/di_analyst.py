@@ -10,6 +10,8 @@ from .core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import AnalysisResult, IAnalyst, IEventBus, IExchangeClient, IStateManager, MarketData
 from .training.dual_model_system import DualModelSystem
 from src.utils.warning_symbols import failed, initialization_error
+import pandas as pd
+import time
 
 class DIAnalyst(AnalystBase, IAnalyst):
     """

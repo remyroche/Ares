@@ -8,6 +8,7 @@ import re
 import os
 
 import asyncio
+import typing
 
 
 def fix_type_annotations(content):

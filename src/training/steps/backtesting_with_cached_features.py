@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 """Backtesting with cached features utilities."""
 
 class BacktestingWithCachedFeatures:

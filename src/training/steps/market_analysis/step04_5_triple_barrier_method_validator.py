@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 'Validator for Step 4: Triple Barrier Method.\n\nThis module validates the triple barrier method step outputs.\n'
 import asyncio
 import sys
@@ -9,6 +10,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .utils.logger import system_logger
 from .core.decorators import handles_errors, traced, validates
+import logging
+
 logger = system_logger.getChild('Step4TripleBarrierMethodValidator')
 
 @traced(span_name='validate_triple_barrier_method')

@@ -37,6 +37,10 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
     from .utils.data_quality_framework import DataQualityFramework
     from .utils.logger import system_logger
     import time
+import collections
+import json
+import logging
+import pandas as pd
     
     logger = system_logger.getChild('OptimisationPipeline')
     

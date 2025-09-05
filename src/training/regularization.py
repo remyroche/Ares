@@ -18,6 +18,7 @@ from .analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEns
 from .config import CONFIG
 from .utils.logger import system_logger
 import numpy as np
+import logging
 
 
 class RegularizationManager:

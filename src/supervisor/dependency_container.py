@@ -11,6 +11,7 @@ from .utils.state_manager import StateManager
 
 from .utils.model_manager import ModelManager
 from .sentinel.sentinel import Sentinel
+import logging
 
 
 class DependencyContainer:

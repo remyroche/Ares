@@ -57,7 +57,8 @@ class HMMClusteringStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('HMMClusteringStep')
-        self.standards = pipeline_standards
+        from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+        self.standards = _pipeline_standards
         self.start_time = None
         self.step_timings = {}
 
@@ -234,7 +235,8 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
         logger = system_logger.getChild('Step3HMMClustering')
         
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+            data_dir = _pipeline_standards.build_path('processed_data', exchange, symbol)
         
         logger.info('=' * 80)
         logger.info('🚀 STEP 3: Enhanced HMM Clustering with Full Pipeline Integration')

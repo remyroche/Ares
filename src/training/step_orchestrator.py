@@ -123,8 +123,8 @@ class StepOrchestrator:
             module = importlib.import_module(module_path)
             self.logger.info(f"✅ Loaded step module: {step_name}")
             return module
-        except ImportError:
-            self.print(failed + " ❌ Failed to import step module {step_name}: {e}")
+        except ImportError as e:
+            self.logger.error(f"{failed} Failed to import step module {step_name}: {e}")
             return None
 
     def get_step_class(self, step_name: str) -> Any | None:
@@ -153,7 +153,7 @@ class StepOrchestrator:
             self.logger.info(f"✅ Found step class: {step_classes[0]}")
             return step_class
 
-        self.print_message(error("❌ No step class found in {step_name}"))
+        self.logger.error(error + f" No step class found in {step_name}")
         return None
 
     async def execute_step(
@@ -186,7 +186,7 @@ class StepOrchestrator:
                 pipeline_state = self._build_pipeline_state(step_name)
                 deps_ok = await validate_step_dependencies(step_name, pipeline_state)
                 if not deps_ok:
-                    self.print(failed + " ❌ Dependencies not satisfied for {step_name}")
+                    self.logger.error(f"{failed} Dependencies not satisfied for {step_name}")
                     return False
             except Exception as e:
                 self.logger.warning(f"⚠️ Dependency validation error for {step_name}: {e}")

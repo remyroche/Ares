@@ -1,36 +1,41 @@
-"""Validator for Step 2: Data Reading.
+"""Enhanced Validator for Step 2: Data Reading with Comprehensive Function Monitoring.
 
-This module validates the data reading step outputs with comprehensive quality checks.
+This module validates the data reading step outputs with comprehensive quality checks
+and includes thorough function call monitoring, validation, and detailed reporting.
 """
 import asyncio
 import sys
+import time
+import traceback
 from pathlib import Path
-
-from .core.decorators import handles_errors, traced, validates
-from .core.decorators.errors import handles_errors
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from .utils.logger import system_logger
-from src.utils.trading_decorators import (
-    comprehensive_data_validation, 
-    handle_errors, 
-    memory_efficient, 
-    resource_monitor,
-    secure_data_processing, 
-    validate_data_structure, 
-    with_tracing_span, 
-    quality_gate
-)
-from .utils.common_operations import safe_json_load
-from typing import Any
-from typing import Dict
+from .utils.common_operations import safe_json_load, ensure_directory, safe_json_dump
 import pandas as pd
+
+# Import the comprehensive function monitoring framework from step02
+from .step02_data_reading import (
+    comprehensive_function_monitoring,
+    function_monitor,
+    FunctionCallMonitor,
+    FunctionInteractionReport
+)
 
 logger = system_logger.getChild('Step2DataReadingValidator')
 
 
+@comprehensive_function_monitoring(
+    validate_inputs=True,
+    validate_outputs=True,
+    track_performance=True,
+    timeout_seconds=30,
+    retry_attempts=1
+)
 async def _validate_directory_structure(data_dir: str, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate directory structure exists."""
     unified_data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
@@ -61,6 +66,13 @@ async def _validate_directory_structure(data_dir: str, exchange: str, symbol: st
     }
 
 
+@comprehensive_function_monitoring(
+    validate_inputs=True,
+    validate_outputs=True,
+    track_performance=True,
+    timeout_seconds=60,
+    retry_attempts=1
+)
 async def _validate_data_files(data_files: list, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate data files and load the latest one."""
     try:
@@ -92,6 +104,13 @@ async def _validate_data_files(data_files: list, exchange: str, symbol: str, tim
         }
 
 
+@comprehensive_function_monitoring(
+    validate_inputs=True,
+    validate_outputs=True,
+    track_performance=True,
+    timeout_seconds=120,
+    retry_attempts=1
+)
 async def _validate_data_content(data: pd.DataFrame, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate data content and structure."""
     try:
@@ -203,9 +222,13 @@ async def _validate_data_content(data: pd.DataFrame, exchange: str, symbol: str,
         }
 
 
-@traced(span_name='validate_data_reading')
-@validates()
-@handles_errors
+@comprehensive_function_monitoring(
+    validate_inputs=True,
+    validate_outputs=True,
+    track_performance=True,
+    timeout_seconds=300,
+    retry_attempts=1
+)
 async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
     """Run validation for Step 2: Data Reading.
 
@@ -283,6 +306,118 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
             'error': f'Validation error: {e}'
         }
 
+@comprehensive_function_monitoring(
+    validate_inputs=True,
+    validate_outputs=True,
+    track_performance=True,
+    timeout_seconds=60,
+    retry_attempts=1
+)
+async def generate_validation_function_report(
+    training_input: Dict[str, Any], 
+    validation_result: Dict[str, Any],
+    data_dir: str
+) -> Dict[str, Any]:
+    """Generate comprehensive validation report with function monitoring details."""
+    try:
+        logger.info('📊 Generating comprehensive validation function report...')
+        
+        # Get function interaction report
+        function_report = function_monitor.get_function_interaction_report()
+        
+        # Save detailed validation report
+        reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'validation_monitoring')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        symbol = training_input.get('symbol', 'UNKNOWN')
+        exchange = training_input.get('exchange', 'UNKNOWN')
+        
+        report_filename = f'step02_validation_function_report_{exchange}_{symbol}_{timestamp}.json'
+        report_path = reports_dir / report_filename
+        
+        # Combine validation results with function monitoring data
+        comprehensive_report = {
+            'step': 'step02_data_reading_validation',
+            'timestamp': datetime.now().isoformat(),
+            'symbol': symbol,
+            'exchange': exchange,
+            'validation_result': validation_result,
+            'function_monitoring': {
+                'total_calls': function_report.total_calls,
+                'successful_calls': function_report.successful_calls,
+                'failed_calls': function_report.failed_calls,
+                'total_execution_time': function_report.total_execution_time,
+                'average_execution_time': function_report.average_execution_time,
+                'performance_metrics': function_report.performance_metrics,
+                'error_summary': function_report.error_summary,
+                'call_hierarchy': function_report.call_hierarchy,
+                'function_call_details': [
+                    {
+                        'function_name': call.function_name,
+                        'module_name': call.module_name,
+                        'call_id': call.call_id,
+                        'start_time': call.start_time,
+                        'end_time': call.end_time,
+                        'status': call.status.value,
+                        'execution_time': call.execution_time,
+                        'parent_call_id': call.parent_call_id,
+                        'child_calls': call.child_calls,
+                        'error_details': call.error_details,
+                        'input_args': call.input_args,
+                        'input_kwargs': call.input_kwargs,
+                        'output_result': call.output_result
+                    }
+                    for call in function_report.function_call_details
+                ]
+            }
+        }
+        
+        safe_json_dump(comprehensive_report, report_path, indent=2, default=str)
+        
+        # Log comprehensive summary
+        logger.info('📊 Validation Function Report Summary:')
+        logger.info(f'   - Validation passed: {validation_result.get("validation_passed", False)}')
+        logger.info(f'   - Total function calls: {function_report.total_calls}')
+        logger.info(f'   - Successful calls: {function_report.successful_calls}')
+        logger.info(f'   - Failed calls: {function_report.failed_calls}')
+        logger.info(f'   - Success rate: {function_report.performance_metrics.get("success_rate", 0):.1f}%')
+        logger.info(f'   - Total execution time: {function_report.total_execution_time:.3f}s')
+        logger.info(f'   - Average execution time: {function_report.average_execution_time:.3f}s')
+        
+        if function_report.performance_metrics.get("fastest_call"):
+            fastest_time = function_report.performance_metrics.get("fastest_call_time", 0)
+            logger.info(f'   - Fastest call: {function_report.performance_metrics["fastest_call"]} ({fastest_time:.3f}s)')
+        if function_report.performance_metrics.get("slowest_call"):
+            slowest_time = function_report.performance_metrics.get("slowest_call_time", 0)
+            logger.info(f'   - Slowest call: {function_report.performance_metrics["slowest_call"]} ({slowest_time:.3f}s)')
+        
+        if function_report.error_summary:
+            logger.info('   - Error summary:')
+            for error_type, count in function_report.error_summary.items():
+                logger.info(f'     * {error_type}: {count} occurrences')
+        
+        logger.info(f'✅ Validation function report saved to: {report_path}')
+        
+        return {
+            'success': True,
+            'report_path': str(report_path),
+            'validation_passed': validation_result.get('validation_passed', False),
+            'function_monitoring_summary': {
+                'total_calls': function_report.total_calls,
+                'successful_calls': function_report.successful_calls,
+                'failed_calls': function_report.failed_calls,
+                'success_rate': function_report.performance_metrics.get("success_rate", 0),
+                'total_execution_time': function_report.total_execution_time,
+                'average_execution_time': function_report.average_execution_time
+            }
+        }
+        
+    except Exception as e:
+        logger.exception(f'❌ Error generating validation function report: {e}')
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
 
 if __name__ == '__main__':
     async def test() -> None:
@@ -293,7 +428,16 @@ if __name__ == '__main__':
             'data_dir': 'data_cache'
         }
         test_state = {}
+        
+        # Run validation with comprehensive function monitoring
         result = await run_validator(test_input, test_state)
         print(f'Validation result: {result}')
+        
+        # Generate comprehensive validation function report
+        if result.get('validation_passed', False):
+            report_result = await generate_validation_function_report(
+                test_input, result, test_input['data_dir']
+            )
+            print(f'Validation function report: {report_result}')
     
     asyncio.run(test())

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.config import CodeQualityConfig, load_config
+from core.config import AnalysisConfig, get_default_config
 
 from utils.file_utils import (
     backup_file,

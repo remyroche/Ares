@@ -60,3 +60,8 @@ class AnalysisConfig:
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'AnalysisConfig':
         """Create configuration from dictionary."""
         return cls(**config_dict)
+
+
+def get_default_config() -> AnalysisConfig:
+    """Get default analysis configuration."""
+    return AnalysisConfig()

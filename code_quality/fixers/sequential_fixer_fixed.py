@@ -26,7 +26,7 @@ AutoFixer, _ = safe_import("fixers.auto_fixer", None)
 
 # Core imports with fallbacks
 try:
-    from core.config import CodeQualityConfig, get_default_config
+    from core.config import AnalysisConfig, get_default_config
 except ImportError:
     CodeQualityConfig = None
     get_default_config = None

@@ -12,7 +12,7 @@ from analyzers.call_graph_analyzer import CallGraphAnalyzer
 from analyzers.dependency_analyzer import DependencyAnalyzer
 from analyzers.linter_analyzer import LinterAnalyzer
 from analyzers.syntax_validator import SyntaxValidator
-from core.config import CodeQualityConfig, get_default_config
+from core.config import AnalysisConfig, get_default_config
 from fixers.auto_fixer import AutoFixer
 from utils.file_utils import get_directory_stats
 

@@ -8,7 +8,7 @@ import os
 from collections import defaultdict
 from typing import Any, NamedTuple
 
-from core.config import CodeQualityConfig
+from core.config import AnalysisConfig
 
 
 class FunctionSignature(NamedTuple):

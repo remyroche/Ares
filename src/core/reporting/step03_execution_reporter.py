@@ -28,28 +28,14 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    # Create a mock pandas for basic functionality
-    class MockDataFrame:
-        def __init__(self, data=None):
-            self.data = data or []
-        def to_csv(self, *args, **kwargs):
-            pass
-        def __len__(self):
-            return len(self.data)
-    pd = type('MockPandas', (), {'DataFrame': MockDataFrame})()
+    pd = None
 
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Create a mock numpy for basic functionality
-    class MockNumpy:
-        def mean(self, data):
-            return sum(data) / len(data) if data else 0
-        def unique(self, data):
-            return list(set(data)), [data.count(x) for x in set(data)]
-    np = MockNumpy()
+    np = None
 
 class ReportFormat(Enum):
     """Report output formats."""
@@ -939,7 +925,7 @@ class Step03ExecutionReporter:
         csv_dir.mkdir(exist_ok=True)
         
         # Function calls CSV
-        if report.function_calls:
+        if report.function_calls and PANDAS_AVAILABLE:
             calls_df = pd.DataFrame([
                 {
                     'function_name': call.function_name,
@@ -962,7 +948,8 @@ class Step03ExecutionReporter:
             calls_df.to_csv(csv_dir / "function_calls.csv", index=False)
         
         # Performance metrics CSV
-        perf_df = pd.DataFrame([{
+        if PANDAS_AVAILABLE:
+            perf_df = pd.DataFrame([{
             'metric': 'total_execution_time',
             'value': report.performance_metrics.total_execution_time
         }, {
@@ -978,10 +965,11 @@ class Step03ExecutionReporter:
             'metric': 'overall_performance_score',
             'value': report.performance_metrics.overall_performance_score
         }])
-        perf_df.to_csv(csv_dir / "performance_metrics.csv", index=False)
+            perf_df.to_csv(csv_dir / "performance_metrics.csv", index=False)
         
         # Quality metrics CSV
-        quality_df = pd.DataFrame([{
+        if PANDAS_AVAILABLE:
+            quality_df = pd.DataFrame([{
             'metric': 'data_quality_score',
             'value': report.quality_metrics.data_quality_score
         }, {
@@ -997,7 +985,7 @@ class Step03ExecutionReporter:
             'metric': 'overall_quality_score',
             'value': report.quality_metrics.overall_quality_score
         }])
-        quality_df.to_csv(csv_dir / "quality_metrics.csv", index=False)
+            quality_df.to_csv(csv_dir / "quality_metrics.csv", index=False)
         
         self.logger.info(f"📄 CSV data saved to: {csv_dir}")
         return csv_dir

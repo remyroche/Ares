@@ -15,9 +15,23 @@ from ..analyzers.syntax_validator import SyntaxValidator
 from ..analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from ..analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
 from ..analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+from ..analyzers.architecture_analyzer import ArchitectureAnalyzer
+from ..analyzers.call_graph_analyzer import CallGraphAnalyzer
+from ..analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
+from ..analyzers.complexity_analyzer import ComplexityAnalyzer
+from ..analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
+from ..analyzers.type_checker import TypeChecker
 from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer
+from ..fixers.conservative_auto_fixer import ConservativeAutoFixer
 from ..utils.file_utils import find_python_files
+
+# Import consolidated fix scripts
+from ..scripts.bulk_syntax_cleanup import BulkSyntaxCleanup
+from ..scripts.apply_all_fixes import ApplyAllFixes
+from ..scripts.fix_missing_imports import MissingImportFixer
+from ..scripts.add_type_hints import TypeHintAdder
+from ..scripts.detect_circular_imports import CircularImportDetector
 
 
 class SequentialFixer:
@@ -984,6 +998,322 @@ class SequentialFixer:
         elif self.start_time and self.end_time:
             duration = self.end_time - self.start_time
             print(f"\nPipeline completed in {duration:.2f} seconds")
+
+    def run_consolidated_fixes(self, target_files: list[str]) -> dict[str, Any]:
+        """Run consolidated fix scripts for comprehensive improvements."""
+        print("\n" + "="*60)
+        print("Running Consolidated Fix Scripts")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Bulk Syntax Cleanup
+        print("Running Bulk Syntax Cleanup...")
+        try:
+            bulk_cleanup = BulkSyntaxCleanup(str(self.project_root))
+            bulk_results = bulk_cleanup.cleanup_all_files()
+            results["bulk_syntax_cleanup"] = bulk_results
+        except Exception as e:
+            results["bulk_syntax_cleanup"] = {"error": str(e)}
+
+        # Apply All Fixes
+        print("Running Apply All Fixes...")
+        try:
+            apply_fixes = ApplyAllFixes(str(self.project_root))
+            apply_results = apply_fixes.apply_all_fixes()
+            results["apply_all_fixes"] = apply_results
+        except Exception as e:
+            results["apply_all_fixes"] = {"error": str(e)}
+
+        # Missing Import Fixer
+        print("Running Missing Import Fixer...")
+        try:
+            import_fixer = MissingImportFixer(str(self.project_root))
+            import_results = import_fixer.fix_missing_imports()
+            results["missing_import_fixer"] = import_results
+        except Exception as e:
+            results["missing_import_fixer"] = {"error": str(e)}
+
+        # Type Hint Adder
+        print("Running Type Hint Adder...")
+        try:
+            type_adder = TypeHintAdder(str(self.project_root))
+            type_results = type_adder.add_type_hints()
+            results["type_hint_adder"] = type_results
+        except Exception as e:
+            results["type_hint_adder"] = {"error": str(e)}
+
+        # Circular Import Detection
+        print("Running Circular Import Detection...")
+        try:
+            circular_detector = CircularImportDetector(str(self.project_root))
+            circular_results = circular_detector.detect_circular_imports()
+            results["circular_imports"] = circular_results
+        except Exception as e:
+            results["circular_imports"] = {"error": str(e)}
+
+        results["execution_time"] = time.time() - start_time
+        return results
+
+    def run_advanced_analysis(self, target_files: list[str]) -> dict[str, Any]:
+        """Run advanced analysis including architecture, complexity, and design patterns."""
+        print("\n" + "="*60)
+        print("Running Advanced Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Architecture Analysis
+        print("Running Architecture Analysis...")
+        try:
+            arch_analyzer = ArchitectureAnalyzer(self.config)
+            arch_results = arch_analyzer.analyze_directory(str(self.project_root))
+            results["architecture"] = arch_results
+        except Exception as e:
+            results["architecture"] = {"error": str(e)}
+
+        # Call Graph Analysis
+        print("Running Call Graph Analysis...")
+        try:
+            call_graph_analyzer = CallGraphAnalyzer(self.config)
+            call_graph_results = call_graph_analyzer.analyze_directory(str(self.project_root))
+            results["call_graph"] = call_graph_results
+        except Exception as e:
+            results["call_graph"] = {"error": str(e)}
+
+        # Code Duplication Analysis
+        print("Running Code Duplication Analysis...")
+        try:
+            dup_analyzer = CodeDuplicationAnalyzer(self.config)
+            dup_results = dup_analyzer.analyze_directory(str(self.project_root))
+            results["code_duplication"] = dup_results
+        except Exception as e:
+            results["code_duplication"] = {"error": str(e)}
+
+        # Complexity Analysis
+        print("Running Complexity Analysis...")
+        try:
+            complexity_analyzer = ComplexityAnalyzer(self.config)
+            complexity_results = complexity_analyzer.analyze_directory(str(self.project_root))
+            results["complexity"] = complexity_results
+        except Exception as e:
+            results["complexity"] = {"error": str(e)}
+
+        # Error Handling Analysis
+        print("Running Error Handling Analysis...")
+        try:
+            error_analyzer = ErrorHandlingAnalyzer(self.config)
+            error_results = error_analyzer.analyze_directory(str(self.project_root))
+            results["error_handling"] = error_results
+        except Exception as e:
+            results["error_handling"] = {"error": str(e)}
+
+        # Type Checker Analysis
+        print("Running Type Checker Analysis...")
+        try:
+            type_analyzer = TypeChecker(self.config)
+            type_results = type_analyzer.analyze_directory(str(self.project_root))
+            results["type_checker"] = type_results
+        except Exception as e:
+            results["type_checker"] = {"error": str(e)}
+
+        results["execution_time"] = time.time() - start_time
+        return results
+
+    def run_enhanced_pipeline(self, target: str | list[str], 
+                            output_dir: str | None = None,
+                            create_backups: bool = True,
+                            run_pre_commit: bool = False,
+                            include_consolidated_fixes: bool = True,
+                            include_advanced_analysis: bool = True) -> dict[str, Any]:
+        """Run enhanced pipeline with consolidated fixes and advanced analysis."""
+        print(f"\n{'='*80}")
+        print("SEQUENTIAL FIXER - ENHANCED PIPELINE")
+        print(f"{'='*80}")
+
+        # Set up output directory
+        if output_dir:
+            self.output_dir = Path(output_dir)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Parse target
+        if isinstance(target, str):
+            if "," in target:
+                target_files = [f.strip() for f in target.split(",")]
+            else:
+                target_path = Path(target)
+                if target_path.is_file():
+                    target_files = [str(target_path)]
+                else:
+                    target_files = find_python_files(str(target_path))
+        else:
+            target_files = target
+
+        print(f"Target: {target_files}")
+        print(f"Output directory: {self.output_dir}")
+        print(f"Create backups: {create_backups}")
+        print(f"Run pre-commit: {run_pre_commit}")
+        print(f"Include consolidated fixes: {include_consolidated_fixes}")
+        print(f"Include advanced analysis: {include_advanced_analysis}")
+
+        # Initialize results
+        self.results = {
+            "target_files": target_files,
+            "timestamp": self.timestamp,
+            "config": self.config.to_dict() if hasattr(self.config, 'to_dict') else {},
+            "step_results": {},
+            "summary": {},
+        }
+
+        total_start = time.time()
+
+        # Run standard pipeline steps
+        self.results["step_results"]["auto_fix"] = self._run_auto_fix(target_files)
+        self.results["step_results"]["linter_analysis"] = self._run_linter_analysis(target_files)
+        self.results["step_results"]["syntax_validation"] = self._run_syntax_validation(target_files)
+        self.results["step_results"]["import_analysis"] = self._run_import_analysis(target_files)
+        self.results["step_results"]["signature_analysis"] = self._run_signature_analysis(target_files)
+        self.results["step_results"]["static_analysis"] = self._run_static_analysis(target_files)
+        self.results["step_results"]["ast_analysis"] = self._run_ast_analysis(target_files)
+        self.results["step_results"]["undefined_names_analysis"] = self._run_undefined_names_analysis(target_files)
+
+        # Run consolidated fixes if requested
+        if include_consolidated_fixes:
+            self.results["step_results"]["consolidated_fixes"] = self.run_consolidated_fixes(target_files)
+
+        # Run advanced analysis if requested
+        if include_advanced_analysis:
+            self.results["step_results"]["advanced_analysis"] = self.run_advanced_analysis(target_files)
+
+        # Run pre-commit hooks if requested
+        if run_pre_commit:
+            self.results["step_results"]["pre_commit"] = self._run_pre_commit_hooks()
+
+        # Generate summary
+        self.results["summary"] = self._generate_enhanced_summary(time.time() - total_start)
+
+        # Save results
+        if self.output_dir:
+            report_path = self.output_dir / f"sequential_fixer_enhanced_report_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(self.results, f, indent=2)
+            print(f"\nEnhanced pipeline report saved to: {report_path}")
+
+        # Print summary
+        self._print_enhanced_summary()
+
+        return self.results
+
+    def _generate_enhanced_summary(self, total_time: float) -> dict[str, Any]:
+        """Generate enhanced summary including consolidated fixes and advanced analysis."""
+        summary = {
+            "execution_time": total_time,
+            "timestamp": self.timestamp,
+            "target_files": len(self.results["target_files"]),
+            "steps_completed": len(self.results["step_results"]),
+            "metrics": {
+                "syntax_issues": 0,
+                "linter_issues": 0,
+                "import_issues": 0,
+                "signature_issues": 0,
+                "static_analysis_issues": 0,
+                "ast_analysis_issues": 0,
+                "undefined_names_issues": 0,
+                "consolidated_fixes_applied": 0,
+                "advanced_analysis_issues": 0,
+            },
+            "recommendations": [],
+        }
+
+        # Aggregate metrics from all steps
+        step_results = self.results["step_results"]
+        
+        # Standard pipeline metrics
+        if "auto_fix" in step_results and step_results["auto_fix"].get("status") == "success":
+            summary["metrics"]["syntax_issues"] = step_results["auto_fix"]["results"]["summary"]["total_issues"]
+        
+        if "linter_analysis" in step_results and step_results["linter_analysis"].get("status") == "success":
+            summary["metrics"]["linter_issues"] = step_results["linter_analysis"]["results"]["summary"]["total_issues"]
+        
+        if "import_analysis" in step_results and step_results["import_analysis"].get("status") == "success":
+            summary["metrics"]["import_issues"] = step_results["import_analysis"]["results"]["summary"]["total_issues"]
+        
+        if "signature_analysis" in step_results and step_results["signature_analysis"].get("status") == "success":
+            summary["metrics"]["signature_issues"] = step_results["signature_analysis"]["results"]["summary"]["total_issues"]
+        
+        if "static_analysis" in step_results and step_results["static_analysis"].get("status") == "success":
+            summary["metrics"]["static_analysis_issues"] = step_results["static_analysis"]["results"]["summary"]["total_issues_found"]
+        
+        if "ast_analysis" in step_results and step_results["ast_analysis"].get("status") == "success":
+            summary["metrics"]["ast_analysis_issues"] = step_results["ast_analysis"]["results"]["summary"]["total_issues"]
+        
+        if "undefined_names_analysis" in step_results and step_results["undefined_names_analysis"].get("status") == "success":
+            summary["metrics"]["undefined_names_issues"] = step_results["undefined_names_analysis"]["results"]["summary"]["total_undefined_names"]
+
+        # Consolidated fixes metrics
+        if "consolidated_fixes" in step_results:
+            consolidated = step_results["consolidated_fixes"]
+            if "bulk_syntax_cleanup" in consolidated and "error" not in consolidated["bulk_syntax_cleanup"]:
+                summary["metrics"]["consolidated_fixes_applied"] += consolidated["bulk_syntax_cleanup"].get("files_processed", 0)
+            if "apply_all_fixes" in consolidated and "error" not in consolidated["apply_all_fixes"]:
+                summary["metrics"]["consolidated_fixes_applied"] += consolidated["apply_all_fixes"].get("fixes_applied", 0)
+
+        # Advanced analysis metrics
+        if "advanced_analysis" in step_results:
+            advanced = step_results["advanced_analysis"]
+            for analyzer_name, analyzer_results in advanced.items():
+                if "error" not in analyzer_results and "issues" in analyzer_results:
+                    summary["metrics"]["advanced_analysis_issues"] += len(analyzer_results["issues"])
+
+        # Generate recommendations
+        total_issues = sum(summary["metrics"].values())
+        if total_issues > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "issues",
+                "message": f"Address {total_issues} total issues found across all analyses"
+            })
+
+        if summary["metrics"]["consolidated_fixes_applied"] > 0:
+            summary["recommendations"].append({
+                "priority": "medium",
+                "category": "fixes",
+                "message": f"Review {summary['metrics']['consolidated_fixes_applied']} automated fixes applied"
+            })
+
+        return summary
+
+    def _print_enhanced_summary(self):
+        """Print enhanced summary to console."""
+        summary = self.results["summary"]
+        metrics = summary["metrics"]
+
+        print(f"\n{'='*60}")
+        print("ENHANCED PIPELINE SUMMARY")
+        print(f"{'='*60}")
+        print(f"Execution time: {summary['execution_time']:.2f} seconds")
+        print(f"Target files: {summary['target_files']}")
+        print(f"Steps completed: {summary['steps_completed']}")
+
+        print(f"\nIssues Found:")
+        print(f"  Syntax issues: {metrics['syntax_issues']}")
+        print(f"  Linter issues: {metrics['linter_issues']}")
+        print(f"  Import issues: {metrics['import_issues']}")
+        print(f"  Signature issues: {metrics['signature_issues']}")
+        print(f"  Static analysis issues: {metrics['static_analysis_issues']}")
+        print(f"  AST analysis issues: {metrics['ast_analysis_issues']}")
+        print(f"  Undefined names issues: {metrics['undefined_names_issues']}")
+        print(f"  Advanced analysis issues: {metrics['advanced_analysis_issues']}")
+
+        print(f"\nFixes Applied:")
+        print(f"  Consolidated fixes: {metrics['consolidated_fixes_applied']}")
+
+        if summary["recommendations"]:
+            print(f"\nRecommendations:")
+            for rec in summary["recommendations"]:
+                print(f"  [{rec['priority'].upper()}] {rec['message']}")
 
 
 def main():

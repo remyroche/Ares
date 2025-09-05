@@ -28,6 +28,19 @@ from analyzers.test_coverage_analyzer import TestCoverageAnalyzer
 from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
 from analyzers.improved_dead_code_analyzer import ImprovedDeadCodeAnalyzer
+from analyzers.architecture_analyzer import ArchitectureAnalyzer
+from analyzers.call_graph_analyzer import CallGraphAnalyzer
+from analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
+from analyzers.complexity_analyzer import ComplexityAnalyzer
+from analyzers.concurrency_analyzer import ConcurrencyAnalyzer
+from analyzers.dependency_analyzer import DependencyAnalyzer
+from analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
+from analyzers.type_checker import TypeChecker
+from analyzers.import_analyzer import ImportAnalyzer
+from analyzers.linter_analyzer import LinterAnalyzer
+from analyzers.syntax_validator import SyntaxValidator
+from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+
 from comprehensive_code_review import CodeQualityReviewer
 from enhanced_validator import EnhancedValidator
 from function_validator import FunctionValidator
@@ -35,15 +48,24 @@ from function_validator import FunctionValidator
 from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
-from scripts.safe_import_fixer import SafeImportFixer
+from scripts.detect_circular_imports import CircularImportDetector
+from scripts.add_type_hints import TypeHintAdder
+from scripts.fix_missing_imports import MissingImportFixer
+from scripts.bulk_syntax_cleanup import BulkSyntaxCleanup
+from scripts.apply_all_fixes import ApplyAllFixes
+
 from utils.report_aggregator import ReportAggregator
 from ..simple_import_undefined_checker import SimpleImportAndUndefinedChecker
 
+# Import plugin system
+from plugins.plugin_manager import PluginManager
+from plugins.plugin_registry import PluginRegistry
+
 
 class UnifiedEnhancedPipeline:
-    """Enhanced unified pipeline with comprehensive reporting."""
+    """Enhanced unified pipeline with comprehensive reporting, advanced analyzers, and plugin support."""
 
-    def __init__(self, project_root: str = "/workspace/src"):
+    def __init__(self, project_root: str = "/workspace/src", enable_plugins: bool = True):
         self.project_root = Path(project_root)
         self.reports_dir = Path("/workspace/code_quality/reports")
         self.reports_dir.mkdir(exist_ok=True)
@@ -52,9 +74,77 @@ class UnifiedEnhancedPipeline:
             "syntax_imports": {},
             "async_types": {},
             "analysis": {},
+            "advanced_analysis": {},
+            "visualization": {},
+            "plugin_results": {},
             "summary": {},
         }
         self.report_aggregator = ReportAggregator(project_root)
+        
+        # Initialize plugin system
+        self.enable_plugins = enable_plugins
+        if self.enable_plugins:
+            self.plugin_registry = PluginRegistry()
+            self.plugin_manager = PluginManager(self.plugin_registry)
+            self._register_default_plugins()
+        
+        # Initialize analyzers
+        self._initialize_analyzers()
+
+    def _register_default_plugins(self):
+        """Register default plugins for the pipeline."""
+        try:
+            # Register production plugins
+            from plugins.production.syntax_fixer import SyntaxFixerPlugin
+            from plugins.production.import_fixer import ImportFixerPlugin
+            from plugins.production.dead_code_fixer import DeadCodeFixerPlugin
+            from plugins.production.linter_runner import LinterRunnerPlugin
+            from plugins.production.security_scanner import SecurityScannerPlugin
+            
+            self.plugin_registry.register_plugin("syntax_fixer", SyntaxFixerPlugin())
+            self.plugin_registry.register_plugin("import_fixer", ImportFixerPlugin())
+            self.plugin_registry.register_plugin("dead_code_fixer", DeadCodeFixerPlugin())
+            self.plugin_registry.register_plugin("linter_runner", LinterRunnerPlugin())
+            self.plugin_registry.register_plugin("security_scanner", SecurityScannerPlugin())
+            
+            print("✓ Default plugins registered successfully")
+        except ImportError as e:
+            print(f"⚠ Warning: Could not register some plugins: {e}")
+
+    def _initialize_analyzers(self):
+        """Initialize all analyzers with default configuration."""
+        try:
+            from core.config import get_default_config
+            config = get_default_config()
+            
+            self.analyzers = {
+                "architecture": ArchitectureAnalyzer(config),
+                "call_graph": CallGraphAnalyzer(config),
+                "code_duplication": CodeDuplicationAnalyzer(config),
+                "complexity": ComplexityAnalyzer(config),
+                "concurrency": ConcurrencyAnalyzer(config),
+                "dependency": DependencyAnalyzer(config),
+                "error_handling": ErrorHandlingAnalyzer(config),
+                "type_checker": TypeChecker(config),
+                "import_analyzer": ImportAnalyzer(config),
+                "linter": LinterAnalyzer(config),
+                "syntax_validator": SyntaxValidator(config),
+                "undefined_names": UndefinedNamesAnalyzer(config),
+                "code_smell": CodeSmellDetector(config),
+                "configuration": ConfigurationAnalyzer(config),
+                "data_flow": DataFlowAnalyzer(config),
+                "documentation": DocumentationAnalyzer(config),
+                "metrics": MetricsAnalyzer(config),
+                "performance": PerformanceAnalyzer(config),
+                "test_coverage": TestCoverageAnalyzer(config),
+                "static_analysis": StaticAnalysisAnalyzer(config),
+                "ast_analysis": ASTAnalysisAnalyzer(config),
+                "dead_code": ImprovedDeadCodeAnalyzer(config),
+            }
+            print("✓ All analyzers initialized successfully")
+        except Exception as e:
+            print(f"⚠ Warning: Could not initialize some analyzers: {e}")
+            self.analyzers = {}
 
     def run_syntax_fixes(self) -> dict[str, Any]:
         """Run advanced syntax fixes."""
@@ -746,6 +836,225 @@ class UnifiedEnhancedPipeline:
 
         return result
 
+    def run_advanced_analysis(self) -> dict[str, Any]:
+        """Run advanced analysis including architecture, call graph, and complexity analysis."""
+        print("\n" + "="*60)
+        print("Running Advanced Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Architecture Analysis
+        if "architecture" in self.analyzers:
+            print("Running Architecture Analysis...")
+            try:
+                arch_results = self.analyzers["architecture"].analyze_directory(str(self.project_root))
+                results["architecture"] = arch_results
+            except Exception as e:
+                results["architecture"] = {"error": str(e)}
+
+        # Call Graph Analysis
+        if "call_graph" in self.analyzers:
+            print("Running Call Graph Analysis...")
+            try:
+                call_graph_results = self.analyzers["call_graph"].analyze_directory(str(self.project_root))
+                results["call_graph"] = call_graph_results
+            except Exception as e:
+                results["call_graph"] = {"error": str(e)}
+
+        # Code Duplication Analysis
+        if "code_duplication" in self.analyzers:
+            print("Running Code Duplication Analysis...")
+            try:
+                dup_results = self.analyzers["code_duplication"].analyze_directory(str(self.project_root))
+                results["code_duplication"] = dup_results
+            except Exception as e:
+                results["code_duplication"] = {"error": str(e)}
+
+        # Complexity Analysis
+        if "complexity" in self.analyzers:
+            print("Running Complexity Analysis...")
+            try:
+                complexity_results = self.analyzers["complexity"].analyze_directory(str(self.project_root))
+                results["complexity"] = complexity_results
+            except Exception as e:
+                results["complexity"] = {"error": str(e)}
+
+        # Concurrency Analysis
+        if "concurrency" in self.analyzers:
+            print("Running Concurrency Analysis...")
+            try:
+                concurrency_results = self.analyzers["concurrency"].analyze_directory(str(self.project_root))
+                results["concurrency"] = concurrency_results
+            except Exception as e:
+                results["concurrency"] = {"error": str(e)}
+
+        # Error Handling Analysis
+        if "error_handling" in self.analyzers:
+            print("Running Error Handling Analysis...")
+            try:
+                error_handling_results = self.analyzers["error_handling"].analyze_directory(str(self.project_root))
+                results["error_handling"] = error_handling_results
+            except Exception as e:
+                results["error_handling"] = {"error": str(e)}
+
+        results["execution_time"] = time.time() - start_time
+
+        # Save individual report
+        report_path = self.reports_dir / f"advanced_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        return results
+
+    def run_consolidated_fixes(self) -> dict[str, Any]:
+        """Run consolidated fix scripts for comprehensive code improvements."""
+        print("\n" + "="*60)
+        print("Running Consolidated Fix Scripts")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Bulk Syntax Cleanup
+        print("Running Bulk Syntax Cleanup...")
+        try:
+            bulk_cleanup = BulkSyntaxCleanup(str(self.project_root))
+            bulk_results = bulk_cleanup.cleanup_all_files()
+            results["bulk_syntax_cleanup"] = bulk_results
+        except Exception as e:
+            results["bulk_syntax_cleanup"] = {"error": str(e)}
+
+        # Apply All Fixes
+        print("Running Apply All Fixes...")
+        try:
+            apply_fixes = ApplyAllFixes(str(self.project_root))
+            apply_results = apply_fixes.apply_all_fixes()
+            results["apply_all_fixes"] = apply_results
+        except Exception as e:
+            results["apply_all_fixes"] = {"error": str(e)}
+
+        # Missing Import Fixer
+        print("Running Missing Import Fixer...")
+        try:
+            import_fixer = MissingImportFixer(str(self.project_root))
+            import_results = import_fixer.fix_missing_imports()
+            results["missing_import_fixer"] = import_results
+        except Exception as e:
+            results["missing_import_fixer"] = {"error": str(e)}
+
+        # Type Hint Adder
+        print("Running Type Hint Adder...")
+        try:
+            type_adder = TypeHintAdder(str(self.project_root))
+            type_results = type_adder.add_type_hints()
+            results["type_hint_adder"] = type_results
+        except Exception as e:
+            results["type_hint_adder"] = {"error": str(e)}
+
+        results["execution_time"] = time.time() - start_time
+
+        # Save individual report
+        report_path = self.reports_dir / f"consolidated_fixes_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        return results
+
+    def run_plugin_analysis(self) -> dict[str, Any]:
+        """Run plugin-based analysis if plugins are enabled."""
+        if not self.enable_plugins:
+            return {"status": "disabled", "message": "Plugins are disabled"}
+
+        print("\n" + "="*60)
+        print("Running Plugin Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Run each registered plugin
+        for plugin_name in self.plugin_registry.list_plugins():
+            print(f"Running plugin: {plugin_name}")
+            try:
+                # Create plugin context
+                from plugins.base_plugin import PluginContext
+                context = PluginContext(
+                    project_root=str(self.project_root),
+                    config={},
+                    files=list(self.project_root.rglob("*.py"))
+                )
+                
+                # Execute plugin
+                plugin_result = self.plugin_manager.execute_plugin(plugin_name, context)
+                results[plugin_name] = {
+                    "status": "success",
+                    "result": plugin_result.to_dict()
+                }
+            except Exception as e:
+                results[plugin_name] = {
+                    "status": "error",
+                    "error": str(e)
+                }
+
+        results["execution_time"] = time.time() - start_time
+
+        # Save individual report
+        report_path = self.reports_dir / f"plugin_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        return results
+
+    def run_visualization_analysis(self) -> dict[str, Any]:
+        """Run visualization and interaction mapping analysis."""
+        print("\n" + "="*60)
+        print("Running Visualization Analysis")
+        print("="*60)
+
+        start_time = time.time()
+        results = {}
+
+        # Enhanced Map Code Interactions
+        print("Running Enhanced Code Interaction Mapping...")
+        try:
+            from enhanced_map_code_interactions import EnhancedCodeInteractionMapper
+            mapper = EnhancedCodeInteractionMapper(str(self.project_root))
+            interaction_results = mapper.map_interactions()
+            results["enhanced_interactions"] = interaction_results
+        except Exception as e:
+            results["enhanced_interactions"] = {"error": str(e)}
+
+        # Visualize Interactions
+        print("Running Interaction Visualization...")
+        try:
+            from visualize_interactions import InteractionVisualizer
+            visualizer = InteractionVisualizer(str(self.project_root))
+            viz_results = visualizer.generate_visualizations()
+            results["interaction_visualization"] = viz_results
+        except Exception as e:
+            results["interaction_visualization"] = {"error": str(e)}
+
+        # Dashboard Generation
+        print("Generating Dashboard...")
+        try:
+            from visualizers.dashboard_generator import DashboardGenerator
+            dashboard = DashboardGenerator(str(self.project_root))
+            dashboard_results = dashboard.generate_dashboard()
+            results["dashboard"] = dashboard_results
+        except Exception as e:
+            results["dashboard"] = {"error": str(e)}
+
+        results["execution_time"] = time.time() - start_time
+
+        # Save individual report
+        report_path = self.reports_dir / f"visualization_analysis_{self.timestamp}.json"
+        with open(report_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        return results
+
     def run_all(self) -> dict[str, Any]:
         """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
@@ -789,6 +1098,18 @@ class UnifiedEnhancedPipeline:
             "ast_analysis": self.run_ast_analysis(),
             "dead_code_analysis": self.run_dead_code_analysis(),
         }
+
+        # Advanced Analysis
+        self.results["advanced_analysis"] = self.run_advanced_analysis()
+
+        # Consolidated Fixes
+        self.results["consolidated_fixes"] = self.run_consolidated_fixes()
+
+        # Plugin Analysis
+        self.results["plugin_results"] = self.run_plugin_analysis()
+
+        # Visualization Analysis
+        self.results["visualization"] = self.run_visualization_analysis()
 
         # Generate summary
         self.results["summary"] = self._generate_summary(time.time() - total_start)

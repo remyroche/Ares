@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple
 import json
 from datetime import datetime
+import numpy as np
 
 class ComprehensiveSyntaxValidator:
     """Comprehensive syntax validation with multiple validation methods."""

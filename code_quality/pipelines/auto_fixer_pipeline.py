@@ -27,7 +27,7 @@ from fixers.conservative_auto_fixer import ConservativeAutoFixer
 from fixers.sequential_fixer_fixed import SequentialFixer
 
 # Import script-based fixers (ONLY auto-fixing related)
-from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
+# from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer  # Not available
 from scripts.enhanced_type_hints import TypeHintEnhancer, EnhancedTypeHintAdder
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import ImportFixer
@@ -91,7 +91,7 @@ class AutoFixerPipeline:
         self.sequential_fixer = SequentialFixer(self.config)
         
         # Initialize script-based fixers
-        self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))
+        # self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))  # Not available
         self.type_hint_enhancer = TypeHintEnhancer()
         self.async_fixer = RobustAsyncFixer(str(self.project_root))
         self.circular_import_detector = ImportAnalyzer(str(self.project_root))

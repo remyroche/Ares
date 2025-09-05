@@ -18,9 +18,11 @@ import datetime
 import logging
 
 
+import numpy as np
+
+
 class Step1DataCollectionValidator:
     """Validator for Step 1: Data Collection."""
-import numpy as np
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.step_name = "step01_data_collection"

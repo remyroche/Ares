@@ -161,5 +161,5 @@ def main():
     return invalid_files
 
 if __name__ == "__main__":
-    exit_code = await main()
+    exit_code = main()
     sys.exit(exit_code)

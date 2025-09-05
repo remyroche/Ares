@@ -59,6 +59,7 @@ except ImportError:
             return lambda *args, **kwargs: 0
     np = FallbackNumpy()
 try:
+    import pandas as pd
 except ImportError:
 
     class FallbackPandas:

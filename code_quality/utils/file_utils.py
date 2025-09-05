@@ -105,6 +105,36 @@ def is_documentation_file(file_path: str) -> bool:
     return False
 
 
+def get_directory_stats(directory: str) -> Dict[str, Any]:
+    """Get statistics about a directory."""
+    try:
+        project_root = Path(directory)
+        if not project_root.exists():
+            return {"error": "Directory does not exist"}
+        
+        python_files = find_python_files(directory)
+        total_files = len(python_files)
+        
+        # Count lines of code
+        total_lines = 0
+        for file_path in python_files:
+            content = read_file_safely(file_path)
+            if content:
+                total_lines += len(content.splitlines())
+        
+        # Count directories
+        total_dirs = len([d for d in project_root.rglob("*") if d.is_dir()])
+        
+        return {
+            "total_python_files": total_files,
+            "total_lines": total_lines,
+            "total_directories": total_dirs,
+            "directory_path": str(project_root)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def backup_file(file_path: Path) -> Optional[Path]:
     """Create a backup of a file."""
     try:

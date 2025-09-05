@@ -195,6 +195,6 @@ async def main() -> None:
         import traceback
 from typing import List
 
-        traceback.print_exc()
+traceback.print_exc()
 if __name__ == '__main__':
     asyncio.run(main())

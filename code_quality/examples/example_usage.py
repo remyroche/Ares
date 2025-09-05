@@ -9,9 +9,9 @@ from pathlib import Path
 # Add the parent directory to the path so we can import the modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from code_quality import (
 import collections
 
+from code_quality import (
     AutoFixer,
     LinterAnalyzer,
     SequentialFixer,

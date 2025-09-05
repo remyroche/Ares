@@ -21,16 +21,18 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .config import CONFIG  # noqa: E402
-from .utils.base_validator import BaseValidator  # noqa: E402
+from src.training.steps.config import CONFIG  # noqa: E402
+from src.training.steps.utils.base_validator import BaseValidator  # noqa: E402
 
 
-class Step8TacticianLabelingValidator(BaseValidator):
-    """Validator for Step 8: Tactician Labeling."""
 import logging
 import pandas as pd
 import time
 import numpy as np
+
+
+class Step8TacticianLabelingValidator(BaseValidator):
+    """Validator for Step 8: Tactician Labeling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step8_tactician_labeling", config)
@@ -189,8 +191,8 @@ import numpy as np
                 if os.path.exists(signals_parquet):
                     # Prefer dataset scan if labeled partition exists
                     try:
-                        from .utils.logger import log_io_operation, log_dataframe_overview
-                        from .data.parquet_dataset_manager import ParquetDatasetManager
+                        from src.training.steps.utils.logger import log_io_operation, log_dataframe_overview
+                        from src.training.steps.data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
@@ -354,7 +356,7 @@ import numpy as np
             if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
                 if os.path.exists(labels_parquet):
                     try:
-                        from .data.parquet_dataset_manager import ParquetDatasetManager
+                        from src.training.steps.data.parquet_dataset_manager import ParquetDatasetManager
 
                         pdm = ParquetDatasetManager(logger=self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")

@@ -83,6 +83,11 @@ class DependencyAnalyzer(BaseAnalyzer):
         total_internal = sum(len(m["internal_dependencies"]) for m in modules.values())
         total_external = sum(len(m["external_dependencies"]) for m in modules.values())
         
+        # Convert sets to lists for JSON serialization
+        serializable_dependency_graph = {}
+        for module, deps in dependency_graph.items():
+            serializable_dependency_graph[module] = list(deps)
+        
         return {
             "modules": modules,
             "total_modules": len(modules),
@@ -90,7 +95,7 @@ class DependencyAnalyzer(BaseAnalyzer):
             "internal_dependencies": total_internal,
             "external_dependencies": total_external,
             "circular_dependencies": circular_dependencies,
-            "dependency_graph": dict(dependency_graph),
+            "dependency_graph": serializable_dependency_graph,
             "external_modules": list(external_dependencies),
             "internal_modules": list(internal_dependencies),
             "dependency_metrics": {

@@ -1,3 +1,4 @@
+from typing import List, Dict, Any, Optional
 """
 Creosote Analyzer Plugin
 

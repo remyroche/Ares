@@ -6,10 +6,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class PyupgradeFixer(BaseCodeFixer):
+class PyupgradeFixer(BasePlugin):
     """Run pyupgrade with optional target version."""
 
     def __init__(self, config: dict[str, Any] | None = None):

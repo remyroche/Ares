@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import interaction mappers (ONLY interaction mapping related)
 from mappers.map_code_interactions import CodeInteractionMapper
 from mappers.enhanced_map_code_interactions import EnhancedCodeInteractionMapper
-from mappers.visualize_interactions import InteractionVisualizer
+# from mappers.visualize_interactions import InteractionVisualizer  # Class doesn't exist
 
 # Import analyzers for interaction analysis (ONLY interaction mapping related)
 from analyzers.dependency_analyzer import DependencyAnalyzer

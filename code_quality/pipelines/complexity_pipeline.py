@@ -29,7 +29,7 @@ from analyzers.architecture_analyzer import ArchitectureAnalyzer
 from analyzers.call_graph_analyzer import CallGraphAnalyzer
 
 # Import visualizers (ONLY complexity-related)
-from visualizers.complexity_heatmap import ComplexityHeatmap
+from visualizers.complexity_heatmap import ComplexityHeatmapVisualizer
 from visualizers.dashboard_generator import DashboardGenerator
 
 # Import core components

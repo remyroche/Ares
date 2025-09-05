@@ -6,10 +6,10 @@ import subprocess
 import sys
 from typing import Any
 
-from code_quality.core.plugins import BaseCodeFixer
+from .base_plugin import BasePlugin
 
 
-class UnifyFixer(BaseCodeFixer):
+class UnifyFixer(BasePlugin):
     """unify plugin to normalize quotes and minor formatting."""
 
     def __init__(self, config: dict[str, Any] = None):

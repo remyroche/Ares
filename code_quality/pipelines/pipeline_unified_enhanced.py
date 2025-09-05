@@ -43,7 +43,7 @@ from validators.integrated_validator import IntegratedValidator
 
 # Import reporters (ONLY comprehensive analysis related)
 from reporters.quality_reporter import QualityReporter
-from reporters.html_reporter import HtmlReporter
+from reporters.html_reporter import HTMLReporter
 from reporters.error_reporter import ErrorReporter
 from reporters.trend_reporter import TrendReporter
 

@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Static Analysis Analyzer - Integrates Pylint, Flake8, MyPy, and Bandit for comprehensive static analysis.
 """

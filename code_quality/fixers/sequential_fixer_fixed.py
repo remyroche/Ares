@@ -821,5 +821,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(import asyncio
-    asyncio.run(main()))
+    import asyncio
+    asyncio.run(main())

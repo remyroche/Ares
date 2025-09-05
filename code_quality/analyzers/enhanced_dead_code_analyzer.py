@@ -1,3 +1,4 @@
+from typing import Dict, List, Any, Optional
 """
 Enhanced Dead Code Analyzer
 

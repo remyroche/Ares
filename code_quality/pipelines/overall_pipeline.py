@@ -33,7 +33,7 @@ from utils.report_aggregator import ReportAggregator
 
 # Import CLI and runners (ONLY orchestration related)
 from cli import main as cli_main
-from run_full_pipeline import run_full_pipeline
+from run_full_pipeline import main as run_full_pipeline
 from quick_start import quick_validate
 
 # Import plugin system (ONLY orchestration related)

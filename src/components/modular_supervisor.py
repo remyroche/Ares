@@ -1085,7 +1085,6 @@ class ModularSupervisor:
 modular_supervisor: ModularSupervisor | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_modular_supervisor(
     config: dict[str, Any] | None = None,
 ) -> ModularSupervisor | None:

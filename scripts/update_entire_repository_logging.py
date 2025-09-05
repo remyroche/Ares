@@ -2,7 +2,6 @@
 """
 Comprehensive script to update logging messages throughout the entire repository with warning symbols.
 
-This script automatically adds warning symbols to error and warning messages
 throughout the entire Ares trading bot codebase to make issues more visible.
 """
 

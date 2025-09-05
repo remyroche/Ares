@@ -332,8 +332,8 @@ class RegimeDiscoveryFeatureEngineer:
         
         # Regime confidence score (vectorized)
         confidence = (features['regime_strength_volatility'] + 
-                     features['regime_strength_volume'] + 
-                     features['regime_strength_momentum']) / 3
+                    features['regime_strength_volume'] +
+                    features['regime_strength_momentum']) / 3
         features['regime_confidence_score'] = confidence
         
         return features

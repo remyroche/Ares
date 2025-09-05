@@ -263,7 +263,7 @@ class EnhancedSRConfluenceDetector:
             # Calculate confluence metrics
             timeframes = [level['timeframe'] for level in confluence_group]
             timeframe_weights = {level['timeframe']: self.timeframe_weights.get(level['timeframe'], 0.1) 
-                               for level in confluence_group}
+                            for level in confluence_group}
             
             # Calculate confluence score
             confluence_score = self._calculate_confluence_score(confluence_group)

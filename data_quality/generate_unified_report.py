@@ -237,7 +237,7 @@ def create_unified_report(all_reports, summary_stats):
         lines.append("QUALITY DISTRIBUTION")
         lines.append("-" * 50)
         for quality, count in sorted(summary_stats["quality_distribution"].items(),
-                                   key=lambda x: {"excellent": 0, "good": 1, "acceptable": 2, "poor": 3, "critical": 4}.get(x[0], 5)):
+                                key=lambda x: {"excellent": 0, "good": 1, "acceptable": 2, "poor": 3, "critical": 4}.get(x[0], 5)):
             lines.append(f"• {quality.capitalize()}: {count} files")
         lines.append("")
 

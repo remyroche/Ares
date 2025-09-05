@@ -18,10 +18,10 @@ class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
     
     def __init__(self, 
-                 chunk_size: int = 10000,
-                 memory_threshold: float = 0.8,
-                 overlap_size: int = 100,
-                 enable_compression: bool = True):
+                chunk_size: int = 10000,
+                memory_threshold: float = 0.8,
+                overlap_size: int = 100,
+                enable_compression: bool = True):
         """
         Initialize data streaming manager.
         
@@ -90,8 +90,8 @@ class DataStreamingManager:
         return False
     
     def create_data_chunks(self, data: pd.DataFrame, 
-                          preserve_order: bool = True,
-                          time_based_chunking: bool = True) -> Generator[pd.DataFrame, None, None]:
+                        preserve_order: bool = True,
+                        time_based_chunking: bool = True) -> Generator[pd.DataFrame, None, None]:
         """
         Create data chunks with optional overlap and time-based chunking.
         
@@ -155,7 +155,7 @@ class DataStreamingManager:
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
                 
                 self.logger.info(f"📦 Created time-based chunk {chunk_index + 1}: {len(chunk_data)} rows, "
-                               f"time range: {chunk_data['timestamp'].min()} to {chunk_data['timestamp'].max()}")
+                            f"time range: {chunk_data['timestamp'].min()} to {chunk_data['timestamp'].max()}")
                 
                 yield chunk_data
                 chunk_index += 1
@@ -187,7 +187,7 @@ class DataStreamingManager:
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
             
             self.logger.info(f"📦 Created size-based chunk {chunk_index + 1}: {len(chunk_data)} rows "
-                           f"(rows {start_idx}-{end_idx-1})")
+                        f"(rows {start_idx}-{end_idx-1})")
             
             yield chunk_data
             chunk_index += 1

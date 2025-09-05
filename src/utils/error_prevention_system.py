@@ -340,4 +340,3 @@ class ErrorPreventionSystem:
 
 
 # Global instance
-error_prevention = ErrorPreventionSystem()

@@ -61,7 +61,6 @@ class ErrorMapper:
         if logger.isEnabledFor(logging.DEBUG) and error.cause:
             output['traceback'] = traceback.format_exception(type(error.cause), error.cause, error.cause.__traceback__)
         return output
-error_mapper = ErrorMapper()
 
 def map_exception(exc: Exception) -> AppError:
     """Convenience function to map exceptions."""

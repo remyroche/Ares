@@ -23,8 +23,11 @@ class OptimizedTimeframeConfig:
 class EnhancedMultiTimeframeOptimizer:
     """
     Enhanced Multi-Timeframe Optimizer that uses optimized lookback periods
-    from the matrix optimization system instead of fixed periods.
 import pandas as pd
+
+    from the matrix optimization system instead of fixed periods.
+
+
 
     """
 

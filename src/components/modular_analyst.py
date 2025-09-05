@@ -863,7 +863,6 @@ class ModularAnalyst:
 modular_analyst: ModularAnalyst | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_modular_analyst(
     config: dict[str, Any] | None = None,
 ) -> ModularAnalyst | None:

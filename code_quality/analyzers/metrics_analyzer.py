@@ -164,8 +164,8 @@ class MetricsAnalyzer:
         }
 
     def _calculate_file_maintainability_index(self,
-                                             functions: list[FunctionMetrics],
-                                             source_lines: int) -> float:
+                                            functions: list[FunctionMetrics],
+                                            source_lines: int) -> float:
         """Calculate maintainability index for entire file."""
         if not functions or source_lines == 0:
             return 0

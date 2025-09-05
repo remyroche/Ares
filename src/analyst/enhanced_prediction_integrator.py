@@ -25,9 +25,12 @@ from .core.decorators import (
 class EnhancedPredictionIntegrator:
     """
     Enhanced Prediction Integrator for Analyst that integrates price and confidence predictions
-    from the enhanced training manager steps 6-14.
 from src.utils.decorators.errors import handles_errors
 import pandas as pd
+
+    from the enhanced training manager steps 6-14.
+
+
 
     This component loads and integrates:
     - HMM-based model predictions (step 6-8)

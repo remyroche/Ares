@@ -264,34 +264,34 @@ def main():
         epilog="""
 Examples:
   # Run all pipelines
-  python pipelines/overall_pipeline.py --all
+python pipelines/overall_pipeline.py --all
   
   # Run specific pipelines
-  python pipelines/overall_pipeline.py --pipelines complexity,dead_code,auto_fixer
+python pipelines/overall_pipeline.py --pipelines complexity,dead_code,auto_fixer
   
   # Run on specific project
-  python pipelines/overall_pipeline.py --project-root /path/to/project --all
+python pipelines/overall_pipeline.py --project-root /path/to/project --all
   
   # List available pipelines
-  python pipelines/overall_pipeline.py --list
+python pipelines/overall_pipeline.py --list
   
   # Run with custom arguments
-  python pipelines/overall_pipeline.py --pipelines complexity --custom-args complexity:--analysis-type,metrics
+python pipelines/overall_pipeline.py --pipelines complexity --custom-args complexity:--analysis-type,metrics
         """
     )
     
     parser.add_argument("--project-root", "-p",
-                       help="Project root directory (default: current directory)")
+                    help="Project root directory (default: current directory)")
     parser.add_argument("--pipelines", "-t",
-                       help="Comma-separated list of pipelines to run")
+                    help="Comma-separated list of pipelines to run")
     parser.add_argument("--all", action="store_true",
-                       help="Run all available pipelines")
+                    help="Run all available pipelines")
     parser.add_argument("--list", action="store_true",
-                       help="List all available pipelines")
+                    help="List all available pipelines")
     parser.add_argument("--output", "-o",
-                       help="Output file for results (default: auto-generated)")
+                    help="Output file for results (default: auto-generated)")
     parser.add_argument("--custom-args",
-                       help="Custom arguments for specific pipelines (format: pipeline:arg1,arg2)")
+                    help="Custom arguments for specific pipelines (format: pipeline:arg1,arg2)")
     
     args = parser.parse_args()
     

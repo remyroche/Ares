@@ -382,7 +382,7 @@ class PerformanceVisitor(ast.NodeVisitor):
         return False
 
     def _add_issue(self, line_number: int, issue_type: str, severity: str,
-                   message: str, suggestion: str, complexity: str | None = None) -> None:
+                message: str, suggestion: str, complexity: str | None = None) -> None:
         """Add a performance issue."""
         issue = PerformanceIssue(
             file_path=self.file_path,

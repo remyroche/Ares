@@ -28,7 +28,6 @@ Main module demonstrating various dead code patterns.
 """
 
 import os
-import sys
 import json  # Unused import
 from typing import List, Dict, Optional  # Dict and Optional unused
 
@@ -59,7 +58,6 @@ def load_module_dynamically(module_name):
 # Function with importlib
 def load_with_importlib(module_name):
     """Load module with importlib."""
-    import importlib
     return importlib.import_module(module_name)
 
 # Function with unreachable code
@@ -99,7 +97,6 @@ if __name__ == "__main__":
 Utility module with more dead code patterns.
 """
 
-import os
 import sys  # Unused import
 
 # Deprecated class
@@ -152,8 +149,9 @@ Module demonstrating import patterns.
 
 from main import calculate_sum, old_calculate, helper_function
 from utils import format_output, OldProcessor
-import os
-import sys  # Unused import
+
+    import importlib
+
 
 def example_usage():
     """Example of using imported functions."""

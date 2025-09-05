@@ -429,7 +429,6 @@ class EnhancedDataCollectionDemo:
 
 
 # Main execution function
-@handles_errors(fallback=False, context="main")
 @traced(span_name="main", log_args=False, log_result_len_only=True)
 @log_execution_time
 async def main():

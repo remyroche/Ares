@@ -15,7 +15,6 @@ from src.training.steps.per_regime_integrator import (
 )
 from src.utils.logging_utils import get_logger
 
-logger = get_logger('UpdatePipelineForPerRegime')
 
 
 async def update_pipeline_configuration() -> Dict[str, Any]:
@@ -148,7 +147,6 @@ step5_success = await step5_labeling.run_step(
 from src.training.steps.per_regime_pipeline_integration import per_regime_integrator
 
 # Get the appropriate step function (per-regime or standard)
-step5_func = await per_regime_integrator.get_step_function('step05_labeling')
 
 # Update config for per-regime processing
 step5_config = per_regime_integrator.update_step_config_for_regime(

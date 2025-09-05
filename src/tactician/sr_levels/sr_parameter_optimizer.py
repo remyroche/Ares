@@ -343,13 +343,13 @@ class SRParameterOptimizer:
         if combined_score > 0.6:
             # Strong breakout signal
             breakout_prob = min(params.max_breakout_probability, 
-                              params.default_probability + combined_score * 0.5)
+                            params.default_probability + combined_score * 0.5)
             rebounce_prob = params.default_probability * 0.7
             consolidation_prob = 1 - breakout_prob - rebounce_prob
         elif combined_score < 0.4:
             # Strong rebounce signal
             rebounce_prob = min(params.max_breakout_probability,
-                              params.default_probability + (1 - combined_score) * 0.5)
+                            params.default_probability + (1 - combined_score) * 0.5)
             breakout_prob = params.default_probability * 0.7
             consolidation_prob = 1 - breakout_prob - rebounce_prob
         else:
@@ -384,7 +384,7 @@ class SRParameterOptimizer:
         
         # Bullish/bearish candles
         bullish_candles = (market_data["close"].iloc[idx-10:idx] > 
-                          market_data["open"].iloc[idx-10:idx]).sum()
+                        market_data["open"].iloc[idx-10:idx]).sum()
         
         # Price acceleration
         acceleration = recent_returns.diff().mean()
@@ -501,9 +501,9 @@ class SRParameterOptimizer:
         # Calculate ATR-based volatility
         high_low = market_data["high"].iloc[idx-14:idx] - market_data["low"].iloc[idx-14:idx]
         high_close = np.abs(market_data["high"].iloc[idx-14:idx] - 
-                           market_data["close"].iloc[idx-15:idx-1].values)
+                        market_data["close"].iloc[idx-15:idx-1].values)
         low_close = np.abs(market_data["low"].iloc[idx-14:idx] - 
-                          market_data["close"].iloc[idx-15:idx-1].values)
+                        market_data["close"].iloc[idx-15:idx-1].values)
         
         true_range = np.maximum(high_low, np.maximum(high_close, low_close))
         atr = true_range.mean()

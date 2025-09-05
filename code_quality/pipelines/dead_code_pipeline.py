@@ -350,7 +350,7 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["basic", "enhanced", "auto_fix"],
+        choices=["basic", "enhanced", "auto_fix", "all"],
         default="enhanced",
         help="Type of dead code analysis to perform (default: enhanced)"
     )

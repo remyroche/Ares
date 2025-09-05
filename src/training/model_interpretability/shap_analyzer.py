@@ -33,11 +33,6 @@ class SHAPAnalyzer:
         """Check if SHAP is available and initialize if possible."""
         try:
             import shap
-from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-
             self.shap = shap
             self.shap_available = True
             self.logger.info("✅ SHAP library available and initialized")

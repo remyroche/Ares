@@ -3,17 +3,22 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.pipeline_standards import PipelineStandards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import pandas as pd
 from src.utils.decorators.errors import handles_errors
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-CONFIG = PipelineStandards.safe_import('src.config', {'SYMBOL': None, 'INTERVAL': '1m', 'LOOKBACK_YEARS': 2})
-system_logger = PipelineStandards.safe_import('src.utils.logger', None)
+CONFIG = PipelineStandards.safe_import('src.config', None)
+# Resolve system logger instance from module
+_logger_module = PipelineStandards.safe_import('src.utils.logger', None)
+system_logger = getattr(_logger_module, 'system_logger', None) if _logger_module else None
 handle_errors = PipelineStandards.safe_import('src.utils.error_handler', None)
-download_all_data_with_consolidation = PipelineStandards.safe_import('src.training.steps.data_downloader', None)
+# Resolve downloader function from module
+_downloader_module = PipelineStandards.safe_import('src.training.steps.data_downloader', None)
+download_all_data_with_consolidation = getattr(_downloader_module, 'download_all_data_with_consolidation', None) if _downloader_module else None
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
 
@@ -633,9 +638,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                         logger.warning('⚠️ Klines file not found, proceeding with data collection...')
                 except Exception as e:
                     logger.warning(f'⚠️ Error checking data completeness: {e}, proceeding with data collection...')
-        step = DataCollectionStep(CONFIG or {})
+        step = DataCollectionStep(CONFIG.__dict__ if hasattr(CONFIG, '__dict__') else {})
         await step.initialize()
-        training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'asset': symbol, 'lookback_period': CONFIG.get('lookback_days', 1095) if CONFIG else 1095, 'project_version': CONFIG.get('project_version', '1.0.0') if CONFIG else '1.0.0'}
+        # Safely resolve config-derived values
+        lookback_days = 1095
+        project_version = '1.0.0'
+        try:
+            if CONFIG is not None:
+                # Try dataclass defaults
+                mtc = getattr(CONFIG, 'ModelTrainingConfig', None)
+                if mtc is not None:
+                    lookback_days = getattr(mtc(), 'lookback_days', lookback_days)
+                project_version = getattr(CONFIG, 'ARES_VERSION', project_version)
+        except Exception:
+            pass
+        training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'force_rerun': force_rerun, 'asset': symbol, 'lookback_period': lookback_days, 'project_version': project_version}
         pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
         if result.get('data_collection_completed', False):
@@ -687,6 +704,4 @@ if __name__ == '__main__':
         print(f'❌ Error: {e}')
     finally:
         import gc
-import numpy as np
-
         gc.collect()

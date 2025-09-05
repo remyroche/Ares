@@ -271,4 +271,4 @@ if __name__ == '__main__':
         config = {'train_period_days': 365, 'test_period_days': 30, 'step_days': 30, 'regime_aware': True, 'adaptive_windows': True}
         validator = WalkForwardValidator(config)
         print('Walk-forward validation system initialized')
-    asyncio.run(await main())
+    asyncio.run(main())

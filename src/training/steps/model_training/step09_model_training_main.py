@@ -525,7 +525,7 @@ async def main():
 if __name__ == "__main__":
     """Run the enhanced model training pipeline."""
     try:
-        success = asyncio.run(await main())
+        success = asyncio.run(main())
         if success:
             print("\n🎉 Enhanced Model Training Pipeline completed successfully!")
             sys.exit(0)

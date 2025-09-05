@@ -101,4 +101,5 @@ def main():
     print("✅ All files processed!")
 
 if __name__== "__main__":
-    await main()
+    import asyncio
+    asyncio.run(main())

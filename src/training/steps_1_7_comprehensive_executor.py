@@ -375,4 +375,4 @@ async def main() -> None:
         for error in result['errors_encountered']:
             print(f'  - {error}')
 if __name__ == '__main__':
-    asyncio.run(await main())
+    asyncio.run(main())

@@ -41,16 +41,16 @@ class EnsembleClusteringRegimeDetector:
 
     def _optimize_feature_preprocessing(self, features: np.ndarray) -> np.ndarray:
         """Optimize feature preprocessing for efficiency."""
+        import typing
+        from sklearn.preprocessing import RobustScaler
+        
         if features.shape[1] > 50:
             from sklearn.decomposition import IncrementalPCA
-import typing
-
             n_components = min(50, features.shape[1] // 2)
             pca = IncrementalPCA(n_components=n_components, batch_size=1000)
             features_reduced = pca.fit_transform(features)
         else:
             features_reduced = features
-        from sklearn.preprocessing import RobustScaler
         scaler = RobustScaler()
         features_scaled = scaler.fit_transform(features_reduced)
         return features_scaled

@@ -29,7 +29,9 @@ import os
 import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
 try:
+    import pandas as pd
 except ImportError:
 
     class MockDataFrame:

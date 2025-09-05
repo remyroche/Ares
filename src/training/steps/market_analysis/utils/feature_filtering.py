@@ -35,11 +35,11 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     lgb = None
 
-try:
-    from scipy.stats import rankdata
 import logging
 import time
 
+try:
+    from scipy.stats import rankdata
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False

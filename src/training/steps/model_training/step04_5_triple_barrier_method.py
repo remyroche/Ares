@@ -15,10 +15,10 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
-try:
-    from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, log_step_metrics
 import logging
 
+try:
+    from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, log_step_metrics
 except Exception:
 
     def with_enhanced_mlflow_logging(_name: str) -> None:

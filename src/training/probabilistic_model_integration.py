@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 '\nProbabilistic Model Integration for Tactician and Analyst\n\nThis module provides seamless integration between the probabilistic Bayesian optimizer\nand your existing Tactician and Analyst models, enabling end-to-end optimization\nof probabilistic outputs and uncertainty quantification.\n'
 import asyncio
 import logging
@@ -126,8 +129,6 @@ class ProbabilisticModelIntegrator:
 
         def factory(params: dict[str, Any]) -> None:
             from sklearn.ensemble import RandomForestClassifier
-            import numpy as np
-            import pandas as pd
 
             return RandomForestClassifier(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
         return factory

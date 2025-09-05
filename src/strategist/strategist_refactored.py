@@ -2,6 +2,6 @@
 
 class Strategist:
     """Strategist class."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         pass

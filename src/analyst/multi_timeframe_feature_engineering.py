@@ -25,6 +25,7 @@ from .config import CONFIG
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
 import pandas as pd
+import numpy as np
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

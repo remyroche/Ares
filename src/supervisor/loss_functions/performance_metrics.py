@@ -12,6 +12,7 @@ from src.core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
 from src.core.decorators.errors import handles_errors
+import numpy as np
 
 
 class PerformanceMetricsCalculator(PnLLossFunctionsBase):

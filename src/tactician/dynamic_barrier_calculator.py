@@ -8,6 +8,7 @@ import yaml
 from .core.decorators import handles_errors, traced
 from .utils.logger import get_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 
 class DynamicBarrierCalculator:

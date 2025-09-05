@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .tactician.tactician import Tactician
 from .core.decorators.errors import handles_errors
 import pandas as pd
+import numpy as np
 
 class Strategist:
     # TODO: Consider extracting common error logging patterns into helper methods

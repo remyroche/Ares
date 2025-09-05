@@ -4,6 +4,8 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Tuple
+import numpy as np
+
 # TPSL OPTIMIZATION - TEMPORARILY DISABLED
 # This file contains TPSL optimization functionality that is temporarily disabled
 # as TPSL parameters are commented out in config.yaml
@@ -186,6 +188,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Extract regime names from data using shared regime accessor."""
         try:
             from .utils.regime_data_access import get_regime_column
+
             regime_column = get_regime_column(data)
         except Exception:
             regime_column = None

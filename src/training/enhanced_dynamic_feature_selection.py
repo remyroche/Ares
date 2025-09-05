@@ -8,6 +8,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
 from .utils.logger import system_logger
+import numpy as np
+import pandas as pd
 
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.cluster.hierarchy import fcluster

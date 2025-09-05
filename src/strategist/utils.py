@@ -1,3 +1,4 @@
+from typing import Dict, List, Optional, Union, Any, Tuple
 """Strategist utilities."""
 
 class PerformanceOptimizer:
@@ -12,6 +13,6 @@ class ValidationError(Exception):
     """Validation error."""
     pass
 
-def validate_data_sufficiency(data):
+def validate_data_sufficiency(data: Union[pd.DataFrame, Dict[str, Any]]) -> bool:
     """Validate data sufficiency."""
     return True

@@ -1,3 +1,4 @@
+import numpy as np
 
 """Validator for Step 6: HMM-Based Enhancement."""
 

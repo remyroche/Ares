@@ -16,6 +16,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .core.decorators import handles_errors, traced
 from .core.decorators.errors import handles_errors
+import pandas as pd
 
 logger = system_logger.getChild("AggtradesFormatValidator")
 

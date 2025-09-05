@@ -1,4 +1,12 @@
-'Step 1: Data Collection.\n\nThis module handles the data collection step of the training pipeline.\nIt downloads and consolidates all required data for training.\n'
+from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
+"""Step 1: Data Collection.
+
+This module handles the data collection step of the training pipeline.
+It downloads and consolidates all required data for training.
+"""
 import os
 import sys
 from datetime import datetime
@@ -12,11 +20,9 @@ from src.utils.decorators.errors import handles_errors
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 CONFIG = PipelineStandards.safe_import('src.config', None)
-# Resolve system logger instance from module
 _logger_module = PipelineStandards.safe_import('src.utils.logger', None)
 system_logger = getattr(_logger_module, 'system_logger', None) if _logger_module else None
 handle_errors = PipelineStandards.safe_import('src.utils.error_handler', None)
-# Resolve downloader function from module
 _downloader_module = PipelineStandards.safe_import('src.training.steps.data_downloader', None)
 download_all_data_with_consolidation = getattr(_downloader_module, 'download_all_data_with_consolidation', None) if _downloader_module else None
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
@@ -28,14 +34,14 @@ def create_fallback_logger() -> Any:
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
-    def decorator(*args, **kwargs):
+
+    def decorator(*args, **kwargs) -> None:
+
         def wrapper(func: Callable) -> Callable:
             return func
-        if len(args) == 1 and callable(args[0]) and not kwargs:
-            # Called as @decorator
+        if len(args) == 1 and callable(args[0]) and (not kwargs):
             return args[0]
         else:
-            # Called as @decorator(args)
             return wrapper
     return decorator
 if system_logger is None:
@@ -165,29 +171,22 @@ class DataCollectionStep:
         """Run standardized quality check after data collection."""
         try:
             self.logger.info('🔍 Running standardized quality check...')
-            expected_files = [
-                self.standards.generate_file_name('klines', exchange, symbol, timeframe),
-                self.standards.generate_file_name('aggtrades', exchange, symbol)
-            ]
-            
+            expected_files = [self.standards.generate_file_name('klines', exchange, symbol, timeframe), self.standards.generate_file_name('aggtrades', exchange, symbol)]
             quality_results = []
-            
             for file_name in expected_files:
                 result = await self._validate_single_file(file_name, data_dir)
-                if result is None:  # File validation failed
+                if result is None:
                     return False
-                if result is not False:  # File exists and was validated
+                if result is not False:
                     quality_results.append(result)
-            
             return self._process_quality_results(quality_results)
         except Exception as e:
             self.logger.exception(f'❌ Error running standardized quality check: {e}')
             return False
 
-    async def _validate_single_file(self, file_name: str, data_dir: str):
+    async def _validate_single_file(self, file_name: str, data_dir: str) -> bool:
         """Validate a single file and return validation result or None if failed."""
         file_path = os.path.join(data_dir, file_name)
-        
         if not os.path.exists(file_path):
             self.logger.warning(f'⚠️ Expected file not found: {file_name}')
             return False
@@ -195,12 +194,10 @@ class DataCollectionStep:
         try:
             df = pd.read_parquet(file_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
-            
             schema_name = self._determine_schema_name(file_name)
             validation_result = self.standards.validate_data_quality(df, schema_name)
             self._log_validation_result(file_name, validation_result)
             return validation_result
-            
         except Exception as e:
             self.logger.exception(f'❌ Error validating {file_name}: {e}')
             return None
@@ -213,50 +210,45 @@ class DataCollectionStep:
             return 'aggtrades'
         else:
             return 'unified'
-    def _log_validation_result(self, file_name: str, validation_result):
+
+    def _log_validation_result(self, file_name: str, validation_result: Any) -> None:
         """Log validation result details."""
         if validation_result.passed:
             self.logger.info(f'✅ {file_name} quality check passed (score: {validation_result.quality_score:.2f})')
         else:
             self.logger.warning(f'⚠️ {file_name} quality check issues:')
             self._log_issues(validation_result.issues)
-        
         self._log_warnings(validation_result.warnings)
 
-    def _log_issues(self, issues, max_display=3):
+    def _log_issues(self, issues: List[Any], max_display: int=3) -> None:
         """Log validation issues."""
         for issue in issues[:max_display]:
             self.logger.warning(f'   - {issue.message}')
         if len(issues) > max_display:
             self.logger.warning(f'   ... and {len(issues) - max_display} more issues')
 
-    def _log_warnings(self, warnings, max_display=3):
+    def _log_warnings(self, warnings: List[Any], max_display: int=3) -> None:
         """Log validation warnings."""
         for warning in warnings[:max_display]:
             self.logger.info(f'   ⚠️ {warning.message}')
         if len(warnings) > max_display:
             self.logger.info(f'   ... and {len(warnings) - max_display} more warnings')
 
-    def _process_quality_results(self, quality_results) -> bool:
+    def _process_quality_results(self, quality_results: List[Any]) -> bool:
         """Process and summarize quality results."""
         if not quality_results:
             self.logger.warning('⚠️ No quality results available')
             return False
-            
-        overall_passed = all(result.passed for result in quality_results)
-        overall_quality_score = sum(result.quality_score for result in quality_results) / len(quality_results)
-        
-        self.logger.info(f"📊 Overall quality check: {'PASSED' if overall_passed else 'FAILED'}")
+        overall_passed = all((result.passed for result in quality_results))
+        overall_quality_score = sum((result.quality_score for result in quality_results)) / len(quality_results)
+        self.logger.info(f"📊 Overall quality check: {('PASSED' if overall_passed else 'FAILED')}")
         self.logger.info(f'📊 Average quality score: {overall_quality_score:.2f}')
-        
-        total_issues = sum(len(result.issues) for result in quality_results)
-        total_warnings = sum(len(result.warnings) for result in quality_results)
-        
+        total_issues = sum((len(result.issues) for result in quality_results))
+        total_warnings = sum((len(result.warnings) for result in quality_results))
         if total_issues > 0:
             self.logger.warning(f'📊 Total issues found: {total_issues}')
         if total_warnings > 0:
             self.logger.info(f'📊 Total warnings: {total_warnings}')
-            
         return overall_passed
 
     async def _run_data_collection(self, training_input: dict[str, Any], data_dir: str) -> bool:
@@ -301,7 +293,6 @@ class DataCollectionStep:
                 if os.path.exists(file_path):
                     self.logger.info(f'✅ Found expected file: {file_name}')
                     try:
-                        import pandas as pd
                         df = pd.read_parquet(file_path)
                         df = self.standards.standardize_timestamp(df, 'timestamp')
                         if 'klines' in file_name:
@@ -343,7 +334,6 @@ class DataCollectionStep:
                 return False
             self.logger.info('📊 Creating mock data for fallback collection...')
             from datetime import datetime, timedelta
-            import pandas as pd
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
             timestamps = pd.date_range(start=start_date, end=end_date, freq='1min')
@@ -447,7 +437,6 @@ class DataCollectionStep:
         logger.info('📊 DETAILED DATA EXTRACT FOR TROUBLESHOOTING')
         logger.info('=' * 80)
         try:
-            import pandas as pd
             klines_file = f'{data_dir}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet'
             aggtrades_file = f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet'
             files_to_check = [('Klines', klines_file), ('Aggtrades', aggtrades_file)]
@@ -614,7 +603,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                 for file_path in existing_files:
                     logger.info(f'      - {file_path}')
                 try:
-                    import pandas as pd
                     klines_path = os.path.join(data_dir, klines_file)
                     if Path(klines_path).exists():
                         df = pd.read_parquet(klines_path)
@@ -640,12 +628,10 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                     logger.warning(f'⚠️ Error checking data completeness: {e}, proceeding with data collection...')
         step = DataCollectionStep(CONFIG.__dict__ if hasattr(CONFIG, '__dict__') else {})
         await step.initialize()
-        # Safely resolve config-derived values
         lookback_days = 1095
         project_version = '1.0.0'
         try:
             if CONFIG is not None:
-                # Try dataclass defaults
                 mtc = getattr(CONFIG, 'ModelTrainingConfig', None)
                 if mtc is not None:
                     lookback_days = getattr(mtc(), 'lookback_days', lookback_days)
@@ -695,7 +681,6 @@ if __name__ == '__main__':
             print('❌ Step 1: Data Collection failed')
         import gc
         gc.collect()
-    
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
@@ -704,4 +689,5 @@ if __name__ == '__main__':
         print(f'❌ Error: {e}')
     finally:
         import gc
+
         gc.collect()

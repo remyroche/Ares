@@ -18,7 +18,6 @@ from code_quality.core.config import CodeQualityConfig, get_default_config, load
 def _load_cq_config(config_path: str | None) -> CodeQualityConfig:
     if config_path:
         return load_config(config_path)
-    return get_default_config()
 
 
 def build_dependency_graph(

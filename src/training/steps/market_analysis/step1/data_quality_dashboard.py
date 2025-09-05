@@ -13,18 +13,22 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .core.decorators import traced
 from .utils.logger import system_logger
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import uvicorn
+from .enhanced_data_quality_manager import EnhancedDataQualityManager
+from .data_quality_monitor import DataQualityMonitor
+
 logger = system_logger.getChild('DataQualityDashboard')
 try:
-    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-    from fastapi.responses import HTMLResponse
-    from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
     logger.warning('⚠️ FastAPI not available - dashboard will use basic HTTP server')
 try:
-    import uvicorn
     UVICORN_AVAILABLE = True
 except ImportError:
     UVICORN_AVAILABLE = False
@@ -54,13 +58,11 @@ class DataQualityDashboard:
     def _initialize_components(self) -> None:
         """Initialize dashboard components."""
         try:
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
             self.quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info('✅ Enhanced data quality manager initialized for dashboard')
         except ImportError as e:
             logger.warning(f'⚠️ Could not import EnhancedDataQualityManager: {e}')
         try:
-            from .data_quality_monitor import DataQualityMonitor
             self.monitor = DataQualityMonitor(str(self.data_cache_path))
             logger.info('✅ Data quality monitor initialized for dashboard')
         except ImportError as e:
@@ -317,7 +319,6 @@ async def start_data_quality_dashboard(data_cache_path: str='data_cache', host: 
     await dashboard.start_dashboard()
     return dashboard
 if __name__ == '__main__':
-    import asyncio
 
     async def main() -> None:
         dashboard = await start_data_quality_dashboard()

@@ -7,12 +7,15 @@ with enhanced data protection, validation, and error handling.
 
 from pathlib import Path
 
+from .utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
-    ensure_directory, safe_json_dump, safe_json_load
 )
 from .utils.data_quality_framework import DataQualityFramework
 from .utils.logger import system_logger
 from .utils.base_validator import BaseValidator
+
+import psutil
+
 
 logger = system_logger.getChild('OptimisationStepValidators')
 
@@ -85,7 +88,6 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
         # Validate data directory
         if not safe_file_exists(data_dir):
             self.logger.warning(f"⚠️ Data directory does not exist: {data_dir}")
-            ensure_directory(data_dir)
         
         self.logger.info("✅ Input parameters validation passed")
         return True
@@ -163,7 +165,6 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
         try:
             # Test write permissions to models directory
             models_dir = Path("models")
-            ensure_directory(models_dir)
             
             # Test file creation
             test_file = models_dir / "test_write_permission.tmp"
@@ -295,7 +296,6 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
         self.logger.info("🔍 Validating computational resources...")
         
         try:
-            import psutil
             
             # Check available memory
             available_memory = psutil.virtual_memory().available

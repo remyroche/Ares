@@ -6,6 +6,11 @@ from .core.enhanced_factories import TradingSystemFactory
 from .core.service_registry import ServiceRegistry
 from .utils.logger import system_logger
 
+from .exchange.binance import BinanceClient
+from .utils.state_manager import StateManager
+from .supervisor.performance_reporter import PerformanceReporter
+
+
 class DILauncher:
     """
     Dependency injection-aware launcher for the Ares trading system.
@@ -38,11 +43,8 @@ class DILauncher:
             self.logger.info(f'Launching paper trading for {symbol} on {exchange}')
             trading_config = self._create_paper_trading_config(symbol, exchange)
             self.registry.register_all_services(trading_config)
-            from .exchange.binance import BinanceClient
             exchange_client = BinanceClient(trading_config.get('exchange', {}))
-            from .utils.state_manager import StateManager
             state_manager = StateManager(trading_config.get('state', {}))
-            from .supervisor.performance_reporter import PerformanceReporter
             performance_reporter = PerformanceReporter(trading_config.get('performance', {}))
             self.system_components = await self.factory.create_complete_trading_system(exchange_client, state_manager, performance_reporter)
             await self._start_all_components()
@@ -68,11 +70,8 @@ class DILauncher:
             self.logger.info(f'Launching live trading for {symbol} on {exchange}')
             trading_config = self._create_live_trading_config(symbol, exchange)
             self.registry.register_all_services(trading_config)
-            from .exchange.binance import BinanceClient
             exchange_client = BinanceClient(trading_config.get('exchange', {}))
-            from .utils.state_manager import StateManager
             state_manager = StateManager(trading_config.get('state', {}))
-            from .supervisor.performance_reporter import PerformanceReporter
             performance_reporter = PerformanceReporter(trading_config.get('performance', {}))
             self.system_components = await self.factory.create_complete_trading_system(exchange_client, state_manager, performance_reporter)
             await self._start_all_components()

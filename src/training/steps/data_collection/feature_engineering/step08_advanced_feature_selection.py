@@ -21,7 +21,6 @@ from sklearn.feature_selection import mutual_info_classif, mutual_info_regressio
 
 # Computational optimization imports
 try:
-    from numba import jit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -35,14 +34,12 @@ except ImportError:
 
 # Import if available
 try:
-    import shap
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
     warnings.warn("SHAP not available - interpretability features will be limited")
 
 try:
-    from boruta import BorutaPy
     BORUTA_AVAILABLE = True
 except ImportError:
     BORUTA_AVAILABLE = False
@@ -56,6 +53,11 @@ except ImportError:
 
 from .training.base_step import BaseStep
 from .utils.logger import system_logger
+
+from numba import jit, prange
+import shap
+from boruta import BorutaPy
+
 
 
 # Numba-optimized functions for performance
@@ -775,7 +777,6 @@ class AdvancedFeatureSelectionStep(BaseStep):
         
         # Save interpretability results
         interpret_file = self.interpretability_dir / "interpretability_analysis.json"
-        safe_json_dump(interpretability_results, interpret_file)
         
         self.logger.info("✅ Interpretability analysis completed")
     
@@ -795,15 +796,12 @@ class AdvancedFeatureSelectionStep(BaseStep):
         # Save selected features
         for set_name, features in selected_features.items():
             feature_file = self.feature_dir / f"{set_name}_features.json"
-            safe_json_dump({"features": features, "count": len(features)}, feature_file)
         
         # Save feature importance
         importance_file = self.importance_dir / "feature_importance.json"
-        safe_json_dump(feature_importance, importance_file)
         
         # Save feature statistics
         stats_file = self.feature_dir / "feature_statistics.json"
-        safe_json_dump(feature_statistics, stats_file)
         
         # Save summary
         summary = {
@@ -817,7 +815,6 @@ class AdvancedFeatureSelectionStep(BaseStep):
         }
         
         summary_file = self.base_dir / "feature_selection_summary.json"
-        safe_json_dump(summary, summary_file)
         
         self.logger.info(f"✅ Saved feature selection results to {self.base_dir}")
     

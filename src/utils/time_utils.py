@@ -134,7 +134,6 @@ def is_valid_timestamp_ms(timestamp_ms: int) -> bool:
         return False
 
     # Check if timestamp is not too far in the future (e.g., 10 years)
-    max_future = get_current_timestamp_ms() + (10 * 365 * 24 * 60 * 60 * 1000)
     return not timestamp_ms > max_future
 
 

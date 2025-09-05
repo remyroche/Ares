@@ -5,8 +5,10 @@ from typing import Any
 from logging import warning
 from .utils.logger import system_logger
 from .core.decorators import handles_errors
+
+from .database.influxdb_manager import InfluxDBManager
+
 try:
-    from .database.influxdb_manager import InfluxDBManager
     INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None

@@ -244,7 +244,6 @@ class RegimeAwareFeatureEngine:
         """
         if 'regime_label' not in data.columns:
             return data
-        regime_dummies = pd.get_dummies(data['regime_label'], prefix='feature_regime')
         data = pd.concat([data, regime_dummies], axis=1)
         data = self._add_regime_transition_features(data)
         data = self._add_regime_statistics(data, regime_characteristics)

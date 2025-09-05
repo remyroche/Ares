@@ -10,21 +10,18 @@ import json
 
 # Optional dependencies with fallback handling
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 
 try:
-    import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -43,6 +40,11 @@ from src.training.steps.model_training.matrix_components import (
     MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer
 )
 from src.utils.logger import system_logger
+
+import pandas as pd
+import numpy as np
+import psutil
+
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""

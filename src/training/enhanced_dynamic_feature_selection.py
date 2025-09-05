@@ -9,6 +9,10 @@ from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
 from .utils.logger import system_logger
 
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.cluster.hierarchy import fcluster
+
+
 # src/training/enhanced_dynamic_feature_selection.py
 
 
@@ -292,7 +296,6 @@ class EnhancedDynamicFeatureSelection:
         distance_matrix = 1 - corr_matrix.values
 
         # Use hierarchical clustering to find feature clusters
-        from scipy.cluster.hierarchy import fcluster, linkage
 
         # Perform hierarchical clustering
         linkage_matrix = linkage(squareform(distance_matrix), method="ward")
@@ -628,7 +631,6 @@ class EnhancedDynamicFeatureSelection:
                 sample_linkage = linkage_matrix[sample_indices]
 
                 try:
-                    from scipy.cluster.hierarchy import fcluster
 
                     clusters = fcluster(
                         sample_linkage, n_clusters, criterion="maxclust"

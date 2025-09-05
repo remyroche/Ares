@@ -84,6 +84,7 @@ class SafeIndentationFixer:
             content = self._fix_orphaned_import_lines(content)
             content = self._fix_duplicate_imports(content)
             content = self._fix_misplaced_imports(content)
+            content = self._fix_misplaced_imports_in_code_blocks(content)
             content = self._fix_basic_indentation_issues(content)
             
             # Only write if changes were made and syntax is valid
@@ -123,9 +124,17 @@ class SafeIndentationFixer:
                     'timed_operation', 'format_bytes', 'safe_log_metric', 'safe_log_params'
                 ]):
                     # This is likely a missing import continuation
-                    # Skip this line as it's probably part of a broken import
-                    i += 1
-                    continue
+                    # Try to reconstruct the import statement
+                    if 'get_current_datetime' in line or 'format_datetime' in line:
+                        # This looks like a utils import
+                        fixed_lines.append("from .utils.common_operations import (")
+                        fixed_lines.append(line)
+                        i += 1
+                        continue
+                    else:
+                        # Skip this line as it's probably part of a broken import
+                        i += 1
+                        continue
             
             fixed_lines.append(line)
             i += 1
@@ -143,22 +152,103 @@ class SafeIndentationFixer:
             
             # Look for lines that look like import continuations but are at wrong indentation
             if (line.strip() and 
-                not line.startswith((' ', '\t')) and  # Not indented
-                not line.strip().startswith(('#', '"""', "'''", 'class ', 'def ', 'if ', 'for ', 'while ', 'try:', 'except', 'finally', 'with ')) and
-                not line.strip().startswith(('from ', 'import ')) and
+                not line.strip().startswith(('from ', 'import ', '#', '"""', "'''", 'class ', 'def ', 'if ', 'for ', 'while ', 'try:', 'except', 'finally', 'with ')) and
                 any(keyword in line for keyword in [
                     'get_', 'safe_', 'format_', 'ensure_', 'timed_', 'connection_',
-                    'critical', 'error', 'execution_error', 'failed', 'initialization_error'
+                    'critical', 'error', 'execution_error', 'failed', 'initialization_error',
+                    'invalid', 'missing', 'problem', 'timeout', 'validation_error', 'warning'
                 ])):
                 
-                # This looks like an orphaned import line, remove it
-                i += 1
-                continue
+                # Check if this is part of a broken import block
+                if self._is_broken_import_block(lines, i):
+                    # Try to fix the import block
+                    fixed_import = self._reconstruct_import_block(lines, i)
+                    if fixed_import:
+                        fixed_lines.extend(fixed_import)
+                        # Skip the broken lines
+                        while i < len(lines) and self._is_import_continuation_line(lines[i]):
+                            i += 1
+                        continue
+                    else:
+                        # Remove the orphaned line
+                        i += 1
+                        continue
+                else:
+                    # This looks like an orphaned import line, remove it
+                    i += 1
+                    continue
             
             fixed_lines.append(line)
             i += 1
         
         return '\n'.join(fixed_lines)
+    
+    def _is_broken_import_block(self, lines: list, start_idx: int) -> bool:
+        """Check if we're in a broken import block."""
+        if start_idx >= len(lines):
+            return False
+        
+        line = lines[start_idx].strip()
+        
+        # Look for patterns that suggest a broken import
+        if (any(keyword in line for keyword in [
+            'connection_error', 'critical', 'error', 'execution_error', 'failed',
+            'initialization_error', 'invalid', 'missing', 'problem', 'timeout',
+            'validation_error', 'warning'
+        ]) and not line.startswith(('from ', 'import '))):
+            return True
+        
+        return False
+    
+    def _is_import_continuation_line(self, line: str) -> bool:
+        """Check if a line is part of an import continuation."""
+        stripped = line.strip()
+        if not stripped:
+            return False
+        
+        # Check for import continuation patterns
+        if (stripped.endswith(',') or stripped.endswith(')') or 
+            any(keyword in stripped for keyword in [
+                'connection_error', 'critical', 'error', 'execution_error', 'failed',
+                'initialization_error', 'invalid', 'missing', 'problem', 'timeout',
+                'validation_error', 'warning', 'get_', 'safe_', 'format_', 'ensure_', 'timed_'
+            ])):
+            return True
+        
+        return False
+    
+    def _reconstruct_import_block(self, lines: list, start_idx: int) -> list:
+        """Try to reconstruct a broken import block."""
+        if start_idx >= len(lines):
+            return None
+        
+        line = lines[start_idx].strip()
+        
+        # Try to determine the source module based on the imports
+        if any(keyword in line for keyword in [
+            'connection_error', 'critical', 'error', 'execution_error', 'failed',
+            'initialization_error', 'invalid', 'missing', 'problem', 'timeout',
+            'validation_error', 'warning'
+        ]):
+            # This looks like error constants - likely from a custom error module
+            return [
+                "from .exceptions import (",
+                line,
+                ")"
+            ]
+        elif any(keyword in line for keyword in [
+            'get_current_datetime', 'format_datetime', 'ensure_directory',
+            'safe_json_dump', 'safe_json_load', 'safe_file_exists',
+            'timed_operation', 'format_bytes', 'safe_log_metric', 'safe_log_params'
+        ]):
+            # This looks like utility functions
+            return [
+                "from .utils.common_operations import (",
+                line,
+                ")"
+            ]
+        
+        return None
     
     def _fix_duplicate_imports(self, content: str) -> str:
         """Remove duplicate import statements."""
@@ -227,6 +317,63 @@ class SafeIndentationFixer:
                 # No existing imports, add at the beginning
                 for imp in imports:
                     fixed_lines.insert(0, imp)
+        
+        return '\n'.join(fixed_lines)
+    
+    def _fix_misplaced_imports_in_code_blocks(self, content: str) -> str:
+        """Fix imports that are placed in the middle of code blocks (like the regularization.py case)."""
+        lines = content.split('\n')
+        fixed_lines = []
+        imports_to_move = []
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            
+            # Look for import statements that are indented (inside code blocks)
+            if (stripped.startswith(('import ', 'from ')) and 
+                line.startswith(('    ', '\t'))):  # Indented
+                
+                # This is an import inside a code block - collect it to move later
+                imports_to_move.append(stripped)
+                i += 1
+                continue
+            
+            fixed_lines.append(line)
+            i += 1
+        
+        # If we found misplaced imports, add them at the top
+        if imports_to_move:
+            # Find the last import statement to insert after
+            last_import_idx = -1
+            for j, line in enumerate(fixed_lines):
+                if line.strip().startswith(('import ', 'from ')):
+                    last_import_idx = j
+            
+            # Insert the misplaced imports after the last import
+            if last_import_idx >= 0:
+                # Insert after the last import
+                fixed_lines.insert(last_import_idx + 1, '')
+                for imp in imports_to_move:
+                    fixed_lines.insert(last_import_idx + 2, imp)
+            else:
+                # No existing imports, add at the beginning (after shebang and docstring)
+                insert_idx = 0
+                for j, line in enumerate(fixed_lines):
+                    if line.strip().startswith('#!') or line.strip().startswith('"""') or line.strip().startswith("'''"):
+                        insert_idx = j + 1
+                        # Skip docstring lines
+                        while (insert_idx < len(fixed_lines) and 
+                               (fixed_lines[insert_idx].strip().startswith('"""') or 
+                                fixed_lines[insert_idx].strip().startswith("'''") or
+                                fixed_lines[insert_idx].strip().startswith('#'))):
+                            insert_idx += 1
+                        break
+                
+                for imp in imports_to_move:
+                    fixed_lines.insert(insert_idx, imp)
+                    insert_idx += 1
         
         return '\n'.join(fixed_lines)
     

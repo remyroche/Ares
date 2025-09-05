@@ -124,7 +124,6 @@ def ensure_async(func: Callable[P, R]) -> Callable[P, R | Callable[..., R]]:
     @functools.wraps(func)
     async def async_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         # Run sync function in executor to avoid blocking
-        loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, functools.partial(func, *args, **kwargs)
         )
@@ -145,7 +144,6 @@ def ensure_sync(func: Callable[P, R]) -> Callable[P, R]:
     def sync_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         # Try to get existing event loop
         try:
-            asyncio.get_running_loop()
             # We're in an async context, but need sync
             # This is generally not recommended
             msg = f"Cannot call async function {func.__name__} synchronously from async context"

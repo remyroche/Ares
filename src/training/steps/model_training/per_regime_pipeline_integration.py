@@ -12,8 +12,11 @@ import inspect
 
 from .training.steps.regime_handler import regime_handler
 
+from .training.steps.regime_processing_decorator import per_regime_processing
+import json
 
-logger = get_logger('PerRegimePipelineIntegration')
+
+
 
 
 # Mapping of step names to their per-regime implementations
@@ -301,7 +304,6 @@ def create_per_regime_wrapper(original_step_func: Callable) -> Callable:
     Returns:
         Wrapped function with per-regime processing
     """
-    from .training.steps.regime_processing_decorator import per_regime_processing
     
     # Get function signature
     sig = inspect.signature(original_step_func)
@@ -383,7 +385,6 @@ if __name__ == '__main__':
         config_template = per_regime_integrator.generate_per_regime_config_template()
         
         print("📋 Per-Regime Configuration Template:")
-        import json
         print(json.dumps(config_template, indent=2))
         
         # Test regime data verification

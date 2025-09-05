@@ -9,6 +9,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import traceback
+import asyncio
+
+
 # Add the parent directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -88,7 +92,6 @@ sys.modules['rich.table'] = mock_rich.table
 
 def main():
     # Configure for a simpler run
-    config = get_default_config()
     
     # Make the fixer even more conservative
     if config.auto_fix:
@@ -143,12 +146,10 @@ def main():
         
     except Exception as e:
         print(f"\nError running sequential fixer: {e}")
-        import traceback
         traceback.print_exc()
         return 1
     
     return 0
 
 if __name__ == "__main__":
-    import asyncio
     sys.exit(asyncio.run(main()))

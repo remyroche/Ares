@@ -7,6 +7,9 @@ import re
 import os
 from pathlib import Path
 
+import asyncio
+
+
 # Update patterns to replace TODO imports with proper domain imports
 UPDATE_PATTERNS = [
     # Pattern to find TODO comment blocks with centralized_decorators imports
@@ -37,11 +40,9 @@ def process_todo_import(match_text: str, imports_text: str) -> str:
             domain_imports.append(imp)
         elif imp.startswith('validate_') or imp.startswith('monitor_') or imp.startswith('secure_'):
             domain_imports.append(imp)
-        elif imp in ['prevent_data_leakage', 'ensure_data_integrity', 'quality_gate']:
             domain_imports.append(imp)
         elif imp in ['comprehensive_validation', 'artifact_versioning', 'deterministic_seed']:
             domain_imports.append(imp)
-        elif imp in ['idempotent_step', 'time_budget_watchdog', 'smart_validation_cache']:
             domain_imports.append(imp)
         elif imp == 'enforce_ndarray':
             domain_imports.append(imp)
@@ -142,5 +143,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

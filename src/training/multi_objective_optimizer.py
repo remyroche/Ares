@@ -10,6 +10,10 @@ from sklearn.preprocessing import StandardScaler
 
 from .utils.logger import system_logger
 
+from .training.optimized_backtester import OptimizedBacktester
+from .core.decorators.errors import handles_errors
+
+
 @dataclass
 class OptimizationMetrics:
     """Container for multiple optimization metrics."""
@@ -58,8 +62,6 @@ class MultiObjectiveOptimizer:
         # Initialize optimized backtester if market data is provided
         self.optimized_backtester = None
         if "market_data" in config:
-            from .training.optimized_backtester import OptimizedBacktester
-            from .core.decorators.errors import handles_errors
 
             self.optimized_backtester = OptimizedBacktester(
                 config["market_data"],

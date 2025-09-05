@@ -8,6 +8,10 @@ from typing import Any
 from .database.sqlite_manager import SQLiteManager
 from .utils.logger import system_logger
 
+import sqlite3
+import sys
+
+
 class DatabaseMigrationUtils:
     """
     Utility class for managing database migrations between computers.
@@ -117,7 +121,6 @@ class DatabaseMigrationUtils:
             with open(file_path, 'rb') as f:
                 checksum = hashlib.md5(f.read()).hexdigest()
             try:
-                import sqlite3
                 conn = sqlite3.connect(file_path)
                 cursor = conn.cursor()
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -197,7 +200,6 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
     await db_manager.close()
     return validation_result
 if __name__ == '__main__':
-    import sys
     if len(sys.argv) < 2:
         print('Usage:')
         print('  python migration_utils.py export [db_path]')

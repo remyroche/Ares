@@ -1,56 +1,121 @@
-"""Error handling decorators.
+"""Error handling decorators with async/sync support and flexible signature.
 
-Provides a tolerant `handles_errors` decorator compatible with both sync and async
-functions, supporting keyword options commonly used across steps:
-
-- exceptions: tuple[type[BaseException], ...] to catch (default: (Exception,))
-- default_return / fallback: value to return on error
-- context: optional string for log context
+This module provides a robust `handles_errors` decorator compatible with various
+call sites across the codebase. It supports both synchronous and asynchronous
+functions, optional exception filtering, default/fallback return values, and
+per-exception handlers.
 """
+
 from __future__ import annotations
 
-from functools import wraps
-from typing import Any, Awaitable, Callable, Optional, Tuple, Type
 import asyncio
+import inspect
+import traceback
+from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Tuple, Type
 
 
-def handles_errors(*decorator_args: Any, **decorator_kwargs: Any):
-    exceptions: Tuple[Type[BaseException], ...] = decorator_kwargs.get("exceptions") or (Exception,)
-    fallback = (
-        decorator_kwargs.get("default_return")
-        if "default_return" in decorator_kwargs
-        else decorator_kwargs.get("fallback")
-    )
-    context: Optional[str] = decorator_kwargs.get("context")
+def _resolve_default_return(default_return: Any, *args: Any, **kwargs: Any) -> Any:
+    """Return default value, calling if it's a zero-arg or flexible callable."""
+    try:
+        if callable(default_return):
+            # Try most permissive call first; if that fails, call without args
+            try:
+                return default_return(*args, **kwargs)
+            except TypeError:
+                return default_return()
+        return default_return
+    except Exception:
+        return None
 
-    def _decorator(func: Callable[..., Any] | Callable[..., Awaitable[Any]]):
-        if asyncio.iscoroutinefunction(func):
 
-            @wraps(func)
-            async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
+def handles_errors(
+    func: Optional[Callable[..., Any]] = None,
+    *,
+    exceptions: Optional[Iterable[Type[BaseException]]] = None,
+    Exception: Optional[Iterable[Type[BaseException]]] = None,  # alias for legacy call sites
+    default_return: Any = None,
+    fallback: Any = None,  # alias for legacy call sites
+    context: Optional[str] = None,
+    error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
+    """Decorator to handle errors consistently across sync/async functions.
+
+    Parameters
+    - exceptions / Exception: Iterable of exception classes to catch. Defaults to (Exception,).
+    - default_return / fallback: Value (or callable) to return on error if no specific handler is found.
+    - context: Optional string describing the operation, used for logging.
+    - error_handlers: Mapping of Exception type to either a return value or a (return, message) tuple.
+
+    Notes
+    - Works with or without parentheses: @handles_errors or @handles_errors(...)
+    - If wrapping an async function, the wrapper is async and awaits the function
+    - If default_return/fallback is callable, it will be invoked to produce the value
+    """
+
+    # Normalize aliases
+    catch_exceptions = tuple(exceptions or Exception or (BaseException,))
+    # If neither provided, default to Exception (not BaseException) to avoid catching SystemExit/KeyboardInterrupt
+    if catch_exceptions == (BaseException,):
+        catch_exceptions = (Exception,)
+
+    default_value = default_return if default_return is not None else fallback
+    handlers = error_handlers or {}
+
+    def _log_error(err: BaseException, fn_name: str) -> None:
+        try:
+            # Lazy import to avoid circular deps
+            from src.utils.logger import system_logger  # type: ignore
+            if system_logger is not None:
+                prefix = f"Error in {fn_name}"
+                if context:
+                    prefix += f" (context: {context})"
+                system_logger.exception(f"{prefix}: {err}")
+                return
+        except Exception:
+            pass
+        # Fallback logging to stdout
+        ctx = f" (context: {context})" if context else ""
+        print(f"Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}")
+
+    def _handle_with_mapping(err: BaseException) -> Any:
+        # Find the most specific matching handler
+        for exc_type, ret in handlers.items():
+            try:
+                if isinstance(err, exc_type):
+                    if isinstance(ret, tuple) and len(ret) >= 1:
+                        return ret[0]
+                    return ret
+            except Exception:
+                continue
+        # Fall back to default value
+        return _resolve_default_return(default_value)
+
+    def _decorate(f: Callable[..., Any]) -> Callable[..., Any] | Callable[..., Awaitable[Any]]:
+        if inspect.iscoroutinefunction(f):
+
+            async def _async_wrapper(*a: Any, **kw: Any) -> Any:
                 try:
-                    return await func(*args, **kwargs)
-                except exceptions as e:  # type: ignore[misc]
-                    prefix = f"[{context}] " if context else ""
-                    print(f"Error in {func.__name__}: {prefix}{e}")
-                    return fallback
+                    return await f(*a, **kw)
+                except catch_exceptions as err:  # type: ignore[misc]
+                    _log_error(err, f.__name__)
+                    return _handle_with_mapping(err)
 
+            _async_wrapper.__name__ = getattr(f, "__name__", "wrapped_async")
+            _async_wrapper.__doc__ = getattr(f, "__doc__", None)
             return _async_wrapper
 
-        @wraps(func)
-        def _sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+        def _sync_wrapper(*a: Any, **kw: Any) -> Any:
             try:
-                return func(*args, **kwargs)
-            except exceptions as e:  # type: ignore[misc]
-                prefix = f"[{context}] " if context else ""
-                print(f"Error in {func.__name__}: {prefix}{e}")
-                return fallback
+                return f(*a, **kw)
+            except catch_exceptions as err:  # type: ignore[misc]
+                _log_error(err, f.__name__)
+                return _handle_with_mapping(err)
 
+        _sync_wrapper.__name__ = getattr(f, "__name__", "wrapped")
+        _sync_wrapper.__doc__ = getattr(f, "__doc__", None)
         return _sync_wrapper
 
-    # Support bare @handles_errors usage without parentheses
-    if decorator_args and callable(decorator_args[0]) and not decorator_kwargs:
-        return _decorator(decorator_args[0])
-
-    return _decorator
-
+    # Support both @handles_errors and @handles_errors(...)
+    if callable(func):
+        return _decorate(func)
+    return _decorate

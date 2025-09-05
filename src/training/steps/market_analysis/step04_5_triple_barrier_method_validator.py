@@ -31,6 +31,11 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import decorators from both locations for compatibility
+from src.core.decorators import traced, validates
+from src.utils.decorators.errors import handles_errors
+import logging
+
 # Initialize logger using common utilities
 logger = get_logger('Step4TripleBarrierMethodValidator')
 

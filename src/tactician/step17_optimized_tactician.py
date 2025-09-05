@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
+
 '\nStep17 Optimized Tactician\n\nThis module implements a complete step17-optimized Tactician where ALL decision logic,\nposition sizing, leverage, and confidence calculations are configurable by step17.\n'
 import logging
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Any
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
 from .core.decorators.errors import handles_errors
 import numpy as np
+import time
 
 logger = logging.getLogger(__name__)
 

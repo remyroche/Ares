@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+
 'S/R Market Regime Optimizer.\n\nThis module optimizes market regime detection and adaptation through backtesting,\nensuring that regime-specific logic is validated and optimized for performance.\n'
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from .utils.logger import system_logger
 from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
+import logging
 
 @dataclass
 class RegimePerformance:

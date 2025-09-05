@@ -29,6 +29,7 @@ from reporters.html_reporter import HTMLReporter
 from reporters.text_reporter import TextReporter
 from visualizers.chart_generator import ChartGenerator
 from core.config import AnalysisConfig
+import time
 
 
 class SimplifiedCodeInteractionMapper:

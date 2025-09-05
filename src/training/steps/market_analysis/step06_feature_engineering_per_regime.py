@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+import pandas as pd
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -46,7 +47,8 @@ except ImportError:
             pass
 try:
     from src.utils.pipeline_standards import pipeline_standards
-    import pandas as pd
+import datetime
+
 except ImportError:
 
     def pipeline_standards(*args, **kwargs) -> None:

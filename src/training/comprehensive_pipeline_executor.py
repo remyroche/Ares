@@ -13,6 +13,7 @@ from .training.data_quality_monitor import DataQualityMonitor
 from .training.steps_1_7_comprehensive_executor import Steps1To7ComprehensiveExecutor
 from .utils.enhanced_mlflow_integration import log_step_metrics, log_step_report
 from .utils.logger import system_logger
+import logging
 
 class ComprehensivePipelineExecutor:
     """
@@ -193,8 +194,8 @@ async def main() -> None:
     except Exception as e:
         print(f'❌ Pipeline execution failed: {e}')
         import traceback
-        traceback.print_exc()
-
 from typing import List
+
+traceback.print_exc()
 if __name__ == '__main__':
     asyncio.run(main())

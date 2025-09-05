@@ -5,12 +5,16 @@ This module provides comprehensive tests for the migrated components,
 ensuring they work correctly and maintain compatibility with the original functionality.
 """
 import asyncio
+import numpy as np
+import pandas as pd
+
 try:
+    try:
     import pytest
 except ImportError:
     pytest = None
-import pandas as pd
-import numpy as np
+except ImportError:
+    pytest = None
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock

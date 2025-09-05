@@ -47,6 +47,9 @@ except ImportError:
     rankdata = None
 project_root = Path(__file__).parent.parent.parent
 import sys
+import collections
+import json
+
 sys.path.insert(0, str(project_root))
 from .utils.common_operations import ensure_directory, safe_json_dump
 from .core.decorators import CachePolicy, cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates

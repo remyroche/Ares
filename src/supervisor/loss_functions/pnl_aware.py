@@ -4,6 +4,7 @@ PnL-Aware Loss Function for Keras Models.
 This module contains the factory function for creating custom Keras loss functions
 that combine standard classification loss with financial components.
 """
+import numpy as np
 
 from typing import Any
 from tensorflow.keras import backend as K

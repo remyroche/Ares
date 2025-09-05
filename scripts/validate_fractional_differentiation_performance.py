@@ -1,3 +1,5 @@
+import pandas as pd
+
 # scripts/validate_fractional_differentiation_performance.py
 
 """Comprehensive validation and testing of fractional differentiation performance."""
@@ -8,6 +10,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import numpy as np
+import os
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -682,7 +686,6 @@ async def main():
 
 if __name__== "__main__":
     import asyncio
-import pandas as pd
 
 
 asyncio.run( main())

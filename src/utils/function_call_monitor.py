@@ -15,6 +15,8 @@ import inspect
 import logging
 import time
 import traceback
+import numpy as np
+
 try:
     import psutil
 except ImportError:
@@ -27,7 +29,7 @@ from enum import Enum
 import json
 import threading
 from contextlib import contextmanager
-import numpy as np
+import collections
 
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""

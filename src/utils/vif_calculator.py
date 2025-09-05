@@ -12,6 +12,9 @@ import numpy as np
 
 from .utils.logger import system_logger
 import pandas as pd
+import numpy as np
+import logging
+import typing
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:

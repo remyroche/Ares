@@ -13,7 +13,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.config import CodeQualityConfig
+from core.config import ReportingConfig
+import numpy as np
+import logging
+import time
 
 
 @dataclass
@@ -77,14 +80,14 @@ class ErrorReporter:
     - Security analysis
     """
 
-    def __init__(self, config: CodeQualityConfig | None = None):
+    def __init__(self, config: ReportingConfig | None = None):
         """
         Initialize the error reporter.
 
         Args:
             config: Reporting configuration
         """
-        self.config = config or CodeQualityConfig()
+        self.config = config or ReportingConfig()
         self.severity_levels = ["critical", "high", "medium", "low"]
         self.error_sources = []
         self.error_data = {}

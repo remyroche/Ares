@@ -16,6 +16,9 @@ import seaborn as sns
 # Import emoji logger with fallback
 try:
     from src.utils.emoji_logger import (
+import json
+import logging
+
         error,
         warning,
         critical,

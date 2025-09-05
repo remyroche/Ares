@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from simple_quality_orchestrator import SimpleQualityOrchestrator
+import time
 
 
 def generate_unified_report():

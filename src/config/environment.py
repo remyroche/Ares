@@ -20,6 +20,8 @@ except Exception:
     def Field(default: Any=None, env: str | None=None) -> None:
         return default
 from ..utils.logger import system_logger
+import logging
+
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)

@@ -2,11 +2,9 @@
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
-
-import numpy as np
-
 try:
     from .logger import log_error_with_context
+
 except ImportError:
 
     def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:
@@ -34,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class DecoratorMetadata:
     """Metadata for a registered decorator with comprehensive error handling."""
+import numpy as np
 
     def __init__(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool=False) -> None:
         try:

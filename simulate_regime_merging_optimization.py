@@ -5,6 +5,8 @@ Simulation script to find optimal regime merging parameters for 70-80% concentra
 
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+import numpy as np
+import pandas as pd
 
 
 

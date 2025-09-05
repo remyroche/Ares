@@ -11,6 +11,8 @@ import functools
 import traceback
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import numpy as np
+import logging
 
 # Mock the missing dependencies
 class MockLogger:

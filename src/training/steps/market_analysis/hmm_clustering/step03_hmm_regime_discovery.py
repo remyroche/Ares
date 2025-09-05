@@ -20,6 +20,8 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 try:
     from src.utils.centralized_decorators import handles_errors, monitor_feature_engineering, validates, traced, log_execution_time, cached, ensure_data_integrity, monitor_step_execution, secure_step_execution
+import os
+
 except ImportError:
 
     def handles_errors(*args, **kwargs) -> None:

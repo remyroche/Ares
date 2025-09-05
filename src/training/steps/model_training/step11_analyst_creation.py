@@ -28,6 +28,8 @@ import lightgbm as lgb
 import xgboost as xgb
 try:
     import shap
+import time
+
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False

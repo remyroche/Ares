@@ -7,6 +7,7 @@ threshold-based approaches with smooth, continuous scaling.
 from typing import Dict, Any, Tuple
 from .utils.logger import system_logger
 import numpy as np
+import logging
 
 class LinearConfidenceScaler:
     """

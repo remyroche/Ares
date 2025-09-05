@@ -12,6 +12,8 @@ from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from .core.decorators import handles_errors
 from .utils.logger import system_logger
 import numpy as np
+import logging
+import time
 
 class OptimizationBlock(Enum):
     """Logical blocks for parameter optimization to avoid curse of dimensionality."""

@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 
 from .core.dependency_injection import DependencyContainer as _DependencyContainer
 from .core.dependency_injection import ServiceLifetime as _ServiceLifetime
+import time
 
 T = TypeVar("T")
 

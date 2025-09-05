@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 S/R Parameter Optimization Script
 
@@ -46,11 +48,12 @@ from src.config_optuna import (  # noqa: E402
     validate_sr_optimization_config,
 )
 from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
+import numpy as np
+
     AdvancedOptunaManager,
     OptimizationResult,
 )
 from src.utils.logger import setup_logging  # noqa: E402
-import pandas as pd
 
 setup_logging()
 warnings.filterwarnings("ignore")

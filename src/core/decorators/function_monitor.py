@@ -15,7 +15,13 @@ import asyncio
 import functools
 import inspect
 import logging
-import psutil
+# Optional system monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 import sys
 import time
 import traceback
@@ -123,6 +129,8 @@ class FunctionCallMonitor:
         
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
+        if not PSUTIL_AVAILABLE:
+            return 0.0
         try:
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024  # Convert to MB
@@ -131,6 +139,8 @@ class FunctionCallMonitor:
     
     def _get_cpu_percent(self) -> float:
         """Get current CPU usage percentage."""
+        if not PSUTIL_AVAILABLE:
+            return 0.0
         try:
             process = psutil.Process()
             return process.cpu_percent()

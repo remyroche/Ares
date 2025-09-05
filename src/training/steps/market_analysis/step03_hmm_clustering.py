@@ -24,12 +24,25 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
-from .training.steps.hmm_clustering import run_enhanced_step
-from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+# Import utilities (optional)
+try:
+    from .utils.logger import system_logger
+except ImportError:
+    import logging
+    system_logger = logging.getLogger("Step3HMMClustering")
+
+try:
+    from .training.steps.hmm_clustering import run_enhanced_step
+except ImportError:
+    run_enhanced_step = None
+
+try:
+    from .training.steps.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
+except ImportError:
+    run_validator = None
 
 # Import enhanced monitoring decorators
-from ...core.decorators import (
+from src.core.decorators import (
     monitor_step03_functions,
     handle_step03_errors,
     validates,
@@ -354,4 +367,4 @@ async def main():
 
 if __name__ == "__main__":
     # Run the enhanced step 3
-    asyncio.run(await main())
+    asyncio.run(main())

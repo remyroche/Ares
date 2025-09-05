@@ -6,10 +6,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 try:
-    try:
     import talib
-except ImportError:
-    talib = None
 except ImportError:
     talib = None
 if TYPE_CHECKING:

@@ -509,8 +509,6 @@ class FeatureEngineeringOptimizer:
             combined_features = pd.concat([interactions], axis=1)
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import cross_val_score
-import pandas as pd
-import numpy as np
 
             model = RandomForestClassifier(n_estimators=50, random_state=42)
             scores = cross_val_score(model, combined_features, target, cv=3, scoring='accuracy')

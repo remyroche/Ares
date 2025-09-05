@@ -831,6 +831,12 @@ class DataReadingStep:
             if dataframes:
                 unified_data = pd.concat(dataframes, ignore_index=True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop=True)
+                
+                # Apply data quality fixes
+                from src.utils.data_quality_fixer import DataQualityFixer
+                quality_fixer = DataQualityFixer()
+                unified_data, fix_report = quality_fixer.fix_data_quality_issues(unified_data, 'timestamp')
+                
                 validation_result = self.standards.validate_data_quality(unified_data, 'unified')
                 if validation_result.passed:
                     self.logger.info(f'✅ Successfully read unified data: {len(unified_data)} rows (quality score: {validation_result.quality_score:.2f})')

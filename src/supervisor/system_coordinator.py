@@ -7,12 +7,14 @@ The actual implementation is now split across modules in src/supervisor/coordina
 
 
 # Import all the components from the new structure
-from .core.circuit_breaker import CircuitBreaker
-from .core.component_monitor import ComponentMonitor
-from .core.health_monitor import HealthMonitor
-from .core.online_learning_manager import OnlineLearningManager
-from .core.recovery_manager import RecoveryManager
-from .core.system_coordinator import SystemCoordinator
+from .supervisor.components import (
+    CircuitBreaker,
+    ComponentMonitor,
+    HealthMonitor,
+    OnlineLearningManager,
+    RecoveryManager,
+    SystemCoordinator,
+)
 
 # Re-export everything for backward compatibility
 __all__ = [

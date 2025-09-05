@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .core.decorators import handles_errors, validates, log_call, traced, authenticated, requires_permission
 from .logger import system_logger
-from .utils.data_utils import (
+from .utils.common import (
     safe_file_exists, safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, generate_hash
 )

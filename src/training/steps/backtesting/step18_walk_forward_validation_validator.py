@@ -30,7 +30,6 @@ from .core.decorators.errors import handles_errors
 
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
-import numpy as np
 
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step13_walk_forward_validation", config)

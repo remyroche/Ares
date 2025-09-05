@@ -262,9 +262,6 @@ async def run_enhanced_step1(training_input: Dict[str, Any], pipeline_state: Dic
     return await step01.execute(training_input, pipeline_state)
 if __name__ == '__main__':
     import asyncio
-from typing import Dict
-from typing import Any
-from typing import Optional
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 

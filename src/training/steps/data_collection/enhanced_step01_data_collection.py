@@ -414,10 +414,6 @@ class EnhancedDataCollectionStep:
                 self.logger.info(f'🔍 Validating {data_type} file: {os.path.basename(filepath)}')
                 
                 try:
-from typing import Any
-from typing import Dict
-from typing import List
-
                     df = pd.read_parquet(filepath)
                     
                     # Basic quality checks
@@ -600,4 +596,4 @@ if __name__ == "__main__":
         else:
             print("❌ Enhanced data collection failed")
     
-    asyncio.run(await main())
+    asyncio.run(main())

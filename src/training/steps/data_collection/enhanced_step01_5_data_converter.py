@@ -540,8 +540,6 @@ class EnhancedUnifiedDataConverter:
                 return False
             
             # Load and validate unified data
-from datetime import datetime
-
             df = pd.read_parquet(unified_filepath)
             
             # Basic quality checks

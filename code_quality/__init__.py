@@ -4,11 +4,6 @@ Code Quality Tools - Comprehensive Python code analysis and fixing suite.
 
 from .core.config import (
     AnalysisConfig,
-    AutoFixConfig,
-    CodeQualityConfig,
-    ReportingConfig,
-    get_default_config,
-    load_config,
 )
 
 # Delayed imports for optional components to avoid heavy dependencies at import time
@@ -73,12 +68,7 @@ __author__ = "Code Quality Tools Team"
 
 __all__ = [
     # Core configuration
-    "CodeQualityConfig",
-    "AutoFixConfig",
     "AnalysisConfig",
-    "ReportingConfig",
-    "get_default_config",
-    "load_config",
 
     # Quick access functions
     "auto_fix",
@@ -97,7 +87,7 @@ __all__ = [
 import os
 
 
-def auto_fix(target: str, config: CodeQualityConfig = None) -> dict:
+def auto_fix(target: str, config: AnalysisConfig = None) -> dict:
     """
     Quick auto-fix for Python code.
 
@@ -108,7 +98,7 @@ def auto_fix(target: str, config: CodeQualityConfig = None) -> dict:
     Returns:
         Fix results
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     AutoFixer, _SequentialFixer = _lazy_import_fixers()
     fixer = AutoFixer(config)
 
@@ -133,7 +123,7 @@ def sequential_fix(target: str, output_dir: str = None) -> dict:
     return fixer.run_pipeline(target=target, output_dir=output_dir)
 
 
-def analyze_imports(target: str, config: CodeQualityConfig = None) -> dict:
+def analyze_imports(target: str, config: AnalysisConfig = None) -> dict:
     """
     Quick import analysis for Python code.
 
@@ -144,7 +134,7 @@ def analyze_imports(target: str, config: CodeQualityConfig = None) -> dict:
     Returns:
         Import analysis results
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     ImportAnalyzer = _lazy_import_analyzers()["ImportAnalyzer"]
 
     if os.path.isfile(target):
@@ -152,7 +142,7 @@ def analyze_imports(target: str, config: CodeQualityConfig = None) -> dict:
     return ImportAnalyzer(config).analyze_directory(target)
 
 
-def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
+def analyze_signatures(target: str, config: AnalysisConfig = None) -> dict:
     """
     Quick function signature analysis for Python code.
 
@@ -163,7 +153,7 @@ def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
     Returns:
         Signature analysis results
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     SignatureAnalyzer = _lazy_import_analyzers()["SignatureAnalyzer"]
 
     if os.path.isfile(target):
@@ -171,7 +161,7 @@ def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
     return SignatureAnalyzer(config).analyze_directory(target)
 
 
-def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
+def analyze_complexity(target: str, config: AnalysisConfig = None) -> dict:
     """
     Quick complexity analysis for Python code.
 
@@ -182,7 +172,7 @@ def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
     Returns:
         Complexity analysis results
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     ComplexityAnalyzer = _lazy_import_analyzers()["ComplexityAnalyzer"]
 
     if os.path.isfile(target):
@@ -190,7 +180,7 @@ def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
     return ComplexityAnalyzer(config).analyze_directory(target)
 
 
-def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
+def analyze_dead_code(target: str, config: AnalysisConfig = None) -> dict:
     """
     Quick dead code analysis for Python code.
 
@@ -201,7 +191,7 @@ def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
     Returns:
         Dead code analysis results
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     DeadCodeAnalyzer = _lazy_import_analyzers()["DeadCodeAnalyzer"]
 
     if os.path.isfile(target):
@@ -209,7 +199,7 @@ def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
     return DeadCodeAnalyzer(config).analyze_directory(target)
 
 
-def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = None):
+def generate_error_report(analyzers_results: dict, config: AnalysisConfig = None):
     """
     Generate comprehensive error report from analyzer results.
 
@@ -220,7 +210,7 @@ def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = N
     Returns:
         ErrorReport object
     """
-    config = config or get_default_config()
+    config = config or AnalysisConfig()
     ErrorReporter = _lazy_import_reporters()["ErrorReporter"]
 
     reporter = ErrorReporter(config)

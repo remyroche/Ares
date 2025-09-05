@@ -999,7 +999,6 @@ class ModularStrategist:
 modular_strategist: ModularStrategist | None = None
 
 
-@handles_errors(fallback=None)
 async def setup_modular_strategist(
     config: dict[str, Any] | None = None,
 ) -> ModularStrategist | None:

@@ -373,7 +373,6 @@ async def generate_validation_function_report(
             }
         }
         
-        safe_json_dump(comprehensive_report, report_path, indent=2, default=str)
         
         # Log comprehensive summary
         logger.info('📊 Validation Function Report Summary:')

@@ -311,8 +311,6 @@ def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
             ).strip(),
             "volatility_regime": (
                 '''
-import numpy as np
-import pandas as pd
 
 def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate volatility regime with improved logic."""
@@ -334,8 +332,6 @@ def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
             ).strip(),
             "volume_regime": (
                 '''
-import numpy as np
-import pandas as pd
 
 def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
     """Calculate volume regime with improved logic."""
@@ -426,7 +422,6 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         return "\n".join(report)
 
 
-@handle_errors(default_return=None, context="investigate_regime_main")
 def main() -> None:
     """Main investigation function."""
     investigator=RegimeCalculationInvestigator()

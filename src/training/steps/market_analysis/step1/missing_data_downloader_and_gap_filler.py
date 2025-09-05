@@ -2,7 +2,9 @@
 import pandas as pd
 """Missing Data Downloader and Gap Filler for Step1.
 
+from .exceptions import (
 Downloads missing data and fills gaps automatically.
+)
 """
 import asyncio
 import sys
@@ -11,12 +13,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
-    from .utils.logger import system_logger
-    from .training.steps.step01.data_gap_detector import DataGapDetector
-    from .exchange.binance_exchange import BinanceExchange
     CONFIG = {'API_KEY': '', 'API_SECRET': '', 'TESTNET': True}
 except ImportError as e:
-    import logging
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger('MissingDataDownloaderFallback')
     system_logger.warning(f'⚠️ Some imports failed: {e}')
@@ -70,9 +68,14 @@ except ImportError as e:
         return decorator
     DataGapDetector = None
     BinanceExchange = None
-    import logging
 from .core.decorators import handles_errors, traced
 from .core.decorators.errors import handles_errors
+
+from .utils.logger import system_logger
+from .training.steps.step01.data_gap_detector import DataGapDetector
+from .exchange.binance_exchange import BinanceExchange
+import logging
+
 logging.basicConfig(level=logging.INFO)
 system_logger = logging.getLogger('MissingDataDownloaderFallback')
 logger = system_logger.getChild('MissingDataDownloader')

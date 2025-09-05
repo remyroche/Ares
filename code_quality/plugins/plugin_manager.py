@@ -10,6 +10,7 @@ import time
 from typing import Optional, List, Dict, Any
 from .plugin_registry import PluginRegistry
 from .base_plugin import PluginContext, PluginResult, PluginCategory, PluginPriority
+from .exceptions import PluginExecutionError, PluginTimeoutError
 
 
 class PluginManager:
@@ -29,9 +30,9 @@ class PluginManager:
         }
     
     def execute_plugin(self, 
-                      plugin_name: str, 
-                      context: PluginContext,
-                      timeout: Optional[int] = None) -> PluginResult:
+                    plugin_name: str,
+                    context: PluginContext,
+                    timeout: Optional[int] = None) -> PluginResult:
         """
         Execute a single plugin.
         
@@ -97,9 +98,9 @@ class PluginManager:
             raise PluginExecutionError(plugin_name, e)
     
     def execute_plugins_sequential(self, 
-                                  plugin_names: List[str], 
-                                  context: PluginContext,
-                                  timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
+                                plugin_names: List[str],
+                                context: PluginContext,
+                                timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
         """
         Execute multiple plugins sequentially.
         
@@ -190,11 +191,11 @@ class PluginManager:
         return results
     
     def execute_plugins_by_category(self, 
-                                   category: PluginCategory, 
-                                   context: PluginContext,
-                                   parallel: bool = False,
-                                   max_workers: Optional[int] = None,
-                                   timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
+                                category: PluginCategory,
+                                context: PluginContext,
+                                parallel: bool = False,
+                                max_workers: Optional[int] = None,
+                                timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
         """
         Execute all plugins in a category.
         
@@ -226,11 +227,11 @@ class PluginManager:
             )
     
     def execute_plugins_by_priority(self, 
-                                   priority: PluginPriority, 
-                                   context: PluginContext,
-                                   parallel: bool = False,
-                                   max_workers: Optional[int] = None,
-                                   timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
+                                priority: PluginPriority,
+                                context: PluginContext,
+                                parallel: bool = False,
+                                max_workers: Optional[int] = None,
+                                timeout_per_plugin: Optional[int] = None) -> List[PluginResult]:
         """
         Execute all plugins with a specific priority.
         
@@ -428,7 +429,7 @@ class PluginManager:
             stats["failed_executions"] += 1
     
     def _record_execution(self, plugin_name: str, context: PluginContext, 
-                         result: PluginResult, execution_time: float) -> None:
+                        result: PluginResult, execution_time: float) -> None:
         """Record execution in history."""
         execution_record = {
             "plugin_name": plugin_name,

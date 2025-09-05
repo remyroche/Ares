@@ -1,25 +1,31 @@
-"""
-Utility modules for code quality tools.
-"""
+"""Utility functions for code analysis."""
 
 from .file_utils import (
-    backup_file,
     find_python_files,
-    find_unused_imports,
-    get_directory_stats,
-    get_file_dependencies,
-    get_file_info,
-    is_valid_python_file,
-    restore_file,
+    read_file_safely,
+    parse_ast_safely,
+    extract_function_name_from_issue,
+    get_module_from_file_path,
+    is_documentation_file,
+    FileUtils,
+)
+
+from .gitignore_parser import (
+    GitignoreParser,
+    should_ignore_file,
+    filter_ignored_files,
 )
 
 __all__ = [
     "find_python_files",
-    "is_valid_python_file",
-    "get_file_info",
-    "get_directory_stats",
-    "backup_file",
-    "restore_file",
-    "get_file_dependencies",
-    "find_unused_imports",
+    "read_file_safely",
+    "parse_ast_safely",
+    "extract_function_name_from_issue",
+    "get_module_from_file_path",
+    "is_documentation_file",
+    "FileUtils",
+    "GitignoreParser",
+    "should_ignore_file",
+    "filter_ignored_files",
 ]
+

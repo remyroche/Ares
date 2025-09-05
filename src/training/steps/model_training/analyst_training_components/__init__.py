@@ -6,6 +6,7 @@
 This package contains specialized components for analyst model training.
 """
 
+from .core.decorators import (
     connection_error,
     critical,
     error,
@@ -17,7 +18,7 @@ This package contains specialized components for analyst model training.
     problem,
     timeout,
     validation_error,
-    warning,
+    warning
 )
 
 

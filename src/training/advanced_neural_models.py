@@ -225,7 +225,6 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
         y_tensor = torch.LongTensor(y)
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-        device = self._get_device()
         self.model = self.model_class(**self.model_params).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
@@ -258,7 +257,6 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
         check_is_fitted(self, ['model', 'classes_'])
         X = check_array(X)
         X_tensor = torch.FloatTensor(X)
-        device = self._get_device()
         self.model.eval()
         with torch.no_grad():
             X_tensor = X_tensor.to(device)
@@ -271,7 +269,6 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
         check_is_fitted(self, ['model', 'classes_'])
         X = check_array(X)
         X_tensor = torch.FloatTensor(X)
-        device = self._get_device()
         self.model.eval()
         with torch.no_grad():
             X_tensor = X_tensor.to(device)

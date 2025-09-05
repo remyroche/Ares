@@ -2,7 +2,6 @@ from typing import Set, List, Dict, Any, Optional
 """
 Plugin System Exceptions
 
-Custom exceptions for the plugin system to provide clear error handling.
 """
 
 

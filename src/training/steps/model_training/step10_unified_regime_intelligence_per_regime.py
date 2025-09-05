@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 
 from .training.steps.step10_unified_regime_intelligence import Step10UnifiedRegimeIntelligence
+from .training.steps.regime_processing_utils import (
     per_regime_processing,
     aggregate_regime_results,
     RegimeProcessingContext
@@ -16,7 +17,6 @@ from .training.steps.step10_unified_regime_intelligence import Step10UnifiedRegi
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
 
 
 logger = get_logger('Step10UnifiedRegimeIntelligencePerRegime')
@@ -993,4 +993,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime regime intelligence result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

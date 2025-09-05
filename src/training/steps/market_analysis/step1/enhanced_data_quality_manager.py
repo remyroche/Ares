@@ -17,6 +17,7 @@ from .core.decorators import handles_errors, traced, validates
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from .core.decorators import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,

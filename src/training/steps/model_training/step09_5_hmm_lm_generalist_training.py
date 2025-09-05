@@ -11,6 +11,7 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
+from .core.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -33,7 +34,7 @@ from torch.utils.data import DataLoader, Dataset
 )
 from .utils.logger import system_logger
 from .core.decorators import handles_errors, traced, timeout
-
+from .utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -1352,4 +1353,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(await test())
+    asyncio.run(test())

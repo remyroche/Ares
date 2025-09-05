@@ -157,7 +157,7 @@ class EnhancedDependencyAnalyzer:
             
             # Add to all issues (avoid duplicates)
             existing_unused = {issue["dependency"] for issue in combined["all_issues"] 
-                             if issue["issue_type"] == "unused"}
+                            if issue["issue_type"] == "unused"}
             
             for dep in unused:
                 if dep not in existing_unused:

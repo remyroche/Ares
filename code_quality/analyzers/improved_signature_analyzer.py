@@ -41,7 +41,7 @@ class SignatureIssue:
     """Represents a function signature-related issue."""
 
     def __init__(self, file_path: str, line_number: int, issue_type: str,
-                 message: str, severity: str = "warning", details: dict | None = None):
+                message: str, severity: str = "warning", details: dict | None = None):
         self.file_path = file_path
         self.line_number = line_number
         self.issue_type = issue_type
@@ -224,7 +224,7 @@ class ImprovedSignatureAnalyzer:
                     self.function_calls_by_file[file_path].append(call)
 
     def _extract_function_signature(self, node: ast.FunctionDef, file_path: str,
-                                   is_method: bool = False, class_name: str | None = None) -> FunctionSignature:
+                                is_method: bool = False, class_name: str | None = None) -> FunctionSignature:
         """Extract function signature from an AST node."""
         # Extract arguments
         args = []
@@ -599,9 +599,9 @@ class ImprovedSignatureAnalyzer:
     def _generate_report(self) -> dict[str, Any]:
         """Generate a comprehensive signature analysis report."""
         total_issues = (len(self.signature_changes) +
-                       len(self.compatibility_issues) +
-                       len(self.missing_functions) +
-                       len(self.unused_functions))
+                    len(self.compatibility_issues) +
+                    len(self.missing_functions) +
+                    len(self.unused_functions))
 
         return {
             "summary": {

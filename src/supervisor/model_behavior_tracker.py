@@ -375,7 +375,6 @@ class ModelBehaviorTracker:
             self.logger.exception(error('Error exporting behavior data: {e}'))
             return ''
 
-@handles_errors(fallback=None)
 async def setup_model_behavior_tracker(config: dict[str, Any], performance_monitor: PerformanceMonitor) -> ModelBehaviorTracker | None:
     """
     Set up model behavior tracker.

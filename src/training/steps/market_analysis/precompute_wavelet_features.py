@@ -18,6 +18,7 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from .utils.data_optimizer import ohlcv_columns
 from .core.domain import validate_wavelet_data_quality
 from .utils.logger import system_logger
+from .core.decorators import (
     error,
     failed,
     initialization_error,

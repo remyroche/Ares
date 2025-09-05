@@ -198,10 +198,10 @@ async def example_basic_explanations():
     print("=" * 50)
     
     # Load configuration
-    config = load_config()
+    config = await {func}()
     
     # Create sample data
-    market_data, features, feature_names = create_sample_data()
+    market_data, features, feature_names = await {func}()
     
     # Initialize explainers
     tactician_explainer = TacticianExplainer(config)
@@ -265,10 +265,10 @@ async def example_decision_tracing():
     print("=" * 50)
     
     # Load configuration
-    config = load_config()
+    config = await {func}()
     
     # Create sample data
-    market_data, features, feature_names = create_sample_data()
+    market_data, features, feature_names = await {func}()
     
     # Initialize orchestrator
     orchestrator = ExplainabilityOrchestrator(config)
@@ -334,10 +334,10 @@ async def example_complete_trading_decision():
     print("=" * 50)
     
     # Load configuration
-    config = load_config()
+    config = await {func}()
     
     # Create sample data
-    market_data, features, feature_names = create_sample_data()
+    market_data, features, feature_names = await {func}()
     
     # Initialize orchestrator
     orchestrator = ExplainabilityOrchestrator(config)
@@ -391,10 +391,10 @@ async def example_visualization():
     print("=" * 50)
     
     # Load configuration
-    config = load_config()
+    config = await {func}()
     
     # Create sample data
-    market_data, features, feature_names = create_sample_data()
+    market_data, features, feature_names = await {func}()
     
     # Initialize explainer and model
     tactician_explainer = TacticianExplainer(config)
@@ -442,10 +442,10 @@ async def example_integration_decorators():
     print("=" * 50)
     
     # Load configuration
-    config = load_config()
+    config = await {func}()
     
     # Create sample data
-    market_data, features, feature_names = create_sample_data()
+    market_data, features, feature_names = await {func}()
     
     # Example: Decorated Tactician prediction
     @explainable_tactician_prediction(

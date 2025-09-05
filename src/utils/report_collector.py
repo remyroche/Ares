@@ -17,8 +17,8 @@ from pathlib import Path
 import shutil
 import functools
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists
 )
 from .utils.logger import system_logger
 
@@ -42,7 +42,6 @@ class ReportCollector:
         """Initialize the current run directory with timestamp."""
         self.run_timestamp = format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')
         self.current_run_dir = self.base_reports_dir / f"run_{self.run_timestamp}"
-        ensure_directory(str(self.current_run_dir))
         
         self.logger.info(f"📁 Report collector initialized: {self.current_run_dir}")
         print(f"📁 Report collector directory: {self.current_run_dir}")

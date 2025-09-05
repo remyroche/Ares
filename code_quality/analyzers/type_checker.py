@@ -20,7 +20,7 @@ class TypeIssue:
     """Container for type checking issue information."""
 
     def __init__(self, file_path: str, line: int, column: int, message: str,
-                 error_type: str, severity: str = "error", code: str = ""):
+                error_type: str, severity: str = "error", code: str = ""):
         self.file_path = file_path
         self.line = line
         self.column = column
@@ -49,8 +49,8 @@ class TypeInfo:
     """Container for type information."""
 
     def __init__(self, name: str, type_hint: str, line: int,
-                 is_function: bool = False, is_class: bool = False,
-                 is_variable: bool = False, has_type_hint: bool = False):
+                is_function: bool = False, is_class: bool = False,
+                is_variable: bool = False, has_type_hint: bool = False):
         self.name = name
         self.type_hint = type_hint
         self.line = line

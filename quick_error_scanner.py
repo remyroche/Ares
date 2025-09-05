@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick Error Scanner - Fast overview of syntax errors
 
-This script provides a quick scan and summary of files with syntax errors,
 focusing on the most important information for prioritization.
 """
 

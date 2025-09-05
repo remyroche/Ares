@@ -585,7 +585,6 @@ class PnLLossFunctions:
             self.logger.exception(f'Error stopping PnL loss functions: {e}')
 pnl_loss_functions: PnLLossFunctions | None = None
 
-@handles_errors(fallback=None)
 async def setup_pnl_loss_functions(config: dict[str, Any] | None=None) -> PnLLossFunctions | None:
     """
     Setup global PnL loss functions.

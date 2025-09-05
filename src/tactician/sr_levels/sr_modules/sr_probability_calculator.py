@@ -373,11 +373,11 @@ class SRProbabilityCalculator:
         
         # Apply bounds
         breakout_prob = np.clip(breakout_prob, 
-                               self.parameters["min_breakout_probability"],
-                               self.parameters["max_breakout_probability"])
+                            self.parameters["min_breakout_probability"],
+                            self.parameters["max_breakout_probability"])
         rebounce_prob = np.clip(rebounce_prob,
-                               self.parameters["min_breakout_probability"],
-                               self.parameters["max_breakout_probability"])
+                            self.parameters["min_breakout_probability"],
+                            self.parameters["max_breakout_probability"])
         consolidation_prob = max(0.1, consolidation_prob)
         
         # Normalize to sum to 1

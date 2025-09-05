@@ -74,8 +74,8 @@ class StateSequenceBuilder:
     def infer_states(self, klines_df: pd.DataFrame) -> pd.DataFrame:
         """
         Returns a DataFrame aligned to klines_df index with columns:
-          - hmm_state_id (int)
-          - regime (str: BULL/BEAR/SIDEWAYS)
+        - hmm_state_id (int)
+        - regime (str: BULL/BEAR/SIDEWAYS)
         """
         if klines_df is None or klines_df.empty:
             return pd.DataFrame(

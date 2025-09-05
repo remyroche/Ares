@@ -18,6 +18,9 @@ from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 from src.utils.common_operations import safe_json_load
 
+import asyncio
+
+
 logger = system_logger.getChild("Step5LabelingValidator")
 
 
@@ -365,7 +368,6 @@ async def run_validator(
 
 if __name__ == "__main__":
     # Test the validator
-    import asyncio
     
     test_input = {
         "symbol": "ETHUSDT",

@@ -9,11 +9,14 @@ model decision explanations.
 
 import time
 
+from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_file_exists,
-    timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from .utils.logger import system_logger
+
+from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
+from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
+
 
 
 @dataclass
@@ -82,14 +85,12 @@ class ExplainabilityIntegrator:
         """Initialize SHAP and LIME analyzers."""
         try:
             if self.enable_shap:
-                from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
                 self.shap_analyzer = SHAPAnalyzer(self.config)
                 if not self.shap_analyzer.shap_available:
                     self.logger.warning("SHAP analyzer initialized but SHAP library not available")
                     self.shap_analyzer = None
             
             if self.enable_lime:
-                from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
                 self.lime_analyzer = LIMEAnalyzer(self.config)
                 if not self.lime_analyzer.lime_available:
                     self.logger.warning("LIME analyzer initialized but LIME library not available")
@@ -104,8 +105,8 @@ class ExplainabilityIntegrator:
     
     @handles_errors(default_return=None, context="explainability_integrator.explain_model_prediction")
     async def explain_model_prediction(self, model_id: str, model: Any, 
-                                     features: np.ndarray, feature_names: List[str],
-                                     prediction: float) -> ModelExplanation:
+                                    features: np.ndarray, feature_names: List[str],
+                                    prediction: float) -> ModelExplanation:
         """Generate comprehensive explanation for a model prediction."""
         start_time = time.time()
         
@@ -191,7 +192,7 @@ class ExplainabilityIntegrator:
             )
     
     async def _generate_shap_explanation(self, model: Any, features: np.ndarray,
-                                       feature_names: List[str], model_id: str) -> Optional[Dict[str, Any]]:
+                                    feature_names: List[str], model_id: str) -> Optional[Dict[str, Any]]:
         """Generate SHAP explanation for a prediction."""
         try:
             if not self.shap_analyzer or not self.shap_analyzer.shap_available:
@@ -238,7 +239,7 @@ class ExplainabilityIntegrator:
             return None
     
     async def _generate_lime_explanation(self, model: Any, features: np.ndarray,
-                                       feature_names: List[str], model_id: str) -> Optional[Dict[str, Any]]:
+                                    feature_names: List[str], model_id: str) -> Optional[Dict[str, Any]]:
         """Generate LIME explanation for a prediction."""
         try:
             if not self.lime_analyzer or not self.lime_analyzer.lime_available:
@@ -294,7 +295,7 @@ class ExplainabilityIntegrator:
             return None
     
     def _merge_explanations(self, shap_explanations: List[FeatureExplanation],
-                          lime_explanations: List[FeatureExplanation]) -> List[FeatureExplanation]:
+                        lime_explanations: List[FeatureExplanation]) -> List[FeatureExplanation]:
         """Merge SHAP and LIME explanations for comprehensive feature importance."""
         merged = {}
         
@@ -447,8 +448,8 @@ class ExplainabilityIntegrator:
             )
     
     def _calculate_ensemble_explanation_quality(self, model_explanations: List[ModelExplanation],
-                                              consensus_features: List[str],
-                                              disagreement_features: List[str]) -> float:
+                                            consensus_features: List[str],
+                                            disagreement_features: List[str]) -> float:
         """Calculate quality score for ensemble explanation."""
         quality_factors = []
         

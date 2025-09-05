@@ -614,4 +614,4 @@ if __name__== "__main__":
 import pandas as pd
 
 
-    asyncio.run(await main())
+asyncio.run( main())

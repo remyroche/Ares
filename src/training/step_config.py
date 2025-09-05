@@ -10,6 +10,9 @@ This module defines the standardized step configuration, including:
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+import re
+
+
 
 @dataclass
 class StepConfig:
@@ -341,7 +344,9 @@ def get_step_number_from_full_name(full_name: str) -> str:
         Step number (e.g., "03", "2_5")
         
     Raises:
-        ValueError: If full name format is invalid
+from .exceptions import (
+ValueError: If full name format is invalid
+)
     """
     if not full_name.startswith("step"):
         raise ValueError(f"Invalid step name format: {full_name}")
@@ -352,7 +357,6 @@ def get_step_number_from_full_name(full_name: str) -> str:
     # Find the first underscore that separates step number from step name
     # We need to be careful with step numbers like "2_5" which contain underscores
     # The step name part should start with a letter, not a number
-    import re
     match = re.match(r'^(\d+(?:_\d+)*)_([a-zA-Z])', remaining)
     if match:
         step_number = match.group(1)
@@ -388,8 +392,6 @@ def get_step_dependencies(step_number: str) -> List[StepConfig]:
     Returns:
         List of StepConfig objects that this step depends on
     """
-    step = get_step_config(step_number)
-    return [get_step_config(dep) for dep in step.dependencies]
 
 
 def get_step_execution_order() -> List[str]:
@@ -445,5 +447,4 @@ def validate_step_sequence() -> Dict[str, Any]:
         "valid": len(issues) == 0,
         "issues": issues,
         "total_steps": len(PIPELINE_STEPS),
-        "enabled_steps": len(get_enabled_steps())
     }

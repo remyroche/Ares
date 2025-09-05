@@ -182,7 +182,7 @@ class DataFlowAnalyzer:
                         )
 
     def _add_issue(self, file_path: str, line_number: int, variable_name: str,
-                   issue_type: str, severity: str, message: str, suggestion: str) -> None:
+                issue_type: str, severity: str, message: str, suggestion: str) -> None:
         """Add a data flow issue."""
         self.issues.append(DataFlowIssue(
             file_path=file_path,
@@ -495,7 +495,7 @@ class DataFlowVisitor(ast.NodeVisitor):
                     break
 
     def _add_validation(self, variable: str, validation_type: str, line_number: int,
-                       is_input: bool = False, is_output: bool = False) -> None:
+                    is_input: bool = False, is_output: bool = False) -> None:
         """Add validation info."""
         if self.file_path not in self.analyzer.validations:
             self.analyzer.validations[self.file_path] = []
@@ -509,7 +509,7 @@ class DataFlowVisitor(ast.NodeVisitor):
         ))
 
     def _has_nearby_validation(self, line_number: int, var_name: str,
-                              distance: int = 5) -> bool:
+                            distance: int = 5) -> bool:
         """Check if variable has validation within a few lines."""
         validations = self.analyzer.validations.get(self.file_path, [])
 

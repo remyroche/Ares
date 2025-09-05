@@ -13,6 +13,9 @@ from .trading import get_trading_config
 from .training import get_training_config
 from .validation import validate_complete_config
 
+from .utils.logger import system_logger
+
+
 
 def get_complete_config() -> dict[str, Any]:
     """Get the complete configuration by combining all domain-specific configurations.
@@ -61,7 +64,6 @@ def get_complete_config() -> dict[str, Any]:
     ok, errors = validate_complete_config(complete_config)
     if not ok:
         # Import logger lazily to avoid cycles
-        from .utils.logger import system_logger
 
         for err in errors:
             system_logger.error(f"Config validation error: {err}")
@@ -126,4 +128,3 @@ def get_training_config_section() -> dict[str, Any]:
 
 
 # Create the main CONFIG object for backward compatibility
-CONFIG = get_complete_config()

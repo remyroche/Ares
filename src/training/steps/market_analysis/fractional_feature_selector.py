@@ -9,13 +9,14 @@ from .core.decorators import handles_errors
 import json
 import time
 from pathlib import Path
-
+from sklearn.feature_selection import (
     SelectKBest, f_regression, mutual_info_regression,
     RFE, SelectFromModel
 )
 from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
+from .utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

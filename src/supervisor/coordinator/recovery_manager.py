@@ -53,7 +53,7 @@ class RecoveryManager:
         default_return=False,
     )
     async def handle_component_failure(self, component_name: str, 
-                                     error_details: Dict[str, Any]) -> bool:
+                                    error_details: Dict[str, Any]) -> bool:
         """
         Handle component failure with automatic recovery.
         
@@ -101,7 +101,7 @@ class RecoveryManager:
         return True
 
     def _determine_recovery_strategy(self, component_name: str, 
-                                   error_details: Dict[str, Any]) -> str:
+                                error_details: Dict[str, Any]) -> str:
         """Determine the appropriate recovery strategy."""
         attempt_count = self.recovery_attempts[component_name]
         error_type = error_details.get("error_type", "unknown")
@@ -121,8 +121,8 @@ class RecoveryManager:
             return "isolate"
 
     async def _execute_recovery(self, component_name: str, 
-                               strategy: str, 
-                               error_details: Dict[str, Any]) -> Dict[str, Any]:
+                            strategy: str,
+                            error_details: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the recovery strategy."""
         self.logger.info(f"Executing {strategy} recovery for {component_name}")
         
@@ -163,7 +163,7 @@ class RecoveryManager:
             return False
 
     async def _reset_component(self, component_name: str, 
-                              error_details: Dict[str, Any]) -> bool:
+                            error_details: Dict[str, Any]) -> bool:
         """Reset component to initial state."""
         try:
             self.logger.info(f"Resetting component: {component_name}")
@@ -176,7 +176,7 @@ class RecoveryManager:
             return False
 
     async def _fallback_component(self, component_name: str, 
-                                 error_details: Dict[str, Any]) -> bool:
+                                error_details: Dict[str, Any]) -> bool:
         """Switch to fallback implementation."""
         try:
             self.logger.info(f"Switching to fallback for component: {component_name}")
@@ -202,8 +202,8 @@ class RecoveryManager:
             return False
 
     def _record_recovery_attempt(self, component_name: str, 
-                               strategy: str, 
-                               result: Dict[str, Any]) -> None:
+                            strategy: str,
+                            result: Dict[str, Any]) -> None:
         """Record recovery attempt details."""
         self.recovery_attempts[component_name] += 1
         self.last_recovery_attempt[component_name] = time.time()

@@ -29,11 +29,27 @@ import inspect
 from functools import wraps
 from dataclasses import dataclass, field
 from enum import Enum
+import re
+import os
+import gc
+from collections import defaultdict, Counter
+import threading
+import multiprocessing
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import warnings
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration', 'src.analyst.meta_labeling_system']
+REQUIRED_MODULES = [
+    'pandas', 'numpy', 'psutil', 
+    'src.utils.centralized_decorators', 
+    'src.utils.logger', 
+    'src.utils.enhanced_mlflow_integration', 
+    'src.analyst.meta_labeling_system',
+    'threading', 'multiprocessing', 'concurrent.futures',
+    'collections', 'gc', 'warnings', 're', 'os'
+]
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
 from src.utils.logger import system_logger
@@ -42,6 +58,16 @@ meta_labeling_system = PipelineStandards.safe_import('src.analyst.meta_labeling_
 psutil = PipelineStandards.safe_import('psutil', None)
 numpy = PipelineStandards.safe_import('numpy', None)
 pandas = PipelineStandards.safe_import('pandas', None)
+
+# Additional imports for comprehensive monitoring
+threading_module = PipelineStandards.safe_import('threading', None)
+multiprocessing_module = PipelineStandards.safe_import('multiprocessing', None)
+concurrent_futures = PipelineStandards.safe_import('concurrent.futures', None)
+collections_module = PipelineStandards.safe_import('collections', None)
+gc_module = PipelineStandards.safe_import('gc', None)
+warnings_module = PipelineStandards.safe_import('warnings', None)
+re_module = PipelineStandards.safe_import('re', None)
+os_module = PipelineStandards.safe_import('os', None)
 
 # =============================================================================
 # COMPREHENSIVE FUNCTION CALL MONITORING AND VALIDATION SYSTEM

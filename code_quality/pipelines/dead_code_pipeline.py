@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # Import dead code analyzers (ONLY dead code-related)
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
 from analyzers.undefined_names_analyzer import UndefinedNamesAnalyzer
+from analyzers.enhanced_import_analysis import EnhancedImportAnalyzer
 
 # Note: AutoFixDeadCode and DeadCodeAnalyzer were removed as they were redundant
 # The enhanced_dead_code_analyzer provides all necessary functionality
@@ -47,6 +48,7 @@ class DeadCodePipeline:
         self.config = get_default_config()
         self.dead_code_analyzer = EnhancedDeadCodeAnalyzer(self.config)
         self.undefined_names_analyzer = UndefinedNamesAnalyzer(self.config)
+        self.import_analyzer = EnhancedImportAnalyzer(None)  # Use default config
         
         # Initialize auto-fixer
         # self.auto_fixer = AutoFixDeadCode()  # Removed during cleanup
@@ -122,7 +124,7 @@ class DeadCodePipeline:
         print("="*60)
         
         try:
-            report = self.enhanced_dead_code_analyzer.analyze_directory(str(self.project_root))
+            report = self.dead_code_analyzer.analyze_directory(str(self.project_root))
             
             # Convert report to dictionary format
             results = {
@@ -237,35 +239,14 @@ class DeadCodePipeline:
         print("Running Automated Dead Code Fixing")
         print("="*60)
         
-        try:
-            results = self.auto_fixer.auto_fix_dead_code(str(self.project_root))
-            
-            # Generate auto-fix report
-            auto_fix_report = {
-                "timestamp": self.timestamp,
-                "analysis_type": "auto_fix_dead_code",
-                "project_root": str(self.project_root),
-                "fixes_applied": results.get("fixes_applied", 0),
-                "files_modified": results.get("files_modified", 0),
-                "fixes_failed": results.get("fixes_failed", 0),
-                "results": results
-            }
-            
-            # Save report
-            report_path = self.reports_dir / f"auto_fix_{self.timestamp}.json"
-            with open(report_path, "w") as f:
-                json.dump(auto_fix_report, f, indent=2)
-            
-            return {
-                "status": "completed",
-                "report_path": str(report_path),
-                "fixes_applied": auto_fix_report["fixes_applied"],
-                "files_modified": auto_fix_report["files_modified"],
-                "fixes_failed": auto_fix_report["fixes_failed"],
-                "results": results
-            }
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+        # Auto-fixer is not available, return disabled status
+        return {
+            "status": "disabled",
+            "message": "Auto-fixer functionality is not available in this version",
+            "fixes_applied": 0,
+            "files_modified": 0,
+            "fixes_failed": 0
+        }
     
     def run_plugin_analysis(self) -> Dict[str, Any]:
         """Run plugin-based dead code analysis."""
@@ -392,6 +373,10 @@ def main():
         results = pipeline.run_basic_dead_code_analysis()
     elif args.analysis_type == "enhanced":
         results = pipeline.run_enhanced_dead_code_analysis()
+        # If auto-fix is requested, also run auto-fix
+        if args.auto_fix:
+            auto_fix_results = pipeline.run_auto_fix_dead_code()
+            results["auto_fix"] = auto_fix_results
     elif args.analysis_type == "unused_imports":
         results = pipeline.run_unused_imports_analysis()
     elif args.analysis_type == "undefined_names":

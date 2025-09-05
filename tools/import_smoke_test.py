@@ -30,7 +30,7 @@ def _maybe_stub_heavy_deps() -> None:
 
     # numpy
     import math
-import json
+    import json
 
     stub(
         "numpy",

@@ -23,6 +23,8 @@ import inspect
 from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
+from src.utils.data_quality_fixer import DataQualityFixer
+from src.utils.step_validation_system import step_validator
 
 logger = system_logger.getChild("Step2_5SROptimization")
 
@@ -500,6 +502,9 @@ class SROptimizationStep(BaseStep):
                 data = training_input.get("validated_data")
             if data is None:
                 raise ValueError("No DataFrame available from step 2. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input.")
+            
+            # Validate and fix data quality issues
+            data = self._validate_and_fix_input_data(data)
             
             self.logger.info(f"📊 Processing {len(data)} rows of data")
             self.logger.info(f"📊 Data columns: {list(data.columns)}")

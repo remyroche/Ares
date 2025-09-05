@@ -14,16 +14,15 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 from src.utils.common_operations import (
-import json
-import numpy as np
-import time
-import typing
-
     get_current_datetime,
     format_datetime,
     safe_json_dump,
     safe_json_load
 )
+import json
+import numpy as np
+import time
+import typing
 
 
 class ErrorSeverity(Enum):

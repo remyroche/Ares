@@ -30,9 +30,9 @@ centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_de
 
 def create_fallback_logger() -> Any:
     import logging
-import collections
-import time
-
+    import collections
+    import time
+    
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 

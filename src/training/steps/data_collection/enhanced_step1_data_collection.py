@@ -17,13 +17,13 @@ import pandas as pd
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+import typing
+
 try:
     from .utils.enhanced_config_management import Step1Config
     from .utils.logger import system_logger
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
-import typing
-
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1')
@@ -282,4 +282,4 @@ if __name__ == '__main__':
             print('=' * 60)
         except Exception as e:
             print(f'❌ Enhanced Step1 execution failed: {e}')
-    asyncio.run(await main())
+    asyncio.run(main())

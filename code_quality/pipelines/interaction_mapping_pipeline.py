@@ -243,7 +243,7 @@ class InteractionMappingPipeline:
         print("="*60)
         
         try:
-            results = self.dependency_analyzer.analyze_dependencies(str(self.project_root))
+            results = self.dependency_analyzer.analyze_directory(str(self.project_root))
             
             # Generate dependency report
             dependency_report = {
@@ -318,7 +318,7 @@ class InteractionMappingPipeline:
         print("="*60)
         
         try:
-            results = self.architecture_analyzer.analyze_architecture(str(self.project_root))
+            results = self.architecture_analyzer.analyze_directory(str(self.project_root))
             
             # Generate architecture report
             architecture_report = {

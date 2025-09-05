@@ -28,6 +28,8 @@ from state_manager import StateManager
 from warning_symbols import critical, error, failed, warning
 from errors import handles_errors
 import pandas as pd
+import logging
+import time
 
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:

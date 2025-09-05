@@ -5,6 +5,8 @@ from typing import Any, Callable
 
 
 import pandas as pd
+import logging
+
 @dataclass
 class MarketData:
     """Standardized market data structure"""

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Model Training Pipeline Demo (Steps 9-15)
 This script simulates the model training pipeline and generates comprehensive reports

@@ -4,6 +4,7 @@ Launch Enhanced Monitoring Dashboard
 A launcher script for the enhanced monitoring dashboard GUI.
 """
 import sys
+import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 from typing import Dict, Any
@@ -28,6 +29,8 @@ def check_dependencies() -> bool:
         missing_deps.append('matplotlib')
     try:
         import seaborn
+import logging
+
     except ImportError:
         missing_deps.append('seaborn')
     if missing_deps:

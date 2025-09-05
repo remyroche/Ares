@@ -9,6 +9,7 @@ import sys
 import tempfile
 from typing import Any
 from pathlib import Path
+import numpy as np
 
 try:
     import toml
@@ -25,6 +26,7 @@ from utils.file_utils import (
     restore_file,
 )
 from utils.progress import ProgressManager
+import json
 
 
 class AutoFixer:

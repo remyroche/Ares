@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Lightweight import smoke test.
 
@@ -27,6 +29,9 @@ def _maybe_stub_heavy_deps() -> None:
 
     # numpy
     import math
+import json
+import pandas as pd
+
     stub(
         "numpy",
         SimpleNamespace(

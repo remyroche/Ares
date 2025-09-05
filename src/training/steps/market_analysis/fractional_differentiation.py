@@ -9,6 +9,7 @@ from .utils.logger import get_logger
 from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
+import logging
 
 class FractionalDifferentiation:
     """Fractional differentiation for enhanced feature engineering.

@@ -8,6 +8,8 @@ from typing import TypeVar
 from src.custom_types import OrderRequest, PositionInfo, TradeDecision, TradingSignal
 from src.custom_types.validation import RuntimeTypeError, TypeValidator, validate_market_data, validate_model_input
 from .utils.warning_symbols import failed
+import time
+
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
 

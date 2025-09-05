@@ -1,3 +1,5 @@
+import pandas as pd
+
 # scripts/optimize_combined_parameters.py
 
 """Joint parameter optimization for combined fractional system."""
@@ -9,6 +11,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import numpy as np
+import time
 
 # Add project root to path
 project_root=Path(__file__).parent.parent
@@ -611,7 +615,6 @@ async def main():
 
 if __name__== "__main__":
     import asyncio
-import pandas as pd
 
 
 asyncio.run( main())

@@ -15,6 +15,7 @@ from .core.decorators.errors import handles_errors
 import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
+import logging
 
 
 

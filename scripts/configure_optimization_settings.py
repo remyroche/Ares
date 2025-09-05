@@ -21,6 +21,8 @@ from src.training.bayesian_optimizer import AdvancedBayesianOptimizer  # noqa: E
 from src.training.multi_objective_optimizer import MultiObjectiveOptimizer  # noqa: E402
 from src.training.optimized_backtester import OptimizedBacktester  # noqa: E402
 from src.utils.warning_symbols import (  # noqa: E402
+import numpy as np
+
     error,
     failed,
     initialization_error,

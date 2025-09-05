@@ -10,6 +10,7 @@ from .core.decorators.errors import handles_errors
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+import time
 
 class DataUtils:
     """

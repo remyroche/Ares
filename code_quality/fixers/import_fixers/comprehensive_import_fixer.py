@@ -9,6 +9,9 @@ import re
 from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
+import logging
+import pandas as pd
+import time
 
 
 class ComprehensiveImportFixer:

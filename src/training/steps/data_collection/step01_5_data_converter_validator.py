@@ -53,6 +53,9 @@ Version Requirements:
 - pandas >= 1.3.0
 - psutil >= 5.8.0
 """
+import collections
+import logging
+
 import asyncio
 import functools
 import glob

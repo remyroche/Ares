@@ -8,6 +8,7 @@ profit-based feature engineering.
 """
 
 from typing import Any
+import pandas as pd
 
 
 def get_multi_output_config() -> dict[str, Any]:
@@ -244,6 +245,7 @@ def get_multi_output_model_config(model_type: str = "LightGBM") -> dict[str, Any
     else:
         model_config = {}
 
+    base_config = get_multi_output_config()
     return {**base_config, "model_config": model_config}
 
 
@@ -285,7 +287,7 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
             },
         },
         # Include multi-output configuration
-        **multi_output_config,
+        **get_multi_output_config(),
     }
 
 
@@ -331,6 +333,7 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
 # Example usage and testing
 if __name__ == "__main__":
     # Test configuration
+    config = get_multi_output_config()
     print("Multi-output configuration:")
     print(f"  - Enable multi-output: {config['enable_multi_output']}")
     print(f"  - Model type: {config['multi_output_models']['model_type']}")
@@ -342,11 +345,13 @@ if __name__ == "__main__":
     validate_multi_output_config(config)
 
     # Test model-specific configuration
+    lightgbm_config = get_multi_output_model_config("LightGBM")
     print("\nLightGBM configuration:")
     print(f"  - N estimators: {lightgbm_config['model_config']['n_estimators']}")
     print(f"  - Learning rate: {lightgbm_config['model_config']['learning_rate']}")
 
     # Test enhanced pipeline configuration
+    pipeline_config = get_enhanced_training_pipeline_config()
     print("\nEnhanced pipeline configuration:")
     print(
         f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}"

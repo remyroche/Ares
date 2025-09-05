@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Data Quality Assessment Script
 
@@ -27,6 +29,10 @@ src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from src.utils.advanced_decorators import PerformanceLevel, performance_monitor
+import numpy as np
+import datetime
+import logging
+import os
 
 
 class EnhancedDataQualityAnalyzer:
@@ -407,8 +413,10 @@ async def main():
             return obj.to_dict()
         return obj
 
-    with open(output_file, "w") as f:
-        json.dump(results, f, indent=2, default=convert_numpy_types)
+import json
+
+with open(output_file, "w") as f:
+    json.dump(results, f, indent=2, default=convert_numpy_types)
 
 print(f"✅ Data quality report saved to: {output_file}")
 
@@ -437,4 +445,4 @@ if summary["recommendations"]:
 
 
 if __name__== "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

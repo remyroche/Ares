@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Unified Data Quality Orchestrator
 
@@ -45,6 +48,8 @@ except ImportError:
 try:
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LinearRegression
+import time
+
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False

@@ -9,6 +9,7 @@ from typing import Any
 from .utils.logger import system_logger
 from .utils.warning_symbols import connection_error, error, failed, initialization_error, invalid, missing
 from .core.decorators.errors import handles_errors
+import logging
 
 class ConnectionPool:
     """Async connection pool for database operations."""

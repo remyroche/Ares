@@ -19,6 +19,7 @@ from .core.enums import (
 
 from typing import Any
 from .utils.logger import system_logger
+import logging
 
 class LiveTradingPipeline:
     def __init__(self, config: dict[str, Any]) -> None:

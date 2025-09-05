@@ -6,6 +6,8 @@ Working version of the enhanced dead code analysis
 import sys
 from pathlib import Path
 from datetime import datetime
+import numpy as np
+import time
 
 # Add the code_quality directory to Python path
 code_quality_path = Path(__file__).parent / "code_quality"

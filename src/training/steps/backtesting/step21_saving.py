@@ -39,6 +39,7 @@ from .core.decorators import cached, circuit_breaker, log_call, log_execution_ti
 # Import pipeline standards
 from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 from .utils.common_operations import ensure_directory, safe_json_dump
+import time
 
 # Standardized import management
 REQUIRED_MODULES = [

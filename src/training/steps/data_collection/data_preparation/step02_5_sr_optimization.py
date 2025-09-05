@@ -21,6 +21,8 @@ from src.training.base_step import BaseStep
 from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
+import logging
+
 logger = system_logger.getChild('Step2_5SROptimization')
 function_call_tracker = {'call_count': 0, 'call_history': [], 'performance_metrics': {}, 'error_count': 0, 'success_count': 0}
 

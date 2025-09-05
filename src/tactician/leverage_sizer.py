@@ -9,6 +9,8 @@ from .utils.logger import system_logger
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
 from .core.decorators import handles_errors as _handles_errors
 import numpy as np
+import logging
+import time
 
 def handles_errors(*_args, **kwargs) -> None:
     fallback = kwargs.get('default_return', kwargs.get('fallback', None))

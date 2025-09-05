@@ -7,6 +7,7 @@ focusing on the most important information for prioritization.
 import os
 import subprocess
 from collections import Counter, defaultdict
+import numpy as np
 
 
 def quick_scan() -> dict:

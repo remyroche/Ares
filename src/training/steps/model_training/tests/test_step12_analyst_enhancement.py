@@ -1,11 +1,12 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+
 """Unit tests for Step 12: Analyst Enhancement."""
 try:
     import pytest
 except ImportError:
     pytest = None
-import numpy as np
-import pandas as pd
 import joblib
 from datetime import datetime
 from pathlib import Path

@@ -11,6 +11,7 @@ Repairs:
 import re
 import sys
 from pathlib import Path
+import typing
 
 
 def fix_bracket_types(text: str) -> str:

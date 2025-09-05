@@ -15,6 +15,7 @@ Supported Exchanges:
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 from enum import Enum
+import logging
 
 class ExchangeType(Enum):
     """Supported exchange types."""

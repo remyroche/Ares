@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 import shutil
+import time
 
 class ManualSyntaxFixer:
     def __init__(self):

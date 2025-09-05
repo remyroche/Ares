@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field, validator
+import logging
 
 class SamplerType(str, Enum):
     """Available Optuna samplers."""

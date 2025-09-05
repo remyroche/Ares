@@ -11,6 +11,7 @@ import os
 from .utils.logger import system_logger
 import logging
 import numpy as np
+import pandas as pd
 
 
 @handles_errors(

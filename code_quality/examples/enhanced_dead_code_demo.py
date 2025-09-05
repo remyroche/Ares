@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analyzers.dead_code_analyzer import DeadCodeAnalyzer
 from core.config import get_default_config
+import logging
 
 
 def create_sample_code():

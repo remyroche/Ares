@@ -241,3 +241,7 @@ def log_error_summary(logger: logging.Logger) -> None:
 
 def handle_errors_basic(func: Callable) -> Callable:
     return handle_errors_with_tracking(fallback=True)(func)
+
+
+def handle_errors_strict(func: Callable) -> Callable:
+    return handle_errors_with_tracking(fallback=False)(func)

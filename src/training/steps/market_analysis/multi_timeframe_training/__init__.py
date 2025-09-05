@@ -6,6 +6,7 @@
 This package contains components for multi-timeframe training and analysis.
 """
 
+from .core.decorators import (
     connection_error,
     critical,
     error,

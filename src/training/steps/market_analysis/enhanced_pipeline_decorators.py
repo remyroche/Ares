@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 # Core decorators
+from .core.decorators import (
     handles_errors,
     traced,
     validates,
@@ -24,13 +25,22 @@ from pathlib import Path
     get_correlation_id,
     set_correlation_id,
 )
+
+# Utility imports
+from .utils.datetime_utils import (
     get_current_datetime,
     format_datetime,
+)
+from .utils.file_utils import (
     ensure_directory,
     safe_json_dump,
     safe_json_load,
+)
+from .utils.validation import (
     validate_dataframe,
     validate_data_quality,
+)
+from .utils.logger import (
     get_logger,
     timed_operation,
 )
@@ -647,4 +657,4 @@ if __name__ == "__main__":
         'volume': [1000, 1100, 1200]
     })
     
-    asyncio.run(await example_function(test_data, "data_cache/test_output.parquet"))
+    asyncio.run(example_function(test_data, "data_cache/test_output.parquet"))

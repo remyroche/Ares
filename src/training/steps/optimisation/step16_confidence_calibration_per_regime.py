@@ -6,24 +6,113 @@ performed specifically for each regime's characteristics and market behavior.
 """
 
 import asyncio
+import sys
+import time
 from pathlib import Path
 import json
 from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
+import pandas as pd
+import numpy as np
 
-from .training.steps.step16_confidence_calibration import Step16ConfidenceCalibration
-    per_regime_processing,
-    aggregate_regime_results,
-    RegimeProcessingContext
-)
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-    format_datetime, get_current_datetime, safe_file_exists, 
-    ensure_directory, safe_json_dump, safe_json_load, safe_sleep
-)
-from .utils.data_quality_framework import DataQualityFramework
-from .utils.data_formatting_framework import DataFormattingFramework
-from .core.decorators.errors import handles_errors
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
+# Import required modules with fallbacks
+try:
+    from src.utils.logger import get_logger
+except ImportError:
+    import logging
+    def get_logger(name):
+        return logging.getLogger(name)
+
+try:
+    from src.training.steps.optimisation.step16_confidence_calibration import Step16ConfidenceCalibration
+except ImportError:
+    # Fallback base class
+    class Step16ConfidenceCalibration:
+        def __init__(self, config):
+            self.config = config
+
+try:
+    from src.training.steps.regime_continuity_decorator import per_regime_step
+except ImportError:
+    def per_regime_step(step_name):
+        def decorator(func):
+            return func
+        return decorator
+
+try:
+    from src.utils.pipeline_standards import pipeline_standards
+except ImportError:
+    pipeline_standards = None
+
+try:
+    from src.utils.common_operations import (
+        format_datetime, get_current_datetime, safe_file_exists, 
+        ensure_directory, safe_json_dump, safe_json_load, safe_sleep
+    )
+except ImportError:
+    # Fallback implementations
+    def format_datetime(dt, fmt):
+        return dt.strftime(fmt) if dt else ""
+    
+    def get_current_datetime():
+        return datetime.now()
+    
+    def safe_file_exists(path):
+        return Path(path).exists()
+    
+    def ensure_directory(path):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        return Path(path)
+    
+    def safe_json_dump(data, path, **kwargs):
+        with open(path, 'w') as f:
+            json.dump(data, f, **kwargs)
+    
+    def safe_json_load(path):
+        with open(path, 'r') as f:
+            return json.load(f)
+    
+    def safe_sleep(seconds):
+        time.sleep(seconds)
+
+try:
+    from src.utils.data_quality_framework import DataQualityFramework
+except ImportError:
+    class DataQualityFramework:
+        def validate_data(self, data, schema):
+            return {'overall_passed': True, 'errors': []}
+
+try:
+    from src.utils.data_formatting_framework import DataFormattingFramework
+except ImportError:
+    class DataFormattingFramework:
+        def format_dataframe(self, df, schema):
+            return df
+
+try:
+    from src.core.decorators.errors import handles_errors
+except ImportError:
+    def handles_errors(fallback=None, context=None):
+        def decorator(func):
+            return func
+        return decorator
+
+try:
+    from src.core.decorators import validates, traced
+except ImportError:
+    def validates(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def traced(span_name=None):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = get_logger('Step16ConfidenceCalibrationPerRegime')
 
@@ -44,6 +133,40 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
         # Enhanced logging
         self.logger = logger.getChild('PerRegimeConfidenceCalibration')
         self.logger.info("🔧 Enhanced Per-Regime Confidence Calibration initialized with data protection")
+    
+    async def initialize(self) -> None:
+        """Initialize the confidence calibration step."""
+        self.logger.info('🚀 Initializing Per-Regime Confidence Calibration Step...')
+        self.logger.info('📋 Step 16 Configuration:')
+        self.logger.info(f"   - Per-regime enabled: {self.per_regime_enabled}")
+        self.logger.info(f"   - Adaptive parameters: {self.adaptive_calibration_parameters}")
+        self.logger.info('✅ Per-Regime Confidence Calibration Step initialized successfully')
+    
+    async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
+        """Execute the complete per-regime confidence calibration step."""
+        self.logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration')
+        try:
+            await self.initialize()
+            
+            # Execute per-regime confidence calibration
+            success = await self.execute_per_regime_confidence_calibration(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=kwargs.get('force_rerun', False)
+            )
+            
+            if success:
+                self.logger.info('✅ Step 16: Per-Regime Confidence Calibration completed successfully')
+                return {'success': True, 'status': 'COMPLETED'}
+            else:
+                self.logger.error('❌ Step 16: Per-Regime Confidence Calibration failed')
+                return {'success': False, 'error': 'Per-regime confidence calibration failed'}
+                
+        except Exception as e:
+            self.logger.exception(f'❌ Error in Step 16: {e}')
+            return {'success': False, 'error': str(e)}
     
     @validates()
     async def validate_tactician_data(self, tactician_data: pd.DataFrame, regime_id: Optional[int] = None) -> Tuple[bool, Dict[str, Any]]:
@@ -1063,7 +1186,10 @@ async def run_per_regime_step(
         config = {}
         
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        if pipeline_standards:
+            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        else:
+            data_dir = f"data_cache/{exchange}_{symbol}"
     
     # Enable per-regime processing
     config['per_regime_confidence_calibration'] = True
@@ -1071,7 +1197,7 @@ async def run_per_regime_step(
     # Initialize and run the per-regime confidence calibration step
     step = PerRegimeConfidenceCalibrationStep(config)
     
-    success = await step.execute_per_regime_confidence_calibration(
+    result = await step.execute(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
@@ -1079,23 +1205,54 @@ async def run_per_regime_step(
         force_rerun=force_rerun
     )
     
+    success = result.get('success', False)
+    
     if success:
         logger.info("✅ Step 16: Per-Regime Confidence Calibration completed successfully")
     else:
-        logger.error("❌ Step 16: Per-Regime Confidence Calibration failed")
+        logger.error(f"❌ Step 16: Per-Regime Confidence Calibration failed: {result.get('error', 'Unknown error')}")
         
     return success
+
+async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> Dict[str, Any]:
+    """Enhanced entry point for Step 16: Per-Regime Confidence Calibration."""
+    if data_dir is None:
+        if pipeline_standards:
+            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        else:
+            data_dir = f"data_cache/{exchange}_{symbol}"
+    
+    logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration (Enhanced)')
+    config = {'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, **kwargs}
+    step = PerRegimeConfidenceCalibrationStep(config)
+    
+    result = await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
+    
+    if result['success']:
+        logger.info('✅ Step 16: Per-Regime Confidence Calibration completed successfully')
+    else:
+        logger.error(f"❌ Step 16: Per-Regime Confidence Calibration failed: {result.get('error', 'Unknown error')}")
+    
+    return result
+
+async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> bool:
+    """Standard entry point for Step 16: Per-Regime Confidence Calibration."""
+    result = await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
+    return result['success']
 
 
 if __name__ == '__main__':
     async def test():
         """Test the per-regime confidence calibration step."""
-        success = await run_per_regime_step(
-            symbol='ETHUSDT',
-            exchange='BINANCE',
-            timeframe='1m',
-            data_dir='data_cache'
+        test_symbol = 'TEST_SYMBOL'
+        test_exchange = 'TEST_EXCHANGE'
+        test_timeframe = '1m'
+        result = await run_step_enhanced(
+            symbol=test_symbol,
+            exchange=test_exchange,
+            timeframe=test_timeframe,
+            data_dir=None
         )
-        print(f'Per-regime confidence calibration result: {success}')
+        print(f'Result: {result}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

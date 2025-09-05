@@ -8,21 +8,20 @@ import asyncio
 from pathlib import Path
 import json
 
-from .training.steps.step08_advanced_feature_selection import Step8AdvancedFeatureSelection
-    per_regime_processing,
-    aggregate_regime_results,
-    RegimeProcessingContext
-)
-from .training.steps.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
+from src.training.steps.market_analysis.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
+from src.utils.pipeline_standards import pipeline_standards
+try:
+    from src.core.decorators import traced, validates, handles_errors
+except Exception:
+    from src.utils.decorators import traced, validates, handles_errors  # type: ignore
+from src.utils.logger import get_logger
 
 
 logger = get_logger('Step8AdvancedFeatureSelectionPerRegime')
 
 
-class PerRegimeAdvancedFeatureSelectionStep(Step8AdvancedFeatureSelection):
+class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
     """Advanced feature selection step that processes each regime separately."""
     
     def __init__(self, config: Dict[str, Any]):
@@ -678,4 +677,4 @@ if __name__ == '__main__':
         )
         print(f'Per-regime feature selection result: {success}')
         
-    asyncio.run(await test())
+    asyncio.run(test())

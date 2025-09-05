@@ -374,7 +374,8 @@ class RawDataQualityChecker:
                 gap_end = gap_start + gap_duration
                 self.logger.info(f'🔧 Downloading gap {i + 1}/{len(gaps)}: {gap_start} to {gap_end}')
                 try:
-                    success = asyncio.run(await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
+                    # Run async downloader from sync context
+                    success = asyncio.run(download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
                     if not success:
                         self.logger.warning('⚠️ Download returned unsuccessful status')
                 except Exception as e:
@@ -1035,7 +1036,7 @@ class RawDataQualityChecker:
             self.logger.info(f'   Time range: {start_time} to {end_time}')
         try:
             from .training.steps.data_downloader import download_all_data_with_consolidation
-            success = asyncio.run(await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
+            success = asyncio.run(download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe))
             if success:
                 downloaded_data = self._load_downloaded_data(symbol, exchange, timeframe)
                 if downloaded_data is not None and (not downloaded_data.empty):

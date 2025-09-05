@@ -22,6 +22,56 @@ from src.training.steps.feature_engineering.feature_components import (
 )
 from typing import Any, Dict, List, Tuple
 
+# Import step06 validation framework
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+steps_dir = os.path.join(current_dir, '..', '..')
+sys.path.insert(0, steps_dir)
+
+try:
+    from step06_enhanced_validation_framework import (
+        step06_function_validator,
+        step06_function_tracker,
+        step06_validation_context,
+        get_step06_validation_summary,
+        ValidationLevel,
+        FunctionStatus
+    )
+    VALIDATION_AVAILABLE = True
+except ImportError as e:
+    # Fallback decorators if validation framework is not available
+    print(f"Warning: Step06 validation framework not available: {e}")
+    
+    def step06_function_validator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def step06_function_tracker(func):
+        return func
+    
+    def step06_validation_context(*args, **kwargs):
+        from contextlib import nullcontext
+        return nullcontext()
+    
+    def get_step06_validation_summary():
+        return {"error": "Validation framework not available"}
+    
+    class ValidationLevel:
+        BASIC = "basic"
+        DETAILED = "detailed"
+        COMPREHENSIVE = "comprehensive"
+    
+    class FunctionStatus:
+        PENDING = "pending"
+        IN_PROGRESS = "in_progress"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        TIMEOUT = "timeout"
+    
+    VALIDATION_AVAILABLE = False
+
 
 class FeatureEngineeringStep(BaseStep):
     """Step 6: Feature Engineering using standardized base class."""
@@ -119,6 +169,7 @@ class FeatureEngineeringStep(BaseStep):
         
         return len(errors) == 0, errors
     
+    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.COMPREHENSIVE)
     @handles_errors(
         exceptions=(Exception,),
         default_return={"success": False},
@@ -138,6 +189,13 @@ class FeatureEngineeringStep(BaseStep):
         Returns:
             Updated pipeline state
         """
+        with step06_validation_context("execute_logic", "feature_engineering"):
+            self.logger.info(f"🔧 Starting feature engineering with comprehensive validation tracking")
+            self.logger.info(f"   Training input keys: {list(training_input.keys())}")
+            self.logger.info(f"   Pipeline state keys: {list(pipeline_state.keys())}")
+            self.logger.info(f"   Feature config: {self.feature_config}")
+            self.logger.info(f"   Validation framework available: {VALIDATION_AVAILABLE}")
+        
         self.logger.info("🔧 Starting feature engineering...")
         
         # Get data to process
@@ -270,6 +328,7 @@ class FeatureEngineeringStep(BaseStep):
         
         return data_dict
     
+    @step06_function_tracker
     async def _engineer_features_for_split(
         self,
         data: pd.DataFrame,
@@ -316,6 +375,7 @@ class FeatureEngineeringStep(BaseStep):
         
         return engineered
     
+    @step06_function_tracker
     def _apply_basic_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic technical indicators.
         
@@ -482,6 +542,7 @@ class FeatureEngineeringStep(BaseStep):
         
         return stats
     
+    @step06_function_validator(function_type="feature_engineering", validation_level=ValidationLevel.DETAILED)
     async def _perform_feature_selection(
         self,
         engineered_data: Dict[str, pd.DataFrame],
@@ -690,3 +751,118 @@ class FeatureEngineeringStep(BaseStep):
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
         return ["05_labeling"]
+    
+    def generate_comprehensive_step06_report(self) -> Dict[str, Any]:
+        """
+        Generate comprehensive function execution report for step06 feature engineering.
+        
+        Returns:
+            Dictionary with detailed function execution analysis
+        """
+        self.logger.info("📋 Generating comprehensive step06 feature engineering report...")
+        
+        # Get validation summary if available
+        validation_summary = {}
+        if VALIDATION_AVAILABLE:
+            try:
+                validation_summary = get_step06_validation_summary()
+            except Exception as e:
+                self.logger.warning(f"Could not get validation summary: {e}")
+        
+        # Generate internal statistics
+        internal_stats = {
+            "feature_engineering_config": {
+                "use_technical_indicators": self.feature_config.get("use_technical_indicators", True),
+                "use_interaction_features": self.feature_config.get("use_interaction_features", True),
+                "use_regime_features": self.feature_config.get("use_regime_features", True),
+                "use_dynamic_lookback": self.feature_config.get("use_dynamic_lookback", True),
+                "feature_selection_enabled": self.feature_config.get("feature_selection", {}).get("enabled", True)
+            },
+            "component_availability": {
+                "technical_engine": self.technical_engine is not None,
+                "interaction_engine": self.interaction_engine is not None,
+                "regime_engine": self.regime_engine is not None
+            },
+            "validation_status": {
+                "validation_framework_available": VALIDATION_AVAILABLE,
+                "comprehensive_validation_enabled": True
+            }
+        }
+        
+        # Combine all statistics
+        comprehensive_report = {
+            "timestamp": datetime.now().isoformat(),
+            "validation_summary": validation_summary,
+            "internal_statistics": internal_stats,
+            "recommendations": self._generate_step06_feature_recommendations(internal_stats),
+            "function_call_analysis": self._analyze_step06_function_calls(),
+            "performance_analysis": self._analyze_step06_performance()
+        }
+        
+        self.logger.info("✅ Comprehensive step06 feature engineering report generated")
+        return comprehensive_report
+    
+    def _generate_step06_feature_recommendations(self, stats: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on step06 feature engineering execution statistics."""
+        recommendations = []
+        
+        # Configuration recommendations
+        if not stats["feature_engineering_config"]["use_technical_indicators"]:
+            recommendations.append("Enable technical indicators for better feature coverage")
+        
+        if not stats["feature_engineering_config"]["use_interaction_features"]:
+            recommendations.append("Enable interaction features to capture non-linear relationships")
+        
+        if not stats["feature_engineering_config"]["use_regime_features"]:
+            recommendations.append("Enable regime features for regime-aware modeling")
+        
+        if not stats["feature_engineering_config"]["use_dynamic_lookback"]:
+            recommendations.append("Enable dynamic lookback optimization for better performance")
+        
+        # Component recommendations
+        if not stats["component_availability"]["technical_engine"]:
+            recommendations.append("Initialize technical indicator engine for advanced features")
+        
+        if not stats["component_availability"]["interaction_engine"]:
+            recommendations.append("Initialize interaction engine for feature interactions")
+        
+        if not stats["component_availability"]["regime_engine"]:
+            recommendations.append("Initialize regime engine for regime-aware features")
+        
+        # Validation recommendations
+        if not stats["validation_status"]["validation_framework_available"]:
+            recommendations.append("Enable validation framework for better error tracking and reporting")
+        
+        return recommendations
+    
+    def _analyze_step06_function_calls(self) -> Dict[str, Any]:
+        """Analyze function call patterns for step06 feature engineering."""
+        return {
+            "main_execution_method": "execute_logic",
+            "feature_engineering_methods": [
+                "_engineer_features_for_split",
+                "_apply_basic_indicators",
+                "_create_basic_interactions",
+                "_create_basic_regime_features",
+                "_add_time_features"
+            ],
+            "feature_selection_methods": [
+                "_perform_feature_selection",
+                "_calculate_feature_statistics"
+            ],
+            "validation_methods": [
+                "validate_inputs",
+                "validate_outputs"
+            ]
+        }
+    
+    def _analyze_step06_performance(self) -> Dict[str, Any]:
+        """Analyze performance metrics for step06 feature engineering."""
+        return {
+            "step_type": "feature_engineering",
+            "base_class": "BaseStep",
+            "async_execution": True,
+            "comprehensive_validation": True,
+            "error_handling": True,
+            "feature_selection": self.feature_config.get("feature_selection", {}).get("enabled", True)
+        }

@@ -1,3 +1,7 @@
+from collections.abc import Iterable
+from typing import Any
+import logging
+
 import numpy as np
 
 DUAL_CONF_BASELINE = 0.216
@@ -16,9 +20,7 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
     except Exception:
         pass
     return (dual, normalized)
-from collections.abc import Iterable
-from typing import Any
-import logging
+
 
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else min(value, 1.0)
@@ -77,7 +79,6 @@ def aggregate_directional_confidences(models: Iterable[dict[str, Any]]) -> dict[
     signed_avg = signed_sum / total_weight
     final_direction = 'LONG' if signed_avg > 0 else 'SHORT' if signed_avg < 0 else 'HOLD'
     final_confidence = _clamp01(abs(signed_avg))
-    return {'direction': final_direction, 'confidence': final_confidence, 'signed_value': signed_avg, 'count': count_active}
     return {'direction': final_direction, 'confidence': final_confidence, 'signed_value': signed_avg, 'count': count_active}
 
 def aggregate_weighted_signals_step17(signals: Iterable[dict[str, Any]], step17_weights: dict[str, float]=None, use_multiplicative: bool=True, logger: logging.Logger=None) -> dict[str, Any]:

@@ -23,6 +23,7 @@ class Step1DataCollectionValidator:
         self.step_name = "step01_data_collection"
         self.config = config
         self.logger = system_logger.getChild("Validator.Step1")
+        self.validation_results: Dict[str, Any] = {}
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_records = 500  # Reduced from 1000 to allow smaller datasets
         self.max_gap_ratio = 0.2  # Allow up to 20% large gaps (increased from 10%)
@@ -483,6 +484,9 @@ class Step1DataCollectionValidator:
             return False
 
 
+import time
+
+
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
@@ -507,7 +511,7 @@ async def run_validator(
         "validation_passed": bool(result.get("validation_passed", False)) if isinstance(result, dict) else bool(result),
         "validation_results": result if isinstance(result, dict) else {"result": result},
         "duration": 0,  # Could be enhanced to track actual duration
-        "timestamp": asyncio.get_event_loop().time(),
+        "timestamp": time.time(),
     }
 
 

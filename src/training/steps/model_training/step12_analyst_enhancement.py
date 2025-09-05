@@ -10,9 +10,11 @@ import logging
 from datetime import datetime
 from typing import Any, Never, Callable, List
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
+import pandas as pd
+import warnings
+
 try:
-    import pandas as pd
-    import numpy as np
     import joblib
     import optuna
     import torch
@@ -38,7 +40,6 @@ try:
     from sklearn.svm import SVC
     from sklearn.neural_network import MLPClassifier
     import signal
-    import warnings
     import sys
     from io import StringIO
     from sklearn.metrics import log_loss

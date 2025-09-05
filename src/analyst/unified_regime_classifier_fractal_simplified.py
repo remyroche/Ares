@@ -18,6 +18,7 @@ from .core.decorators.errors import handles_errors
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
+import time
 
 class UnifiedRegimeClassifierFractal:
     """

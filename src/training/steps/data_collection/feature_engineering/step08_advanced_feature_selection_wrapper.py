@@ -26,6 +26,8 @@ class AdvancedFeatureSelectionStep(BaseStep):
         super().__init__(config, '08', 'advanced_feature_selection')
         try:
             from src.utils.logger import get_logger
+import logging
+
             self.logger = get_logger('AdvancedFeatureSelectionStep')
         except Exception:
             self.logger = None

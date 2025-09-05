@@ -18,6 +18,8 @@ from src.utils.warning_symbols import error, failed, initialization_error
 from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
+import logging
+import time
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""

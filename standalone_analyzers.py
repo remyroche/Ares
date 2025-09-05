@@ -12,6 +12,7 @@ from typing import Any
 
 # Import minimal modules
 from minimal_config import CodeQualityConfig as CodeQualityConfig_minimal_config, get_default_config
+import numpy as np
 
 
 class TypeChecker:

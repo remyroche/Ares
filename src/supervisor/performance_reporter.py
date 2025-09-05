@@ -13,6 +13,9 @@ from .core.decorators.errors import handles_errors
 
 
 import numpy as np
+import logging
+import time
+
 class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""
 

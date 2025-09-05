@@ -3,6 +3,7 @@
 
 from datetime import datetime
 from typing import Dict, Any
+import time
 
 
 class TextReporter:

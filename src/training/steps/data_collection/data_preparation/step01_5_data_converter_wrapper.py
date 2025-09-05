@@ -38,6 +38,8 @@ class DataConverterStep(BaseStep):
     def _update_pipeline_state(self, pipeline_state: Dict[str, Any], params: Dict[str, Any], conversion_success: bool) -> None:
         """Update pipeline state with conversion results."""
         from .training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
+import logging
+
         converter = UnifiedDataConverter({})
         unified_path = converter.get_unified_data_path(params['symbol'], params['exchange'], params['timeframe'])
         unified_config_path = converter.get_unified_config_path(params['symbol'], params['exchange'], params['timeframe'])

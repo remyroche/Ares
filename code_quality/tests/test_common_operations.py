@@ -26,6 +26,8 @@ except ImportError:
     print("Warning: pytest not available")
 
 from src.utils.common_operations import *
+import collections
+import json
 
 
 class TestCommonOperations(unittest.TestCase):

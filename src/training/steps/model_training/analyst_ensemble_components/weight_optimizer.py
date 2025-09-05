@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, log_loss
 from .utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
 from .core.decorators.errors import handles_errors
+import logging
 
 class WeightOptimizer:
     """Handles weight optimization for ensemble models."""

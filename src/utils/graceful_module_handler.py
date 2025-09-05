@@ -3,6 +3,7 @@ import importlib
 import sys
 from typing import Any, Optional, Dict
 from src.utils.logger import system_logger
+import logging
 
 class GracefulModuleHandler:
     """Handles missing modules gracefully with fallback implementations."""

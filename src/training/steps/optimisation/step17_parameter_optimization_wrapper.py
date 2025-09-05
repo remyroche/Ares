@@ -26,6 +26,8 @@ class ParameterOptimizationStep(BaseStep):
         except Exception:
             from src.training.steps.validation.step17_final_parameters_optimization import FinalParametersOptimizationStep
             from .core.decorators.errors import handles_errors
+import logging
+
             impl = FinalParametersOptimizationStep(self.config)
         result = await impl.execute(training_input, dict(pipeline_state))
         if isinstance(result, dict):

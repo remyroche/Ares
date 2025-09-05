@@ -6,6 +6,7 @@ Script to standardize utility modules with pipeline standards.
 import os
 import re
 from pathlib import Path
+import logging
 
 
 def standardize_utility_module(file_path: str) -> bool:

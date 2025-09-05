@@ -27,7 +27,7 @@ from fixers.conservative_auto_fixer import ConservativeAutoFixer
 from fixers.sequential_fixer_fixed import SequentialFixer
 
 # Import script-based fixers (ONLY auto-fixing related)
-from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer
+# from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer  # Not available
 from scripts.enhanced_type_hints import TypeHintEnhancer, EnhancedTypeHintAdder
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.fix_missing_imports import ImportFixer
@@ -91,7 +91,7 @@ class AutoFixerPipeline:
         self.sequential_fixer = SequentialFixer(self.config)
         
         # Initialize script-based fixers
-        self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))
+        # self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))  # Not available
         self.type_hint_enhancer = TypeHintEnhancer()
         self.async_fixer = RobustAsyncFixer(str(self.project_root))
         self.circular_import_detector = ImportAnalyzer(str(self.project_root))
@@ -99,6 +99,10 @@ class AutoFixerPipeline:
         self.missing_import_fixer = ImportFixer(str(self.project_root))
         self.async_await_fixer = AsyncAwaitFixer(set())  # Empty set for now
         self.async_pattern_fixer = AsyncPatternFixer(str(self.project_root))
+        
+        # Initialize missing fixers
+        self.bulk_cleanup = None  # Not implemented yet
+        self.auto_dead_code_fixer = None  # Not implemented yet
         
         # Initialize comprehensive fixers
         # Note: Some comprehensive fixers may not be available
@@ -163,6 +167,32 @@ class AutoFixerPipeline:
             # Get all Python files
             file_paths = list(self.project_root.glob("**/*.py"))
             print(f"🔍 Analyzing {len(file_paths)} Python files for import issues...")
+            
+            # First run comprehensive syntax validation
+            print("🔍 Running comprehensive syntax validation...")
+            from scripts.comprehensive_syntax_validator import ComprehensiveSyntaxValidator
+            syntax_validator = ComprehensiveSyntaxValidator(str(self.project_root))
+            syntax_results = syntax_validator.validate_directory(str(self.project_root))
+            results["syntax_validation"] = syntax_results
+            
+            # Print syntax validation summary
+            syntax_validator.print_summary()
+            
+            # Auto-install missing dependencies if there are import errors
+            import_error_count = syntax_results["error_counts"]["import_errors"]
+            if import_error_count > 0:
+                print(f"🔧 Found {import_error_count} files with import errors. Attempting to install missing dependencies...")
+                try:
+                    from scripts.auto_dependency_installer import AutoDependencyInstaller
+                    dependency_installer = AutoDependencyInstaller(str(self.project_root))
+                    dependency_results = dependency_installer.install_all_missing_dependencies(dry_run=False)
+                    results["dependency_installation"] = dependency_results
+                except Exception as e:
+                    print(f"⚠️  Dependency installation failed: {e}")
+                    results["dependency_installation"] = {"status": "error", "error": str(e)}
+            else:
+                print("✅ No import errors found, skipping dependency installation")
+                results["dependency_installation"] = {"status": "skipped", "reason": "no_import_errors"}
             
             # Enhanced auto-detection import fixes (primary method)
             print("🚀 Running enhanced auto-detection for missing imports...")
@@ -389,8 +419,12 @@ class AutoFixerPipeline:
             results["advanced_syntax_fixes"] = syntax_results
             
             # Bulk syntax cleanup
-            bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
-            results["bulk_syntax_cleanup"] = bulk_results
+            if self.bulk_cleanup is not None:
+                bulk_results = self.bulk_cleanup.cleanup_syntax(str(self.project_root))
+                results["bulk_syntax_cleanup"] = bulk_results
+            else:
+                bulk_results = {"fixes_applied": 0, "status": "not_implemented"}
+                results["bulk_syntax_cleanup"] = bulk_results
             
             # Generate syntax fixes report
             syntax_fixes_report = {
@@ -473,7 +507,8 @@ class AutoFixerPipeline:
             results["robust_async_fixes"] = robust_results
             
             # Async/await fixes
-            await_results = self.async_await_fixer.fix_async_await(str(self.project_root))
+            # Use the correct method name
+            await_results = self.async_await_fixer.fix_all_async(dry_run=False)
             results["async_await_fixes"] = await_results
             
             # Generate async fixes report
@@ -508,7 +543,10 @@ class AutoFixerPipeline:
         print("="*60)
         
         try:
-            results = self.auto_dead_code_fixer.auto_fix_dead_code(str(self.project_root))
+            if self.auto_dead_code_fixer is not None:
+                results = self.auto_dead_code_fixer.auto_fix_dead_code(str(self.project_root))
+            else:
+                results = {"fixes_applied": 0, "status": "not_implemented"}
             
             # Generate dead code fixes report
             dead_code_fixes_report = {

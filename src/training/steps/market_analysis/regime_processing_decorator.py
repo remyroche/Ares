@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import functools
 from .training.steps.regime_handler import regime_handler
 import pandas as pd
+import logging
+import numpy as np
 
 logger = get_logger('RegimeProcessingDecorator')
 

@@ -7,9 +7,14 @@ with comprehensive error handling and validation.
 
 from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
+from typing import Optional, List, Dict
+import numpy as np
 
 from .utils.logger import system_logger
 import pandas as pd
+import numpy as np
+import logging
+import typing
 
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
@@ -69,7 +74,6 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
     return pd.Series(vif_scores)
 
 
-@comprehensive_vif_validation(timeout_seconds=30, max_vif_threshold=1000.0, fallback_strategy="ones")
 def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
     """
     Robust VIF calculation with comprehensive error handling.

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Feature Quality Diagnostic Script
 Investigates feature calculation issues, NaN sources, and data quality in HMM regime discovery.
@@ -20,7 +23,9 @@ try:
     from src.utils.logger import system_logger  # noqa: E402
 except ImportError:
     import logging
-    system_logger = logging.getLogger(__name__)
+import typing
+
+system_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     def _handle_errors(default: Any | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

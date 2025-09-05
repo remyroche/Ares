@@ -128,7 +128,7 @@ class RegimeDiscoveryFeatureEngineer:
         vol_regime[self.volatility_20 > high_threshold] = 3
         vol_regime[(self.volatility_20 > low_threshold) & (self.volatility_20 <= high_threshold)] = 2
         features['volatility_regime'] = vol_regime
-        features['volatility_clustering'] = self.volatility_20.rolling(50).apply(lambda x: x.autocorr(lag=1))
+        features['volatility_clustering'] = self.volatility_20.rolling(50).apply(lambda x: x.autocorr(lag=1) if len(x) > 1 else 0)
         features['volatility_persistence'] = self.volatility_20.rolling(50).apply(lambda x: np.corrcoef(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0)
         return features
 
@@ -511,7 +511,7 @@ class RegimeDiscoveryFeatureEngineer:
         """Calculate volatility clustering indicator."""
         returns = prices.pct_change()
         volatility = returns.rolling(20).std()
-        clustering = volatility.rolling(50).apply(lambda x: x.autocorr(lag=1))
+        clustering = volatility.rolling(50).apply(lambda x: x.autocorr(lag=1) if len(x) > 1 else 0)
         return clustering.fillna(0)
 
     def _calculate_volatility_persistence(self, volatility: pd.Series) -> pd.Series:

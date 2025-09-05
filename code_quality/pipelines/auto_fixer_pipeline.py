@@ -168,6 +168,32 @@ class AutoFixerPipeline:
             file_paths = list(self.project_root.glob("**/*.py"))
             print(f"🔍 Analyzing {len(file_paths)} Python files for import issues...")
             
+            # First run comprehensive syntax validation
+            print("🔍 Running comprehensive syntax validation...")
+            from scripts.comprehensive_syntax_validator import ComprehensiveSyntaxValidator
+            syntax_validator = ComprehensiveSyntaxValidator(str(self.project_root))
+            syntax_results = syntax_validator.validate_directory(str(self.project_root))
+            results["syntax_validation"] = syntax_results
+            
+            # Print syntax validation summary
+            syntax_validator.print_summary()
+            
+            # Auto-install missing dependencies if there are import errors
+            import_error_count = syntax_results["error_counts"]["import_errors"]
+            if import_error_count > 0:
+                print(f"🔧 Found {import_error_count} files with import errors. Attempting to install missing dependencies...")
+                try:
+                    from scripts.auto_dependency_installer import AutoDependencyInstaller
+                    dependency_installer = AutoDependencyInstaller(str(self.project_root))
+                    dependency_results = dependency_installer.install_all_missing_dependencies(dry_run=False)
+                    results["dependency_installation"] = dependency_results
+                except Exception as e:
+                    print(f"⚠️  Dependency installation failed: {e}")
+                    results["dependency_installation"] = {"status": "error", "error": str(e)}
+            else:
+                print("✅ No import errors found, skipping dependency installation")
+                results["dependency_installation"] = {"status": "skipped", "reason": "no_import_errors"}
+            
             # Enhanced auto-detection import fixes (primary method)
             print("🚀 Running enhanced auto-detection for missing imports...")
             auto_detection_results = self.missing_import_fixer.auto_fix_all_files(

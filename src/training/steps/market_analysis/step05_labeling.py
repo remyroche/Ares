@@ -13,7 +13,24 @@ Key Enhancements:
 - Detailed Completion Reporting: Provides comprehensive reports on function execution outcomes
 """
 import logging
-from src.core.decorators import handles_errors, traced, validates, cached, log_execution_time
+try:
+    from src.utils.decorators import handles_errors as _handles_errors
+    from src.utils.decorators import traced as _traced
+    from src.utils.decorators import validates as _validates
+    from src.utils.decorators import cached as _cached
+    from src.utils.decorators import log_execution_time as _log_execution_time
+except Exception:
+    def _identity(fn=None, *args, **kwargs):
+        if fn is None:
+            def _wrap(f):
+                return f
+            return _wrap
+        return fn
+    _handles_errors = _identity
+    _traced = _identity
+    _validates = _identity
+    _cached = _identity
+    _log_execution_time = _identity
 import asyncio
 import sys
 from pathlib import Path
@@ -2905,4 +2922,5 @@ if __name__ == '__main__':
     async def test() -> None:
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'Step 5 result: {success}')
-    asyncio.run(await test())
+    # Correct asyncio usage: pass coroutine to asyncio.run
+    asyncio.run(test())

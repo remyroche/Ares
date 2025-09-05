@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from pathlib import Path
 
 # Add project root to path
@@ -18,7 +18,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 # Standardized import management
 REQUIRED_MODULES = [
     "pandas", "src.utils.centralized_decorators",
-    "src.training.steps.unified_data_loader",
+    "src.training.steps.data_collection.unified_data_loader",
     "src.utils.logger",
     "src.utils.enhanced_mlflow_integration"
 ]
@@ -28,14 +28,16 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 
 # Safe imports with fallbacks
 centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-unified_data_loader = PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
+unified_data_loader = PipelineStandards.safe_import("src.training.steps.data_collection.unified_data_loader", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 
 # Import get_unified_data_loader function
 if unified_data_loader is not None:
-    get_unified_data_loader = unified_data_loader.get_unified_data_loader
+    # Create factory function for UnifiedDataLoader
+    def get_unified_data_loader(config):
+        return unified_data_loader.UnifiedDataLoader(config)
 else:
     def get_unified_data_loader(config):
         raise ImportError("unified_data_loader module not available")
@@ -147,19 +149,48 @@ class RegimeDataSplittingStep:
         try:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
+            
+            # Validate data loader is available
+            if data_loader is None:
+                self.logger.error("🚨 Unified data loader is not available")
+                self.logger.error("   This indicates a critical configuration issue")
+                return {"success": False, "error": "Unified data loader not available"}
+            
             from src.config.constants import (
                 BLANK_TRAINING_LOOKBACK_DAYS, )
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
                 "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS, )
+            
+            # Validate data loader has required method
+            if not hasattr(data_loader, 'load_unified_data'):
+                self.logger.error("🚨 Data loader missing load_unified_data method")
+                return {"success": False, "error": "Data loader missing required method"}
+                
             unified_data = await data_loader.load_unified_data(
                 symbol=self.config.get("symbol", "ETHUSDT"),
                 exchange=self.config.get("exchange", "BINANCE"),
                 timeframe=self.config.get("timeframe", "1m"),
-                lookback_days=config_lookback, )
+                data_dir=self.config.get("data_dir", "data_cache")
+            )
+
+            # Validate unified_data is not None and has data
+            if unified_data is None:
+                self.logger.error("🚨 Unified data loader returned None")
+                return {"success": False, "error": "Unified data loader returned None"}
+            
+            if len(unified_data) == 0:
+                self.logger.error("🚨 Unified data is empty")
+                return {"success": False, "error": "Unified data is empty"}
+            
+            # Validate data structure
+            if not hasattr(unified_data, 'columns'):
+                self.logger.error("🚨 Unified data is not a DataFrame")
+                return {"success": False, "error": "Unified data is not a DataFrame"}
 
             self.logger.info(f"✅ Loaded unified data: {len(unified_data)} rows")
+            self.logger.info(f"   Columns: {list(unified_data.columns)}")
             self.logger.info(
                 f"   Date range: {unified_data.index.min()} to {unified_data.index.max()}", )
 
@@ -555,4 +586,11 @@ if __name__ == "__main__":
     async def _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(_test())
+    # Safe event loop handling to prevent conflicts
+    try:
+        loop = asyncio.get_running_loop()
+        # If we're already in an event loop, create a task instead
+        loop.create_task(_test())
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        asyncio.run(_test())

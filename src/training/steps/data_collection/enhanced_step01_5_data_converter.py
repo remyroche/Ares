@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Enhanced Step 1.5: Data Converter with Real-time Validation
 
@@ -180,7 +182,6 @@ class EnhancedUnifiedDataConverter:
         """Load and validate source data for conversion."""
         try:
             import os
-            import pandas as pd
             
             self.logger.info('📖 Loading and validating source data...')
             
@@ -529,6 +530,7 @@ class EnhancedUnifiedDataConverter:
             self.logger.info('🔍 Running enhanced quality validation...')
             
             # Check for unified data file
+            import os
             unified_path = os.path.join(unified_dir, exchange.lower(), symbol, timeframe)
             unified_file = f"unified_{exchange}_{symbol}_{timeframe}_validated.parquet"
             unified_filepath = os.path.join(unified_path, unified_file)
@@ -538,6 +540,8 @@ class EnhancedUnifiedDataConverter:
                 return False
             
             # Load and validate unified data
+from datetime import datetime
+
             df = pd.read_parquet(unified_filepath)
             
             # Basic quality checks

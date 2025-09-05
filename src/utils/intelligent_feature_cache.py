@@ -10,6 +10,7 @@ import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
+import numpy as np
 
 
 logger = logging.getLogger(__name__)

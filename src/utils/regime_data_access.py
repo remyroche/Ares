@@ -21,6 +21,8 @@ except Exception:  # pragma: no cover - fallback
 
 try:
     from .utils.hmm_composite_manager import get_hmm_composite_manager
+import numpy as np
+
 except Exception:  # pragma: no cover - fallback
     get_hmm_composite_manager = None  # type: ignore
 

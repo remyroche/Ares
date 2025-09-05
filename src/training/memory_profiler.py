@@ -11,6 +11,7 @@ from typing import Any
 import psutil
 
 from .utils.logger import system_logger
+import numpy as np
 
 # src/training/memory_profiler.py
 

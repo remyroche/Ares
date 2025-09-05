@@ -7,6 +7,8 @@ from typing import Any
 
 # Import ML Confidence Predictor
 from .analyst.ml_confidence_predictor import MLConfidencePredictor
+import pandas as pd
+
 from src.utils.decorators import (
     cached,
     circuit_breaker,
@@ -19,6 +21,8 @@ from .core.domain import quality_gate, secure_data_processing
 from .utils.confidence import aggregate_directional_confidences
 from .utils.logger import system_logger
 from src.utils.warning_symbols import (
+import numpy as np
+
     error,
     execution_error,
     initialization_error,
@@ -434,6 +438,7 @@ class DualModelSystem:
 
             if os.path.exists(tactician_model_path):
                 import pickle
+
                 with open(tactician_model_path, "rb") as f:
                     self.tactician_model = pickle.load(f)
                 self.logger.info("Tactician model loaded successfully")

@@ -1,3 +1,4 @@
+import numpy as np
 
 """Validator for Step 12: Final Parameters Optimization."""
 

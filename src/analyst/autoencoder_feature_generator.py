@@ -5,7 +5,16 @@ from pathlib import Path
 from typing import Any
 import yaml
 from .utils.logger import system_logger
+import time
+import numpy as np
+
 try:
+    import optuna
+    from optuna.integration import TFKerasPruningCallback
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+    from tensorflow.keras import Model, layers
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
@@ -18,22 +27,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
 import sys
-
-import optuna
-from optuna.integration import TFKerasPruningCallback
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-from tensorflow.keras import Model, layers
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from shap.explainers import TreeExplainer
-from shap import TreeExplainer
-from sklearn.model_selection import train_test_split
-import signal
-import platform
-from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.inspection import permutation_importance
-from sklearn.linear_model import LogisticRegression
+import pandas as pd
 
 sys.path.insert(0, str(project_root))
 
@@ -300,8 +294,10 @@ class FeatureFilter:
             self.logger.info('🔍 Computing SHAP values with enhanced efficiency...')
             start_time = time.time()
             try:
+                from shap.explainers import TreeExplainer
                 self.logger.info('📦 Using SHAP TreeExplainer from shap.explainers')
             except ImportError:
+                from shap import TreeExplainer
                 self.logger.info('📦 Using SHAP TreeExplainer from shap')
             sample_percentage = self.config.get('feature_filtering.sample_percentage', 10.0)
             min_sample_size = self.config.get('feature_filtering.min_sample_size', 1000)
@@ -333,6 +329,7 @@ class FeatureFilter:
                     self.logger.info(f'📊 Random sample size: {len(X_sample)} rows')
                 elif min_class_count >= 10:
                     try:
+                        from sklearn.model_selection import train_test_split
                         class_sample_sizes = {}
                         for label, count in zip(unique_labels, label_counts):
                             class_sample_size = int(count * sample_percentage / 100)
@@ -388,6 +385,8 @@ class FeatureFilter:
             self.logger.info(f'✅ Optimized RF training completed (score: {shap_rf_model.score(X_sample, y_sample):.4f})')
             explainer = TreeExplainer(shap_rf_model, feature_names=X_sample.columns.tolist(), model_output='raw')
             self.logger.info('🔧 Optimized SHAP explainer created successfully')
+            import signal
+            import platform
             base_timeout_per_5000 = self.config.get('feature_filtering.timeout_per_5000_samples', 60)
             calculated_timeout = int(len(X_sample) / 5000 * base_timeout_per_5000)
             timeout_seconds = max(30, min(900, calculated_timeout))
@@ -869,6 +868,7 @@ class AutoencoderFeatureAnalyzer:
             correlations = analysis_df.corr()['target'].drop('target')
             abs_correlations = correlations.abs().sort_values(ascending=False)
             try:
+                from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
                 unique_labels = len(np.unique(labels))
                 if unique_labels <= 10:
                     mi_scores = mutual_info_classif(encoded_features, labels, random_state=42)
@@ -907,6 +907,7 @@ class AutoencoderFeatureAnalyzer:
             rf_model.fit(X, y)
             rf_importance = pd.DataFrame({'feature': X.columns, 'importance': rf_model.feature_importances_}).sort_values('importance', ascending=False)
             try:
+                from sklearn.ensemble import GradientBoostingClassifier
                 gb_model = GradientBoostingClassifier(n_estimators=100, max_depth=6, random_state=42)
                 gb_model.fit(X, y)
                 gb_importance = pd.DataFrame({'feature': X.columns, 'importance': gb_model.feature_importances_}).sort_values('importance', ascending=False)
@@ -917,7 +918,11 @@ class AutoencoderFeatureAnalyzer:
                 self.logger.warning('⚠️ Gradient Boosting not available')
                 gb_importance = None
             try:
+                from sklearn.inspection import permutation_importance
+                from sklearn.model_selection import train_test_split
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y if len(np.unique(y)) <= 10 else None)
+                from sklearn.linear_model import LogisticRegression
+
                 perm_model = LogisticRegression(random_state=42, max_iter=1000)
                 perm_model.fit(X_train, y_train)
                 perm_importance = permutation_importance(perm_model, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1)

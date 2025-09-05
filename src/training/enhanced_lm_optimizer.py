@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 # src/training/enhanced_lm_optimizer.py
 
 """Enhanced LM Model Optimizer for Step6, Step6_5, and Step9."
@@ -1342,6 +1345,7 @@ class EnhancedFeatureSelector:
         """Analyze feature stability across multiple CV folds."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
+
         except Exception as e:
             pass  # TODO: Handle exception properly
         feature_stability = dict.fromkeys(features_df.columns, 0)

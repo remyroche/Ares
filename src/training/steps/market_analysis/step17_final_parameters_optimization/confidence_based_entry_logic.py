@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .core.decorators import handles_errors, traced
 from .utils.logger import system_logger
 from .core.decorators.errors import handles_errors
+import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
 

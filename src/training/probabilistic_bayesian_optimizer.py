@@ -1,3 +1,5 @@
+import numpy as np
+
 '\nProbabilistic Bayesian Optimizer for Tactician and Analyst Models\n\nThis module provides Bayesian optimization specifically designed for probabilistic models\nthat output probability distributions, confidence intervals, and uncertainty estimates.\nIt optimizes both model hyperparameters and probabilistic output calibration.\n'
 import logging
 import warnings
@@ -251,6 +253,7 @@ def create_tactician_model(params: dict[str, Any]) -> Any:
 def create_analyst_model(params: Dict[str, Any]) -> Any:
     """Factory function for creating Analyst models."""
     from sklearn.ensemble import RandomForestClassifier
+
     return RandomForestClassifier(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
 
 def get_recommended_hyperparameters(study: Any, objectives: list[str], objective_weights: dict[str, float] | None=None) -> dict[str, Any]:

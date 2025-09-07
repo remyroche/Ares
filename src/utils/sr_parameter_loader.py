@@ -1,4 +1,5 @@
 """S/R Parameter Loader for Live Trading.
+from .logger import system_logger
 
 This module ensures that optimized S/R parameters from step 2.5 are loaded
 and used consistently across both training and live trading.
@@ -8,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
-from .utils.logger import system_logger
+from .logger import system_logger
 import numpy as np
 import logging
 import typing

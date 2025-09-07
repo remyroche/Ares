@@ -1,6 +1,7 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 import pandas as pd
+from src.core.decorators import traced, validates, handles_errors
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -10,12 +11,15 @@ features are engineered specifically for each regime's characteristics.
 import asyncio
 import logging
 from pathlib import Path
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
     from .step06_feature_engineering import FeatureInteractionEngine
 except ImportError:
 
     class FeatureInteractionEngine:
 
+        @log_important_calls
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
@@ -32,16 +36,17 @@ try:
     from .regime_processing_decorator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
 except ImportError:
 
-    def per_regime_processing(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def per_regime_processing(*args, **kwargs):
+        def decorator(func: Callable):
             return func
         return decorator
 
-    def aggregate_regime_results(*args, **kwargs) -> None:
+    def aggregate_regime_results(*args, **kwargs):
         return {}
 
     class RegimeProcessingContext:
+
+        @log_important_calls
 
         def __init__(self, *args, **kwargs) -> None:
             pass
@@ -52,26 +57,8 @@ except ImportError:
     def pipeline_standards(*args, **kwargs) -> None:
         return {}
 
-try:
-    from src.utils.centralized_decorators import traced, validates, handles_errors
-except ImportError:
-    def traced(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def validates(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def handles_errors(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+from src.core.decorators.logging import log_execution_time, log_call
+from src.core.decorators.cache import cached
 try:
     from src.utils.logger import get_logger
     logger = get_logger('Step6FeatureEngineeringPerRegime')
@@ -80,6 +67,7 @@ except ImportError:
 
 class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
     """Enhanced feature engineering step that processes each regime separately."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
@@ -94,7 +82,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
 
     @traced(span_name='execute_per_regime_feature_engineering')
-    async def execute_per_regime_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False) -> bool:
+    async def execute_per_regime_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False) -> bool:
         """Execute feature engineering on a per-regime basis.
         
         Each regime may have different market dynamics, so features should be
@@ -126,14 +114,14 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 for regime_id in ctx.regime_ids:
                     self.logger.info(f'🔄 Processing regime {regime_id}')
                     regime_config = self._get_regime_feature_config(regime_id)
-                    result, feature_info = await self._engineer_features_single_regime(ctx=ctx, regime_id=regime_id, labeled_data=labeled_data, regime_config=regime_config)
+                    result, feature_info = await self._engineer_features_single_regime(ctx = ctx, regime_id = regime_id, labeled_data = labeled_data, regime_config = regime_config)
                     if result is not None:
                         regime_results[regime_id] = result
                         regime_feature_info[regime_id] = feature_info
                         self.logger.info(f'✅ Successfully engineered features for regime {regime_id}')
                     else:
                         self.logger.error(f'❌ Failed to engineer features for regime {regime_id}')
-                success = await regime_handler.save_regime_results(results=regime_results, step_name='step06_feature_engineering', symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, result_type='feature_engineered_data')
+                success = await regime_handler.save_regime_results(results = regime_results, step_name='step06_feature_engineering', symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, result_type='feature_engineered_data')
                 if success:
                     await self._save_regime_feature_metadata(regime_feature_info, symbol, exchange, timeframe, data_dir)
                     aggregated = self._aggregate_regime_features(regime_results)
@@ -159,7 +147,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             Tuple of (feature engineered DataFrame, feature metadata)
         """
         try:
-            regime_data = ctx.get_regime_data(regime_id, preserve_context=True)
+            regime_data = ctx.get_regime_data(regime_id, preserve_context = True)
             if regime_data.empty:
                 self.logger.warning(f'⚠️ No data for regime {regime_id}')
                 return (None, None)
@@ -168,7 +156,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 context_mask = regime_labeled['is_regime_context']
                 regime_labeled = regime_labeled.drop(columns=['is_regime_context'])
             else:
-                context_mask = pd.Series(False, index=regime_labeled.index)
+                context_mask = pd.Series(False, index = regime_labeled.index)
             if self.adaptive_lookback:
                 await self._optimize_regime_lookback_periods(regime_id, regime_labeled, context_mask, regime_config)
             features_df = await self._apply_feature_engineering(regime_labeled, regime_config)
@@ -180,6 +168,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         except Exception as e:
             self.logger.error(f'❌ Error engineering features for regime {regime_id}: {e}')
             return (None, None)
+    @log_all_calls
 
     def _get_regime_feature_config(self, regime_id: int) -> Dict[str, Any]:
         """Get feature engineering configuration for a specific regime.
@@ -209,6 +198,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             config = {**base_config, 'lookback_periods': [7, 14, 30, 60], 'emphasis': 'balanced', 'additional_features': ['momentum_features', 'volume_profile', 'market_microstructure'], 'interaction_patterns': {'momentum_volume': {'features': ['RSI_14', 'MACD_12_26', 'OBV_20', 'Volume_Ratio'], 'weight': 1.6, 'enabled': True}, 'oscillator_trend': {'features': ['RSI_14', 'Williams_R_14', 'CCI_20', 'EMA_21'], 'weight': 1.4, 'enabled': True}}, 'optimization_priority': 'balanced_performance'}
             self.logger.info(f'⚖️ Configured regime {regime_id} for balanced approach')
         return config
+    @log_all_calls
 
     def _update_regime_interaction_patterns(self, regime_config: Dict[str, Any], regime_id: int) -> None:
         """Update interaction patterns with regime-specific optimized periods.
@@ -264,7 +254,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             if technical_features.empty:
                 self.logger.warning('⚠️ No technical features extracted')
                 return None
-            features_df = pd.concat([regime_data, technical_features], axis=1)
+            features_df = pd.concat([regime_data, technical_features], axis = 1)
             interaction_patterns = regime_config.get('interaction_patterns', {})
             if interaction_patterns:
                 self.logger.info(f'🔄 Applying {len(interaction_patterns)} interaction patterns')
@@ -272,8 +262,8 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 interaction_features = self.extract_interaction_features(features_df[feature_names].values, feature_names, regime_data)
                 if interaction_features is not None and interaction_features.size > 0:
                     interaction_names = [f'interaction_{i}' for i in range(interaction_features.shape[1])]
-                    interaction_df = pd.DataFrame(interaction_features, index=features_df.index, columns=interaction_names)
-                    features_df = pd.concat([features_df, interaction_df], axis=1)
+                    interaction_df = pd.DataFrame(interaction_features, index = features_df.index, columns = interaction_names)
+                    features_df = pd.concat([features_df, interaction_df], axis = 1)
                     self.logger.info(f'✅ Added {len(interaction_names)} interaction features')
             features_df['regime_emphasis'] = regime_config.get('emphasis', 'unknown')
             features_df['optimization_priority'] = regime_config.get('optimization_priority', 'unknown')
@@ -282,6 +272,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         except Exception as e:
             self.logger.error(f'❌ Error applying feature engineering: {e}')
             return None
+    @log_all_calls
 
     def _validate_regime_optimization(self, regime_id: int, optimization_results: Dict[str, Any], regime_config: Dict[str, Any]) -> bool:
         """Validate that regime-specific optimization is working correctly.
@@ -347,6 +338,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         except Exception as e:
             self.logger.error(f'❌ Error loading labeled data: {e}')
             return None
+    @log_all_calls
 
     def _aggregate_regime_features(self, regime_results: Dict[int, pd.DataFrame]) -> pd.DataFrame:
         """Aggregate per-regime feature results intelligently.
@@ -373,8 +365,8 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 dfs.append(df)
         if not dfs:
             return pd.DataFrame()
-        aggregated = pd.concat(dfs, ignore_index=True)
-        aggregated = aggregated.sort_values('timestamp').reset_index(drop=True)
+        aggregated = pd.concat(dfs, ignore_index = True)
+        aggregated = aggregated.sort_values('timestamp').reset_index(drop = True)
         return aggregated
 
     async def _save_regime_feature_metadata(self, regime_feature_info: Dict[int, Dict[str, Any]], symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
@@ -392,10 +384,11 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             metadata_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_features_metadata.json'
             import json
             with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(metadata, f, indent = 2)
             self.logger.info(f'✅ Saved regime feature metadata: {metadata_path}')
         except Exception as e:
             self.logger.error(f'❌ Error saving feature metadata: {e}')
+    @log_all_calls
 
     def _log_feature_statistics(self, aggregated_data: pd.DataFrame, regime_feature_info: Dict[int, Dict[str, Any]]) -> None:
         """Log statistics about the engineered features.
@@ -449,8 +442,8 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             regime_config['optimized_periods'] = {}
             return
         target = optimization_data['label']
-        regime_series = pd.Series(regime_id, index=optimization_data.index)
-        optimization_results = await self.optimize_lookback_periods(optimization_data, target, regimes=regime_series)
+        regime_series = pd.Series(regime_id, index = optimization_data.index)
+        optimization_results = await self.optimize_lookback_periods(optimization_data, target, regimes = regime_series)
         status = optimization_results.get('status')
         if status == 'optimized':
             self._process_optimized_results(regime_id, optimization_results, regime_config)
@@ -460,6 +453,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         else:
             self.logger.error(f'❌ Regime {regime_id} optimization failed')
             regime_config['optimized_periods'] = {}
+    @log_all_calls
 
     def _process_optimized_results(self, regime_id: int, optimization_results: Dict[str, Any], regime_config: Dict[str, Any]) -> None:
         """Process successful optimization results.
@@ -488,7 +482,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
 @traced(span_name='run_per_regime_feature_engineering_step')
 @validates()
 @handles_errors
-async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
+async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the enhanced per-regime feature engineering step.
     
     Args:
@@ -523,7 +517,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     config['per_regime_feature_engineering'] = True
     step = PerRegimeFeatureEngineeringStep(config)
     await step.initialize()
-    success = await step.execute_per_regime_feature_engineering(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+    success = await step.execute_per_regime_feature_engineering(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
     if success:
         logger.info('✅ Step 6: Per-Regime Feature Engineering completed successfully')
     else:

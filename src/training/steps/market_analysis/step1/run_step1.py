@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
 
 """Step 1 Runner Script."
 
@@ -90,11 +91,11 @@ def main() -> None:
         # Run complete step01 process
         results = asyncio.run(
             orchestrator.run_complete_step1(
-                symbol=args.symbol,
-                exchange=args.exchange,
-                start_date=start_date,
-                end_date=end_date,
-                auto_fix=not args.no_auto_fix,
+                symbol = args.symbol,
+                exchange = args.exchange,
+                start_date = start_date,
+                end_date = end_date,
+                auto_fix = not args.no_auto_fix,
             )
         )
 
@@ -155,7 +156,7 @@ def main() -> None:
         validation_results = validator.validate_all_aggtrades(
             args.symbol,
             args.exchange,
-            auto_fix=not args.no_auto_fix,
+            auto_fix = not args.no_auto_fix,
         )
 
         # Generate report

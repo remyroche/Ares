@@ -22,7 +22,7 @@ class IntelligentFeatureCache:
     Intelligent caching system for feature engineering with memory optimization.
     """
 
-    def __init__(self, cache_dir: str='data_cache/feature_cache', max_memory_mb: int=2048, max_cache_size_mb: int=1024, enable_compression: bool=True) -> None:
+    def __init__(self, cache_dir: str='data_cache/feature_cache', max_memory_mb: int = 2048, max_cache_size_mb: int = 1024, enable_compression: bool = True) -> None:
         """
         Initialize the intelligent feature cache.
 
@@ -33,7 +33,7 @@ class IntelligentFeatureCache:
             enable_compression: Whether to enable compression for cache files
         """
         self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents = True, exist_ok = True)
         self.max_memory_mb = max_memory_mb
         self.max_cache_size_mb = max_cache_size_mb
         self.enable_compression = enable_compression
@@ -114,7 +114,7 @@ class IntelligentFeatureCache:
         total_memory = 0
         for value in self.memory_cache.values():
             if isinstance(value, pd.DataFrame):
-                total_memory += int(value.memory_usage(deep=True).sum())
+                total_memory += int(value.memory_usage(deep = True).sum())
             elif isinstance(value, np.ndarray):
                 total_memory += int(value.nbytes)
             else:
@@ -131,7 +131,7 @@ class IntelligentFeatureCache:
         current_memory = self._get_memory_usage_mb()
         if current_memory <= target_memory_mb:
             return
-        sorted_items = sorted(self.cache_metadata.items(), key=lambda x: x[1].get('last_access', 0))
+        sorted_items = sorted(self.cache_metadata.items(), key = lambda x: x[1].get('last_access', 0))
         for key, _metadata in sorted_items:
             if key in self.memory_cache:
                 del self.memory_cache[key]
@@ -155,10 +155,10 @@ class IntelligentFeatureCache:
         try:
             if self.enable_compression:
                 with gzip.open(cache_file, 'wb') as f:
-                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
             else:
                 with open(cache_file, 'wb') as f:
-                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
             logger.debug(f'💾 Saved to disk cache: {cache_key}')
         except Exception as e:
             logger.warning(f'Failed to save to disk cache {cache_key}: {e}')
@@ -220,7 +220,7 @@ class IntelligentFeatureCache:
         self.miss_count += 1
         return None
 
-    def set(self, cache_key: str, data: Any, metadata: dict | None=None) -> None:
+    def set(self, cache_key: str, data: Any, metadata: dict | None = None) -> None:
         """
         Store data in cache.
 
@@ -252,7 +252,7 @@ class IntelligentFeatureCache:
             Estimated size in MB
         """
         if isinstance(data, pd.DataFrame):
-            return float(data.memory_usage(deep=True).sum()) / (1024 * 1024)
+            return float(data.memory_usage(deep = True).sum()) / (1024 * 1024)
         if isinstance(data, np.ndarray):
             return float(data.nbytes) / (1024 * 1024)
         return float(len(pickle.dumps(data))) / (1024 * 1024)
@@ -305,7 +305,7 @@ def get_feature_cache() -> IntelligentFeatureCache:
         _feature_cache = IntelligentFeatureCache()
     return _feature_cache
 
-def cache_feature_engineering(max_memory_mb: int=2048) -> None:
+def cache_feature_engineering(max_memory_mb: int = 2048) -> None:
     """
     Decorator for caching feature engineering functions.
     Supports both sync and async functions.

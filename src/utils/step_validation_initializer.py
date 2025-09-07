@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import collections
 import logging
+from .logger import system_logger
 
 class StepValidationInitializer:
     """Initializes all pipeline steps with comprehensive validation."""
@@ -24,7 +25,7 @@ class StepValidationInitializer:
         """Initialize all pipeline steps with validation."""
         self.logger.info('🚀 Initializing all pipeline steps with validation...')
         steps_config = {'step02_data_reading': {'module': 'src.training.steps.data_collection.step02_data_reading', 'class': 'DataReadingStep', 'priority': 1}, 'step2_5_sr_optimization': {'module': 'src.training.steps.data_collection.data_preparation.step02_5_sr_optimization', 'class': 'SROptimizationStep', 'priority': 2}, 'step03_hmm_regime_discovery': {'module': 'src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'class': 'Step03HMMRegimeDiscovery', 'priority': 3}, 'step04_regime_data_splitting': {'module': 'src.training.steps.step08_regime_data_splitting', 'class': 'RegimeDataSplittingStep', 'priority': 4}, 'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 5}, 'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 6}, 'step07_enhanced_matrix_operations': {'module': 'src.training.steps.model_training.step07_enhanced_matrix_operations', 'class': 'MatrixOperationsStep', 'priority': 7}, 'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8}, 'step09_hmm_based_training': {'module': 'src.training.steps.model_training.step09_hmm_based_training', 'class': 'HMMTrainingStep', 'priority': 9}, 'step10_unified_regime_intelligence': {'module': 'src.training.steps.model_training.step10_unified_regime_intelligence', 'class': 'RegimeIntelligenceStep', 'priority': 10}, 'step11_analyst_creation': {'module': 'src.training.steps.model_training.step11_analyst_creation', 'class': 'AnalystCreationStep', 'priority': 11}, 'step12_analyst_enhancement': {'module': 'src.training.steps.model_training.step12_analyst_enhancement', 'class': 'AnalystEnhancementStep', 'priority': 12}, 'step13_analyst_ensemble_creation': {'module': 'src.training.steps.model_training.step13_analyst_ensemble_creation', 'class': 'AnalystEnsembleStep', 'priority': 13}, 'step14_tactician_labeling': {'module': 'src.training.steps.model_training.step14_tactician_labeling', 'class': 'TacticianLabelingStep', 'priority': 14}, 'step15_tactician_specialist_training': {'module': 'src.training.steps.model_training.step15_tactician_specialist_training', 'class': 'TacticianTrainingStep', 'priority': 15}, 'step16_confidence_calibration': {'module': 'src.training.steps.model_training.validation.step16_confidence_calibration', 'class': 'ConfidenceCalibrationStep', 'priority': 16}, 'step17_parameter_optimization': {'module': 'src.training.steps.optimisation.step17_final_parameters_optimization', 'class': 'ParameterOptimizationStep', 'priority': 17}, 'step18_walk_forward_validation': {'module': 'src.training.steps.model_training.validation.step18_walk_forward_validation', 'class': 'WalkForwardValidationStep', 'priority': 18}, 'step19_monte_carlo_validation': {'module': 'src.training.steps.model_training.validation.step19_monte_carlo_validation', 'class': 'MonteCarloValidationStep', 'priority': 19}, 'step20_ab_testing': {'module': 'src.training.steps.model_training.validation.step20_ab_testing', 'class': 'ABTestingStep', 'priority': 20}, 'step21_model_persistence': {'module': 'src.training.steps.backtesting.step21_saving', 'class': 'ModelPersistenceStep', 'priority': 21}}
-        sorted_steps = sorted(steps_config.items(), key=lambda x: x[1]['priority'])
+        sorted_steps = sorted(steps_config.items(), key = lambda x: x[1]['priority'])
         for step_name, config in sorted_steps:
             try:
                 self.logger.info(f'🔧 Initializing {step_name}...')
@@ -118,7 +119,7 @@ class StepValidationInitializer:
             if 'timestamp' in fixed_data.columns:
                 if not fixed_data['timestamp'].is_monotonic_increasing:
                     self.logger.info('📈 Sorting data by timestamp')
-                    fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                    fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
             try:
                 fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
                 self.logger.info('✅ Applied schema enforcement')

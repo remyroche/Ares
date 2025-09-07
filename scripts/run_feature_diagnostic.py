@@ -24,7 +24,7 @@ import pandas as pd
 import logging
 
 # Analysis thresholds
-HIGH_CORR_THRESHOLD=0.95
+HIGH_CORR_THRESHOLD = 0.95
 LOW_VAR_THRESHOLD = 1e-6
 MIN_FEATURES_FOR_CORR = 2
 HIGH_NAN_PERCENT = 10
@@ -34,7 +34,7 @@ class FeatureDiagnosticRunner:
     """Runs comprehensive feature diagnostics on actual data."""
 
     def __init__(self) -> None:
-        self.logger=system_logger.getChild("FeatureDiagnosticRunner")
+        self.logger = system_logger.getChild("FeatureDiagnosticRunner")
 
     def analyze_feature_issues(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze feature issues based on the logs."""
@@ -115,9 +115,9 @@ class FeatureDiagnosticRunner:
         # Block-specific analysis
         for block_name, features in feature_blocks.items():
             results["block_analyses"][block_name] = self._analyze_block(
-                data=data,
-                features=features,
-                block_name=block_name,
+                data = data,
+                features = features,
+                block_name = block_name,
             )
 
         # Correlation analysis
@@ -136,7 +136,7 @@ class FeatureDiagnosticRunner:
 
     def _analyze_overall_data(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze overall data characteristics."""
-        numeric=data.select_dtypes(include=[np.number])
+        numeric = data.select_dtypes(include=[np.number])
         return {
             "shape": data.shape,
             "total_features": len(data.columns),
@@ -164,15 +164,15 @@ class FeatureDiagnosticRunner:
                 "missing_features": missing_features,
             }
 
-        block_data=data[available_features]
+        block_data = data[available_features]
 
         # Analyze correlations
         corr_matrix = block_data.corr()
         high_corr_pairs: list[dict[str, Any]] = []
-        columns=list(corr_matrix.columns)
+        columns = list(corr_matrix.columns)
         for i in range(len(columns)):
             for j in range(i + 1, len(columns)):
-                corr_val=float(corr_matrix.iloc[i, j])
+                corr_val = float(corr_matrix.iloc[i, j])
                 if not np.isnan(corr_val) and abs(corr_val) > HIGH_CORR_THRESHOLD:
                     high_corr_pairs.append(
                         {
@@ -183,13 +183,13 @@ class FeatureDiagnosticRunner:
                     )
 
         # Analyze variance
-        variances=block_data.var(numeric_only=True)
-        zero_var_features=variances[variances == 0].index.tolist()
-        low_var_features=variances[variances < LOW_VAR_THRESHOLD].index.tolist()
+        variances = block_data.var(numeric_only = True)
+        zero_var_features = variances[variances == 0].index.tolist()
+        low_var_features = variances[variances < LOW_VAR_THRESHOLD].index.tolist()
 
         # Analyze NaN
-        nan_counts=block_data.isna().sum()
-        nan_features=nan_counts[nan_counts > 0].index.tolist()
+        nan_counts = block_data.isna().sum()
+        nan_features = nan_counts[nan_counts > 0].index.tolist()
 
         return {
             "available_features": available_features,
@@ -216,15 +216,15 @@ class FeatureDiagnosticRunner:
         if len(all_features) < MIN_FEATURES_FOR_CORR:
             return {"error": "Not enough features for correlation analysis"}
 
-        corr_data=data[all_features]
+        corr_data = data[all_features]
         corr_matrix = corr_data.corr()
 
         # Find all high correlations
         high_corr_pairs: list[dict[str, Any]] = []
-        columns=list(corr_matrix.columns)
+        columns = list(corr_matrix.columns)
         for i in range(len(columns)):
             for j in range(i + 1, len(columns)):
-                corr_val=float(corr_matrix.iloc[i, j])
+                corr_val = float(corr_matrix.iloc[i, j])
                 if not np.isnan(corr_val) and abs(corr_val) > HIGH_CORR_THRESHOLD:
                     high_corr_pairs.append(
                         {
@@ -234,11 +234,11 @@ class FeatureDiagnosticRunner:
                         },
                     )
 
-        vals=corr_matrix.values
-        iu = np.triu_indices_from(vals, k=1)
-        upper_vals=vals[iu]
+        vals = corr_matrix.values
+        iu = np.triu_indices_from(vals, k = 1)
+        upper_vals = vals[iu]
         mean_corr = float(np.nanmean(upper_vals)) if upper_vals.size else float("nan")
-        max_corr=float(np.nanmax(upper_vals)) if upper_vals.size else float("nan")
+        max_corr = float(np.nanmax(upper_vals)) if upper_vals.size else float("nan")
 
         return {
             "total_high_corr_pairs": len(high_corr_pairs),
@@ -260,15 +260,15 @@ class FeatureDiagnosticRunner:
         if not all_features:
             return {"error": "No features found for variance analysis"}
 
-        var_data=data[all_features]
-        variances = var_data.var(numeric_only=True)
+        var_data = data[all_features]
+        variances = var_data.var(numeric_only = True)
 
         # Test different variance thresholds
         thresholds=[1e-8, 1e-6, 1e-4, 1e-2, 1e-1]
         threshold_analysis: dict[float, dict[str, Any]] = {}
 
         for threshold in thresholds:
-            low_var_features=variances[variances < threshold].index.tolist()
+            low_var_features = variances[variances < threshold].index.tolist()
             threshold_analysis[threshold] = {
                 "features_removed": len(low_var_features),
                 "percentage_removed": (
@@ -295,9 +295,9 @@ class FeatureDiagnosticRunner:
 
     def _analyze_nan_issues(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze NaN issues in the data."""
-        nan_counts=data.isna().sum()
+        nan_counts = data.isna().sum()
         nan_percentages=(nan_counts / max(len(data), 1)) * 100
-        nan_features=nan_counts[nan_counts > 0]
+        nan_features = nan_counts[nan_counts > 0]
 
         return {
             "total_nan_features": int((nan_counts > 0).sum()),
@@ -316,7 +316,7 @@ class FeatureDiagnosticRunner:
             "correlation_issues" in results
             and "total_high_corr_pairs" in results["correlation_issues"]
         ):
-            high_corr_count=results["correlation_issues"]["total_high_corr_pairs"]
+            high_corr_count = results["correlation_issues"]["total_high_corr_pairs"]
             if high_corr_count > 0:
                 recommendations.append(
                     f"Found {high_corr_count} feature pairs with correlation > {HIGH_CORR_THRESHOLD}",
@@ -333,7 +333,7 @@ class FeatureDiagnosticRunner:
             "variance_issues" in results
             and "threshold_analysis" in results["variance_issues"]
         ):
-            threshold_analysis=results["variance_issues"]["threshold_analysis"]
+            threshold_analysis = results["variance_issues"]["threshold_analysis"]
             if LOW_VAR_THRESHOLD in threshold_analysis:
                 pct_removed = threshold_analysis[LOW_VAR_THRESHOLD]["percentage_removed"]
                 if pct_removed > 50:
@@ -348,7 +348,7 @@ class FeatureDiagnosticRunner:
 
         # NaN recommendations
         if "nan_issues" in results and "total_nan_features" in results["nan_issues"]:
-            nan_count=results["nan_issues"]["total_nan_features"]
+            nan_count = results["nan_issues"]["total_nan_features"]
             if nan_count > 0:
                 recommendations.append(f"Found {nan_count} features with NaN values")
                 recommendations.append(
@@ -378,7 +378,7 @@ class FeatureDiagnosticRunner:
         report.append("")
 
         # Overall summary
-        overall=results["overall_analysis"]
+        overall = results["overall_analysis"]
         report.append("📊 OVERALL DATA SUMMARY:")
         report.append("-" * 40)
         report.append(f"Shape: {overall['shape']}")
@@ -433,7 +433,7 @@ class FeatureDiagnosticRunner:
             "correlation_issues" in results
             and "total_high_corr_pairs" in results["correlation_issues"]
         ):
-            corr_issues=results["correlation_issues"]
+            corr_issues = results["correlation_issues"]
             report.append("🔗 CORRELATION ANALYSIS:")
             report.append("-" * 40)
             report.append(
@@ -450,7 +450,7 @@ class FeatureDiagnosticRunner:
             "variance_issues" in results
             and "threshold_analysis" in results["variance_issues"]
         ):
-            var_issues=results["variance_issues"]
+            var_issues = results["variance_issues"]
             report.append("📈 VARIANCE ANALYSIS:")
             report.append("-" * 40)
             report.append(f"Total features analyzed: {var_issues['total_features']}")
@@ -480,7 +480,7 @@ class FeatureDiagnosticRunner:
 
         # NaN analysis
         if "nan_issues" in results and "total_nan_features" in results["nan_issues"]:
-            nan_issues=results["nan_issues"]
+            nan_issues = results["nan_issues"]
             report.append("❓ NaN ANALYSIS:")
             report.append("-" * 40)
             report.append(f"Features with NaN: {nan_issues['total_nan_features']}")
@@ -503,7 +503,7 @@ class FeatureDiagnosticRunner:
 
 def main() -> None:
     """Main diagnostic function."""
-    runner=FeatureDiagnosticRunner()
+    runner = FeatureDiagnosticRunner()
 
     try:
         # Try to find feature data
@@ -514,10 +514,10 @@ def main() -> None:
             "data/features_15m.csv",
         ]
 
-        data_path: str | None=None
+        data_path: str | None = None
         for path in possible_paths:
             if Path(path).exists():
-                data_path=path
+                data_path = path
                 break
 
         if data_path is None:
@@ -700,7 +700,7 @@ def main() -> None:
                 "recommendations": [],
             }
 
-            results=sample_analysis
+            results = sample_analysis
             # Use public API for recommendations generation
             results["recommendations"] = FeatureDiagnosticRunner()._generate_recommendations(  # noqa: SLF001
                 results,
@@ -715,14 +715,14 @@ def main() -> None:
             print(f"✅ Loaded data with shape: {data.shape}")
 
             # Run analysis
-            results=runner.analyze_feature_issues(data)
+            results = runner.analyze_feature_issues(data)
 
         # Generate report
-        report=runner.generate_report(results)
+        report = runner.generate_report(results)
         print(report)
 
         # Save report
-        report_path=Path("feature_diagnostic_report.txt")
+        report_path = Path("feature_diagnostic_report.txt")
         with report_path.open("w", encoding="utf-8") as f:
             f.write(report)
         print("📄 Report saved to: feature_diagnostic_report.txt")

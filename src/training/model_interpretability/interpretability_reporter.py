@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from ..core.decorators import handles_errors
 """Interpretability Reporter for Model Analysis.
 
 This module provides comprehensive reporting capabilities for model interpretability results
@@ -7,13 +9,12 @@ including SHAP and LIME analysis outputs.
 
 from pathlib import Path
 
-from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 class InterpretabilityReporter:
     """Reporter for model interpretability results."""
@@ -23,8 +24,8 @@ class InterpretabilityReporter:
         self.config = config
         self.logger = system_logger.getChild("InterpretabilityReporter")
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     async def generate_report(
@@ -42,6 +43,11 @@ class InterpretabilityReporter:
         try:
             # Use report manager for standardized report organization
             from .utils.report_manager import get_report_manager
+            import json
+            import logging
+            import time
+            import typing
+
             report_manager = get_report_manager()
             
             # Generate different report formats using report manager
@@ -49,10 +55,10 @@ class InterpretabilityReporter:
             
             # 1. Human-readable TXT Report
             txt_report_path = report_manager.save_ml_interpretability_report(
-                model_type=model_type,
-                symbol=symbol,
-                exchange=exchange,
-                report_data=results,
+                model_type = model_type,
+                symbol = symbol,
+                exchange = exchange,
+                report_data = results,
                 file_extension="txt"
             )
             reports_created.append(str(txt_report_path))
@@ -97,7 +103,7 @@ class InterpretabilityReporter:
             print(f"❌ Failed to generate interpretability report: {e}")
             return None
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_json_report(
@@ -125,7 +131,7 @@ class InterpretabilityReporter:
             
             # Save JSON report
             json_path = f"{output_dir}/interpretability_report.json"
-            safe_json_dump(json_report, json_path, indent=2)
+            safe_json_dump(json_report, json_path, indent = 2)
             
             print(f"✅ JSON report saved: {json_path}")
             self.logger.info(f"✅ JSON report saved: {json_path}")
@@ -137,7 +143,7 @@ class InterpretabilityReporter:
             print(f"❌ Failed to generate JSON report: {e}")
             return None
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_markdown_report(
@@ -199,7 +205,7 @@ class InterpretabilityReporter:
                 if shap_importance:
                     markdown_content.append("### SHAP Feature Importance (Top 5)")
                     markdown_content.append("")
-                    sorted_shap = sorted(shap_importance.items(), key=lambda x: x[1], reverse=True)
+                    sorted_shap = sorted(shap_importance.items(), key = lambda x: x[1], reverse = True)
                     for i, (feature, score) in enumerate(sorted_shap[:5], 1):
                         markdown_content.append(f"{i}. **{feature}** - SHAP Score: {score:.4f}")
                     markdown_content.append("")
@@ -224,7 +230,7 @@ class InterpretabilityReporter:
                 if lime_importance:
                     markdown_content.append("### LIME Feature Importance (Top 5)")
                     markdown_content.append("")
-                    sorted_lime = sorted(lime_importance.items(), key=lambda x: x[1].get("importance_score", 0), reverse=True)
+                    sorted_lime = sorted(lime_importance.items(), key = lambda x: x[1].get("importance_score", 0), reverse = True)
                     for i, (feature, data) in enumerate(sorted_lime[:5], 1):
                         score = data.get("importance_score", 0)
                         markdown_content.append(f"{i}. **{feature}** - LIME Score: {score:.4f}")
@@ -306,7 +312,7 @@ class InterpretabilityReporter:
             print(f"❌ Failed to generate Markdown report: {e}")
             return None
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_html_report(
@@ -332,7 +338,7 @@ class InterpretabilityReporter:
             html_content.append("<html lang='en'>")
             html_content.append("<head>")
             html_content.append("    <meta charset='UTF-8'>")
-            html_content.append("    <meta name='viewport' content='width=device-width, initial-scale=1.0'>")
+            html_content.append("    <meta name='viewport' content='width = device-width, initial-scale = 1.0'>")
             html_content.append("    <title>Model Interpretability Report</title>")
             html_content.append("    <style>")
             html_content.append("        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }")
@@ -392,7 +398,7 @@ class InterpretabilityReporter:
                     html_content.append("<div class='feature-list'>")
                     html_content.append("<table>")
                     html_content.append("<tr><th>Rank</th><th>Feature</th><th>SHAP Score</th></tr>")
-                    sorted_shap = sorted(shap_importance.items(), key=lambda x: x[1], reverse=True)
+                    sorted_shap = sorted(shap_importance.items(), key = lambda x: x[1], reverse = True)
                     for i, (feature, score) in enumerate(sorted_shap[:5], 1):
                         html_content.append(f"<tr><td>{i}</td><td><strong>{feature}</strong></td><td>{score:.4f}</td></tr>")
                     html_content.append("</table>")
@@ -409,7 +415,7 @@ class InterpretabilityReporter:
                     html_content.append("<div class='feature-list'>")
                     html_content.append("<table>")
                     html_content.append("<tr><th>Rank</th><th>Feature</th><th>LIME Score</th></tr>")
-                    sorted_lime = sorted(lime_importance.items(), key=lambda x: x[1].get("importance_score", 0), reverse=True)
+                    sorted_lime = sorted(lime_importance.items(), key = lambda x: x[1].get("importance_score", 0), reverse = True)
                     for i, (feature, data) in enumerate(sorted_lime[:5], 1):
                         score = data.get("importance_score", 0)
                         html_content.append(f"<tr><td>{i}</td><td><strong>{feature}</strong></td><td>{score:.4f}</td></tr>")
@@ -466,7 +472,7 @@ class InterpretabilityReporter:
             print(f"❌ Failed to generate HTML report: {e}")
             return None
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_summary_report(
@@ -511,7 +517,7 @@ class InterpretabilityReporter:
             
             # Save summary report
             summary_path = f"{output_dir}/interpretability_summary.json"
-            safe_json_dump(summary, summary_path, indent=2)
+            safe_json_dump(summary, summary_path, indent = 2)
             
             print(f"✅ Summary report saved: {summary_path}")
             self.logger.info(f"✅ Summary report saved: {summary_path}")

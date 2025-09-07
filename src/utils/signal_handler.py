@@ -1,11 +1,12 @@
 
-from typing import Any
-from src.utils.error_handler import handles_errors
+from typing import Any, Callable
+from .logger import system_logger
+from src.core.decorators import handles_errors
 '\nSignal handling utilities for graceful shutdown.\n\nThis module provides centralized signal handling for graceful shutdown\nof the application, including both synchronous and asynchronous cleanup.\n'
 import asyncio
 import signal
-from .utils.logger import system_logger
-from .utils.warning_symbols import error, failed, initialization_error, invalid, missing, warning
+from .logger import system_logger
+from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing, warning
 import logging
 
 class SignalHandler:
@@ -59,7 +60,7 @@ class SignalHandler:
             self.print_message(failed('❌ Signal Handler initialization failed: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_signal_configuration(self) -> None:
         """Load signal configuration."""
         try:
@@ -74,7 +75,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error loading signal configuration: {e}'))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """
         Validate signal configuration.
@@ -92,7 +93,7 @@ class SignalHandler:
             self.print_message(error('Error validating configuration: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _register_signal_handlers(self) -> None:
         """Register signal handlers."""
         try:
@@ -109,7 +110,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error registering signal handlers: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _register_handler(self, sig: int, handler: Callable) -> None:
         """
         Register a signal handler.
@@ -125,7 +126,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error registering signal handler for {sig}: {e}'))
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return=None, context='SIGTERM handling')
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return = None, context='SIGTERM handling')
     def _handle_sigterm(self, signum: int, frame: Any) -> None:
         """
         Handle SIGTERM signal.
@@ -140,7 +141,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error handling SIGTERM: {e}'))
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return=None, context='SIGINT handling')
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return = None, context='SIGINT handling')
     def _handle_sigint(self, signum: int, frame: Any) -> None:
         """
         Handle SIGINT signal.
@@ -155,7 +156,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error handling SIGINT: {e}'))
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return=None, context='SIGHUP handling')
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid signal handling'), AttributeError: (None, 'Missing signal components'), KeyError: (None, 'Missing required signal data')}, default_return = None, context='SIGHUP handling')
     def _handle_sighup(self, signum: int, frame: Any) -> None:
         """
         Handle SIGHUP signal for configuration reload.
@@ -166,7 +167,7 @@ class SignalHandler:
         """
         try:
             self.logger.info('🔄 Received SIGHUP signal - reloading configuration')
-            from .config import CONFIG, load_configuration
+            from src.config import CONFIG, load_configuration
             self.logger.info('📋 Reloading configuration from config file...')
             new_config = load_configuration()
             if new_config:
@@ -187,7 +188,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error notifying configuration change: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _initiate_shutdown(self, reason: str) -> None:
         """
         Initiate graceful shutdown.
@@ -205,7 +206,7 @@ class SignalHandler:
         except Exception:
             self.print_message(initialization_error('Error initiating shutdown: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _run_shutdown_callbacks(self) -> None:
         """Run shutdown callbacks."""
         try:
@@ -226,7 +227,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error running shutdown callbacks: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def register_shutdown_callback(self, callback: Callable) -> None:
         """
         Register a shutdown callback.
@@ -243,7 +244,7 @@ class SignalHandler:
         except Exception:
             self.print_message(error('Error registering shutdown callback: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def unregister_shutdown_callback(self, callback: Callable) -> None:
         """
         Unregister a shutdown callback.
@@ -269,7 +270,7 @@ class SignalHandler:
         """
         return {'is_shutting_down': self.is_shutting_down, 'enable_signal_handling': self.enable_signal_handling, 'graceful_shutdown_timeout': self.graceful_shutdown_timeout, 'registered_handlers': list(self.registered_handlers.keys()), 'shutdown_callbacks_count': len(self.shutdown_callbacks)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the signal handler."""
         self.logger.info('🛑 Stopping Signal Handler...')
@@ -285,8 +286,8 @@ class SignalHandler:
             self.print_message(error('Error stopping signal handler: {e}'))
 signal_handler: SignalHandler | None = None
 
-@handles_errors(fallback=None)
-async def setup_signal_handler(config: dict[str, Any] | None=None) -> SignalHandler | None:
+@handles_errors(fallback = None)
+async def setup_signal_handler(config: dict[str, Any] | None = None) -> SignalHandler | None:
     """
     Setup signal handler with enhanced error handling.
 
@@ -315,7 +316,7 @@ class GracefulShutdown:
     Context manager for graceful shutdown handling.
     """
 
-    def __init__(self, signal_handler: SignalHandler | None=None) -> None:
+    def __init__(self, signal_handler: SignalHandler | None = None) -> None:
         self.signal_handler = signal_handler
         self.original_handlers = {}
 

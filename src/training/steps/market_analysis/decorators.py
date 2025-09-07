@@ -1,3 +1,4 @@
+from ....core.decorators import handles_errors
 """Decorator System for Step05 Labeling.
 
 This module provides a centralized decorator system with fallback mechanisms
@@ -11,7 +12,7 @@ import pandas as pd
 
 # Try to import centralized decorators
 try:
-    from src.utils.decorators import (
+    from ....utils.decorators import (
         handles_errors as _handles_errors,
         traced as _traced,
         validates as _validates,
@@ -24,7 +25,7 @@ except ImportError:
 
 # Try to import enhanced MLflow integration
 try:
-    from .utils.mlflow_integration import (
+    from ....utils.enhanced_mlflow_integration import (
         with_enhanced_mlflow_logging as _with_enhanced_mlflow_logging,
         log_step_report as _log_step_report,
         create_detailed_step_report as _create_detailed_step_report,
@@ -39,7 +40,7 @@ except ImportError:
 
 def create_fallback_logger() -> logging.Logger:
     """Create a fallback logger."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 

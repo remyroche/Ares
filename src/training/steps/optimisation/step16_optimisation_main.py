@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 16: Enhanced Optimization Pipeline.
 
 This module provides the main interface for optimization with comprehensive validation,
@@ -26,10 +30,8 @@ from .utils.datetime_utils import (
     ensure_directory, safe_json_dump, safe_json_load
 )
 from .utils.data_quality_framework import DataQualityFramework
-from .utils.logger import system_logger
-from .core.decorators import handles_errors, validates, traced, log_execution_time
+from src.utils.logger import system_logger
 from .training.steps.optimisation import run_optimisation_pipeline
-from .core.decorators.errors import handles_errors
 import json
 import logging
 
@@ -38,6 +40,7 @@ logger = system_logger.getChild('OptimisationMain')
 
 class OptimisationPipelineValidator:
     """Comprehensive validator for optimisation pipeline."""
+    @log_important_calls
     
     def __init__(self):
         self.dq_framework = DataQualityFramework()
@@ -60,7 +63,7 @@ class OptimisationPipelineValidator:
             return False
         
         # Validate timeframe
-        valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        valid_timeframes = ['1m', '5m', '15m', '30m', '1h']
         if timeframe not in valid_timeframes:
             self.logger.error(f"❌ Invalid timeframe: {timeframe}. Valid: {valid_timeframes}")
             return False
@@ -120,7 +123,7 @@ class OptimisationPipelineValidator:
         self.logger.info("✅ Previous step outputs validation completed")
         return True
 
-@handles_errors(fallback=False, context="optimisation_pipeline_execution")
+@handles_errors(fallback = False, context="optimisation_pipeline_execution")
 @traced(span_name="run_enhanced_optimisation_pipeline")
 @log_execution_time("optimisation_pipeline")
 async def run_enhanced_optimisation_pipeline(
@@ -145,7 +148,7 @@ async def run_enhanced_optimisation_pipeline(
         validator.validate_input_parameters(symbol, exchange, timeframe, data_dir),
         validator.validate_data_availability(symbol, exchange, data_dir),
         validator.validate_previous_step_outputs(symbol, exchange),
-        return_exceptions=True
+        return_exceptions = True
     )
     
     # Check validation results
@@ -179,10 +182,10 @@ async def run_enhanced_optimisation_pipeline(
     try:
         # Run the optimisation pipeline with enhanced configuration
         success = await run_optimisation_pipeline(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            data_dir=data_dir,
+            symbol = symbol,
+            exchange = exchange,
+            timeframe = timeframe,
+            data_dir = data_dir,
             **enhanced_config
         )
         
@@ -203,9 +206,9 @@ async def main():
     parser.add_argument("--data-dir", default="data_cache", help="Data directory")
     parser.add_argument("--enhanced-mode", action="store_true", help="Enable enhanced mode")
     parser.add_argument("--force-rerun", action="store_true", help="Force rerun")
-    parser.add_argument("--confidence-calibration", action="store_true", default=True, help="Enable confidence calibration")
-    parser.add_argument("--parameter-optimization", action="store_true", default=True, help="Enable parameter optimization")
-    parser.add_argument("--random-state", type=int, default=42, help="Random state")
+    parser.add_argument("--confidence-calibration", action="store_true", default = True, help="Enable confidence calibration")
+    parser.add_argument("--parameter-optimization", action="store_true", default = True, help="Enable parameter optimization")
+    parser.add_argument("--random-state", type = int, default = 42, help="Random state")
     
     args = parser.parse_args()
     
@@ -237,11 +240,11 @@ async def main():
     
     try:
         success = await run_enhanced_optimisation_pipeline(
-            symbol=args.symbol,
-            exchange=args.exchange,
-            timeframe=args.timeframe,
-            data_dir=args.data_dir,
-            enhanced_mode=enhanced_mode,
+            symbol = args.symbol,
+            exchange = args.exchange,
+            timeframe = args.timeframe,
+            data_dir = args.data_dir,
+            enhanced_mode = enhanced_mode,
             **config
         )
         
@@ -274,7 +277,7 @@ async def main():
                 'timestamp': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')
             }
             
-            safe_json_dump(config_data, config_file, indent=2)
+            safe_json_dump(config_data, config_file, indent = 2)
             print(f"💾 Enhanced configuration saved to: {config_file}")
             
         else:

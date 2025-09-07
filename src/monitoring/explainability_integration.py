@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Explainability Integration for Enhanced ML Monitoring
 
@@ -12,7 +14,7 @@ import time
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 
 from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
 from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
@@ -106,7 +108,7 @@ class ExplainabilityIntegrator:
             self.shap_analyzer = None
             self.lime_analyzer = None
     
-    @handles_errors(default_return=None, context="explainability_integrator.explain_model_prediction")
+    @handles_errors(default_return = None, context="explainability_integrator.explain_model_prediction")
     async def explain_model_prediction(self, model_id: str, model: Any, 
                                     features: np.ndarray, feature_names: List[str],
                                     prediction: float) -> ModelExplanation:
@@ -160,13 +162,13 @@ class ExplainabilityIntegrator:
             
             # Create model explanation
             model_explanation = ModelExplanation(
-                model_id=model_id,
-                prediction=prediction,
-                base_value=0.0,  # Will be updated if SHAP provides it
-                feature_explanations=feature_explanations[:self.max_features_explained],
-                shap_values=shap_values,
-                lime_explanation=lime_explanation,
-                explanation_confidence=explanation_confidence,
+                model_id = model_id,
+                prediction = prediction,
+                base_value = 0.0,  # Will be updated if SHAP provides it
+                feature_explanations = feature_explanations[:self.max_features_explained],
+                shap_values = shap_values,
+                lime_explanation = lime_explanation,
+                explanation_confidence = explanation_confidence,
                 processing_time_ms=(time.time() - start_time) * 1000
             )
             
@@ -186,11 +188,11 @@ class ExplainabilityIntegrator:
             self.logger.error(f"Error generating explanation for {model_id}: {e}")
             # Return minimal explanation
             return ModelExplanation(
-                model_id=model_id,
-                prediction=prediction,
-                base_value=0.0,
+                model_id = model_id,
+                prediction = prediction,
+                base_value = 0.0,
                 feature_explanations=[],
-                explanation_confidence=0.0,
+                explanation_confidence = 0.0,
                 processing_time_ms=(time.time() - start_time) * 1000
             )
     
@@ -224,12 +226,12 @@ class ExplainabilityIntegrator:
                 for i, (name, value) in enumerate(zip(names, values)):
                     if i < len(features_reshaped[0]):
                         feature_explanations.append(FeatureExplanation(
-                            feature_name=name,
-                            feature_value=float(features_reshaped[0][i]),
-                            importance_score=abs(float(value)),
-                            contribution=float(value),
+                            feature_name = name,
+                            feature_value = float(features_reshaped[0][i]),
+                            importance_score = abs(float(value)),
+                            contribution = float(value),
                             explanation_type="shap",
-                            confidence=0.8  # SHAP confidence
+                            confidence = 0.8  # SHAP confidence
                         ))
             
             return {
@@ -280,12 +282,12 @@ class ExplainabilityIntegrator:
                                 feature_value = float(features_reshaped[0][idx])
                         
                         feature_explanations.append(FeatureExplanation(
-                            feature_name=feature_name,
-                            feature_value=feature_value,
-                            importance_score=abs(importance),
-                            contribution=importance,
+                            feature_name = feature_name,
+                            feature_value = feature_value,
+                            importance_score = abs(importance),
+                            contribution = importance,
                             explanation_type="lime",
-                            confidence=0.7  # LIME confidence
+                            confidence = 0.7  # LIME confidence
                         ))
             
             return {
@@ -312,8 +314,8 @@ class ExplainabilityIntegrator:
                 # Average the importance scores
                 existing = merged[exp.feature_name]
                 merged[exp.feature_name] = FeatureExplanation(
-                    feature_name=exp.feature_name,
-                    feature_value=exp.feature_value,
+                    feature_name = exp.feature_name,
+                    feature_value = exp.feature_value,
                     importance_score=(existing.importance_score + exp.importance_score) / 2,
                     contribution=(existing.contribution + exp.contribution) / 2,
                     explanation_type="combined",
@@ -325,8 +327,8 @@ class ExplainabilityIntegrator:
         # Sort by importance and return
         sorted_explanations = sorted(
             merged.values(), 
-            key=lambda x: x.importance_score, 
-            reverse=True
+            key = lambda x: x.importance_score, 
+            reverse = True
         )
         
         return sorted_explanations
@@ -377,7 +379,7 @@ class ExplainabilityIntegrator:
             for key in oldest_keys:
                 del self.explanation_cache[key]
     
-    @handles_errors(default_return=None, context="explainability_integrator.explain_ensemble_prediction")
+    @handles_errors(default_return = None, context="explainability_integrator.explain_ensemble_prediction")
     async def explain_ensemble_prediction(self, ensemble_id: str, 
                                         model_explanations: List[ModelExplanation],
                                         final_prediction: float) -> EnsembleExplanation:
@@ -422,12 +424,12 @@ class ExplainabilityIntegrator:
             )
             
             ensemble_explanation = EnsembleExplanation(
-                ensemble_id=ensemble_id,
-                final_prediction=final_prediction,
-                model_explanations=model_explanations,
-                consensus_features=consensus_features,
-                disagreement_features=disagreement_features,
-                explanation_quality_score=explanation_quality
+                ensemble_id = ensemble_id,
+                final_prediction = final_prediction,
+                model_explanations = model_explanations,
+                consensus_features = consensus_features,
+                disagreement_features = disagreement_features,
+                explanation_quality_score = explanation_quality
             )
             
             self.logger.debug(
@@ -442,12 +444,12 @@ class ExplainabilityIntegrator:
         except Exception as e:
             self.logger.error(f"Error generating ensemble explanation: {e}")
             return EnsembleExplanation(
-                ensemble_id=ensemble_id,
-                final_prediction=final_prediction,
-                model_explanations=model_explanations,
+                ensemble_id = ensemble_id,
+                final_prediction = final_prediction,
+                model_explanations = model_explanations,
                 consensus_features=[],
                 disagreement_features=[],
-                explanation_quality_score=0.0
+                explanation_quality_score = 0.0
             )
     
     def _calculate_ensemble_explanation_quality(self, model_explanations: List[ModelExplanation],

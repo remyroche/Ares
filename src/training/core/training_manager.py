@@ -5,18 +5,9 @@ This module provides the main training manager that coordinates
 the training pipeline execution.
 """
 from typing import Any, Dict, Optional
-try:
-    from .core.decorators import handles_errors
-except Exception:
-
-    def handles_errors(*args, **kwargs) -> None:
-
-        def _decorator(fn: Any) -> None:
-            return fn
-        return _decorator
 from ..simplified_training_manager import SimplifiedTrainingManager
-from ...utils.logger import system_logger
-from ...core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
+from src.core.decorators.errors import handles_errors
 import logging
 
 class TrainingManager:
@@ -38,7 +29,7 @@ class TrainingManager:
         self.is_initialized = False
         self.current_execution = None
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def initialize(self) -> bool:
         """Initialize the training manager.
         
@@ -57,7 +48,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Initialization failed: {e}')
             return False
 
-    async def train(self, symbol: str, exchange: str, start_step: Optional[str]=None, end_step: Optional[str]=None, force_rerun: bool=False) -> Dict[str, Any]:
+    async def train(self, symbol: str, exchange: str, start_step: Optional[str]=None, end_step: Optional[str]=None, force_rerun: bool = False) -> Dict[str, Any]:
         """Execute the training pipeline.
         
         Args:
@@ -75,7 +66,7 @@ class TrainingManager:
         self.logger.info(f'🚀 Starting training for {symbol} on {exchange}')
         self.pipeline_manager.symbol = symbol
         self.pipeline_manager.exchange = exchange
-        result = await self.pipeline_manager.execute_pipeline(start_step=start_step, end_step=end_step, force_rerun=force_rerun)
+        result = await self.pipeline_manager.execute_pipeline(start_step = start_step, end_step = end_step, force_rerun = force_rerun)
         if result['success']:
             self.logger.info('✅ Training completed successfully')
         else:

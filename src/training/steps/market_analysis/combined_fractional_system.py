@@ -1,10 +1,12 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 # src/training/steps/combined_fractional_system.py
 
 """Combined Fractional System: Integration of fractional labeling and fractional differentiation.
 Designed to work with existing HMM regime system without redundant regime tuning.
 """
 
-from .core.decorators import handles_errors
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -29,6 +31,7 @@ import logging
 
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
+    @log_important_calls
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize HMM integration component."
@@ -177,7 +180,7 @@ class HMMFractionalIntegration:
                     continue
                 
                 # Calculate rolling variance stability
-                rolling_var = feature_series.rolling(window=min(50, len(feature_series)//4), min_periods=10).var()
+                rolling_var = feature_series.rolling(window = min(50, len(feature_series)//4), min_periods = 10).var()
                 
                 if rolling_var.mean() > 0:
                     var_consistency = 1.0 - (rolling_var.std() / rolling_var.mean())
@@ -209,6 +212,7 @@ class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation."
     
     Designed to work with existing HMM regime system without redundant regime tuning.
+    @log_important_calls
     """
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize combined fractional system."
@@ -220,15 +224,15 @@ class CombinedFractionalSystem:
         
         # Initialize components
         self.fractional_labeler = FractionalTripleBarrierLabeling(
-            fractional_config=self.config.get('labeling', {})
+            fractional_config = self.config.get('labeling', {})
         )
         
         self.fractional_feature_generator = FractionalFeatureGenerator(
-            config=self.config.get('differentiation', {})
+            config = self.config.get('differentiation', {})
         )
         
         self.hmm_integration = HMMFractionalIntegration(
-            config=self.config.get('hmm_integration', {})
+            config = self.config.get('hmm_integration', {})
         )
         
         # Performance tracking
@@ -267,7 +271,7 @@ class CombinedFractionalSystem:
             # 2. Apply fractional labeling
             self.logger.info("🏷️ Applying fractional labeling...")
             labels = self.fractional_labeler.apply_fractional_triple_barrier_labeling(
-                price_data, regime_labels=hmm_regime
+                price_data, regime_labels = hmm_regime
             )
             
             # 3. Enhance features with HMM regime information
@@ -301,6 +305,7 @@ class CombinedFractionalSystem:
         except Exception as e:
             self.logger.error(f"❌ Combined processing failed: {e}")
             raise
+    @log_all_calls
     
     def _calculate_performance_metrics(
         self, 
@@ -434,19 +439,21 @@ class CombinedFractionalSystem:
         except Exception as e:
             self.logger.warning(f"Error generating performance summary: {e}")
             return {'error': str(e)}
+    @log_all_calls
     
     def _setup_output_directory(self, output_dir: str) -> Path:
         """Setup and return the output directory path."""
         output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_path.mkdir(parents = True, exist_ok = True)
         return output_path
+    @log_all_calls
 
     def _export_json_file(self, data: dict, file_path: Path) -> bool:
         """Export data to a JSON file."""
         try:
             import json
             with open(file_path, 'w') as f:
-                json.dump(data, f, indent=2, default=str)
+                json.dump(data, f, indent = 2, default = str)
             return True
         except Exception as e:
             self.logger.error(f"Failed to export JSON file {file_path}: {e}")

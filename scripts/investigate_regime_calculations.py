@@ -31,7 +31,7 @@ class RegimeCalculationInvestigator:
     """Investigates regime calculation issues causing zero variance."""
 
     def __init__(self) -> None:
-        self.logger=system_logger.getChild("RegimeCalculationInvestigator")
+        self.logger = system_logger.getChild("RegimeCalculationInvestigator")
 
     def investigate_regime_calculations(self, data: pd.DataFrame) -> dict[str, Any]:
         """Investigate regime calculation issues."""
@@ -66,15 +66,15 @@ class RegimeCalculationInvestigator:
 
     def _analyze_regime_feature(self, series: pd.Series, feature_name: str) -> dict[str, Any]:
         """Analyze a specific regime feature."""
-        series=pd.to_numeric(series, errors="coerce")
+        series = pd.to_numeric(series, errors="coerce")
         analysis: dict[str, Any] = {
             "feature_name": feature_name,
             "total_values": int(len(series)),
-            "unique_values": int(series.nunique(dropna=True)),
-            "value_counts": {int(k): int(v) for k, v in series.value_counts(dropna=False).to_dict().items()},
+            "unique_values": int(series.nunique(dropna = True)),
+            "value_counts": {int(k): int(v) for k, v in series.value_counts(dropna = False).to_dict().items()},
             "nan_count": int(series.isna().sum()),
-            "zero_count": int((series== 0).sum(skipna=True)),
-            "variance": float(series.var(skipna=True)) if len(series) > 0 else 0.0,
+            "zero_count": int((series== 0).sum(skipna = True)),
+            "variance": float(series.var(skipna = True)) if len(series) > 0 else 0.0,
             "issues": [],
         }
 
@@ -115,7 +115,7 @@ class RegimeCalculationInvestigator:
 
         # Trend
         if "trend_regime" in data.columns:
-            trend_analysis=self._analyze_trend_calculation(data)
+            trend_analysis = self._analyze_trend_calculation(data)
             if trend_analysis["issues"]:
                 issues.append(
                     {
@@ -127,7 +127,7 @@ class RegimeCalculationInvestigator:
 
         # Volatility
         if "volatility_regime" in data.columns:
-            vol_analysis=self._analyze_volatility_calculation(data)
+            vol_analysis = self._analyze_volatility_calculation(data)
             if vol_analysis["issues"]:
                 issues.append(
                     {
@@ -139,7 +139,7 @@ class RegimeCalculationInvestigator:
 
         # Volume
         if "volume_regime" in data.columns:
-            volume_analysis=self._analyze_volume_calculation(data)
+            volume_analysis = self._analyze_volume_calculation(data)
             if volume_analysis["issues"]:
                 issues.append(
                     {
@@ -159,11 +159,11 @@ class RegimeCalculationInvestigator:
             analysis["issues"].append("Missing 'close' column for trend calculation")
             return analysis
 
-        close=pd.to_numeric(data["close"], errors="coerce")
+        close = pd.to_numeric(data["close"], errors="coerce")
 
         # Simulate the trend calculation
-        sma_short=close.rolling(window=10, min_periods=10).mean()
-        sma_long=close.rolling(window=30, min_periods=30).mean()
+        sma_short = close.rolling(window = 10, min_periods = 10).mean()
+        sma_long = close.rolling(window = 30, min_periods = 30).mean()
         trend_strength=(sma_short - sma_long).fillna(0)
 
         # Checks
@@ -198,10 +198,10 @@ class RegimeCalculationInvestigator:
             )
             return analysis
 
-        close=pd.to_numeric(data["close"], errors="coerce")
+        close = pd.to_numeric(data["close"], errors="coerce")
 
         # Simulate the volatility calculation
-        vol=close.pct_change().rolling(window=20, min_periods=20).std().fillna(0)
+        vol = close.pct_change().rolling(window = 20, min_periods = 20).std().fillna(0)
 
         # Checks
         if vol.isna().all():
@@ -233,10 +233,10 @@ class RegimeCalculationInvestigator:
             analysis["issues"].append("Missing 'volume' column for volume calculation")
             return analysis
 
-        volume=pd.to_numeric(data["volume"], errors="coerce")
+        volume = pd.to_numeric(data["volume"], errors="coerce")
 
         # Simulate the volume calculation
-        vol_ma=volume.rolling(window=20, min_periods=20).mean()
+        vol_ma = volume.rolling(window = 20, min_periods = 20).mean()
         with np.errstate(divide="ignore", invalid="ignore"):
             volume_ratio=(volume / vol_ma.replace(0, np.nan)).fillna(0)
 
@@ -295,22 +295,22 @@ class RegimeCalculationInvestigator:
 
 def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate trend regime with improved logic."""
-    close=pd.to_numeric(price_data["close"], errors="coerce")
-    sma_short=close.rolling(window=10, min_periods=10).mean()
-    sma_long=close.rolling(window=30, min_periods=30).mean()
+    close = pd.to_numeric(price_data["close"], errors="coerce")
+    sma_short = close.rolling(window = 10, min_periods = 10).mean()
+    sma_long = close.rolling(window = 30, min_periods = 30).mean()
     trend_strength=(sma_short - sma_long).fillna(0)
 
     if trend_strength.isna().all() or float(trend_strength.std()) == 0.0:
-        return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
+        return pd.Series(np.zeros(len(close), dtype = int), index = price_data.index)
 
     try:
-        trend_bins=pd.qcut(trend_strength, q=5, labels=False, duplicates="drop")
+        trend_bins = pd.qcut(trend_strength, q = 5, labels = False, duplicates="drop")
         if int(pd.Series(trend_bins).nunique()) < 3:
-            trend_bins=pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
+            trend_bins = pd.cut(trend_strength, bins = 5, labels = False, include_lowest = True)
     except Exception:
-        trend_bins=pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
+        trend_bins = pd.cut(trend_strength, bins = 5, labels = False, include_lowest = True)
 
-    return pd.Series(pd.to_numeric(trend_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
+    return pd.Series(pd.to_numeric(trend_bins, errors="coerce").fillna(0).astype(int), index = price_data.index)
                 '''
             ).strip(),
             "volatility_regime": (
@@ -318,20 +318,20 @@ def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
 
 def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     """Calculate volatility regime with improved logic."""
-    close=pd.to_numeric(price_data["close"], errors="coerce")
-    vol=close.pct_change().rolling(window=20, min_periods=20).std().fillna(0)
+    close = pd.to_numeric(price_data["close"], errors="coerce")
+    vol = close.pct_change().rolling(window = 20, min_periods = 20).std().fillna(0)
 
     if vol.isna().all() or float(vol.std()) == 0.0:
-        return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
+        return pd.Series(np.zeros(len(close), dtype = int), index = price_data.index)
 
     try:
-        vol_bins=pd.qcut(vol, q=5, labels=False, duplicates="drop")
+        vol_bins = pd.qcut(vol, q = 5, labels = False, duplicates="drop")
         if int(pd.Series(vol_bins).nunique()) < 3:
-            vol_bins=pd.cut(vol, bins=5, labels=False, include_lowest=True)
+            vol_bins = pd.cut(vol, bins = 5, labels = False, include_lowest = True)
     except Exception:
-        vol_bins=pd.cut(vol, bins=5, labels=False, include_lowest=True)
+        vol_bins = pd.cut(vol, bins = 5, labels = False, include_lowest = True)
 
-    return pd.Series(pd.to_numeric(vol_bins, errors="coerce").fillna(0).astype(int), index=price_data.index)
+    return pd.Series(pd.to_numeric(vol_bins, errors="coerce").fillna(0).astype(int), index = price_data.index)
                 '''
             ).strip(),
             "volume_regime": (
@@ -339,22 +339,22 @@ def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
 
 def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
     """Calculate volume regime with improved logic."""
-    volume=pd.to_numeric(volume_data["volume"], errors="coerce")
-    vol_ma=volume.rolling(window=20, min_periods=20).mean()
+    volume = pd.to_numeric(volume_data["volume"], errors="coerce")
+    vol_ma = volume.rolling(window = 20, min_periods = 20).mean()
     with np.errstate(divide="ignore", invalid="ignore"):
         volume_ratio=(volume / vol_ma.replace(0, np.nan)).fillna(0)
 
     if volume_ratio.isna().all() or float(volume_ratio.std()) == 0.0:
-        return pd.Series(np.zeros(len(volume), dtype=int), index=volume_data.index)
+        return pd.Series(np.zeros(len(volume), dtype = int), index = volume_data.index)
 
     try:
-        volreg_bins=pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
+        volreg_bins = pd.qcut(volume_ratio, q = 5, labels = False, duplicates="drop")
         if int(pd.Series(volreg_bins).nunique()) < 3:
-            volreg_bins=pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
+            volreg_bins = pd.cut(volume_ratio, bins = 5, labels = False, include_lowest = True)
     except Exception:
-        volreg_bins=pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
+        volreg_bins = pd.cut(volume_ratio, bins = 5, labels = False, include_lowest = True)
 
-    return pd.Series(pd.to_numeric(volreg_bins, errors="coerce").fillna(0).astype(int), index=volume_data.index)
+    return pd.Series(pd.to_numeric(volreg_bins, errors="coerce").fillna(0).astype(int), index = volume_data.index)
                 '''
             ).strip(),
         }
@@ -388,19 +388,19 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
             for issue in results["calculation_issues"]:
                 report.append(f"- {issue['type']}: {issue['description']}")
                 if "details" in issue:
-                    details=issue["details"]
+                    details = issue["details"]
                     if "trend_strength_stats" in details:
                         stats = details["trend_strength_stats"]
                         report.append(
                             f"   - Trend strength: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
                     if "volatility_stats" in details:
-                        stats=details["volatility_stats"]
+                        stats = details["volatility_stats"]
                         report.append(
                             f"   - Volatility: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
                     if "volume_ratio_stats" in details:
-                        stats=details["volume_ratio_stats"]
+                        stats = details["volume_ratio_stats"]
                         report.append(
                             f"   - Volume ratio: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}",
                         )
@@ -417,7 +417,7 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         # Fixed code
         report.append("Fixed Calculation Code (reference):")
         report.append("-" * 40)
-        fixed_code=self.generate_fixed_regime_calculations()
+        fixed_code = self.generate_fixed_regime_calculations()
         for regime_type, code in fixed_code.items():
             report.append(f"# {regime_type.upper()} FIX:")
             report.append(code)
@@ -428,7 +428,7 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
 
 def main() -> None:
     """Main investigation function."""
-    investigator=RegimeCalculationInvestigator()
+    investigator = RegimeCalculationInvestigator()
 
     try:
         # Try to find feature data
@@ -439,10 +439,10 @@ def main() -> None:
             "data/features_15m.csv",
         ]
 
-        data_path: str | None=None
+        data_path: str | None = None
         for path in possible_paths:
             if Path(path).exists():
-                data_path=path
+                data_path = path
                 break
 
         if data_path is None:
@@ -450,7 +450,7 @@ def main() -> None:
 
             # Create sample data for demonstration
             np.random.seed(42)
-            n_samples=1000
+            n_samples = 1000
 
             # Simulate price data
             price_data = pd.DataFrame(
@@ -461,11 +461,11 @@ def main() -> None:
             )
 
             # Simulate regime features with issues
-            data=pd.DataFrame(
+            data = pd.DataFrame(
                 {
                     "trend_regime": np.zeros(n_samples),
-                    "volatility_regime": np.random.choice([0, 1], size=n_samples, p=[0.8, 0.2]),
-                    "volume_regime": np.random.choice([0, 1, 2], size=n_samples, p=[0.7, 0.2, 0.1]),
+                    "volatility_regime": np.random.choice([0, 1], size = n_samples, p=[0.8, 0.2]),
+                    "volume_regime": np.random.choice([0, 1, 2], size = n_samples, p=[0.7, 0.2, 0.1]),
                     "close": price_data["close"],
                     "volume": price_data["volume"],
                 },
@@ -481,10 +481,10 @@ def main() -> None:
             print(f"Loaded data with shape: {data.shape}")
 
         # Run investigation
-        results=investigator.investigate_regime_calculations(data)
+        results = investigator.investigate_regime_calculations(data)
 
         # Generate report
-        report=investigator.generate_report(results)
+        report = investigator.generate_report(results)
         print(report)
 
         # Save report

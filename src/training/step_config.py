@@ -25,10 +25,10 @@ class StepConfig:
     description: str
     module_path: str
     class_name: str
-    dependencies: List[str] = field(default_factory=list)
-    required_inputs: List[str] = field(default_factory=list)
-    produced_outputs: List[str] = field(default_factory=list)
-    required_files: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory = list)
+    required_inputs: List[str] = field(default_factory = list)
+    produced_outputs: List[str] = field(default_factory = list)
+    required_files: List[str] = field(default_factory = list)
     optional: bool = False
     enabled: bool = True
     
@@ -76,8 +76,8 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_files=[]
     ),
     
-    "2_5": StepConfig(
-        step_number="2_5",
+    "02_5": StepConfig(
+        step_number="02_5",
         step_name="sr_optimization",
         description="Optimize Support and Resistance levels",
         module_path="src.training.steps.data_collection.data_preparation.step02_5_sr_optimization",
@@ -94,7 +94,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         description="Identify market regimes using HMM",
         module_path="src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery",
         class_name="HMMRegimeDiscoveryStep",
-        dependencies=["2_5"],
+        dependencies=["02_5"],
         required_inputs=["sr_levels"],
         produced_outputs=["regime_labels", "regime_transitions"],
         required_files=["data/hmm_regimes/*_composite_clusters.parquet"]
@@ -166,8 +166,8 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         description="Train HMM-enhanced models",
         module_path="src.training.steps.model_training.step09_hmm_based_training",
         class_name="HmmBasedTrainingStep",
-        dependencies=["07", "05"],
-        required_inputs=["engineered_data"],
+        dependencies=["07", "08", "05"],
+        required_inputs=["engineered_data", "step08_advanced_feature_selection"],
         produced_outputs=["trained_models", "model_performance", "feature_importance", "best_models", "training_reports"],
         required_files=["data/training/*_hmm_models.pkl"]
     ),
@@ -302,7 +302,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_inputs=["optimized_models"],
         produced_outputs=["step20_ab_testing_results", "step20_ab_testing_summary"],
         required_files=["data/training/*_ab_test_results.json"],
-        optional=True
+        optional = True
     ),
     
     "21": StepConfig(
@@ -449,4 +449,5 @@ def validate_step_sequence() -> Dict[str, Any]:
         "valid": len(issues) == 0,
         "issues": issues,
         "total_steps": len(PIPELINE_STEPS),
+        "enabled_steps": len(PIPELINE_STEPS),  # All steps are enabled by default
     }

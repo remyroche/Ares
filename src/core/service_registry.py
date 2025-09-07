@@ -1,13 +1,13 @@
 '\nService registry for dependency injection container configuration.\n\nThis module provides centralized service registration for all trading components, ensuring proper dependency injection throughout the system.\n'
 from typing import Any
-from exchange.factory import ExchangeFactory
+from .exchange.factory import ExchangeFactory
 from .analyst.analyst import Analyst
 from .components.modular_analyst import ModularAnalyst
 from .components.modular_tactician import ModularTactician
 from .core.dependency_injection import DependencyContainer, ServiceLifetime
 from .interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
 from .supervisor.supervisor import Supervisor
-from .training.training_manager import TrainingManager
+from ..training.training_manager import TrainingManager
 from .utils.logger import system_logger
 import logging
 import time
@@ -31,25 +31,25 @@ class ServiceRegistry:
 
     def _register_core_services(self, config: dict[str, Any]) -> None:
         """Register core infrastructure services."""
-        self.container.register(IEventBus, EventBus, lifetime=ServiceLifetime.SINGLETON, config=config.get('event_bus', {}))
+        self.container.register(IEventBus, EventBus, lifetime = ServiceLifetime.SINGLETON, config = config.get('event_bus', {}))
 
     def _register_trading_components(self, config: dict[str, Any]) -> None:
         """Register trading component services."""
         use_modular = config.get('use_modular_components', True)
         if use_modular:
-            self.container.register(IAnalyst, ModularAnalyst, lifetime=ServiceLifetime.SINGLETON, config=config.get('analyst', {}))
-            self.container.register(IStrategist, ModularStrategist, lifetime=ServiceLifetime.SINGLETON, config=config.get('strategist', {}))
-            self.container.register(ITactician, ModularTactician, lifetime=ServiceLifetime.SINGLETON, config=config.get('tactician', {}))
+            self.container.register(IAnalyst, ModularAnalyst, lifetime = ServiceLifetime.SINGLETON, config = config.get('analyst', {}))
+            self.container.register(IStrategist, ModularStrategist, lifetime = ServiceLifetime.SINGLETON, config = config.get('strategist', {}))
+            self.container.register(ITactician, ModularTactician, lifetime = ServiceLifetime.SINGLETON, config = config.get('tactician', {}))
         else:
-            self.container.register(IAnalyst, Analyst, lifetime=ServiceLifetime.SINGLETON, config=config.get('analyst', {}))
-            self.container.register(IStrategist, Strategist, lifetime=ServiceLifetime.SINGLETON, config=config.get('strategist', {}))
-            self.container.register(ITactician, Tactician, lifetime=ServiceLifetime.SINGLETON, config=config.get('tactician', {}))
-        self.container.register(ISupervisor, Supervisor, lifetime=ServiceLifetime.SINGLETON, config=config.get('supervisor', {}))
+            self.container.register(IAnalyst, Analyst, lifetime = ServiceLifetime.SINGLETON, config = config.get('analyst', {}))
+            self.container.register(IStrategist, Strategist, lifetime = ServiceLifetime.SINGLETON, config = config.get('strategist', {}))
+            self.container.register(ITactician, Tactician, lifetime = ServiceLifetime.SINGLETON, config = config.get('tactician', {}))
+        self.container.register(ISupervisor, Supervisor, lifetime = ServiceLifetime.SINGLETON, config = config.get('supervisor', {}))
 
     def _register_specialized_services(self, config: dict[str, Any]) -> None:
         """Register specialized services."""
-        self.container.register(TrainingManager, TrainingManager, lifetime=ServiceLifetime.SINGLETON, config=config.get('training', {}))
-        self.container.register(ExchangeFactory, ExchangeFactory, lifetime=ServiceLifetime.SINGLETON, config=config.get('exchange', {}))
+        self.container.register(TrainingManager, TrainingManager, lifetime = ServiceLifetime.SINGLETON, config = config.get('training', {}))
+        self.container.register(ExchangeFactory, ExchangeFactory, lifetime = ServiceLifetime.SINGLETON, config = config.get('exchange', {}))
 
     def get_registered_services(self) -> dict[str, Any]:
         """Get all registered services."""

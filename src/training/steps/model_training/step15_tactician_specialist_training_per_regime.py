@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+from src.core.decorators import handles_errors, traced, validates
 
 """Step 15: Tactician Specialist Training - Per-Regime Implementation.
 
@@ -11,49 +12,20 @@ from pathlib import Path
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional
-from .step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
-
-def per_regime_step(step_name: Any) -> None:
-
-    def decorator(func: Callable) -> None:
-        return func
-    return decorator
-
-def traced(span_name: Any) -> None:
-
-    def decorator(func: Callable) -> None:
-        return func
-    return decorator
-
-def validates() -> None:
-
-    def decorator(func: Callable) -> None:
-        return func
-    return decorator
-
-def handles_errors(exceptions: List[Any]=(Exception,), default_return: Any=None, context: Any='') -> None:
-
-    def decorator(func: Callable) -> None:
-
-        async def wrapper(*args, **kwargs) -> None:
-            try:
-                return await func(*args, **kwargs)
-            except exceptions as e:
-                print(f'Error in {context}: {e}')
-                return default_return
-        return wrapper
-    return decorator
-try:
-    from ...utils.pipeline_standards import pipeline_standards
-except ImportError:
-    pipeline_standards = None
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.model_training.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
+from src.utils.logger import get_logger
+from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import logging
-import time
+import typing
 
-logger = logging.getLogger('Step15TacticianSpecialistTrainingPerRegime')
+
+logger = get_logger('Step15TacticianSpecialistTrainingPerRegime')
 
 class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTrainingStep):
     """Tactician specialist training step that processes each regime separately."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
@@ -63,7 +35,7 @@ class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTra
 
     @traced(span_name='execute_per_regime_tactician_specialist_training')
     @per_regime_step('step15_tactician_specialist_training')
-    async def execute_per_regime_tactician_specialist_training(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool=True) -> bool:
+    async def execute_per_regime_tactician_specialist_training(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool = True) -> bool:
         """Execute tactician specialist training on a per-regime basis.
         
         Each regime may require different tactician specialist training strategies, so tactician
@@ -131,6 +103,7 @@ class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTra
         except Exception as e:
             self.logger.error(f'❌ Error loading tactician labeling data for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _get_regime_specialist_config(self, regime_id: int) -> Dict[str, Any]:
         """Get tactician specialist training configuration for a specific regime.
@@ -385,6 +358,7 @@ class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTra
         except Exception as e:
             self.logger.error(f'❌ Error simulating specialist training: {e}')
             return {'accuracy': 0.5, 'precision': 0.5, 'recall': 0.5, 'f1_score': 0.5, 'training_epochs': 0, 'learning_rate': 0.01, 'batch_size': 32, 'training_time': 0.0, 'convergence_achieved': False}
+    @log_all_calls
 
     def _calculate_training_metrics(self, trained_specialists: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate training metrics.
@@ -428,7 +402,7 @@ class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTra
         try:
             training_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_tactician_specialist_training_regime_{regime_id}.json'
             with open(training_path, 'w') as f:
-                json.dump(training_results, f, indent=2, default=str)
+                json.dump(training_results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved tactician specialist training results for regime {regime_id}: {training_path}')
             return True
         except Exception as e:
@@ -438,7 +412,7 @@ class PerRegimeTacticianSpecialistTrainingStep(RegimeAwareTacticianSpecialistTra
 @traced(span_name='run_per_regime_tactician_specialist_training_step')
 @validates()
 @handles_errors
-async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
+async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the enhanced per-regime tactician specialist training step.
     
     Args:
@@ -459,7 +433,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
         data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
     config['per_regime_tactician_specialist_training'] = True
     step = PerRegimeTacticianSpecialistTrainingStep(config)
-    success = await step.execute_per_regime_tactician_specialist_training(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+    success = await step.execute_per_regime_tactician_specialist_training(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
     if success:
         logger.info('✅ Step 15: Per-Regime Tactician Specialist Training completed successfully')
     else:

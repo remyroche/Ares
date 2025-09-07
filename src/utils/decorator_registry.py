@@ -2,12 +2,14 @@
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy as np
 try:
     from .logger import log_error_with_context
+    import time
 
 except ImportError:
 
-    def log_error_with_context(logger: logging.Logger, error: Exception, context: Any=None, operation: Any='', recovery_attempted: Any=False) -> None:
+    def log_error_with_context(logger: logging.Logger, error: Exception, context: Any = None, operation: Any='', recovery_attempted: Any = False) -> None:
         logger.error(f'Error in {operation}: {error}')
 
     def log_system_status(logger: logging.Logger, component: Any, status: List[Any], details: List[Any]='', health_metrics: List[Any]=None) -> None:
@@ -33,7 +35,7 @@ logger = logging.getLogger(__name__)
 class DecoratorMetadata:
     """Metadata for a registered decorator with comprehensive error handling."""
     
-    def __init__(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool=False) -> None:
+    def __init__(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool = False) -> None:
         try:
             logger.info(f"🔧 Creating DecoratorMetadata for '{name}' v{version}")
             if not name or not isinstance(name, str):
@@ -110,7 +112,7 @@ class DecoratorMetadata:
             else:
                 status = 'poor'
             health_info = {'name': self.name, 'version': self.version, 'status': status, 'health_score': health_score, 'usage_count': self.usage_count, 'error_count': self.error_count, 'deprecated': self.deprecated, 'issues': issues, 'last_used': self.last_used.isoformat() if self.last_used else None, 'last_error': self.last_error}
-            log_system_status(logger, f'Decorator-{self.name}', status, details=f'Health Score: {health_score}/100', health_metrics=health_info)
+            log_system_status(logger, f'Decorator-{self.name}', status, details = f'Health Score: {health_score}/100', health_metrics = health_info)
             return health_info
         except Exception as e:
             logger.error(f"❌ Error getting health status for decorator '{self.name}': {e}")
@@ -133,7 +135,7 @@ class DecoratorRegistry:
             log_error_with_context(logger, e, operation='DecoratorRegistry.__init__')
             raise
 
-    def register(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool=False, aliases: list[str]=None) -> None:
+    def register(self, name: str, decorator: Callable, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool = False, aliases: list[str]=None) -> None:
         """Register a decorator with version tracking and comprehensive error handling."""
         try:
             logger.info(f"🔧 Registering decorator '{name}' v{version}")
@@ -176,7 +178,7 @@ class DecoratorRegistry:
             log_error_with_context(logger, e, context={'name': name, 'version': version, 'deprecated': deprecated, 'aliases': aliases}, operation='DecoratorRegistry.register')
             raise
 
-    def get(self, name: str, version: str=None) -> Callable:
+    def get(self, name: str, version: str = None) -> Callable:
         """Get decorator by name and optional version with comprehensive error handling."""
         try:
             logger.info(f"🔍 Getting decorator '{name}'" + (f' v{version}' if version else ''))
@@ -205,20 +207,20 @@ class DecoratorRegistry:
             log_error_with_context(logger, e, context={'name': name, 'version': version}, operation='DecoratorRegistry.get')
             raise
 
-    def list_decorators(self, include_deprecated: bool=False, tags: list[str]=None) -> list[DecoratorMetadata]:
+    def list_decorators(self, include_deprecated: bool = False, tags: list[str]=None) -> list[DecoratorMetadata]:
         """List all registered decorators with optional filtering."""
         decorators = list(self._decorators.values())
         if not include_deprecated:
             decorators = [d for d in decorators if not d.deprecated]
         if tags:
             decorators = [d for d in decorators if any((tag in d.tags for tag in tags))]
-        return sorted(decorators, key=lambda x: x.name)
+        return sorted(decorators, key = lambda x: x.name)
 
     def get_usage_stats(self) -> dict[str, int]:
         """Get usage statistics for all decorators."""
         return {name: metadata.usage_count for name, metadata in self._decorators.items()}
 
-    def deprecate(self, name: str, replacement: str=None) -> None:
+    def deprecate(self, name: str, replacement: str = None) -> None:
         """Mark a decorator as deprecated."""
         if name in self._decorators:
             self._decorators[name].deprecated = True
@@ -282,7 +284,7 @@ class DecoratorRegistry:
                 status = 'poor'
             health_info = {'status': status, 'health_score': health_score, 'total_decorators': total_decorators, 'deprecated_count': deprecated_count, 'total_errors': total_errors, 'total_usage': total_usage, 'total_aliases': len(self._aliases), 'registry_stats': self._registry_stats, 'issues': issues, 'decorator_health': [d.get_health_status() for d in self._decorators.values()]}
             if status in ['fair', 'poor']:
-                log_system_status(logger, 'DecoratorRegistry', status, details=f'Health Score: {health_score}/100 | Decorators: {total_decorators} | Errors: {total_errors}', health_metrics=health_info)
+                log_system_status(logger, 'DecoratorRegistry', status, details = f'Health Score: {health_score}/100 | Decorators: {total_decorators} | Errors: {total_errors}', health_metrics = health_info)
             return health_info
         except Exception as e:
             logger.error(f'❌ Error getting registry health status: {e}')
@@ -319,13 +321,13 @@ class DecoratorRegistry:
             log_error_with_context(logger, e, operation='DecoratorRegistry.validate_registry')
             return (False, [f'Validation error: {e}'])
 
-def register_decorator(name: str, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool=False, aliases: list[str]=None) -> Callable:
+def register_decorator(name: str, version: str='1.0', description: str='', tags: list[str]=None, deprecated: bool = False, aliases: list[str]=None) -> Callable:
     """Decorator to register a decorator function in the registry with comprehensive error handling."""
 
     def decorator(func: Callable) -> Callable:
         try:
             logger.info(f"🔧 Registering decorator function '{name}' using @register_decorator")
-            decorator_registry.register(name=name, decorator=func, version=version, description=description, tags=tags or [], deprecated=deprecated, aliases=aliases or [])
+            decorator_registry.register(name = name, decorator = func, version = version, description = description, tags = tags or [], deprecated = deprecated, aliases = aliases or [])
             logger.success(f"✅ Decorator function '{name}' registered successfully")
             return func
         except Exception as e:

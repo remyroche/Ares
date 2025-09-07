@@ -1,4 +1,7 @@
 """Data Downloader Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Handles all data downloading operations for market data.
 Extracted from raw_data_quality_checker.py
 """
@@ -9,7 +12,7 @@ from datetime import datetime
 from typing import Any, Optional
 import pandas as pd
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import json
 import logging
@@ -24,10 +27,12 @@ class DataDownloader:
     - Managing data download sessions
     - Handling download errors and retries
     """
+    @log_important_calls
     
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.logger = system_logger.getChild("DataDownloader")
         self.config = config or self._get_default_config()
+    @log_all_calls
         
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for data downloading."""
@@ -74,9 +79,9 @@ class DataDownloader:
             from ..data_downloader import download_all_data_with_consolidation
             
             success = asyncio.run(download_all_data_with_consolidation(
-                symbol=symbol, 
-                exchange_name=exchange, 
-                interval=timeframe
+                symbol = symbol, 
+                exchange_name = exchange, 
+                interval = timeframe
             ))
             
             if success:
@@ -133,9 +138,9 @@ class DataDownloader:
             from ..data_downloader import download_all_data_with_consolidation
             
             success = asyncio.run(download_all_data_with_consolidation(
-                symbol=symbol, 
-                exchange_name=exchange, 
-                interval=timeframe
+                symbol = symbol, 
+                exchange_name = exchange, 
+                interval = timeframe
             ))
             
             if success:
@@ -165,6 +170,7 @@ class DataDownloader:
         except Exception as e:
             self.logger.exception(f'❌ Error downloading {timeframe} data: {e}')
             return None
+    @log_all_calls
             
     def _load_downloaded_data(
         self, 
@@ -197,7 +203,7 @@ class DataDownloader:
                     self.logger.info(f'🔍 Loading data from: {latest_file}')
                     
                     if latest_file.endswith('.csv'):
-                        data = pd.read_csv(latest_file, index_col=0, parse_dates=True)
+                        data = pd.read_csv(latest_file, index_col = 0, parse_dates = True)
                     elif latest_file.endswith('.parquet'):
                         data = pd.read_parquet(latest_file)
                     else:
@@ -268,11 +274,11 @@ class DataDownloader:
                 
                 try:
                     gap_data = self.download_missing_data_for_timeframe(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        start_time=gap_start,
-                        end_time=gap_end
+                        symbol = symbol,
+                        exchange = exchange,
+                        timeframe = timeframe,
+                        start_time = gap_start,
+                        end_time = gap_end
                     )
                     
                     if gap_data is not None and not gap_data.empty:
@@ -295,7 +301,7 @@ class DataDownloader:
                 
             self.logger.info('🔍 Re-validating data after download...')
             # Note: This would need to be called from the main validator
-            # updated_results, updated_data = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing=False)
+            # updated_results, updated_data = self.validate_raw_data(updated_data, symbol, exchange, auto_download_missing = False)
             # results['data_quality_score'] = updated_results['data_quality_score']
             # results['data_shape'] = updated_data.shape
             # self.logger.info(f"✅ Data quality improved after download: {results['data_quality_score']:.2f}")
@@ -306,6 +312,7 @@ class DataDownloader:
             self.logger.exception(f'❌ Error in missing data download process: {e}')
             download_summary['download_errors'] += 1
             return data, download_summary
+    @log_all_calls
             
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
         """Determine the timeframe from the data intervals.
@@ -342,6 +349,7 @@ class DataDownloader:
             return '1d'
         else:
             return '1d'
+    @log_all_calls
             
     def _fill_gap_in_dataset(
         self, 

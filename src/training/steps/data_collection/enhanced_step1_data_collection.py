@@ -1,4 +1,7 @@
 """
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Enhanced Step1 Data Collection
 
 This module provides an improved implementation of Step1 data collection
@@ -21,7 +24,7 @@ import typing
 
 try:
     from .utils.enhanced_config_management import Step1Config
-    from .utils.logger import system_logger
+    from src.utils.logger import system_logger
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
 except ImportError as e:
@@ -37,22 +40,24 @@ class EnhancedStep1DataCollection:
     This class provides an improved implementation of Step1 data collection
     with enhanced error handling, memory optimization, and data quality validation.
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[Step1Config]=None) -> None:
         self.config = config or Step1Config()
         self.logger = system_logger.getChild('EnhancedStep1')
-        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb=self.config.max_memory_mb))
-        self.quality_validator = EnhancedDataQualityValidator(QualityThresholds(max_nan_ratio=self.config.max_nan_ratio, max_infinite_count=self.config.max_infinite_count, min_unique_values=self.config.min_unique_values, price_tolerance=self.config.price_tolerance, volume_tolerance=self.config.volume_tolerance))
+        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = self.config.max_memory_mb))
+        self.quality_validator = EnhancedDataQualityValidator(QualityThresholds(max_nan_ratio = self.config.max_nan_ratio, max_infinite_count = self.config.max_infinite_count, min_unique_values = self.config.min_unique_values, price_tolerance = self.config.price_tolerance, volume_tolerance = self.config.volume_tolerance))
         config_issues = self.config.validate()
         if config_issues:
             raise ValueError(f'Configuration validation failed: {config_issues}')
         self._initialize_directories()
+    @log_all_calls
 
     def _initialize_directories(self) -> None:
         """Initialize required directories."""
         directories = [self.config.data_dir, self.config.backup_dir, self.config.temp_dir]
         for directory in directories:
-            os.makedirs(directory, exist_ok=True)
+            os.makedirs(directory, exist_ok = True)
             self.logger.debug(f'Initialized directory: {directory}')
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,7 +116,7 @@ class EnhancedStep1DataCollection:
                     self.logger.warning('Could not import data downloader, using fallback')
                     return await self._fallback_data_download(training_input)
             if download_all_data_with_consolidation:
-                success = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe)
+                success = await download_all_data_with_consolidation(symbol = symbol, exchange_name = exchange, interval = timeframe)
                 if success:
                     self.logger.info('✅ Data download completed successfully')
                     data_dir = training_input.get('data_dir', self.config.data_dir)
@@ -162,7 +167,7 @@ class EnhancedStep1DataCollection:
                     all_quality_passed = False
                 else:
                     self.logger.info(f'✅ {data_type} quality validation passed')
-                self.logger.info(f'📊 {data_type} metrics: {json.dumps(quality_result.metrics, indent=2)}')
+                self.logger.info(f'📊 {data_type} metrics: {json.dumps(quality_result.metrics, indent = 2)}')
             return all_quality_passed
         except Exception as e:
             self.logger.exception(f'Error during data processing and validation: {e}')
@@ -174,7 +179,7 @@ class EnhancedStep1DataCollection:
         chunks = []
         chunk_count = 0
         try:
-            for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
+            for chunk in pd.read_parquet(file_path, chunksize = self.config.chunk_size):
                 chunk_count += 1
                 self.logger.debug(f'Processing chunk {chunk_count}')
                 quality_result = await self.quality_validator.validate_dataframe_quality(chunk, f'chunk_{chunk_count}')
@@ -189,7 +194,7 @@ class EnhancedStep1DataCollection:
             self.logger.error(f'Error processing file: {e}')
             raise
         if chunks:
-            result = pd.concat(chunks, ignore_index=True)
+            result = pd.concat(chunks, ignore_index = True)
             self.logger.info(f'Processed {len(chunks)} chunks, final shape: {result.shape}')
             return result
         else:
@@ -202,14 +207,15 @@ class EnhancedStep1DataCollection:
             return chunk
         chunk = optimize_dataframe_dtypes(chunk)
         if len(chunk) > 1000:
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+            with ThreadPoolExecutor(max_workers = self.config.max_workers) as executor:
                 chunk_splits = np.array_split(chunk, self.config.max_workers)
                 loop = asyncio.get_event_loop()
                 futures = [loop.run_in_executor(executor, self._process_chunk_sync, split) for split in chunk_splits if not split.empty]
                 processed_splits = await asyncio.gather(*futures)
-                return pd.concat(processed_splits, ignore_index=True)
+                return pd.concat(processed_splits, ignore_index = True)
         else:
             return self._process_chunk_sync(chunk)
+    @log_all_calls
 
     def _process_chunk_sync(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Synchronous chunk processing."""
@@ -225,7 +231,7 @@ class EnhancedStep1DataCollection:
                 if os.path.exists(file_path):
                     try:
                         file_size = os.path.getsize(file_path) / (1024 * 1024)
-                        df_info = pd.read_parquet(file_path, nrows=1)
+                        df_info = pd.read_parquet(file_path, nrows = 1)
                         columns = list(df_info.columns)
                         files_info.append({'type': file_type, 'path': file_path, 'size_mb': file_size, 'columns': columns})
                         self.logger.info(f'📁 {file_type}: {file_size:.1f}MB, {len(columns)} columns')
@@ -265,10 +271,10 @@ async def run_enhanced_step1(training_input: Dict[str, Any], pipeline_state: Dic
 if __name__ == '__main__':
     import asyncio
 
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level = logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     async def main() -> None:
-        config = Step1Config(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', lookback_days=30, max_memory_mb=512, chunk_size=5000)
+        config = Step1Config(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', lookback_days = 30, max_memory_mb = 512, chunk_size = 5000)
         step01 = EnhancedStep1DataCollection(config)
         training_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache'}
         pipeline_state = {'data_collection_completed': False, 'quality_check_passed': False}

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any
 import yaml
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import time
 import numpy as np
 import pandas as pd
@@ -23,7 +23,7 @@ except ImportError as e:
     print(f' Missing dependency: {MISSING_DEPENDENCY}')
     print('📦 Please install required packages:')
     print('   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml')
-from .utils.logger import setup_logging
+from ...utils.logger import system_logger
 setup_logging()
 logger = logging.getLogger(__name__)
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -35,7 +35,7 @@ sys.path.insert(0, str(project_root))
 class AutoencoderConfig:
     """Configuration manager for autoencoder feature generator."""
 
-    def __init__(self, config_path: str | None=None) -> None:
+    def __init__(self, config_path: str | None = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         if not DEPENDENCIES_AVAILABLE:
             msg = f'Required dependencies not available: {MISSING_DEPENDENCY}'
@@ -61,7 +61,7 @@ class AutoencoderConfig:
         default_config = {'preprocessing': {'scaler_type': 'robust', 'outlier_threshold': 3.0, 'missing_value_strategy': 'forward_fill', 'iqr_multiplier': 3.0, 'use_price_returns': True, 'price_return_method': 'pct_change', 'primary_price_feature': 'close', 'primary_volume_feature': 'volume', 'enable_feature_selection': True}, 'sequence': {'timesteps': 10, 'overlap': 0.5}, 'autoencoder': {'epochs': 100, 'early_stopping_patience': 10, 'reduce_lr_patience': 5, 'min_lr': 1e-06}, 'training': {'n_trials': 50, 'n_jobs': 1, 'pruning_enabled': True}, 'feature_filtering': {'n_estimators': 100, 'max_depth': 10, 'importance_threshold': 0.99, 'shap_imbalance_threshold': 100.0, 'enable_shap_imbalance_handling': True}, 'feature_analysis': {'enable_analysis': True, 'high_correlation_threshold': 0.7, 'low_correlation_threshold': 0.1, 'stability_window': 100, 'stability_threshold': 0.7, 'regime_analysis_enabled': True, 'comparison_with_original': True}, 'output': {'output_dir': 'models/autoencoder_features'}}
         return default_config
 
-    def get(self, key: str, default: Any=None) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value using dot notation."""
         keys = key.split('.')
         value = self.config
@@ -75,9 +75,9 @@ class AutoencoderConfig:
     def save_config(self, output_path: str) -> None:
         """Save current configuration to file."""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            os.makedirs(os.path.dirname(output_path), exist_ok = True)
             with open(output_path, 'w') as file:
-                yaml.dump(self.config, file, default_flow_style=False)
+                yaml.dump(self.config, file, default_flow_style = False)
             self.logger.info(f'📋 Configuration saved successfully to {output_path}')
         except Exception:
             self.logger.exception('⚠️ Error saving config file')
@@ -174,7 +174,7 @@ class PriceReturnConverter:
                         features_to_remove.append(col)
             if features_to_remove:
                 self.logger.info(f'🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}')
-                converted_df = converted_df.drop(columns=features_to_remove)
+                converted_df = converted_df.drop(columns = features_to_remove)
             features_to_convert = []
             if selected_price_feature:
                 features_to_convert.append(selected_price_feature)
@@ -256,14 +256,14 @@ class FeatureFilter:
             self.logger.info('🔍 Starting feature filtering with Random Forest + SHAP...')
             self.logger.info(f'📊 Input data shape: {features_df.shape}')
             self.logger.info(f'🎯 Number of unique labels: {len(np.unique(labels))}')
-            self.logger.info(f'📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}')
+            self.logger.info(f'📈 Label distribution: {dict(zip(*np.unique(labels, return_counts = True)))}')
             raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
             raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
             if raw_ohlcv_columns:
                 self.logger.warning(f'🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}')
                 self.logger.warning('🚨 These should be excluded from feature filtering')
                 self.logger.warning('🚨 Raw price data should be processed into engineered features first')
-                features_df = features_df.drop(columns=raw_ohlcv_columns)
+                features_df = features_df.drop(columns = raw_ohlcv_columns)
                 self.logger.info(f'✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features')
                 self.logger.info(f'📊 Features shape after removal: {features_df.shape}')
                 if features_df.empty:
@@ -286,7 +286,7 @@ class FeatureFilter:
             max_depth = self.config.get('feature_filtering.max_depth', 10)
             random_state = self.config.get('feature_filtering.random_state', 42)
             self.logger.info(f'🌲 RF Parameters: n_estimators={n_estimators}, max_depth={max_depth}, random_state={random_state}')
-            rf_model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=random_state, n_jobs=-1)
+            rf_model = RandomForestClassifier(n_estimators = n_estimators, max_depth = max_depth, random_state = random_state, n_jobs=-1)
             start_time = time.time()
             rf_model.fit(X, y)
             training_time = time.time() - start_time
@@ -310,7 +310,7 @@ class FeatureFilter:
             self.logger.info(f'📊 Calculated sample size: {sample_size} rows')
             if sample_size < len(X):
                 self.logger.info('🔄 Applying stratified sampling to maintain class balance...')
-                unique_labels, label_counts = np.unique(y, return_counts=True)
+                unique_labels, label_counts = np.unique(y, return_counts = True)
                 min_class_count = label_counts.min()
                 max_class_count = label_counts.max()
                 imbalance_ratio = max_class_count / min_class_count if min_class_count > 0 else float('inf')
@@ -324,7 +324,7 @@ class FeatureFilter:
                 if enable_shap_imbalance_handling and imbalance_ratio > shap_imbalance_threshold:
                     self.logger.warning(f'🚨 CRITICAL FIX: Extreme label imbalance detected (ratio={imbalance_ratio:.1f} > {shap_imbalance_threshold})')
                     self.logger.info('🔄 Using random sampling for SHAP computation...')
-                    sample_indices = np.random.choice(len(X), sample_size, replace=False)
+                    sample_indices = np.random.choice(len(X), sample_size, replace = False)
                     X_sample = X.iloc[sample_indices]
                     y_sample = y[sample_indices]
                     self.logger.info(f'📊 Random sample size: {len(X_sample)} rows')
@@ -336,9 +336,9 @@ class FeatureFilter:
                             class_sample_size = int(count * sample_percentage / 100)
                             class_sample_size = max(5, min(class_sample_size, count))
                             class_sample_sizes[label] = class_sample_size
-                        X_sample, _, y_sample, _ = train_test_split(X, y, train_size=sample_size, stratify=y, random_state=42)
+                        X_sample, _, y_sample, _ = train_test_split(X, y, train_size = sample_size, stratify = y, random_state = 42)
                         original_dist = dict(zip(unique_labels, label_counts))
-                        sample_dist = dict(zip(*np.unique(y_sample, return_counts=True)))
+                        sample_dist = dict(zip(*np.unique(y_sample, return_counts = True)))
                         self.logger.info('✅ Stratified sampling successful!')
                         self.logger.info(f'📊 Original class distribution: {original_dist}')
                         self.logger.info(f'📊 Sample class distribution: {sample_dist}')
@@ -346,14 +346,14 @@ class FeatureFilter:
                     except Exception as e:
                         self.logger.warning(f'⚠️ Stratified sampling failed: {e}')
                         self.logger.info('🔄 Falling back to random sampling...')
-                        sample_indices = np.random.choice(len(X), sample_size, replace=False)
+                        sample_indices = np.random.choice(len(X), sample_size, replace = False)
                         X_sample = X.iloc[sample_indices]
                         y_sample = y[sample_indices]
                         self.logger.info(f'📊 Random sample size: {len(X_sample)} rows')
                 else:
                     self.logger.warning(f'⚠️ Insufficient samples per class for stratification (min: {min_class_count})')
                     self.logger.info('🔄 Using random sampling...')
-                    sample_indices = np.random.choice(len(X), sample_size, replace=False)
+                    sample_indices = np.random.choice(len(X), sample_size, replace = False)
                     X_sample = X.iloc[sample_indices]
                     y_sample = y[sample_indices]
                     self.logger.info(f'📊 Random sample size: {len(X_sample)} rows')
@@ -366,7 +366,7 @@ class FeatureFilter:
             if enable_prefiltering and len(X_sample.columns) > max_features_for_shap:
                 self.logger.info(f'📊 High feature count ({len(X_sample.columns)}), applying pre-filtering')
                 self.logger.info(f'📊 Target feature count: {max_features_for_shap}')
-                pre_filter_rf = RandomForestClassifier(n_estimators=50, max_depth=8, random_state=42, n_jobs=-1)
+                pre_filter_rf = RandomForestClassifier(n_estimators = 50, max_depth = 8, random_state = 42, n_jobs=-1)
                 pre_filter_rf.fit(X_sample, y_sample)
                 feature_importance = pre_filter_rf.feature_importances_
                 top_feature_indices = np.argsort(feature_importance)[-max_features_for_shap:]
@@ -379,12 +379,12 @@ class FeatureFilter:
             shap_max_depth = self.config.get('feature_filtering.shap_max_depth', 8)
             shap_min_samples_split = self.config.get('feature_filtering.shap_min_samples_split', 10)
             shap_min_samples_leaf = self.config.get('feature_filtering.shap_min_samples_leaf', 5)
-            shap_rf_model = RandomForestClassifier(n_estimators=shap_n_estimators, max_depth=shap_max_depth, min_samples_split=shap_min_samples_split, min_samples_leaf=shap_min_samples_leaf, random_state=42, n_jobs=-1)
+            shap_rf_model = RandomForestClassifier(n_estimators = shap_n_estimators, max_depth = shap_max_depth, min_samples_split = shap_min_samples_split, min_samples_leaf = shap_min_samples_leaf, random_state = 42, n_jobs=-1)
             self.logger.info(f'🌲 SHAP RF Parameters: n_estimators={shap_n_estimators}, max_depth={shap_max_depth}')
             self.logger.info('🌲 Training optimized Random Forest for SHAP...')
             shap_rf_model.fit(X_sample, y_sample)
             self.logger.info(f'✅ Optimized RF training completed (score: {shap_rf_model.score(X_sample, y_sample):.4f})')
-            explainer = TreeExplainer(shap_rf_model, feature_names=X_sample.columns.tolist(), model_output='raw')
+            explainer = TreeExplainer(shap_rf_model, feature_names = X_sample.columns.tolist(), model_output='raw')
             self.logger.info('🔧 Optimized SHAP explainer created successfully')
             import signal
             import platform
@@ -406,7 +406,7 @@ class FeatureFilter:
                 self.logger.info('⚠️ Windows detected - using simplified timeout protection')
             try:
                 background_size = min(100, len(X_sample) // 10)
-                background_indices = np.random.choice(len(X_sample), background_size, replace=False)
+                background_indices = np.random.choice(len(X_sample), background_size, replace = False)
                 background_values = X_sample.iloc[background_indices]
                 self.logger.info(f'📊 Computing SHAP values with background set of {len(background_values)} samples...')
                 shap_values = explainer.shap_values(X_sample)
@@ -468,7 +468,7 @@ class FeatureFilter:
                 shap_arr = np.asarray(shap_values.values)
             elif isinstance(shap_values, list):
                 self.logger.info(f'📦 SHAP values format: list of {len(shap_values)} arrays')
-                shap_arr = np.stack([np.asarray(sv) for sv in shap_values], axis=0)
+                shap_arr = np.stack([np.asarray(sv) for sv in shap_values], axis = 0)
             else:
                 self.logger.info('📦 SHAP values format: numpy array')
                 shap_arr = np.asarray(shap_values)
@@ -481,7 +481,7 @@ class FeatureFilter:
                 shap_arr = shap_arr[None, :, None]
             self.logger.info('📊 Computing mean absolute SHAP importance per feature...')
             feature_importance = np.nanmean(np.abs(shap_arr), axis=(0, 1))
-            feature_importance = np.nan_to_num(feature_importance, nan=0.0, posinf=0.0, neginf=0.0)
+            feature_importance = np.nan_to_num(feature_importance, nan = 0.0, posinf = 0.0, neginf = 0.0)
             importance_time = time.time() - start_time
             self.logger.info(f'✅ Feature importance computed in {importance_time:.2f} seconds')
             self.logger.info('📈 Sorting features by importance...')
@@ -591,7 +591,7 @@ class ImprovedAutoencoderPreprocessor:
         self.logger.info(f'📊 Outlier bounds calculated for {len(self.outlier_lower_bounds_)} features')
         lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
         upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
-        X_clipped = X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
+        X_clipped = X_numeric.clip(lower = lower_bounds, upper = upper_bounds, axis = 1)
         outliers_clipped = ((X_numeric < lower_bounds) | (X_numeric > upper_bounds)).sum().sum()
         if outliers_clipped > 0:
             self.logger.info(f'📊 Outliers clipped: {outliers_clipped} values')
@@ -638,7 +638,7 @@ class ImprovedAutoencoderPreprocessor:
         X_numeric = X.select_dtypes(include=[np.number])
         lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
         upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
-        return X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
+        return X_numeric.clip(lower = lower_bounds, upper = upper_bounds, axis = 1)
 
 def create_sequences_with_index(X: np.ndarray, timesteps: int, original_index: pd.Index) -> tuple[np.ndarray, np.ndarray, pd.Index]:
     """Convert 2D array to 3D sequences, tracking the index of the target."""
@@ -680,14 +680,14 @@ class SequenceAwareAutoencoder:
         self.autoencoder = None
         self.encoder = None
 
-    def build_model(self, input_shape: tuple[int, int], trial: optuna.Trial | None=None) -> Model:
+    def build_model(self, input_shape: tuple[int, int], trial: optuna.Trial | None = None) -> Model:
         """Build 1D-CNN autoencoder model."""
         timesteps, features = input_shape
         if trial:
             filters = trial.suggest_categorical('filters', [16, 32, 64])
             kernel_size = trial.suggest_int('kernel_size', 3, 7)
             dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5)
-            learning_rate = trial.suggest_float('learning_rate', 0.0001, 0.01, log=True)
+            learning_rate = trial.suggest_float('learning_rate', 0.0001, 0.01, log = True)
             encoding_dim = trial.suggest_int('encoding_dim', 8, 64)
         else:
             encoding_dim = self.config.get('autoencoder.encoding_dim', 32)
@@ -705,18 +705,18 @@ class SequenceAwareAutoencoder:
         self.logger.info(f'   📊 Encoding dimension: {encoding_dim}')
         self.logger.info(f'   📊 Learning rate: {learning_rate}')
         input_layer = layers.Input(shape=(timesteps, features))
-        x = layers.Conv1D(filters=filters, kernel_size=kernel_size, activation='relu', padding='same')(input_layer)
+        x = layers.Conv1D(filters = filters, kernel_size = kernel_size, activation='relu', padding='same')(input_layer)
         x = layers.BatchNormalization()(x)
         x = layers.Dropout(dropout_rate)(x)
-        x = layers.Conv1D(filters=filters // 2, kernel_size=kernel_size, activation='relu', padding='same')(x)
+        x = layers.Conv1D(filters = filters // 2, kernel_size = kernel_size, activation='relu', padding='same')(x)
         x = layers.BatchNormalization()(x)
         x = layers.GlobalAveragePooling1D()(x)
         bottleneck = layers.Dense(encoding_dim, activation='tanh', name='bottleneck')(x)
         output_layer = layers.Dense(features, activation='linear')(bottleneck)
-        self.autoencoder = Model(inputs=input_layer, outputs=output_layer)
-        self.encoder = Model(inputs=input_layer, outputs=bottleneck)
-        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        self.autoencoder.compile(optimizer=optimizer, loss='huber', metrics=['mae'])
+        self.autoencoder = Model(inputs = input_layer, outputs = output_layer)
+        self.encoder = Model(inputs = input_layer, outputs = bottleneck)
+        optimizer = tf.keras.optimizers.Adam(learning_rate = learning_rate)
+        self.autoencoder.compile(optimizer = optimizer, loss='huber', metrics=['mae'])
         try:
             total_params = int(np.sum([np.prod(v.shape) for v in self.autoencoder.trainable_weights]))
             self.logger.info('✅ Model compiled successfully!')
@@ -737,12 +737,12 @@ class SequenceAwareAutoencoder:
             self.logger.warning(f'⚠️ Could not calculate model parameters: {str(e)}')
         return self.autoencoder
 
-    def fit(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, trial: optuna.Trial | None=None) -> Any:
+    def fit(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, trial: optuna.Trial | None = None) -> Any:
         """Train the autoencoder with enhanced logging."""
         early_stopping_patience = self.config.get('autoencoder.early_stopping_patience', 10)
         reduce_lr_patience = self.config.get('autoencoder.reduce_lr_patience', 5)
         min_lr = self.config.get('autoencoder.min_lr', 1e-06)
-        callbacks = [EarlyStopping(monitor='val_loss', patience=early_stopping_patience, restore_best_weights=True), ReduceLROnPlateau(monitor='val_loss', patience=reduce_lr_patience, min_lr=min_lr)]
+        callbacks = [EarlyStopping(monitor='val_loss', patience = early_stopping_patience, restore_best_weights = True), ReduceLROnPlateau(monitor='val_loss', patience = reduce_lr_patience, min_lr = min_lr)]
         if trial and self.config.get('training.pruning_enabled', True):
             callbacks.append(TFKerasPruningCallback(trial, 'val_loss'))
             self.logger.info('📊 Optuna pruning callback enabled')
@@ -759,7 +759,7 @@ class SequenceAwareAutoencoder:
         self.logger.info(f'📊 Training configuration: epochs={epochs}, batch_size={batch_size}')
         self.logger.info(f'📊 Callbacks: EarlyStopping(patience={early_stopping_patience}), ReduceLROnPlateau(patience={reduce_lr_patience})')
         start_time = time.time()
-        history = self.autoencoder.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=epochs, batch_size=batch_size, callbacks=callbacks, verbose=0)
+        history = self.autoencoder.fit(X_train, y_train, validation_data=(X_val, y_val), epochs = epochs, batch_size = batch_size, callbacks = callbacks, verbose = 0)
         training_time = time.time() - start_time
         try:
             val_losses = history.history.get('val_loss', [])
@@ -810,7 +810,7 @@ class AutoencoderFeatureAnalyzer:
         self.stability_metrics = {}
         self.regime_analysis = {}
 
-    def analyze_feature_importance(self, encoded_features: pd.DataFrame, labels: np.ndarray, original_features: pd.DataFrame | None=None, regime_labels: np.ndarray | None=None) -> dict[str, Any]:
+    def analyze_feature_importance(self, encoded_features: pd.DataFrame, labels: np.ndarray, original_features: pd.DataFrame | None = None, regime_labels: np.ndarray | None = None) -> dict[str, Any]:
         """
         Comprehensive analysis of autoencoder feature importance.
 
@@ -867,15 +867,15 @@ class AutoencoderFeatureAnalyzer:
             analysis_df = encoded_features.copy()
             analysis_df['target'] = labels
             correlations = analysis_df.corr()['target'].drop('target')
-            abs_correlations = correlations.abs().sort_values(ascending=False)
+            abs_correlations = correlations.abs().sort_values(ascending = False)
             try:
                 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
                 unique_labels = len(np.unique(labels))
                 if unique_labels <= 10:
-                    mi_scores = mutual_info_classif(encoded_features, labels, random_state=42)
+                    mi_scores = mutual_info_classif(encoded_features, labels, random_state = 42)
                 else:
-                    mi_scores = mutual_info_regression(encoded_features, labels, random_state=42)
-                mi_df = pd.DataFrame({'feature': encoded_features.columns, 'mutual_info': mi_scores}).sort_values('mutual_info', ascending=False)
+                    mi_scores = mutual_info_regression(encoded_features, labels, random_state = 42)
+                mi_df = pd.DataFrame({'feature': encoded_features.columns, 'mutual_info': mi_scores}).sort_values('mutual_info', ascending = False)
                 self.logger.info(f'📊 Mutual information computed for {len(encoded_features.columns)} features')
             except ImportError:
                 self.logger.warning('⚠️ scikit-learn not available, skipping mutual information')
@@ -904,14 +904,14 @@ class AutoencoderFeatureAnalyzer:
                 self.logger.warning('⚠️ Insufficient unique labels for ML importance analysis')
                 return {'error': 'Insufficient unique labels'}
             self.logger.info('🌲 Computing Random Forest feature importance...')
-            rf_model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+            rf_model = RandomForestClassifier(n_estimators = 100, max_depth = 10, random_state = 42, n_jobs=-1)
             rf_model.fit(X, y)
-            rf_importance = pd.DataFrame({'feature': X.columns, 'importance': rf_model.feature_importances_}).sort_values('importance', ascending=False)
+            rf_importance = pd.DataFrame({'feature': X.columns, 'importance': rf_model.feature_importances_}).sort_values('importance', ascending = False)
             try:
                 from sklearn.ensemble import GradientBoostingClassifier
-                gb_model = GradientBoostingClassifier(n_estimators=100, max_depth=6, random_state=42)
+                gb_model = GradientBoostingClassifier(n_estimators = 100, max_depth = 6, random_state = 42)
                 gb_model.fit(X, y)
-                gb_importance = pd.DataFrame({'feature': X.columns, 'importance': gb_model.feature_importances_}).sort_values('importance', ascending=False)
+                gb_importance = pd.DataFrame({'feature': X.columns, 'importance': gb_model.feature_importances_}).sort_values('importance', ascending = False)
                 self.logger.info('🌳 Gradient Boosting importance computed')
             except Exception as e:
                 pass
@@ -921,13 +921,13 @@ class AutoencoderFeatureAnalyzer:
             try:
                 from sklearn.inspection import permutation_importance
                 from sklearn.model_selection import train_test_split
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y if len(np.unique(y)) <= 10 else None)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3, random_state = 42, stratify = y if len(np.unique(y)) <= 10 else None)
                 from sklearn.linear_model import LogisticRegression
 
-                perm_model = LogisticRegression(random_state=42, max_iter=1000)
+                perm_model = LogisticRegression(random_state = 42, max_iter = 1000)
                 perm_model.fit(X_train, y_train)
-                perm_importance = permutation_importance(perm_model, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1)
-                perm_df = pd.DataFrame({'feature': X.columns, 'importance': perm_importance.importances_mean, 'std': perm_importance.importances_std}).sort_values('importance', ascending=False)
+                perm_importance = permutation_importance(perm_model, X_test, y_test, n_repeats = 10, random_state = 42, n_jobs=-1)
+                perm_df = pd.DataFrame({'feature': X.columns, 'importance': perm_importance.importances_mean, 'std': perm_importance.importances_std}).sort_values('importance', ascending = False)
                 self.logger.info('🔄 Permutation importance computed')
             except ImportError:
                 self.logger.warning('⚠️ Permutation importance not available')
@@ -939,8 +939,8 @@ class AutoencoderFeatureAnalyzer:
                 for method_name, method_df in available_methods.items():
                     if method_df is not None:
                         normalized_importance[method_name] = method_df['importance'] / method_df['importance'].max()
-                ensemble_scores = pd.DataFrame(normalized_importance).mean(axis=1)
-                ensemble_df = pd.DataFrame({'feature': X.columns, 'ensemble_importance': ensemble_scores}).sort_values('ensemble_importance', ascending=False)
+                ensemble_scores = pd.DataFrame(normalized_importance).mean(axis = 1)
+                ensemble_df = pd.DataFrame({'feature': X.columns, 'ensemble_importance': ensemble_scores}).sort_values('ensemble_importance', ascending = False)
                 self.logger.info('🎯 Ensemble importance computed from multiple methods')
             else:
                 ensemble_df = rf_importance.copy()
@@ -965,14 +965,14 @@ class AutoencoderFeatureAnalyzer:
                 feature_data = encoded_features[column].dropna()
                 if len(feature_data) < window_size * 2:
                     continue
-                rolling_mean = feature_data.rolling(window=window_size, min_periods=window_size // 2).mean()
-                rolling_std = feature_data.rolling(window=window_size, min_periods=window_size // 2).std()
+                rolling_mean = feature_data.rolling(window = window_size, min_periods = window_size // 2).mean()
+                rolling_std = feature_data.rolling(window = window_size, min_periods = window_size // 2).std()
                 mean_stability = 1 - (rolling_std / (rolling_mean.abs() + 1e-08)).mean()
                 trend_stability = 1 - abs(rolling_mean.diff().mean()) / (feature_data.std() + 1e-08)
                 cv = feature_data.std() / (feature_data.mean() + 1e-08)
                 stability_metrics[column] = {'mean_stability': mean_stability, 'trend_stability': trend_stability, 'coefficient_of_variation': cv, 'overall_stability': (mean_stability + trend_stability) / 2}
             stability_df = pd.DataFrame.from_dict(stability_metrics, orient='index')
-            stability_df = stability_df.sort_values('overall_stability', ascending=False)
+            stability_df = stability_df.sort_values('overall_stability', ascending = False)
             stability_threshold = self.config.get('feature_analysis.stability_threshold', 0.7)
             stable_features = stability_df[stability_df['overall_stability'] > stability_threshold].index.tolist()
             unstable_features = stability_df[stability_df['overall_stability'] < 1 - stability_threshold].index.tolist()
@@ -1018,7 +1018,7 @@ class AutoencoderFeatureAnalyzer:
                     if importances:
                         consistency_scores[feature] = {'mean_importance': np.mean(importances), 'std_importance': np.std(importances), 'consistency': 1 - np.std(importances) / (np.mean(importances) + 1e-08)}
                 consistency_df = pd.DataFrame.from_dict(consistency_scores, orient='index')
-                consistency_df = consistency_df.sort_values('consistency', ascending=False)
+                consistency_df = consistency_df.sort_values('consistency', ascending = False)
                 results = {'regime_importance': regime_importance, 'consistency_analysis': consistency_df.to_dict('index'), 'consistent_features': consistency_df[consistency_df['consistency'] > 0.8].index.tolist(), 'inconsistent_features': consistency_df[consistency_df['consistency'] < 0.3].index.tolist()}
             else:
                 results = {'regime_importance': regime_importance, 'consistency_analysis': {}, 'consistent_features': [], 'inconsistent_features': []}
@@ -1097,7 +1097,7 @@ class AutoencoderFeatureAnalyzer:
         else:
             return pd.DataFrame(self.importance_scores[method])
 
-    def get_stable_features(self, threshold: float=0.7) -> list[str]:
+    def get_stable_features(self, threshold: float = 0.7) -> list[str]:
         """Get list of stable features above threshold."""
         if 'stability_metrics' not in self.stability_metrics:
             return []
@@ -1107,7 +1107,7 @@ class AutoencoderFeatureAnalyzer:
                 stable_features.append(feature)
         return stable_features
 
-    def get_high_correlation_features(self, threshold: float=0.5) -> list[str]:
+    def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
         """Get list of features with high correlation to target."""
         if 'correlation_analysis' not in self.correlation_analysis:
             return []
@@ -1121,7 +1121,7 @@ class AutoencoderFeatureAnalyzer:
 class AutoencoderFeatureGenerator:
     """Main class for the complete autoencoder feature generation workflow."""
 
-    def __init__(self, config: str | dict | None=None) -> None:
+    def __init__(self, config: str | dict | None = None) -> None:
         if not DEPENDENCIES_AVAILABLE:
             msg = f'Required dependencies not available: {MISSING_DEPENDENCY}'
             raise ImportError(msg)
@@ -1134,7 +1134,7 @@ class AutoencoderFeatureGenerator:
             self.config = AutoencoderConfig(config)
         self.logger = system_logger.getChild('AutoencoderFeatureGenerator')
 
-    def generate_features(self, features_df: pd.DataFrame, regime_name: str, labels: np.ndarray, regime_labels: np.ndarray | None=None, enable_analysis: bool | None=None) -> pd.DataFrame:
+    def generate_features(self, features_df: pd.DataFrame, regime_name: str, labels: np.ndarray, regime_labels: np.ndarray | None = None, enable_analysis: bool | None = None) -> pd.DataFrame:
         """
         Generate autoencoder features from input features.
 
@@ -1201,7 +1201,7 @@ class AutoencoderFeatureGenerator:
             self.logger.warning(f'🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}')
             self.logger.warning('🚨 These should be excluded from autoencoder feature generation')
             self.logger.warning('🚨 Raw price data should be processed into engineered features first')
-            features_df = features_df.drop(columns=raw_ohlcv_columns)
+            features_df = features_df.drop(columns = raw_ohlcv_columns)
             self.logger.info(f'✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features')
             self.logger.info(f'📊 Features shape after removal: {features_df.shape}')
             if features_df.empty:
@@ -1216,7 +1216,7 @@ class AutoencoderFeatureGenerator:
             self.logger.error('🚨 CRITICAL DATA LEAKAGE DETECTED in autoencoder!')
             self.logger.error(f'🚨 Found label columns in autoencoder input: {actual_label_columns}')
             self.logger.error('🚨 This will cause severe data leakage! Removing these columns from autoencoder analysis.')
-            features_df = features_df.drop(columns=actual_label_columns)
+            features_df = features_df.drop(columns = actual_label_columns)
             self.logger.info(f'📊 Autoencoder features after leakage prevention: {features_df.shape[1]} columns')
 
         # Check minimum data requirements
@@ -1270,7 +1270,7 @@ class AutoencoderFeatureGenerator:
             return False
 
         std_threshold = float(self.config.get('autoencoder.min_feature_std', 1e-06))
-        per_feature_std = numeric_features.std(axis=0, skipna=True)
+        per_feature_std = numeric_features.std(axis = 0, skipna = True)
         low_std_cols = per_feature_std.index[per_feature_std <= std_threshold].tolist()
         
         if len(low_std_cols) > 0:
@@ -1304,7 +1304,7 @@ class AutoencoderFeatureGenerator:
         
         self.logger.info('✅ Sequence creation completed successfully')
         self.logger.info(f'📊 Sequence shapes: X_sequences={X_sequences.shape}, y_targets={y_targets.shape}')
-        self.logger.info(f'📊 Sequence configuration: timesteps={timesteps}, overlap=50%')
+        self.logger.info(f'📊 Sequence configuration: timesteps={timesteps}, overlap = 50%')
         self.logger.info(f'📊 Target indices: {len(target_indices)} samples with preserved timestamps')
         
         min_sequences = 5
@@ -1366,16 +1366,16 @@ class AutoencoderFeatureGenerator:
         """Generate encoded features and reconstruction error."""
         self.logger.info('🔧 Generating encoded features and reconstructions...')
         self.logger.info('📊 Using encoder to extract latent representations...')
-        encoded_features = autoencoder.encoder.predict(X_sequences, verbose=0)
+        encoded_features = autoencoder.encoder.predict(X_sequences, verbose = 0)
         self.logger.info('📊 Using full autoencoder to generate reconstructions...')
-        reconstructed = autoencoder.autoencoder.predict(X_sequences, verbose=0)
+        reconstructed = autoencoder.autoencoder.predict(X_sequences, verbose = 0)
         
         self.logger.info('✅ Feature generation completed successfully')
         self.logger.info(f'📊 Encoded features shape: {encoded_features.shape}')
         self.logger.info(f'📊 Reconstructed features shape: {reconstructed.shape}')
         
         self.logger.info('📊 Calculating reconstruction error...')
-        recon_error = np.mean((y_targets - reconstructed) ** 2, axis=1)
+        recon_error = np.mean((y_targets - reconstructed) ** 2, axis = 1)
         mean_recon_error = np.mean(recon_error)
         std_recon_error = np.std(recon_error)
         
@@ -1387,7 +1387,7 @@ class AutoencoderFeatureGenerator:
         
         self.logger.info('🔄 Step 5/5: Creating enriched feature DataFrame')
         self.logger.info('📊 Creating encoded features DataFrame...')
-        encoded_df = pd.DataFrame(encoded_features, index=target_indices, columns=[f'autoencoder_{i + 1}' for i in range(encoded_features.shape[1])])
+        encoded_df = pd.DataFrame(encoded_features, index = target_indices, columns=[f'autoencoder_{i + 1}' for i in range(encoded_features.shape[1])])
         encoded_df['autoencoder_recon_error'] = recon_error
         
         self.logger.info('✅ Encoded features DataFrame created successfully')
@@ -1399,7 +1399,7 @@ class AutoencoderFeatureGenerator:
     def _merge_features(self, features_df: pd.DataFrame, encoded_df: pd.DataFrame) -> pd.DataFrame:
         """Merge original and encoded features."""
         self.logger.info('📊 Merging encoded features with original features...')
-        result_df = features_df.merge(encoded_df, left_index=True, right_index=True, how='left')
+        result_df = features_df.merge(encoded_df, left_index = True, right_index = True, how='left')
         autoencoder_cols = [col for col in result_df.columns if 'autoencoder' in col]
         result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
         
@@ -1420,10 +1420,10 @@ class AutoencoderFeatureGenerator:
                 feature_analyzer = AutoencoderFeatureAnalyzer(self.config)
                 autoencoder_features = result_df[autoencoder_cols].copy()
                 analysis_results = feature_analyzer.analyze_feature_importance(
-                    encoded_features=autoencoder_features, 
-                    labels=labels, 
-                    original_features=features_df if self.config.get('feature_analysis.comparison_with_original', True) else None, 
-                    regime_labels=regime_labels if self.config.get('feature_analysis.regime_analysis_enabled', True) else None
+                    encoded_features = autoencoder_features, 
+                    labels = labels, 
+                    original_features = features_df if self.config.get('feature_analysis.comparison_with_original', True) else None, 
+                    regime_labels = regime_labels if self.config.get('feature_analysis.regime_analysis_enabled', True) else None
                 )
                 
                 if 'error' not in analysis_results:
@@ -1463,13 +1463,13 @@ class AutoencoderFeatureGenerator:
                 self.logger.warning(f'⚠️ Trial failed: {str(e)}')
                 return float('inf')
         self.logger.info('🔧 Creating Optuna study for hyperparameter optimization...')
-        study = optuna.create_study(direction='minimize', pruner=optuna.pruners.MedianPruner())
+        study = optuna.create_study(direction='minimize', pruner = optuna.pruners.MedianPruner())
         n_trials = self.config.get('training.n_trials', 50)
         n_jobs = self.config.get('training.n_jobs', 1)
         self.logger.info(f'🚀 Starting Optuna optimization with {n_trials} trials...')
         self.logger.info(f'📊 Parallel jobs: {n_jobs} (1 recommended for GPU compatibility)')
         start_time = time.time()
-        study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs)
+        study.optimize(objective, n_trials = n_trials, n_jobs = n_jobs)
         optimization_time = time.time() - start_time
         self.logger.info('✅ Optuna optimization completed successfully!')
         self.logger.info(f'📊 Optimization time: {optimization_time:.2f} seconds')
@@ -1493,7 +1493,7 @@ class AutoencoderFeatureGenerator:
                 return pd.DataFrame(feature_importance[method])
         return pd.DataFrame()
 
-    def get_stable_features(self, threshold: float=0.7) -> list[str]:
+    def get_stable_features(self, threshold: float = 0.7) -> list[str]:
         """Get list of stable features from the last analysis."""
         analysis_results = self.get_last_analysis_results()
         if analysis_results and 'stability_metrics' in analysis_results:
@@ -1502,7 +1502,7 @@ class AutoencoderFeatureGenerator:
                 return stability_metrics['stable_features']
         return []
 
-    def get_high_correlation_features(self, threshold: float=0.5) -> list[str]:
+    def get_high_correlation_features(self, threshold: float = 0.5) -> list[str]:
         """Get list of features with high correlation to target from the last analysis."""
         analysis_results = self.get_last_analysis_results()
         if analysis_results and 'correlation_analysis' in analysis_results:

@@ -44,9 +44,9 @@ class DataQualityValidator:
         traced(span_name="validate_ohlc_data"),
         validate_data_quality(
             required_columns=['open', 'high', 'low', 'close', 'volume'],
-            check_ohlc_integrity=True,
-            check_nan=True,
-            check_infinite=True,
+            check_ohlc_integrity = True,
+            check_nan = True,
+            check_infinite = True,
             context='ohlc_validation'
         )
     )
@@ -73,14 +73,14 @@ class DataQualityValidator:
             # Check OHLC integrity
             if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
                 # High should be >= max(open, close)
-                invalid_high = df['high'] < df[['open', 'close']].max(axis=1)
+                invalid_high = df['high'] < df[['open', 'close']].max(axis = 1)
                 if invalid_high.any():
                     count = invalid_high.sum()
                     validation_results['issues'].append(f"Found {count} rows where high < max(open, close)")
                     validation_results['validation_passed'] = False
                 
                 # Low should be <= min(open, close)
-                invalid_low = df['low'] > df[['open', 'close']].min(axis=1)
+                invalid_low = df['low'] > df[['open', 'close']].min(axis = 1)
                 if invalid_low.any():
                     count = invalid_low.sum()
                     validation_results['issues'].append(f"Found {count} rows where low > min(open, close)")

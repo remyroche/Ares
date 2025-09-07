@@ -1,18 +1,24 @@
 
 import pandas as pd
-'\nComprehensive Trade Tracking System\n\nThis module provides detailed tracking of trades with model ensemble data = regime analysis, feature importance, decision paths, and model behavior monitoring.\n'
 import json
 import time
+import numpy as np
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from dataclasses_json import dataclass_json
-from .utils.logger import system_logger
-from .utils.warning_symbols import missing
-from .core.decorators.errors import handles_errors
-import numpy as np
-import logging
+
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
+from ..utils.warning_symbols import missing, failed
+
+"""
+Comprehensive Trade Tracking System
+
+This module provides detailed tracking of trades with model ensemble data = regime analysis, feature importance, decision paths, and model behavior monitoring.
+"""
 
 class TradeStatus(Enum):
     """Trade status enumeration."""
@@ -154,7 +160,7 @@ class TradeTracker:
         self.performance_metrics = {'total_trades': 0, 'winning_trades': 0, 'losing_trades': 0, 'total_pnl': 0.0, 'win_rate': 0.0, 'avg_win': 0.0, 'avg_loss': 0.0, 'max_drawdown': 0.0}
         self.logger.info('🚀 Trade Tracker initialized')
 
-    @handles_errors(error_handlers={ValueError: ('Invalid trade data', False), KeyError: ('Missing required trade fields', False)}, default_return=False, context='trade recording')
+    @handles_errors(error_handlers={ValueError: ('Invalid trade data', False), KeyError: ('Missing required trade fields', False)}, default_return = False, context='trade recording')
     async def record_trade(self, trade_data: dict[str, Any], ensemble_decision: dict[str, Any], regime_analysis: dict[str, Any], decision_path: dict[str, Any], model_behaviors: list[dict[str, Any]]) -> bool:
         """
         Record a comprehensive trade with all tracking data.
@@ -171,7 +177,7 @@ class TradeTracker:
         """
         try:
             trade_id = f'trade_{int(time.time() * 1000)}'
-            trade_record = TradeRecord(trade_id=trade_id, symbol=trade_data['symbol'], side=trade_data['side'], quantity=trade_data['quantity'], price=trade_data['price'], timestamp=datetime.fromisoformat(trade_data['timestamp']), status=TradeStatus(trade_data['status']), order_type=trade_data['order_type'], ensemble_decision=EnsembleDecision(**ensemble_decision), regime_analysis=RegimeAnalysis(**regime_analysis), decision_path=DecisionPath(**decision_path), model_behaviors=[ModelBehavior(**mb) for mb in model_behaviors], market_conditions=trade_data.get('market_conditions', {}), risk_metrics=trade_data.get('risk_metrics', {}), execution_metadata=trade_data.get('execution_metadata', {}), stop_loss=trade_data.get('stop_loss'), take_profit=trade_data.get('take_profit'))
+            trade_record = TradeRecord(trade_id = trade_id, symbol = trade_data['symbol'], side = trade_data['side'], quantity = trade_data['quantity'], price = trade_data['price'], timestamp = datetime.fromisoformat(trade_data['timestamp']), status = TradeStatus(trade_data['status']), order_type = trade_data['order_type'], ensemble_decision = EnsembleDecision(**ensemble_decision), regime_analysis = RegimeAnalysis(**regime_analysis), decision_path = DecisionPath(**decision_path), model_behaviors=[ModelBehavior(**mb) for mb in model_behaviors], market_conditions = trade_data.get('market_conditions', {}), risk_metrics = trade_data.get('risk_metrics', {}), execution_metadata = trade_data.get('execution_metadata', {}), stop_loss = trade_data.get('stop_loss'), take_profit = trade_data.get('take_profit'))
             self.trades[trade_id] = trade_record
             self.trade_history.append(trade_record)
             self._update_performance_metrics(trade_record)
@@ -182,7 +188,7 @@ class TradeTracker:
             self.logger.exception(failed(f'❌ Failed to record trade: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _update_performance_metrics(self, trade_record: TradeRecord) -> None:
         """Update performance metrics with new trade."""
         self.performance_metrics['total_trades'] += 1
@@ -196,7 +202,7 @@ class TradeTracker:
             winning_trades = self.performance_metrics['winning_trades']
             self.performance_metrics['win_rate'] = winning_trades / total_trades if total_trades > 0 else 0.0
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _track_model_performance(self, trade_record: TradeRecord) -> None:
         """Track individual model performance."""
         for model_behavior in trade_record.model_behaviors:
@@ -206,7 +212,7 @@ class TradeTracker:
             performance_record = {'timestamp': trade_record.timestamp, 'trade_id': trade_record.trade_id, 'prediction_consistency': model_behavior.prediction_consistency, 'confidence_trend': model_behavior.confidence_trend, 'feature_importance_stability': model_behavior.feature_importance_stability, 'prediction_drift': model_behavior.prediction_drift, 'performance_metrics': model_behavior.model_performance_metrics}
             self.model_performance_history[model_type].append(performance_record)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def update_trade(self, trade_id: str, update_data: dict[str, Any]) -> bool:
         """
         Update an existing trade record.
@@ -238,7 +244,7 @@ class TradeTracker:
         """Get a specific trade record."""
         return self.trades.get(trade_id)
 
-    def get_trade_history(self, symbol: str | None=None, start_time: datetime | None=None, end_time: datetime | None=None, limit: int | None=None) -> list[TradeRecord]:
+    def get_trade_history(self, symbol: str | None = None, start_time: datetime | None = None, end_time: datetime | None = None, limit: int | None = None) -> list[TradeRecord]:
         """
         Get trade history with optional filtering.
 
@@ -278,7 +284,7 @@ class TradeTracker:
             summary[model_type] = {'total_predictions': len(history), 'avg_prediction_consistency': avg_consistency, 'avg_feature_importance_stability': avg_stability, 'avg_prediction_drift': avg_drift, 'last_prediction': history[-1]['timestamp'] if history else None}
         return summary
 
-    def get_feature_importance_analysis(self, model_type: str | None=None, timeframe: str | None=None, regime: str | None=None) -> dict[str, Any]:
+    def get_feature_importance_analysis(self, model_type: str | None = None, timeframe: str | None = None, regime: str | None = None) -> dict[str, Any]:
         """
         Analyze feature importance across trades.
 
@@ -347,7 +353,7 @@ class TradeTracker:
             analysis['regime_transition_analysis'] = {'mean_transition_probability': np.mean(transition_probs), 'high_transition_periods': len([p for p in transition_probs if p > 0.5])}
         return analysis
 
-    def export_trade_data(self, format: str='json', filepath: str | None=None) -> str:
+    def export_trade_data(self, format: str='json', filepath: str | None = None) -> str:
         """
         Export trade data to file.
 
@@ -364,14 +370,14 @@ class TradeTracker:
         if format == 'json':
             export_data = {'trades': [asdict(trade) for trade in self.trade_history], 'performance_metrics': self.performance_metrics, 'model_performance': self.model_performance_history}
             with open(filepath, 'w') as f:
-                json.dump(export_data, f, indent=2, default=str)
+                json.dump(export_data, f, indent = 2, default = str)
         elif format == 'csv':
             trade_data = []
             for trade in self.trade_history:
                 trade_dict = asdict(trade)
                 trade_data.append(self._flatten_trade_dict(trade_dict))
             df = pd.DataFrame(trade_data)
-            df.to_csv(filepath, index=False)
+            df.to_csv(filepath, index = False)
         self.logger.info(f'📊 Trade data exported to {filepath}')
         return filepath
 
@@ -388,7 +394,7 @@ class TradeTracker:
                 flattened[key] = value
         return flattened
 
-    async def cleanup_old_records(self, max_age_days: int=30) -> int:
+    async def cleanup_old_records(self, max_age_days: int = 30) -> int:
         """
         Clean up old trade records.
 
@@ -398,7 +404,7 @@ class TradeTracker:
         Returns:
             int: Number of records cleaned up
         """
-        cutoff_time = datetime.now() - pd.Timedelta(days=max_age_days)
+        cutoff_time = datetime.now() - pd.Timedelta(days = max_age_days)
         old_count = len(self.trade_history)
         self.trade_history = [trade for trade in self.trade_history if trade.timestamp > cutoff_time]
         new_count = len(self.trade_history)

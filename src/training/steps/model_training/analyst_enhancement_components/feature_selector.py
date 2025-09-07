@@ -3,16 +3,19 @@ from typing import List
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Feature selection component for analyst enhancement."""
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 
 class FeatureSelector:
     """Handles feature selection for analyst models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the feature selector.
@@ -64,7 +67,7 @@ class FeatureSelector:
     async def _mutual_info_selection(self, X_train: pd.DataFrame, y_train: pd.Series) -> Dict[str, float]:
         """Perform mutual information feature selection."""
         try:
-            mi_scores = mutual_info_classif(X_train, y_train, n_neighbors=self.method_config['mutual_info']['n_neighbors'], random_state=self.method_config['mutual_info']['random_state'])
+            mi_scores = mutual_info_classif(X_train, y_train, n_neighbors = self.method_config['mutual_info']['n_neighbors'], random_state = self.method_config['mutual_info']['random_state'])
             scores = {feature: score for feature, score in zip(X_train.columns, mi_scores)}
             return scores
         except Exception as e:
@@ -78,7 +81,7 @@ class FeatureSelector:
                 model.fit(X_train, y_train)
                 importances = model.feature_importances_
             else:
-                rf = RandomForestClassifier(n_estimators=self.method_config['importance']['n_estimators'], random_state=self.method_config['importance']['random_state'], n_jobs=-1)
+                rf = RandomForestClassifier(n_estimators = self.method_config['importance']['n_estimators'], random_state = self.method_config['importance']['random_state'], n_jobs=-1)
                 rf.fit(X_train, y_train)
                 importances = rf.feature_importances_
             scores = {feature: importance for feature, importance in zip(X_train.columns, importances)}
@@ -93,13 +96,14 @@ class FeatureSelector:
             n_features = self.method_config['rfe']['n_features_to_select']
             if n_features is None:
                 n_features = max(self.min_features, int(X_train.shape[1] * self.selection_threshold))
-            selector = RFE(estimator=model, n_features_to_select=n_features, step=self.method_config['rfe']['step'])
+            selector = RFE(estimator = model, n_features_to_select = n_features, step = self.method_config['rfe']['step'])
             selector.fit(X_train, y_train)
             scores = {feature: 1.0 if selected else 0.0 for feature, selected in zip(X_train.columns, selector.support_)}
             return scores
         except Exception as e:
             self.logger.warning(f'RFE selection failed: {str(e)}')
             return {}
+    @log_all_calls
 
     def _combine_feature_scores(self, feature_scores: Dict[str, Dict[str, float]]) -> Dict[str, float]:
         """Combine scores from different selection methods."""
@@ -124,12 +128,13 @@ class FeatureSelector:
         if max_score > 0:
             combined = {f: s / max_score for f, s in combined.items()}
         return combined
+    @log_all_calls
 
     def _select_top_features(self, feature_scores: Dict[str, float]) -> List[str]:
         """Select top features based on scores."""
         if not feature_scores:
             return []
-        sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_features = sorted(feature_scores.items(), key = lambda x: x[1], reverse = True)
         n_features = len(sorted_features)
         if self.max_features is not None:
             n_features = min(n_features, self.max_features)

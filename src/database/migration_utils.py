@@ -5,8 +5,8 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from typing import Any
-from .database.sqlite_manager import SQLiteManager
-from .utils.logger import system_logger
+from ..database.sqlite_manager import SQLiteManager
+from ..utils.logger import system_logger
 
 import sqlite3
 import sys
@@ -24,7 +24,7 @@ class DatabaseMigrationUtils:
         self.db_manager = db_manager
         self.logger = system_logger.getChild('MigrationUtils')
 
-    async def export_for_trading(self, export_name: str=None) -> str:
+    async def export_for_trading(self, export_name: str = None) -> str:
         """
         Exports database from backtesting computer for use on trading computer.
         Filters out backtest-specific data and keeps only essential trading data.
@@ -52,7 +52,7 @@ class DatabaseMigrationUtils:
         try:
             backtest_results = await temp_db.get_collection('backtest_results')
             if len(backtest_results) > 1:
-                sorted_results = sorted(backtest_results, key=lambda x: x.get('created_at', ''), reverse=True)
+                sorted_results = sorted(backtest_results, key = lambda x: x.get('created_at', ''), reverse = True)
                 for result in sorted_results[1:]:
                     await temp_db.delete_document('backtest_results', result.get('backtest_id', ''))
             for result in await temp_db.get_collection('backtest_results'):
@@ -60,7 +60,7 @@ class DatabaseMigrationUtils:
                 await temp_db.set_document('backtest_results', result.get('backtest_id', ''), result)
             self.logger.info('Database cleaned for trading export')
         except Exception as e:
-            self.logger.error(f'Error cleaning database for trading: {e}', exc_info=True)
+            self.logger.error(f'Error cleaning database for trading: {e}', exc_info = True)
 
     async def import_for_trading(self, import_path: str) -> bool:
         """
@@ -85,7 +85,7 @@ class DatabaseMigrationUtils:
             self.logger.error(failed(f'Failed to import for trading: {e}'))
             return False
 
-    async def export_backtest_results(self, export_name: str=None) -> str:
+    async def export_backtest_results(self, export_name: str = None) -> str:
         """
         Exports only backtest results for analysis on another computer.
         """
@@ -96,13 +96,13 @@ class DatabaseMigrationUtils:
             backtest_results = await self.db_manager.get_collection('backtest_results')
             export_data = {'export_id': export_name, 'export_type': 'backtest_results', 'created_at': datetime.now().isoformat(), 'source_computer': os.uname().nodename if hasattr(os, 'uname') else 'unknown', 'results_count': len(backtest_results), 'results': backtest_results}
             with open(export_path, 'w') as f:
-                json.dump(export_data, f, indent=2)
+                json.dump(export_data, f, indent = 2)
             with open(export_path, 'rb') as f:
                 checksum = hashlib.md5(f.read()).hexdigest()
             self.logger.info(f'Backtest results exported: {export_path} (checksum: {checksum})')
             return export_path
         except Exception as e:
-            self.logger.error(f'Failed to export backtest results: {e}', exc_info=True)
+            self.logger.error(f'Failed to export backtest results: {e}', exc_info = True)
             return ''
 
     async def validate_migration_file(self, file_path: str) -> dict[str, Any]:
@@ -150,17 +150,17 @@ class DatabaseMigrationUtils:
         """
         try:
             migrations = await self.db_manager.get_collection('database_migrations')
-            return sorted(migrations, key=lambda x: x.get('created_at', ''), reverse=True)
+            return sorted(migrations, key = lambda x: x.get('created_at', ''), reverse = True)
         except Exception as e:
-            self.logger.error(f'Failed to list migrations: {e}', exc_info=True)
+            self.logger.error(f'Failed to list migrations: {e}', exc_info = True)
             return []
 
-    async def cleanup_old_migrations(self, keep_days: int=30) -> None:
+    async def cleanup_old_migrations(self, keep_days: int = 30) -> None:
         """
         Cleans up old migration files and records.
         """
         try:
-            cutoff_date = datetime.now() - timedelta(days=keep_days)
+            cutoff_date = datetime.now() - timedelta(days = keep_days)
             migrations = await self.list_migrations()
             old_migrations = [m for m in migrations if datetime.fromisoformat(m.get('created_at', '1970-01-01')) < cutoff_date]
             for migration in old_migrations:
@@ -173,7 +173,7 @@ class DatabaseMigrationUtils:
                 self.logger.info(f'Removed old migration record: {migration_id}')
             self.logger.info(f'Cleaned up {len(old_migrations)} old migrations')
         except Exception as e:
-            self.logger.error(f'Failed to cleanup old migrations: {e}', exc_info=True)
+            self.logger.error(f'Failed to cleanup old migrations: {e}', exc_info = True)
 
 async def export_database_for_trading(db_path: str='data/ares_local_db.sqlite') -> str:
     """Command-line function to export database for trading."""
@@ -235,7 +235,7 @@ if __name__ == '__main__':
                 sys.exit(1)
             file_path = sys.argv[2]
             validation_result = await validate_migration_file(file_path)
-            print(json.dumps(validation_result, indent=2))
+            print(json.dumps(validation_result, indent = 2))
         else:
             print(f'Unknown command: {command}')
             sys.exit(1)

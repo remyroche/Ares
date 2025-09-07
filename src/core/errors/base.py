@@ -34,7 +34,7 @@ class AppError(Exception):
     message: str
     code: ErrorCode = ErrorCode.INTERNAL_ERROR
     status_code: int = 500
-    details: dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory = dict)
     cause: Exception | None = None
 
     def __str__(self) -> str:
@@ -63,84 +63,84 @@ class AppError(Exception):
 class ValidationError(AppError):
     """Input validation error."""
 
-    def __init__(self, message: str, field: str | None=None, value: Any=None, **kwargs) -> None:
+    def __init__(self, message: str, field: str | None = None, value: Any = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if field:
             details['field'] = field
         if value is not None:
             details['value'] = value
-        super().__init__(message=message, code=ErrorCode.VALIDATION_ERROR, status_code=400, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.VALIDATION_ERROR, status_code = 400, details = details, **kwargs)
 
 class AuthenticationError(AppError):
     """Authentication failure."""
 
     def __init__(self, message: str='Authentication required', **kwargs) -> None:
-        super().__init__(message=message, code=ErrorCode.AUTHENTICATION_ERROR, status_code=401, **kwargs)
+        super().__init__(message = message, code = ErrorCode.AUTHENTICATION_ERROR, status_code = 401, **kwargs)
 
 class AuthorizationError(AppError):
     """Authorization failure."""
 
-    def __init__(self, message: str='Insufficient permissions', required_permission: str | None=None, **kwargs) -> None:
+    def __init__(self, message: str='Insufficient permissions', required_permission: str | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if required_permission:
             details['required_permission'] = required_permission
-        super().__init__(message=message, code=ErrorCode.AUTHORIZATION_ERROR, status_code=403, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.AUTHORIZATION_ERROR, status_code = 403, details = details, **kwargs)
 
 class NotFoundError(AppError):
     """Resource not found."""
 
-    def __init__(self, message: str, resource_type: str | None=None, resource_id: str | None=None, **kwargs) -> None:
+    def __init__(self, message: str, resource_type: str | None = None, resource_id: str | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if resource_type:
             details['resource_type'] = resource_type
         if resource_id:
             details['resource_id'] = resource_id
-        super().__init__(message=message, code=ErrorCode.NOT_FOUND, status_code=404, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.NOT_FOUND, status_code = 404, details = details, **kwargs)
 
 class ConflictError(AppError):
     """Resource conflict."""
 
     def __init__(self, message: str, **kwargs) -> None:
-        super().__init__(message=message, code=ErrorCode.CONFLICT, status_code=409, **kwargs)
+        super().__init__(message = message, code = ErrorCode.CONFLICT, status_code = 409, **kwargs)
 
 class RateLimitError(AppError):
     """Rate limit exceeded."""
 
-    def __init__(self, message: str='Rate limit exceeded', retry_after: int | None=None, **kwargs) -> None:
+    def __init__(self, message: str='Rate limit exceeded', retry_after: int | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if retry_after:
             details['retry_after'] = retry_after
-        super().__init__(message=message, code=ErrorCode.RATE_LIMITED, status_code=429, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.RATE_LIMITED, status_code = 429, details = details, **kwargs)
 
 class TimeoutError(AppError):
     """Operation timeout."""
 
-    def __init__(self, message: str='Operation timed out', timeout_seconds: float | None=None, **kwargs) -> None:
+    def __init__(self, message: str='Operation timed out', timeout_seconds: float | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if timeout_seconds:
             details['timeout_seconds'] = timeout_seconds
-        super().__init__(message=message, code=ErrorCode.TIMEOUT, status_code=504, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.TIMEOUT, status_code = 504, details = details, **kwargs)
 
 class ServiceUnavailableError(AppError):
     """Service temporarily unavailable."""
 
-    def __init__(self, message: str='Service temporarily unavailable', service_name: str | None=None, **kwargs) -> None:
+    def __init__(self, message: str='Service temporarily unavailable', service_name: str | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if service_name:
             details['service_name'] = service_name
-        super().__init__(message=message, code=ErrorCode.SERVICE_UNAVAILABLE, status_code=503, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.SERVICE_UNAVAILABLE, status_code = 503, details = details, **kwargs)
 
 class BusinessRuleError(AppError):
     """Business rule violation."""
 
-    def __init__(self, message: str, rule_name: str | None=None, **kwargs) -> None:
+    def __init__(self, message: str, rule_name: str | None = None, **kwargs) -> None:
         details = kwargs.pop('details', {})
         if rule_name:
             details['rule_name'] = rule_name
-        super().__init__(message=message, code=ErrorCode.BUSINESS_RULE_VIOLATION, status_code=422, details=details, **kwargs)
+        super().__init__(message = message, code = ErrorCode.BUSINESS_RULE_VIOLATION, status_code = 422, details = details, **kwargs)
 
 class DataIntegrityError(AppError):
     """Data integrity violation."""
 
     def __init__(self, message: str, **kwargs) -> None:
-        super().__init__(message=message, code=ErrorCode.DATA_INTEGRITY_ERROR, status_code=422, **kwargs)
+        super().__init__(message = message, code = ErrorCode.DATA_INTEGRITY_ERROR, status_code = 422, **kwargs)

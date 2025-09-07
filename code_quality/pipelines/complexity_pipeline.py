@@ -20,8 +20,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+current_dir = Path(__file__).parent
+parent_dir = current_dir.parent
+grandparent_dir = parent_dir.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(grandparent_dir))
 
 # Import complexity analyzers (ONLY complexity-related)
 from analyzers.simple_complexity_analyzer import SimpleComplexityAnalyzer
@@ -37,26 +40,29 @@ print("Warning: Visualizers disabled due to missing dependencies")
 
 # Import core components
 from core.config import get_default_config
-from plugins.plugin_registry import PluginRegistry
-from plugins.plugin_manager import PluginManager
+
+# Import standardized base pipeline
+from base_pipeline import BasePipeline
 
 
-class ComplexityPipeline:
-    """Specialized pipeline for complexity analysis."""
-    
+class ComplexityPipeline(BasePipeline):
+    """Specialized pipeline for complexity analysis with standardized initialization."""
+
     def __init__(self, project_root: str = None, enable_plugins: bool = True):
-        self.project_root = Path(project_root) if project_root else Path.cwd()
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.results = {}
-        self.enable_plugins = enable_plugins
-        
-        # Initialize analyzers
+        # Use standardized initialization from base class
+        super().__init__(project_root=project_root, enable_plugins=enable_plugins,
+                        pipeline_name="complexity")
+
+        # Setup pipeline-specific paths
+        self.setup_pipeline_paths()
+
+        # Initialize analyzers with standardized config
         self.config = get_default_config()
         self.complexity_analyzer = SimpleComplexityAnalyzer(self.config)
         self.metrics_analyzer = MetricsAnalyzer(self.project_root)
         self.architecture_analyzer = ArchitectureAnalyzer(self.config)
         self.call_graph_analyzer = CallGraphAnalyzer(self.config)
-        
+
         # Initialize visualizers
         if VISUALIZERS_AVAILABLE:
             self.complexity_heatmap = ComplexityHeatmapVisualizer()
@@ -64,34 +70,24 @@ class ComplexityPipeline:
         else:
             self.complexity_heatmap = None
             self.dashboard_generator = None
-        
-        # Initialize plugin system
+
+        # Initialize plugin system with standardized registration
         if self.enable_plugins:
-            try:
-                self.plugin_registry = PluginRegistry()
-                self.plugin_manager = PluginManager(self.plugin_registry)
-                self._register_complexity_plugins()
-            except Exception as e:
-                print(f"⚠️  Warning: Could not initialize plugin system: {e}")
-                self.enable_plugins = False
-        
-        # Setup reports directory
-        self.reports_dir = self.project_root / "code_quality" / "reports" / "complexity"
-        self.reports_dir.mkdir(parents=True, exist_ok=True)
+            self._register_complexity_plugins()
     
     def _register_complexity_plugins(self):
-        """Register complexity-related plugins."""
+        """Register complexity-related plugins using standardized batch registration."""
         try:
-            # Register complexity analysis plugins
+            # Import complexity analysis plugins
             from plugins.creosote_analyzer import CreosoteAnalyzer
             from plugins.flake8_analyzer import Flake8Analyzer
-            
-            self.plugin_registry.register_plugin(CreosoteAnalyzer)
-            self.plugin_registry.register_plugin(Flake8Analyzer)
-            
-            print(f"✅ Registered {len(self.plugin_registry.list_plugins())} complexity plugins")
+
+            # Use standardized batch registration
+            plugin_classes = [CreosoteAnalyzer, Flake8Analyzer]
+            self.register_plugins_batch(plugin_classes)
+
         except ImportError as e:
-            print(f"⚠️  Warning: Could not register some plugins: {e}")
+            self.logger.warning(f"Could not import complexity plugins: {e}")
     
     def run_cyclomatic_complexity_analysis(self) -> Dict[str, Any]:
         """Run cyclomatic complexity analysis."""

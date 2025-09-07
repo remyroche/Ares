@@ -5,11 +5,11 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
+from .core.decorators import handles_errors
 
 # src/training/model_specific_pruning.py
 
@@ -96,7 +96,7 @@ class ModelSpecificPruning:
 
             # Step 2: Remove highly correlated features (keep diverse set)
             uncorrelated_features = self._remove_highly_correlated_features(
-                features_df, threshold=0.85
+                features_df, threshold = 0.85
             )
 
             # Step 3: Combine and rank by importance
@@ -112,10 +112,10 @@ class ModelSpecificPruning:
                 f for f in uncorrelated_features if f not in preferred_features
             ]
             mi_scores = mutual_info_classif(
-                features_df[remaining_features], target, random_state=42
+                features_df[remaining_features], target, random_state = 42
             )
-            mi_ranking = pd.Series(mi_scores, index=remaining_features).sort_values(
-                ascending=False
+            mi_ranking = pd.Series(mi_scores, index = remaining_features).sort_values(
+                ascending = False
             )
 
             # Step 5: Select final features
@@ -186,7 +186,7 @@ class ModelSpecificPruning:
 
             # Step 2: Remove highly correlated features (multicollinearity)
             uncorrelated_features = self._remove_highly_correlated_features(
-                features_df[linear_features], threshold=0.7
+                features_df[linear_features], threshold = 0.7
             )
 
             # Step 3: Keep interpretable features
@@ -201,10 +201,10 @@ class ModelSpecificPruning:
 
             # Step 5: Final selection based on mutual information
             mi_scores = mutual_info_classif(
-                features_df[lasso_features], target, random_state=42
+                features_df[lasso_features], target, random_state = 42
             )
-            mi_ranking = pd.Series(mi_scores, index=lasso_features).sort_values(
-                ascending=False
+            mi_ranking = pd.Series(mi_scores, index = lasso_features).sort_values(
+                ascending = False
             )
 
             final_features = mi_ranking.head(target_features).index.tolist()
@@ -609,7 +609,7 @@ class ModelSpecificPruning:
         """Remove highly correlated features."""
         corr_matrix = features_df.corr().abs()
         upper_tri = corr_matrix.where(
-            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool)
         )
 
         features_to_keep = []
@@ -627,15 +627,15 @@ class ModelSpecificPruning:
     ) -> list[str]:
         """Remove redundant features for ensemble models."""
         # Use mutual information to identify redundant features
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(
-            ascending=False
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores, index = features_df.columns).sort_values(
+            ascending = False
         )
 
         # Keep top features and remove highly correlated ones
         top_features = mi_ranking.head(len(features_df.columns) // 2).index.tolist()
         return self._remove_highly_correlated_features(
-            features_df[top_features], threshold=0.9
+            features_df[top_features], threshold = 0.9
         )
 
     def _balance_feature_categories(
@@ -675,7 +675,7 @@ class ModelSpecificPruning:
         self, features_df: pd.DataFrame, target: pd.Series, target_features: int
     ) -> list[str]:
         """Use Lasso for feature selection in linear models."""
-        lasso = Lasso(alpha=0.01, random_state=42)
+        lasso = Lasso(alpha = 0.01, random_state = 42)
         lasso.fit(features_df, target)
 
         # Get features with non-zero coefficients
@@ -684,9 +684,9 @@ class ModelSpecificPruning:
         # If too many features selected, use top by coefficient magnitude
         if len(selected_features) > target_features:
             coef_ranking = (
-                pd.Series(lasso.coef_, index=features_df.columns)
+                pd.Series(lasso.coef_, index = features_df.columns)
                 .abs()
-                .sort_values(ascending=False)
+                .sort_values(ascending = False)
             )
             selected_features = coef_ranking.head(target_features).index.tolist()
 
@@ -697,13 +697,13 @@ class ModelSpecificPruning:
     ) -> list[str]:
         """Use ensemble methods for feature selection."""
         # Use Random Forest for feature importance
-        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+        rf = RandomForestClassifier(n_estimators = 100, random_state = 42)
         rf.fit(features_df, target)
 
         # Get feature importance ranking
         importance_ranking = pd.Series(
-            rf.feature_importances_, index=features_df.columns
-        ).sort_values(ascending=False)
+            rf.feature_importances_, index = features_df.columns
+        ).sort_values(ascending = False)
 
         return importance_ranking.head(target_features).index.tolist()
 
@@ -715,11 +715,11 @@ class ModelSpecificPruning:
         methods = [
             (
                 "random_forest",
-                RandomForestClassifier(n_estimators=100, random_state=42),
+                RandomForestClassifier(n_estimators = 100, random_state = 42),
             ),
             (
                 "lightgbm",
-                lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1),
+                lgb.LGBMClassifier(n_estimators = 100, random_state = 42, verbose=-1),
             ),
             ("mutual_info", None),  # Will use mutual_info_classif
         ]
@@ -727,16 +727,16 @@ class ModelSpecificPruning:
         feature_scores = {}
         for method_name, estimator in methods:
             if method_name == "mutual_info":
-                scores = mutual_info_classif(features_df, target, random_state=42)
+                scores = mutual_info_classif(features_df, target, random_state = 42)
             else:
                 estimator.fit(features_df, target)
                 scores = estimator.feature_importances_
 
-            feature_scores[method_name] = pd.Series(scores, index=features_df.columns)
+            feature_scores[method_name] = pd.Series(scores, index = features_df.columns)
 
         # Combine scores from different methods
         combined_scores = (
-            pd.DataFrame(feature_scores).mean(axis=1).sort_values(ascending=False)
+            pd.DataFrame(feature_scores).mean(axis = 1).sort_values(ascending = False)
         )
 
         return combined_scores.head(target_features).index.tolist()

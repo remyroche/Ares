@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import pandas as pd
+from src.utils.logger import system_logger
 
 """
 Enhanced Data Collection Integration
@@ -26,7 +29,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
 import numpy as np
@@ -37,6 +40,7 @@ logger = system_logger.getChild("EnhancedDataCollectionIntegration")
 
 class EnhancedDataCollectionPipeline:
     """Enhanced data collection pipeline with comprehensive validation."""
+    @log_important_calls
     
     def __init__(self, exchange: str, symbol: str, timeframe: str):
         self.exchange = exchange.upper()
@@ -71,10 +75,10 @@ class EnhancedDataCollectionPipeline:
             self.logger.info("-" * 40)
             
             step01_success = await run_enhanced_step01_data_collection(
-                symbol=self.symbol,
-                exchange=self.exchange,
-                timeframe=self.timeframe,
-                force_rerun=force_rerun
+                symbol = self.symbol,
+                exchange = self.exchange,
+                timeframe = self.timeframe,
+                force_rerun = force_rerun
             )
             
             self.pipeline_state['step01_completed'] = step01_success
@@ -90,10 +94,10 @@ class EnhancedDataCollectionPipeline:
             self.logger.info("-" * 40)
             
             step01_5_success = await run_enhanced_step01_5_data_converter(
-                symbol=self.symbol,
-                exchange=self.exchange,
-                timeframe=self.timeframe,
-                force_rerun=force_rerun
+                symbol = self.symbol,
+                exchange = self.exchange,
+                timeframe = self.timeframe,
+                force_rerun = force_rerun
             )
             
             self.pipeline_state['step01_5_completed'] = step01_5_success
@@ -122,6 +126,7 @@ class EnhancedDataCollectionPipeline:
         except Exception as e:
             self.logger.exception(f"❌ Pipeline failed with exception: {e}")
             return self._create_pipeline_summary()
+    @log_all_calls
     
     def _create_pipeline_summary(self) -> Dict[str, Any]:
         """Create comprehensive pipeline summary."""
@@ -345,7 +350,7 @@ async def demonstrate_enhanced_validation():
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m",
-        force_rerun=False
+        force_rerun = False
     )
     
     logger.info(f"Pipeline Summary: {pipeline_summary}")
@@ -408,3 +413,5 @@ def test_klines_validation():
 if __name__ == "__main__":
     # Run demonstration
     asyncio.run(demonstrate_enhanced_validation())
+#!/usr/bin/env python3
+import pandas as pd

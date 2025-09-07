@@ -1,15 +1,18 @@
 
 import pandas as pd
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 18: Walk Forward Validation - Updated to use BaseStep pattern."""
 from typing import Any, Dict, List, Optional, Tuple
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from .base_validation_step import BaseValidationStep
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 
 class WalkForwardValidationStep(BaseValidationStep):
     """Step 18: Walk Forward Validation for time series models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Walk Forward Validation step.
@@ -18,12 +21,14 @@ class WalkForwardValidationStep(BaseValidationStep):
             config: Configuration dictionary
         """
         super().__init__(config, '18', 'walk_forward_validation')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         self.wf_config = {'n_splits': self.config.get('walk_forward_splits', 5), 'train_size': self.config.get('walk_forward_train_size', 0.7), 'test_size': self.config.get('walk_forward_test_size', 0.1), 'step_size': self.config.get('walk_forward_step_size', 0.05), 'retrain_frequency': self.config.get('retrain_frequency', 1), 'expanding_window': self.config.get('expanding_window', False)}
         self.fold_results: List[Dict[str, Any]] = []
         self.model_performance: Dict[str, List[Dict[str, float]]] = {}
+    @log_all_calls
 
     def _validate_step_specific_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific inputs."""
@@ -67,6 +72,7 @@ class WalkForwardValidationStep(BaseValidationStep):
         result[f'{self.full_step_name}_results'] = {'fold_results': self.fold_results, 'model_performance': self.model_performance, 'aggregated_results': aggregated_results, 'configuration': self.wf_config}
         result[f'{self.full_step_name}_summary'] = self._create_validation_summary({'model_results': aggregated_results, 'overall_metrics': self._calculate_overall_wf_metrics(aggregated_results)})
         return result
+    @log_all_calls
 
     def _extract_time_series_data(self, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
         """Extract time series data from pipeline state."""
@@ -138,7 +144,7 @@ class WalkForwardValidationStep(BaseValidationStep):
                     self.logger.info(f'  Retraining {model_name} on fold {fold_idx}')
                     model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
-                metrics = {'accuracy': accuracy_score(y_test, y_pred), 'precision': precision_score(y_test, y_pred, average='weighted', zero_division=0), 'recall': recall_score(y_test, y_pred, average='weighted', zero_division=0), 'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division=0)}
+                metrics = {'accuracy': accuracy_score(y_test, y_pred), 'precision': precision_score(y_test, y_pred, average='weighted', zero_division = 0), 'recall': recall_score(y_test, y_pred, average='weighted', zero_division = 0), 'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division = 0)}
                 fold_results['model_results'][model_name] = metrics
                 if model_name not in self.model_performance:
                     self.model_performance[model_name] = []
@@ -147,6 +153,7 @@ class WalkForwardValidationStep(BaseValidationStep):
                 self.logger.error(f'Failed to validate {model_name} on fold {fold_idx}: {str(e)}')
                 fold_results['model_results'][model_name] = {'error': str(e)}
         return fold_results
+    @log_all_calls
 
     def _split_features_labels(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         """Split data into features and labels."""
@@ -159,8 +166,9 @@ class WalkForwardValidationStep(BaseValidationStep):
                 returns = data['close'].pct_change()
                 y = (returns > 0).astype(int)
             else:
-                y = pd.Series(np.random.randint(0, 2, size=len(data)), index=data.index)
+                y = pd.Series(np.random.randint(0, 2, size = len(data)), index = data.index)
         return (X, y)
+    @log_all_calls
 
     def _aggregate_fold_results(self) -> Dict[str, Dict[str, float]]:
         """Aggregate results across all folds."""
@@ -178,6 +186,7 @@ class WalkForwardValidationStep(BaseValidationStep):
                         model_agg[f'{metric}_max'] = np.max(values)
             aggregated[model_name] = model_agg
         return aggregated
+    @log_all_calls
 
     def _calculate_overall_wf_metrics(self, aggregated_results: Dict[str, Dict[str, float]]) -> Dict[str, float]:
         """Calculate overall walk forward metrics."""
@@ -196,6 +205,7 @@ class WalkForwardValidationStep(BaseValidationStep):
             else:
                 metrics[key] = 0.0
         return metrics
+    @log_all_calls
 
     def _validate_step_specific_outputs(self, pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific outputs."""
@@ -206,6 +216,7 @@ class WalkForwardValidationStep(BaseValidationStep):
             if 'fold_results' not in results or len(results['fold_results']) == 0:
                 errors.append('No fold results found in walk forward validation')
         return errors
+    @log_all_calls
 
     def _add_step_specific_summary(self, summary: Dict[str, Any], validation_results: Dict[str, Any]) -> None:
         """Add step-specific items to summary."""

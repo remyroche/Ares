@@ -81,7 +81,7 @@ class ComprehensiveValidator:
             return False, errors
         
         if operation_type == "correlation":
-            if not np.allclose(matrix, matrix.T, rtol=1e-10):
+            if not np.allclose(matrix, matrix.T, rtol = 1e-10):
                 errors.append("Correlation matrix is not symmetric")
             if not np.all(np.diag(matrix) == 1.0):
                 errors.append("Correlation matrix diagonal is not 1.0")
@@ -89,13 +89,13 @@ class ComprehensiveValidator:
                 errors.append("Correlation matrix has values outside [-1, 1]")
         
         elif operation_type == "covariance":
-            if not np.allclose(matrix, matrix.T, rtol=1e-10):
+            if not np.allclose(matrix, matrix.T, rtol = 1e-10):
                 errors.append("Covariance matrix is not symmetric")
             if np.any(np.diag(matrix) < 0):
                 errors.append("Covariance matrix has negative diagonal values")
         
         elif operation_type == "eigenvalues":
-            if not np.allclose(matrix, matrix.T, rtol=1e-10):
+            if not np.allclose(matrix, matrix.T, rtol = 1e-10):
                 errors.append("Matrix is not symmetric for eigenvalue computation")
             if np.any(np.iscomplex(matrix)):
                 errors.append("Matrix has complex eigenvalues")

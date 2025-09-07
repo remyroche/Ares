@@ -3,15 +3,18 @@ import numpy as np
 from typing import Any
 import pandas as pd
 from typing import Dict
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Model optimization component for analyst enhancement."""
 from sklearn.metrics import accuracy_score
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import collections
 import logging
 
 class ModelOptimizer:
     """Handles model-specific optimizations for analyst models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model optimizer.
@@ -25,7 +28,7 @@ class ModelOptimizer:
         self.early_stopping_patience = self.config.get('early_stopping_patience', 10)
         self.regularization_strength = self.config.get('regularization_strength', 0.1)
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='model optimization')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='model optimization')
     async def optimize(self, model: Any, X_train: pd.DataFrame, y_train: pd.Series, optimized_params: Dict[str, Any], regime_id: str) -> Any:
         """Optimize a model with various techniques.
         
@@ -51,6 +54,7 @@ class ModelOptimizer:
         optimized_model.fit(X_train, y_train)
         self.logger.info(f'Model optimization completed for regime {regime_id}')
         return optimized_model
+    @log_all_calls
 
     def _create_optimized_model(self, base_model: Any, optimized_params: Dict[str, Any]) -> Any:
         """Create a new model instance with optimized parameters."""
@@ -71,10 +75,10 @@ class ModelOptimizer:
         model_type = model.__class__.__name__.lower()
         if 'lightgbm' in model_type or 'lgb' in model_type:
             if hasattr(model, 'set_params'):
-                model.set_params(early_stopping_rounds=self.early_stopping_patience, verbose=-1)
+                model.set_params(early_stopping_rounds = self.early_stopping_patience, verbose=-1)
         elif 'xgboost' in model_type or 'xgb' in model_type:
             if hasattr(model, 'set_params'):
-                model.set_params(early_stopping_rounds=self.early_stopping_patience, verbose=0)
+                model.set_params(early_stopping_rounds = self.early_stopping_patience, verbose = 0)
         elif hasattr(model, 'warm_start'):
             model.warm_start = True
             best_score = -np.inf
@@ -121,11 +125,12 @@ class ModelOptimizer:
                 pass
         elif 'bagging' in model_type or 'randomforest' in model_type:
             if hasattr(model, 'set_params'):
-                model.set_params(bootstrap=True, oob_score=True, max_samples=0.8)
+                model.set_params(bootstrap = True, oob_score = True, max_samples = 0.8)
         elif 'boosting' in model_type or 'adaboost' in model_type:
             if hasattr(model, 'learning_rate'):
                 model.learning_rate = min(1.0, model.learning_rate * 1.1)
         return model
+    @log_all_calls
 
     def _calculate_model_complexity(self, model: Any) -> float:
         """Calculate a complexity score for the model."""

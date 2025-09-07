@@ -29,7 +29,7 @@ def optimize_dataframe_dtypes(
     Returns:
         DataFrame with optimized data types
     """
-    initial_memory = df.memory_usage(deep=True).sum()
+    initial_memory = df.memory_usage(deep = True).sum()
     logger.info(
         f"🔧 Optimizing data types - Initial memory: {initial_memory / 1024**2:.2f} MB",
     )
@@ -63,7 +63,7 @@ def optimize_dataframe_dtypes(
                 try:
                     # Test if conversion preserves values within tolerance
                     float32_vals = df[col].astype(np.float32)
-                    if np.allclose(df[col], float32_vals, rtol=1e-5):
+                    if np.allclose(df[col], float32_vals, rtol = 1e-5):
                         optimized_df[col] = float32_vals
                 except Exception:
                     pass
@@ -95,7 +95,7 @@ def optimize_dataframe_dtypes(
                     .astype("bool")
                 )
 
-    final_memory = optimized_df.memory_usage(deep=True).sum()
+    final_memory = optimized_df.memory_usage(deep = True).sum()
     memory_reduction = (
         (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
     )
@@ -182,7 +182,7 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
                         if df[col].dtype == "float64":
                             try:
                                 float32_vals = df[col].astype("float32")
-                                if np.allclose(df[col], float32_vals, rtol=1e-5):
+                                if np.allclose(df[col], float32_vals, rtol = 1e-5):
                                     optimized_df[col] = float32_vals
                             except Exception:
                                 pass
@@ -221,14 +221,14 @@ def optimize_feature_engineering_pipeline(
         # For input data, be conservative with optimizations
         return optimize_dataframe_dtypes(
             df,
-            preserve_categorical=True,
+            preserve_categorical = True,
         )
 
     if stage == "intermediate":
         # For intermediate calculations, be more aggressive
         return optimize_dataframe_dtypes(
             df,
-            preserve_categorical=False,
+            preserve_categorical = False,
         )
 
     if stage == "output":

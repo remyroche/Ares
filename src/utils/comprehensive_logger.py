@@ -16,7 +16,7 @@ class ComprehensiveLogger:
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.log_dir = Path(config.get('log_dir', 'logs'))
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents = True, exist_ok = True)
         self._setup_loggers()
 
     def _setup_loggers(self) -> None:
@@ -63,9 +63,9 @@ class ComprehensiveLogger:
         status = 'SUCCESS' if exit_code == 0 else 'FAILED'
         self.main_logger.info(f'🏁 Launcher ended: {status} (exit code: {exit_code})')
 
-    def log_error(self, message: str, exc_info: bool=False) -> None:
+    def log_error(self, message: str, exc_info: bool = False) -> None:
         """Log an error."""
-        self.main_logger.error(message, exc_info=exc_info)
+        self.main_logger.error(message, exc_info = exc_info)
 _comprehensive_logger: Optional[ComprehensiveLogger] = None
 
 def setup_comprehensive_logging(config: Dict[str, Any]) -> ComprehensiveLogger:

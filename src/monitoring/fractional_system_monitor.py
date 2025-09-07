@@ -1,10 +1,10 @@
+from src.core.decorators import handles_errors
 'Fractional System Monitor: Production monitoring for combined fractional system.\nImplements comprehensive monitoring, alerting, and performance tracking.\n'
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from .utils.logger import get_logger
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 import pandas as pd
@@ -13,7 +13,7 @@ import time
 class FractionalSystemMonitor:
     """Monitor performance of combined fractional system in production."""
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize fractional system monitor.
 
         Args:
@@ -29,7 +29,7 @@ class FractionalSystemMonitor:
         self.monitoring_start_time = None
         self.alert_channels = self.config.get('alert_channels', ['log', 'file'])
         self.alert_output_dir = Path(self.config.get('alert_output_dir', 'data/monitoring/alerts'))
-        self.alert_output_dir.mkdir(parents=True, exist_ok=True)
+        self.alert_output_dir.mkdir(parents = True, exist_ok = True)
         self.metrics = {'feature_quality': [], 'label_quality': [], 'processing_time': [], 'error_rate': [], 'regime_quality': [], 'hmm_integration_quality': [], 'overall_synergy': []}
         self.logger = get_logger('FractionalSystemMonitor')
         self.logger.info('✅ Fractional System Monitor initialized successfully')
@@ -47,7 +47,7 @@ class FractionalSystemMonitor:
         self.logger.info(f'⏹️ Stopped fractional system monitoring (duration: {monitoring_duration})')
 
     @handles_errors
-    def track_performance(self, features: pd.DataFrame, labels: pd.Series, hmm_regime: str | None=None, processing_time: float=0.0, error_occurred: bool=False) -> None:
+    def track_performance(self, features: pd.DataFrame, labels: pd.Series, hmm_regime: str | None = None, processing_time: float = 0.0, error_occurred: bool = False) -> None:
         """Track performance metrics for the fractional system.
 
         Args:
@@ -276,7 +276,7 @@ class FractionalSystemMonitor:
                     existing_alerts = json.load(f)
             existing_alerts.append(alert)
             with open(alert_file, 'w') as f:
-                json.dump(existing_alerts, f, indent=2, default=str)
+                json.dump(existing_alerts, f, indent = 2, default = str)
         except Exception as e:
             self.logger.exception(f'Error writing alert to file: {e}')
 
@@ -383,28 +383,28 @@ class FractionalSystemMonitor:
         """
         try:
             output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
+            output_path.mkdir(parents = True, exist_ok = True)
             summary = self.get_performance_summary()
             current_status = self.get_current_status()
             summary_file = output_path / 'performance_summary.json'
             with open(summary_file, 'w') as f:
-                json.dump(summary, f, indent=2, default=str)
+                json.dump(summary, f, indent = 2, default = str)
             status_file = output_path / 'current_status.json'
             with open(status_file, 'w') as f:
-                json.dump(current_status, f, indent=2, default=str)
+                json.dump(current_status, f, indent = 2, default = str)
             history_file = output_path / 'performance_history.json'
             with open(history_file, 'w') as f:
-                json.dump(self.performance_history, f, indent=2, default=str)
+                json.dump(self.performance_history, f, indent = 2, default = str)
             alerts_file = output_path / 'alerts_history.json'
             with open(alerts_file, 'w') as f:
-                json.dump(self.alert_history, f, indent=2, default=str)
+                json.dump(self.alert_history, f, indent = 2, default = str)
             self.logger.info(f'📊 Monitoring report exported to: {output_path}')
             return str(output_path)
         except Exception as e:
             self.logger.exception(f'Failed to export monitoring report: {e}')
             return ''
 
-def get_fractional_system_monitor_config(monitoring_window: int=1000, alert_thresholds: dict[str, float] | None=None, alert_channels: list[str] | None=None, alert_output_dir: str='data/monitoring/alerts') -> dict[str, Any]:
+def get_fractional_system_monitor_config(monitoring_window: int = 1000, alert_thresholds: dict[str, float] | None = None, alert_channels: list[str] | None = None, alert_output_dir: str='data/monitoring/alerts') -> dict[str, Any]:
     """Get configuration for fractional system monitor.
 
     Args:

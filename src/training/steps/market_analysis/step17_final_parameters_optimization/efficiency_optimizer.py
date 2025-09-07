@@ -1,6 +1,10 @@
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Any
 import numpy as np
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 
 """Efficiency Optimizer for Hyperparameter Optimization.
 
@@ -14,8 +18,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import json
 import logging
 
@@ -43,6 +46,7 @@ class EfficiencyConfig:
 
 class EfficiencyOptimizer:
     """Optimizes computational efficiency of hyperparameter optimization."""
+    @log_important_calls
 
     def __init__(self, config: EfficiencyConfig) -> None:
         self.config = config
@@ -57,19 +61,19 @@ class EfficiencyOptimizer:
         self.cache_misses = 0
         self.logger.info(f'Efficiency optimizer initialized with {self.max_workers} workers')
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='efficiency optimizer initialization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='efficiency optimizer initialization')
     async def initialize(self) -> None:
         """Initialize the efficiency optimizer."""
         if self.config.enable_parallel_processing:
             if self.config.use_process_pool:
-                self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
+                self.executor = ProcessPoolExecutor(max_workers = self.max_workers)
             else:
-                self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+                self.executor = ThreadPoolExecutor(max_workers = self.max_workers)
         await self._load_caches()
         self.logger.info('✅ Efficiency optimizer initialized successfully')
 
     @handles_errors(exceptions=(Exception,), default_return={'status': 'FAILED', 'error': 'Optimization failed'}, context='efficiency optimizer trial optimization')
-    async def optimize_trial_efficiency(self, objective_function: Any, search_space: dict[str, Any], n_trials: int, timeout_seconds: int=3600) -> dict[str, Any]:
+    async def optimize_trial_efficiency(self, objective_function: Any, search_space: dict[str, Any], n_trials: int, timeout_seconds: int = 3600) -> dict[str, Any]:
         """Run efficient hyperparameter optimization."
 
         Args:
@@ -119,6 +123,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error in efficient optimization: {e}')
             raise
+    @log_all_calls
 
     def _calculate_adaptive_trials(self, base_trials: int, search_space: dict[str, Any]) -> int:
         """Calculate adaptive number of trials based on search space complexity."""
@@ -165,6 +170,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error getting warm start parameters: {e}')
             return []
+    @log_all_calls
 
     def _generate_smart_parameters(self, search_space: dict[str, Any], n_trials: int, previous_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Generate smart parameters based on previous results."""
@@ -172,7 +178,7 @@ class EfficiencyOptimizer:
             params_list = []
             for _i in range(n_trials):
                 if previous_results and self.config.enable_smart_sampling:
-                    best_results = sorted(previous_results, key=lambda x: x.get('value', 0))[:5]
+                    best_results = sorted(previous_results, key = lambda x: x.get('value', 0))[:5]
                     if best_results and np.random.random() < 0.7:
                         base_params = best_results[np.random.randint(len(best_results))]['params']
                         params = self._perturb_parameters(base_params, search_space)
@@ -185,6 +191,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error generating smart parameters: {e}')
             return [self._generate_random_parameters(search_space) for _ in range(n_trials)]
+    @log_all_calls
 
     def _generate_random_parameters(self, search_space: dict[str, Any]) -> dict[str, Any]:
         """Generate random parameters within search space."""
@@ -211,6 +218,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error generating random parameters: {e}')
             return {}
+    @log_all_calls
 
     def _generate_diverse_parameters(self, search_space: dict[str, Any], index: int) -> dict[str, Any]:
         """Generate diverse parameters for warm start."""
@@ -245,6 +253,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error generating diverse parameters: {e}')
             return {}
+    @log_all_calls
 
     def _perturb_parameters(self, base_params: dict[str, Any], search_space: dict[str, Any]) -> dict[str, Any]:
         """Perturb base parameters to create similar but different parameters."""
@@ -296,7 +305,7 @@ class EfficiencyOptimizer:
                 results = []
                 for future in futures:
                     try:
-                        result = future.result(timeout=300)
+                        result = future.result(timeout = 300)
                         results.append(result)
                     except Exception as e:
                         self.logger.exception(f'Trial evaluation failed: {e}')
@@ -316,6 +325,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error processing batch {batch_name}: {e}')
             return []
+    @log_all_calls
 
     def _evaluate_trial(self, objective_function: Any, params: dict[str, Any], trial_index: int) -> dict[str, Any]:
         """Evaluate a single trial with caching."""
@@ -348,6 +358,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error evaluating trial {trial_index}: {e}')
             return {'trial_index': trial_index, 'params': params, 'value': 0.0, 'error': str(e), 'cached': False}
+    @log_all_calls
 
     def _generate_cache_key(self, params: dict[str, Any]) -> str:
         """Generate cache key for parameters."""
@@ -357,6 +368,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error generating cache key: {e}')
             return str(hash(str(params)))
+    @log_all_calls
 
     def _trim_cache(self) -> None:
         """Trim cache to maintain size limit."""
@@ -384,6 +396,7 @@ class EfficiencyOptimizer:
                 self.logger.info(f'Cleared {len(keys_to_remove)} old cache entries')
         except Exception as e:
             self.logger.exception(f'Error clearing old cache: {e}')
+    @log_all_calls
 
     def _calculate_efficiency_metrics(self, start_time: float) -> dict[str, Any]:
         """Calculate efficiency metrics."""
@@ -400,6 +413,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error calculating efficiency metrics: {e}')
             return {}
+    @log_all_calls
 
     def _calculate_parallel_efficiency(self) -> float:
         """Calculate parallel processing efficiency."""
@@ -416,6 +430,7 @@ class EfficiencyOptimizer:
         except Exception as e:
             self.logger.exception(f'Error calculating parallel efficiency: {e}')
             return 0.0
+    @log_all_calls
 
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
@@ -435,7 +450,7 @@ class EfficiencyOptimizer:
         """Load existing caches from disk."""
         try:
             cache_dir = 'data/optimization_cache'
-            os.makedirs(cache_dir, exist_ok=True)
+            os.makedirs(cache_dir, exist_ok = True)
             cache_files = {'parameter_cache': 'parameter_cache.pkl', 'evaluation_cache': 'evaluation_cache.pkl', 'performance_cache': 'performance_cache.pkl'}
             for cache_name, filename in cache_files.items():
                 cache_path = os.path.join(cache_dir, filename)
@@ -454,7 +469,7 @@ class EfficiencyOptimizer:
         """Save caches to disk."""
         try:
             cache_dir = 'data/optimization_cache'
-            os.makedirs(cache_dir, exist_ok=True)
+            os.makedirs(cache_dir, exist_ok = True)
             cache_dict = {'parameter_cache': self.parameter_cache, 'evaluation_cache': self.evaluation_cache, 'performance_cache': self.performance_cache}
             for cache_name, cache_data in cache_dict.items():
                 cache_path = os.path.join(cache_dir, f'{cache_name}.pkl')
@@ -471,7 +486,7 @@ class EfficiencyOptimizer:
         """Cleanup resources."""
         try:
             if self.executor:
-                self.executor.shutdown(wait=True)
+                self.executor.shutdown(wait = True)
             await self.save_caches()
             self.logger.info('Efficiency optimizer cleanup completed')
         except Exception as e:
@@ -484,13 +499,13 @@ def create_efficiency_optimizer(config: EfficiencyConfig) -> EfficiencyOptimizer
 def create_test_config() -> EfficiencyConfig:
     """Create test configuration for efficiency optimizer."""
     return EfficiencyConfig(
-        enable_data_subsampling=True,
-        subsample_fraction=0.3,
-        enable_caching=True,
-        cache_size=1000,
-        enable_parallel_processing=True,
-        max_workers=4,
-        enable_aggressive_pruning=True
+        enable_data_subsampling = True,
+        subsample_fraction = 0.3,
+        enable_caching = True,
+        cache_size = 1000,
+        enable_parallel_processing = True,
+        max_workers = 4,
+        enable_aggressive_pruning = True
     )
 
 def create_test_objective() -> callable:
@@ -517,8 +532,10 @@ async def run_efficiency_test() -> None:
     search_space = create_test_search_space()
     
     await optimizer.initialize()
-    await optimizer.optimize_trial_efficiency(test_objective, search_space, n_trials=50, timeout_seconds=60)
+    await optimizer.optimize_trial_efficiency(test_objective, search_space, n_trials = 50, timeout_seconds = 60)
     await optimizer.cleanup()
 
 if __name__ == '__main__':
     asyncio.run( run_efficiency_test())
+
+from typing import Any

@@ -1,4 +1,28 @@
 #!/usr/bin/env python3
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .logger import system_logger
+from .core.decorators import (
+    handles_errors,
+    log_execution_time,
+    traced as with_tracing_span,
+    validates
+)
+from .core.domain import (
+    ensure_data_integrity,
+    monitor_step_execution,
+    quality_gate,
+    secure_step_execution,
+    validate_pipeline_step
+)
+
+import numpy as np
+import logging
+import time
+
 """
 Model Performance Monitoring System
 
@@ -6,30 +30,6 @@ This module provides comprehensive monitoring and tracking of ML model performan
 across all steps in the enhanced training manager. It tracks accuracy, precision,
 recall, F1 scores, and other key metrics with proper error handling and quality assurance.
 """
-
-import json
-from datetime import datetime
-from pathlib import Path
-
-from .core.decorators import (
-    handles_errors,
-    log_execution_time,
-    traced as with_tracing_span,
-    validates
-)
-
-from src.core.domain import (
-    ensure_data_integrity,
-    monitor_step_execution,
-    quality_gate,
-    secure_step_execution,
-    validate_pipeline_step
-)
-from .utils.logger import system_logger
-import numpy as np
-import logging
-import time
-import typing
 
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
@@ -58,12 +58,12 @@ class ModelPerformanceMonitor:
 
         # Storage
         self.results_dir = Path(self.monitor_config.get("results_dir", "results/model_performance"))
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.results_dir.mkdir(parents = True, exist_ok = True)
 
         # Initialize performance tracking
         self._initialize_performance_tracking()
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking structures."""
         self.logger.info("🔧 Initializing model performance tracking...")
@@ -91,14 +91,14 @@ class ModelPerformanceMonitor:
         self.logger.info(f"✅ Performance tracking initialized for {len(model_types)} model types")
 
     @validate_pipeline_step(
-        step_name="model_performance_monitoring", validation_level="CRITICAL", enable_rollback=True, max_retries=2
+        step_name="model_performance_monitoring", validation_level="CRITICAL", enable_rollback = True, max_retries = 2
     )
-    @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
-    @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
-    @secure_step_execution(error_handling=True, rollback_on_failure=True, data_validation=True, resource_cleanup=True)
+    @ensure_data_integrity(check_schema = True, check_constraints = True, validate_relationships = True)
+    @monitor_step_execution(enable_timing = True, enable_memory_monitoring = True, enable_progress_tracking = True)
+    @secure_step_execution(error_handling = True, rollback_on_failure = True, data_validation = True, resource_cleanup = True)
     @with_tracing_span("track_model_performance")
-    @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
-    @handles_errors(fallback=False)
+    @quality_gate(min_quality_score = 0.7, max_correlation = 0.95, required_grade="C")
+    @handles_errors(fallback = False)
     async def track_model_performance(
         self,
         model_type: str,
@@ -245,15 +245,15 @@ class ModelPerformanceMonitor:
 
             # Calculate basic classification metrics
             accuracy = accuracy_score(actual_values, predictions)
-            precision = precision_score(actual_values, predictions, average="weighted", zero_division=0)
-            recall = recall_score(actual_values, predictions, average="weighted", zero_division=0)
-            f1 = f1_score(actual_values, predictions, average="weighted", zero_division=0)
+            precision = precision_score(actual_values, predictions, average="weighted", zero_division = 0)
+            recall = recall_score(actual_values, predictions, average="weighted", zero_division = 0)
+            f1 = f1_score(actual_values, predictions, average="weighted", zero_division = 0)
 
             # Confusion matrix
             cm = confusion_matrix(actual_values, predictions)
 
             # Classification report
-            report = classification_report(actual_values, predictions, output_dict=True, zero_division=0)
+            report = classification_report(actual_values, predictions, output_dict = True, zero_division = 0)
 
             return {
                 "accuracy": float(accuracy),
@@ -420,7 +420,7 @@ class ModelPerformanceMonitor:
             }
 
     @with_tracing_span("store_performance_metrics")
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _store_performance_metrics(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
         """Store performance metrics in history.
 
@@ -451,7 +451,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error storing performance metrics: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _save_metrics_to_file(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
         """Save metrics to file for persistence.
 
@@ -466,19 +466,19 @@ class ModelPerformanceMonitor:
         try:
             # Create model-specific directory
             model_dir = self.results_dir / model_type / model_name
-            model_dir.mkdir(parents=True, exist_ok=True)
+            model_dir.mkdir(parents = True, exist_ok = True)
 
             # Save current metrics
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             metrics_file = model_dir / f"metrics_{timestamp}.json"
 
             with open(metrics_file, "w") as f:
-                json.dump(metrics, f, indent=2, default=str)
+                json.dump(metrics, f, indent = 2, default = str)
 
             # Save latest metrics
             latest_file = model_dir / "latest_metrics.json"
             with open(latest_file, "w") as f:
-                json.dump(metrics, f, indent=2, default=str)
+                json.dump(metrics, f, indent = 2, default = str)
 
             return True
 
@@ -540,7 +540,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error checking performance thresholds: {e}")
             return {"status": "ERROR", "error": str(e)}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _update_model_registry(
         self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
     ) -> bool:
@@ -585,7 +585,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error updating model registry: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _log_performance_summary(
         self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
     ) -> None:
@@ -766,7 +766,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating recommendations: {e}")
             return [f"Error generating recommendations: {str(e)}"]
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _save_performance_report(self, report: Dict[str, Any]) -> bool:
         """Save performance report to file.
 
@@ -781,12 +781,12 @@ class ModelPerformanceMonitor:
             report_file = self.results_dir / f"performance_report_{timestamp}.json"
 
             with open(report_file, "w") as f:
-                json.dump(report, f, indent=2, default=str)
+                json.dump(report, f, indent = 2, default = str)
 
             # Save latest report
             latest_file = self.results_dir / "latest_performance_report.json"
             with open(latest_file, "w") as f:
-                json.dump(report, f, indent=2, default=str)
+                json.dump(report, f, indent = 2, default = str)
 
             self.logger.info(f"📄 Performance report saved to {report_file}")
             return True

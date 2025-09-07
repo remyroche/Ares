@@ -7,7 +7,7 @@ from .data_integrity_checker import DataIntegrityChecker
 from .anomaly_detector import AnomalyDetector
 from .data_preprocessor import DataPreprocessor
 from .data_downloader import DataDownloader
-from .config_manager import QualityCheckConfig
+from ..config import QualityCheckConfig
 from .validation_strategies import (
     ValidationStrategy,
     StructureValidationStrategy,

@@ -57,7 +57,7 @@ class SystemConfig:
     memory_limit_gb: float = 8.0
 
     # Data
-    data_dir: str = "data"
+    data_dir: str = "data_cache"
     cache_dir: str = "cache"
     max_cache_size_gb: float = 10.0
 
@@ -69,7 +69,7 @@ class EnvironmentConfig:
     trading_environment: str = "paper"  # paper, live, backtest
     exchange_name: str = "binance"
     trade_symbol: str = "ETHUSDT"
-    timeframe: str = "1m"
+    timeframe: str = "5m"
     initial_equity: float = 10000.0
     is_live_mode: bool = False
 

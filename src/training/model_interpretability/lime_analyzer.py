@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 """LIME Analyzer for Model Interpretability.
 
@@ -9,13 +11,12 @@ for understanding individual model predictions.
 """
 
 
-from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 class LIMEAnalyzer:
     """LIME analyzer for model interpretability."""
@@ -32,7 +33,10 @@ class LIMEAnalyzer:
     def _check_lime_availability(self):
         """Check if LIME is available and initialize if possible."""
         try:
-            import lime
+            import logging
+            import time
+            import typing
+
             self.lime = lime
             self.lime_tabular = lime.lime_tabular
             self.lime_available = True
@@ -43,8 +47,8 @@ class LIMEAnalyzer:
             print("⚠️ LIME library not available - install with: pip install lime")
             self.lime_available = False
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     async def analyze_model(
@@ -91,7 +95,7 @@ class LIMEAnalyzer:
             self.logger.info("🔍 Generating local explanations...")
             
             local_explanations = await self._generate_local_explanations(
-                explainer, model, X_test, feature_names, num_samples=20
+                explainer, model, X_test, feature_names, num_samples = 20
             )
             results["local_explanations"] = local_explanations
             
@@ -134,23 +138,23 @@ class LIMEAnalyzer:
             print(f"❌ LIME analysis failed: {e}")
             return {"error": str(e)}
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _create_lime_explainer(self, X_test: pd.DataFrame, feature_names: List[str]) -> Optional[Any]:
         """Create LIME tabular explainer."""
         try:
             # Use a subset of data for training the explainer
-            training_data = X_test.sample(min(1000, len(X_test)), random_state=42).values
+            training_data = X_test.sample(min(1000, len(X_test)), random_state = 42).values
             
             # Create LIME explainer
             explainer = self.lime_tabular.LimeTabularExplainer(
                 training_data,
-                feature_names=feature_names,
+                feature_names = feature_names,
                 class_names=['prediction'],
                 mode='regression' if len(np.unique(training_data.flatten())) > 10 else 'classification',
-                discretize_continuous=True,
-                random_state=42
+                discretize_continuous = True,
+                random_state = 42
             )
             
             print("✅ Created LIME tabular explainer")
@@ -163,7 +167,7 @@ class LIMEAnalyzer:
             print(f"❌ Failed to create LIME explainer: {e}")
             return None
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_local_explanations(
@@ -180,7 +184,7 @@ class LIMEAnalyzer:
             
             # Limit number of samples for performance
             num_samples = min(num_samples, len(X_test))
-            sample_indices = np.random.choice(len(X_test), num_samples, replace=False)
+            sample_indices = np.random.choice(len(X_test), num_samples, replace = False)
             
             for i, sample_idx in enumerate(sample_indices):
                 sample_id = f"sample_{i}"
@@ -191,8 +195,8 @@ class LIMEAnalyzer:
                     explanation = explainer.explain_instance(
                         sample_data,
                         model.predict,
-                        num_features=min(10, len(feature_names)),
-                        top_labels=1
+                        num_features = min(10, len(feature_names)),
+                        top_labels = 1
                     )
                     
                     # Extract explanation data
@@ -218,8 +222,8 @@ class LIMEAnalyzer:
                     # Sort by absolute contribution
                     sorted_contributions = dict(sorted(
                         explanation_data["feature_contributions"].items(),
-                        key=lambda x: x[1]["abs_contribution"],
-                        reverse=True
+                        key = lambda x: x[1]["abs_contribution"],
+                        reverse = True
                     ))
                     explanation_data["top_features"] = list(sorted_contributions.keys())[:5]
                     
@@ -239,7 +243,7 @@ class LIMEAnalyzer:
             print(f"❌ Failed to generate local explanations: {e}")
             return {}
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _analyze_feature_importance(
@@ -282,8 +286,8 @@ class LIMEAnalyzer:
             # Sort by importance score
             sorted_importance = dict(sorted(
                 feature_importance.items(),
-                key=lambda x: x[1]["importance_score"],
-                reverse=True
+                key = lambda x: x[1]["importance_score"],
+                reverse = True
             ))
             
             print(f"✅ Feature importance calculated for {len(feature_importance)} features")
@@ -296,7 +300,7 @@ class LIMEAnalyzer:
             print(f"❌ Failed to analyze feature importance: {e}")
             return {}
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _analyze_explanation_consistency(
@@ -357,8 +361,8 @@ class LIMEAnalyzer:
             # Top features consistency
             sorted_consistency = dict(sorted(
                 consistency_analysis["feature_consistency"].items(),
-                key=lambda x: x[1]["consistency_score"],
-                reverse=True
+                key = lambda x: x[1]["consistency_score"],
+                reverse = True
             ))
             consistency_analysis["top_features_consistency"] = dict(list(sorted_consistency.items())[:10])
             
@@ -372,7 +376,7 @@ class LIMEAnalyzer:
             print(f"❌ Failed to analyze explanation consistency: {e}")
             return {}
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _create_lime_plots(
@@ -390,7 +394,7 @@ class LIMEAnalyzer:
         try:
             # Create plots for a few representative samples
             num_plots = min(5, len(X_test))
-            sample_indices = np.random.choice(len(X_test), num_plots, replace=False)
+            sample_indices = np.random.choice(len(X_test), num_plots, replace = False)
             
             for i, sample_idx in enumerate(sample_indices):
                 try:
@@ -400,8 +404,8 @@ class LIMEAnalyzer:
                     explanation = explainer.explain_instance(
                         sample_data,
                         model.predict,
-                        num_features=min(10, len(feature_names)),
-                        top_labels=1
+                        num_features = min(10, len(feature_names)),
+                        top_labels = 1
                     )
                     
                     # Save explanation as HTML

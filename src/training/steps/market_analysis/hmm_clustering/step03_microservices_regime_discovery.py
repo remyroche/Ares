@@ -4,6 +4,8 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Microservices Architecture for Regime Discovery.\n\nThis module implements a microservices-based architecture for regime discovery,\nbreaking the monolithic step into specialized services with async communication.\n'
 import asyncio
 import time
@@ -36,6 +38,7 @@ class ServiceResponse:
 
 class BaseService(ABC):
     """Base class for all microservices."""
+    @log_important_calls
 
     def __init__(self, service_id: str, config: Dict[str, Any]=None) -> None:
         self.service_id = service_id
@@ -67,7 +70,7 @@ class BaseService(ABC):
             return response
         except Exception as e:
             processing_time = time.time() - start_time
-            return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data=None, metadata={'error': str(e)}, timestamp=datetime.now(), success=False, error=str(e), processing_time=processing_time)
+            return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data = None, metadata={'error': str(e)}, timestamp = datetime.now(), success = False, error = str(e), processing_time = processing_time)
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get service metrics."""
@@ -75,6 +78,7 @@ class BaseService(ABC):
 
 class OptimizationService(BaseService):
     """Bayesian parameter optimization service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('optimization_service', config)
@@ -93,10 +97,11 @@ class OptimizationService(BaseService):
         features = data.get('features')
         market_data = data.get('market_data')
         optimization_results = await self.optimizer.optimize_parameters(market_data, features)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data=optimization_results, metadata={'optimization_completed': True}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data = optimization_results, metadata={'optimization_completed': True}, timestamp = datetime.now(), success = True)
 
 class FeatureService(BaseService):
     """Feature engineering service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('feature_service', config)
@@ -114,10 +119,11 @@ class FeatureService(BaseService):
         market_data = data.get('market_data')
         existing_regimes = data.get('existing_regimes')
         features = self.feature_engineer.create_regime_discovery_features(market_data, existing_regimes)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data={'features': features}, metadata={'feature_count': len(features.columns)}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data={'features': features}, metadata={'feature_count': len(features.columns)}, timestamp = datetime.now(), success = True)
 
 class ClusteringService(BaseService):
     """Ensemble clustering service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('clustering_service', config)
@@ -135,10 +141,11 @@ class ClusteringService(BaseService):
         features = data.get('features')
         optimized_params = data.get('optimized_params')
         consensus_regimes, ensemble_results = self.ensemble_detector.ensemble_regime_detection(features, optimized_params)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data={'regimes': consensus_regimes, 'ensemble_results': ensemble_results}, metadata={'n_regimes': len(np.unique(consensus_regimes))}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data={'regimes': consensus_regimes, 'ensemble_results': ensemble_results}, metadata={'n_regimes': len(np.unique(consensus_regimes))}, timestamp = datetime.now(), success = True)
 
 class ValidationService(BaseService):
     """Economic significance validation service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('validation_service', config)
@@ -156,10 +163,11 @@ class ValidationService(BaseService):
         market_data = data.get('market_data')
         regimes = data.get('regimes')
         validation_results = await self.validator.run_step(market_data, regimes)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data=validation_results, metadata={'validation_passed': validation_results.get('overall_significant', False)}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data = validation_results, metadata={'validation_passed': validation_results.get('overall_significant', False)}, timestamp = datetime.now(), success = True)
 
 class TransitionService(BaseService):
     """ML transition detection service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('transition_service', config)
@@ -177,10 +185,11 @@ class TransitionService(BaseService):
         market_data = data.get('market_data')
         regimes = data.get('regimes')
         transition_results = await self.transition_detector.detect_transitions(market_data, regimes)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data=transition_results, metadata={'transitions_detected': len(transition_results.get('transitions', []))}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data = transition_results, metadata={'transitions_detected': len(transition_results.get('transitions', []))}, timestamp = datetime.now(), success = True)
 
 class PersistenceService(BaseService):
     """Regime persistence and forecasting service."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         super().__init__('persistence_service', config)
@@ -198,10 +207,11 @@ class PersistenceService(BaseService):
         market_data = data.get('market_data')
         regimes = data.get('regimes')
         persistence_models = self.forecaster.build_persistence_models(market_data, regimes)
-        return ServiceResponse(service_id=self.service_id, request_id=request.request_id, data=persistence_models, metadata={'models_built': len(persistence_models.get('persistence_models', {}))}, timestamp=datetime.now(), success=True)
+        return ServiceResponse(service_id = self.service_id, request_id = request.request_id, data = persistence_models, metadata={'models_built': len(persistence_models.get('persistence_models', {}))}, timestamp = datetime.now(), success = True)
 
 class ServiceOrchestrator:
     """Orchestrates microservices for regime discovery."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -225,13 +235,13 @@ class ServiceOrchestrator:
         """Discover regimes using microservices architecture."""
         print('🔍 Starting microservices-based regime discovery...')
         print('  📊 Engineering features...')
-        feature_request = ServiceRequest(service_id='feature_service', request_id=f'features_{int(time.time())}', data={'market_data': data}, metadata={'step': 'feature_engineering'}, timestamp=datetime.now())
+        feature_request = ServiceRequest(service_id='feature_service', request_id = f'features_{int(time.time())}', data={'market_data': data}, metadata={'step': 'feature_engineering'}, timestamp = datetime.now())
         feature_response = await self.services['features'].handle_request(feature_request)
         if not feature_response.success:
             raise Exception(f'Feature engineering failed: {feature_response.error}')
         features = feature_response.data['features']
         print('  🎯 Optimizing parameters...')
-        optimization_request = ServiceRequest(service_id='optimization_service', request_id=f'optimization_{int(time.time())}', data={'market_data': data, 'features': features}, metadata={'step': 'parameter_optimization'}, timestamp=datetime.now())
+        optimization_request = ServiceRequest(service_id='optimization_service', request_id = f'optimization_{int(time.time())}', data={'market_data': data, 'features': features}, metadata={'step': 'parameter_optimization'}, timestamp = datetime.now())
         optimization_response = await self.services['optimization'].handle_request(optimization_request)
         if not optimization_response.success:
             print(f'⚠️ Optimization failed: {optimization_response.error}, using defaults')
@@ -239,14 +249,14 @@ class ServiceOrchestrator:
         else:
             optimized_params = optimization_response.data
         print('  🔄 Performing ensemble clustering...')
-        clustering_request = ServiceRequest(service_id='clustering_service', request_id=f'clustering_{int(time.time())}', data={'features': features, 'optimized_params': optimized_params}, metadata={'step': 'ensemble_clustering'}, timestamp=datetime.now())
+        clustering_request = ServiceRequest(service_id='clustering_service', request_id = f'clustering_{int(time.time())}', data={'features': features, 'optimized_params': optimized_params}, metadata={'step': 'ensemble_clustering'}, timestamp = datetime.now())
         clustering_response = await self.services['clustering'].handle_request(clustering_request)
         if not clustering_response.success:
             raise Exception(f'Clustering failed: {clustering_response.error}')
         regimes = clustering_response.data['regimes']
         ensemble_results = clustering_response.data['ensemble_results']
         print('  ✅ Validating economic significance...')
-        validation_request = ServiceRequest(service_id='validation_service', request_id=f'validation_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'economic_validation'}, timestamp=datetime.now())
+        validation_request = ServiceRequest(service_id='validation_service', request_id = f'validation_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'economic_validation'}, timestamp = datetime.now())
         validation_response = await self.services['validation'].handle_request(validation_request)
         if not validation_response.success:
             print(f'⚠️ Validation failed: {validation_response.error}')
@@ -254,7 +264,7 @@ class ServiceOrchestrator:
         else:
             validation_results = validation_response.data
         print('  🔄 Detecting regime transitions...')
-        transition_request = ServiceRequest(service_id='transition_service', request_id=f'transitions_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'transition_detection'}, timestamp=datetime.now())
+        transition_request = ServiceRequest(service_id='transition_service', request_id = f'transitions_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'transition_detection'}, timestamp = datetime.now())
         transition_response = await self.services['transitions'].handle_request(transition_request)
         if not transition_response.success:
             print(f'⚠️ Transition detection failed: {transition_response.error}')
@@ -262,7 +272,7 @@ class ServiceOrchestrator:
         else:
             transition_results = transition_response.data
         print('  🔮 Building persistence models...')
-        persistence_request = ServiceRequest(service_id='persistence_service', request_id=f'persistence_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'persistence_forecasting'}, timestamp=datetime.now())
+        persistence_request = ServiceRequest(service_id='persistence_service', request_id = f'persistence_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'persistence_forecasting'}, timestamp = datetime.now())
         persistence_response = await self.services['persistence'].handle_request(persistence_request)
         if not persistence_response.success:
             print(f'⚠️ Persistence modeling failed: {persistence_response.error}')
@@ -275,29 +285,30 @@ class ServiceOrchestrator:
     async def discover_regimes_parallel(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Discover regimes using parallel microservices execution."""
         print('🚀 Starting parallel microservices regime discovery...')
-        requests = {'features': ServiceRequest(service_id='feature_service', request_id=f'features_{int(time.time())}', data={'market_data': data}, metadata={'step': 'feature_engineering'}, timestamp=datetime.now()), 'optimization': ServiceRequest(service_id='optimization_service', request_id=f'optimization_{int(time.time())}', data={'market_data': data}, metadata={'step': 'parameter_optimization'}, timestamp=datetime.now())}
+        requests = {'features': ServiceRequest(service_id='feature_service', request_id = f'features_{int(time.time())}', data={'market_data': data}, metadata={'step': 'feature_engineering'}, timestamp = datetime.now()), 'optimization': ServiceRequest(service_id='optimization_service', request_id = f'optimization_{int(time.time())}', data={'market_data': data}, metadata={'step': 'parameter_optimization'}, timestamp = datetime.now())}
         feature_task = asyncio.create_task(self.services['features'].handle_request(requests['features']))
         optimization_task = asyncio.create_task(self.services['optimization'].handle_request(requests['optimization']))
-        feature_response, optimization_response = await asyncio.gather(feature_task, optimization_task, return_exceptions=True)
+        feature_response, optimization_response = await asyncio.gather(feature_task, optimization_task, return_exceptions = True)
         if isinstance(feature_response, Exception):
             raise Exception(f'Feature engineering failed: {feature_response}')
         if not feature_response.success:
             raise Exception(f'Feature engineering failed: {feature_response.error}')
         features = feature_response.data['features']
         optimized_params = optimization_response.data if optimization_response.success else None
-        clustering_request = ServiceRequest(service_id='clustering_service', request_id=f'clustering_{int(time.time())}', data={'features': features, 'optimized_params': optimized_params}, metadata={'step': 'ensemble_clustering'}, timestamp=datetime.now())
+        clustering_request = ServiceRequest(service_id='clustering_service', request_id = f'clustering_{int(time.time())}', data={'features': features, 'optimized_params': optimized_params}, metadata={'step': 'ensemble_clustering'}, timestamp = datetime.now())
         clustering_response = await self.services['clustering'].handle_request(clustering_request)
         if not clustering_response.success:
             raise Exception(f'Clustering failed: {clustering_response.error}')
         regimes = clustering_response.data['regimes']
-        parallel_requests = {'validation': ServiceRequest(service_id='validation_service', request_id=f'validation_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'economic_validation'}, timestamp=datetime.now()), 'transitions': ServiceRequest(service_id='transition_service', request_id=f'transitions_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'transition_detection'}, timestamp=datetime.now()), 'persistence': ServiceRequest(service_id='persistence_service', request_id=f'persistence_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'persistence_forecasting'}, timestamp=datetime.now())}
+        parallel_requests = {'validation': ServiceRequest(service_id='validation_service', request_id = f'validation_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'economic_validation'}, timestamp = datetime.now()), 'transitions': ServiceRequest(service_id='transition_service', request_id = f'transitions_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'transition_detection'}, timestamp = datetime.now()), 'persistence': ServiceRequest(service_id='persistence_service', request_id = f'persistence_{int(time.time())}', data={'market_data': data, 'regimes': regimes}, metadata={'step': 'persistence_forecasting'}, timestamp = datetime.now())}
         parallel_tasks = [asyncio.create_task(self.services['validation'].handle_request(parallel_requests['validation'])), asyncio.create_task(self.services['transitions'].handle_request(parallel_requests['transitions'])), asyncio.create_task(self.services['persistence'].handle_request(parallel_requests['persistence']))]
-        parallel_responses = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+        parallel_responses = await asyncio.gather(*parallel_tasks, return_exceptions = True)
         validation_response = parallel_responses[0] if not isinstance(parallel_responses[0], Exception) else None
         transition_response = parallel_responses[1] if not isinstance(parallel_responses[1], Exception) else None
         persistence_response = parallel_responses[2] if not isinstance(parallel_responses[2], Exception) else None
         results = {'regimes': regimes, 'features': features, 'optimized_parameters': optimized_params, 'ensemble_results': clustering_response.data['ensemble_results'], 'validation_results': validation_response.data if validation_response and validation_response.success else {'overall_significant': False}, 'transition_results': transition_response.data if transition_response and transition_response.success else {'transitions': []}, 'persistence_results': persistence_response.data if persistence_response and persistence_response.success else {}, 'microservices_metrics': self._get_services_metrics(), 'processing_summary': self._generate_processing_summary()}
         return results
+    @log_all_calls
 
     def _get_services_metrics(self) -> Dict[str, Any]:
         """Get metrics from all services."""
@@ -306,6 +317,7 @@ class ServiceOrchestrator:
             service = service_info['service']
             metrics[service_name] = service.get_metrics()
         return metrics
+    @log_all_calls
 
     def _generate_processing_summary(self) -> Dict[str, Any]:
         """Generate processing summary."""
@@ -322,12 +334,13 @@ class ServiceOrchestrator:
 
 class MicroservicesRegimeDiscovery:
     """Main interface for microservices-based regime discovery."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
         self.orchestrator = ServiceOrchestrator(config)
 
-    async def discover_regimes(self, data: pd.DataFrame, use_parallel: bool=True) -> Dict[str, Any]:
+    async def discover_regimes(self, data: pd.DataFrame, use_parallel: bool = True) -> Dict[str, Any]:
         """Discover regimes using microservices architecture."""
         await self.orchestrator.initialize_services()
         try:

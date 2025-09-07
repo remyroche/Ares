@@ -178,10 +178,10 @@ class UnifiedRegimeClassifierSROptimized(UnifiedRegimeClassifierSRFocused):
         import os
         weights_file = os.path.join(self.config.get('model_dir', 'models'), f'sr_weights_{self.exchange}_{self.symbol}.json')
         try:
-            os.makedirs(os.path.dirname(weights_file), exist_ok=True)
+            os.makedirs(os.path.dirname(weights_file), exist_ok = True)
             data = {'weights': self.optimized_weights, 'timestamp': self.last_optimization_time.isoformat(), 'exchange': self.exchange, 'symbol': self.symbol, 'optimization_history': self.optimization_results[-10:]}
             with open(weights_file, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent = 2)
             self.logger.info(f'Saved optimized weights to {weights_file}')
         except Exception as e:
             self.logger.error(f'Failed to save weights: {e}')

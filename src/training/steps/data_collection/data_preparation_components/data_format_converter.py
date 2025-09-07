@@ -1,4 +1,5 @@
 """Data Format Converter Component
+
 Handles conversion between different data formats, particularly focusing on Parquet operations.
 Extracted from step01_5_data_converter.py
 """
@@ -8,17 +9,21 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 try:
+    import pyarrow as pa
+    import pyarrow.dataset as ds
+    import pyarrow.parquet as pq
     PYARROW_AVAILABLE = True
 except ImportError:
     PYARROW_AVAILABLE = False
     pa = None
     ds = None
     pq = None
-from .core.decorators import traced, validates
-from .utils.logger import system_logger
-from .utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
+from src.core.decorators import traced, validates
+from src.utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
 import json
 import logging
 import time
@@ -32,8 +37,8 @@ class DataFormatConverter:
     - Metadata management
     - Efficient scanning with filters
     """
-
-    def __init__(self, logger: logging.Logger=None) -> None:
+    @log_important_calls
+    def __init__(self, logger: logging.Logger = None) -> None:
         self.logger = logger or system_logger.getChild('DataFormatConverter')
         try:
             self.default_batch_size = int(os.environ.get('ARES_SCAN_BATCH_SIZE', '262144'))
@@ -48,14 +53,15 @@ class DataFormatConverter:
             except Exception:
                 self._proxy_pool = None
 
+    @log_all_calls
     def _ensure_pyarrow(self) -> None:
         """Ensure pyarrow is available for operations."""
         if not PYARROW_AVAILABLE:
             msg = 'pyarrow is required for DataFormatConverter operations'
             raise ImportError(msg)
 
-    @validates(mode='warn', arg_index=1)
-    @traced('DataFormatConverter.enforce_schema', log_args=False, log_result_len_only=True)
+    @validates(mode='warn', arg_index = 1)
+    @traced('DataFormatConverter.enforce_schema', log_args = False, log_result_len_only = True)
     def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
         """Enforce a specific schema on the DataFrame.
         
@@ -90,7 +96,7 @@ class DataFormatConverter:
         if 'timestamp' in df.columns:
             try:
                 if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-                    df.loc[:, 'timestamp'] = (pd.to_datetime(df['timestamp'], utc=True).astype('int64') // 10 ** 6).astype('int64')
+                    df.loc[:, 'timestamp'] = (pd.to_datetime(df['timestamp'], utc = True).astype('int64') // 10 ** 6).astype('int64')
                 else:
                     ts_numeric = pd.to_numeric(df['timestamp'], errors='coerce')
                     if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
@@ -113,7 +119,7 @@ class DataFormatConverter:
                         self.logger.debug(f'Schema conversion skipped for column: {col}')
         return df
 
-    def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, min_rows_per_group: int=50000, max_rows_per_file: int=5000000, use_threads: bool=True, update_manifest: bool=True, metadata: dict[str, Any] | None=None, auto_add_date_columns: bool=True) -> None:
+    def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5000000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None = None, auto_add_date_columns: bool = True) -> None:
         """Write DataFrame as partitioned Parquet dataset.
         
         Args:
@@ -145,20 +151,20 @@ class DataFormatConverter:
             if self.logger:
                 self.logger.info(f'Preparing to write dataset: rows={nrows}, cols={ncols}, cols[0..11]=[{cols_preview}] -> {base_dir}')
             if 'timestamp' in df.columns:
-                ts = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
+                ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True, errors='coerce')
                 if self.logger:
                     self.logger.info(f'Timestamp coverage: {ts.min()} → {ts.max()} (UTC)')
         except Exception:
             pass
         if 'timestamp' in df.columns and auto_add_date_columns:
-            ts = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            ts = pd.to_datetime(df['timestamp'], unit='ms', utc = True)
             if 'year' not in df.columns:
                 df['year'] = ts.dt.year.astype('int16')
             if 'month' not in df.columns:
                 df['month'] = ts.dt.month.astype('int8')
             if 'day' not in df.columns:
                 df['day'] = ts.dt.day.astype('int8')
-        table = pa.Table.from_pandas(df, preserve_index=False)
+        table = pa.Table.from_pandas(df, preserve_index = False)
         if metadata:
             try:
                 meta = {str(k): str(v) if v is not None else '' for k, v in metadata.items()}
@@ -192,6 +198,7 @@ class DataFormatConverter:
         except Exception:
             before_count = None
 
+        @log_all_calls
         def _file_visitor(written_file: Any) -> None:
             try:
                 path = getattr(written_file, 'path', None) or str(written_file)
@@ -199,6 +206,7 @@ class DataFormatConverter:
                 path = str(written_file)
             if self.logger:
                 self.logger.info(f'🆕 Wrote partitioned parquet file: {path}')
+
         write_args: dict[str, Any] = {'base_dir': base_dir, 'format': 'parquet', 'basename_template': 'part-{i}.parquet', 'file_visitor': _file_visitor, 'existing_data_behavior': 'overwrite_or_ignore', 'max_rows_per_file': max_rows_per_file, 'min_rows_per_group': min_rows_per_group, 'max_rows_per_group': min(max_rows_per_file, 1024 * 1024)}
         if partitioning is not None:
             write_args['partitioning'] = partitioning
@@ -220,7 +228,7 @@ class DataFormatConverter:
             with contextlib.suppress(Exception):
                 self.update_manifest(base_dir)
 
-    def scan_dataset(self, base_dir: str, filters: list | None=None, columns: list[str] | None=None, batch_size: int | None=None, to_pandas: bool=True, use_threads: bool=True, ignore_hidden_temp: bool=True) -> pd.DataFrame | Any:
+    def scan_dataset(self, base_dir: str, filters: list | None = None, columns: list[str] | None = None, batch_size: int | None = None, to_pandas: bool = True, use_threads: bool = True, ignore_hidden_temp: bool = True) -> pd.DataFrame | Any:
         """Scan a partitioned Parquet dataset with optional filters.
         
         Args:
@@ -261,11 +269,11 @@ class DataFormatConverter:
             dataset = ds.dataset(base_dir, format='parquet')
         expr = self._build_filter_expression(filters)
         try:
-            table = dataset.to_table(columns=columns, filter=expr)
+            table = dataset.to_table(columns = columns, filter = expr)
         except Exception:
-            table = dataset.to_table(columns=columns, filter=expr)
+            table = dataset.to_table(columns = columns, filter = expr)
         if to_pandas:
-            df = table.to_pandas(types_mapper=pd.ArrowDtype)
+            df = table.to_pandas(types_mapper = pd.ArrowDtype)
             with contextlib.suppress(Exception):
                 nbytes = getattr(table, 'nbytes', None) or 0
                 if self.logger:
@@ -280,6 +288,7 @@ class DataFormatConverter:
                 self.logger.debug(f'Arrow memory delta: {after_bytes - before_bytes} bytes (alloc={after_bytes})')
         return table
 
+    @log_all_calls
     def _build_filter_expression(self, filters: list | None) -> Optional['ds.Expression']:
         """Build Arrow filter expression from list of filter tuples."""
         if not filters:
@@ -310,7 +319,7 @@ class DataFormatConverter:
             return None
         return None
 
-    def write_flat_parquet(self, df: pd.DataFrame, file_path: str, schema_name: str | None=None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, row_group_size: int=128000, write_statistics: bool=True, metadata: dict[str, Any] | None=None) -> None:
+    def write_flat_parquet(self, df: pd.DataFrame, file_path: str, schema_name: str | None = None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, row_group_size: int = 128000, write_statistics: bool = True, metadata: dict[str, Any] | None = None) -> None:
         """Write DataFrame as a single Parquet file.
         
         Args:
@@ -327,12 +336,12 @@ class DataFormatConverter:
         ensure_directory(os.path.dirname(file_path))
         if schema_name:
             df = self.enforce_schema(df, schema_name)
-        table = pa.Table.from_pandas(df, preserve_index=False)
+        table = pa.Table.from_pandas(df, preserve_index = False)
         if metadata:
             with contextlib.suppress(Exception):
                 meta = {str(k): str(v) if v is not None else '' for k, v in metadata.items()}
                 table = table.cast(table.schema.with_metadata(meta))
-        pq.write_table(table, file_path, compression=compression, row_group_size=row_group_size, write_statistics=write_statistics)
+        pq.write_table(table, file_path, compression = compression, row_group_size = row_group_size, write_statistics = write_statistics)
 
     def update_manifest(self, base_dir: str, ts_column: str='timestamp') -> None:
         """Update manifest file with dataset statistics.
@@ -368,7 +377,7 @@ class DataFormatConverter:
                                         latest_ts = candidate if latest_ts is None else max(latest_ts, candidate)
             manifest['file_count'] = file_count
             manifest['latest_timestamp'] = latest_ts
-            safe_json_dump(manifest, manifest_path, indent=2, default=str)
+            safe_json_dump(manifest, manifest_path, indent = 2, default = str)
             if self.logger:
                 self.logger.info(f'Updated manifest: {manifest_path}')
         except Exception as e:

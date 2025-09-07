@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 Unified helpers to access and operate on per-HMM regime data consistently across steps.
 
 Primary responsibilities:
@@ -18,7 +19,7 @@ import pandas as pd
 import numpy as np
 
 try:
-    from .utils.logger import system_logger
+    from .logger import system_logger
 except Exception:  # pragma: no cover - fallback
     import logging
     system_logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def ensure_regime_labels(
         try:
             left_ts = left["timestamp"].dtype
             if right["timestamp"].dtype != left_ts:
-                right["timestamp"] = right["timestamp"].astype(left_ts, copy=False)
+                right["timestamp"] = right["timestamp"].astype(left_ts, copy = False)
         except Exception:
             pass
         merged = pd.merge(left, right, on="timestamp", how="left")
@@ -135,7 +136,7 @@ def iter_regimes(
     col = regime_column or get_regime_column(df)
     if not col or col not in df.columns:
         return
-    for regime_id, regime_df in df.groupby(col, sort=True):
+    for regime_id, regime_df in df.groupby(col, sort = True):
         if len(regime_df) >= min_samples:
             yield regime_id, regime_df
 
@@ -156,7 +157,7 @@ def split_train_val_test_by_regime(
     if not col or col not in df.columns:
         return {}
     results: Dict[str, Dict[str, pd.DataFrame]] = {}
-    for regime_id, regime_df in df.sort_values("timestamp").groupby(col, sort=True):
+    for regime_id, regime_df in df.sort_values("timestamp").groupby(col, sort = True):
         n = len(regime_df)
         if n < max(min_samples_per_split, 3):
             continue

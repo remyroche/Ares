@@ -1,4 +1,0 @@
-2025-08-17 21:03:37,689 - INFO - Stage=Stationarity | NaN_total=23 | Inf_total=0 | NaN_cols={'close_returns': 1, 'open_returns': 1, 'high_returns': 1, 'low_returns': 1, 'close_detrended': 19} | Inf_cols={}
-2025-08-17 21:06:30,829 - INFO - Stage=Combine | NaN_total=23 | Inf_total=0 | NaN_cols={'close_returns': 1, 'open_returns': 1, 'high_returns': 1, 'low_returns': 1, 'close_detrended': 19} | Inf_cols={}
-2025-08-17 21:09:56,940 - INFO - Stage=FeatureSelection | NaN_total=1 | Inf_total=0 | NaN_cols={'close_returns': 1} | Inf_cols={}
-2025-08-17 21:10:00,311 - INFO - Stage=Normalization | NaN_total=1 | Inf_total=0 | NaN_cols={'close_returns': 1} | Inf_cols={}

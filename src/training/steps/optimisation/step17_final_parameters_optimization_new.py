@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import json
 import os
 import pickle
@@ -5,15 +7,16 @@ from datetime import datetime
 from typing import Any
 import optuna
 from src.config.config_manager import get_config_manager, get_optimizable_parameters, get_search_space, update_optimizable_config
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import logging
 import time
+from ...core.decorators import handles_errors
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -21,7 +24,7 @@ class FinalParametersOptimizationStepNew:
         self.config_manager = get_config_manager()
         self.optimizable_params = get_optimizable_parameters()
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info('🚀 Initializing Final Parameters Optimization Step (New)...')
@@ -50,23 +53,23 @@ class FinalParametersOptimizationStepNew:
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             data_dir = training_input.get('data_dir', 'data/training')
-            from .utils.logger import heartbeat
-            with heartbeat(self.logger, name='Step12 load_calibration_results', interval_seconds=60.0):
+            from src.utils.logger import system_logger
+            with heartbeat(self.logger, name='Step12 load_calibration_results', interval_seconds = 60.0):
                 calibration_results = await self._load_calibration_results(symbol, exchange, data_dir)
             if not calibration_results:
                 msg = 'Calibration results not found'
                 raise FileNotFoundError(msg)
-            with heartbeat(self.logger, name='Step12 load_previous_optimization', interval_seconds=60.0):
+            with heartbeat(self.logger, name='Step12 load_previous_optimization', interval_seconds = 60.0):
                 previous_results = await self._load_previous_optimization_results(symbol, exchange, data_dir)
-            with heartbeat(self.logger, name='Step12 optimize_all_parameters', interval_seconds=60.0):
+            with heartbeat(self.logger, name='Step12 optimize_all_parameters', interval_seconds = 60.0):
                 optimization_results = await self._optimize_all_parameters_categorized(calibration_results, previous_results)
-            with heartbeat(self.logger, name='Step12 validate_optimization', interval_seconds=60.0):
+            with heartbeat(self.logger, name='Step12 validate_optimization', interval_seconds = 60.0):
                 validation_passed = await self._validate_optimization_results(optimization_results)
             if not validation_passed:
                 self.logger.warning('⚠️ Optimization results validation failed, using fallback parameters')
-            with heartbeat(self.logger, name='Step12 save_results', interval_seconds=60.0):
+            with heartbeat(self.logger, name='Step12 save_results', interval_seconds = 60.0):
                 await self._save_optimization_results(optimization_results, symbol, exchange, data_dir)
-            with heartbeat(self.logger, name='Step12 generate_report', interval_seconds=60.0):
+            with heartbeat(self.logger, name='Step12 generate_report', interval_seconds = 60.0):
                 report = await self._generate_optimization_report(optimization_results, start_time)
             pipeline_state['final_parameters'] = optimization_results
             pipeline_state['optimization_report'] = report
@@ -122,18 +125,19 @@ class FinalParametersOptimizationStepNew:
                 self.logger.warning(f'No search space found for category: {category}')
                 return {}
             study_name = f'step12_{category}_optimization'
-            study = optuna.create_study(study_name=study_name, direction='maximize', storage='sqlite:///optuna_studies.db', load_if_exists=True)
+            study = optuna.create_study(study_name = study_name, direction='maximize', storage='sqlite:///optuna_studies.db', load_if_exists = True)
 
             def objective(trial: Any) -> None:
                 return self._objective_function(trial, category, search_space, calibration_results)
             n_trials = 50
-            study.optimize(objective, n_trials=n_trials, timeout=300)
+            study.optimize(objective, n_trials = n_trials, timeout = 300)
             best_params = study.best_params
             best_value = study.best_value
             return {'best_params': best_params, 'best_value': best_value, 'study_name': study_name, 'n_trials': n_trials}
         except Exception as e:
             self.logger.error(f'Error optimizing category {category}: {e}')
             return {}
+    @log_all_calls
 
     def _objective_function(self, trial: optuna.Trial, category: str, search_space: dict[str, dict[str, Any]], calibration_results: dict[str, Any]) -> float:
         """Objective function for Optuna optimization.
@@ -161,6 +165,7 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             self.logger.error(f'Error in objective function for {category}: {e}')
             return -999.0
+    @log_all_calls
 
     def _evaluate_configuration(self, category: str, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate a configuration by running a backtest or simulation.
@@ -204,6 +209,7 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             self.logger.error(f'Error evaluating configuration for {category}: {e}')
             return 0.0
+    @log_all_calls
 
     def _evaluate_confidence_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate confidence threshold parameters."""
@@ -224,6 +230,7 @@ class FinalParametersOptimizationStepNew:
             if 0.1 <= tactician_thresh - analyst_thresh <= 0.2:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_position_sizing_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate position sizing parameters."""
@@ -243,6 +250,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_leverage_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate leverage parameters."""
@@ -256,6 +264,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_tpsl_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate TP/SL parameters."""
@@ -270,6 +279,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_ensemble_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate ensemble parameters."""
@@ -281,6 +291,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_sr_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate S/R parameters."""
@@ -292,6 +303,7 @@ class FinalParametersOptimizationStepNew:
         else:
             score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_two_tier_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate two-tier system parameters."""
@@ -316,6 +328,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate technical indicator parameters."""
@@ -347,6 +360,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_system_monitoring_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate system monitoring parameters."""
@@ -376,6 +390,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_training_optimization_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate training optimization parameters."""
@@ -413,6 +428,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_regime_transitions_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate regime transition parameters."""
@@ -451,6 +467,7 @@ class FinalParametersOptimizationStepNew:
             else:
                 score += 0.1
         return score
+    @log_all_calls
 
     def _evaluate_signal_aggregation_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate signal aggregation parameters."""
@@ -535,13 +552,13 @@ class FinalParametersOptimizationStepNew:
         """Save optimization results."""
         try:
             optimization_dir = f'{data_dir}/optimization_results'
-            os.makedirs(optimization_dir, exist_ok=True)
+            os.makedirs(optimization_dir, exist_ok = True)
             results_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl'
             with open(results_file, 'wb') as f:
                 pickle.dump(optimization_results, f)
             json_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters_new.json'
             with open(json_file, 'w') as f:
-                json.dump(optimization_results, f, indent=2, default=str)
+                json.dump(optimization_results, f, indent = 2, default = str)
             self.logger.info(f'Optimization results saved to {results_file}')
         except Exception as e:
             self.logger.error(f'Error saving optimization results: {e}')
@@ -557,12 +574,13 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             self.logger.error(f'Error generating optimization report: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _setup_optimization_storage(self) -> None:
         """Setup optimization storage."""
         try:
-            os.makedirs('data/optimization_results', exist_ok=True)
-            os.makedirs('data/calibration_results', exist_ok=True)
+            os.makedirs('data/optimization_results', exist_ok = True)
+            os.makedirs('data/calibration_results', exist_ok = True)
         except Exception as e:
             self.logger.error(f'Error setting up optimization storage: {e}')
 
@@ -585,15 +603,16 @@ class FinalParametersOptimizationStepNew:
 
             for path in step12_paths:
                 try:
-                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    os.makedirs(os.path.dirname(path), exist_ok = True)
                     with open(path, 'w') as f:
-                        yaml.dump(step12_results, f, default_flow_style=False, indent=2)
+                        yaml.dump(step12_results, f, default_flow_style = False, indent = 2)
                     self.logger.info(f'✅ Step12 results delivered to: {path}')
                 except Exception as e:
                     self.logger.warning(f'⚠️ Could not save step12 results to {path}: {e}')
             self.logger.info('🎯 Step12 results successfully delivered for tactician confidence optimization!')
         except Exception as e:
             self.logger.error(f'❌ Error delivering step12 results: {e}')
+    @log_all_calls
 
     def _extract_tactician_optimization_results(self, optimization_results: dict[str, Any]) -> dict[str, Any]:
         """
@@ -633,3 +652,4 @@ class FinalParametersOptimizationStepNew:
         except Exception as e:
             self.logger.error(f'Error extracting tactician optimization results: {e}')
             return {'ml_confidence_factors': {'price_deviation_prediction': 1.35, 'price_direction_prediction': 1.28, 'price_target_confidence': 1.42}, 'position_monitor': {'high_confidence_threshold': 0.65, 'low_confidence_threshold': 0.35, 'very_low_confidence_threshold': 0.25, 'confidence_threshold': 0.65}, 'position_opening': {'require_both_barriers': True, 'min_barrier_confidence': 0.72, 'combined_confidence_threshold': 0.78}}
+import json

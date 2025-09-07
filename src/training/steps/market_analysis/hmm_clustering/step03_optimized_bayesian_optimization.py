@@ -4,6 +4,8 @@ from typing import Any
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Optimized Bayesian Parameter Optimization for Enhanced Computational Efficiency.\n\nThis module implements several optimization strategies:\n1. Parallel trial execution with multiprocessing\n2. Early pruning with adaptive thresholds\n3. Smart parameter space reduction\n4. Caching and memoization\n5. Progressive parameter refinement\n'
 import asyncio
 import optuna
@@ -15,6 +17,7 @@ warnings.filterwarnings('ignore')
 
 class OptimizedBayesianParameterOptimization:
     """Optimized Bayesian parameter optimization with enhanced efficiency."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -60,7 +63,7 @@ class OptimizedBayesianParameterOptimization:
         """Reduce parameter space using quick evaluation."""
         print('🔍 Reducing parameter space...')
         sample_size = min(1000, len(features))
-        sample_indices = np.random.choice(len(features), sample_size, replace=False)
+        sample_indices = np.random.choice(len(features), sample_size, replace = False)
         data_sample = data.iloc[sample_indices]
         features_sample = features.iloc[sample_indices]
         full_space = self._get_full_parameter_space()
@@ -74,7 +77,7 @@ class OptimizedBayesianParameterOptimization:
                         scores.append((value, score))
                     except:
                         scores.append((value, 0.0))
-                scores.sort(key=lambda x: x[1], reverse=True)
+                scores.sort(key = lambda x: x[1], reverse = True)
                 reduced_space[param_type] = [score[0] for score in scores[:3]]
             else:
                 reduced_space[param_type] = param_values
@@ -103,8 +106,8 @@ class OptimizedBayesianParameterOptimization:
             n_components = config.get('hmm_n_components', 4)
             covariance_type = config.get('hmm_covariance_type', 'full')
             sample_size = min(500, len(features))
-            features_sample = features.sample(n=sample_size, random_state=42)
-            model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=20, random_state=42)
+            features_sample = features.sample(n = sample_size, random_state = 42)
+            model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 20, random_state = 42)
             model.fit(features_sample)
             regimes = model.predict(features_sample)
             unique_regimes = len(np.unique(regimes))
@@ -121,8 +124,8 @@ class OptimizedBayesianParameterOptimization:
             from sklearn.cluster import KMeans
             n_clusters = config.get('kmeans_n_clusters', 20)
             sample_size = min(500, len(features))
-            features_sample = features.sample(n=sample_size, random_state=42)
-            model = KMeans(n_clusters=n_clusters, n_init=3, max_iter=50, random_state=42)
+            features_sample = features.sample(n = sample_size, random_state = 42)
+            model = KMeans(n_clusters = n_clusters, n_init = 3, max_iter = 50, random_state = 42)
             regimes = model.fit_predict(features_sample)
             unique_regimes = len(np.unique(regimes))
             if unique_regimes < 2:
@@ -140,8 +143,8 @@ class OptimizedBayesianParameterOptimization:
             eps = config.get('dbscan_eps', 0.5)
             min_samples = config.get('dbscan_min_samples', 10)
             sample_size = min(500, len(features))
-            features_sample = features.sample(n=sample_size, random_state=42)
-            model = DBSCAN(eps=eps, min_samples=min_samples)
+            features_sample = features.sample(n = sample_size, random_state = 42)
+            model = DBSCAN(eps = eps, min_samples = min_samples)
             regimes = model.fit_predict(features_sample)
             unique_regimes = len(np.unique(regimes))
             n_noise = np.sum(regimes == -1)
@@ -164,25 +167,26 @@ class OptimizedBayesianParameterOptimization:
     async def _coarse_optimization(self, data: pd.DataFrame, features: pd.DataFrame, reduced_space: Dict[str, List]) -> Dict[str, Any]:
         """Coarse optimization phase."""
         print('   Phase 1: Coarse optimization...')
-        study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=self.random_state), pruner=SuccessiveHalvingPruner(min_resource=1, reduction_factor=2, min_early_stopping_rate=0), study_name='coarse_optimization')
+        study = optuna.create_study(direction='maximize', sampler = TPESampler(seed = self.random_state), pruner = SuccessiveHalvingPruner(min_resource = 1, reduction_factor = 2, min_early_stopping_rate = 0), study_name='coarse_optimization')
 
         def objective(trial: Any) -> None:
-            return self._evaluate_parameter_combination(trial, data, features, reduced_space, coarse=True)
+            return self._evaluate_parameter_combination(trial, data, features, reduced_space, coarse = True)
         start_time = time.time()
-        study.optimize(objective, n_trials=self.max_trials // 2, timeout=self.timeout_minutes * 60 // 2)
+        study.optimize(objective, n_trials = self.max_trials // 2, timeout = self.timeout_minutes * 60 // 2)
         return {'best_params': study.best_params, 'history': [trial.value for trial in study.trials if trial.value is not None], 'total_trials': len(study.trials), 'pruned_trials': len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]), 'optimization_time': time.time() - start_time}
 
     async def _fine_optimization(self, data: pd.DataFrame, features: pd.DataFrame, best_params: Dict[str, Any]) -> Dict[str, Any]:
         """Fine optimization phase around best parameters."""
         print('   Phase 2: Fine optimization...')
         refined_space = self._create_refined_parameter_space(best_params)
-        study = optuna.create_study(direction='maximize', sampler=CmaEsSampler(seed=self.random_state), pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=5), study_name='fine_optimization')
+        study = optuna.create_study(direction='maximize', sampler = CmaEsSampler(seed = self.random_state), pruner = MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 5), study_name='fine_optimization')
 
         def objective(trial: Any) -> None:
-            return self._evaluate_parameter_combination(trial, data, features, refined_space, coarse=False)
+            return self._evaluate_parameter_combination(trial, data, features, refined_space, coarse = False)
         start_time = time.time()
-        study.optimize(objective, n_trials=self.max_trials // 2, timeout=self.timeout_minutes * 60 // 2)
+        study.optimize(objective, n_trials = self.max_trials // 2, timeout = self.timeout_minutes * 60 // 2)
         return {'best_params': study.best_params, 'history': [trial.value for trial in study.trials if trial.value is not None], 'total_trials': len(study.trials), 'pruned_trials': len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]), 'optimization_time': time.time() - start_time}
+    @log_all_calls
 
     def _create_refined_parameter_space(self, best_params: Dict[str, Any]) -> Dict[str, List]:
         """Create refined parameter space around best parameters."""
@@ -209,15 +213,16 @@ class OptimizedBayesianParameterOptimization:
     async def _standard_optimization(self, data: pd.DataFrame, features: pd.DataFrame, reduced_space: Dict[str, List]) -> Dict[str, Any]:
         """Standard optimization without progressive refinement."""
         print('🔄 Running standard optimization...')
-        study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=self.random_state), pruner=MedianPruner(n_startup_trials=self.min_trials_for_pruning, n_warmup_steps=20, interval_steps=10), study_name='standard_optimization')
+        study = optuna.create_study(direction='maximize', sampler = TPESampler(seed = self.random_state), pruner = MedianPruner(n_startup_trials = self.min_trials_for_pruning, n_warmup_steps = 20, interval_steps = 10), study_name='standard_optimization')
 
         def objective(trial: Any) -> None:
-            return self._evaluate_parameter_combination(trial, data, features, reduced_space, coarse=False)
+            return self._evaluate_parameter_combination(trial, data, features, reduced_space, coarse = False)
         start_time = time.time()
-        study.optimize(objective, n_trials=self.max_trials, timeout=self.timeout_minutes * 60)
+        study.optimize(objective, n_trials = self.max_trials, timeout = self.timeout_minutes * 60)
         return {'best_params': study.best_params, 'history': [trial.value for trial in study.trials if trial.value is not None], 'total_trials': len(study.trials), 'pruned_trials': len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]), 'optimization_time': time.time() - start_time}
+    @log_all_calls
 
-    def _evaluate_parameter_combination(self, trial: Any, data: pd.DataFrame, features: pd.DataFrame, parameter_space: Dict[str, List], coarse: bool=False) -> float:
+    def _evaluate_parameter_combination(self, trial: Any, data: pd.DataFrame, features: pd.DataFrame, parameter_space: Dict[str, List], coarse: bool = False) -> float:
         """Evaluate a parameter combination."""
         try:
             params = {}
@@ -238,12 +243,13 @@ class OptimizedBayesianParameterOptimization:
             return score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _coarse_evaluation(self, params: Dict[str, Any], data: pd.DataFrame, features: pd.DataFrame) -> float:
         """Coarse evaluation for parameter space reduction."""
         try:
             sample_size = min(1000, len(features))
-            sample_indices = np.random.choice(len(features), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features), sample_size, replace = False)
             features_sample = features.iloc[sample_indices]
             hmm_score = self._quick_hmm_evaluation_sync(params, features_sample)
             clustering_score = self._quick_clustering_evaluation_sync(params, features_sample)
@@ -251,6 +257,7 @@ class OptimizedBayesianParameterOptimization:
             return combined_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _detailed_evaluation(self, params: Dict[str, Any], data: pd.DataFrame, features: pd.DataFrame) -> float:
         """Detailed evaluation for final optimization."""
@@ -262,6 +269,7 @@ class OptimizedBayesianParameterOptimization:
             return combined_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _quick_hmm_evaluation_sync(self, params: Dict[str, Any], features: pd.DataFrame) -> float:
         """Synchronous quick HMM evaluation."""
@@ -269,7 +277,7 @@ class OptimizedBayesianParameterOptimization:
             from hmmlearn import hmm
             n_components = params.get('hmm_n_components', 4)
             covariance_type = params.get('hmm_covariance_type', 'full')
-            model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=50, random_state=42)
+            model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 50, random_state = 42)
             model.fit(features)
             regimes = model.predict(features)
             unique_regimes = len(np.unique(regimes))
@@ -281,6 +289,7 @@ class OptimizedBayesianParameterOptimization:
             return 0.6 * balance_score + 0.4 * regime_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _quick_clustering_evaluation_sync(self, params: Dict[str, Any], features: pd.DataFrame) -> float:
         """Synchronous quick clustering evaluation."""
@@ -288,7 +297,7 @@ class OptimizedBayesianParameterOptimization:
             from sklearn.cluster import KMeans, DBSCAN
             from sklearn.metrics import silhouette_score
             kmeans_n_clusters = params.get('kmeans_n_clusters', 20)
-            kmeans_model = KMeans(n_clusters=kmeans_n_clusters, n_init=5, max_iter=100, random_state=42)
+            kmeans_model = KMeans(n_clusters = kmeans_n_clusters, n_init = 5, max_iter = 100, random_state = 42)
             kmeans_regimes = kmeans_model.fit_predict(features)
             if len(np.unique(kmeans_regimes)) > 1:
                 kmeans_score = silhouette_score(features, kmeans_regimes)
@@ -296,7 +305,7 @@ class OptimizedBayesianParameterOptimization:
                 kmeans_score = 0.0
             dbscan_eps = params.get('dbscan_eps', 0.5)
             dbscan_min_samples = params.get('dbscan_min_samples', 10)
-            dbscan_model = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples)
+            dbscan_model = DBSCAN(eps = dbscan_eps, min_samples = dbscan_min_samples)
             dbscan_regimes = dbscan_model.fit_predict(features)
             unique_dbscan_regimes = len(np.unique(dbscan_regimes))
             n_noise = np.sum(dbscan_regimes == -1)
@@ -308,6 +317,7 @@ class OptimizedBayesianParameterOptimization:
             return max(0.0, combined_score)
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _detailed_hmm_evaluation(self, params: Dict[str, Any], features: pd.DataFrame) -> float:
         """Detailed HMM evaluation."""
@@ -315,7 +325,7 @@ class OptimizedBayesianParameterOptimization:
             from hmmlearn import hmm
             n_components = params.get('hmm_n_components', 4)
             covariance_type = params.get('hmm_covariance_type', 'full')
-            model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=200, random_state=42)
+            model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 200, random_state = 42)
             model.fit(features)
             regimes = model.predict(features)
             regime_probs = model.predict_proba(features)
@@ -324,13 +334,13 @@ class OptimizedBayesianParameterOptimization:
                 return 0.0
             regime_counts = np.bincount(regimes)
             balance_score = 1.0 - np.std(regime_counts) / np.mean(regime_counts)
-            max_probs = np.max(regime_probs, axis=1)
+            max_probs = np.max(regime_probs, axis = 1)
             stability_score = np.mean(max_probs)
             regime_centroids = []
             for regime in np.unique(regimes):
                 regime_mask = regimes == regime
                 if np.sum(regime_mask) > 0:
-                    centroid = np.mean(features[regime_mask], axis=0)
+                    centroid = np.mean(features[regime_mask], axis = 0)
                     regime_centroids.append(centroid)
             if len(regime_centroids) > 1:
                 from scipy.spatial.distance import pdist
@@ -342,6 +352,7 @@ class OptimizedBayesianParameterOptimization:
             return combined_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _detailed_clustering_evaluation(self, params: Dict[str, Any], features: pd.DataFrame) -> float:
         """Detailed clustering evaluation."""
@@ -349,7 +360,7 @@ class OptimizedBayesianParameterOptimization:
             from sklearn.cluster import KMeans, DBSCAN
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             kmeans_n_clusters = params.get('kmeans_n_clusters', 20)
-            kmeans_model = KMeans(n_clusters=kmeans_n_clusters, n_init=10, max_iter=300, random_state=42)
+            kmeans_model = KMeans(n_clusters = kmeans_n_clusters, n_init = 10, max_iter = 300, random_state = 42)
             kmeans_regimes = kmeans_model.fit_predict(features)
             if len(np.unique(kmeans_regimes)) > 1:
                 kmeans_silhouette = silhouette_score(features, kmeans_regimes)
@@ -363,7 +374,7 @@ class OptimizedBayesianParameterOptimization:
                 kmeans_score = 0.0
             dbscan_eps = params.get('dbscan_eps', 0.5)
             dbscan_min_samples = params.get('dbscan_min_samples', 10)
-            dbscan_model = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples)
+            dbscan_model = DBSCAN(eps = dbscan_eps, min_samples = dbscan_min_samples)
             dbscan_regimes = dbscan_model.fit_predict(features)
             unique_dbscan_regimes = len(np.unique(dbscan_regimes))
             n_noise = np.sum(dbscan_regimes == -1)
@@ -382,6 +393,7 @@ class OptimizedBayesianParameterOptimization:
             return max(0.0, combined_score)
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _economic_significance_evaluation(self, params: Dict[str, Any], data: pd.DataFrame, features: pd.DataFrame) -> float:
         """Economic significance evaluation."""
@@ -389,7 +401,7 @@ class OptimizedBayesianParameterOptimization:
             from hmmlearn import hmm
             n_components = params.get('hmm_n_components', 4)
             covariance_type = params.get('hmm_covariance_type', 'full')
-            model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=100, random_state=42)
+            model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 100, random_state = 42)
             model.fit(features)
             regimes = model.predict(features)
             returns = data['close'].pct_change().dropna()
@@ -428,7 +440,7 @@ class OptimizedBayesianParameterOptimization:
             best_score = 0.0
             for reg_covar in reg_covar_values:
                 try:
-                    model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, reg_covar=reg_covar, n_iter=100, random_state=42)
+                    model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, reg_covar = reg_covar, n_iter = 100, random_state = 42)
                     model.fit(features)
                     regimes = model.predict(features)
                     if len(np.unique(regimes)) > 1:
@@ -445,7 +457,7 @@ class OptimizedBayesianParameterOptimization:
             best_score = 0.0
             for tol in tol_values:
                 try:
-                    model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, reg_covar=params['hmm_reg_covar'], tol=tol, n_iter=100, random_state=42)
+                    model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, reg_covar = params['hmm_reg_covar'], tol = tol, n_iter = 100, random_state = 42)
                     model.fit(features)
                     regimes = model.predict(features)
                     if len(np.unique(regimes)) > 1:
@@ -472,7 +484,7 @@ class OptimizedBayesianParameterOptimization:
             best_score = 0.0
             for init_method in init_methods:
                 try:
-                    model = KMeans(n_clusters=kmeans_n_clusters, init=init_method, n_init=10, max_iter=300, random_state=42)
+                    model = KMeans(n_clusters = kmeans_n_clusters, init = init_method, n_init = 10, max_iter = 300, random_state = 42)
                     regimes = model.fit_predict(features)
                     if len(np.unique(regimes)) > 1:
                         score = silhouette_score(features, regimes)
@@ -489,7 +501,7 @@ class OptimizedBayesianParameterOptimization:
             best_score = 0.0
             for metric in metrics:
                 try:
-                    model = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples, metric=metric)
+                    model = DBSCAN(eps = dbscan_eps, min_samples = dbscan_min_samples, metric = metric)
                     regimes = model.fit_predict(features)
                     unique_regimes = len(np.unique(regimes))
                     n_noise = np.sum(regimes == -1)
@@ -504,6 +516,7 @@ class OptimizedBayesianParameterOptimization:
             return params
         except Exception as e:
             return params
+    @log_all_calls
 
     def _get_full_parameter_space(self) -> Dict[str, List]:
         """Get enhanced parameter space for optimization."""

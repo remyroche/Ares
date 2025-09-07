@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Error Detection and Alerting System (minimal scaffold)
 
@@ -8,8 +10,7 @@ Error Detection and Alerting System (minimal scaffold)
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 
 
@@ -57,7 +58,7 @@ class ErrorDetectionSystem:
             ValueError: (False, "Invalid error detection configuration"),
             AttributeError: (False, "Missing error detection parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="error_detection_system.initialize",
     )
     async def initialize(self) -> bool:

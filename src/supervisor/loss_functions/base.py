@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Base class for PnL Loss Functions.
 
 This module provides the base functionality and structure for all
@@ -9,9 +11,7 @@ PnL-related loss function calculators.
 from datetime import datetime
 from typing import Any, Dict, List
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -53,7 +53,7 @@ class PnLLossFunctionsBase:
             AttributeError: (False, "Missing required PnL parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="base initialization",
     )
     async def initialize(self) -> bool:
@@ -77,7 +77,7 @@ class PnLLossFunctionsBase:
         """Validate configuration (to be overridden by subclasses)."""
         return True
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _update_calculation_history(self) -> None:
         """Update calculation history."""
         try:

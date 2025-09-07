@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Correlation Manager
 
@@ -12,8 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -74,7 +75,7 @@ class CorrelationManager:
             ValueError: (False, "Invalid correlation configuration"),
             AttributeError: (False, "Missing required correlation parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="correlation_manager.initialize",
     )
     async def initialize(self) -> bool:
@@ -85,7 +86,7 @@ class CorrelationManager:
         self.logger.info("✅ Correlation Manager initialization completed")
         return True
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def track_correlation_request(
         self,
         correlation_id: str,
@@ -94,13 +95,13 @@ class CorrelationManager:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         request = CorrelationRequest(
-            correlation_id=correlation_id,
-            request_timestamp=datetime.now(),
-            status=CorrelationStatus.ACTIVE,
-            component_path=list(component_path),
-            request_data=dict(request_data),
+            correlation_id = correlation_id,
+            request_timestamp = datetime.now(),
+            status = CorrelationStatus.ACTIVE,
+            component_path = list(component_path),
+            request_data = dict(request_data),
             performance_metrics={},
-            metadata=dict(metadata or {}),
+            metadata = dict(metadata or {}),
         )
         self.correlation_requests[correlation_id] = request
 
@@ -109,7 +110,7 @@ class CorrelationManager:
             oldest_key = next(iter(self.correlation_requests))
             self.correlation_requests.pop(oldest_key, None)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def complete_correlation_request(
         self,
         correlation_id: str,

@@ -1,3 +1,4 @@
+from ..core.decorators import handles_errors
 """
 Risk Metrics Calculator Module.
 
@@ -9,10 +10,8 @@ and other risk measures.
 from typing import Any, Dict
 
 
-from .core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 

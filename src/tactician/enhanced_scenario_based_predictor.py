@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from .core.decorators import handles_errors
 '\nEnhanced Scenario-Based Predictor for Tactician\n\nImplements advanced probabilistic scenario analysis with:\n- All step07 technical indicators\n- 15-minute look-ahead period\n- Fractal scenario definitions (linear progression)\n- Full step17 optimization for all parameters\n- Complete migration from existing system\n'
 import logging
 from datetime import datetime
@@ -12,7 +13,6 @@ except ImportError:
     talib = None
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
-from .core.decorators.errors import handles_errors
 import os
 import time
 
@@ -174,38 +174,38 @@ class EnhancedScenarioBasedPredictor:
             volume_ma_ratio = volumes[-1] / np.mean(volumes[-self.feature_config['volume_ma_period']:]) if np.mean(volumes[-self.feature_config['volume_ma_period']:]) > 0 else 1.0
             features.extend([volume_trend, volume_ma_ratio])
             rsi_params = self.technical_indicators['RSI']
-            rsi = talib.RSI(close_prices, timeperiod=rsi_params['lookback_period'])
+            rsi = talib.RSI(close_prices, timeperiod = rsi_params['lookback_period'])
             features.append(rsi[-1] / 100 if not np.isnan(rsi[-1]) else 0.5)
             macd_params = self.technical_indicators['MACD']
-            macd, macd_signal, macd_hist = talib.MACD(close_prices, fastperiod=macd_params['fast_period'], slowperiod=macd_params['slow_period'], signalperiod=macd_params['signal_period'])
+            macd, macd_signal, macd_hist = talib.MACD(close_prices, fastperiod = macd_params['fast_period'], slowperiod = macd_params['slow_period'], signalperiod = macd_params['signal_period'])
             features.extend([macd[-1] if not np.isnan(macd[-1]) else 0.0, macd_signal[-1] if not np.isnan(macd_signal[-1]) else 0.0, macd_hist[-1] if not np.isnan(macd_hist[-1]) else 0.0])
             bb_params = self.technical_indicators['Bollinger_Bands']
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(close_prices, timeperiod=bb_params['lookback_period'], nbdevup=bb_params['std_dev'], nbdevdn=bb_params['std_dev'])
+            bb_upper, bb_middle, bb_lower = talib.BBANDS(close_prices, timeperiod = bb_params['lookback_period'], nbdevup = bb_params['std_dev'], nbdevdn = bb_params['std_dev'])
             bb_position = (current_price - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if bb_upper[-1] != bb_lower[-1] else 0.5
             bb_squeeze = (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1] if bb_middle[-1] > 0 else 0.0
             features.extend([bb_position if not np.isnan(bb_position) else 0.5, bb_squeeze if not np.isnan(bb_squeeze) else 0.0])
             sma_params = self.technical_indicators['SMA']
-            sma_short = talib.SMA(close_prices, timeperiod=sma_params['short_period'])
-            sma_long = talib.SMA(close_prices, timeperiod=sma_params['long_period'])
+            sma_short = talib.SMA(close_prices, timeperiod = sma_params['short_period'])
+            sma_long = talib.SMA(close_prices, timeperiod = sma_params['long_period'])
             sma_ratio = sma_short[-1] / sma_long[-1] if sma_long[-1] > 0 else 1.0
             features.append(sma_ratio if not np.isnan(sma_ratio) else 1.0)
             ema_params = self.technical_indicators['EMA']
-            ema_short = talib.EMA(close_prices, timeperiod=ema_params['short_period'])
-            ema_long = talib.EMA(close_prices, timeperiod=ema_params['long_period'])
+            ema_short = talib.EMA(close_prices, timeperiod = ema_params['short_period'])
+            ema_long = talib.EMA(close_prices, timeperiod = ema_params['long_period'])
             ema_ratio = ema_short[-1] / ema_long[-1] if ema_long[-1] > 0 else 1.0
             features.append(ema_ratio if not np.isnan(ema_ratio) else 1.0)
             atr_params = self.technical_indicators['ATR']
-            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod=atr_params['lookback_period'])
+            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod = atr_params['lookback_period'])
             atr_normalized = atr[-1] / current_price if current_price > 0 else 0.0
             features.append(atr_normalized if not np.isnan(atr_normalized) else 0.0)
             stoch_params = self.technical_indicators['Stochastic']
-            stoch_k, stoch_d = talib.STOCH(high_prices, low_prices, close_prices, fastk_period=stoch_params['k_period'], slowk_period=stoch_params['d_period'], slowd_period=stoch_params['d_period'])
+            stoch_k, stoch_d = talib.STOCH(high_prices, low_prices, close_prices, fastk_period = stoch_params['k_period'], slowk_period = stoch_params['d_period'], slowd_period = stoch_params['d_period'])
             features.extend([stoch_k[-1] / 100 if not np.isnan(stoch_k[-1]) else 0.5, stoch_d[-1] / 100 if not np.isnan(stoch_d[-1]) else 0.5])
             adx_params = self.technical_indicators['ADX']
-            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod=adx_params['lookback_period'])
+            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod = adx_params['lookback_period'])
             features.append(adx[-1] / 100 if not np.isnan(adx[-1]) else 0.5)
             cci_params = self.technical_indicators['CCI']
-            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod=cci_params['lookback_period'])
+            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod = cci_params['lookback_period'])
             cci_normalized = (cci[-1] + 300) / 600 if not np.isnan(cci[-1]) else 0.5
             features.append(np.clip(cci_normalized, 0, 1))
             price_range = (high_prices[-1] - low_prices[-1]) / current_price
@@ -313,7 +313,7 @@ class EnhancedScenarioBasedPredictor:
             return False
 
     @handles_errors
-    async def train_model(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray | None=None, y_val: np.ndarray | None=None, market_data: pd.DataFrame | None=None) -> bool:
+    async def train_model(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray | None = None, y_val: np.ndarray | None = None, market_data: pd.DataFrame | None = None) -> bool:
         """
         Train the enhanced scenario prediction model.
 
@@ -332,11 +332,11 @@ class EnhancedScenarioBasedPredictor:
             if market_data is not None and len(y_train) == len(X_train):
                 y_train = self.prepare_scenario_targets(X_train, market_data)
             if X_val is None or y_val is None:
-                X_train_split, X_val, y_train_split, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42, stratify=y_train)
+                X_train_split, X_val, y_train_split, y_val = train_test_split(X_train, y_train, test_size = 0.2, random_state = 42, stratify = y_train)
             else:
                 X_train_split, y_train_split = (X_train, y_train)
             self.model.fit(X_train_split, y_train_split, eval_set=[(X_val, y_val)], eval_metric='multi_logloss', callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)])
-            self.feature_importance = dict(zip([f'feature_{i}' for i in range(X_train.shape[1])], self.model.feature_importances_, strict=False))
+            self.feature_importance = dict(zip([f'feature_{i}' for i in range(X_train.shape[1])], self.model.feature_importances_, strict = False))
             y_pred = self.model.predict(X_val)
             y_pred_proba = self.model.predict_proba(X_val)
             self.model_performance = {'accuracy': accuracy_score(y_val, y_pred), 'log_loss': log_loss(y_val, y_pred_proba), 'n_samples': len(X_train), 'n_features': X_train.shape[1], 'n_scenarios': len(self.scenarios)}
@@ -349,7 +349,7 @@ class EnhancedScenarioBasedPredictor:
             return False
 
     @handles_errors
-    async def predict_scenarios(self, X: np.ndarray, market_data: pd.DataFrame | None=None) -> dict[str, Any]:
+    async def predict_scenarios(self, X: np.ndarray, market_data: pd.DataFrame | None = None) -> dict[str, Any]:
         """
         Generate enhanced scenario predictions.
 
@@ -368,7 +368,7 @@ class EnhancedScenarioBasedPredictor:
             predicted_scenario = self.model.predict(X)[0]
             scenario_analysis = self._analyze_enhanced_scenario_probabilities(probabilities[0])
             confidence = self._calculate_enhanced_confidence(probabilities[0])
-            return {'probabilities': dict(zip(range(len(probabilities[0])), probabilities[0], strict=False)), 'predicted_scenario': predicted_scenario, 'scenario_name': self.scenarios[predicted_scenario]['name'], 'confidence': confidence, 'scenario_analysis': scenario_analysis, 'metadata': {'model_type': 'enhanced_scenario_based', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': self.is_trained, 'last_training_time': self.last_training_time.isoformat() if self.last_training_time else None, 'n_scenarios': len(self.scenarios), 'time_limit_minutes': self.time_limit_minutes}}
+            return {'probabilities': dict(zip(range(len(probabilities[0])), probabilities[0], strict = False)), 'predicted_scenario': predicted_scenario, 'scenario_name': self.scenarios[predicted_scenario]['name'], 'confidence': confidence, 'scenario_analysis': scenario_analysis, 'metadata': {'model_type': 'enhanced_scenario_based', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': self.is_trained, 'last_training_time': self.last_training_time.isoformat() if self.last_training_time else None, 'n_scenarios': len(self.scenarios), 'time_limit_minutes': self.time_limit_minutes}}
         except Exception as e:
             self.logger.exception(f'❌ Enhanced scenario prediction failed: {e}')
             return self._generate_enhanced_fallback_predictions(X)
@@ -446,7 +446,7 @@ class EnhancedScenarioBasedPredictor:
             n_scenarios = len(self.scenarios)
             base_prob = 1.0 / n_scenarios
             probabilities = [base_prob * 0.8] * (n_scenarios - 1) + [base_prob * 1.4]
-            return {'probabilities': dict(zip(range(n_scenarios), probabilities, strict=False)), 'predicted_scenario': n_scenarios - 1, 'scenario_name': self.scenarios[n_scenarios - 1]['name'], 'confidence': 0.3, 'scenario_analysis': {'profit_zone_probability': base_prob * 8, 'risk_zone_probability': base_prob * 8, 'neutral_probability': base_prob * 1.4, 'dominant_zone': 'neutral', 'risk_reward_ratio': 1.0, 'profit_risk_difference': 0.0, 'scenario_dominance': base_prob * 1.4, 'zone_distribution': {'profit_zones': 8, 'risk_zones': 8, 'profit_probabilities': [base_prob * 0.8] * 8, 'risk_probabilities': [base_prob * 0.8] * 8}, 'max_probability': base_prob * 1.4, 'probability_entropy': np.log(n_scenarios)}, 'metadata': {'model_type': 'enhanced_scenario_based_fallback', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': False, 'last_training_time': None, 'n_scenarios': n_scenarios, 'time_limit_minutes': self.time_limit_minutes}}
+            return {'probabilities': dict(zip(range(n_scenarios), probabilities, strict = False)), 'predicted_scenario': n_scenarios - 1, 'scenario_name': self.scenarios[n_scenarios - 1]['name'], 'confidence': 0.3, 'scenario_analysis': {'profit_zone_probability': base_prob * 8, 'risk_zone_probability': base_prob * 8, 'neutral_probability': base_prob * 1.4, 'dominant_zone': 'neutral', 'risk_reward_ratio': 1.0, 'profit_risk_difference': 0.0, 'scenario_dominance': base_prob * 1.4, 'zone_distribution': {'profit_zones': 8, 'risk_zones': 8, 'profit_probabilities': [base_prob * 0.8] * 8, 'risk_probabilities': [base_prob * 0.8] * 8}, 'max_probability': base_prob * 1.4, 'probability_entropy': np.log(n_scenarios)}, 'metadata': {'model_type': 'enhanced_scenario_based_fallback', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': False, 'last_training_time': None, 'n_scenarios': n_scenarios, 'time_limit_minutes': self.time_limit_minutes}}
         except Exception as e:
             self.logger.exception(f'❌ Enhanced fallback prediction generation failed: {e}')
             return {'probabilities': dict.fromkeys(range(n_scenarios), 1.0 / n_scenarios), 'predicted_scenario': n_scenarios - 1, 'scenario_name': 'Neutral', 'confidence': 0.0, 'scenario_analysis': {'profit_zone_probability': 0.5, 'risk_zone_probability': 0.5, 'neutral_probability': 0.0, 'dominant_zone': 'neutral', 'risk_reward_ratio': 1.0, 'profit_risk_difference': 0.0, 'scenario_dominance': 0.0, 'zone_distribution': {'profit_zones': 0, 'risk_zones': 0, 'profit_probabilities': [], 'risk_probabilities': []}, 'max_probability': 0.0, 'probability_entropy': 0.0}, 'metadata': {'model_type': 'enhanced_scenario_based_error', 'generation_timestamp': datetime.now().isoformat(), 'is_trained': False, 'last_training_time': None, 'n_scenarios': n_scenarios, 'time_limit_minutes': self.time_limit_minutes}}

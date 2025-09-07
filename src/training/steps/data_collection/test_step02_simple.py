@@ -36,7 +36,7 @@ class SimpleStep02Tester:
             self.function_monitor.completed_calls.clear()
             self.function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_function(x: int) -> int:
                 """Simple test function."""
                 await asyncio.sleep(0.01)
@@ -62,20 +62,20 @@ class SimpleStep02Tester:
             self.function_monitor.completed_calls.clear()
             self.function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def parent_function(x: int) -> Dict[str, Any]:
                 """Parent function."""
                 child1_result = await child_function_1(x)
                 child2_result = await child_function_2(x)
                 return {'parent': x, 'child1': child1_result, 'child2': child2_result}
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def child_function_1(x: int) -> int:
                 """Child function 1."""
                 await asyncio.sleep(0.01)
                 return x + 1
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def child_function_2(x: int) -> int:
                 """Child function 2."""
                 await asyncio.sleep(0.01)
@@ -100,7 +100,7 @@ class SimpleStep02Tester:
             self.function_monitor.completed_calls.clear()
             self.function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def failing_function(x: int) -> int:
                 """Function that fails with negative input."""
                 if x < 0:
@@ -131,7 +131,7 @@ class SimpleStep02Tester:
             self.function_monitor.completed_calls.clear()
             self.function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def performance_function(duration: float) -> Dict[str, Any]:
                 """Function with controllable duration."""
                 await asyncio.sleep(duration)

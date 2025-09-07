@@ -3,6 +3,9 @@ import numpy as np
 from typing import Dict
 import pandas as pd
 from typing import Any
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """HMM Components for regime discovery.
 
 This module contains the core components used by the HMM regime discovery step,
@@ -10,7 +13,7 @@ extracted from the original large file for better modularity.
 """
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 from hmmlearn import hmm
 import logging
@@ -18,6 +21,7 @@ import logging
 
 class HMMRegimeAnalyzer:
     """Analyzes market regimes using Hidden Markov Models."""
+    @log_important_calls
 
     def __init__(self, n_regimes: int, config: Dict[str, Any]) -> None:
         """Initialize HMM analyzer.
@@ -44,7 +48,7 @@ class HMMRegimeAnalyzer:
             X = features.values
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            self.hmm_model = hmm.GaussianHMM(n_components=self.n_regimes, covariance_type='full', n_iter=100)
+            self.hmm_model = hmm.GaussianHMM(n_components = self.n_regimes, covariance_type='full', n_iter = 100)
             self.hmm_model.fit(X_scaled)
             states = self.hmm_model.predict(X_scaled)
             state_probs = self.hmm_model.predict_proba(X_scaled)
@@ -70,16 +74,17 @@ class HMMRegimeAnalyzer:
             X = features.values
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            kmeans = KMeans(n_clusters=self.n_regimes, random_state=42)
+            kmeans = KMeans(n_clusters = self.n_regimes, random_state = 42)
             states = kmeans.fit_predict(X_scaled)
             distances = kmeans.transform(X_scaled)
             exp_distances = np.exp(-distances)
-            state_probs = exp_distances / exp_distances.sum(axis=1, keepdims=True)
+            state_probs = exp_distances / exp_distances.sum(axis = 1, keepdims = True)
             trans_matrix = self._calculate_transition_matrix(states)
             return {'success': True, 'n_states': self.n_regimes, 'regime_labels': states, 'regime_probabilities': state_probs, 'transition_matrix': trans_matrix, 'model_score': -kmeans.inertia_, 'cluster_centers': kmeans.cluster_centers_, 'method': 'kmeans_fallback'}
         except Exception as e:
             self.logger.error(f'Fallback analysis failed: {e}')
             return {'success': False, 'error': str(e)}
+    @log_all_calls
 
     def _calculate_transition_matrix(self, states: np.ndarray) -> np.ndarray:
         """Calculate transition matrix from state sequence.
@@ -93,12 +98,13 @@ class HMMRegimeAnalyzer:
         trans_matrix = np.zeros((self.n_regimes, self.n_regimes))
         for i in range(len(states) - 1):
             trans_matrix[states[i], states[i + 1]] += 1
-        row_sums = trans_matrix.sum(axis=1)
+        row_sums = trans_matrix.sum(axis = 1)
         trans_matrix = trans_matrix / np.maximum(row_sums[:, np.newaxis], 1)
         return trans_matrix
 
 class FeatureEngineer:
     """Engineers features for regime analysis."""
+    @log_important_calls
 
     def __init__(self, feature_config: Dict[str, Any]) -> None:
         """Initialize feature engineer.
@@ -108,6 +114,7 @@ class FeatureEngineer:
         """
         self.feature_config = feature_config
         self.logger = system_logger.getChild('FeatureEngineer')
+    @log_step_functions
 
     def engineer_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Engineer features from raw market data.
@@ -118,7 +125,7 @@ class FeatureEngineer:
         Returns:
             DataFrame with engineered features
         """
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         features['returns'] = data['close'].pct_change()
         features['log_returns'] = np.log(data['close'] / data['close'].shift(1))
         features['price_change'] = data['close'] - data['close'].shift(1)
@@ -133,6 +140,7 @@ class FeatureEngineer:
         features = features.dropna()
         self.logger.info(f'✅ Engineered {len(features.columns)} features')
         return features
+    @log_all_calls
 
     def _add_technical_indicators(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add technical indicators.
@@ -155,6 +163,7 @@ class FeatureEngineer:
         features['bb_position'] = (data['close'] - bb_results['lower']) / (bb_results['upper'] - bb_results['lower'])
         features['atr'] = self._calculate_atr(data)
         return features
+    @log_all_calls
 
     def _add_volume_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based features.
@@ -172,6 +181,7 @@ class FeatureEngineer:
         features['volume_change'] = data['volume'].pct_change()
         features['obv'] = (np.sign(data['close'].diff()) * data['volume']).cumsum()
         return features
+    @log_all_calls
 
     def _add_volatility_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add volatility features.
@@ -190,6 +200,7 @@ class FeatureEngineer:
             features['parkinson_vol'] = hl_ratio.rolling(20).apply(lambda x: np.sqrt(np.mean(x ** 2) / (4 * np.log(2))))
         features['realized_vol'] = np.sqrt(features['returns'].rolling(20).apply(lambda x: np.sum(x ** 2)))
         return features
+    @log_all_calls
 
     def _add_momentum_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add momentum features.
@@ -210,41 +221,46 @@ class FeatureEngineer:
             features['stoch_k'] = 100 * (data['close'] - lowest_low) / (highest_high - lowest_low)
             features['stoch_d'] = features['stoch_k'].rolling(3).mean()
         return features
+    @log_all_calls
 
-    def _calculate_rsi(self, prices: pd.Series, period: int=14) -> pd.Series:
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
         rs = gain / loss
         return 100 - 100 / (1 + rs)
+    @log_all_calls
 
-    def _calculate_macd(self, prices: pd.Series, fast: int=12, slow: int=26, signal: int=9) -> Dict[str, pd.Series]:
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
         """Calculate MACD indicator."""
-        exp_fast = prices.ewm(span=fast).mean()
-        exp_slow = prices.ewm(span=slow).mean()
+        exp_fast = prices.ewm(span = fast).mean()
+        exp_slow = prices.ewm(span = slow).mean()
         macd = exp_fast - exp_slow
-        macd_signal = macd.ewm(span=signal).mean()
+        macd_signal = macd.ewm(span = signal).mean()
         return {'macd': macd, 'signal': macd_signal, 'histogram': macd - macd_signal}
+    @log_all_calls
 
-    def _calculate_bollinger_bands(self, prices: pd.Series, window: int=20, num_std: float=2) -> Dict[str, pd.Series]:
+    def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Dict[str, pd.Series]:
         """Calculate Bollinger Bands."""
         sma = prices.rolling(window).mean()
         std = prices.rolling(window).std()
         return {'upper': sma + num_std * std, 'lower': sma - num_std * std, 'middle': sma}
+    @log_all_calls
 
-    def _calculate_atr(self, data: pd.DataFrame, window: int=14) -> pd.Series:
+    def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range."""
         if not all((col in data.columns for col in ['high', 'low', 'close'])):
-            return pd.Series(index=data.index)
+            return pd.Series(index = data.index)
         high_low = data['high'] - data['low']
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
-        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        true_range = pd.concat([high_low, high_close, low_close], axis = 1).max(axis = 1)
         return true_range.rolling(window).mean()
 
 class RegimeCharacterizer:
     """Characterizes identified market regimes."""
+    @log_important_calls
 
     def __init__(self) -> None:
         """Initialize regime characterizer."""
@@ -278,6 +294,7 @@ class RegimeCharacterizer:
                 characteristics[f'regime_{regime}'] = regime_stats
         characteristics['transitions'] = self._analyze_transitions(regime_labels, hmm_results.get('transition_matrix'))
         return characteristics
+    @log_all_calls
 
     def _calculate_duration_stats(self, regime_labels: np.ndarray, regime: int) -> Dict[str, float]:
         """Calculate duration statistics for a regime."""
@@ -295,6 +312,7 @@ class RegimeCharacterizer:
             return {'mean': float(np.mean(durations)), 'std': float(np.std(durations)), 'min': float(np.min(durations)), 'max': float(np.max(durations))}
         else:
             return {'mean': 0, 'std': 0, 'min': 0, 'max': 0}
+    @log_all_calls
 
     def _determine_regime_type(self, stats: Dict[str, Any], feature_names: List[str]) -> str:
         """Determine the type of regime based on statistics."""
@@ -318,11 +336,13 @@ class RegimeCharacterizer:
             return 'bearish'
         else:
             return 'neutral'
+    @log_all_calls
 
     def _get_regime_label(self, regime_type: str) -> str:
         """Get human-readable label for regime type."""
         labels = {'volatile_bullish': 'Volatile Bull', 'volatile_bearish': 'Volatile Bear', 'ranging': 'Range-Bound', 'steady_bullish': 'Steady Bull', 'steady_bearish': 'Steady Bear', 'bullish': 'Bullish', 'bearish': 'Bearish', 'neutral': 'Neutral'}
         return labels.get(regime_type, 'Unknown')
+    @log_all_calls
 
     def _analyze_transitions(self, regime_labels: np.ndarray, transition_matrix: Optional[np.ndarray]) -> Dict[str, Any]:
         """Analyze regime transitions."""

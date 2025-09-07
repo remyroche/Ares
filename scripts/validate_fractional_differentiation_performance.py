@@ -14,7 +14,7 @@ import numpy as np
 import os
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -23,8 +23,8 @@ class FractionalDifferentiationValidator:
 
     def __init__(self):
         """Initialize the validator."""
-        self.output_dir=Path("data/fractional_performance/fractional_differentiation_validation")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path("data/fractional_performance/fractional_differentiation_validation")
+        self.output_dir.mkdir(parents = True, exist_ok = True)
 
         # Validation scenarios
         self.validation_scenarios={
@@ -65,7 +65,7 @@ class FractionalDifferentiationValidator:
             "mean_reversion": {"trend": 0.0, "volatility": 0.020, "mean_reversion": 0.15},
         }
 
-        params=scenario_params.get(scenario, scenario_params["ranging"])
+        params = scenario_params.get(scenario, scenario_params["ranging"])
 
         # Asset-specific base prices
         base_prices={
@@ -74,14 +74,14 @@ class FractionalDifferentiationValidator:
             "equity": 50,
         }
 
-        base_price=base_prices.get(asset_type, 100)
+        base_price = base_prices.get(asset_type, 100)
 
         # Generate price series
         prices=[base_price]
 
         for i in range(n_samples - 1):
             # Add trend component
-            trend_component=params["trend"]
+            trend_component = params["trend"]
 
             # Add mean reversion component
             if params["mean_reversion"] > 0:
@@ -94,7 +94,7 @@ class FractionalDifferentiationValidator:
             noise = random.gauss(0, params["volatility"])
 
             # Calculate new price
-            new_price=prices[-1] * (1 + trend_component + mean_reversion + noise)
+            new_price = prices[-1] * (1 + trend_component + mean_reversion + noise)
             prices.append(new_price)
 
         # Create OHLCV data
@@ -118,7 +118,7 @@ class FractionalDifferentiationValidator:
             "mean_reversion": {"base_volume": 7000, "volatility": 0.35},
         }
 
-        vol_params=volume_patterns.get(scenario, volume_patterns["ranging"])
+        vol_params = volume_patterns.get(scenario, volume_patterns["ranging"])
 
         volume_data={
             "volume": [int(vol_params["base_volume"] * (1 + random.gauss(0, vol_params["volatility"]))) for _ in range(n_samples)],
@@ -127,12 +127,12 @@ class FractionalDifferentiationValidator:
         }
 
         # Add datetime index
-        start_time=pd.Timestamp("2024-01-01 00:00:00")
-        timestamps=[start_time + pd.Timedelta(minutes=i) for i in range(n_samples)]
+        start_time = pd.Timestamp("2024-01-01 00:00:00")
+        timestamps=[start_time + pd.Timedelta(minutes = i) for i in range(n_samples)]
 
         # Convert to DataFrames
-        price_df=pd.DataFrame(price_data, index=timestamps)
-        volume_df=pd.DataFrame(volume_data, index=timestamps)
+        price_df = pd.DataFrame(price_data, index = timestamps)
+        volume_df = pd.DataFrame(volume_data, index = timestamps)
 
         return price_df, volume_df
 
@@ -162,9 +162,9 @@ class FractionalDifferentiationValidator:
         for feature_name, feature_series in frac_diff_features.items():
             # Simulate stationarity test (ADF)
             # Higher variance reduction indicates better stationarity
-            original_var=original_data[feature_name.split("_frac_diff")[0]].var() if feature_name.split("_frac_diff")[0] in original_data.columns else 1.0
-            feature_var=feature_series.var()
-            stationarity=max(0.0, 1.0 - (feature_var / original_var))
+            original_var = original_data[feature_name.split("_frac_diff")[0]].var() if feature_name.split("_frac_diff")[0] in original_data.columns else 1.0
+            feature_var = feature_series.var()
+            stationarity = max(0.0, 1.0 - (feature_var / original_var))
             stationarity_scores.append(stationarity)
 
         quality_metrics["stationarity_score"] = sum(stationarity_scores) / len(stationarity_scores)
@@ -173,10 +173,10 @@ class FractionalDifferentiationValidator:
         variance_scores=[]
         for feature_name, feature_series in frac_diff_features.items():
             # Good features should have reasonable variance (not too low, not too high)
-            variance=feature_series.var()
+            variance = feature_series.var()
             # Optimal variance range: 0.001 to 0.1
             if 0.001 <= variance <= 0.1:
-                variance_score=1.0
+                variance_score = 1.0
             else:
                 variance_score = max(0.0, 1.0 - abs(variance - 0.05) / 0.05)
             variance_scores.append(variance_score)
@@ -187,13 +187,13 @@ class FractionalDifferentiationValidator:
         correlation_scores=[]
         for feature_name, feature_series in frac_diff_features.items():
             # Check correlation with original series
-            original_col=feature_name.split("_frac_diff")[0]
+            original_col = feature_name.split("_frac_diff")[0]
             if original_col in original_data.columns:
-                correlation=abs(feature_series.corr(original_data[original_col]))
+                correlation = abs(feature_series.corr(original_data[original_col]))
                 # Lower correlation is better (more independent information)
-                correlation_score=max(0.0, 1.0 - correlation)
+                correlation_score = max(0.0, 1.0 - correlation)
             else:
-                correlation_score=0.5  # Neutral score
+                correlation_score = 0.5  # Neutral score
             correlation_scores.append(correlation_score)
 
         quality_metrics["correlation_score"] = sum(correlation_scores) / len(correlation_scores)
@@ -202,10 +202,10 @@ class FractionalDifferentiationValidator:
         information_scores=[]
         for feature_name, feature_series in frac_diff_features.items():
             # Calculate information content based on entropy-like measure
-            # Higher entropy=more information
+            # Higher entropy = more information
             non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
-            unique_ratio=feature_series.nunique() / len(feature_series)
-            information_score=non_zero_ratio * unique_ratio
+            unique_ratio = feature_series.nunique() / len(feature_series)
+            information_score = non_zero_ratio * unique_ratio
             information_scores.append(information_score)
 
         quality_metrics["information_content"] = sum(information_scores) / len(information_scores)
@@ -215,7 +215,7 @@ class FractionalDifferentiationValidator:
 
         return quality_metrics
 
-    def test_computational_performance(self, execution_time: float, memory_usage: float=0.0) -> dict[str, float]:
+    def test_computational_performance(self, execution_time: float, memory_usage: float = 0.0) -> dict[str, float]:
         """Test computational performance metrics.
 
         Args:
@@ -236,15 +236,15 @@ class FractionalDifferentiationValidator:
         # 2. Memory Efficiency Score
         if memory_usage > 0:
             # Benchmark: 100MB for 1000 samples
-            baseline_memory=100.0
+            baseline_memory = 100.0
             memory_score = max(0.0, 1.0 - (memory_usage / baseline_memory))
         else:
-            memory_score=0.5  # Neutral score
+            memory_score = 0.5  # Neutral score
         performance_metrics["memory_efficiency_score"] = memory_score
 
         # 3. CPU Utilization Score (simulated)
         # Assume efficient implementation
-        cpu_score=0.8  # Simulated score
+        cpu_score = 0.8  # Simulated score
         performance_metrics["cpu_utilization_score"] = cpu_score
 
         # Overall computational performance
@@ -279,15 +279,15 @@ class FractionalDifferentiationValidator:
             }
 
         # Simulate performance improvements based on feature quality
-        feature_count=len(frac_diff_features)
+        feature_count = len(frac_diff_features)
 
         # More features generally lead to better performance (up to a point)
         if feature_count <= 10:
-            improvement_factor=feature_count / 10.0
+            improvement_factor = feature_count / 10.0
         else:
             improvement_factor = 1.0 - (feature_count - 10) / 50.0  # Diminishing returns
 
-        improvement_factor=max(0.0, min(1.0, improvement_factor))
+        improvement_factor = max(0.0, min(1.0, improvement_factor))
 
         # Simulate improvements for different metrics
         model_metrics["accuracy_improvement"] = 0.05 * improvement_factor  # 5% max improvement
@@ -326,8 +326,8 @@ class FractionalDifferentiationValidator:
         stability_scores=[]
         for feature_name, feature_series in frac_diff_features.items():
             # Calculate stability based on variance consistency
-            rolling_var=feature_series.rolling(window=50, min_periods=10).var()
-            var_consistency=1.0 - (rolling_var.std() / rolling_var.mean()) if rolling_var.mean() > 0 else 0.0
+            rolling_var = feature_series.rolling(window = 50, min_periods = 10).var()
+            var_consistency = 1.0 - (rolling_var.std() / rolling_var.mean()) if rolling_var.mean() > 0 else 0.0
             stability_scores.append(max(0.0, var_consistency))
 
         robustness_metrics["stability_score"] = sum(stability_scores) / len(stability_scores)
@@ -337,7 +337,7 @@ class FractionalDifferentiationValidator:
         for feature_name, feature_series in frac_diff_features.items():
             # Check for consistent behavior across different market conditions
             # Simulate consistency check
-            consistency_score=0.8  # Simulated score
+            consistency_score = 0.8  # Simulated score
             consistency_scores.append(consistency_score)
 
         robustness_metrics["consistency_score"] = sum(consistency_scores) / len(consistency_scores)
@@ -347,15 +347,15 @@ class FractionalDifferentiationValidator:
         for feature_name, feature_series in frac_diff_features.items():
             # Check how well outliers are handled
             # Fractional differentiation should reduce outlier impact
-            original_col=feature_name.split("_frac_diff")[0]
+            original_col = feature_name.split("_frac_diff")[0]
             if original_col in original_data.columns:
-                original_outliers=abs(original_data[original_col] - original_data[original_col].mean()) > 2 * original_data[original_col].std()
-                feature_outliers=abs(feature_series - feature_series.mean()) > 2 * feature_series.std()
+                original_outliers = abs(original_data[original_col] - original_data[original_col].mean()) > 2 * original_data[original_col].std()
+                feature_outliers = abs(feature_series - feature_series.mean()) > 2 * feature_series.std()
 
                 if original_outliers.sum() > 0:
-                    outlier_reduction=1.0 - (feature_outliers.sum() / original_outliers.sum())
+                    outlier_reduction = 1.0 - (feature_outliers.sum() / original_outliers.sum())
                 else:
-                    outlier_reduction=1.0
+                    outlier_reduction = 1.0
 
                 outlier_scores.append(max(0.0, outlier_reduction))
             else:
@@ -376,7 +376,7 @@ class FractionalDifferentiationValidator:
             data_sizes: List of data sizes to test
         """
         if scenarios is None:
-            scenarios=self.validation_scenarios["market_regimes"]
+            scenarios = self.validation_scenarios["market_regimes"]
         if data_sizes is None:
             data_sizes = self.validation_scenarios["data_sizes"]
 
@@ -392,8 +392,8 @@ class FractionalDifferentiationValidator:
             "summary": {},
         }
 
-        total_tests=len(scenarios) * len(data_sizes)
-        test_count=0
+        total_tests = len(scenarios) * len(data_sizes)
+        test_count = 0
 
         for scenario in scenarios:
             validation_results["results"][scenario] = {}
@@ -403,10 +403,10 @@ class FractionalDifferentiationValidator:
                 print(f"\n🧪 Test {test_count}/{total_tests}: {scenario} scenario, {data_size} samples")
 
                 # Generate test data
-                price_data, volume_data=self.generate_validation_data(scenario, data_size)
+                price_data, volume_data = self.generate_validation_data(scenario, data_size)
 
                 # Test fractional differentiation
-                test_result=await self._test_single_scenario(scenario, data_size, price_data, volume_data)
+                test_result = await self._test_single_scenario(scenario, data_size, price_data, volume_data)
                 validation_results["results"][scenario][data_size] = test_result
 
                 print(f"   ✅ Completed - Quality: {test_result['feature_quality']['overall_quality']:.3f}")
@@ -450,21 +450,21 @@ class FractionalDifferentiationValidator:
                 "max_parallel_workers": 4,
             }
 
-            fractional_generator=FractionalFeatureGenerator(config)
+            fractional_generator = FractionalFeatureGenerator(config)
 
             # Combine data
-            combined_data=price_data.copy()
+            combined_data = price_data.copy()
             for col in volume_data.columns:
                 if col not in combined_data.columns:
                     combined_data[col] = volume_data[col]
 
             # Generate features and measure performance
             import time
-            start_time=time.time()
+            start_time = time.time()
 
-            fractional_features=fractional_generator.generate_features(combined_data)
+            fractional_features = fractional_generator.generate_features(combined_data)
 
-            execution_time=time.time() - start_time
+            execution_time = time.time() - start_time
 
             # Extract fractional differentiation features
             frac_diff_features={}
@@ -474,9 +474,9 @@ class FractionalDifferentiationValidator:
 
             # Calculate all performance metrics
             feature_quality = self.test_feature_quality(frac_diff_features, combined_data)
-            computational_performance=self.test_computational_performance(execution_time)
-            model_performance=self.test_model_performance(frac_diff_features, combined_data)
-            robustness=self.test_robustness(frac_diff_features, combined_data)
+            computational_performance = self.test_computational_performance(execution_time)
+            model_performance = self.test_model_performance(frac_diff_features, combined_data)
+            robustness = self.test_robustness(frac_diff_features, combined_data)
 
             return {
                 "scenario": scenario,
@@ -564,8 +564,7 @@ class FractionalDifferentiationValidator:
 
         # Best performing scenario
         if summary["scenario_performance"]:
-            best_scenario = max(summary["scenario_performance"].keys(),
-                              key=lambda x: summary["scenario_performance"][x]["mean_quality"])
+            best_scenario = max(summary["scenario_performance"].keys(), key=lambda x: summary["scenario_performance"][x]["mean_quality"])
             recommendations.append(f"Best performing scenario: {best_scenario}")
 
         # Scalability assessment
@@ -573,13 +572,13 @@ class FractionalDifferentiationValidator:
             scalability_scores=[]
             for size, perf in summary["data_size_performance"].items():
                 # Calculate scalability (execution time per sample)
-                scalability=perf["mean_execution_time"] / size
+                scalability = perf["mean_execution_time"] / size
                 scalability_scores.append((size, scalability))
 
             # Check if scalability is good (linear or sub-linear scaling)
             if len(scalability_scores) > 1:
-                scalability_scores.sort(key=lambda x: x[0])
-                scaling_factor=scalability_scores[-1][1] / scalability_scores[0][1]
+                scalability_scores.sort(key = lambda x: x[0])
+                scaling_factor = scalability_scores[-1][1] / scalability_scores[0][1]
                 if scaling_factor < 2.0:
                     recommendations.append("Good scalability: execution time scales sub-linearly")
                 else:
@@ -598,12 +597,12 @@ class FractionalDifferentiationValidator:
         print("💾 Exporting validation results...")
 
         # Export main results
-        results_file=self.output_dir / "validation_results.json"
+        results_file = self.output_dir / "validation_results.json"
         with open(results_file, "w") as f:
-            json.dump(validation_results, f, indent=2, default=str)
+            json.dump(validation_results, f, indent = 2, default = str)
 
         # Create summary report
-        summary_file=self.output_dir / "validation_summary.md"
+        summary_file = self.output_dir / "validation_summary.md"
         with open(summary_file, "w") as f:
             f.write(f"""# Fractional Differentiation Validation Summary
 
@@ -668,8 +667,8 @@ class FractionalDifferentiationValidator:
 async def main():
     """Main function to run comprehensive validation."""
 
-    validator=FractionalDifferentiationValidator()
-    results=await validator.run_comprehensive_validation()
+    validator = FractionalDifferentiationValidator()
+    results = await validator.run_comprehensive_validation()
 
     print("\n🎯 Validation Summary:")
 

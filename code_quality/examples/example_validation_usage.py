@@ -96,13 +96,13 @@ def example_code_with_issues():
     print("=" * 60)
 
     test_dir = Path("code_quality/test_examples")
-    test_dir.mkdir(exist_ok=True)
+    test_dir.mkdir(exist_ok = True)
 
     # Example 1: Function with argument issues
     example1 = '''#!/usr/bin/env python3
 """Example with function argument issues."""
 
-def process_data(data, threshold, normalize=True):
+def process_data(data, threshold, normalize = True):
     """Process data with threshold."""
     if data:
         return data * threshold
@@ -116,7 +116,7 @@ def main():
     result2 = process_data(100, 0.5, True, False)  # Extra argument
 
     # Wrong keyword argument
-    result3 = process_data(100, 0.5, normalized=True)  # Wrong keyword
+    result3 = process_data(100, 0.5, normalized = True)  # Wrong keyword
 
 if __name__ == "__main__":
     main()
@@ -241,7 +241,7 @@ def validate_test_files(test_dir):
 
     # Use enhanced validator on test directory
     validator = EnhancedValidator(
-        project_root=str(test_dir),
+        project_root = str(test_dir),
         exclude_patterns=["__pycache__", "*.pyc"],
     )
 

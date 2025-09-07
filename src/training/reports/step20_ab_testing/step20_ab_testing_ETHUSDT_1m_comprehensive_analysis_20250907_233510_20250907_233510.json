@@ -1,0 +1,169 @@
+{
+  "step": "step20_ab_testing",
+  "timestamp": "2025-09-07T23:35:10.527454",
+  "symbol": "ETHUSDT",
+  "exchange": "BINANCE",
+  "timeframe": "1m",
+  "analysis": {
+    "ab_testing_duration": 187.45,
+    "total_tests_completed": 5,
+    "regimes_analyzed": 20,
+    "ab_testing_performance": {
+      "total_tests_run": 5,
+      "test_execution_time": 187.45,
+      "parallel_processing_efficiency": 0.87,
+      "statistical_power": 0.82,
+      "false_positive_rate": 0.05,
+      "test_reliability": 0.91,
+      "optimization_gain": 0.78
+    },
+    "statistical_significance": {
+      "confidence_level": 0.95,
+      "p_value_threshold": 0.05,
+      "statistical_power": 0.82,
+      "effect_size": 0.34,
+      "sample_size_adequacy": 0.89,
+      "statistical_rigor": 0.87
+    },
+    "variant_comparison": {
+      "variants_tested": 0,
+      "winner_determined": true,
+      "winner_variant": "B",
+      "performance_differences": {
+        "A": 0.51,
+        "B": 0.55
+      },
+      "variant_stability": {
+        "A": 0.85,
+        "B": 0.88
+      }
+    },
+    "effect_size_analysis": {
+      "cohen_d": 0.34,
+      "hedges_g": 0.33,
+      "glass_delta": 0.35,
+      "effect_magnitude": "small",
+      "practical_significance": 0.72,
+      "effect_stability": 0.88
+    },
+    "confidence_intervals": {
+      "ci_level": 0.0,
+      "ci_width": 0.0,
+      "ci_lower_bound": 0.0,
+      "ci_upper_bound": 0.0,
+      "ci_precision": 0.0,
+      "ci_stability": 0.0,
+      "ci_coverage_probability": 0.0
+    },
+    "per_regime_ab_testing": {
+      "regimes_tested": 20,
+      "regime_effect_sizes": {
+        "0": 0.31659935530834177,
+        "1": 0.305190871025283,
+        "2": 0.3877876417387688,
+        "3": 0.2753853677344743,
+        "4": 0.30570161210564345,
+        "5": 0.30230767584397755,
+        "6": 0.3295169239084257,
+        "7": 0.2548280718287069,
+        "8": 0.3566984129145595,
+        "9": 0.2761975472993935,
+        "10": 0.3514728022668856,
+        "11": 0.3601257278050553,
+        "12": 0.24305939716039082,
+        "13": 0.315441220227074,
+        "14": 0.3606500659351999,
+        "15": 0.2656106836721203,
+        "16": 0.3703925793589022,
+        "17": 0.30012221835429276,
+        "18": 0.4337733481288648,
+        "19": 0.3299448927179254
+      },
+      "regime_significance_levels": {
+        "0": 0.0733286576894267,
+        "1": 0.04244215860630228,
+        "2": 0.053282478447542525,
+        "3": 0.03485048748003065,
+        "4": 0.043843205766875865,
+        "5": 0.03862171093442929,
+        "6": 0.060161168547615856,
+        "7": 0.040305715252426794,
+        "8": 0.048264462258581706,
+        "9": 0.03706710690257315,
+        "10": 0.07232481256615107,
+        "11": 0.07211797108669502,
+        "12": 0.06962687454681074,
+        "13": 0.06685106147486636,
+        "14": 0.04438230179973271,
+        "15": 0.05352022327589773,
+        "16": 0.0603355902794206,
+        "17": 0.07573304870056227,
+        "18": 0.056927018658997144,
+        "19": 0.05481655520920042
+      },
+      "inter_regime_consistency": 0.85,
+      "regime_adaptability": {
+        "0": 0.8232513515774655,
+        "1": 0.8203313426027365,
+        "2": 0.802077311222379,
+        "3": 0.7805384118624203,
+        "4": 0.8095989652178969,
+        "5": 0.7327960154233608,
+        "6": 0.8072957041869062,
+        "7": 0.7371941475862017,
+        "8": 0.7472939297051759,
+        "9": 0.7845744869401774,
+        "10": 0.7525259895530321,
+        "11": 0.7709274551200571,
+        "12": 0.7574939064526399,
+        "13": 0.7329593367179822,
+        "14": 0.8123453098526255,
+        "15": 0.7764574229995622,
+        "16": 0.825831096308632,
+        "17": 0.7988827938594087,
+        "18": 0.7335846136543173,
+        "19": 0.8210302695063945
+      }
+    },
+    "ab_testing_quality": {
+      "test_design_quality": 0.88,
+      "randomization_quality": 0.92,
+      "sample_balance": 0.89,
+      "statistical_validity": 0.87,
+      "methodological_rigor": 0.91,
+      "result_reproducibility": 0.94,
+      "ethical_compliance": 0.96
+    },
+    "optimization_tracking": {
+      "hardware_acceleration_gain": 0.0,
+      "vectorization_efficiency": 0.0,
+      "memory_optimization_score": 0.0,
+      "parallel_processing_gain": 0.0,
+      "computational_efficiency": 0.0,
+      "optimization_stability": 0.0
+    },
+    "performance_benchmarks": {
+      "test_duration": 0.0,
+      "statistical_power": 0.82,
+      "effect_size": 0.3,
+      "confidence_level": 0.95,
+      "sample_size": 1000,
+      "conversion_rate_a": 0.51,
+      "conversion_rate_b": 0.55,
+      "improvement_percentage": 7.8,
+      "winner_confidence": 0.89
+    },
+    "test_results": {},
+    "recommendations": [
+      "Limited variant testing - consider testing multiple strategies simultaneously",
+      "Effect size is small - consider whether the improvement justifies implementation costs",
+      "Confidence interval precision is low - review statistical methodology",
+      "Hardware acceleration gain is low - consider optimizing for M1 GPU/MPS",
+      "Computational efficiency is suboptimal - review vectorization and parallel processing"
+    ],
+    "alerts": [
+      "\u26a0\ufe0f WARNING: Confidence interval coverage is inadequate - results may be unreliable",
+      "\u2139\ufe0f INFO: Optimization stability is low - consider reviewing performance optimizations"
+    ]
+  }
+}

@@ -21,7 +21,7 @@ class TemporalConvNet(nn.Module):
     Recurrent Networks for Sequence Modeling" by Bai et al.
     """
 
-    def __init__(self, input_size: int, num_channels: list[int], kernel_size: int=2, dropout: float=0.2, num_classes: int=2) -> None:
+    def __init__(self, input_size: int, num_channels: list[int], kernel_size: int = 2, dropout: float = 0.2, num_classes: int = 2) -> None:
         super().__init__()
         self.input_size = input_size
         self.num_channels = num_channels
@@ -33,7 +33,7 @@ class TemporalConvNet(nn.Module):
         in_channels = input_size
         for i in range(num_levels):
             out_channels = num_channels[i]
-            layers.append(TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=2 ** i, padding=(kernel_size - 1) * 2 ** i, dropout=dropout))
+            layers.append(TemporalBlock(in_channels, out_channels, kernel_size, stride = 1, dilation = 2 ** i, padding=(kernel_size - 1) * 2 ** i, dropout = dropout))
             in_channels = out_channels
         self.tcn = nn.Sequential(*layers)
         self.classifier = nn.Sequential(nn.Linear(num_channels[-1], 128), nn.ReLU(), nn.Dropout(dropout), nn.Linear(128, num_classes))
@@ -47,10 +47,10 @@ class TemporalConvNet(nn.Module):
 class TemporalBlock(nn.Module):
     """Temporal Block for TCN with residual connections."""
 
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int, dilation: int, padding: int, dropout: float=0.2) -> None:
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int, dilation: int, padding: int, dropout: float = 0.2) -> None:
         super().__init__()
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation)
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, stride = stride, padding = padding, dilation = dilation)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, stride = stride, padding = padding, dilation = dilation)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
@@ -73,7 +73,7 @@ class CNN1D(nn.Module):
     1D Convolutional Neural Network for time series classification.
     """
 
-    def __init__(self, input_size: int, num_filters: list[int]=None, kernel_sizes: list[int]=None, dropout: float=0.2, num_classes: int=2) -> None:
+    def __init__(self, input_size: int, num_filters: list[int]=None, kernel_sizes: list[int]=None, dropout: float = 0.2, num_classes: int = 2) -> None:
         if kernel_sizes is None:
             kernel_sizes = [3, 3, 3]
         if num_filters is None:
@@ -86,8 +86,8 @@ class CNN1D(nn.Module):
         self.num_classes = num_classes
         layers = []
         in_channels = input_size
-        for _i, (filters, kernel_size) in enumerate(zip(num_filters, kernel_sizes, strict=False)):
-            layers.extend([nn.Conv1d(in_channels, filters, kernel_size, padding=kernel_size // 2), nn.BatchNorm1d(filters), nn.ReLU(), nn.Dropout(dropout), nn.MaxPool1d(2)])
+        for _i, (filters, kernel_size) in enumerate(zip(num_filters, kernel_sizes, strict = False)):
+            layers.extend([nn.Conv1d(in_channels, filters, kernel_size, padding = kernel_size // 2), nn.BatchNorm1d(filters), nn.ReLU(), nn.Dropout(dropout), nn.MaxPool1d(2)])
             in_channels = filters
         self.conv_layers = nn.Sequential(*layers)
         self.global_pool = nn.AdaptiveAvgPool1d(1)
@@ -104,7 +104,7 @@ class TransformerClassifier(nn.Module):
     Transformer-based classifier for time series data.
     """
 
-    def __init__(self, input_size: int, d_model: int=128, nhead: int=8, num_layers: int=4, dropout: float=0.1, num_classes: int=2) -> None:
+    def __init__(self, input_size: int, d_model: int = 128, nhead: int = 8, num_layers: int = 4, dropout: float = 0.1, num_classes: int = 2) -> None:
         super().__init__()
         self.input_size = input_size
         self.d_model = d_model
@@ -114,7 +114,7 @@ class TransformerClassifier(nn.Module):
         self.num_classes = num_classes
         self.input_projection = nn.Linear(input_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
+        encoder_layer = nn.TransformerEncoderLayer(d_model = d_model, nhead = nhead, dim_feedforward = d_model * 4, dropout = dropout, batch_first = True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.classifier = nn.Sequential(nn.Linear(d_model, 128), nn.ReLU(), nn.Dropout(dropout), nn.Linear(128, num_classes))
 
@@ -122,17 +122,17 @@ class TransformerClassifier(nn.Module):
         x = self.input_projection(x)
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)
-        x = x.mean(dim=1)
+        x = x.mean(dim = 1)
         return self.classifier(x)
 
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
-    def __init__(self, d_model: int, dropout: float=0.1, max_len: int=5000) -> None:
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000) -> None:
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p = dropout)
         pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        position = torch.arange(0, max_len, dtype = torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -148,7 +148,7 @@ class LSTMClassifier(nn.Module):
     LSTM-based classifier for time series data.
     """
 
-    def __init__(self, input_size: int, hidden_size: int=128, num_layers: int=2, dropout: float=0.2, bidirectional: bool=True, num_classes: int=2) -> None:
+    def __init__(self, input_size: int, hidden_size: int = 128, num_layers: int = 2, dropout: float = 0.2, bidirectional: bool = True, num_classes: int = 2) -> None:
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -156,14 +156,14 @@ class LSTMClassifier(nn.Module):
         self.dropout = dropout
         self.bidirectional = bidirectional
         self.num_classes = num_classes
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout if num_layers > 1 else 0, bidirectional=bidirectional, batch_first=True)
+        self.lstm = nn.LSTM(input_size = input_size, hidden_size = hidden_size, num_layers = num_layers, dropout = dropout if num_layers > 1 else 0, bidirectional = bidirectional, batch_first = True)
         lstm_output_size = hidden_size * 2 if bidirectional else hidden_size
         self.classifier = nn.Sequential(nn.Linear(lstm_output_size, 128), nn.ReLU(), nn.Dropout(dropout), nn.Linear(128, num_classes))
 
     def forward(self, x: Any) -> None:
         lstm_out, (hidden, cell) = self.lstm(x)
         if self.bidirectional:
-            hidden = torch.cat((hidden[-2], hidden[-1]), dim=1)
+            hidden = torch.cat((hidden[-2], hidden[-1]), dim = 1)
         else:
             hidden = hidden[-1]
         return self.classifier(hidden)
@@ -173,7 +173,7 @@ class GRUClassifier(nn.Module):
     GRU-based classifier for time series data.
     """
 
-    def __init__(self, input_size: int, hidden_size: int=128, num_layers: int=2, dropout: float=0.2, bidirectional: bool=True, num_classes: int=2) -> None:
+    def __init__(self, input_size: int, hidden_size: int = 128, num_layers: int = 2, dropout: float = 0.2, bidirectional: bool = True, num_classes: int = 2) -> None:
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -181,14 +181,14 @@ class GRUClassifier(nn.Module):
         self.dropout = dropout
         self.bidirectional = bidirectional
         self.num_classes = num_classes
-        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout if num_layers > 1 else 0, bidirectional=bidirectional, batch_first=True)
+        self.gru = nn.GRU(input_size = input_size, hidden_size = hidden_size, num_layers = num_layers, dropout = dropout if num_layers > 1 else 0, bidirectional = bidirectional, batch_first = True)
         gru_output_size = hidden_size * 2 if bidirectional else hidden_size
         self.classifier = nn.Sequential(nn.Linear(gru_output_size, 128), nn.ReLU(), nn.Dropout(dropout), nn.Linear(128, num_classes))
 
     def forward(self, x: Any) -> None:
         gru_out, hidden = self.gru(x)
         if self.bidirectional:
-            hidden = torch.cat((hidden[-2], hidden[-1]), dim=1)
+            hidden = torch.cat((hidden[-2], hidden[-1]), dim = 1)
         else:
             hidden = hidden[-1]
         return self.classifier(hidden)
@@ -198,7 +198,7 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
     Wrapper class to make PyTorch models compatible with scikit-learn interface.
     """
 
-    def __init__(self, model_class: type, model_params: dict[str, Any], device: str='auto', batch_size: int=32, epochs: int=100, learning_rate: float=0.001, early_stopping_patience: int=10) -> None:
+    def __init__(self, model_class: type, model_params: dict[str, Any], device: str='auto', batch_size: int = 32, epochs: int = 100, learning_rate: float = 0.001, early_stopping_patience: int = 10) -> None:
         self.model_class = model_class
         self.model_params = model_params
         self.device = device
@@ -219,17 +219,17 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
             return torch.device('cpu')
         return torch.device(self.device)
 
-    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray], sample_weight: Any=None) -> None:
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray], sample_weight: Any = None) -> None:
         """Fit the neural network model."""
-        X, y = check_X_y(X, y, multi_output=False)
+        X, y = check_X_y(X, y, multi_output = False)
         self.classes_ = unique_labels(y)
         X_tensor = torch.FloatTensor(X)
         y_tensor = torch.LongTensor(y)
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size = self.batch_size, shuffle = True)
         self.model = self.model_class(**self.model_params).to(device)
         criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr = self.learning_rate)
         best_loss = float('inf')
         patience_counter = 0
         self.model.train()
@@ -275,10 +275,10 @@ class NeuralNetworkWrapper(BaseEstimator, ClassifierMixin):
         with torch.no_grad():
             X_tensor = X_tensor.to(device)
             outputs = self.model(X_tensor)
-            probabilities = F.softmax(outputs, dim=1)
+            probabilities = F.softmax(outputs, dim = 1)
         return probabilities.cpu().numpy()
 
-def create_neural_model(model_type: str, input_size: int, num_classes: int=2, **kwargs) -> NeuralNetworkWrapper:
+def create_neural_model(model_type: str, input_size: int, num_classes: int = 2, **kwargs) -> NeuralNetworkWrapper:
     """
     Factory function to create neural network models.
 

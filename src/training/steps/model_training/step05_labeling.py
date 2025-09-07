@@ -1,21 +1,26 @@
-from typing import Any, Dict, Tuple
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Union, Any, Tuple
-'Step 5: Labeling - Refactored to use BaseStep.\n\nThis module creates comprehensive labels for the training data, combining triple barrier\nlabels with additional labeling strategies and meta-labeling features.\n'
+from typing import Any, Dict, Tuple, List, Optional, Union
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
 from pathlib import Path
 import json
 from src.training.base_step import BaseStep
+
+"""
+Step 5: Labeling - Refactored to use BaseStep.
+
+This module creates comprehensive labels for the training data, combining triple barrier
+labels with additional labeling strategies and meta-labeling features.
+"""
+
+# Import fallback handling
 try:
-    from src.utils.decorators.errors import handles_errors
+    # Import successful - decorators are imported above
+    pass
 except Exception:
-
     def handles_errors(*_args, **_kwargs) -> None:
-
         def _wrap(fn: Any) -> None:
             return fn
         return _wrap
-from src.utils.logger import system_logger
 
 class LabelingStep(BaseStep):
     """Step 5: Labeling using standardized base class."""
@@ -162,7 +167,7 @@ class LabelingStep(BaseStep):
                 df['data_split'] = split
                 data_parts.append(df)
         if data_parts:
-            return pd.concat(data_parts, axis=0)
+            return pd.concat(data_parts, axis = 0)
         if 'dataframe' in pipeline_state:
             return pipeline_state['dataframe'].copy()
         raise ValueError('No data available for labeling')
@@ -319,7 +324,7 @@ class LabelingStep(BaseStep):
                 metrics = stats[f'{label_col}_metrics']
                 summary_lines.extend([f'\n{label_col}:', f"  Unique values: {metrics['unique_values']}", f"  Most common: {metrics['most_common']} ({metrics['most_common_pct']:.1f}%)", f"  Entropy: {metrics['entropy']:.3f}"])
         reports['summary'] = '\n'.join(summary_lines)
-        config_lines = ['Labeling Configuration', '=' * 40, json.dumps(self.labeling_config, indent=2)]
+        config_lines = ['Labeling Configuration', '=' * 40, json.dumps(self.labeling_config, indent = 2)]
         reports['configuration'] = '\n'.join(config_lines)
         return reports
 
@@ -331,7 +336,7 @@ class LabelingStep(BaseStep):
             pipeline_state: Pipeline state with results
         """
         output_dir = Path(training_input.get('output_dir', 'output')) / 'step05_labeling'
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents = True, exist_ok = True)
         if 'labeled_data' in pipeline_state:
             file_path = output_dir / 'labeled_data.parquet'
             pipeline_state['labeled_data'].to_parquet(file_path)
@@ -339,7 +344,7 @@ class LabelingStep(BaseStep):
         if 'label_statistics' in pipeline_state:
             stats_path = output_dir / 'label_statistics.json'
             with open(stats_path, 'w') as f:
-                json.dump(pipeline_state['label_statistics'], f, indent=2)
+                json.dump(pipeline_state['label_statistics'], f, indent = 2)
             self.logger.info(f'💾 Saved label statistics to {stats_path}')
         if 'labeling_reports' in pipeline_state:
             for report_name, content in pipeline_state['labeling_reports'].items():

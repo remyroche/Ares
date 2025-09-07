@@ -3,6 +3,9 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 import numpy as np
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Step 8: Advanced Feature Selection - Refactored to use BaseStep.\n\nThis step performs sophisticated feature selection using:\n- Phase 1: mRMR and Random Forest to select top 150 features\n- Phase 2: Boruta to generate multiple feature sets (100, 80, 60)\nwith regime-aware selection, time-series validation, and interpretability analysis.\n'
 import asyncio
 import warnings
@@ -38,14 +41,14 @@ except ImportError:
     LIME_AVAILABLE = False
     warnings.warn('LIME not available - interpretability features will be limited')
 from .training.base_step import BaseStep
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import json
 import logging
 import time
 
 if NUMBA_AVAILABLE:
 
-    @jit(nopython=True, parallel=True)
+    @jit(nopython = True, parallel = True)
     def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
         """Compute correlation matrix using Numba for speed."""
         n_features = X.shape[1]
@@ -69,8 +72,8 @@ if NUMBA_AVAILABLE:
                     corr_matrix[j, i] = corr
         return corr_matrix
 
-    @jit(nopython=True)
-    def fast_mutual_information(X: np.ndarray, y: np.ndarray, n_bins: int=10) -> np.ndarray:
+    @jit(nopython = True)
+    def fast_mutual_information(X: np.ndarray, y: np.ndarray, n_bins: int = 10) -> np.ndarray:
         """Fast mutual information calculation using histogram method."""
         n_features = X.shape[1]
         mi_scores = np.zeros(n_features)
@@ -86,8 +89,8 @@ if NUMBA_AVAILABLE:
                 for j in range(len(x_discrete)):
                     hist_2d[x_discrete[j], y_discrete[j]] += 1
                 hist_2d = hist_2d / len(x_discrete)
-                px = np.sum(hist_2d, axis=1)
-                py = np.sum(hist_2d, axis=0)
+                px = np.sum(hist_2d, axis = 1)
+                py = np.sum(hist_2d, axis = 0)
                 mi = 0.0
                 for xi in range(n_bins):
                     for yi in range(n_bins):
@@ -101,7 +104,7 @@ else:
         """Standard correlation matrix computation."""
         return np.corrcoef(X.T)
 
-    def fast_mutual_information(X: np.ndarray, y: np.ndarray, n_bins: int=10) -> np.ndarray:
+    def fast_mutual_information(X: np.ndarray, y: np.ndarray, n_bins: int = 10) -> np.ndarray:
         """Standard mutual information using sklearn."""
         if len(np.unique(y)) <= 10:
             return mutual_info_classif(X, y)
@@ -110,6 +113,7 @@ else:
 
 class AdvancedFeatureSelectionStep(BaseStep):
     """Step 8: Advanced Feature Selection using standardized base class."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize advanced feature selection step.
@@ -123,6 +127,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
         self.feature_importance_analyzer = None
         self.selected_features = {}
         self.feature_statistics = {}
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -130,17 +135,19 @@ class AdvancedFeatureSelectionStep(BaseStep):
         self._initialize_selectors()
         self._initialize_interpretability_tools()
         self.feature_dir = self.base_dir / 'selected_features'
-        self.feature_dir.mkdir(parents=True, exist_ok=True)
+        self.feature_dir.mkdir(parents = True, exist_ok = True)
         self.importance_dir = self.base_dir / 'feature_importance'
-        self.importance_dir.mkdir(parents=True, exist_ok=True)
+        self.importance_dir.mkdir(parents = True, exist_ok = True)
         self.interpretability_dir = self.base_dir / 'interpretability'
-        self.interpretability_dir.mkdir(parents=True, exist_ok=True)
+        self.interpretability_dir.mkdir(parents = True, exist_ok = True)
+    @log_all_calls
 
     def _initialize_selectors(self) -> None:
         """Initialize feature selection algorithms."""
-        self.rf_classifier = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=self.selection_config['phase1']['n_jobs'])
-        self.rf_regressor = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42, n_jobs=self.selection_config['phase1']['n_jobs'])
+        self.rf_classifier = RandomForestClassifier(n_estimators = 100, max_depth = 10, random_state = 42, n_jobs = self.selection_config['phase1']['n_jobs'])
+        self.rf_regressor = RandomForestRegressor(n_estimators = 100, max_depth = 10, random_state = 42, n_jobs = self.selection_config['phase1']['n_jobs'])
         self.lgb_params = {'objective': 'binary', 'metric': 'auc', 'boosting_type': 'gbdt', 'num_leaves': 31, 'learning_rate': 0.05, 'feature_fraction': 0.9, 'bagging_fraction': 0.8, 'bagging_freq': 5, 'verbose': -1, 'num_threads': self.selection_config['phase1']['n_jobs']}
+    @log_all_calls
 
     def _initialize_interpretability_tools(self) -> None:
         """Initialize SHAP and LIME if available."""
@@ -150,6 +157,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
             self.logger.info('SHAP initialized for interpretability analysis')
         if LIME_AVAILABLE and self.selection_config['interpretability']['calculate_lime']:
             self.logger.info('LIME initialized for interpretability analysis')
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
@@ -258,6 +266,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
         selected_features = [feature_names[i] for i in all_selected]
         self.logger.info(f'Phase 1 selected {len(selected_features)} features')
         return selected_features
+    @log_all_calls
 
     def _mrmr_selection(self, mi_scores: np.ndarray, corr_matrix: np.ndarray, k: int) -> np.ndarray:
         """Perform mRMR (minimum Redundancy Maximum Relevance) selection.
@@ -315,31 +324,31 @@ class AdvancedFeatureSelectionStep(BaseStep):
         if BORUTA_AVAILABLE:
             self.logger.info('Running Boruta feature selection...')
             if len(np.unique(y)) <= 10:
-                estimator = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42, n_jobs=self.selection_config['phase1']['n_jobs'])
+                estimator = RandomForestClassifier(n_estimators = 100, max_depth = 5, random_state = 42, n_jobs = self.selection_config['phase1']['n_jobs'])
             else:
-                estimator = RandomForestRegressor(n_estimators=100, max_depth=5, random_state=42, n_jobs=self.selection_config['phase1']['n_jobs'])
-            boruta = BorutaPy(estimator, n_estimators='auto', max_iter=self.selection_config['phase2']['boruta_max_iter'], alpha=self.selection_config['phase2']['boruta_alpha'], random_state=42)
+                estimator = RandomForestRegressor(n_estimators = 100, max_depth = 5, random_state = 42, n_jobs = self.selection_config['phase1']['n_jobs'])
+            boruta = BorutaPy(estimator, n_estimators='auto', max_iter = self.selection_config['phase2']['boruta_max_iter'], alpha = self.selection_config['phase2']['boruta_alpha'], random_state = 42)
             boruta.fit(X.values, y)
             boruta_selected = X.columns[boruta.support_].tolist()
             boruta_tentative = X.columns[boruta.support_weak_].tolist()
             feature_ranking = boruta.ranking_
-            ranked_features = sorted(zip(available_features, feature_ranking), key=lambda x: x[1])
+            ranked_features = sorted(zip(available_features, feature_ranking), key = lambda x: x[1])
             self.logger.info(f'Boruta selected {len(boruta_selected)} confirmed features')
             self.logger.info(f'Boruta found {len(boruta_tentative)} tentative features')
         else:
             self.logger.info('Using LightGBM for feature ranking (Boruta not available)...')
             if len(np.unique(y)) <= 10:
-                lgb_train = lgb.Dataset(X.values, label=y)
+                lgb_train = lgb.Dataset(X.values, label = y)
                 lgb_params = self.lgb_params.copy()
-                model = lgb.train(lgb_params, lgb_train, num_boost_round=100, verbose_eval=False)
+                model = lgb.train(lgb_params, lgb_train, num_boost_round = 100, verbose_eval = False)
             else:
                 lgb_params = self.lgb_params.copy()
                 lgb_params['objective'] = 'regression'
                 lgb_params['metric'] = 'rmse'
-                lgb_train = lgb.Dataset(X.values, label=y)
-                model = lgb.train(lgb_params, lgb_train, num_boost_round=100, verbose_eval=False)
+                lgb_train = lgb.Dataset(X.values, label = y)
+                model = lgb.train(lgb_params, lgb_train, num_boost_round = 100, verbose_eval = False)
             importance = model.feature_importance(importance_type='gain')
-            ranked_features = sorted(zip(available_features, importance), key=lambda x: x[1], reverse=True)
+            ranked_features = sorted(zip(available_features, importance), key = lambda x: x[1], reverse = True)
             boruta_selected = [f for f, _ in ranked_features[:100]]
         for n_features in self.selection_config['phase2']['feature_sets']:
             if n_features <= len(ranked_features):
@@ -352,6 +361,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
                 feature_sets['boruta_all'] = boruta_selected + boruta_tentative
         self.feature_statistics = self._calculate_feature_statistics(X, y, feature_sets)
         return feature_sets
+    @log_all_calls
 
     def _calculate_feature_statistics(self, X: pd.DataFrame, y: np.ndarray, feature_sets: Dict[str, List[str]]) -> Dict[str, Any]:
         """Calculate statistics for selected features.
@@ -388,7 +398,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
             return
         train_data = feature_data['train']
         feature_set_sizes = {name: len(features) for name, features in selected_features.items()}
-        smallest_set_name = min(feature_set_sizes, key=feature_set_sizes.get)
+        smallest_set_name = min(feature_set_sizes, key = feature_set_sizes.get)
         features_to_explain = selected_features[smallest_set_name]
         n_explain = min(len(features_to_explain), self.selection_config['interpretability']['top_features_to_explain'])
         features_to_explain = features_to_explain[:n_explain]
@@ -402,18 +412,18 @@ class AdvancedFeatureSelectionStep(BaseStep):
         if SHAP_AVAILABLE and self.selection_config['interpretability']['calculate_shap']:
             self.logger.info('Generating SHAP values...')
             if len(np.unique(y)) <= 10:
-                model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+                model = RandomForestClassifier(n_estimators = 50, max_depth = 5, random_state = 42)
             else:
-                model = RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)
+                model = RandomForestRegressor(n_estimators = 50, max_depth = 5, random_state = 42)
             model.fit(X_explain.values, y)
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_explain.values)
             if len(shap_values.shape) == 3:
                 shap_values = shap_values[:, :, 1]
-            shap_importance = np.abs(shap_values).mean(axis=0)
+            shap_importance = np.abs(shap_values).mean(axis = 0)
             interpretability_results['shap'] = {'feature_importance': dict(zip(features_to_explain, shap_importance)), 'mean_abs_shap': shap_importance.tolist()}
             shap_file = self.interpretability_dir / 'shap_values.npz'
-            np.savez_compressed(shap_file, shap_values=shap_values, features=features_to_explain, importance=shap_importance)
+            np.savez_compressed(shap_file, shap_values = shap_values, features = features_to_explain, importance = shap_importance)
         interpret_file = self.interpretability_dir / 'interpretability_analysis.json'
         safe_json_dump(interpretability_results, interpret_file)
         self.logger.info('✅ Interpretability analysis completed')
@@ -492,7 +502,7 @@ class AdvancedFeatureSelectionStep(BaseStep):
         """Get list of step dependencies."""
         return ['step06_feature_engineering', 'step03_hmm_regime_discovery']
 
-async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str=None, force_rerun: bool=False, **kwargs: Any) -> bool:
+async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """
     Run Step 8: Advanced Feature Selection (backward compatibility).
     
@@ -517,4 +527,4 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         system_logger.error(f'Failed to execute step 8: {str(e)}')
         return False
 if __name__ == '__main__':
-    asyncio.run(run_step(symbol='BTCUSDT', exchange='binance', timeframe='1m', force_rerun=True))
+    asyncio.run(run_step(symbol='BTCUSDT', exchange='binance', timeframe='1m', force_rerun = True))

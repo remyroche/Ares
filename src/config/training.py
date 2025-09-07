@@ -66,7 +66,7 @@ def get_training_config() -> dict[str, Any]:
             "exclude_recent_days": 2,  # Exclude the most recent N days from the lookback window
         },
         # --- Data Directory Configuration ---
-        "data_dir": "data",  # Data directory for storing training data
+        "data_dir": "data_cache",  # Data directory for storing training data
         # --- Enhanced Training Configuration ---
         "ENHANCED_TRAINING": {
             "enable_efficiency_optimizations": True,

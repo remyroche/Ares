@@ -1,5 +1,14 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+from datetime import datetime
+from typing import Any, TYPE_CHECKING
+import logging
+import time
+
+from ..utils.compat import handle_specific_errors
+from ..utils.logger import system_logger
+from ..core.error_classes import ValidationError
+from ..core.decorators import handles_errors
 
 """
 Strategist module for trading strategy generation.
@@ -9,12 +18,6 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
-from datetime import datetime
-
-
-from .core.decorators import handles_errors
-from .utils.compat import handle_specific_errors
-from .utils.logger import system_logger
 
 # Import Pydantic models and utilities
 from .config import MarketIndicators, StrategistConfig, StrategyResult
@@ -64,9 +67,9 @@ class Strategist:
 
         # Initialize performance optimizer
         self.optimizer = PerformanceOptimizer(
-            use_vectorized=self.strategist_config.use_vectorized_calculations,
-            use_parallel=self.strategist_config.parallel_indicator_calculation,
-            cache_ttl=self.strategist_config.cache_ttl,
+            use_vectorized = self.strategist_config.use_vectorized_calculations,
+            use_parallel = self.strategist_config.parallel_indicator_calculation,
+            cache_ttl = self.strategist_config.cache_ttl,
         )
 
         # Component extractor for reducing complexity
@@ -92,7 +95,7 @@ class Strategist:
             AttributeError: (False, "Missing required strategist parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="strategist initialization",
     )
     async def initialize(self) -> bool:
@@ -153,10 +156,10 @@ class Strategist:
             CalculationError: (None, "Error in market calculations"),
             Exception: (None, "Unexpected error in strategy generation"),
         },
-        default_return=None,
+        default_return = None,
         context="strategy generation",
     )
-    @create_strategy_validator(min_confidence=0.0, max_confidence=1.0)
+    @create_strategy_validator(min_confidence = 0.0, max_confidence = 1.0)
     async def generate_strategy(
         self,
         market_data: pd.DataFrame,
@@ -248,7 +251,7 @@ class Strategist:
         """
         required_columns = ["close", "volume", "timestamp"]
         validate_required_columns(market_data, required_columns)
-        validate_data_sufficiency(market_data, min_rows=100)
+        validate_data_sufficiency(market_data, min_rows = 100)
 
     async def _extract_market_indicators_optimized(
         self,
@@ -288,13 +291,13 @@ class Strategist:
             )
 
             return MarketIndicators(
-                rsi=indicators.get("rsi"),
-                sma_fast=indicators.get("sma_fast"),
-                sma_slow=indicators.get("sma_slow"),
-                volume_ratio=indicators.get("volume_ratio"),
-                volatility=indicators.get("volatility"),
-                price_change_percent=price_change_percent,
-                sma_trend=sma_trend,
+                rsi = indicators.get("rsi"),
+                sma_fast = indicators.get("sma_fast"),
+                sma_slow = indicators.get("sma_slow"),
+                volume_ratio = indicators.get("volume_ratio"),
+                volatility = indicators.get("volatility"),
+                price_change_percent = price_change_percent,
+                sma_trend = sma_trend,
             )
 
         except Exception as e:
@@ -318,9 +321,9 @@ class Strategist:
         """
         strategy = StrategyResult(
             direction="HOLD",
-            confidence=0.5,
+            confidence = 0.5,
             reasoning=[],
-            timestamp=datetime.now().isoformat(),
+            timestamp = datetime.now().isoformat(),
         ).dict()
 
         # RSI-based signals
@@ -574,7 +577,7 @@ class Strategist:
             return strategy
 
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
 
     async def stop(self) -> bool:
         """Stop the strategist component."""
@@ -584,7 +587,7 @@ class Strategist:
 
             # Cleanup optimizer resources
             if hasattr(self, "optimizer") and self.optimizer._executor:
-                self.optimizer._executor.shutdown(wait=True)
+                self.optimizer._executor.shutdown(wait = True)
 
             self.logger.info("✅ Strategist stopped successfully")
             return True

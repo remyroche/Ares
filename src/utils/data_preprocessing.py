@@ -1,4 +1,5 @@
 import logging
+from .logger import system_logger
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ from datetime import timedelta
 from typing import Any
 
 
-from .utils.logger import system_logger
+from .logger import system_logger
 import numpy as np
 import pandas as pd
 
@@ -73,7 +74,7 @@ def regularize_timestamps(
 
         # Identify irregular intervals
         irregular_mask = abs(time_diffs - expected_interval) > timedelta(
-            seconds=tolerance_seconds
+            seconds = tolerance_seconds
         )
         irregular_ratio = irregular_mask.sum() / len(time_diffs)
 
@@ -92,7 +93,7 @@ def regularize_timestamps(
             freq = _get_frequency_string(expected_interval)
 
             # Create regular timestamp index
-            regular_index = pd.date_range(start=start_time, end=end_time, freq=freq)
+            regular_index = pd.date_range(start = start_time, end = end_time, freq = freq)
 
         # Reindex data to regular intervals
         if method == "forward_fill":
@@ -238,19 +239,19 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     # Fix OHLC consistency
     if all(col in data.columns for col in ["open", "high", "low", "close"]):
         # High should be >= max of open, close
-        high_violations = data["high"] < data[["open", "close"]].max(axis=1)
+        high_violations = data["high"] < data[["open", "close"]].max(axis = 1)
         if high_violations.any():
             data.loc[high_violations, "high"] = data.loc[
                 high_violations, ["open", "close"]
-            ].max(axis=1)
+            ].max(axis = 1)
             issues.append(f"Fixed {high_violations.sum()} high price violations")
 
         # Low should be <= min of open, close
-        low_violations = data["low"] > data[["open", "close"]].min(axis=1)
+        low_violations = data["low"] > data[["open", "close"]].min(axis = 1)
         if low_violations.any():
             data.loc[low_violations, "low"] = data.loc[
                 low_violations, ["open", "close"]
-            ].min(axis=1)
+            ].min(axis = 1)
             issues.append(f"Fixed {low_violations.sum()} low price violations")
 
     # Fix zero volume

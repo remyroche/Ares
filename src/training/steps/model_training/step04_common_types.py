@@ -42,12 +42,12 @@ class StepResult:
                       execution_time: float = None, warnings: List[str] = None) -> 'StepResult':
         """Create a successful result."""
         return cls(
-            status=StepResultStatus.SUCCESS,
-            success=True,
-            data=data,
-            metadata=metadata or {},
-            execution_time=execution_time,
-            warnings=warnings or []
+            status = StepResultStatus.SUCCESS,
+            success = True,
+            data = data,
+            metadata = metadata or {},
+            execution_time = execution_time,
+            warnings = warnings or []
         )
     
     @classmethod
@@ -55,12 +55,12 @@ class StepResult:
                       metadata: Dict[str, Any] = None, execution_time: float = None) -> 'StepResult':
         """Create a failure result."""
         return cls(
-            status=StepResultStatus.FAILURE,
-            success=False,
-            error=error,
-            error_type=error_type,
-            metadata=metadata or {},
-            execution_time=execution_time
+            status = StepResultStatus.FAILURE,
+            success = False,
+            error = error,
+            error_type = error_type,
+            metadata = metadata or {},
+            execution_time = execution_time
         )
     
     @classmethod
@@ -68,12 +68,12 @@ class StepResult:
                               metadata: Dict[str, Any] = None, execution_time: float = None) -> 'StepResult':
         """Create a partial success result."""
         return cls(
-            status=StepResultStatus.PARTIAL_SUCCESS,
-            success=True,  # Partial success is still considered successful
-            data=data,
-            warnings=warnings or [],
-            metadata=metadata or {},
-            execution_time=execution_time
+            status = StepResultStatus.PARTIAL_SUCCESS,
+            success = True,  # Partial success is still considered successful
+            data = data,
+            warnings = warnings or [],
+            metadata = metadata or {},
+            execution_time = execution_time
         )
 
 
@@ -119,7 +119,7 @@ def standardize_result(result: Union[bool, Dict[str, Any], StepResult],
             return StepResult.success_result(metadata={"operation": operation_name})
         else:
             return StepResult.failure_result(
-                error=f"{operation_name} failed", 
+                error = f"{operation_name} failed", 
                 error_type="OperationFailure",
                 metadata={"operation": operation_name}
             )
@@ -128,20 +128,20 @@ def standardize_result(result: Union[bool, Dict[str, Any], StepResult],
         success = result.get('success', False)
         if success:
             return StepResult.success_result(
-                data=result.get('data'),
-                metadata=result.get('metadata', {}),
-                warnings=result.get('warnings', [])
+                data = result.get('data'),
+                metadata = result.get('metadata', {}),
+                warnings = result.get('warnings', [])
             )
         else:
             return StepResult.failure_result(
-                error=result.get('error', f"{operation_name} failed"),
-                error_type=result.get('error_type', "OperationFailure"),
-                metadata=result.get('metadata', {})
+                error = result.get('error', f"{operation_name} failed"),
+                error_type = result.get('error_type', "OperationFailure"),
+                metadata = result.get('metadata', {})
             )
     
     # Fallback for unknown types
     return StepResult.failure_result(
-        error=f"Unknown result type: {type(result)}",
+        error = f"Unknown result type: {type(result)}",
         error_type="TypeError",
         metadata={"operation": operation_name, "result_type": str(type(result))}
     )

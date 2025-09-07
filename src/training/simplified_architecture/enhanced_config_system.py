@@ -31,12 +31,12 @@ class Environment(Enum):
 @dataclass
 class GlobalSettings:
     """Global pipeline settings."""
-    data_source: Dict[str, Any] = field(default_factory=dict)
-    model: Dict[str, Any] = field(default_factory=dict)
-    logging: Dict[str, Any] = field(default_factory=dict)
-    performance: Dict[str, Any] = field(default_factory=dict)
-    security: Dict[str, Any] = field(default_factory=dict)
-    monitoring: Dict[str, Any] = field(default_factory=dict)
+    data_source: Dict[str, Any] = field(default_factory = dict)
+    model: Dict[str, Any] = field(default_factory = dict)
+    logging: Dict[str, Any] = field(default_factory = dict)
+    performance: Dict[str, Any] = field(default_factory = dict)
+    security: Dict[str, Any] = field(default_factory = dict)
+    monitoring: Dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class StepConfiguration:
@@ -49,12 +49,12 @@ class StepConfiguration:
     retry_delay_seconds: int = 1
     fail_fast: bool = True
     priority: int = 2
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    dependencies: List[str] = field(default_factory=list)
+    parameters: Dict[str, Any] = field(default_factory = dict)
+    dependencies: List[str] = field(default_factory = list)
     output_schema: Optional[Dict[str, Any]] = None
-    validation_rules: List[Dict[str, Any]] = field(default_factory=list)
-    resource_limits: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    validation_rules: List[Dict[str, Any]] = field(default_factory = list)
+    resource_limits: Dict[str, Any] = field(default_factory = dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class PipelineConfiguration:
@@ -63,9 +63,9 @@ class PipelineConfiguration:
     version: str
     description: str = ''
     environment: Environment = Environment.DEVELOPMENT
-    global_settings: GlobalSettings = field(default_factory=GlobalSettings)
-    steps: List[StepConfiguration] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    global_settings: GlobalSettings = field(default_factory = GlobalSettings)
+    steps: List[StepConfiguration] = field(default_factory = list)
+    metadata: Dict[str, Any] = field(default_factory = dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -135,7 +135,7 @@ class ConfigurationManager:
             self.logger.error(f'Failed to load configuration from {config_path}: {e}')
             raise ConfigurationError(f'Configuration loading failed: {e}')
 
-    def save_config(self, config: PipelineConfiguration, config_path: Union[str, Path], format: ConfigFormat=ConfigFormat.YAML) -> None:
+    def save_config(self, config: PipelineConfiguration, config_path: Union[str, Path], format: ConfigFormat = ConfigFormat.YAML) -> None:
         """
         Save pipeline configuration to file.
         
@@ -145,7 +145,7 @@ class ConfigurationManager:
             format: Output format
         """
         config_path = Path(config_path)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents = True, exist_ok = True)
         config.updated_at = datetime.now()
         try:
             config_data = self._serialize_configuration(config)
@@ -217,12 +217,12 @@ class ConfigurationManager:
     def _save_yaml(self, data: Dict[str, Any], path: Path) -> None:
         """Save configuration as YAML."""
         with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(data, f, default_flow_style=False, indent=2)
+            yaml.dump(data, f, default_flow_style = False, indent = 2)
 
     def _save_json(self, data: Dict[str, Any], path: Path) -> None:
         """Save configuration as JSON."""
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, default=str)
+            json.dump(data, f, indent = 2, default = str)
 
     def _apply_environment_overrides(self, config_data: Dict[str, Any], environment: Environment) -> Dict[str, Any]:
         """Apply environment-specific configuration overrides."""
@@ -236,12 +236,12 @@ class ConfigurationManager:
     def _parse_configuration(self, data: Dict[str, Any]) -> PipelineConfiguration:
         """Parse configuration data into PipelineConfiguration object."""
         global_settings_data = data.get('global_settings', {})
-        global_settings = GlobalSettings(data_source=global_settings_data.get('data_source', {}), model=global_settings_data.get('model', {}), logging=global_settings_data.get('logging', {}), performance=global_settings_data.get('performance', {}), security=global_settings_data.get('security', {}), monitoring=global_settings_data.get('monitoring', {}))
+        global_settings = GlobalSettings(data_source = global_settings_data.get('data_source', {}), model = global_settings_data.get('model', {}), logging = global_settings_data.get('logging', {}), performance = global_settings_data.get('performance', {}), security = global_settings_data.get('security', {}), monitoring = global_settings_data.get('monitoring', {}))
         steps = []
         for step_data in data.get('steps', []):
-            step = StepConfiguration(name=step_data['name'], class_name=step_data['class_name'], enabled=step_data.get('enabled', True), timeout_seconds=step_data.get('timeout_seconds'), retry_count=step_data.get('retry_count', 0), retry_delay_seconds=step_data.get('retry_delay_seconds', 1), fail_fast=step_data.get('fail_fast', True), priority=step_data.get('priority', 2), parameters=step_data.get('parameters', {}), dependencies=step_data.get('dependencies', []), output_schema=step_data.get('output_schema'), validation_rules=step_data.get('validation_rules', []), resource_limits=step_data.get('resource_limits', {}), metadata=step_data.get('metadata', {}))
+            step = StepConfiguration(name = step_data['name'], class_name = step_data['class_name'], enabled = step_data.get('enabled', True), timeout_seconds = step_data.get('timeout_seconds'), retry_count = step_data.get('retry_count', 0), retry_delay_seconds = step_data.get('retry_delay_seconds', 1), fail_fast = step_data.get('fail_fast', True), priority = step_data.get('priority', 2), parameters = step_data.get('parameters', {}), dependencies = step_data.get('dependencies', []), output_schema = step_data.get('output_schema'), validation_rules = step_data.get('validation_rules', []), resource_limits = step_data.get('resource_limits', {}), metadata = step_data.get('metadata', {}))
             steps.append(step)
-        config = PipelineConfiguration(name=data['name'], version=data['version'], description=data.get('description', ''), environment=Environment(data.get('environment', 'development')), global_settings=global_settings, steps=steps, metadata=data.get('metadata', {}))
+        config = PipelineConfiguration(name = data['name'], version = data['version'], description = data.get('description', ''), environment = Environment(data.get('environment', 'development')), global_settings = global_settings, steps = steps, metadata = data.get('metadata', {}))
         return config
 
     def _serialize_configuration(self, config: PipelineConfiguration) -> Dict[str, Any]:
@@ -289,16 +289,16 @@ class ConfigurationManager:
 
     def _create_basic_ml_template(self) -> PipelineConfiguration:
         """Create basic ML pipeline template."""
-        return PipelineConfiguration(name='Basic_ML_Pipeline', version='1.0.0', description='Basic machine learning pipeline for data processing and model training', global_settings=GlobalSettings(data_source={'type': 'file', 'format': 'parquet'}, model={'type': 'lightgbm', 'hyperparameters': {'n_estimators': 1000}}), steps=[StepConfiguration(name='data_loading', class_name='DataLoadingStep', parameters={'source': 'data/raw/training_data.parquet'}), StepConfiguration(name='feature_engineering', class_name='FeatureEngineeringStep', dependencies=['data_loading'], parameters={'feature_types': ['technical', 'statistical']}), StepConfiguration(name='model_training', class_name='ModelTrainingStep', dependencies=['feature_engineering'], parameters={'model_type': 'lightgbm'})])
+        return PipelineConfiguration(name='Basic_ML_Pipeline', version='1.0.0', description='Basic machine learning pipeline for data processing and model training', global_settings = GlobalSettings(data_source={'type': 'file', 'format': 'parquet'}, model={'type': 'lightgbm', 'hyperparameters': {'n_estimators': 1000}}), steps=[StepConfiguration(name='data_loading', class_name='DataLoadingStep', parameters={'source': 'data/raw/training_data.parquet'}), StepConfiguration(name='feature_engineering', class_name='FeatureEngineeringStep', dependencies=['data_loading'], parameters={'feature_types': ['technical', 'statistical']}), StepConfiguration(name='model_training', class_name='ModelTrainingStep', dependencies=['feature_engineering'], parameters={'model_type': 'lightgbm'})])
 
     def _create_advanced_trading_template(self) -> PipelineConfiguration:
         """Create advanced trading pipeline template."""
-        return PipelineConfiguration(name='Advanced_Trading_Pipeline', version='2.0.0', description='Advanced trading pipeline with HMM regime detection and ensemble models', global_settings=GlobalSettings(data_source={'type': 'exchange', 'exchange': 'binance'}, model={'type': 'ensemble', 'models': ['lightgbm', 'xgboost', 'neural_network']}), steps=[StepConfiguration(name='data_collection', class_name='DataCollectionStep', parameters={'symbol': 'BTCUSDT', 'timeframe': '1h', 'lookback_days': 90}), StepConfiguration(name='hmm_regime_discovery', class_name='HMMRegimeDiscoveryStep', dependencies=['data_collection'], parameters={'n_components': 3, 'max_iterations': 100}), StepConfiguration(name='feature_engineering', class_name='FeatureEngineeringStep', dependencies=['hmm_regime_discovery'], parameters={'feature_types': ['technical', 'statistical', 'wavelet', 'regime_based']}), StepConfiguration(name='ensemble_training', class_name='EnsembleTrainingStep', dependencies=['feature_engineering'], parameters={'models': [{'type': 'lightgbm', 'hyperparameters': {'n_estimators': 1000}}, {'type': 'xgboost', 'hyperparameters': {'n_estimators': 1000}}, {'type': 'neural_network', 'hyperparameters': {'hidden_layers': [128, 64]}}]})])
+        return PipelineConfiguration(name='Advanced_Trading_Pipeline', version='2.0.0', description='Advanced trading pipeline with HMM regime detection and ensemble models', global_settings = GlobalSettings(data_source={'type': 'exchange', 'exchange': 'binance'}, model={'type': 'ensemble', 'models': ['lightgbm', 'xgboost', 'neural_network']}), steps=[StepConfiguration(name='data_collection', class_name='DataCollectionStep', parameters={'symbol': 'BTCUSDT', 'timeframe': '1h', 'lookback_days': 90}), StepConfiguration(name='hmm_regime_discovery', class_name='HMMRegimeDiscoveryStep', dependencies=['data_collection'], parameters={'n_components': 3, 'max_iterations': 100}), StepConfiguration(name='feature_engineering', class_name='FeatureEngineeringStep', dependencies=['hmm_regime_discovery'], parameters={'feature_types': ['technical', 'statistical', 'wavelet', 'regime_based']}), StepConfiguration(name='ensemble_training', class_name='EnsembleTrainingStep', dependencies=['feature_engineering'], parameters={'models': [{'type': 'lightgbm', 'hyperparameters': {'n_estimators': 1000}}, {'type': 'xgboost', 'hyperparameters': {'n_estimators': 1000}}, {'type': 'neural_network', 'hyperparameters': {'hidden_layers': [128, 64]}}]})])
 
     def _create_hmm_regime_template(self) -> PipelineConfiguration:
         """Create HMM regime detection pipeline template."""
-        return PipelineConfiguration(name='HMM_Regime_Pipeline', version='1.5.0', description='HMM-based regime detection and per-regime model training', global_settings=GlobalSettings(data_source={'type': 'exchange', 'exchange': 'binance'}, model={'type': 'hmm_ensemble', 'regime_models': ['lightgbm', 'xgboost']}), steps=[StepConfiguration(name='data_collection', class_name='DataCollectionStep', parameters={'symbol': 'BTCUSDT', 'timeframe': '1h'}), StepConfiguration(name='hmm_regime_discovery', class_name='HMMRegimeDiscoveryStep', dependencies=['data_collection'], parameters={'n_components': 4, 'covariance_type': 'full'}), StepConfiguration(name='regime_data_splitting', class_name='RegimeDataSplittingStep', dependencies=['hmm_regime_discovery'], parameters={'min_samples_per_regime': 1000}), StepConfiguration(name='per_regime_training', class_name='PerRegimeTrainingStep', dependencies=['regime_data_splitting'], parameters={'model_type': 'lightgbm', 'regime_specific': True})])
+        return PipelineConfiguration(name='HMM_Regime_Pipeline', version='1.5.0', description='HMM-based regime detection and per-regime model training', global_settings = GlobalSettings(data_source={'type': 'exchange', 'exchange': 'binance'}, model={'type': 'hmm_ensemble', 'regime_models': ['lightgbm', 'xgboost']}), steps=[StepConfiguration(name='data_collection', class_name='DataCollectionStep', parameters={'symbol': 'BTCUSDT', 'timeframe': '1h'}), StepConfiguration(name='hmm_regime_discovery', class_name='HMMRegimeDiscoveryStep', dependencies=['data_collection'], parameters={'n_components': 4, 'covariance_type': 'full'}), StepConfiguration(name='regime_data_splitting', class_name='RegimeDataSplittingStep', dependencies=['hmm_regime_discovery'], parameters={'min_samples_per_regime': 1000}), StepConfiguration(name='per_regime_training', class_name='PerRegimeTrainingStep', dependencies=['regime_data_splitting'], parameters={'model_type': 'lightgbm', 'regime_specific': True})])
 
     def _create_ensemble_training_template(self) -> PipelineConfiguration:
         """Create ensemble training pipeline template."""
-        return PipelineConfiguration(name='Ensemble_Training_Pipeline', version='1.2.0', description='Multi-model ensemble training with stacking and blending', global_settings=GlobalSettings(data_source={'type': 'file', 'format': 'parquet'}, model={'type': 'stacking_ensemble', 'meta_learner': 'logistic_regression'}), steps=[StepConfiguration(name='data_loading', class_name='DataLoadingStep', parameters={'source': 'data/processed/features.parquet'}), StepConfiguration(name='base_model_training', class_name='BaseModelTrainingStep', dependencies=['data_loading'], parameters={'models': ['lightgbm', 'xgboost', 'random_forest', 'neural_network'], 'cross_validation': True}), StepConfiguration(name='meta_learner_training', class_name='MetaLearnerTrainingStep', dependencies=['base_model_training'], parameters={'meta_learner_type': 'logistic_regression'}), StepConfiguration(name='ensemble_validation', class_name='EnsembleValidationStep', dependencies=['meta_learner_training'], parameters={'validation_method': 'time_series_split'})])
+        return PipelineConfiguration(name='Ensemble_Training_Pipeline', version='1.2.0', description='Multi-model ensemble training with stacking and blending', global_settings = GlobalSettings(data_source={'type': 'file', 'format': 'parquet'}, model={'type': 'stacking_ensemble', 'meta_learner': 'logistic_regression'}), steps=[StepConfiguration(name='data_loading', class_name='DataLoadingStep', parameters={'source': 'data/processed/features.parquet'}), StepConfiguration(name='base_model_training', class_name='BaseModelTrainingStep', dependencies=['data_loading'], parameters={'models': ['lightgbm', 'xgboost', 'random_forest', 'neural_network'], 'cross_validation': True}), StepConfiguration(name='meta_learner_training', class_name='MetaLearnerTrainingStep', dependencies=['base_model_training'], parameters={'meta_learner_type': 'logistic_regression'}), StepConfiguration(name='ensemble_validation', class_name='EnsembleValidationStep', dependencies=['meta_learner_training'], parameters={'validation_method': 'time_series_split'})])

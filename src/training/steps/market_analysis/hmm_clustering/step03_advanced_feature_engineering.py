@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Advanced Feature Engineering for ML Transition Detection.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides sophisticated feature engineering alternatives using
 domain-specific knowledge, advanced signal processing, and automated feature
 generation techniques.
@@ -69,11 +71,12 @@ class FeatureEngineeringConfig:
     
     # Regime Transition Parameters
     transition_window: int = 10
-    prediction_horizon: int = 3
+    prediction_horizon: int = 5
 
 
 class AdvancedFeatureEngineer:
     """Advanced feature engineering for regime transition detection."""
+    @log_important_calls
     
     def __init__(self, config: Step03Config):
         self.config = config
@@ -85,10 +88,11 @@ class AdvancedFeatureEngineer:
         # Feature storage
         self.feature_cache = {}
         self.feature_importance = {}
+    @log_all_calls
         
     def _calculate_fourier_features(self, data: pd.Series, n_frequencies: int = 20) -> pd.DataFrame:
         """Calculate Fourier transform features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             # Remove NaN values
@@ -130,10 +134,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Fourier feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_wavelet_features(self, data: pd.Series) -> pd.DataFrame:
         """Calculate wavelet transform features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             # Import PyWavelets if available
@@ -149,7 +154,7 @@ class AdvancedFeatureEngineer:
             
             # Perform wavelet decomposition
             coeffs = pywt.wavedec(clean_data.values, self.feature_config.wavelet_family, 
-                                level=self.feature_config.wavelet_levels)
+                                level = self.feature_config.wavelet_levels)
             
             # Extract features from each level
             for level, coeff in enumerate(coeffs):
@@ -170,10 +175,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Wavelet feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_spectral_features(self, data: pd.Series) -> pd.DataFrame:
         """Calculate spectral analysis features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             # Remove NaN values
@@ -182,7 +188,7 @@ class AdvancedFeatureEngineer:
                 return features
             
             # Calculate power spectral density using Welch's method
-            frequencies, psd = signal.welch(clean_data.values, nperseg=min(256, len(clean_data)//4))
+            frequencies, psd = signal.welch(clean_data.values, nperseg = min(256, len(clean_data)//4))
             
             # Spectral features
             features['spectral_peak_frequency'] = frequencies[np.argmax(psd)]
@@ -212,10 +218,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Spectral feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_market_microstructure_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate market microstructure features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             # Price impact features
@@ -253,10 +260,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Market microstructure feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_regime_transition_features(self, data: pd.DataFrame, regimes: np.ndarray) -> pd.DataFrame:
         """Calculate regime transition-specific features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             # Regime persistence
@@ -301,8 +309,8 @@ class AdvancedFeatureEngineer:
                     transition_matrix[current_idx, next_idx] += 1
                 
                 # Normalize to probabilities
-                row_sums = transition_matrix.sum(axis=1, keepdims=True)
-                transition_matrix = np.divide(transition_matrix, row_sums, where=row_sums > 0)
+                row_sums = transition_matrix.sum(axis = 1, keepdims = True)
+                transition_matrix = np.divide(transition_matrix, row_sums, where = row_sums > 0)
                 
                 # Calculate transition probability for each point
                 transition_prob = np.zeros(len(regimes))
@@ -334,10 +342,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Regime transition feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_volatility_regime_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate volatility regime features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             if 'close' in data.columns:
@@ -353,7 +362,7 @@ class AdvancedFeatureEngineer:
                 # Volatility clustering
                 vol_20 = features['volatility_20']
                 features['volatility_clustering'] = vol_20.rolling(50).apply(
-                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0
+                    lambda x: x.autocorr(lag = 1) if len(x) > 1 else 0
                 )
                 
                 # Volatility regime classification
@@ -361,7 +370,7 @@ class AdvancedFeatureEngineer:
                 low_threshold = vol_100.rolling(100).quantile(0.33)
                 high_threshold = vol_100.rolling(100).quantile(0.67)
                 
-                vol_regime = pd.Series(1, index=data.index)
+                vol_regime = pd.Series(1, index = data.index)
                 vol_regime[vol_100 > high_threshold] = 3
                 vol_regime[(vol_100 > low_threshold) & (vol_100 <= high_threshold)] = 2
                 features['volatility_regime'] = vol_regime.fillna(1)
@@ -377,10 +386,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Volatility regime feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_higher_moment_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate higher moment features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             if 'close' in data.columns:
@@ -415,10 +425,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Higher moment feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_entropy_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate entropy-based features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             if 'close' in data.columns:
@@ -432,7 +443,7 @@ class AdvancedFeatureEngineer:
                         try:
                             # Discretize returns into bins
                             bins = np.linspace(x.min(), x.max(), 10)
-                            hist, _ = np.histogram(x, bins=bins)
+                            hist, _ = np.histogram(x, bins = bins)
                             hist = hist[hist > 0]  # Remove zero counts
                             prob = hist / hist.sum()
                             return -np.sum(prob * np.log2(prob))
@@ -442,16 +453,19 @@ class AdvancedFeatureEngineer:
                     features[f'shannon_entropy_{window}'] = returns.rolling(window).apply(shannon_entropy)
                     
                     # Approximate entropy
-                    def approximate_entropy(x, m=2, r=0.2):
+                    def approximate_entropy(x, m = 2, r = 0.2):
                         if len(x) < 10:
                             return 0
                         try:
                             N = len(x)
                             r = r * np.std(x)
+    @log_all_calls
                             
                             def _maxdist(xi, xj, N):
                                 return max([abs(ua - va) for ua, va in zip(xi, xj)])
+    @log_all_calls
                             
+    @log_all_calls
                             def _approximate_entropy(U, m, r):
                                 def _phi(m):
                                     C = np.zeros(N - m + 1)
@@ -477,10 +491,11 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Entropy feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _calculate_fractal_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate fractal dimension features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         try:
             if 'close' in data.columns:
@@ -547,6 +562,7 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Fractal feature calculation failed: {e}")
         
         return features
+    @log_all_calls
     
     def _generate_polynomial_features(self, features: pd.DataFrame, degree: int = 2) -> pd.DataFrame:
         """Generate polynomial features."""
@@ -557,27 +573,28 @@ class AdvancedFeatureEngineer:
             numeric_features = features.select_dtypes(include=[np.number])
             
             if len(numeric_features.columns) == 0:
-                return pd.DataFrame(index=features.index)
+                return pd.DataFrame(index = features.index)
             
             # Limit to top features to avoid explosion
             top_features = numeric_features.iloc[:, :min(10, len(numeric_features.columns))]
             
             # Generate polynomial features
-            poly = PolynomialFeatures(degree=degree, include_bias=False, interaction_only=True)
+            poly = PolynomialFeatures(degree = degree, include_bias = False, interaction_only = True)
             poly_features = poly.fit_transform(top_features.fillna(0))
             
             # Create feature names
             feature_names = [f"poly_{i}" for i in range(poly_features.shape[1])]
             
-            return pd.DataFrame(poly_features, index=features.index, columns=feature_names)
+            return pd.DataFrame(poly_features, index = features.index, columns = feature_names)
             
         except Exception as e:
             self.logger.warning(f"Polynomial feature generation failed: {e}")
-            return pd.DataFrame(index=features.index)
+            return pd.DataFrame(index = features.index)
+    @log_all_calls
     
     def _generate_interaction_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate interaction features between key variables."""
-        interaction_features = pd.DataFrame(index=features.index)
+        interaction_features = pd.DataFrame(index = features.index)
         
         try:
             # Key feature combinations for regime transitions
@@ -599,6 +616,7 @@ class AdvancedFeatureEngineer:
             self.logger.warning(f"Interaction feature generation failed: {e}")
         
         return interaction_features
+    @log_all_calls
     
     def _select_features(self, features: pd.DataFrame, target: np.ndarray) -> pd.DataFrame:
         """Select most relevant features."""
@@ -608,32 +626,32 @@ class AdvancedFeatureEngineer:
             corr_matrix = numeric_features.corr().abs()
             
             # Find pairs of highly correlated features
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > self.feature_config.correlation_threshold)]
             
-            features_cleaned = numeric_features.drop(columns=to_drop)
+            features_cleaned = numeric_features.drop(columns = to_drop)
             
             # Feature selection
             if self.feature_config.feature_selection_method == 'mutual_info':
-                selector = SelectKBest(score_func=mutual_info_classif, k=min(self.feature_config.max_features, len(features_cleaned.columns)))
+                selector = SelectKBest(score_func = mutual_info_classif, k = min(self.feature_config.max_features, len(features_cleaned.columns)))
             elif self.feature_config.feature_selection_method == 'f_score':
-                selector = SelectKBest(score_func=f_classif, k=min(self.feature_config.max_features, len(features_cleaned.columns)))
+                selector = SelectKBest(score_func = f_classif, k = min(self.feature_config.max_features, len(features_cleaned.columns)))
             else:
                 # Variance-based selection
                 from sklearn.feature_selection import VarianceThreshold
-                selector = VarianceThreshold(threshold=0.01)
+                selector = VarianceThreshold(threshold = 0.01)
             
             # Fit selector
             features_selected = selector.fit_transform(features_cleaned.fillna(0), target)
             
             # Get selected feature names
             if hasattr(selector, 'get_support'):
-                selected_indices = selector.get_support(indices=True)
+                selected_indices = selector.get_support(indices = True)
                 selected_columns = features_cleaned.columns[selected_indices]
             else:
                 selected_columns = features_cleaned.columns
             
-            return pd.DataFrame(features_selected, index=features.index, columns=selected_columns)
+            return pd.DataFrame(features_selected, index = features.index, columns = selected_columns)
             
         except Exception as e:
             self.logger.warning(f"Feature selection failed: {e}")
@@ -643,72 +661,72 @@ class AdvancedFeatureEngineer:
         """Create comprehensive advanced features for regime transition detection."""
         self.logger.info("🚀 Creating advanced features for regime transition detection...")
         
-        all_features = pd.DataFrame(index=data.index)
+        all_features = pd.DataFrame(index = data.index)
         
         with memory_aware_processing("feature_engineering", self.config.memory.__dict__):
             # Basic technical indicators
             self.logger.info("📊 Creating basic technical indicators...")
             basic_features = self.technical_indicators.calculate_all_indicators(data)
-            all_features = pd.concat([all_features, basic_features], axis=1)
+            all_features = pd.concat([all_features, basic_features], axis = 1)
             
             # Signal processing features
             if self.feature_config.enable_fourier_features and 'close' in data.columns:
                 self.logger.info("🌊 Creating Fourier features...")
                 fourier_features = self._calculate_fourier_features(data['close'])
-                all_features = pd.concat([all_features, fourier_features], axis=1)
+                all_features = pd.concat([all_features, fourier_features], axis = 1)
             
             if self.feature_config.enable_wavelet_features and 'close' in data.columns:
                 self.logger.info("🌊 Creating wavelet features...")
                 wavelet_features = self._calculate_wavelet_features(data['close'])
-                all_features = pd.concat([all_features, wavelet_features], axis=1)
+                all_features = pd.concat([all_features, wavelet_features], axis = 1)
             
             if self.feature_config.enable_spectral_features and 'close' in data.columns:
                 self.logger.info("📡 Creating spectral features...")
                 spectral_features = self._calculate_spectral_features(data['close'])
-                all_features = pd.concat([all_features, spectral_features], axis=1)
+                all_features = pd.concat([all_features, spectral_features], axis = 1)
             
             # Domain-specific features
             if self.feature_config.enable_market_microstructure:
                 self.logger.info("🏪 Creating market microstructure features...")
                 microstructure_features = self._calculate_market_microstructure_features(data)
-                all_features = pd.concat([all_features, microstructure_features], axis=1)
+                all_features = pd.concat([all_features, microstructure_features], axis = 1)
             
             if self.feature_config.enable_regime_transition_features:
                 self.logger.info("🔄 Creating regime transition features...")
                 transition_features = self._calculate_regime_transition_features(data, regimes)
-                all_features = pd.concat([all_features, transition_features], axis=1)
+                all_features = pd.concat([all_features, transition_features], axis = 1)
             
             if self.feature_config.enable_volatility_regime_features:
                 self.logger.info("📈 Creating volatility regime features...")
                 volatility_features = self._calculate_volatility_regime_features(data)
-                all_features = pd.concat([all_features, volatility_features], axis=1)
+                all_features = pd.concat([all_features, volatility_features], axis = 1)
             
             # Advanced statistical features
             if self.feature_config.enable_higher_moments:
                 self.logger.info("📊 Creating higher moment features...")
                 moment_features = self._calculate_higher_moment_features(data)
-                all_features = pd.concat([all_features, moment_features], axis=1)
+                all_features = pd.concat([all_features, moment_features], axis = 1)
             
             if self.feature_config.enable_entropy_features:
                 self.logger.info("🔀 Creating entropy features...")
                 entropy_features = self._calculate_entropy_features(data)
-                all_features = pd.concat([all_features, entropy_features], axis=1)
+                all_features = pd.concat([all_features, entropy_features], axis = 1)
             
             if self.feature_config.enable_fractal_features:
                 self.logger.info("🌀 Creating fractal features...")
                 fractal_features = self._calculate_fractal_features(data)
-                all_features = pd.concat([all_features, fractal_features], axis=1)
+                all_features = pd.concat([all_features, fractal_features], axis = 1)
             
             # Automated feature generation
             if self.feature_config.enable_interaction_features:
                 self.logger.info("🔗 Creating interaction features...")
                 interaction_features = self._generate_interaction_features(all_features)
-                all_features = pd.concat([all_features, interaction_features], axis=1)
+                all_features = pd.concat([all_features, interaction_features], axis = 1)
             
             if self.feature_config.enable_polynomial_features:
                 self.logger.info("📐 Creating polynomial features...")
                 poly_features = self._generate_polynomial_features(all_features)
-                all_features = pd.concat([all_features, poly_features], axis=1)
+                all_features = pd.concat([all_features, poly_features], axis = 1)
         
         # Clean and select features
         self.logger.info("🧹 Cleaning and selecting features...")
@@ -725,6 +743,7 @@ class AdvancedFeatureEngineer:
         self.logger.info(f"   Selected {len(selected_features.columns)} features")
         
         return selected_features
+    @log_all_calls
     
     def _create_transition_target(self, regimes: np.ndarray) -> np.ndarray:
         """Create target variable for regime transitions."""
@@ -738,3 +757,11 @@ class AdvancedFeatureEngineer:
                 target[i] = 1
         
         return target
+
+"""
+Advanced Feature Engineering for ML Transition Detection.
+
+This module provides sophisticated feature engineering alternatives using
+domain-specific knowledge, advanced signal processing, and automated feature
+generation techniques.
+"""

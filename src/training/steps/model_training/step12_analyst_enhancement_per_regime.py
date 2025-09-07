@@ -1,3 +1,6 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 12: Analyst Enhancement - Per-Regime Implementation.
 
 This module provides per-HMM regime analyst enhancement functionality, ensuring that
@@ -17,7 +20,6 @@ from .training.steps.regime_processing_utils import (
 )
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
 import numpy as np
 import logging
 import time
@@ -29,6 +31,7 @@ logger = get_logger('Step12AnalystEnhancementPerRegime')
 
 class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
     """Analyst enhancement step that processes each regime separately."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
@@ -144,6 +147,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error loading analyst creation data for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _get_regime_enhancement_config(self, regime_id: int) -> Dict[str, Any]:
         """Get analyst enhancement configuration for a specific regime.
@@ -367,6 +371,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing analyst {analyst_name} for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _enhance_trend_analyst(
         self,
@@ -432,6 +437,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing trend analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_volatility_analyst(
         self,
@@ -497,6 +503,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing volatility analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_momentum_analyst(
         self,
@@ -562,6 +569,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing momentum analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_volume_analyst(
         self,
@@ -626,6 +634,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing volume analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_risk_analyst(
         self,
@@ -692,6 +701,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing risk analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_ensemble_analyst(
         self,
@@ -758,6 +768,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing ensemble analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _enhance_generic_analyst(
         self,
@@ -803,6 +814,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
         except Exception as e:
             self.logger.error(f"❌ Error enhancing generic analyst: {e}")
             return analyst
+    @log_all_calls
     
     def _calculate_enhancement_metrics(
         self,
@@ -890,7 +902,7 @@ class PerRegimeAnalystEnhancementStep(Step12AnalystEnhancement):
             enhancement_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_analyst_enhancement_regime_{regime_id}.json'
             
             with open(enhancement_path, 'w') as f:
-                json.dump(enhancement_results, f, indent=2, default=str)
+                json.dump(enhancement_results, f, indent = 2, default = str)
             
             self.logger.info(f"✅ Saved analyst enhancement results for regime {regime_id}: {enhancement_path}")
             return True
@@ -939,11 +951,11 @@ async def run_per_regime_step(
     step = PerRegimeAnalystEnhancementStep(config)
     
     success = await step.execute_per_regime_analyst_enhancement(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        force_rerun=force_rerun
+        symbol = symbol,
+        exchange = exchange,
+        timeframe = timeframe,
+        data_dir = data_dir,
+        force_rerun = force_rerun
     )
     
     if success:

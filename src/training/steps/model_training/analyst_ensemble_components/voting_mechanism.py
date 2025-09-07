@@ -1,16 +1,19 @@
 
+"""Voting mechanism component for analyst ensemble creation."""
+
 import pandas as pd
 import numpy as np
-"""Voting mechanism component for analyst ensemble creation."""
 from typing import Any, Dict, List, Optional
 from sklearn.ensemble import VotingClassifier
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.logger import system_logger
 import logging
 
 class VotingMechanism:
     """Handles different voting mechanisms for ensemble creation."""
 
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the voting mechanism.
         
@@ -61,7 +64,7 @@ class VotingMechanism:
             Hard voting ensemble
         """
         try:
-            ensemble = VotingClassifier(estimators=base_models, voting='hard', n_jobs=-1)
+            ensemble = VotingClassifier(estimators = base_models, voting='hard', n_jobs=-1)
             self.logger.info(f'Created hard voting ensemble with {len(base_models)} models')
             return ensemble
         except Exception as e:
@@ -87,7 +90,7 @@ class VotingMechanism:
             if not proba_models:
                 self.logger.warning('No models support soft voting')
                 return None
-            ensemble = VotingClassifier(estimators=proba_models, voting='soft', n_jobs=-1)
+            ensemble = VotingClassifier(estimators = proba_models, voting='soft', n_jobs=-1)
             self.logger.info(f'Created soft voting ensemble with {len(proba_models)} models')
             return ensemble
         except Exception as e:
@@ -120,14 +123,14 @@ class VotingMechanism:
                 return None
             weights = np.array(weights)
             weights = weights / weights.sum()
-            ensemble = VotingClassifier(estimators=proba_models, voting='soft', weights=weights, n_jobs=-1)
+            ensemble = VotingClassifier(estimators = proba_models, voting='soft', weights = weights, n_jobs=-1)
             self.logger.info(f'Created weighted soft voting ensemble with {len(proba_models)} models, weights: {dict(zip([m[0] for m in proba_models], weights))}')
             return ensemble
         except Exception as e:
             self.logger.error(f'Failed to create weighted soft voting ensemble: {str(e)}')
             return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='dynamic voting creation')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='dynamic voting creation')
     async def create_dynamic_voting_ensemble(self, models: Dict[str, Dict[str, Any]], features: pd.DataFrame) -> Optional[Any]:
         """Create a dynamic voting ensemble that adjusts weights based on input.
         
@@ -142,10 +145,13 @@ class VotingMechanism:
 
         class DynamicVotingEnsemble:
 
+            @log_important_calls
             def __init__(self, base_models: List[Any], initial_weights: List[Any]=None) -> None:
                 self.base_models = base_models
                 self.initial_weights = initial_weights or np.ones(len(base_models))
                 self.is_fitted = False
+
+            @log_important_calls
 
             def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray]) -> None:
                 for name, model in self.base_models:
@@ -153,6 +159,7 @@ class VotingMechanism:
                 self.is_fitted = True
                 return self
 
+            @log_step_functions
             def predict(self, X: Union[pd.DataFrame, np.ndarray]) -> None:
                 if not self.is_fitted:
                     raise ValueError('Model must be fitted before prediction')
@@ -161,7 +168,7 @@ class VotingMechanism:
                     pred = model.predict(X)
                     predictions.append(pred)
                 predictions = np.array(predictions)
-                return np.apply_along_axis(lambda x: np.bincount(x.astype(int)).argmax(), axis=0, arr=predictions)
+                return np.apply_along_axis(lambda x: np.bincount(x.astype(int)).argmax(), axis = 0, arr = predictions)
 
             def predict_proba(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
                 if not self.is_fitted:

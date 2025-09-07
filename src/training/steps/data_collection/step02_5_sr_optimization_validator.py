@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
 
 """Step 2.5: S/R Detection Optimization Validator with Comprehensive Function Call Monitoring.
 
@@ -23,48 +25,28 @@ from datetime import datetime
 from typing import Any, Dict, Callable
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-try:
-    from src.utils.centralized_decorators import handle_errors, monitor_step_execution, secure_step_execution, validate_pipeline_step, quality_gate
-except ImportError:
 
-    def handle_errors(*args, **kwargs) -> None:
+# Placeholder decorators for compatibility
+def monitor_step_execution(*args, **kwargs):
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def secure_step_execution(*args, **kwargs):
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def monitor_step_execution(*args, **kwargs) -> None:
+def validate_pipeline_step(*args, **kwargs):
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def quality_gate(*args, **kwargs):
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def secure_step_execution(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def validate_pipeline_step(*args, **kwargs) -> bool:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def quality_gate(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-try:
-    from src.utils.decorators.errors import handles_errors
-except ImportError:
-
-    def handles_errors(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
 try:
     from src.utils.logger import system_logger
 except ImportError:
@@ -240,7 +222,7 @@ def generate_validator_report() -> Dict[str, Any]:
     """Generate comprehensive validator function call report."""
     total_calls = validator_function_tracker['call_count']
     success_rate = validator_function_tracker['success_count'] / total_calls * 100 if total_calls > 0 else 0
-    report = {'summary': {'total_function_calls': total_calls, 'successful_calls': validator_function_tracker['success_count'], 'failed_calls': validator_function_tracker['error_count'], 'success_rate_percent': round(success_rate, 2), 'report_generated_at': datetime.now().isoformat(), 'validator_type': 'step02_5_sr_optimization_validator'}, 'performance_metrics': validator_function_tracker['performance_metrics'], 'call_history': validator_function_tracker['call_history'][-50:], 'top_performing_functions': sorted(validator_function_tracker['performance_metrics'].items(), key=lambda x: x[1]['avg_time'])[:10], 'most_called_functions': sorted(validator_function_tracker['performance_metrics'].items(), key=lambda x: x[1]['total_calls'], reverse=True)[:10]}
+    report = {'summary': {'total_function_calls': total_calls, 'successful_calls': validator_function_tracker['success_count'], 'failed_calls': validator_function_tracker['error_count'], 'success_rate_percent': round(success_rate, 2), 'report_generated_at': datetime.now().isoformat(), 'validator_type': 'step02_5_sr_optimization_validator'}, 'performance_metrics': validator_function_tracker['performance_metrics'], 'call_history': validator_function_tracker['call_history'][-50:], 'top_performing_functions': sorted(validator_function_tracker['performance_metrics'].items(), key = lambda x: x[1]['avg_time'])[:10], 'most_called_functions': sorted(validator_function_tracker['performance_metrics'].items(), key = lambda x: x[1]['total_calls'], reverse = True)[:10]}
     return report
 
 class SROptimizationValidator:
@@ -258,7 +240,7 @@ class SROptimizationValidator:
 
     @monitor_validator_function_calls
     @validate_validator_inputs
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def validate_step(self, symbol: str, exchange: str, timeframe: str) -> bool:
         """Validate the S/R optimization step with detailed monitoring."""
         try:
@@ -603,7 +585,7 @@ class SROptimizationValidator:
 
 @monitor_validator_function_calls
 @validate_validator_inputs
-@handles_errors(fallback=False)
+@handles_errors(fallback = False)
 async def run_validation(config: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> bool:
     """Run validation for the S/R optimization step with comprehensive monitoring."""
     try:
@@ -658,15 +640,15 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
     success = await run_validation(config, symbol, exchange, timeframe)
     return {'step_name': 'step02_5_sr_optimization', 'validation_passed': bool(success)}
 
-def save_validator_report(report: Dict[str, Any], filename: str=None) -> str:
+def save_validator_report(report: Dict[str, Any], filename: str = None) -> str:
     """Save validator function call report to file."""
     if filename is None:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'step02_5_validator_report_{timestamp}.json'
     report_path = Path('reports') / filename
-    report_path.parent.mkdir(exist_ok=True)
+    report_path.parent.mkdir(exist_ok = True)
     with open(report_path, 'w') as f:
-        json.dump(report, f, indent=2, default=str)
+        json.dump(report, f, indent = 2, default = str)
     logger.info(f'📄 Validator report saved to: {report_path}')
     return str(report_path)
 

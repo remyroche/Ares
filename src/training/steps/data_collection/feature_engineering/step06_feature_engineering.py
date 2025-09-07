@@ -3,27 +3,30 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Tuple
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
+from src.core.decorators import handles_errors
 
 'Step 6: Feature Engineering - Refactored to use BaseStep.\n\nThis module implements comprehensive feature engineering including technical indicators,\ninteraction terms, and regime-aware features.\n'
 from pathlib import Path
 import json
 import logging
 from src.training.base_step import BaseStep
-from src.utils.decorators.errors import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
     from src.training.steps.data_collection.feature_engineering.feature_components import TechnicalIndicatorEngine, FeatureInteractionEngine, RegimeAwareFeatureEngine
 except ImportError:
 
     class TechnicalIndicatorEngine:
-
+        @log_important_calls
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
 
     class FeatureInteractionEngine:
 
+        @log_important_calls
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
@@ -32,7 +35,7 @@ except ImportError:
             return data
 
     class RegimeAwareFeatureEngine:
-
+        @log_important_calls
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..', '..')
 sys.path.insert(0, steps_dir)
 try:
-    from step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
+    from ...step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
     import datetime
     import time
     VALIDATION_AVAILABLE = True
@@ -95,6 +98,7 @@ class FeatureEngineeringStep(BaseStep):
         self.technical_engine = None
         self.interaction_engine = None
         self.regime_engine = None
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -107,6 +111,7 @@ class FeatureEngineeringStep(BaseStep):
             self.logger.info('✅ Feature engineering components initialized')
         except ImportError as e:
             self.logger.warning(f'⚠️ Some feature components not available: {e}')
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
@@ -134,7 +139,7 @@ class FeatureEngineeringStep(BaseStep):
                     self.logger.warning(f'Missing expected price column: {col}')
         return (len(errors) == 0, errors)
 
-    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.COMPREHENSIVE)
+    @step06_function_validator(function_type='feature_engineering', validation_level = ValidationLevel.COMPREHENSIVE)
     @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='feature engineering execution')
     async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute feature engineering logic.
@@ -209,6 +214,7 @@ class FeatureEngineeringStep(BaseStep):
                         errors.append(f'Selected features missing from data: {missing_features}')
                     break
         return (len(errors) == 0, errors)
+    @log_all_calls
 
     def _get_data_to_process(self, pipeline_state: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
         """Get data splits to process.
@@ -257,6 +263,7 @@ class FeatureEngineeringStep(BaseStep):
         engineered = self._add_time_features(engineered)
         return engineered
 
+    @log_all_calls
     @step06_function_tracker
     def _apply_basic_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic technical indicators.
@@ -284,6 +291,7 @@ class FeatureEngineeringStep(BaseStep):
             data['feature_volume_sma'] = data['volume'].rolling(20).mean()
             data['feature_volume_ratio'] = data['volume'] / data['feature_volume_sma']
         return data
+    @log_all_calls
 
     def _create_basic_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create basic feature interactions.
@@ -302,6 +310,7 @@ class FeatureEngineeringStep(BaseStep):
         if 'feature_sma_10_ratio' in data.columns and 'feature_sma_50_ratio' in data.columns:
             data['feature_momentum_interaction'] = data['feature_sma_10_ratio'] - data['feature_sma_50_ratio']
         return data
+    @log_all_calls
 
     def _create_basic_regime_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create basic regime-aware features.
@@ -314,10 +323,11 @@ class FeatureEngineeringStep(BaseStep):
         """
         if 'regime_label' in data.columns:
             regime_dummies = pd.get_dummies(data['regime_label'], prefix='feature_regime')
-            data = pd.concat([data, regime_dummies], axis=1)
+            data = pd.concat([data, regime_dummies], axis = 1)
             data['feature_regime_changed'] = (data['regime_label'] != data['regime_label'].shift(1)).astype(int)
             data['feature_time_in_regime'] = data.groupby((data['regime_label'] != data['regime_label'].shift()).cumsum()).cumcount()
         return data
+    @log_all_calls
 
     def _add_time_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add time-based features.
@@ -338,6 +348,7 @@ class FeatureEngineeringStep(BaseStep):
             data['feature_is_monday'] = (data.index.dayofweek == 0).astype(int)
             data['feature_is_friday'] = (data.index.dayofweek == 4).astype(int)
         return data
+    @log_all_calls
 
     def _calculate_feature_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate statistics for engineered features.
@@ -359,7 +370,7 @@ class FeatureEngineeringStep(BaseStep):
                 stats['zero_variance'].append(col)
         if len(feature_cols) > 1:
             sample_size = min(1000, len(data))
-            sample_data = data[feature_cols].sample(n=sample_size)
+            sample_data = data[feature_cols].sample(n = sample_size)
             corr_matrix = sample_data.corr()
             for i in range(len(feature_cols)):
                 for j in range(i + 1, len(feature_cols)):
@@ -367,7 +378,7 @@ class FeatureEngineeringStep(BaseStep):
                         stats['high_correlation_pairs'].append((feature_cols[i], feature_cols[j], corr_matrix.iloc[i, j]))
         return stats
 
-    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.DETAILED)
+    @step06_function_validator(function_type='feature_engineering', validation_level = ValidationLevel.DETAILED)
     async def _perform_feature_selection(self, engineered_data: Dict[str, pd.DataFrame], feature_statistics: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
         """Perform feature selection.
         
@@ -399,6 +410,7 @@ class FeatureEngineeringStep(BaseStep):
         for split_name, data in engineered_data.items():
             selected_data[split_name] = data[selected_columns]
         return (selected_data, valid_features)
+    @log_all_calls
 
     def _get_all_feature_columns(self, engineered_data: Dict[str, pd.DataFrame]) -> List[str]:
         """Get all feature columns from engineered data.
@@ -415,6 +427,7 @@ class FeatureEngineeringStep(BaseStep):
                 features = [col for col in data.columns if col.startswith('feature_')]
                 all_features.update(features)
         return sorted(list(all_features))
+    @log_all_calls
 
     def _generate_feature_reports(self, engineered_data: Dict[str, pd.DataFrame], feature_statistics: Dict[str, Dict[str, Any]], selected_features: List[str]) -> Dict[str, str]:
         """Generate feature engineering reports.
@@ -461,7 +474,7 @@ class FeatureEngineeringStep(BaseStep):
             pipeline_state: Pipeline state with results
         """
         output_dir = Path(training_input.get('output_dir', 'output')) / 'step06_feature_engineering'
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents = True, exist_ok = True)
         if 'engineered_data' in pipeline_state:
             for split_name, data in pipeline_state['engineered_data'].items():
                 if isinstance(data, pd.DataFrame):
@@ -471,12 +484,12 @@ class FeatureEngineeringStep(BaseStep):
         if 'selected_features' in pipeline_state:
             features_path = output_dir / 'selected_features.json'
             with open(features_path, 'w') as f:
-                json.dump(pipeline_state['selected_features'], f, indent=2)
+                json.dump(pipeline_state['selected_features'], f, indent = 2)
             self.logger.info(f'💾 Saved selected features to {features_path}')
         if 'feature_statistics' in pipeline_state:
             stats_path = output_dir / 'feature_statistics.json'
             with open(stats_path, 'w') as f:
-                json.dump(pipeline_state['feature_statistics'], f, indent=2)
+                json.dump(pipeline_state['feature_statistics'], f, indent = 2)
             self.logger.info(f'💾 Saved feature statistics to {stats_path}')
         if 'feature_reports' in pipeline_state:
             for report_name, content in pipeline_state['feature_reports'].items():
@@ -515,6 +528,7 @@ class FeatureEngineeringStep(BaseStep):
         comprehensive_report = {'timestamp': datetime.now().isoformat(), 'validation_summary': validation_summary, 'internal_statistics': internal_stats, 'recommendations': self._generate_step06_feature_recommendations(internal_stats), 'function_call_analysis': self._analyze_step06_function_calls(), 'performance_analysis': self._analyze_step06_performance()}
         self.logger.info('✅ Comprehensive step06 feature engineering report generated')
         return comprehensive_report
+    @log_all_calls
 
     def _generate_step06_feature_recommendations(self, stats: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on step06 feature engineering execution statistics."""
@@ -536,10 +550,12 @@ class FeatureEngineeringStep(BaseStep):
         if not stats['validation_status']['validation_framework_available']:
             recommendations.append('Enable validation framework for better error tracking and reporting')
         return recommendations
+    @log_all_calls
 
     def _analyze_step06_function_calls(self) -> Dict[str, Any]:
         """Analyze function call patterns for step06 feature engineering."""
         return {'main_execution_method': 'execute_logic', 'feature_engineering_methods': ['_engineer_features_for_split', '_apply_basic_indicators', '_create_basic_interactions', '_create_basic_regime_features', '_add_time_features'], 'feature_selection_methods': ['_perform_feature_selection', '_calculate_feature_statistics'], 'validation_methods': ['validate_inputs', 'validate_outputs']}
+    @log_all_calls
 
     def _analyze_step06_performance(self) -> Dict[str, Any]:
         """Analyze performance metrics for step06 feature engineering."""

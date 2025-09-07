@@ -1,3 +1,4 @@
+from ..core.decorators import handles_errors
 """
 PnL Calculator Module.
 
@@ -9,10 +10,8 @@ and strategies.
 from typing import Any, Dict
 
 
-from .core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 

@@ -16,8 +16,8 @@ from src.utils.logger import system_logger
 import logging
 
 # Add the src directory to the Python path
-current_dir=Path(__file__).parent
-src_dir=current_dir.parent / "src"
+current_dir = Path(__file__).parent
+src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 
@@ -27,7 +27,7 @@ def _log_exceptions(logger_name: str):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            logger=system_logger.getChild(logger_name)
+            logger = system_logger.getChild(logger_name)
             try:
                 return func(*args, **kwargs)
             except Exception as e:  # noqa: BLE001
@@ -43,7 +43,7 @@ def _log_exceptions(logger_name: str):
 def fix_feature_engineering_code() -> bool:
     """Fix the critical multicollinearity issue in the feature engineering code."""
 
-    logger=system_logger.getChild("MulticollinearityFix")
+    logger = system_logger.getChild("MulticollinearityFix")
     logger.info("🔧 Starting multicollinearity fix...")
 
     # Path to the feature engineering file
@@ -58,7 +58,7 @@ def fix_feature_engineering_code() -> bool:
     # Read the current file
     content: str
     with open(feature_eng_file, encoding="utf-8") as f:
-        content=f.read()
+        content = f.read()
 
     logger.info("📖 Reading current feature engineering code...")
 
@@ -73,22 +73,22 @@ def fix_feature_engineering_code() -> bool:
                 "30m": 30,   # 30-period change for 30m
             }
 
-            periods=timeframe_periods.get(timeframe, 1)
-            price_changes=price_data[price_column].pct_change(periods=periods)"""
+            periods = timeframe_periods.get(timeframe, 1)
+            price_changes = price_data[price_column].pct_change(periods = periods)"""
     )
 
     if old_price_change in content:
-        content=content.replace(old_price_change, new_price_change)
+        content = content.replace(old_price_change, new_price_change)
         logger.info("✅ Fixed price_change calculation")
 
     # Fix the problematic volume_change calculation
     old_volume_change='volume_changes, volume_data["volume"].pct_change()'
     new_volume_change=(
-        'volume_changes, volume_data["volume"].pct_change(periods=periods)'
+        'volume_changes, volume_data["volume"].pct_change(periods = periods)'
     )
 
     if old_volume_change in content:
-        content=content.replace(old_volume_change, new_volume_change)
+        content = content.replace(old_volume_change, new_volume_change)
         logger.info("✅ Fixed volume_change calculation")
 
     # Write the fixed content back
@@ -103,7 +103,7 @@ def fix_feature_engineering_code() -> bool:
 def main() -> bool:
     """Main function to fix the multicollinearity issue."""
 
-    logger=system_logger.getChild("MulticollinearityFixMain")
+    logger = system_logger.getChild("MulticollinearityFixMain")
     logger.info("🚀 Starting multicollinearity fix...")
 
     if fix_feature_engineering_code():
@@ -115,7 +115,7 @@ def main() -> bool:
             "📋 All timeframes were using the same pct_change() without periods",
         )
         logger.info(
-            "📋 Now each timeframe uses proper periods: 1m=1, 5m=5, 15m=15, 30m=30",
+            "📋 Now each timeframe uses proper periods: 1m = 1, 5m = 5, 15m = 15, 30m = 30",
         )
         return True
     logger.error("❌ Multicollinearity fix failed!")

@@ -1,5 +1,6 @@
 
-from src.utils.error_handler import handles_errors
+from .logger import system_logger
+from src.utils.decorators import handles_errors
 """
 State manager for managing application state and persistence.
 
@@ -14,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .utils.logger import system_logger
+from .logger import system_logger
 import logging
 import time
 
@@ -58,7 +59,7 @@ class StateManager:
             AttributeError: (False, "Missing required state parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="state manager initialization",
     )
     async def initialize(self) -> bool:
@@ -87,12 +88,12 @@ class StateManager:
         self.logger.info("✅ State Manager initialization completed successfully")
         return True
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_state_configuration(self) -> None:
         """Load state configuration."""
         # Configuration is already loaded in __init__
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """Validate state manager configuration.
 
@@ -117,7 +118,7 @@ class StateManager:
             self.print_message(error(f"Error validating configuration: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_existing_state(self) -> None:
         """Load existing state from file."""
         try:
@@ -131,7 +132,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error loading existing state: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _start_auto_save(self) -> None:
         """Start auto-save functionality."""
         try:
@@ -151,7 +152,7 @@ class StateManager:
             except Exception as e:
                 self.logger.exception(f"Error in auto-save loop: {e}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def save_state(self) -> bool:
         """Save current state to file.
 
@@ -160,11 +161,11 @@ class StateManager:
         """
         try:
             # Ensure directory exists
-            Path(self.state_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(self.state_file).parent.mkdir(parents = True, exist_ok = True)
 
             # Save state
             with open(self.state_file, "w") as f:
-                json.dump(self.state, f, indent=2, default=str)
+                json.dump(self.state, f, indent = 2, default = str)
 
             self.logger.info("State saved successfully")
             return True
@@ -173,7 +174,7 @@ class StateManager:
             self.logger.exception(f"Error saving state: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_state(self, key: str, default: Any = None) -> Any:
         """Get state value.
 
@@ -190,7 +191,7 @@ class StateManager:
             self.logger.exception(f"Error getting state: {e}")
             return default
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def set_state(self, key: str, value: Any) -> None:
         """Set state value.
 
@@ -204,7 +205,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error setting state: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def clear_state(self) -> None:
         """Clear all state."""
         try:
@@ -213,7 +214,7 @@ class StateManager:
         except Exception as e:
             self.logger.exception(f"Error clearing state: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the state manager."""
         self.logger.info("🛑 Stopping State Manager...")

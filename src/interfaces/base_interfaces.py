@@ -61,7 +61,7 @@ class IExchangeClient(ABC):
     """Interface for exchange client implementations"""
 
     @abstractmethod
-    async def get_klines(self, symbol: str, interval: str, limit: int=100) -> list[MarketData]:
+    async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[MarketData]:
         """Get historical kline data"""
 
     @abstractmethod
@@ -69,7 +69,7 @@ class IExchangeClient(ABC):
         """Get account information"""
 
     @abstractmethod
-    async def create_order(self, symbol: str, side: str, quantity: float, price: float | None=None, order_type: str='MARKET') -> dict[str, Any]:
+    async def create_order(self, symbol: str, side: str, quantity: float, price: float | None = None, order_type: str='MARKET') -> dict[str, Any]:
         """Create a trading order"""
 
     @abstractmethod

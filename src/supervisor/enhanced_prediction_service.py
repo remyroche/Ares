@@ -1,7 +1,7 @@
 
 import pandas as pd
-from src.utils.error_handler import handles_errors
 import numpy as np
+from src.core.decorators import handles_errors
 
 """
 Enhanced Prediction Service for ML Profit Integration System.
@@ -75,7 +75,7 @@ class EnhancedPredictionService:
         self.max_confidence_threshold = self.config.get('max_confidence_threshold', 0.7)
         self.logger.info('Enhanced Prediction Service initialized')
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('initialize_enhanced_prediction_service')
     async def initialize(self) -> bool:
         """Initialize the Enhanced Prediction Service."""
@@ -92,7 +92,7 @@ class EnhancedPredictionService:
             self.logger.error(error(f'❌ Failed to initialize Enhanced Prediction Service: {e}'))
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('load_analyst_ml_models')
     @intelligent_caching(cache_key='analyst_ml_models')
     async def _load_analyst_ml_models(self) -> None:
@@ -123,7 +123,7 @@ class EnhancedPredictionService:
             self.logger.error(error(f'❌ Error loading Analyst ML models: {e}'))
             raise
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('load_tactician_ml_models')
     @intelligent_caching(cache_key='tactician_ml_models')
     async def _load_tactician_ml_models(self) -> None:
@@ -154,7 +154,7 @@ class EnhancedPredictionService:
             self.logger.error(error(f'❌ Error loading Tactician ML models: {e}'))
             raise
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('load_calibration_results')
     async def _load_calibration_results(self) -> None:
         """Load calibration results from step 11 (model performance vs actual reliability)."""
@@ -174,7 +174,7 @@ class EnhancedPredictionService:
         except Exception as e:
             self.logger.error(error(f'❌ Error loading calibration results: {e}'))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('load_optimization_results')
     async def _load_optimization_results(self) -> None:
         """Load optimization results from step 11 (model performance vs actual reliability)."""
@@ -392,7 +392,7 @@ class EnhancedPredictionService:
             self.logger.error(error(f'❌ Error validating price action probabilities for {model_name}: {e}'))
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('verify_model_probability_outputs')
     def _verify_model_probability_outputs(self, model_data: Dict[str, Any], model_name: str) -> bool:
         """
@@ -457,7 +457,7 @@ class EnhancedPredictionService:
             self.logger.error(error(f'❌ Error verifying all models probability outputs: {e}'))
             return {'error': str(e)}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @with_tracing_span('check_service_health')
     async def check_service_health(self) -> bool:
         """Check if the service is healthy and has loaded models with probability outputs."""

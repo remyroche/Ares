@@ -1,0 +1,9 @@
+metric,value,category
+total_tests,5.0,testing
+statistical_power,0.82,statistics
+effect_size,0.34,statistics
+cohen_d,0.34,effect
+ci_level,0.0,confidence
+winner_determined,1.0,comparison
+sample_balance,0.89,quality
+test_reliability,0.91,performance

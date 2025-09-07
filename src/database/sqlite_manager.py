@@ -6,15 +6,17 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
-from .utils.logger import system_logger
-from .utils.warning_symbols import connection_error, error, failed, initialization_error, invalid, missing
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
+from ..utils.warning_symbols import connection_error, error, failed, invalid, missing
 import logging
+from src.core.error_classes import execution_error, initialization_error
+from ..core.decorators import handles_errors
+from ..core.constants import DEFAULT_DATABASE_PATH, DEFAULT_MAX_RECOVERY_ATTEMPTS
 
 class ConnectionPool:
     """Async connection pool for database operations."""
 
-    def __init__(self, max_connections: int=10, database_path: str='data/ares.db') -> None:
+    def __init__(self, max_connections: int = 10, database_path: str='data/ares.db') -> None:
         self.max_connections = max_connections
         self.database_path = database_path
         self.connection_pool: asyncio.Queue | None = None
@@ -22,17 +24,17 @@ class ConnectionPool:
         self.total_connections_created: int = 0
         self.connection_errors: int = 0
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def initialize(self) -> None:
         """Initialize the connection pool."""
-        self.connection_pool = asyncio.Queue(maxsize=self.max_connections)
+        self.connection_pool = asyncio.Queue(maxsize = self.max_connections)
         for _ in range(self.max_connections):
             connection = await self._create_connection()
             if connection:
                 await self.connection_pool.put(connection)
                 self.total_connections_created += 1
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _create_connection(self) -> sqlite3.Connection | None:
         """Create a new database connection."""
         connection = sqlite3.connect(self.database_path)
@@ -41,7 +43,7 @@ class ConnectionPool:
         connection.execute('PRAGMA journal_mode = WAL')
         return connection
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def get_connection(self) -> sqlite3.Connection | None:
         """Get a connection from the pool."""
         if not self.connection_pool:
@@ -61,7 +63,7 @@ class ConnectionPool:
             self.active_connections += 1
             return connection
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
         if connection and self.connection_pool:
@@ -108,7 +110,7 @@ class SQLiteManager:
         self.error_stats: dict[str, int] = defaultdict(int)
         self.start_time: float = time.time()
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid SQLite manager configuration'), AttributeError: (False, 'Missing required database parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='SQLite manager initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid SQLite manager configuration'), AttributeError: (False, 'Missing required database parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='SQLite manager initialization')
     async def initialize(self) -> bool:
         """
         Initialize SQLite manager with enhanced error handling.
@@ -138,21 +140,18 @@ class SQLiteManager:
             self.print(failed(f'❌ SQLite Manager initialization failed - Unexpected error: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_database_configuration(self) -> None:
         """Load database configuration."""
         try:
-            DEFAULT_BACKUP_INTERVAL = DEFAULT_DATABASE_PATH
-            DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_RECOVERY_ATTEMPTS
-            DEFAULT_RECOVERY_COOLDOWN = DEFAULT_MAX_RECOVERY_ATTEMPTS
             self.db_config.setdefault('database_path', DEFAULT_DATABASE_PATH)
             self.db_config.setdefault('auto_backup', True)
-            self.db_config.setdefault('backup_interval', DEFAULT_BACKUP_INTERVAL)
-            self.db_config.setdefault('max_connections', DEFAULT_MAX_CONNECTIONS)
+            self.db_config.setdefault('backup_interval', 3600)  # 1 hour default
+            self.db_config.setdefault('max_connections', 10)  # Default max connections
             self.db_config.setdefault('enable_foreign_keys', True)
             self.db_config.setdefault('journal_mode', 'WAL')
             self.db_config.setdefault('max_recovery_attempts', DEFAULT_MAX_RECOVERY_ATTEMPTS)
-            self.db_config.setdefault('recovery_cooldown', DEFAULT_RECOVERY_COOLDOWN)
+            self.db_config.setdefault('recovery_cooldown', 5)  # 5 seconds default
             self.db_path = self.db_config['database_path']
             self.auto_backup = self.db_config['auto_backup']
             self.backup_interval = self.db_config['backup_interval']
@@ -165,7 +164,7 @@ class SQLiteManager:
         except Exception as e:
             self.print(error(f'Error loading database configuration - Unexpected error: {e}'))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """
         Validate database configuration.
@@ -198,11 +197,11 @@ class SQLiteManager:
             self.print(error(f'Error validating configuration - Unexpected error: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_connection_pool(self) -> None:
         """Initialize connection pool."""
         try:
-            self.connection_pool = ConnectionPool(max_connections=self.max_connections, database_path=self.db_path)
+            self.connection_pool = ConnectionPool(max_connections = self.max_connections, database_path = self.db_path)
             await self.connection_pool.initialize()
             self.logger.info(f'Connection pool initialized with {self.max_connections} connections')
         except OSError as e:
@@ -210,7 +209,7 @@ class SQLiteManager:
         except Exception as e:
             self.print(connection_error(f'Error initializing connection pool - Unexpected error: {e}'))
 
-    @handles_errors(default_return=False, context='database initialization')
+    @handles_errors(default_return = False, context='database initialization')
     async def _initialize_database(self) -> bool:
         """
         Initialize database with enhanced error handling.
@@ -247,7 +246,7 @@ class SQLiteManager:
             self.print(initialization_error(f'Error initializing database - Unexpected error: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _create_tables(self, connection: sqlite3.Connection) -> None:
         """Create database tables with enhanced error handling."""
         try:
@@ -262,7 +261,7 @@ class SQLiteManager:
         except Exception as e:
             self.print(error(f'Error creating tables - Unexpected error: {e}'))
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid trade data'), AttributeError: (False, 'Missing trade components'), KeyError: (False, 'Missing required trade data')}, default_return=False, context='trade insertion')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid trade data'), AttributeError: (False, 'Missing trade components'), KeyError: (False, 'Missing required trade data')}, default_return = False, context='trade insertion')
     async def insert_trade(self, trade_data: dict[str, Any]) -> bool:
         """
         Insert trade data with enhanced error handling and connection pooling.
@@ -297,7 +296,7 @@ class SQLiteManager:
             await self._attempt_recovery('trade_insertion')
             return False
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid position data'), AttributeError: (False, 'Missing position components'), KeyError: (False, 'Missing required position data')}, default_return=False, context='position update')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid position data'), AttributeError: (False, 'Missing position components'), KeyError: (False, 'Missing required position data')}, default_return = False, context='position update')
     async def update_position(self, position_data: dict[str, Any]) -> bool:
         """
         Update position data with enhanced error handling and connection pooling.
@@ -333,8 +332,8 @@ class SQLiteManager:
             await self._attempt_recovery('position_update')
             return False
 
-    @handles_errors(fallback=None)
-    async def get_trades(self, symbol: str | None=None, limit: int | None=None) -> list[dict[str, Any]]:
+    @handles_errors(fallback = None)
+    async def get_trades(self, symbol: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get trades with enhanced error handling and connection pooling.
 
@@ -371,7 +370,7 @@ class SQLiteManager:
             await self._attempt_recovery('trades_retrieval')
             return []
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def get_positions(self) -> list[dict[str, Any]]:
         """
         Get positions with enhanced error handling and connection pooling.
@@ -397,8 +396,8 @@ class SQLiteManager:
             await self._attempt_recovery('positions_retrieval')
             return []
 
-    @handles_errors(fallback=None)
-    async def get_performance(self, days: int | None=None) -> list[dict[str, Any]]:
+    @handles_errors(fallback = None)
+    async def get_performance(self, days: int | None = None) -> list[dict[str, Any]]:
         """
         Get performance data with enhanced error handling and connection pooling.
 
@@ -431,7 +430,7 @@ class SQLiteManager:
             await self._attempt_recovery('performance_retrieval')
             return []
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid performance data'), AttributeError: (False, 'Missing performance components'), KeyError: (False, 'Missing required performance data')}, default_return=False, context='performance insertion')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid performance data'), AttributeError: (False, 'Missing performance components'), KeyError: (False, 'Missing required performance data')}, default_return = False, context='performance insertion')
     async def insert_performance(self, performance_data: dict[str, Any]) -> bool:
         """
         Insert performance data with enhanced error handling and connection pooling.
@@ -466,7 +465,7 @@ class SQLiteManager:
             await self._attempt_recovery('performance_insertion')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def get_setting(self, key: str) -> str | None:
         """
         Get setting with enhanced error handling and connection pooling.
@@ -495,7 +494,7 @@ class SQLiteManager:
             await self._attempt_recovery('settings_retrieval')
             return None
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def set_setting(self, key: str, value: str) -> bool:
         """
         Set setting with enhanced error handling and connection pooling.
@@ -526,7 +525,7 @@ class SQLiteManager:
             await self._attempt_recovery('settings_update')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def set_document(self, collection: str, key: str, data: dict[str, Any]) -> bool:
         """
         Set document with enhanced error handling and connection pooling.
@@ -559,7 +558,7 @@ class SQLiteManager:
             await self._attempt_recovery('documents_update')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _attempt_recovery(self, operation: str) -> None:
         """Attempt automatic recovery for failed operations."""
         try:
@@ -585,7 +584,7 @@ class SQLiteManager:
                 self.print(error('Error in auto backup task: {e}'))
                 await asyncio.sleep(self.backup_interval)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def close(self) -> None:
         """Close database connections."""
         try:
@@ -602,8 +601,8 @@ class SQLiteManager:
         except Exception:
             self.print(connection_error('Error closing database connections: {e}'))
 
-    @handles_errors(default_return=False, context='database backup')
-    async def create_backup(self, backup_path: str | None=None) -> bool:
+    @handles_errors(default_return = False, context='database backup')
+    async def create_backup(self, backup_path: str | None = None) -> bool:
         """
         Create database backup with enhanced error handling.
 
@@ -649,7 +648,7 @@ class SQLiteManager:
             self.print(error('Error getting database status: {e}'))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the SQLite manager."""
         self.logger.info('🛑 Stopping SQLite Manager...')
@@ -662,7 +661,7 @@ class SQLiteManager:
             self.print(error('Error stopping SQLite manager: {e}'))
 sqlite_manager: SQLiteManager | None = None
 
-async def setup_sqlite_manager(config: dict[str, Any] | None=None) -> SQLiteManager | None:
+async def setup_sqlite_manager(config: dict[str, Any] | None = None) -> SQLiteManager | None:
     """
     Setup global SQLite manager.
 

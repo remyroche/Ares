@@ -6,12 +6,13 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict
+from src.utils.logger import system_logger
 
 # Add project root to path for proper imports
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import get_logger, system_logger
+from src.utils.logger import system_logger, get_logger
 from src.utils.common_operations import safe_json_load
 import json
 import logging

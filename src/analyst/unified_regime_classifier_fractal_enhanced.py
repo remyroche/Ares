@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Enhanced Unified Regime Classifier with Step 6 Features and Performance Optimizations
 
 This version integrates:
@@ -6,7 +8,6 @@ This version integrates:
 2. Performance optimizations (caching, vectorization, incremental updates)
 3. Better ML integration through richer feature sets
 """
-from .core.decorators import handles_errors
 import os
 from datetime import datetime
 from typing import Any, List, Dict, Optional, Tuple
@@ -20,11 +21,9 @@ except ImportError:
 from sklearn.preprocessing import StandardScaler
 import numba
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 import asyncio
-from src.core.decorators import validates as validate_data_quality, traced as with_tracing_span
-from .core.decorators.errors import handles_errors
 import time
 
 class UnifiedRegimeClassifierFractalEnhanced:
@@ -60,7 +59,7 @@ class UnifiedRegimeClassifierFractalEnhanced:
         self.trained = False
         self.last_training_time = None
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid data for location classification'), AttributeError: (False, 'Missing required attributes')}, default_return=False, context='classifier initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid data for location classification'), AttributeError: (False, 'Missing required attributes')}, default_return = False, context='classifier initialization')
     async def initialize(self) -> bool:
         """Initialize the enhanced fractal location classifier."""
         try:
@@ -116,8 +115,8 @@ class UnifiedRegimeClassifierFractalEnhanced:
             return self._get_default_classification()
 
     @staticmethod
-    @numba.jit(nopython=True)
-    def _calculate_atr_vectorized(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int=14) -> float:
+    @numba.jit(nopython = True)
+    def _calculate_atr_vectorized(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> float:
         """Vectorized ATR calculation using Numba for speed."""
         n = len(high)
         if n < period:
@@ -148,7 +147,7 @@ class UnifiedRegimeClassifierFractalEnhanced:
         low = df['low'].values
         volume = df['volume'].values
         for period in self.technical_indicators_config['RSI']['periods']:
-            rsi = talib.RSI(close, timeperiod=period)
+            rsi = talib.RSI(close, timeperiod = period)
             if len(rsi) > 0 and (not np.isnan(rsi[-1])):
                 indicators[f'rsi_{period}'] = rsi[-1]
                 if len(rsi) > 5:
@@ -156,11 +155,11 @@ class UnifiedRegimeClassifierFractalEnhanced:
                     rsi_slope = (rsi[-1] - rsi[-5]) / (rsi[-5] + 1e-08)
                     indicators[f'rsi_{period}_divergence'] = price_slope - rsi_slope
         for period in self.technical_indicators_config['ATR']['periods']:
-            atr = talib.ATR(high, low, close, timeperiod=period)
+            atr = talib.ATR(high, low, close, timeperiod = period)
             if len(atr) > 0 and (not np.isnan(atr[-1])):
                 indicators[f'atr_normalized_{period}'] = atr[-1] / close[-1]
         for period in self.technical_indicators_config['BB']['periods']:
-            upper, middle, lower = talib.BBANDS(close, timeperiod=period)
+            upper, middle, lower = talib.BBANDS(close, timeperiod = period)
             if len(upper) > 0 and (not np.isnan(upper[-1])):
                 bb_position = (close[-1] - lower[-1]) / (upper[-1] - lower[-1] + 1e-08)
                 indicators[f'bb_position_{period}'] = bb_position
@@ -168,7 +167,7 @@ class UnifiedRegimeClassifierFractalEnhanced:
                 indicators[f'bb_squeeze_{period}'] = bb_squeeze
         sma_values = {}
         for period in self.technical_indicators_config['SMA']['periods']:
-            sma = talib.SMA(close, timeperiod=period)
+            sma = talib.SMA(close, timeperiod = period)
             if len(sma) > 0 and (not np.isnan(sma[-1])):
                 sma_values[period] = sma[-1]
                 indicators[f'price_to_sma_{period}'] = close[-1] / sma[-1]
@@ -179,18 +178,18 @@ class UnifiedRegimeClassifierFractalEnhanced:
                 slow_period = sorted_periods[i + 1]
                 indicators[f'sma_ratio_{fast_period}_{slow_period}'] = sma_values[fast_period] / sma_values[slow_period]
         macd_config = self.technical_indicators_config['MACD']
-        macd, signal, hist = talib.MACD(close, fastperiod=macd_config['fast'], slowperiod=macd_config['slow'], signalperiod=macd_config['signal'])
+        macd, signal, hist = talib.MACD(close, fastperiod = macd_config['fast'], slowperiod = macd_config['slow'], signalperiod = macd_config['signal'])
         if len(macd) > 0 and (not np.isnan(macd[-1])):
             indicators['macd'] = macd[-1]
             indicators['macd_signal'] = signal[-1]
             indicators['macd_hist'] = hist[-1]
             indicators['macd_hist_normalized'] = hist[-1] / (close[-1] * 0.01)
         for period in self.technical_indicators_config['ADX']['periods']:
-            adx = talib.ADX(high, low, close, timeperiod=period)
+            adx = talib.ADX(high, low, close, timeperiod = period)
             if len(adx) > 0 and (not np.isnan(adx[-1])):
                 indicators[f'adx_{period}'] = adx[-1]
         for period in self.technical_indicators_config['MFI']['periods']:
-            mfi = talib.MFI(high, low, close, volume, timeperiod=period)
+            mfi = talib.MFI(high, low, close, volume, timeperiod = period)
             if len(mfi) > 0 and (not np.isnan(mfi[-1])):
                 indicators[f'mfi_{period}'] = mfi[-1]
         obv = talib.OBV(close, volume)
@@ -305,7 +304,7 @@ class UnifiedRegimeClassifierFractalEnhanced:
     def _cleanup_cache(self) -> None:
         """Clean up old cache entries."""
         if len(self._feature_cache) > self.cache_size:
-            sorted_items = sorted(self._feature_cache.items(), key=lambda x: x[1].get('timestamp', datetime.min))
+            sorted_items = sorted(self._feature_cache.items(), key = lambda x: x[1].get('timestamp', datetime.min))
             self._feature_cache = dict(sorted_items[-self.cache_size:])
 
     def get_ml_features(self, classification: Dict[str, Any]) -> pd.Series:

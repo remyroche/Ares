@@ -1,4 +1,6 @@
 
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Live Trading Wavelet Integration
 
@@ -11,8 +13,7 @@ from typing import Any
 
 
 from .trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -46,7 +47,7 @@ class LiveWaveletIntegration:
         self.min_confidence = config.get("min_wavelet_confidence", 0.6)
         self.max_signal_age = config.get("max_signal_age", 60)  # seconds
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """Initialize the live wavelet integration."""
         try:
@@ -84,7 +85,7 @@ class LiveWaveletIntegration:
             )
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def process_market_data(
         self,
         market_data: dict[str, Any],

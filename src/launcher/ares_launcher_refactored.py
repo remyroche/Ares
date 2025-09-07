@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from .training.training_manager import TrainingManager
 """
 Refactored Ares Launcher - Simplified and Modular
 
@@ -104,7 +105,7 @@ class AresLauncher:
         self.process_manager.cleanup()
 
     # Delegate methods to appropriate managers
-    def launch_gui(self, mode=None, symbol=None, exchange=None):
+    def launch_gui(self, mode = None, symbol = None, exchange = None):
         """Launch the GUI server."""
         return self.gui_manager.launch_gui(mode, symbol, exchange)
 
@@ -117,15 +118,15 @@ class AresLauncher:
         self.user_interaction_manager.wait_for_user_input()
 
     # Training methods using configuration manager
-    def _run_unified_training(self, symbol, exchange, training_mode, lookback_days=None, with_gui=False):
+    def _run_unified_training(self, symbol, exchange, training_mode, lookback_days = None, with_gui = False):
         """Run unified training with enhanced training manager."""
         try:
             # Setup training environment
             env_config = self.config_manager.setup_training_environment(
-                training_mode=training_mode,
-                symbol=symbol,
-                exchange=exchange,
-                lookback_days=lookback_days
+                training_mode = training_mode,
+                symbol = symbol,
+                exchange = exchange,
+                lookback_days = lookback_days
             )
             
             mode_config = env_config["mode_config"]
@@ -188,11 +189,11 @@ class AresLauncher:
             
             # Prepare training input
             training_input = get_training_input_dict(
-                mode=training_mode,
-                symbol=symbol,
-                exchange=exchange,
-                timestamp=format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
-                lookback_days=lookback_days,
+                mode = training_mode,
+                symbol = symbol,
+                exchange = exchange,
+                timestamp = format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
+                lookback_days = lookback_days,
             )
             
             # Execute the enhanced training
@@ -216,7 +217,7 @@ class AresLauncher:
                 logger.warning(f"⚠️ Database cleanup warning: {cleanup_error}")
 
     # Trading methods using trading process manager
-    def _run_unified_trading(self, symbol, exchange, trading_mode, with_gui=False):
+    def _run_unified_trading(self, symbol, exchange, trading_mode, with_gui = False):
         """Unified trading method for both paper and live trading modes."""
         if with_gui and not self.launch_gui(trading_mode.lower(), symbol, exchange):
             return False
@@ -224,15 +225,15 @@ class AresLauncher:
         self.config_manager.setup_trading_environment(trading_mode)
         return self.trading_process_manager.run_trading_process(symbol, exchange, trading_mode)
 
-    def run_paper_trading(self, symbol, exchange, with_gui=False):
+    def run_paper_trading(self, symbol, exchange, with_gui = False):
         """Run paper trading using unified trading method."""
         return self._run_unified_trading(symbol, exchange, "PAPER", with_gui)
 
-    def run_live_trading(self, symbol, exchange, with_gui=False):
+    def run_live_trading(self, symbol, exchange, with_gui = False):
         """Run live trading using unified trading method."""
         return self._run_unified_trading(symbol, exchange, "LIVE", with_gui)
 
-    def run_challenger_trading(self, symbol, exchange, with_gui=False):
+    def run_challenger_trading(self, symbol, exchange, with_gui = False):
         """Run challenger trading with optional GUI."""
         self.logger.info(f"🏆 Running challenger trading for {symbol} on {exchange}")
         
@@ -242,9 +243,9 @@ class AresLauncher:
         try:
             process = subprocess.Popen(
                 [sys.executable, "scripts/setup_challenger_model.py", symbol, exchange],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                stdout = subprocess.PIPE,
+                stderr = subprocess.PIPE,
+                text = True,
             )
             self.process_manager.add_process(process)
             
@@ -261,7 +262,7 @@ class AresLauncher:
             self.logger.exception(f"❌ Failed to run challenger trading: {e}")
             return False
 
-    def run_portfolio_trading(self, with_gui=False):
+    def run_portfolio_trading(self, with_gui = False):
         """Run portfolio trading with optional GUI."""
         self.logger.info("📈 Running portfolio trading")
         
@@ -276,50 +277,50 @@ class AresLauncher:
 
     # Step-based training methods using step orchestrator wrapper
     async def run_step_based_training_with_validation(self, symbol, exchange, start_step, 
-                                                     training_mode="blank", force_rerun=False, with_gui=False):
+                                                     training_mode="blank", force_rerun = False, with_gui = False):
         """Run step-based training with comprehensive validation."""
         return await self.step_orchestrator_wrapper.run_step_based_training_with_validation(
-            symbol=symbol,
-            exchange=exchange,
-            start_step=start_step,
-            training_mode=training_mode,
-            force_rerun=force_rerun,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            start_step = start_step,
+            training_mode = training_mode,
+            force_rerun = force_rerun,
+            with_gui = with_gui,
         )
 
     async def run_step2_with_existing_data(self, symbol, exchange, start_step="step2_feature_engineering", 
-                                          force_rerun=False, with_gui=False):
+                                          force_rerun = False, with_gui = False):
         """Run step02 with existing data from step01 and step1_5."""
         return await self.step_orchestrator_wrapper.run_step2_with_existing_data(
-            symbol=symbol,
-            exchange=exchange,
-            start_step=start_step,
-            force_rerun=force_rerun,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            start_step = start_step,
+            force_rerun = force_rerun,
+            with_gui = with_gui,
         )
 
     # Pipeline methods using pipeline managers
-    def run_data_collection_pipeline(self, symbol, exchange, with_gui=False):
+    def run_data_collection_pipeline(self, symbol, exchange, with_gui = False):
         """Run enhanced data collection pipeline."""
         manager = PipelineManagerFactory.create_manager("data-collection", self)
         return manager.execute(symbol, exchange, with_gui)
 
-    def run_model_training_pipeline(self, symbol, exchange, with_gui=False):
+    def run_model_training_pipeline(self, symbol, exchange, with_gui = False):
         """Run model training pipeline."""
         manager = PipelineManagerFactory.create_manager("model-training", self)
         return manager.execute(symbol, exchange, with_gui)
 
-    def run_optimisation_pipeline(self, symbol, exchange, with_gui=False):
+    def run_optimisation_pipeline(self, symbol, exchange, with_gui = False):
         """Run enhanced optimisation pipeline."""
         manager = PipelineManagerFactory.create_manager("optimisation", self)
         return manager.execute(symbol, exchange, with_gui)
 
-    def run_backtesting_pipeline(self, symbol, exchange, with_gui=False):
+    def run_backtesting_pipeline(self, symbol, exchange, with_gui = False):
         """Run backtesting pipeline."""
         manager = PipelineManagerFactory.create_manager("backtesting", self)
         return manager.execute(symbol, exchange, with_gui)
 
-    def run_all_pipelines(self, symbol, exchange, with_gui=False):
+    def run_all_pipelines(self, symbol, exchange, with_gui = False):
         """Run all pipelines in sequence."""
         manager = PipelineManagerFactory.create_manager("all-pipelines", self)
         return manager.execute(symbol, exchange, with_gui)
@@ -357,7 +358,7 @@ class AresLauncher:
                 return False
             
             # Precompute features
-            success = asyncio.run(precomputer.precompute_dataset(data_path=data_path, symbol=symbol))
+            success = asyncio.run(precomputer.precompute_dataset(data_path = data_path, symbol = symbol))
             
             if success:
                 self.logger.info("✅ Wavelet feature precomputation completed successfully")
@@ -370,7 +371,7 @@ class AresLauncher:
             self.logger.exception(f"❌ Failed to precompute wavelet features: {e}")
             return False
 
-    def resume_training(self, symbol, exchange, with_gui=False):
+    def resume_training(self, symbol, exchange, with_gui = False):
         """Resume training from the last checkpoint."""
         self.logger.info(f"🔄 Resuming training for {symbol} on {exchange}")
         
@@ -387,18 +388,18 @@ class AresLauncher:
             lookback_days = checkpoint_data.get("lookback_days", 30)
             
             return self._run_unified_training(
-                symbol=symbol,
-                exchange=exchange,
-                training_mode=training_mode,
-                lookback_days=lookback_days,
-                with_gui=with_gui,
+                symbol = symbol,
+                exchange = exchange,
+                training_mode = training_mode,
+                lookback_days = lookback_days,
+                with_gui = with_gui,
             )
             
         except Exception as e:
             self.logger.exception(f"❌ Failed to resume training: {e}")
             return False
 
-    def run_data_loading(self, symbol, exchange, lookback_days=DEFAULT_LOOKBACK_DAYS):
+    def run_data_loading(self, symbol, exchange, lookback_days = DEFAULT_LOOKBACK_DAYS):
         """Run data loading and consolidation."""
         try:
             self.logger.info(f"🔄 Starting data loading for {symbol} on {exchange}")
@@ -421,7 +422,7 @@ class AresLauncher:
             
             env = os.environ.copy()
             env["BLANK_TRAINING_MODE"] = "1"
-            download_result = subprocess.run(download_cmd, env=env, check=False)
+            download_result = subprocess.run(download_cmd, env = env, check = False)
             
             if download_result.returncode != 0:
                 self.logger.error(f"❌ Download failed")
@@ -440,7 +441,7 @@ class AresLauncher:
                 str(CONFIG.get("DATA_CONFIG", {}).get("exclude_recent_days", 0)),
             ]
             
-            consolidate_result = subprocess.run(consolidate_cmd, env=env, check=False, timeout=1800)
+            consolidate_result = subprocess.run(consolidate_cmd, env = env, check = False, timeout = 1800)
             
             if consolidate_result.returncode != 0:
                 self.logger.error(f"❌ Consolidation failed")
@@ -453,7 +454,7 @@ class AresLauncher:
             self.logger.exception(f"❌ Data loading failed: {e}")
             return False
 
-    async def run_regime_operations(self, symbol, exchange, subcommand, with_gui=False):
+    async def run_regime_operations(self, symbol, exchange, subcommand, with_gui = False):
         """Run regime operations (HMM labeling or ML training)."""
         self.logger.info(f"🧠 Running regime operations for {symbol} on {exchange}")
         
@@ -520,52 +521,52 @@ def execute_command(launcher, args):
         # Execute command with appropriate parameters
         if args.command in ["light", "blank", "full"]:
             return handler.execute(
-                training_mode=args.command,
-                symbol=args.symbol,
-                exchange=args.exchange,
-                lookback_days=getattr(args, "lookback_days", None),
-                with_gui=args.gui,
+                training_mode = args.command,
+                symbol = args.symbol,
+                exchange = args.exchange,
+                lookback_days = getattr(args, "lookback_days", None),
+                with_gui = args.gui,
             )
         elif args.command in ["paper", "live", "challenger"]:
             return handler.execute(
-                trading_mode=args.command.upper() if args.command != "challenger" else "CHALLENGER",
-                symbol=args.symbol,
-                exchange=args.exchange,
-                with_gui=args.gui,
+                trading_mode = args.command.upper() if args.command != "challenger" else "CHALLENGER",
+                symbol = args.symbol,
+                exchange = args.exchange,
+                with_gui = args.gui,
             )
         elif args.command.startswith("step"):
             return handler.execute(
-                start_step=normalized_step or f"{args.command}_data_reading",
-                symbol=args.symbol,
-                exchange=args.exchange,
-                training_mode=args.training_mode,
-                force_rerun=force_flag,
-                with_gui=args.gui,
+                start_step = normalized_step or f"{args.command}_data_reading",
+                symbol = args.symbol,
+                exchange = args.exchange,
+                training_mode = args.training_mode,
+                force_rerun = force_flag,
+                with_gui = args.gui,
             )
         elif args.command == "load":
             return handler.execute(
-                symbol=args.symbol,
-                exchange=args.exchange,
-                lookback_days=DEFAULT_LOOKBACK_DAYS if not args.blank_mode else 30,
-                blank_mode=args.blank_mode,
+                symbol = args.symbol,
+                exchange = args.exchange,
+                lookback_days = DEFAULT_LOOKBACK_DAYS if not args.blank_mode else 30,
+                blank_mode = args.blank_mode,
             )
         elif args.command in ["data-collection", "market-analysis", "model-training", 
                              "optimisation", "backtesting", "all-pipelines"]:
             return handler.execute(
-                pipeline_type=args.command,
-                symbol=args.symbol,
-                exchange=args.exchange,
-                with_gui=args.gui,
+                pipeline_type = args.command,
+                symbol = args.symbol,
+                exchange = args.exchange,
+                with_gui = args.gui,
             )
         elif args.command == "regime":
             return handler.execute(
-                subcommand=args.regime_subcommand,
-                symbol=args.symbol,
-                exchange=args.exchange,
-                with_gui=args.gui,
+                subcommand = args.regime_subcommand,
+                symbol = args.symbol,
+                exchange = args.exchange,
+                with_gui = args.gui,
             )
         else:
-            return handler.execute(command=args.command, **vars(args))
+            return handler.execute(command = args.command, **vars(args))
             
     except Exception as e:
         launcher.logger.exception(f"❌ Failed to execute command {args.command}: {e}")
@@ -633,7 +634,7 @@ def main():
             
     except Exception as e:
         if "launcher" in locals():
-            launcher.comprehensive_logger.log_error(f"Main function exception: {e}", exc_info=True)
+            launcher.comprehensive_logger.log_error(f"Main function exception: {e}", exc_info = True)
             launcher.comprehensive_logger.log_launcher_end(1)
         else:
             print(f"💥 ERROR: Exception in main: {e}")

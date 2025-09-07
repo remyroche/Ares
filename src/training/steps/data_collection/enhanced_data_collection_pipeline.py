@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
+from src.core.errors.base import ValidationError
 
 """
 Enhanced Data Collection Pipeline
@@ -22,6 +23,7 @@ from .validators.pipeline_validators import (
     ValidationResult,
     ValidationReport
 )
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from .decorators.data_operation_decorators import (
     data_operation_protection,
     data_formatting_protection,
@@ -65,6 +67,7 @@ from src.utils.common_operations import (
 
 class EnhancedDataCollectionPipeline:
     """Enhanced data collection pipeline with comprehensive protection."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -93,7 +96,7 @@ class EnhancedDataCollectionPipeline:
         step_name="data_collection_pipeline",
         prerequisites=[],
         outputs=["data_collected", "data_validated", "data_formatted"],
-        quality_threshold=0.8
+        quality_threshold = 0.8
     )
     async def run_pipeline(
         self,
@@ -111,7 +114,7 @@ class EnhancedDataCollectionPipeline:
             
             # Start monitoring
             self.pipeline_monitor = PipelineMonitor(self.pipeline_id, self.config)
-            self.pipeline_monitor.start_pipeline(total_steps=3)
+            self.pipeline_monitor.start_pipeline(total_steps = 3)
             
             self.logger.info(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}")
             print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}")
@@ -152,13 +155,13 @@ class EnhancedDataCollectionPipeline:
             raise
     
     @data_operation_protection(
-        operation_type=DataOperationType.READ,
-        security_level=SecurityLevel.INTERNAL,
-        audit=True,
-        validate_inputs=True,
-        validate_outputs=True,
-        timeout_seconds=300,
-        retry_attempts=3
+        operation_type = DataOperationType.READ,
+        security_level = SecurityLevel.INTERNAL,
+        audit = True,
+        validate_inputs = True,
+        validate_outputs = True,
+        timeout_seconds = 300,
+        retry_attempts = 3
     )
     async def _run_step1_data_collection(self) -> Dict[str, Any]:
         """Run Step 1: Data Collection with protection."""
@@ -172,10 +175,10 @@ class EnhancedDataCollectionPipeline:
             # Create error context
             error_context = ErrorContext(
                 operation="data_collection",
-                step_name=step_name,
-                symbol=self.symbol,
-                exchange=self.exchange,
-                data_dir=self.data_dir
+                step_name = step_name,
+                symbol = self.symbol,
+                exchange = self.exchange,
+                data_dir = self.data_dir
             )
             
             # Execute data collection with error handling
@@ -209,11 +212,11 @@ class EnhancedDataCollectionPipeline:
             raise
     
     @data_operation_protection(
-        operation_type=DataOperationType.VALIDATE,
-        security_level=SecurityLevel.INTERNAL,
-        audit=True,
-        validate_inputs=True,
-        validate_outputs=True
+        operation_type = DataOperationType.VALIDATE,
+        security_level = SecurityLevel.INTERNAL,
+        audit = True,
+        validate_inputs = True,
+        validate_outputs = True
     )
     async def _run_step2_data_validation(self) -> Dict[str, Any]:
         """Run Step 2: Data Validation with protection."""
@@ -227,10 +230,10 @@ class EnhancedDataCollectionPipeline:
             # Create error context
             error_context = ErrorContext(
                 operation="data_validation",
-                step_name=step_name,
-                symbol=self.symbol,
-                exchange=self.exchange,
-                data_dir=self.data_dir
+                step_name = step_name,
+                symbol = self.symbol,
+                exchange = self.exchange,
+                data_dir = self.data_dir
             )
             
             # Execute validation with error handling
@@ -278,10 +281,10 @@ class EnhancedDataCollectionPipeline:
     @data_formatting_protection(
         required_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'],
         data_types={'timestamp': 'datetime64[ns]', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'},
-        min_rows=100,
-        max_null_ratio=0.05,
-        check_duplicates=True,
-        check_timestamps=True
+        min_rows = 100,
+        max_null_ratio = 0.05,
+        check_duplicates = True,
+        check_timestamps = True
     )
     async def _run_step3_data_formatting(self) -> Dict[str, Any]:
         """Run Step 3: Data Formatting and Storage with protection."""
@@ -295,10 +298,10 @@ class EnhancedDataCollectionPipeline:
             # Create error context
             error_context = ErrorContext(
                 operation="data_formatting",
-                step_name=step_name,
-                symbol=self.symbol,
-                exchange=self.exchange,
-                data_dir=self.data_dir
+                step_name = step_name,
+                symbol = self.symbol,
+                exchange = self.exchange,
+                data_dir = self.data_dir
             )
             
             # Execute formatting with error handling
@@ -342,7 +345,7 @@ class EnhancedDataCollectionPipeline:
         # For now, return a placeholder DataFrame
         
         # Create sample data for demonstration
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
+        dates = pd.date_range(start='2024-01-01', periods = 1000, freq='1min')
         data = {
             'timestamp': dates,
             'open': np.random.uniform(100, 200, 1000),
@@ -404,8 +407,8 @@ class EnhancedDataCollectionPipeline:
         storage_result = self.data_storage_manager.save_data(
             formatted_data,
             output_file,
-            format=DataFormat.PARQUET,
-            compression=CompressionType.GZIP,
+            format = DataFormat.PARQUET,
+            compression = CompressionType.GZIP,
             metadata={
                 "symbol": symbol,
                 "exchange": exchange,

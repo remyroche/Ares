@@ -14,7 +14,7 @@ from .logging import get_correlation_id
 import numpy as np
 import collections
 
-request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar('request_cache', default=None)
+request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar('request_cache', default = None)
 
 class CachePolicy(Enum):
     """Cache policy types."""
@@ -49,7 +49,7 @@ class CacheBackend(ABC):
         """Get value from cache."""
 
     @abstractmethod
-    def set(self, key: str, value: Any, ttl: float | None=None) -> None:
+    def set(self, key: str, value: Any, ttl: float | None = None) -> None:
         """Set value in cache with optional TTL."""
 
     @abstractmethod
@@ -67,7 +67,7 @@ class CacheBackend(ABC):
 class MemoryCacheBackend(CacheBackend):
     """In-memory cache backend."""
 
-    def __init__(self, max_size: int=1000) -> None:
+    def __init__(self, max_size: int = 1000) -> None:
         self.cache: dict[str, CacheEntry] = {}
         self.max_size = max_size
         self.access_order: list[str] = []
@@ -86,14 +86,14 @@ class MemoryCacheBackend(CacheBackend):
         entry.increment_hits()
         return entry.value
 
-    def set(self, key: str, value: Any, ttl: float | None=None) -> None:
+    def set(self, key: str, value: Any, ttl: float | None = None) -> None:
         """Set value in cache with optional TTL."""
         if len(self.cache) >= self.max_size and key not in self.cache:
             if self.access_order:
                 lru_key = self.access_order[0]
                 self.delete(lru_key)
         expires_at = time.time() + ttl if ttl else None
-        self.cache[key] = CacheEntry(value=value, created_at=time.time(), expires_at=expires_at)
+        self.cache[key] = CacheEntry(value = value, created_at = time.time(), expires_at = expires_at)
         if key in self.access_order:
             self.access_order.remove(key)
         self.access_order.append(key)
@@ -139,7 +139,7 @@ def clear_request_cache() -> None:
     """Clear request-scoped cache."""
     request_cache_var.set(None)
 
-def make_cache_key(func: Callable, args: tuple, kwargs: dict, include_correlation_id: bool=False) -> str:
+def make_cache_key(func: Callable, args: tuple, kwargs: dict, include_correlation_id: bool = False) -> str:
     """
     Create a cache key from function and arguments.
 
@@ -156,8 +156,8 @@ def make_cache_key(func: Callable, args: tuple, kwargs: dict, include_correlatio
     if include_correlation_id:
         key_parts.append(get_correlation_id())
     try:
-        args_str = json.dumps(args, sort_keys=True, default=str)
-        kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
+        args_str = json.dumps(args, sort_keys = True, default = str)
+        kwargs_str = json.dumps(kwargs, sort_keys = True, default = str)
         key_parts.extend([args_str, kwargs_str])
         key = ':'.join(key_parts)
     except (TypeError, ValueError):
@@ -165,7 +165,7 @@ def make_cache_key(func: Callable, args: tuple, kwargs: dict, include_correlatio
         key = hashlib.sha256(key_data).hexdigest()
     return key
 
-def cached(*, policy: CachePolicy=CachePolicy.PER_REQUEST, ttl: float | None=None, key_func: Callable | None=None, condition: Callable[[Any], bool] | None=None, cache_none: bool=False, cache_exceptions: bool=False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def cached(*, policy: CachePolicy = CachePolicy.PER_REQUEST, ttl: float | None = None, key_func: Callable | None = None, condition: Callable[[Any], bool] | None = None, cache_none: bool = False, cache_exceptions: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Cache function results based on policy.
 
@@ -178,13 +178,13 @@ def cached(*, policy: CachePolicy=CachePolicy.PER_REQUEST, ttl: float | None=Non
         cache_exceptions: Whether to cache exceptions
 
     Example:
-        @cached(policy=CachePolicy.CROSS_REQUEST, ttl=300)
+        @cached(policy = CachePolicy.CROSS_REQUEST, ttl = 300)
         def get_user(user_id: str) -> dict:
             return database.fetch_user(user_id)
 
         @cached(
-            policy=CachePolicy.PER_REQUEST,
-            condition=lambda result: result["status"] == "success"
+            policy = CachePolicy.PER_REQUEST,
+            condition = lambda result: result["status"] == "success"
         )
         def api_call(endpoint: str) -> dict:
             return requests.get(endpoint).json()
@@ -270,7 +270,7 @@ def cached(*, policy: CachePolicy=CachePolicy.PER_REQUEST, ttl: float | None=Non
             raise
     return uniform_wrapper(f'cached({policy.value})', sync_handler, async_handler)
 
-def cache_invalidate(func: Callable | None=None, *, pattern: str | None=None, tags: list[str] | None=None) -> None:
+def cache_invalidate(func: Callable | None = None, *, pattern: str | None = None, tags: list[str] | None = None) -> None:
     """
     Invalidate cache entries.
 
@@ -290,7 +290,7 @@ def cache_invalidate(func: Callable | None=None, *, pattern: str | None=None, ta
         backend.clear()
     clear_request_cache()
 
-def memoize(maxsize: int=128, typed: bool=False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def memoize(maxsize: int = 128, typed: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Simple memoization decorator using functools.lru_cache.
 
@@ -302,7 +302,7 @@ def memoize(maxsize: int=128, typed: bool=False) -> Callable[[Callable[P, R]], C
         typed: Whether to cache separately based on argument types
 
     Example:
-        @memoize(maxsize=100)
+        @memoize(maxsize = 100)
         def fibonacci(n: int) -> int:
             if n < 2:
                 return n
@@ -310,7 +310,7 @@ def memoize(maxsize: int=128, typed: bool=False) -> Callable[[Callable[P, R]], C
     """
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        cached_func = functools.lru_cache(maxsize=maxsize, typed=typed)(func)
+        cached_func = functools.lru_cache(maxsize = maxsize, typed = typed)(func)
         cached_func.__wrapped__ = func
         return cached_func
     return decorator

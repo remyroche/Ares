@@ -20,24 +20,24 @@ class EnhancedFeatureSelectionConfig:
 
     # Core feature selection parameters
     target_features: int = Field(
-        default=100, description="Target number of features to select"
+        default = 100, description="Target number of features to select"
     )
     min_features_per_category: int = Field(
-        default=3, description="Minimum features to select from each category"
+        default = 3, description="Minimum features to select from each category"
     )
     max_features_per_category: int = Field(
-        default=20, description="Maximum features to select from each category"
+        default = 20, description="Maximum features to select from each category"
     )
 
     # Dynamic threshold configuration
     enable_adaptive_thresholds: bool = Field(
-        default=True, description="Enable adaptive threshold computation"
+        default = True, description="Enable adaptive threshold computation"
     )
     variance_percentile: float = Field(
-        default=25.0, description="Percentile for adaptive variance threshold"
+        default = 25.0, description="Percentile for adaptive variance threshold"
     )
     correlation_adaptive_ranges: dict[str, float] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "high_feature_count": 0.98,  # >1000 features
             "medium_feature_count": 0.95,  # 500-1000 features
             "low_feature_count": 0.90,  # 200-500 features
@@ -45,16 +45,16 @@ class EnhancedFeatureSelectionConfig:
         }
     )
     mi_percentile: float = Field(
-        default=25.0, description="Percentile for adaptive mutual information threshold"
+        default = 25.0, description="Percentile for adaptive mutual information threshold"
     )
 
     # Correlation management
     enable_hierarchical_clustering: bool = Field(
-        default=True,
+        default = True,
         description="Use hierarchical clustering for correlation filtering",
     )
     max_clusters: int = Field(
-        default=50, description="Maximum number of clusters for correlation filtering"
+        default = 50, description="Maximum number of clusters for correlation filtering"
     )
     clustering_method: str = Field(
         default="ward", description="Hierarchical clustering method"
@@ -62,7 +62,7 @@ class EnhancedFeatureSelectionConfig:
 
     # Feature importance methods
     importance_methods: list[str] = field(
-        default_factory=lambda: [
+        default_factory = lambda: [
             "mutual_info",
             "random_forest",
             "f_statistic",
@@ -70,7 +70,7 @@ class EnhancedFeatureSelectionConfig:
         ]
     )
     importance_weights: dict[str, float] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "mutual_info": 0.3,
             "random_forest": 0.3,
             "f_statistic": 0.2,
@@ -80,10 +80,10 @@ class EnhancedFeatureSelectionConfig:
 
     # Category-aware selection
     enable_category_aware_selection: bool = Field(
-        default=True, description="Enable category-aware feature selection"
+        default = True, description="Enable category-aware feature selection"
     )
     category_weights: dict[str, float] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "momentum": 1.0,
             "volatility": 1.0,
             "liquidity": 1.0,
@@ -100,13 +100,13 @@ class EnhancedFeatureSelectionConfig:
 
     # Interaction features configuration
     enable_interaction_features: bool = Field(
-        default=True, description="Enable interaction feature generation"
+        default = True, description="Enable interaction feature generation"
     )
     max_interaction_features: int = Field(
-        default=50, description="Maximum number of interaction features to generate"
+        default = 50, description="Maximum number of interaction features to generate"
     )
     interaction_methods: list[str] = field(
-        default_factory=lambda: [
+        default_factory = lambda: [
             "multiplication",
             "ratio",
             "difference",
@@ -119,20 +119,20 @@ class EnhancedFeatureSelectionConfig:
 
     # Advanced correlation filtering
     enable_advanced_correlation_filtering: bool = Field(
-        default=True, description="Enable advanced correlation filtering"
+        default = True, description="Enable advanced correlation filtering"
     )
     correlation_filtering_method: str = Field(
         default="hierarchical_clustering",
         description="Method for correlation filtering: hierarchical_clustering, recursive_elimination, or threshold_based",
     )
     correlation_threshold_fallback: float = Field(
-        default=0.95,
+        default = 0.95,
         description="Fallback correlation threshold if adaptive method fails",
     )
 
     # Final optimization
     enable_final_optimization: bool = Field(
-        default=True, description="Enable final feature optimization"
+        default = True, description="Enable final feature optimization"
     )
     final_optimization_method: str = Field(
         default="rfe_lightgbm",
@@ -141,30 +141,30 @@ class EnhancedFeatureSelectionConfig:
 
     # Performance and monitoring
     enable_performance_monitoring: bool = Field(
-        default=True, description="Enable performance monitoring during selection"
+        default = True, description="Enable performance monitoring during selection"
     )
     save_selection_metadata: bool = Field(
-        default=True, description="Save detailed selection metadata"
+        default = True, description="Save detailed selection metadata"
     )
     enable_correlation_analysis: bool = Field(
-        default=True, description="Enable correlation analysis of selected features"
+        default = True, description="Enable correlation analysis of selected features"
     )
 
     # Data quality thresholds
     max_nan_ratio: float = Field(
-        default=0.2, description="Maximum allowed NaN ratio for features"
+        default = 0.2, description="Maximum allowed NaN ratio for features"
     )
     constant_variance_threshold: float = Field(
-        default=1e-10, description="Threshold for identifying constant features"
+        default = 1e-10, description="Threshold for identifying constant features"
     )
 
     # Validation and testing
     enable_cross_validation: bool = Field(
-        default=True, description="Enable cross-validation during feature selection"
+        default = True, description="Enable cross-validation during feature selection"
     )
-    cv_folds: int = Field(default=5, description="Number of cross-validation folds")
+    cv_folds: int = Field(default = 5, description="Number of cross-validation folds")
     enable_stability_analysis: bool = Field(
-        default=True, description="Enable feature stability analysis"
+        default = True, description="Enable feature stability analysis"
     )
 
     # Logging and reporting
@@ -172,10 +172,10 @@ class EnhancedFeatureSelectionConfig:
         default="INFO", description="Logging level for feature selection process"
     )
     enable_progress_tracking: bool = Field(
-        default=True, description="Enable progress tracking during selection"
+        default = True, description="Enable progress tracking during selection"
     )
     save_intermediate_results: bool = Field(
-        default=True, description="Save intermediate results for debugging"
+        default = True, description="Save intermediate results for debugging"
     )
 
 

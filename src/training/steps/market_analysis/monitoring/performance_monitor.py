@@ -7,6 +7,11 @@ from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Dict, List
 
+from src.utils.comprehensive_function_logger import (
+    log_step_functions, log_important_calls, log_all_calls,
+    log_internal_call, log_step_progress, log_data_operation
+)
+
 import asyncio
 import numpy as np
 import time
@@ -19,7 +24,8 @@ except ImportError:
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system for function calls."""
-    
+
+    @log_important_calls
     def __init__(self, logger: Any = None):
         self.logger = logger or logging.getLogger(__name__)
         self.performance_history: List[Dict[str, Any]] = []
@@ -108,11 +114,12 @@ class PerformanceMonitor:
             self.performance_history.append(performance_record)
             
             return performance_record
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to end performance monitoring: {e}")
             return performance_record
-    
+
+    @log_all_calls
     def _get_system_metrics(self) -> Dict[str, Any]:
         """Get current system metrics."""
         try:
@@ -138,7 +145,8 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to get system metrics: {e}")
             return {}
-    
+
+    @log_all_calls
     def _calculate_performance_score(self, performance_record: Dict[str, Any]) -> float:
         """Calculate performance score based on execution time, memory usage, and CPU usage."""
         try:
@@ -170,7 +178,8 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to calculate performance score: {e}")
             return 50.0  # Default score
-    
+
+    @log_all_calls
     def _identify_bottlenecks(self, performance_record: Dict[str, Any]) -> List[str]:
         """Identify performance bottlenecks."""
         bottlenecks = []
@@ -193,9 +202,10 @@ class PerformanceMonitor:
             bottlenecks.append("High CPU usage (>80%)")
         elif cpu_usage > 50:
             bottlenecks.append("Moderate CPU usage (>50%)")
-        
+
         return bottlenecks
-    
+
+    @log_all_calls
     def _generate_optimization_suggestions(self, performance_record: Dict[str, Any]) -> List[str]:
         """Generate optimization suggestions based on performance metrics."""
         suggestions = []
@@ -241,7 +251,8 @@ class PerformanceMonitor:
             ])
         
         return suggestions
-    
+
+    @log_all_calls
     def _update_function_performance_stats(self, performance_record: Dict[str, Any]) -> None:
         """Update function performance statistics."""
         try:
@@ -302,7 +313,7 @@ class PerformanceMonitor:
             # Identify worst performers
             worst_performers = sorted(
                 self.performance_history,
-                key=lambda x: x.get('performance_score', 0)
+                key = lambda x: x.get('performance_score', 0)
             )[:5]
             
             # Function-specific analysis
@@ -317,8 +328,8 @@ class PerformanceMonitor:
                         'average_performance_score': sum(stats['performance_scores']) / len(stats['performance_scores']),
                         'most_common_bottlenecks': sorted(
                             stats['bottlenecks'].items(),
-                            key=lambda x: x[1],
-                            reverse=True
+                            key = lambda x: x[1],
+                            reverse = True
                         )[:3],
                         'optimization_suggestions': list(stats['optimization_suggestions'])[:5]
                     }
@@ -348,7 +359,8 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.error(f"❌ Failed to generate performance report: {e}")
             return {}
-    
+
+    @log_all_calls
     def _analyze_performance_trends(self) -> Dict[str, Any]:
         """Analyze performance trends over time."""
         try:
@@ -356,7 +368,7 @@ class PerformanceMonitor:
                 return {'trend': 'insufficient_data'}
             
             # Sort by start time
-            sorted_history = sorted(self.performance_history, key=lambda x: x['start_time'])
+            sorted_history = sorted(self.performance_history, key = lambda x: x['start_time'])
             
             # Calculate trend for execution time
             execution_times = [record.get('execution_time', 0) for record in sorted_history]

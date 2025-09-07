@@ -46,7 +46,7 @@ class TestAnalystEnhancer:
     async def test_enhance_analyst(self, enhancer: Any, sample_data: Any, sample_analyst_data: Any) -> None:
         """Test analyst enhancement."""
         X_train, y_train, X_val, y_val = sample_data
-        with patch.object(enhancer, '_retrain_model', new_callable=AsyncMock) as mock_retrain:
+        with patch.object(enhancer, '_retrain_model', new_callable = AsyncMock) as mock_retrain:
             mock_model = Mock()
             mock_model.predict.return_value = np.random.randint(0, 3, len(y_val))
             mock_retrain.return_value = mock_model
@@ -109,7 +109,7 @@ class TestFeatureAugmenter:
     def test_augment_features(self, augmenter: Any, sample_features: List[Any]) -> None:
         """Test feature augmentation."""
         feature_importance = {col: np.random.rand() for col in sample_features.columns}
-        augmented = augmenter.augment_features(sample_features, feature_importance, top_k=3)
+        augmented = augmenter.augment_features(sample_features, feature_importance, top_k = 3)
         assert len(augmented.columns) > len(sample_features.columns)
         for col in sample_features.columns:
             assert col in augmented.columns
@@ -123,7 +123,7 @@ class TestFeatureAugmenter:
         feature_importance = {col: np.random.rand() for col in sample_features.columns}
         augmented = augmenter.augment_features(sample_features, feature_importance)
         y = pd.Series(np.random.randint(0, 2, len(augmented)))
-        selected = augmenter.select_augmented_features(augmented, y, len(sample_features.columns), selection_ratio=0.5)
+        selected = augmenter.select_augmented_features(augmented, y, len(sample_features.columns), selection_ratio = 0.5)
         assert isinstance(selected, list)
         for col in sample_features.columns:
             assert col in selected
@@ -143,7 +143,7 @@ class TestModelOptimizer:
     def test_optimize_random_forest(self, optimizer: Any) -> None:
         """Test Random Forest optimization."""
         from sklearn.ensemble import RandomForestClassifier
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model = RandomForestClassifier(n_estimators = 100, random_state = 42)
         X = np.random.randn(100, 10)
         y = np.random.randint(0, 2, 100)
         model.fit(X, y)
@@ -264,11 +264,11 @@ class TestAnalystEnhancementStep:
     async def test_execute_logic(self, step: Any, valid_pipeline_state: Any) -> None:
         """Test execution logic."""
         training_input = {}
-        with patch.object(step, '_enhance_regime_analyst', new_callable=AsyncMock) as mock_enhance:
+        with patch.object(step, '_enhance_regime_analyst', new_callable = AsyncMock) as mock_enhance:
             enhanced_data = {'regime_id': 0, 'best_model': 'lightgbm', 'enhanced_model': Mock(), 'enhancements': {'performance_metrics': {'val_accuracy': 0.8}}}
             report = {'regime_id': 'regime_0', 'enhanced_performance': {'val_accuracy': 0.8}, 'enhancement_impact': {'val_accuracy_absolute_gain': 0.05}}
             mock_enhance.return_value = ('regime_0', enhanced_data, report)
-            with patch.object(step, '_save_artifacts', new_callable=AsyncMock):
+            with patch.object(step, '_save_artifacts', new_callable = AsyncMock):
                 result = await step.execute_logic(training_input, valid_pipeline_state)
         assert 'enhanced_analysts' in result
         assert 'enhancement_reports' in result

@@ -1,6 +1,7 @@
 
-from .core.decorators import cached, log_execution_time
-from .core.domain import PerformanceLevel
+from src.core.domain import PerformanceLevel
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors, log_execution_time, cached
 
 # src/monitoring/performance_dashboard.py
 
@@ -15,13 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
     from datetime import datetime
-from .core.decorators.errors import handles_errors
 import logging
 import time
 
@@ -70,15 +69,53 @@ class PerformanceDashboard:
 
         # Export configuration
         self.export_dir = Path("dashboard_exports")
-        self.export_dir.mkdir(exist_ok=True)
+        self.export_dir.mkdir(exist_ok = True)
 
-    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @log_execution_time(level = PerformanceLevel.DETAILED)
     @log_execution_time()
     @cached()
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """Initialize performance dashboard."""
         self.logger.info("📊 Initializing Performance Dashboard...")
         self.is_active = True
         self.logger.info("✅ Performance Dashboard initialized successfully")
         return True
+
+
+# Global dashboard instance
+performance_dashboard: PerformanceDashboard | None = None
+
+
+async def setup_performance_dashboard(
+    config: dict[str, Any] | None = None
+) -> PerformanceDashboard | None:
+    """
+    Setup and initialize the performance dashboard.
+
+    Args:
+        config: Configuration dictionary for the dashboard
+
+    Returns:
+        PerformanceDashboard instance or None if setup fails
+    """
+    global performance_dashboard
+
+    try:
+        if performance_dashboard is None:
+            default_config = config or {}
+            performance_dashboard = PerformanceDashboard(default_config)
+            success = await performance_dashboard.initialize()
+            if success:
+                system_logger.info("✅ Performance dashboard setup completed successfully")
+                return performance_dashboard
+            else:
+                system_logger.error("❌ Performance dashboard initialization failed")
+                return None
+        else:
+            system_logger.info("📊 Performance dashboard already initialized")
+            return performance_dashboard
+
+    except Exception as e:
+        system_logger.exception(f"❌ Error setting up performance dashboard: {e}")
+        return None

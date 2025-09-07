@@ -80,10 +80,10 @@ async def example_enhanced_monitoring_with_hmm():
     print("\n📊 Recording trade decisions with HMM regime information...")
     
     # Simulate multiple days of trading
-    base_date = datetime.now() - timedelta(days=5)
+    base_date = datetime.now() - timedelta(days = 5)
     
     for day_offset in range(5):
-        current_date = base_date + timedelta(days=day_offset)
+        current_date = base_date + timedelta(days = day_offset)
         
         # Simulate 3-8 trades per day
         num_trades = np.random.randint(3, 9)
@@ -94,12 +94,12 @@ async def example_enhanced_monitoring_with_hmm():
             regime_name = regime_id.replace('_', ' ').title()
             
             hmm_regime_info = HMMRegimeInfo(
-                regime_id=regime_id,
-                regime_name=regime_name,
-                regime_probability=np.random.uniform(0.6, 0.95),
-                regime_transition_probability=np.random.uniform(0.1, 0.3),
-                regime_duration=np.random.randint(5, 50),
-                regime_stability_score=np.random.uniform(0.7, 0.95),
+                regime_id = regime_id,
+                regime_name = regime_name,
+                regime_probability = np.random.uniform(0.6, 0.95),
+                regime_transition_probability = np.random.uniform(0.1, 0.3),
+                regime_duration = np.random.randint(5, 50),
+                regime_stability_score = np.random.uniform(0.7, 0.95),
                 next_regime_probabilities={
                     "regime_bull": np.random.uniform(0.2, 0.4),
                     "regime_bear": np.random.uniform(0.2, 0.4),
@@ -110,13 +110,13 @@ async def example_enhanced_monitoring_with_hmm():
             # Create trade context with HMM regime
             context = TradeContext(
                 exchange="binance",
-                token=np.random.choice(["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT"]),
-                timestamp=current_date + timedelta(hours=trade_num * 2),
-                price=np.random.uniform(20000, 50000) if "BTC" in context.token else np.random.uniform(1000, 4000),
-                volume=np.random.uniform(0.01, 0.5),
+                token = np.random.choice(["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT"]),
+                timestamp = current_date + timedelta(hours = trade_num * 2),
+                price = np.random.uniform(20000, 50000) if "BTC" in context.token else np.random.uniform(1000, 4000),
+                volume = np.random.uniform(0.01, 0.5),
                 timeframe="1h",
-                regime=regime_id,
-                hmm_regime_info=hmm_regime_info,
+                regime = regime_id,
+                hmm_regime_info = hmm_regime_info,
                 market_conditions={
                     "volatility": np.random.uniform(0.1, 0.3),
                     "trend": np.random.choice(["upward", "downward", "sideways"]),
@@ -128,26 +128,26 @@ async def example_enhanced_monitoring_with_hmm():
             trading_indicators = [
                 TradingIndicator(
                     name="RSI",
-                    value=np.random.uniform(20, 80),
-                    weight=0.3,
-                    confidence=np.random.uniform(0.6, 0.9),
-                    risk_score=np.random.uniform(0.1, 0.4),
+                    value = np.random.uniform(20, 80),
+                    weight = 0.3,
+                    confidence = np.random.uniform(0.6, 0.9),
+                    risk_score = np.random.uniform(0.1, 0.4),
                     description="Relative Strength Index"
                 ),
                 TradingIndicator(
                     name="MACD",
-                    value=np.random.uniform(-100, 200),
-                    weight=0.4,
-                    confidence=np.random.uniform(0.7, 0.95),
-                    risk_score=np.random.uniform(0.1, 0.3),
+                    value = np.random.uniform(-100, 200),
+                    weight = 0.4,
+                    confidence = np.random.uniform(0.7, 0.95),
+                    risk_score = np.random.uniform(0.1, 0.3),
                     description="MACD Signal"
                 ),
                 TradingIndicator(
                     name="Bollinger Bands",
-                    value=np.random.uniform(0.1, 0.9),
-                    weight=0.3,
-                    confidence=np.random.uniform(0.6, 0.8),
-                    risk_score=np.random.uniform(0.2, 0.5),
+                    value = np.random.uniform(0.1, 0.9),
+                    weight = 0.3,
+                    confidence = np.random.uniform(0.6, 0.8),
+                    risk_score = np.random.uniform(0.2, 0.5),
                     description="Bollinger Band Position"
                 )
             ]
@@ -156,31 +156,31 @@ async def example_enhanced_monitoring_with_hmm():
             model_decisions = [
                 MLModelDecision(
                     model_id="hmm_model_1",
-                    model_type=ModelType.HMM,
-                    prediction=np.random.uniform(0.4, 0.9),
-                    confidence=np.random.uniform(0.7, 0.95),
-                    risk_score=np.random.uniform(0.1, 0.3),
+                    model_type = ModelType.HMM,
+                    prediction = np.random.uniform(0.4, 0.9),
+                    confidence = np.random.uniform(0.7, 0.95),
+                    risk_score = np.random.uniform(0.1, 0.3),
                     feature_importance={
                         "price_momentum": np.random.uniform(0.3, 0.5),
                         "volume_trend": np.random.uniform(0.2, 0.4),
                         "volatility": np.random.uniform(0.1, 0.3),
                         "regime_stability": np.random.uniform(0.1, 0.2)
                     },
-                    processing_time_ms=np.random.uniform(10, 30),
+                    processing_time_ms = np.random.uniform(10, 30),
                     model_version="v2.1"
                 ),
                 MLModelDecision(
                     model_id="analyst_model_1",
-                    model_type=ModelType.ANALYST,
-                    prediction=np.random.uniform(0.3, 0.8),
-                    confidence=np.random.uniform(0.6, 0.9),
-                    risk_score=np.random.uniform(0.2, 0.4),
+                    model_type = ModelType.ANALYST,
+                    prediction = np.random.uniform(0.3, 0.8),
+                    confidence = np.random.uniform(0.6, 0.9),
+                    risk_score = np.random.uniform(0.2, 0.4),
                     feature_importance={
                         "technical_indicators": np.random.uniform(0.4, 0.6),
                         "market_sentiment": np.random.uniform(0.2, 0.4),
                         "fundamental_analysis": np.random.uniform(0.1, 0.3)
                     },
-                    processing_time_ms=np.random.uniform(15, 40),
+                    processing_time_ms = np.random.uniform(15, 40),
                     model_version="v1.5"
                 )
             ]
@@ -188,34 +188,34 @@ async def example_enhanced_monitoring_with_hmm():
             # Create ensemble decision
             ensemble_decision = EnsembleDecision(
                 ensemble_id="main_ensemble",
-                final_prediction=np.random.uniform(0.4, 0.8),
-                final_confidence=np.random.uniform(0.7, 0.9),
-                final_risk_score=np.random.uniform(0.15, 0.35),
+                final_prediction = np.random.uniform(0.4, 0.8),
+                final_confidence = np.random.uniform(0.7, 0.9),
+                final_risk_score = np.random.uniform(0.15, 0.35),
                 model_weights={
                     "hmm_model_1": 0.6,
                     "analyst_model_1": 0.4
                 },
-                model_decisions=model_decisions,
+                model_decisions = model_decisions,
                 voting_mechanism="weighted_average",
-                consensus_score=np.random.uniform(0.7, 0.9),
-                disagreement_level=np.random.uniform(0.1, 0.3)
+                consensus_score = np.random.uniform(0.7, 0.9),
+                disagreement_level = np.random.uniform(0.1, 0.3)
             )
             
             # Create complete trade decision
             trade_decision = TradeDecision(
-                decision_id=f"trade_{day_offset}_{trade_num:03d}",
-                context=context,
-                trading_mode=TradingMode.PAPER,
-                timestamp=context.timestamp,
-                trading_indicators=trading_indicators,
-                overall_confidence=np.random.uniform(0.7, 0.9),
-                overall_risk_score=np.random.uniform(0.15, 0.35),
-                ensemble_decision=ensemble_decision,
-                action=np.random.choice(["buy", "sell", "hold"]),
-                position_size=np.random.uniform(0.01, 0.2),
-                stop_loss=context.price * np.random.uniform(0.95, 0.98) if np.random.choice([True, False]) else None,
-                take_profit=context.price * np.random.uniform(1.02, 1.05) if np.random.choice([True, False]) else None,
-                execution_time_ms=np.random.uniform(20, 60),
+                decision_id = f"trade_{day_offset}_{trade_num:03d}",
+                context = context,
+                trading_mode = TradingMode.PAPER,
+                timestamp = context.timestamp,
+                trading_indicators = trading_indicators,
+                overall_confidence = np.random.uniform(0.7, 0.9),
+                overall_risk_score = np.random.uniform(0.15, 0.35),
+                ensemble_decision = ensemble_decision,
+                action = np.random.choice(["buy", "sell", "hold"]),
+                position_size = np.random.uniform(0.01, 0.2),
+                stop_loss = context.price * np.random.uniform(0.95, 0.98) if np.random.choice([True, False]) else None,
+                take_profit = context.price * np.random.uniform(1.02, 1.05) if np.random.choice([True, False]) else None,
+                execution_time_ms = np.random.uniform(20, 60),
                 success_metrics={
                     "profit_loss": np.random.uniform(-100, 200),
                     "execution_price": context.price * np.random.uniform(0.999, 1.001),
@@ -232,7 +232,7 @@ async def example_enhanced_monitoring_with_hmm():
     # Example 2: Get daily summary for a specific date
     print("\n📈 Getting daily summary...")
     
-    summary_date = date.today() - timedelta(days=1)
+    summary_date = date.today() - timedelta(days = 1)
     daily_summary = await orchestrator.daily_summary_tracker.get_daily_summary(summary_date)
     
     if daily_summary:

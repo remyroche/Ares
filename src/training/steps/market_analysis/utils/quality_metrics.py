@@ -1,5 +1,7 @@
 """Quality Metrics Calculation Module for Step 7 Enhanced Matrix Operations.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides comprehensive quality metrics calculation and reporting
 for feature matrices and matrix operations results.
 """
@@ -25,6 +27,7 @@ except ImportError:
 
 class QualityMetricsCalculator:
     """Quality metrics calculation for feature matrices."""
+    @log_important_calls
     
     def __init__(self, logger):
         self.logger = logger
@@ -45,7 +48,7 @@ class QualityMetricsCalculator:
                 'missing_cells': numeric_df.isnull().sum().sum(),
                 'missing_ratio': float(numeric_df.isnull().sum().sum() / numeric_df.size),
                 'complete_rows': int(numeric_df.dropna().shape[0]),
-                'complete_columns': int(numeric_df.dropna(axis=1).shape[1])
+                'complete_columns': int(numeric_df.dropna(axis = 1).shape[1])
             }
             
             # Variance metrics
@@ -102,8 +105,8 @@ class QualityMetricsCalculator:
             
             # Memory metrics
             quality_metrics['memory'] = {
-                'memory_usage_mb': float(numeric_df.memory_usage(deep=True).sum() / 1024 / 1024),
-                'memory_per_feature_kb': float(numeric_df.memory_usage(deep=True).sum() / len(numeric_df.columns) / 1024),
+                'memory_usage_mb': float(numeric_df.memory_usage(deep = True).sum() / 1024 / 1024),
+                'memory_per_feature_kb': float(numeric_df.memory_usage(deep = True).sum() / len(numeric_df.columns) / 1024),
                 'data_types': numeric_df.dtypes.value_counts().to_dict()
             }
             
@@ -116,6 +119,7 @@ class QualityMetricsCalculator:
         except Exception as e:
             self.logger.error(f'❌ Error calculating quality metrics: {str(e)}')
             return {'error': str(e)}
+    @log_all_calls
     
     def _calculate_outlier_metrics(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate outlier metrics for features."""
@@ -145,6 +149,7 @@ class QualityMetricsCalculator:
             outlier_metrics = {'error': str(e)}
         
         return outlier_metrics
+    @log_all_calls
     
     def _calculate_overall_quality_score(self, quality_metrics: Dict[str, Any]) -> float:
         """Calculate overall quality score from individual metrics."""
@@ -201,6 +206,7 @@ class QualityMetricsCalculator:
         except Exception as e:
             self.logger.error(f'Error calculating overall quality score: {str(e)}')
             return 0.0
+    @log_all_calls
     
     def _generate_report_header(self, overall_score: float) -> List[str]:
         """Generate report header and overall score section."""
@@ -224,6 +230,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_completeness_analysis(self, completeness: Dict[str, Any]) -> List[str]:
         """Generate completeness analysis section."""
@@ -243,6 +250,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_variance_analysis(self, variance: Dict[str, Any]) -> List[str]:
         """Generate variance analysis section."""
@@ -263,6 +271,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_correlation_analysis(self, correlation: Dict[str, Any]) -> List[str]:
         """Generate correlation analysis section."""
@@ -283,6 +292,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_stability_analysis(self, stability: Dict[str, Any]) -> List[str]:
         """Generate numerical stability analysis section."""
@@ -300,6 +310,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_dimensionality_analysis(self, dimensionality: Dict[str, Any]) -> List[str]:
         """Generate dimensionality analysis section."""
@@ -318,6 +329,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_distribution_analysis(self, distribution: Dict[str, Any]) -> List[str]:
         """Generate distribution analysis section."""
@@ -338,6 +350,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_outlier_analysis(self, outliers: Dict[str, Any]) -> List[str]:
         """Generate outlier analysis section."""
@@ -357,6 +370,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_memory_analysis(self, memory: Dict[str, Any]) -> List[str]:
         """Generate memory usage analysis section."""
@@ -374,6 +388,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_sr_analysis(self, matrix_results: Dict[str, Any]) -> List[str]:
         """Generate SR-specific analysis section."""
@@ -408,6 +423,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_recommendations(self, quality_metrics: Dict[str, Any], matrix_results: Dict[str, Any] = None) -> List[str]:
         """Generate actionable recommendations section."""
@@ -455,6 +471,7 @@ class QualityMetricsCalculator:
         
         report.append('')
         return report
+    @log_all_calls
     
     def _generate_summary(self, overall_score: float, matrix_results: Dict[str, Any] = None) -> List[str]:
         """Generate summary section."""
@@ -525,3 +542,10 @@ class QualityMetricsCalculator:
 
 
 __all__ = ['QualityMetricsCalculator']
+
+"""
+Quality Metrics Calculation Module for Step 7 Enhanced Matrix Operations.
+
+This module provides comprehensive quality metrics calculation and reporting
+for feature matrices and matrix operations results.
+"""

@@ -1,5 +1,7 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+from ...utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 'Context-Aware S/R Calculator Module.\n\nThis module adjusts S/R parameters and calculations based on market context,\nincluding time of day, volatility regime, news events, and correlations.\n'
 from datetime import datetime, time
@@ -7,8 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 import json
 import os
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
+, traced
+from ...utils.logger import system_logger
 from .tactician.sr_modules.sr_probability_calculator import SRProbabilityCalculator
 from .tactician.sr_strength_optimizer import SRLevelIdentifier
 import logging
@@ -51,7 +53,7 @@ class MarketContextAnalyzer:
         self.market_hours = {'asian': (time(0, 0), time(9, 0)), 'european': (time(7, 0), time(16, 0)), 'us': (time(13, 30), time(21, 0))}
         self.volatility_thresholds = {'low': 0.005, 'normal': 0.015, 'high': 0.025}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='analyze market context')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='analyze market context')
     async def analyze_context(self, market_data: pd.DataFrame, correlation_data: Optional[Dict[str, pd.DataFrame]]=None, news_data: Optional[List[Dict[str, Any]]]=None) -> MarketContext:
         """Analyze current market context."""
         current_time = datetime.now()
@@ -64,7 +66,7 @@ class MarketContextAnalyzer:
         if correlation_data:
             correlation_state = self._analyze_correlations(market_data, correlation_data)
         news_impact, economic_calendar = self._analyze_news_impact(news_data)
-        return MarketContext(timestamp=current_time, is_market_hours=is_market_hours, session_type=session_type, volatility_regime=volatility_regime, current_volatility=current_volatility, volume_profile=volume_profile, trend_strength=trend_strength, correlation_state=correlation_state, news_impact=news_impact, economic_calendar=economic_calendar)
+        return MarketContext(timestamp = current_time, is_market_hours = is_market_hours, session_type = session_type, volatility_regime = volatility_regime, current_volatility = current_volatility, volume_profile = volume_profile, trend_strength = trend_strength, correlation_state = correlation_state, news_impact = news_impact, economic_calendar = economic_calendar)
 
     def _determine_session(self, current_time: datetime) -> str:
         """Determine current trading session."""
@@ -101,7 +103,7 @@ class MarketContextAnalyzer:
         high_low = data['high'] - data['low']
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
-        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        true_range = pd.concat([high_low, high_close, low_close], axis = 1).max(axis = 1)
         return true_range.rolling(period).mean()
 
     def _analyze_volume_profile(self, market_data: pd.DataFrame) -> str:
@@ -192,7 +194,7 @@ class ContextAwareSRCalculator:
         """Initialize context-based adjustment rules."""
         return {'volatility_adjustments': {'low': {'proximity_threshold_multiplier': 0.8, 'min_touches_adjustment': 1, 'bounce_requirement_multiplier': 0.8}, 'high': {'proximity_threshold_multiplier': 1.5, 'volatility_weight_multiplier': 1.5, 'min_touches_adjustment': -1}, 'extreme': {'proximity_threshold_multiplier': 2.0, 'volatility_weight_multiplier': 2.0, 'age_decay_acceleration': 1.5}}, 'session_adjustments': {'asian': {'volume_weight_multiplier': 0.8, 'momentum_weight_multiplier': 0.9}, 'us': {'volume_weight_multiplier': 1.2, 'momentum_weight_multiplier': 1.1}, 'overlap': {'strength_multiplier': 1.2, 'volume_weight_multiplier': 1.3}}, 'news_adjustments': {'high': {'volatility_weight_multiplier': 1.5, 'age_decay_acceleration': 1.3, 'proximity_threshold_multiplier': 1.3}, 'medium': {'volatility_weight_multiplier': 1.2, 'volume_weight_multiplier': 1.1}}, 'trend_adjustments': {'strong_trend': {'momentum_weight_multiplier': 1.3, 'bounce_requirement_multiplier': 1.2}, 'no_trend': {'proximity_threshold_multiplier': 0.9, 'min_touches_adjustment': 1}}}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='calculate context-aware SR')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='calculate context-aware SR')
     @traced(span_name='ContextSR.calculate')
     async def calculate_context_aware_sr(self, market_data: pd.DataFrame, correlation_data: Optional[Dict[str, pd.DataFrame]]=None, news_data: Optional[List[Dict[str, Any]]]=None) -> Dict[str, Any]:
         """
@@ -332,6 +334,6 @@ class ContextAwareSRCalculator:
             history.append(entry)
             history = history[-1000:]
             with open(history_file, 'w') as f:
-                json.dump(history, f, indent=2)
+                json.dump(history, f, indent = 2)
         except Exception as e:
             self.logger.error(f'Error saving context history: {e}')

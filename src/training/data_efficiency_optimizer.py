@@ -24,7 +24,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 from .core.decorators import handles_errors
-from .database.sqlite_manager import SQLiteManager
+from ..database.sqlite_manager import SQLiteManager
 import pickle
 import ast
 import numpy as np

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
 """Comprehensive Optimisation Pipeline Validator.
 
 This module provides comprehensive validation for the optimisation pipeline including:
@@ -16,7 +17,7 @@ from .utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists, 
 )
 from .utils.data_quality_framework import DataQualityFramework
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.base_validator import BaseValidator
 
 import pickle
@@ -400,7 +401,7 @@ class OptimisationPipelineValidator(BaseValidator):
                 validation_tasks.append(self.validate_output_quality(symbol, exchange, expected_outputs))
             
             # Execute all validations
-            validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
+            validation_results = await asyncio.gather(*validation_tasks, return_exceptions = True)
             
             # Process results
             validation_names = [

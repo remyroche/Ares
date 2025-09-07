@@ -55,7 +55,7 @@ class AnalystExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, analyst_model, features, feature_names)
             feature_importance = self._extract_feature_importance(analyst_model)
             confidence = self._calculate_regime_confidence(analyst_model, features, regime_prediction)
-            explanation = ExplanationResult(model_name='Analyst_RegimeClassification', prediction=regime_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'regime_classifier', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_classification'})
+            explanation = ExplanationResult(model_name='Analyst_RegimeClassification', prediction = regime_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'regime_classifier', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_classification'})
             self.save_explanation(explanation)
             self.logger.info('✅ Analyst regime classification explained successfully')
             return explanation
@@ -84,7 +84,7 @@ class AnalystExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, analyst_model, features, feature_names)
             feature_importance = self._extract_feature_importance(analyst_model)
             confidence = self._calculate_location_confidence(analyst_model, features, location_prediction)
-            explanation = ExplanationResult(model_name='Analyst_LocationClassification', prediction=location_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'location_classifier', 'feature_groups': self.feature_groups, 'location_types': self.location_types, 'explanation_type': 'location_classification'})
+            explanation = ExplanationResult(model_name='Analyst_LocationClassification', prediction = location_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'location_classifier', 'feature_groups': self.feature_groups, 'location_types': self.location_types, 'explanation_type': 'location_classification'})
             self.save_explanation(explanation)
             self.logger.info('✅ Analyst location classification explained successfully')
             return explanation
@@ -115,7 +115,7 @@ class AnalystExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, analyst_model, features, feature_names)
             feature_importance = self._extract_ensemble_feature_importance(analyst_model)
             confidence = self._calculate_ensemble_confidence(ensemble_prediction, shap_values)
-            explanation = ExplanationResult(model_name='Analyst_EnsemblePrediction', prediction=ensemble_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'ensemble_prediction', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'location_types': self.location_types, 'explanation_type': 'ensemble_prediction'})
+            explanation = ExplanationResult(model_name='Analyst_EnsemblePrediction', prediction = ensemble_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'ensemble_prediction', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'location_types': self.location_types, 'explanation_type': 'ensemble_prediction'})
             self.save_explanation(explanation)
             self.logger.info('✅ Analyst ensemble prediction explained successfully')
             return explanation
@@ -146,7 +146,7 @@ class AnalystExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, analyst_model, features, feature_names)
             feature_importance = self._extract_feature_importance(analyst_model)
             confidence = self._calculate_confidence_confidence(confidence_prediction, shap_values)
-            explanation = ExplanationResult(model_name='Analyst_ConfidencePrediction', prediction=confidence_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'confidence_prediction', 'feature_groups': self.feature_groups, 'explanation_type': 'confidence_prediction'})
+            explanation = ExplanationResult(model_name='Analyst_ConfidencePrediction', prediction = confidence_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'confidence_prediction', 'feature_groups': self.feature_groups, 'explanation_type': 'confidence_prediction'})
             self.save_explanation(explanation)
             self.logger.info('✅ Analyst confidence prediction explained successfully')
             return explanation
@@ -154,7 +154,7 @@ class AnalystExplainer(BaseExplainer):
             self.logger.error(f'❌ Failed to explain Analyst confidence prediction: {e}')
             return None
 
-    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a general Analyst model prediction."""
         try:
             self.logger.info('🔍 Explaining Analyst prediction...')
@@ -204,7 +204,7 @@ class AnalystExplainer(BaseExplainer):
         else:
             return 'generic'
 
-    async def _explain_generic_analyst_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def _explain_generic_analyst_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a generic Analyst model."""
         try:
             if prediction is None:
@@ -220,7 +220,7 @@ class AnalystExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, model, features, feature_names)
             feature_importance = self._extract_feature_importance(model)
             confidence = self._calculate_prediction_confidence(prediction, shap_values)
-            explanation = ExplanationResult(model_name='Analyst_Generic', prediction=prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'location_types': self.location_types, 'explanation_type': 'generic_prediction'})
+            explanation = ExplanationResult(model_name='Analyst_Generic', prediction = prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'location_types': self.location_types, 'explanation_type': 'generic_prediction'})
             self.save_explanation(explanation)
             return explanation
         except Exception as e:
@@ -406,21 +406,21 @@ class AnalystExplainer(BaseExplainer):
                         if shap_values is not None:
                             summary_parts.append(f'\nTop Factors for {component}:')
                             feature_importance = list(zip(explanation.feature_names, shap_values))
-                            feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                            feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                             for i, (feature, importance) in enumerate(feature_importance[:3]):
                                 direction = 'increases' if importance > 0 else 'decreases'
                                 summary_parts.append(f'  {i + 1}. {feature}: {direction} by {abs(importance):.3f}')
                 else:
                     summary_parts.append('\nTop Contributing Factors:')
                     feature_importance = list(zip(explanation.feature_names, explanation.shap_values))
-                    feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                    feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                     for i, (feature, importance) in enumerate(feature_importance[:5]):
                         direction = 'increases' if importance > 0 else 'decreases'
                         summary_parts.append(f'  {i + 1}. {feature}: {direction} prediction by {abs(importance):.3f}')
             group_importance = self.get_feature_group_importance(explanation)
             if group_importance:
                 summary_parts.append('\nFeature Group Importance:')
-                for group, importance in sorted(group_importance.items(), key=lambda x: x[1], reverse=True):
+                for group, importance in sorted(group_importance.items(), key = lambda x: x[1], reverse = True):
                     summary_parts.append(f'  {group}: {importance:.3f}')
             return '\n'.join(summary_parts)
         except Exception as e:

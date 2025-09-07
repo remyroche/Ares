@@ -138,7 +138,7 @@ class TestMultiOutputAnalystBuilder:
         output_models = {'output1': {'best_score': 0.8}, 'output2': {'best_score': 0.7}, 'output3': {'best_score': 0.9}}
         metrics = builder._calculate_aggregated_metrics(output_models)
         assert 'avg_validation_score' in metrics
-        assert metrics['avg_validation_score'] == pytest.approx(0.8, rel=0.001)
+        assert metrics['avg_validation_score'] == pytest.approx(0.8, rel = 0.001)
         assert metrics['min_validation_score'] == 0.7
         assert metrics['max_validation_score'] == 0.9
         assert len(metrics['output_scores']) == 3
@@ -159,8 +159,8 @@ class TestAnalystCreationStep:
         n_samples = 200
         n_features = 10
         n_regimes = 3
-        dates = pd.date_range(start='2024-01-01', periods=n_samples, freq='5min')
-        regime_features = pd.DataFrame(np.random.randn(n_samples, n_features), columns=[f'feature_{i}' for i in range(n_features)], index=dates)
+        dates = pd.date_range(start='2024-01-01', periods = n_samples, freq='5min')
+        regime_features = pd.DataFrame(np.random.randn(n_samples, n_features), columns=[f'feature_{i}' for i in range(n_features)], index = dates)
         regime_labels = pd.Series(np.repeat(np.arange(n_regimes), n_samples // n_regimes + 1)[:n_samples])
         np.random.shuffle(regime_labels.values)
         return {'regime_features': regime_features, 'regime_labels': regime_labels, 'num_regimes': n_regimes}
@@ -227,7 +227,7 @@ class TestAnalystCreationStep:
     async def test_execute_logic(self, step: Any, valid_pipeline_state: Any) -> None:
         """Test execution logic."""
         training_input = {}
-        with patch.object(step, '_save_artifacts', new_callable=AsyncMock):
+        with patch.object(step, '_save_artifacts', new_callable = AsyncMock):
             result = await step.execute_logic(training_input, valid_pipeline_state)
         assert 'regime_analysts' in result
         assert 'analyst_metadata' in result
@@ -242,7 +242,7 @@ class TestAnalystCreationStep:
         """Test execution logic with multi-output."""
         step.use_multi_output = True
         training_input = {}
-        with patch.object(step, '_save_artifacts', new_callable=AsyncMock):
+        with patch.object(step, '_save_artifacts', new_callable = AsyncMock):
             result = await step.execute_logic(training_input, valid_multi_output_state)
         assert 'regime_analysts' in result
         for regime_key, analyst_data in result['regime_analysts'].items():
@@ -254,7 +254,7 @@ class TestAnalystCreationStep:
         analyst_performance = {'regime_0': {'validation_score': 0.85}, 'regime_1': {'validation_score': 0.8}, 'regime_2': {'validation_score': 0.9}}
         metrics = step._calculate_overall_metrics(analyst_performance)
         assert 'mean_score' in metrics
-        assert metrics['mean_score'] == pytest.approx(0.85, rel=0.001)
+        assert metrics['mean_score'] == pytest.approx(0.85, rel = 0.001)
         assert metrics['std_score'] > 0
         assert metrics['min_score'] == 0.8
         assert metrics['max_score'] == 0.9

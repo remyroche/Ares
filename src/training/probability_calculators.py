@@ -5,6 +5,7 @@ import numpy as np
 import os
 import pandas as pd
 import typing
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,12 @@ class BaseProbabilityCalculator:
         """Calculate confidence from prediction probabilities."""
         if y_pred_proba.ndim == 1:
             return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
-        return np.mean(np.max(y_pred_proba, axis=1))
+        return np.mean(np.max(y_pred_proba, axis = 1))
 
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for classification models."""
 
-    def calculate_triple_barrier_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, profit_target: float=0.02, stop_loss: float=0.01, volatility_window: int=20) -> float:
+    def calculate_triple_barrier_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, profit_target: float = 0.02, stop_loss: float = 0.01, volatility_window: int = 20) -> float:
         """
         Calculate probability of reaching profit target without hitting stop-loss.
 
@@ -50,7 +51,7 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=volatility_window).std().mean()
+                volatility = returns.rolling(window = volatility_window).std().mean()
             else:
                 volatility = 0.02
             volatility_factor = max(0.1, 1 - volatility * 10)
@@ -86,7 +87,7 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             self.logger.exception(f'Error calculating direction probability: {e}')
             return 0.5
 
-    def calculate_magnitude_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, threshold_factor: float=0.8) -> float:
+    def calculate_magnitude_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, threshold_factor: float = 0.8) -> float:
         """
         Calculate probability of price moving by expected magnitude.
 
@@ -114,7 +115,7 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             self.logger.exception(f'Error calculating magnitude probability: {e}')
             return 0.5
 
-    def calculate_barrier_avoidance_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, adverse_threshold: float=0.01) -> float:
+    def calculate_barrier_avoidance_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, adverse_threshold: float = 0.01) -> float:
         """
         Calculate probability of avoiding adverse price movements.
 
@@ -148,7 +149,7 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
 class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
 
-    def calculate_triple_barrier_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, profit_target: float=0.02, stop_loss: float=0.01) -> float:
+    def calculate_triple_barrier_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, profit_target: float = 0.02, stop_loss: float = 0.01) -> float:
         """
         Calculate probability of reaching profit target without hitting stop-loss.
 
@@ -208,7 +209,7 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             self.logger.exception(f'Error calculating direction probability: {e}')
             return 0.5
 
-    def calculate_magnitude_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, threshold_factor: float=0.8) -> float:
+    def calculate_magnitude_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, threshold_factor: float = 0.8) -> float:
         """
         Calculate probability of price moving by expected magnitude.
 
@@ -237,7 +238,7 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             self.logger.exception(f'Error calculating magnitude probability: {e}')
             return 0.5
 
-    def calculate_barrier_avoidance_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, adverse_threshold: float=0.01) -> float:
+    def calculate_barrier_avoidance_probability(self, model: Any, X_test: np.ndarray, market_data: pd.DataFrame, adverse_threshold: float = 0.01) -> float:
         """
         Calculate probability of avoiding adverse price movements.
 

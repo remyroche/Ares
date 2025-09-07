@@ -1,11 +1,11 @@
 from typing import Any
 import optuna
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import datetime
 import logging
 import pandas as pd
+from .core.decorators import handles_errors
 
 class MarketRegime:
     """Represents a market regime with specific characteristics."""
@@ -35,23 +35,23 @@ class AdaptiveOptimizer:
         """Initialize predefined regime templates."""
         self.regime_templates = {'bull': MarketRegime('bull', 0.015, 0.8, 'trending', {'tp_multiplier': 3.0, 'sl_multiplier': 1.5, 'position_size': 0.15}), 'bear': MarketRegime('bear', 0.02, 0.7, 'trending', {'tp_multiplier': 2.5, 'sl_multiplier': 1.2, 'position_size': 0.12}), 'sideways': MarketRegime('sideways', 0.01, 0.2, 'ranging', {'tp_multiplier': 1.8, 'sl_multiplier': 1.0, 'position_size': 0.08}), 'sr': MarketRegime('sr', 0.012, 0.3, 'support_resistance', {'tp_multiplier': 2.2, 'sl_multiplier': 1.1, 'position_size': 0.1}), 'candle': MarketRegime('candle', 0.008, 0.1, 'pattern_based', {'tp_multiplier': 1.5, 'sl_multiplier': 0.8, 'position_size': 0.06})}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def detect_market_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Detect current market regime using multiple indicators."""
         features = self._calculate_regime_features(market_data)
         regime_type = self._classify_regime(features)
         optimal_params = self._get_regime_optimal_params(regime_type, features)
-        regime = MarketRegime(name=regime_type, volatility=features['volatility'], trend_strength=features['trend_strength'], regime_type=regime_type, optimal_params=optimal_params)
+        regime = MarketRegime(name = regime_type, volatility = features['volatility'], trend_strength = features['trend_strength'], regime_type = regime_type, optimal_params = optimal_params)
         regime.confidence = self._calculate_regime_confidence(features, regime_type)
         return regime
 
     def _calculate_regime_features(self, market_data: pd.DataFrame) -> dict[str, float]:
         """Calculate features for regime detection."""
         returns = market_data['close'].pct_change().dropna()
-        volatility = returns.rolling(window=20).std().iloc[-1]
+        volatility = returns.rolling(window = 20).std().iloc[-1]
         high_low_diff = market_data['high'] - market_data['low']
         close_change = market_data['close'].diff()
-        trend_strength = abs(close_change).rolling(window=14).mean().iloc[-1] / high_low_diff.rolling(window=14).mean().iloc[-1]
+        trend_strength = abs(close_change).rolling(window = 14).mean().iloc[-1] / high_low_diff.rolling(window = 14).mean().iloc[-1]
         momentum_short = market_data['close'].pct_change(5).iloc[-1]
         momentum_long = market_data['close'].pct_change(20).iloc[-1]
         return {'volatility': volatility, 'trend_strength': trend_strength, 'momentum_short': momentum_short, 'momentum_long': momentum_long}
@@ -106,7 +106,7 @@ class AdaptiveOptimizer:
                 confidence += 0.2
         return min(1.0, confidence)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def optimize_for_regime(self, regime: MarketRegime, market_data: pd.DataFrame) -> dict[str, Any]:
         """Optimize hyperparameters for specific market regime."""
         optimizer = RegimeSpecificOptimizer(regime, self.config)
@@ -156,7 +156,7 @@ class RegimeSpecificOptimizer:
 
         def objective(trial: Any) -> None:
             return self._regime_objective(trial, market_data)
-        study.optimize(objective, n_trials=50, show_progress_bar=False)
+        study.optimize(objective, n_trials = 50, show_progress_bar = False)
         return {'best_params': study.best_params, 'best_score': study.best_value, 'regime_confidence': self.regime.confidence}
 
     def _regime_objective(self, trial: optuna.trial.Trial, market_data: pd.DataFrame) -> float:
@@ -173,7 +173,7 @@ class RegimeSpecificOptimizer:
         params['tp_multiplier'] = trial.suggest_float('tp_multiplier', tp_range[0], tp_range[1])
         params['sl_multiplier'] = trial.suggest_float('sl_multiplier', sl_range[0], sl_range[1])
         params['position_size'] = trial.suggest_float('position_size', pos_range[0], pos_range[1])
-        params['learning_rate'] = trial.suggest_float('learning_rate', 0.0001, 0.1, log=True)
+        params['learning_rate'] = trial.suggest_float('learning_rate', 0.0001, 0.1, log = True)
         params['max_depth'] = trial.suggest_int('max_depth', 3, 12)
         return params
 

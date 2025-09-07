@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
 """Integrated Data Quality Pipeline.
 
 This script demonstrates the comprehensive data quality management system that:
@@ -11,7 +13,9 @@ This script demonstrates the comprehensive data quality management system that:
 
 import asyncio
 import sys
+import gc
 from pathlib import Path
+from typing import Dict, Any, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -21,9 +25,10 @@ from src.utils.trading_decorators import (
     comprehensive_data_validation,
     handle_errors,
     quality_gate,
-    with_tracing_span
+    with_tracing_span,
+    traced
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("IntegratedDataQualityPipeline")
 
@@ -32,7 +37,7 @@ class IntegratedDataQualityPipeline:
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok=True)
+        self.data_cache_path.mkdir(exist_ok = True)
         
         # Initialize components
         self.enhanced_quality_manager = None
@@ -42,6 +47,7 @@ class IntegratedDataQualityPipeline:
         """Initialize all pipeline components."""
         try:
             from .step01.enhanced_data_quality_manager import EnhancedDataQualityManager
+            import logging
             self.enhanced_quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized")
         except ImportError as e:
@@ -193,12 +199,12 @@ class IntegratedDataQualityPipeline:
 
         try:
             return await self.enhanced_quality_manager.comprehensive_quality_check(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                check_gaps=True,
-                fill_gaps=True,
-                validate_format=True
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                check_gaps = True,
+                fill_gaps = True,
+                validate_format = True
             )
         except Exception as e:
             logger.exception(f"❌ Error in initial quality check: {e}")
@@ -210,11 +216,11 @@ class IntegratedDataQualityPipeline:
         try:
             
             success = await run_step1(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=str(self.data_cache_path),
-                force_rerun=force_rerun
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                data_dir = str(self.data_cache_path),
+                force_rerun = force_rerun
             )
             
             return {
@@ -235,11 +241,11 @@ class IntegratedDataQualityPipeline:
             from .step01_5_data_converter import run_step as run_step1_5
             
             success = await run_step1_5(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=str(self.data_cache_path),
-                force_rerun=force_rerun
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                data_dir = str(self.data_cache_path),
+                force_rerun = force_rerun
             )
             
             return {
@@ -260,11 +266,11 @@ class IntegratedDataQualityPipeline:
             from .step03_hmm_clustering import run_step as run_step3
             
             success = await run_step3(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=str(self.data_cache_path),
-                force_rerun=force_rerun
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                data_dir = str(self.data_cache_path),
+                force_rerun = force_rerun
             )
             
             return {
@@ -285,9 +291,9 @@ class IntegratedDataQualityPipeline:
             # First ensure data quality for step04
             if self.enhanced_quality_manager:
                 data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe
                 )
                 
                 if not data_ready.get("success", False):
@@ -318,12 +324,12 @@ class IntegratedDataQualityPipeline:
 
         try:
             return await self.enhanced_quality_manager.comprehensive_quality_check(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                check_gaps=True,
-                fill_gaps=False,  # Don't fill gaps in final check
-                validate_format=True
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                check_gaps = True,
+                fill_gaps = False,  # Don't fill gaps in final check
+                validate_format = True
             )
         except Exception as e:
             logger.exception(f"❌ Error in final quality check: {e}")
@@ -385,7 +391,7 @@ class IntegratedDataQualityPipeline:
         report.append("=" * 80)
         return "\n".join(report)
 
-@handles_errors(fallback=False)
+@handles_errors(fallback = False)
 async def run_integrated_pipeline(
     symbol: str,
     exchange: str,
@@ -413,14 +419,14 @@ async def run_integrated_pipeline(
         pipeline = IntegratedDataQualityPipeline(data_cache_path)
         
         results = await pipeline.run_comprehensive_quality_pipeline(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            run_step1=run_all_steps,
-            run_step1_5=run_all_steps,
-            run_step3=run_all_steps,
-            run_step4=run_all_steps,
-            force_rerun=force_rerun
+            symbol = symbol,
+            exchange = exchange,
+            timeframe = timeframe,
+            run_step1 = run_all_steps,
+            run_step1_5 = run_all_steps,
+            run_step3 = run_all_steps,
+            run_step4 = run_all_steps,
+            force_rerun = force_rerun
         )
         
         # Generate and log report
@@ -451,12 +457,12 @@ if __name__ == "__main__":
             return
 
         success = await run_integrated_pipeline(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            data_cache_path=data_cache_path,
-            run_all_steps=True,
-            force_rerun=force_rerun
+            symbol = symbol,
+            exchange = exchange,
+            timeframe = timeframe,
+            data_cache_path = data_cache_path,
+            run_all_steps = True,
+            force_rerun = force_rerun
         )
 
         if success:
@@ -478,8 +484,7 @@ if __name__ == "__main__":
     finally:
         # Final cleanup
         import gc
-        from .core.decorators.errors import handles_errors
-from typing import Any
+        from typing import Any
 from typing import Dict
 
 gc.collect()

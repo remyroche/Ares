@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 Quality Alert System for Data Quality Monitoring
 
 This module provides an alert system that can send notifications when data quality
@@ -18,7 +19,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 from .utils.advanced_ml_validation import Alert, AlertConfig, MLValidationResult
-from .utils.logger import system_logger
+from .logger import system_logger
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -43,25 +44,25 @@ class QualityAlertManager:
             score = validation_result.quality_score.overall
             grade = validation_result.quality_score.grade
             if score < 0.6:
-                alerts.append(Alert(level='CRITICAL', message=f'Critical data quality issue: Quality score {score:.3f} (Grade {grade})', timestamp=datetime.now(), action_required=True, details={'quality_score': score, 'grade': grade}))
+                alerts.append(Alert(level='CRITICAL', message = f'Critical data quality issue: Quality score {score:.3f} (Grade {grade})', timestamp = datetime.now(), action_required = True, details={'quality_score': score, 'grade': grade}))
             elif score < 0.8:
-                alerts.append(Alert(level='WARNING', message=f'Data quality warning: Quality score {score:.3f} (Grade {grade})', timestamp=datetime.now(), action_required=False, details={'quality_score': score, 'grade': grade}))
+                alerts.append(Alert(level='WARNING', message = f'Data quality warning: Quality score {score:.3f} (Grade {grade})', timestamp = datetime.now(), action_required = False, details={'quality_score': score, 'grade': grade}))
         if validation_result.drift_report:
             drift_issues = validation_result.drift_report.issues
             if len(drift_issues) > 0:
-                alerts.append(Alert(level='ERROR', message=f'Data drift detected: {len(drift_issues)} drift issues found', timestamp=datetime.now(), action_required=True, details={'drift_issues': drift_issues}))
+                alerts.append(Alert(level='ERROR', message = f'Data drift detected: {len(drift_issues)} drift issues found', timestamp = datetime.now(), action_required = True, details={'drift_issues': drift_issues}))
         if validation_result.correlation_issues:
-            alerts.append(Alert(level='WARNING', message=f'Feature correlation issues: {len(validation_result.correlation_issues)} issues found', timestamp=datetime.now(), action_required=False, details={'correlation_issues': validation_result.correlation_issues[:5]}))
+            alerts.append(Alert(level='WARNING', message = f'Feature correlation issues: {len(validation_result.correlation_issues)} issues found', timestamp = datetime.now(), action_required = False, details={'correlation_issues': validation_result.correlation_issues[:5]}))
         if validation_result.target_issues:
-            alerts.append(Alert(level='ERROR', message=f'Target variable issues: {len(validation_result.target_issues)} issues found', timestamp=datetime.now(), action_required=True, details={'target_issues': validation_result.target_issues[:5]}))
+            alerts.append(Alert(level='ERROR', message = f'Target variable issues: {len(validation_result.target_issues)} issues found', timestamp = datetime.now(), action_required = True, details={'target_issues': validation_result.target_issues[:5]}))
         if validation_result.distribution_issues:
-            alerts.append(Alert(level='WARNING', message=f'Distribution issues: {len(validation_result.distribution_issues)} issues found', timestamp=datetime.now(), action_required=False, details={'distribution_issues': validation_result.distribution_issues[:5]}))
+            alerts.append(Alert(level='WARNING', message = f'Distribution issues: {len(validation_result.distribution_issues)} issues found', timestamp = datetime.now(), action_required = False, details={'distribution_issues': validation_result.distribution_issues[:5]}))
         if validation_result.outlier_issues:
-            alerts.append(Alert(level='WARNING', message=f'Outlier issues: {len(validation_result.outlier_issues)} issues found', timestamp=datetime.now(), action_required=False, details={'outlier_issues': validation_result.outlier_issues[:5]}))
+            alerts.append(Alert(level='WARNING', message = f'Outlier issues: {len(validation_result.outlier_issues)} issues found', timestamp = datetime.now(), action_required = False, details={'outlier_issues': validation_result.outlier_issues[:5]}))
         if validation_result.time_series_issues:
-            alerts.append(Alert(level='WARNING', message=f'Time series issues: {len(validation_result.time_series_issues)} issues found', timestamp=datetime.now(), action_required=False, details={'time_series_issues': validation_result.time_series_issues[:5]}))
+            alerts.append(Alert(level='WARNING', message = f'Time series issues: {len(validation_result.time_series_issues)} issues found', timestamp = datetime.now(), action_required = False, details={'time_series_issues': validation_result.time_series_issues[:5]}))
         if validation_result.financial_issues:
-            alerts.append(Alert(level='ERROR', message=f'Financial data issues: {len(validation_result.financial_issues)} issues found', timestamp=datetime.now(), action_required=True, details={'financial_issues': validation_result.financial_issues[:5]}))
+            alerts.append(Alert(level='ERROR', message = f'Financial data issues: {len(validation_result.financial_issues)} issues found', timestamp = datetime.now(), action_required = True, details={'financial_issues': validation_result.financial_issues[:5]}))
         return alerts
 
     def send_alerts(self, alerts: List[Alert]) -> Dict[str, bool]:
@@ -86,7 +87,7 @@ class QualityAlertManager:
             if alert.details:
                 details_text = '\n'.join([f'• {k}: {v}' for k, v in alert.details.items()])
                 slack_message['attachments'][0]['fields'].append({'title': 'Details', 'value': details_text, 'short': False})
-            response = requests.post(self.config.slack_webhook, json=slack_message, timeout=10)
+            response = requests.post(self.config.slack_webhook, json = slack_message, timeout = 10)
             if response.status_code == 200:
                 self.logger.info(f'✅ Slack alert sent successfully: {alert.level}')
                 return True
@@ -130,7 +131,7 @@ class QualityAlertManager:
         """Send alert via webhook."""
         try:
             webhook_data = {'level': alert.level, 'message': alert.message, 'timestamp': alert.timestamp.isoformat(), 'action_required': alert.action_required, 'details': alert.details}
-            response = requests.post(self.config.webhook_url, json=webhook_data, headers={'Content-Type': 'application/json'}, timeout=10)
+            response = requests.post(self.config.webhook_url, json = webhook_data, headers={'Content-Type': 'application/json'}, timeout = 10)
             if response.status_code in [200, 201, 202]:
                 self.logger.info(f'✅ Webhook alert sent successfully: {alert.level}')
                 return True
@@ -141,12 +142,12 @@ class QualityAlertManager:
             self.logger.error(f'❌ Error sending webhook alert: {e}')
             return False
 
-    def get_alert_history(self, hours: int=24) -> List[Alert]:
+    def get_alert_history(self, hours: int = 24) -> List[Alert]:
         """Get alert history for the last N hours."""
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = datetime.now() - timedelta(hours = hours)
         return [alert for alert in self.alert_history if alert.timestamp > cutoff_time]
 
-    def get_alert_summary(self, hours: int=24) -> Dict[str, int]:
+    def get_alert_summary(self, hours: int = 24) -> Dict[str, int]:
         """Get summary of alerts in the last N hours."""
         recent_alerts = self.get_alert_history(hours)
         summary = {'total': len(recent_alerts), 'critical': len([a for a in recent_alerts if a.level == 'CRITICAL']), 'error': len([a for a in recent_alerts if a.level == 'ERROR']), 'warning': len([a for a in recent_alerts if a.level == 'WARNING']), 'info': len([a for a in recent_alerts if a.level == 'INFO'])}
@@ -178,7 +179,7 @@ class StreamingQualityValidator:
                 self.quality_metrics[metric_name].pop(0)
         rolling_metrics = self._calculate_rolling_metrics()
         if issues:
-            alert = Alert(level='WARNING', message=f'Streaming data quality issues: {len(issues)} issues detected', timestamp=datetime.now(), action_required=len(issues) > 5, details={'issues': issues[:5], 'rolling_metrics': rolling_metrics})
+            alert = Alert(level='WARNING', message = f'Streaming data quality issues: {len(issues)} issues detected', timestamp = datetime.now(), action_required = len(issues) > 5, details={'issues': issues[:5], 'rolling_metrics': rolling_metrics})
             self.alert_manager.send_alerts([alert])
         return {'issues': issues, 'metrics': metrics, 'rolling_metrics': rolling_metrics, 'timestamp': datetime.now()}
 
@@ -226,14 +227,14 @@ class QualityDashboard:
             recommendations.append('Verify financial data integrity and OHLC relationships.')
         return recommendations
 
-    def get_alert_summary(self, hours: int=24) -> Dict[str, Any]:
+    def get_alert_summary(self, hours: int = 24) -> Dict[str, Any]:
         """Get alert summary for dashboard."""
         alert_summary = self.alert_manager.get_alert_summary(hours)
         return {'period_hours': hours, 'alert_counts': alert_summary, 'total_alerts': alert_summary['total'], 'critical_alerts': alert_summary['critical'], 'error_alerts': alert_summary['error'], 'warning_alerts': alert_summary['warning']}
 
 def create_alert_config(slack_webhook: Optional[str]=None, email_config: Optional[Dict[str, Any]]=None, webhook_url: Optional[str]=None) -> AlertConfig:
     """Create alert configuration."""
-    return AlertConfig(slack_webhook=slack_webhook, email_config=email_config, webhook_url=webhook_url)
+    return AlertConfig(slack_webhook = slack_webhook, email_config = email_config, webhook_url = webhook_url)
 
 def setup_quality_monitoring(alert_config: AlertConfig, validation_rules: Optional[List[Any]]=None) -> Tuple[QualityAlertManager, StreamingQualityValidator, QualityDashboard]:
     """Set up complete quality monitoring system."""

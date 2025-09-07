@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
 '\nEarly Stage Optimization Module\n\nThis module handles optimization that should happen BEFORE ML trading begins:\n1. SR (Stationarity and Randomness) optimization (step2_5)\n2. Regime-specific triple barrier optimization (step04)\n\nThese optimizations happen early in the pipeline to ensure:\n- Proper data preprocessing (SR)\n- Regime-aware trading parameters (triple barrier)\n- Optimal foundation for ML model training\n'
 import json
@@ -35,7 +35,7 @@ class EarlyStageOptimizer:
     - Regime-specific triple barrier optimization (step04) - trading parameters
     """
 
-    def __init__(self, config: dict[str, Any], training_manager: Any=None) -> None:
+    def __init__(self, config: dict[str, Any], training_manager: Any = None) -> None:
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -56,11 +56,11 @@ class EarlyStageOptimizer:
         if not OPTUNA_AVAILABLE:
             return {'error': 'Optuna is required for SR optimization'}
         try:
-            study = optuna.create_study(study_name='sr_parameter_optimization', direction='maximize', sampler=optuna.samplers.TPESampler(n_startup_trials=10, n_ei_candidates=24, multivariate=True), pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=3))
+            study = optuna.create_study(study_name='sr_parameter_optimization', direction='maximize', sampler = optuna.samplers.TPESampler(n_startup_trials = 10, n_ei_candidates = 24, multivariate = True), pruner = optuna.pruners.MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 3))
             objective = self._create_sr_objective(data)
             n_trials = optimization_config.get('n_trials', 100)
             timeout = optimization_config.get('timeout', 1800)
-            study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience=optimization_config.get('early_stopping_patience', 20))])
+            study.optimize(objective, n_trials = n_trials, timeout = timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience = optimization_config.get('early_stopping_patience', 20))])
             best_trial = study.best_trial
             best_params = best_trial.params
             best_value = best_trial.value
@@ -130,7 +130,7 @@ class EarlyStageOptimizer:
         """Create objective function for SR optimization."""
 
         def objective(trial: Any) -> None:
-            params = {'fractional_d': trial.suggest_float('fractional_d', 0.1, 0.9, log=True), 'window_size': trial.suggest_int('window_size', 10, 200), 'min_periods': trial.suggest_int('min_periods', 5, 100), 'threshold': trial.suggest_float('threshold', 0.001, 0.1, log=True), 'adf_significance': trial.suggest_float('adf_significance', 0.01, 0.1, log=True), 'kpss_significance': trial.suggest_float('kpss_significance', 0.01, 0.1, log=True)}
+            params = {'fractional_d': trial.suggest_float('fractional_d', 0.1, 0.9, log = True), 'window_size': trial.suggest_int('window_size', 10, 200), 'min_periods': trial.suggest_int('min_periods', 5, 100), 'threshold': trial.suggest_float('threshold', 0.001, 0.1, log = True), 'adf_significance': trial.suggest_float('adf_significance', 0.01, 0.1, log = True), 'kpss_significance': trial.suggest_float('kpss_significance', 0.01, 0.1, log = True)}
             try:
                 return self._evaluate_sr_parameters(data, params)
             except Exception as e:
@@ -191,7 +191,7 @@ class EarlyStageOptimizer:
     async def _create_regime_barrier_study(self, regime_name: str, optimization_config: dict[str, Any]) -> optuna.Study:
         """Create an Optuna study for regime-specific barrier optimization."""
         study_name = f'regime_specific_barrier_{regime_name}'
-        return optuna.create_study(study_name=study_name, direction='maximize', sampler=optuna.samplers.TPESampler(n_startup_trials=10, n_ei_candidates=24, multivariate=True, group=True), pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=3))
+        return optuna.create_study(study_name = study_name, direction='maximize', sampler = optuna.samplers.TPESampler(n_startup_trials = 10, n_ei_candidates = 24, multivariate = True, group = True), pruner = optuna.pruners.MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 3))
 
     async def _optimize_single_regime_barrier(self, regime_name: str, regime_data: pd.DataFrame, study: optuna.Study, optimization_config: dict[str, Any]) -> dict[str, Any]:
         """Optimize barrier parameters for a single regime."""
@@ -199,7 +199,7 @@ class EarlyStageOptimizer:
         objective = self._create_regime_barrier_objective(regime_name, regime_data, regime_params)
         n_trials = optimization_config.get('n_trials', 100)
         timeout = optimization_config.get('timeout', 3600)
-        study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience=optimization_config.get('early_stopping_patience', 20))])
+        study.optimize(objective, n_trials = n_trials, timeout = timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience = optimization_config.get('early_stopping_patience', 20))])
         best_trial = study.best_trial
         best_params = best_trial.params
         best_value = best_trial.value
@@ -235,7 +235,7 @@ class EarlyStageOptimizer:
                         if param_name in ['barrier_timeout']:
                             params[param_name] = trial.suggest_int(param_name, param_config[0], param_config[1])
                         else:
-                            params[param_name] = trial.suggest_float(param_name, param_config[0], param_config[1], log=True)
+                            params[param_name] = trial.suggest_float(param_name, param_config[0], param_config[1], log = True)
                 elif isinstance(param_config, list):
                     params[param_name] = trial.suggest_categorical(param_name, param_config)
                 else:
@@ -302,7 +302,7 @@ class EarlyStageOptimizer:
                 for param_name, param_value in best_params.items():
                     mlflow.log_param(param_name, param_value)
                 with open('sr_optimization_results.json', 'w') as f:
-                    json.dump(optimization_results, f, indent=2, default=str)
+                    json.dump(optimization_results, f, indent = 2, default = str)
                 mlflow.log_artifact('sr_optimization_results.json', 'sr_optimization')
                 self.logger.info('✅ SR optimization results logged to MLflow')
         except Exception as e:
@@ -323,7 +323,7 @@ class EarlyStageOptimizer:
                         for param_name, param_value in best_params.items():
                             mlflow.log_param(f'{regime_name}_{param_name}', param_value)
                 with open('regime_optimization_results.json', 'w') as f:
-                    json.dump(optimization_results, f, indent=2, default=str)
+                    json.dump(optimization_results, f, indent = 2, default = str)
                 mlflow.log_artifact('regime_optimization_results.json', 'regime_optimization')
                 self.logger.info('✅ Regime optimization results logged to MLflow')
         except Exception as e:
@@ -352,7 +352,7 @@ class EarlyStageOptimizer:
             summary['regime_optimization'] = {'status': 'not_started'}
         return summary
 
-def create_early_stage_optimizer(config: dict[str, Any], training_manager: Any=None) -> Any:
+def create_early_stage_optimizer(config: dict[str, Any], training_manager: Any = None) -> Any:
     """Create early stage optimizer instance."""
     return EarlyStageOptimizer(config, training_manager)
 if __name__ == '__main__':

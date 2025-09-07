@@ -1,4 +1,9 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.reports import save_training_report
+
 """Step 2: Data Reading and Validation with Comprehensive Function Monitoring.
+from src.utils.logger import system_logger
 
 This module handles reading the unified data from step1_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery. It includes
@@ -39,16 +44,16 @@ class FunctionCallContext:
     start_time: float
     end_time: Optional[float] = None
     status: FunctionCallStatus = FunctionCallStatus.PENDING
-    input_args: Dict[str, Any] = field(default_factory=dict)
-    input_kwargs: Dict[str, Any] = field(default_factory=dict)
+    input_args: Dict[str, Any] = field(default_factory = dict)
+    input_kwargs: Dict[str, Any] = field(default_factory = dict)
     output_result: Any = None
     error_details: Optional[Dict[str, Any]] = None
     execution_time: Optional[float] = None
     memory_usage: Optional[float] = None
     cpu_usage: Optional[float] = None
-    called_functions: List[str] = field(default_factory=list)
+    called_functions: List[str] = field(default_factory = list)
     parent_call_id: Optional[str] = None
-    child_calls: List[str] = field(default_factory=list)
+    child_calls: List[str] = field(default_factory = list)
 
 @dataclass
 class FunctionInteractionReport:
@@ -58,13 +63,14 @@ class FunctionInteractionReport:
     failed_calls: int = 0
     total_execution_time: float = 0.0
     average_execution_time: float = 0.0
-    function_call_details: List[FunctionCallContext] = field(default_factory=list)
-    call_hierarchy: Dict[str, List[str]] = field(default_factory=dict)
-    performance_metrics: Dict[str, Any] = field(default_factory=dict)
-    error_summary: Dict[str, int] = field(default_factory=dict)
+    function_call_details: List[FunctionCallContext] = field(default_factory = list)
+    call_hierarchy: Dict[str, List[str]] = field(default_factory = dict)
+    performance_metrics: Dict[str, Any] = field(default_factory = dict)
+    error_summary: Dict[str, int] = field(default_factory = dict)
 
 class FunctionCallMonitor:
     """Comprehensive function call monitoring system with performance tracking."""
+    @log_important_calls
     
     def __init__(self):
         self.active_calls: Dict[str, FunctionCallContext] = {}
@@ -79,11 +85,13 @@ class FunctionCallMonitor:
         }
         self._setup_logger()
         self._setup_performance_monitoring()
+    @log_all_calls
     
     def _setup_logger(self):
         """Setup logger for function monitoring."""
         import logging
         self.logger = logging.getLogger(f"{__name__}.FunctionCallMonitor")
+    @log_all_calls
     
     def _setup_performance_monitoring(self):
         """Setup performance monitoring capabilities."""
@@ -94,6 +102,7 @@ class FunctionCallMonitor:
         except ImportError:
             self.psutil_available = False
             self.logger.warning("⚠️ psutil not available - performance monitoring limited")
+    @log_all_calls
     
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
@@ -104,6 +113,7 @@ class FunctionCallMonitor:
             except Exception:
                 return 0.0
         return 0.0
+    @log_all_calls
     
     def _get_cpu_usage(self) -> float:
         """Get current CPU usage percentage."""
@@ -113,6 +123,7 @@ class FunctionCallMonitor:
             except Exception:
                 return 0.0
         return 0.0
+    @log_all_calls
     
     def _generate_call_id(self, function_name: str) -> str:
         """Generate unique call ID."""
@@ -155,16 +166,16 @@ class FunctionCallMonitor:
         initial_cpu = self._get_cpu_usage()
         
         context = FunctionCallContext(
-            function_name=func.__name__,
-            module_name=func.__module__,
-            call_id=call_id,
-            start_time=time.time(),
-            status=FunctionCallStatus.IN_PROGRESS,
-            input_args=input_args,
-            input_kwargs=input_kwargs,
-            parent_call_id=parent_call_id,
-            memory_usage=initial_memory,
-            cpu_usage=initial_cpu
+            function_name = func.__name__,
+            module_name = func.__module__,
+            call_id = call_id,
+            start_time = time.time(),
+            status = FunctionCallStatus.IN_PROGRESS,
+            input_args = input_args,
+            input_kwargs = input_kwargs,
+            parent_call_id = parent_call_id,
+            memory_usage = initial_memory,
+            cpu_usage = initial_cpu
         )
         
         self.active_calls[call_id] = context
@@ -299,7 +310,7 @@ class FunctionCallMonitor:
         
         # Enhanced performance metrics
         if self.completed_calls:
-            fastest_call = min(self.completed_calls, key=lambda c: c.execution_time or float('inf'))
+            fastest_call = min(self.completed_calls, key = lambda c: c.execution_time or float('inf'))
             slowest_call = max(self.completed_calls, key=lambda c: c.execution_time or 0)
             
             # Function call frequency analysis
@@ -357,16 +368,17 @@ class FunctionCallMonitor:
             }
         
         return FunctionInteractionReport(
-            total_calls=total_calls,
-            successful_calls=successful_calls,
-            failed_calls=failed_calls,
-            total_execution_time=total_execution_time,
-            average_execution_time=average_execution_time,
-            function_call_details=self.completed_calls.copy(),
-            call_hierarchy=call_hierarchy,
-            performance_metrics=performance_metrics,
-            error_summary=error_summary
+            total_calls = total_calls,
+            successful_calls = successful_calls,
+            failed_calls = failed_calls,
+            total_execution_time = total_execution_time,
+            average_execution_time = average_execution_time,
+            function_call_details = self.completed_calls.copy(),
+            call_hierarchy = call_hierarchy,
+            performance_metrics = performance_metrics,
+            error_summary = error_summary
         )
+    @log_all_calls
     
     def _calculate_call_depth(self, call_id: str) -> int:
         """Calculate the depth of a function call in the hierarchy."""
@@ -402,7 +414,7 @@ function_monitor = FunctionCallMonitor()
 
 # Context variable for tracking current function call
 import contextvars
-current_call_context = contextvars.ContextVar('current_call_id', default=None)
+current_call_context = contextvars.ContextVar('current_call_id', default = None)
 
 def comprehensive_function_monitoring(
     validate_inputs: bool = True,
@@ -434,7 +446,7 @@ def comprehensive_function_monitoring(
                 if timeout_seconds:
                     result = await asyncio.wait_for(
                         func(*args, **kwargs),
-                        timeout=timeout_seconds
+                        timeout = timeout_seconds
                     )
                 else:
                     result = await func(*args, **kwargs)
@@ -447,7 +459,7 @@ def comprehensive_function_monitoring(
                 return result
                 
             except Exception as e:
-                function_monitor.complete_function_call(call_id, error=e)
+                function_monitor.complete_function_call(call_id, error = e)
                 
                 # Retry logic
                 if retry_attempts > 0:
@@ -485,7 +497,7 @@ def comprehensive_function_monitoring(
                 return result
                 
             except Exception as e:
-                function_monitor.complete_function_call(call_id, error=e)
+                function_monitor.complete_function_call(call_id, error = e)
                 
                 # Retry logic
                 if retry_attempts > 0:
@@ -650,7 +662,7 @@ async def _retry_function_call(func: Callable, args: tuple, kwargs: dict, retry_
                 current_call_context.reset(token)
                 
         except Exception as e:
-            function_monitor.complete_function_call(retry_call_id, error=e)
+            function_monitor.complete_function_call(retry_call_id, error = e)
             if attempt == retry_attempts - 1:
                 raise
             await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
@@ -675,7 +687,7 @@ def _retry_function_call_sync(func: Callable, args: tuple, kwargs: dict, retry_a
                 current_call_context.reset(token)
                 
         except Exception as e:
-            function_monitor.complete_function_call(retry_call_id, error=e)
+            function_monitor.complete_function_call(retry_call_id, error = e)
             if attempt == retry_attempts - 1:
                 raise
             time.sleep(0.1 * (2 ** attempt))  # Exponential backoff
@@ -690,7 +702,7 @@ REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorato
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Create fallback decorators
-def handles_errors(exceptions=(Exception,), default_return=None, context=None):
+def handles_errors(exceptions=(Exception,), default_return = None, context = None):
     """Fallback error handling decorator."""
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -762,6 +774,7 @@ logger = system_logger.getChild('Step2DataReading') if hasattr(system_logger, 'g
 
 class DataReadingStep:
     """Step 2: Data Reading and Validation with comprehensive function monitoring and standardized data quality management."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -771,6 +784,7 @@ class DataReadingStep:
         self.step_timings = {}
         self.function_interaction_report = None
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -792,6 +806,7 @@ class DataReadingStep:
         self.logger.info(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         self.logger.info('✅ Data Reading Step initialized successfully')
+    @log_all_calls
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
         """Log timing information for a step."""
@@ -800,14 +815,14 @@ class DataReadingStep:
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
     @comprehensive_function_monitoring(
-        validate_inputs=True,
-        validate_outputs=True,
-        track_performance=True,
-        timeout_seconds=300,
-        retry_attempts=2
+        validate_inputs = True,
+        validate_outputs = True,
+        track_performance = True,
+        timeout_seconds = 300,
+        retry_attempts = 2
     )
     @traced(span_name='read_unified_data')
-    @validates(min_quality_score=0.8, max_correlation=0.95, required_grade='B')
+    @validates(min_quality_score = 0.8, max_correlation = 0.95, required_grade='B')
     @cached
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Read unified data from step1_5 output with standardized validation."""
@@ -831,8 +846,8 @@ class DataReadingStep:
                 df = self.standards.enforce_schema(df, 'unified')
                 dataframes.append(df)
             if dataframes:
-                unified_data = pd.concat(dataframes, ignore_index=True)
-                unified_data = unified_data.sort_values('timestamp').reset_index(drop=True)
+                unified_data = pd.concat(dataframes, ignore_index = True)
+                unified_data = unified_data.sort_values('timestamp').reset_index(drop = True)
                 
                 # Apply data quality fixes using pipeline standards
                 unified_data = self._apply_pipeline_standards_fixes(unified_data)
@@ -854,11 +869,11 @@ class DataReadingStep:
             return None
 
     @comprehensive_function_monitoring(
-        validate_inputs=True,
-        validate_outputs=True,
-        track_performance=True,
-        timeout_seconds=120,
-        retry_attempts=1
+        validate_inputs = True,
+        validate_outputs = True,
+        track_performance = True,
+        timeout_seconds = 120,
+        retry_attempts = 1
     )
     @traced(span_name='validate_data_quality')
     @validates()
@@ -877,7 +892,7 @@ class DataReadingStep:
                     'start': data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None,
                     'end': data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None,
                 },
-                'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0,
+                'memory_usage': data.memory_usage(deep = True).sum() / 1024 / 1024 if data is not None else 0,
             }
             
             # Create validation_results with data_info
@@ -934,6 +949,7 @@ class DataReadingStep:
                 'quality_score': 0.0
             }
         return validation_results
+    @log_all_calls
     
     def _apply_pipeline_standards_fixes(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -969,7 +985,7 @@ class DataReadingStep:
         if 'timestamp' in fixed_data.columns:
             if not fixed_data['timestamp'].is_monotonic_increasing:
                 self.logger.info("📈 Sorting data by timestamp")
-                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
         
         # Enforce schema using pipeline standards
         try:
@@ -994,50 +1010,51 @@ class DataReadingStep:
         return fixed_data
 
     @comprehensive_function_monitoring(
-        validate_inputs=True,
-        validate_outputs=True,
-        track_performance=True,
-        timeout_seconds=60,
-        retry_attempts=1
+        validate_inputs = True,
+        validate_outputs = True,
+        track_performance = True,
+        timeout_seconds = 60,
+        retry_attempts = 1
     )
     @traced(span_name='save_validation_report')
     async def save_validation_report(self, validation_results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> bool:
         """Save validation report to file."""
         step_start = time.time()
         self.logger.info('💾 Saving validation report...')
-        
+
         try:
-            reports_dir = Path(data_dir) / 'reports' / 'data_quality'
-            reports_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_filename = f'data_reading_validation_{exchange}_{symbol}_{timestamp}.json'
-            report_path = reports_dir / report_filename
-            
             report_data = {
-                'step': 'step02_data_reading', 
-                'timestamp': datetime.now().isoformat(), 
-                'symbol': symbol, 
-                'exchange': exchange, 
-                'validation_results': validation_results, 
+                'step': 'step02_data_reading',
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'exchange': exchange,
+                'validation_results': validation_results,
                 'step_timings': self.step_timings
             }
-            
-            with open(report_path, 'w') as _f:
-                _json.dump(report_data, _f, indent=2, default=str)
+
+            report_path = save_training_report(
+                data=report_data,
+                step_name="step02_data_reading",
+                report_type="validation_report",
+                symbol=symbol,
+                timeframe="1m",  # Default timeframe
+                file_format="json"
+            )
+
             self.logger.info(f'✅ Validation report saved to {report_path}')
             self._log_step_timing('save_validation_report', step_start)
             return True
-            
+
         except Exception as e:
             self.logger.exception(f'❌ Error saving validation report: {e}')
             return False
 
     @comprehensive_function_monitoring(
-        validate_inputs=True,
-        validate_outputs=True,
-        track_performance=True,
-        timeout_seconds=600,
-        retry_attempts=1
+        validate_inputs = True,
+        validate_outputs = True,
+        track_performance = True,
+        timeout_seconds = 600,
+        retry_attempts = 1
     )
     @traced(span_name='execute_data_reading_step')
     @handles_errors
@@ -1062,7 +1079,7 @@ class DataReadingStep:
                 self.logger.error(f"   Issues: {validation_results['issues']}")
                 return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
             processed_dir = self.standards.build_path('processed_data', exchange, symbol)
-            Path(processed_dir).mkdir(parents=True, exist_ok=True)
+            Path(processed_dir).mkdir(parents = True, exist_ok = True)
             output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
             output_path = Path(processed_dir) / output_file
             unified_data = self.standards.standardize_timestamp(unified_data, 'timestamp')
@@ -1095,25 +1112,25 @@ class DataReadingStep:
             metrics_calculated = {'data_reading_success': 1.0, 'validation_passed': 1.0 if validation_results.get('passed', False) else 0.0, 'data_quality_score': validation_results.get('quality_score', 0.0), 'total_rows': len(unified_data) if unified_data is not None else 0, 'total_columns': len(unified_data.columns) if unified_data is not None else 0, 'validation_issues_count': len(validation_results.get('issues', []))}
             training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')}
             step_data = {'validation_results': validation_results, 'step_timings': self.step_timings, 'data_path': str(output_path)}
-            report_data = create_detailed_step_report(step_name='step02_data_reading', step_data=step_data, training_input=training_input, execution_metadata=execution_metadata, artifacts_generated=artifacts_generated, metrics_calculated=metrics_calculated, errors_encountered=[] if validation_results.get('passed', False) else validation_results.get('issues', []))
-            report_name = log_step_report(config=self.config, step_name='step02_data_reading', report_data=report_data, report_type='data_reading_report', additional_metadata={'validation_passed': validation_results.get('passed', False), 'data_quality_score': validation_results.get('quality_score', 0.0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+            report_data = create_detailed_step_report(step_name='step02_data_reading', step_data = step_data, training_input = training_input, execution_metadata = execution_metadata, artifacts_generated = artifacts_generated, metrics_calculated = metrics_calculated, errors_encountered=[] if validation_results.get('passed', False) else validation_results.get('issues', []))
+            report_name = log_step_report(config = self.config, step_name='step02_data_reading', report_data = report_data, report_type='data_reading_report', additional_metadata={'validation_passed': validation_results.get('passed', False), 'data_quality_score': validation_results.get('quality_score', 0.0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
             self.logger.info(f'✅ Logged data reading report: {report_name}')
             if unified_data is not None:
-                artifact_name = log_step_dataframe_with_standardized_name(config=self.config, step_name='step02_data_reading', df=unified_data, artifact_type='validated_data', additional_metadata={'artifact_type': 'validated_data', 'dataframe_shape': list(unified_data.shape), 'validation_passed': validation_results.get('passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+                artifact_name = log_step_dataframe_with_standardized_name(config = self.config, step_name='step02_data_reading', df = unified_data, artifact_type='validated_data', additional_metadata={'artifact_type': 'validated_data', 'dataframe_shape': list(unified_data.shape), 'validation_passed': validation_results.get('passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
                 self.logger.info(f'✅ Logged validated data: {artifact_name}')
-            validation_report_name = log_step_report(config=self.config, step_name='step02_data_reading', report_data=validation_results, report_type='validation_results', additional_metadata={'validation_passed': validation_results.get('passed', False), 'quality_score': validation_results.get('quality_score', 0.0), 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0'), 'timeframe': timeframe})
+            validation_report_name = log_step_report(config = self.config, step_name='step02_data_reading', report_data = validation_results, report_type='validation_results', additional_metadata={'validation_passed': validation_results.get('passed', False), 'quality_score': validation_results.get('quality_score', 0.0), 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0'), 'timeframe': timeframe})
             self.logger.info(f'✅ Logged validation results: {validation_report_name}')
-            log_step_metrics(config=self.config, step_name='step02_data_reading', metrics=metrics_calculated, additional_metadata={'metrics_type': 'data_reading_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+            log_step_metrics(config = self.config, step_name='step02_data_reading', metrics = metrics_calculated, additional_metadata={'metrics_type': 'data_reading_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
             self.logger.info('✅ Step 2 artifacts and reports logged successfully')
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 2 artifacts and reports: {e}')
 
     @comprehensive_function_monitoring(
-        validate_inputs=True,
-        validate_outputs=True,
-        track_performance=True,
-        timeout_seconds=30,
-        retry_attempts=1
+        validate_inputs = True,
+        validate_outputs = True,
+        track_performance = True,
+        timeout_seconds = 30,
+        retry_attempts = 1
     )
     async def generate_function_interaction_report(self, symbol: str, exchange: str, data_dir: str) -> Dict[str, Any]:
         """Generate comprehensive function interaction report."""
@@ -1123,11 +1140,7 @@ class DataReadingStep:
             # Get the function interaction report
             self.function_interaction_report = function_monitor.get_function_interaction_report()
             
-            # Save detailed report to file
-            reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'function_monitoring')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_filename = f'step02_function_interaction_report_{exchange}_{symbol}_{timestamp}.json'
-            report_path = reports_dir / report_filename
+            # Save detailed report using centralized system
             
             # Convert dataclass to dict for JSON serialization
             report_data = {
@@ -1163,7 +1176,14 @@ class DataReadingStep:
                 ]
             }
             
-            safe_json_dump(report_data, report_path, indent=2, default=str)
+            report_path = save_training_report(
+                data=report_data,
+                step_name="step02_data_reading",
+                report_type="function_interaction_report",
+                symbol=symbol,
+                timeframe="1m",
+                file_format="json"
+            )
             
             # Enhanced detailed logging
             self.logger.info('📊 Function Interaction Report Summary:')
@@ -1197,7 +1217,7 @@ class DataReadingStep:
             function_frequency = self.function_interaction_report.performance_metrics.get("function_frequency", {})
             if function_frequency:
                 self.logger.info('   - Function call frequency:')
-                sorted_functions = sorted(function_frequency.items(), key=lambda x: x[1], reverse=True)
+                sorted_functions = sorted(function_frequency.items(), key = lambda x: x[1], reverse = True)
                 for func_name, count in sorted_functions[:5]:  # Top 5 most called functions
                     self.logger.info(f'     * {func_name}: {count} calls')
             
@@ -1237,7 +1257,7 @@ class DataReadingStep:
                 'error': str(e)
             }
 
-async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str=None, **kwargs) -> Dict[str, Any]:
+async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> Dict[str, Any]:
     """Enhanced entry point for Step 2: Data Reading and Validation."""
     if data_dir is None:
         data_dir = pipeline_standards.build_path('raw_data', exchange, symbol)
@@ -1252,7 +1272,7 @@ async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir
         logger.error(f"❌ Step 2: Data Reading and Validation failed: {result.get('error', 'Unknown error')}")
     return result
 
-async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, **kwargs) -> bool:
+async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> bool:
     """Standard entry point for Step 2: Data Reading and Validation."""
     result = await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
     return result['success']
@@ -1262,6 +1282,6 @@ if __name__ == '__main__':
         test_symbol = 'TEST_SYMBOL'
         test_exchange = 'TEST_EXCHANGE'
         test_timeframe = '1m'
-        result = await run_step_enhanced(symbol=test_symbol, exchange=test_exchange, timeframe=test_timeframe, data_dir=None)
+        result = await run_step_enhanced(symbol = test_symbol, exchange = test_exchange, timeframe = test_timeframe, data_dir = None)
         print(f'Result: {result}')
     asyncio.run(test())

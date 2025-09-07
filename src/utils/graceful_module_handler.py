@@ -1,9 +1,10 @@
 """Graceful module handler for missing dependencies."""
 import importlib
 import sys
-from typing import Any, Optional, Dict
-from src.utils.logger import system_logger
 import logging
+from typing import Any, Optional, Dict
+from .logger import system_logger
+from .logger import system_logger
 
 class GracefulModuleHandler:
     """Handles missing modules gracefully with fallback implementations."""

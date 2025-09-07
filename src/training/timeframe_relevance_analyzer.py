@@ -1,11 +1,11 @@
+from .core.decorators import handles_errors
 '\nTimeframe Relevance Analyzer\n\nThis module analyzes the relevance of different timeframes for high leverage trading (10x-100x)\nand optimizes the ensemble configuration accordingly.\n'
+from src.utils.logger import system_logger
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -269,9 +269,9 @@ class TimeframeRelevanceAnalyzer:
 
     def _calculate_signal_decay_rate(self, returns: pd.Series) -> float:
         """Calculate signal decay rate."""
-        autocorr_1 = returns.autocorr(lag=1)
-        returns.autocorr(lag=5)
-        autocorr_10 = returns.autocorr(lag=10)
+        autocorr_1 = returns.autocorr(lag = 1)
+        returns.autocorr(lag = 5)
+        autocorr_10 = returns.autocorr(lag = 10)
         decay_rate = (autocorr_1 - autocorr_10) / 10.0 if autocorr_1 > 0 else 0.0
         return min(1.0, max(0.0, decay_rate))
 
@@ -289,7 +289,7 @@ class TimeframeRelevanceAnalyzer:
     def _calculate_signal_consistency(self, returns: pd.Series) -> float:
         """Calculate signal consistency."""
         direction = np.sign(returns)
-        return direction.rolling(10).apply(lambda x: abs(x.sum()) / len(x), raw=True).mean()
+        return direction.rolling(10).apply(lambda x: abs(x.sum()) / len(x), raw = True).mean()
 
     def _analyze_signal_decay(self, signal_quality: dict[str, Any]) -> dict[str, Any]:
         """Analyze signal decay across timeframes."""
@@ -399,11 +399,11 @@ class TimeframeRelevanceAnalyzer:
     async def _save_analysis_results(self, results: dict[str, Any], symbol: str, exchange: str) -> None:
         """Save analysis results to file."""
         output_dir = Path('data/timeframe_analysis')
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents = True, exist_ok = True)
         filename = f'{exchange}_{symbol}_timeframe_analysis.json'
         filepath = output_dir / filename
         with open(filepath, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+            json.dump(results, f, indent = 2, default = str)
         self.logger.info(f'💾 Saved timeframe analysis results to {filepath}')
 
     def get_optimized_ensemble_config(self, symbol: str, exchange: str) -> dict[str, Any]:

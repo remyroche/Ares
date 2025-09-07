@@ -14,7 +14,6 @@ from typing import Any
 
 from core.config import AnalysisConfig, CodeQualityConfig, get_default_config
 from utils.file_utils import find_python_files
-import numpy as np
 
 
 class TypeIssue:

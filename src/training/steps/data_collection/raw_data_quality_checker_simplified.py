@@ -1,4 +1,7 @@
 """Simplified Raw Data Quality Checker
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This is a simplified version of raw_data_quality_checker.py that uses extracted components.
 The complexity has been reduced from 586 to approximately 150-200 by using component architecture.
 """
@@ -10,7 +13,7 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Import the extracted components
 from .data_quality_components import (
@@ -43,6 +46,7 @@ class RawDataQualityChecker:
     data quality validation while maintaining a much lower complexity
     than the original monolithic implementation.
     """
+    @log_important_calls
     
     def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
         self.logger = system_logger.getChild("RawDataQualityChecker")
@@ -154,6 +158,7 @@ class RawDataQualityChecker:
         results = result_builder.build()
         
         return results, processed_data
+    @log_all_calls
         
     def _auto_fix_issues(
         self,
@@ -201,7 +206,7 @@ class RawDataQualityChecker:
             missing_before = fixed_data.isna().sum().sum()
             if missing_before > 0:
                 # Forward fill for time series continuity
-                fixed_data = fixed_data.fillna(method="ffill", limit=5)
+                fixed_data = fixed_data.fillna(method="ffill", limit = 5)
                 # Fill remaining with 0 for numeric columns
                 numeric_cols = fixed_data.select_dtypes(include=[pd.api.types.is_numeric_dtype]).columns
                 fixed_data[numeric_cols] = fixed_data[numeric_cols].fillna(0)
@@ -215,9 +220,9 @@ class RawDataQualityChecker:
             ohlc_cols = ["open", "high", "low", "close"]
             if all(col in fixed_data.columns for col in ohlc_cols):
                 # Ensure high is max of OHLC
-                fixed_data["high"] = fixed_data[ohlc_cols].max(axis=1)
+                fixed_data["high"] = fixed_data[ohlc_cols].max(axis = 1)
                 # Ensure low is min of OHLC
-                fixed_data["low"] = fixed_data[ohlc_cols].min(axis=1)
+                fixed_data["low"] = fixed_data[ohlc_cols].min(axis = 1)
                 fix_results["fixes_applied"].append("ohlc_consistency")
                 fix_results["data_modified"] = True
             
@@ -237,6 +242,7 @@ class RawDataQualityChecker:
             fix_results["fixes_failed"].append(str(e))
         
         return fixed_data, fix_results
+    @log_all_calls
         
     def _needs_interval_fixing(self, results: dict[str, Any]) -> bool:
         """Check if interval fixing is needed based on validation results.
@@ -281,7 +287,7 @@ class RawDataQualityChecker:
         self.logger.info(f'🔍 Comprehensive data quality validation and fixing for {exchange} {symbol}')
         
         # Run initial validation
-        initial_results, _ = self.validate_raw_data(data, symbol, exchange, auto_fix=False)
+        initial_results, _ = self.validate_raw_data(data, symbol, exchange, auto_fix = False)
         
         # Check if fixing is needed
         needs_fixing = (
@@ -298,7 +304,7 @@ class RawDataQualityChecker:
             )
             
             # Re-validate fixed data
-            final_results, final_data = self.validate_raw_data(fixed_data, symbol, exchange, auto_fix=False)
+            final_results, final_data = self.validate_raw_data(fixed_data, symbol, exchange, auto_fix = False)
             
             # Calculate improvement
             quality_improvement = final_results.get('data_quality_score', 0) - initial_results.get('data_quality_score', 0)
@@ -349,6 +355,7 @@ class RawDataQualityChecker:
         validation_results['interval_analysis'] = interval_stats
         
         return validation_results
+    @log_all_calls
     
     def _create_error_result(self, message: str, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Create a standardized error result.
@@ -377,7 +384,7 @@ def validate_raw_data_quality(
 ) -> Tuple[dict[str, Any], pd.DataFrame]:
     """Convenience function to validate raw data quality."""
     checker = RawDataQualityChecker(config)
-    return checker.validate_raw_data(data, symbol, exchange, auto_download_missing=auto_download_missing)
+    return checker.validate_raw_data(data, symbol, exchange, auto_download_missing = auto_download_missing)
 
 
 def validate_and_fix_data_quality_issues(
@@ -414,10 +421,10 @@ def enhanced_preprocess_market_data(
     """Convenience function for enhanced preprocessing with intelligent gap handling."""
     checker = RawDataQualityChecker(config)
     return checker.preprocessor.enhanced_preprocess_market_data(
-        data=data,
-        symbol=symbol,
-        exchange=exchange,
-        expected_interval_seconds=expected_interval_seconds,
-        max_forward_fill_seconds=max_forward_fill_seconds,
-        download_missing_data=download_missing_data
+        data = data,
+        symbol = symbol,
+        exchange = exchange,
+        expected_interval_seconds = expected_interval_seconds,
+        max_forward_fill_seconds = max_forward_fill_seconds,
+        download_missing_data = download_missing_data
     )

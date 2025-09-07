@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 
 # Add project root to path
@@ -38,12 +40,14 @@ OPTIONAL_MODULES = [
 
 class DependencyManager:
     """Manages dependencies and provides fallback mechanisms."""
+    @log_important_calls
     
     def __init__(self, logger: Any = None):
         self.logger = logger or logging.getLogger(__name__)
         self.dependency_status: Dict[str, bool] = {}
         self.imported_modules: Dict[str, Any] = {}
         self._validate_dependencies()
+    @log_all_calls
     
     def _validate_dependencies(self) -> None:
         """Validate all dependencies and record their status."""
@@ -130,7 +134,7 @@ except ImportError:
     # Fallback implementations
     def ensure_directory(path: Path | str) -> Path:
         p = Path(path)
-        p.mkdir(parents=True, exist_ok=True)
+        p.mkdir(parents = True, exist_ok = True)
         return p
     
     def safe_json_dump(data: Any, path: Path | str, **kwargs) -> None:
@@ -157,7 +161,7 @@ def get_system_logger() -> Any:
     if system_logger_available:
         return system_logger
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level = logging.INFO)
         return logging.getLogger("System")
 
 

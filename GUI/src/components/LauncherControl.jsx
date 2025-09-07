@@ -183,7 +183,7 @@ const LauncherControl = () => {
       case 'live': return 'Live trading with real money';
       case 'backtest': return 'Historical backtesting';
       case 'blank': return 'Standard training mode (180 days)';
-      case 'light': return 'Quick training mode (30 days)';
+      case 'light': return 'Quick training mode (10 days)';
       case 'full': return 'Full training mode (730 days)';
       case 'load': return 'Load and process market data';
       case 'precompute': return 'Precompute wavelet features';

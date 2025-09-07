@@ -61,7 +61,7 @@ def analyze_file_sizes(directory: Path) -> List[Tuple[Path, int]]:
             lines = len(filepath.read_text().splitlines())
             if lines > 1000:
                 large_files.append((filepath, lines))
-    return sorted(large_files, key=lambda x: x[1], reverse=True)
+    return sorted(large_files, key = lambda x: x[1], reverse = True)
 
 def generate_cleanup_report(training_dir: Path) -> Dict[str, any]:
     """Generate a comprehensive cleanup report."""
@@ -103,7 +103,7 @@ def main() -> None:
             print(f'  - {f}: {lines} lines')
     report_path = Path('src/training/cleanup_report.json')
     with open(report_path, 'w') as f:
-        json.dump(report, f, indent=2)
+        json.dump(report, f, indent = 2)
     print(f'\n📊 Detailed report saved to: {report_path}')
     print('\n💡 RECOMMENDATIONS:')
     print('-' * 60)
@@ -113,4 +113,5 @@ def main() -> None:
     print('4. Use version control instead of keeping backup copies')
     print('5. Follow the new module structure in MODULE_STRUCTURE.md')
 if __name__ == '__main__':
-    await main()
+    import asyncio
+    asyncio.run(main())

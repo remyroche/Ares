@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from .monitoring.regime_performance_tracker import RegimePerformanceTracker
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from pathlib import Path
 import logging
 import time
@@ -41,8 +41,8 @@ class RegimeMonitoringDashboard:
         self.performance_tracker = RegimePerformanceTracker(config)
         self.current_regime = {}
         self.regime_confidence = {}
-        self.regime_history = defaultdict(lambda: deque(maxlen=1000))
-        self.alerts = deque(maxlen=100)
+        self.regime_history = defaultdict(lambda: deque(maxlen = 1000))
+        self.alerts = deque(maxlen = 100)
         self.alert_handlers = {'console': self._handle_console_alert, 'file': self._handle_file_alert, 'webhook': self._handle_webhook_alert}
         self.real_time_metrics = defaultdict(dict)
         self.update_frequency = config.get('update_frequency', 60)
@@ -78,7 +78,7 @@ class RegimeMonitoringDashboard:
                         self.regime_confidence[symbol] = regime_data['confidence']
                         self.regime_history[symbol].append({'timestamp': datetime.now(), 'regime': regime_data['regime'], 'confidence': regime_data['confidence']})
                         if regime_data['confidence'] < 0.7:
-                            await self._create_alert(alert_type='confidence_drop', severity='warning', regime=regime_data['regime'], message=f"Low regime confidence for {symbol}: {regime_data['confidence']:.2f}", metadata={'symbol': symbol, 'confidence': regime_data['confidence']})
+                            await self._create_alert(alert_type='confidence_drop', severity='warning', regime = regime_data['regime'], message = f"Low regime confidence for {symbol}: {regime_data['confidence']:.2f}", metadata={'symbol': symbol, 'confidence': regime_data['confidence']})
                 await asyncio.sleep(self.update_frequency)
             except Exception as e:
                 self.logger.error(f'Error in regime monitoring: {e}')
@@ -100,7 +100,7 @@ class RegimeMonitoringDashboard:
         """Handle regime transition event."""
         self.logger.info(f'Regime transition detected for {symbol}: {from_regime} -> {to_regime}')
         await self.performance_tracker.track_regime_transition({'timestamp': datetime.now(), 'symbol': symbol, 'from_regime': from_regime, 'to_regime': to_regime, 'confidence': confidence, 'detection_lag_minutes': self._estimate_detection_lag(symbol)})
-        await self._create_alert(alert_type='transition', severity='info' if confidence > 0.8 else 'warning', regime=to_regime, message=f'Regime transition for {symbol}: {from_regime} -> {to_regime} (confidence: {confidence:.2f})', metadata={'symbol': symbol, 'from_regime': from_regime, 'to_regime': to_regime, 'confidence': confidence})
+        await self._create_alert(alert_type='transition', severity='info' if confidence > 0.8 else 'warning', regime = to_regime, message = f'Regime transition for {symbol}: {from_regime} -> {to_regime} (confidence: {confidence:.2f})', metadata={'symbol': symbol, 'from_regime': from_regime, 'to_regime': to_regime, 'confidence': confidence})
 
     def _estimate_detection_lag(self, symbol: str) -> int:
         """Estimate regime detection lag in minutes."""
@@ -127,9 +127,9 @@ class RegimeMonitoringDashboard:
                 continue
             regime_metrics = metrics[regime]
             if regime_metrics['sharpe_ratio'] < 0.3:
-                await self._create_alert(alert_type='performance_degradation', severity='warning', regime=regime, message=f"Low Sharpe ratio for {symbol} in {regime} regime: {regime_metrics['sharpe_ratio']:.2f}", metadata={'symbol': symbol, 'sharpe_ratio': regime_metrics['sharpe_ratio'], 'trade_count': regime_metrics['trade_count']})
+                await self._create_alert(alert_type='performance_degradation', severity='warning', regime = regime, message = f"Low Sharpe ratio for {symbol} in {regime} regime: {regime_metrics['sharpe_ratio']:.2f}", metadata={'symbol': symbol, 'sharpe_ratio': regime_metrics['sharpe_ratio'], 'trade_count': regime_metrics['trade_count']})
             if regime_metrics['win_rate'] < 0.35:
-                await self._create_alert(alert_type='performance_degradation', severity='critical' if regime_metrics['win_rate'] < 0.25 else 'warning', regime=regime, message=f"Low win rate for {symbol} in {regime} regime: {regime_metrics['win_rate']:.2%}", metadata={'symbol': symbol, 'win_rate': regime_metrics['win_rate'], 'trade_count': regime_metrics['trade_count']})
+                await self._create_alert(alert_type='performance_degradation', severity='critical' if regime_metrics['win_rate'] < 0.25 else 'warning', regime = regime, message = f"Low win rate for {symbol} in {regime} regime: {regime_metrics['win_rate']:.2%}", metadata={'symbol': symbol, 'win_rate': regime_metrics['win_rate'], 'trade_count': regime_metrics['trade_count']})
 
     async def _check_alerts(self) -> None:
         """Process and handle alerts."""
@@ -147,7 +147,7 @@ class RegimeMonitoringDashboard:
 
     async def _create_alert(self, alert_type: str, severity: str, regime: str, message: str, metadata: Dict[str, Any]) -> None:
         """Create a new alert."""
-        alert = RegimeAlert(timestamp=datetime.now(), alert_type=alert_type, severity=severity, regime=regime, message=message, metadata=metadata)
+        alert = RegimeAlert(timestamp = datetime.now(), alert_type = alert_type, severity = severity, regime = regime, message = message, metadata = metadata)
         self.alerts.append(alert)
         self.logger.info(f'Alert created: {message}')
 
@@ -214,7 +214,7 @@ class RegimeMonitoringDashboard:
 class RegimeMonitoringWebSocket:
     """WebSocket server for real-time regime updates."""
 
-    def __init__(self, dashboard: RegimeMonitoringDashboard, port: int=8765) -> None:
+    def __init__(self, dashboard: RegimeMonitoringDashboard, port: int = 8765) -> None:
         self.dashboard = dashboard
         self.port = port
         self.clients = set()

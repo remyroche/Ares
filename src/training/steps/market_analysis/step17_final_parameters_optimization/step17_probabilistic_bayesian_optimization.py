@@ -2,6 +2,8 @@ from typing import Dict, Any, List
 
 import pandas as pd
 import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """
 Step 17: Probabilistic Bayesian Optimization for Final Parameters
 
@@ -51,8 +53,9 @@ class Step17ProbabilisticBayesianOptimization:
     The optimization provides uncertainty quantification and confidence intervals
     for all optimized parameters.
     """
+    @log_important_calls
 
-    def __init__(self, config: Dict[str, Any], training_manager: Any=None) -> None:
+    def __init__(self, config: Dict[str, Any], training_manager: Any = None) -> None:
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -64,10 +67,11 @@ class Step17ProbabilisticBayesianOptimization:
         self.integrator = None
         self.optimization_results = {}
         self.optimization_metadata = {}
+    @log_all_calls
 
     def _create_optimization_config(self) -> ProbabilisticOptimizationConfig:
         """Create optimization configuration for step17."""
-        return ProbabilisticOptimizationConfig(objectives=['total_profit', 'win_rate', 'sharpe_ratio'], n_trials=self.step_config.get('n_trials', 200), n_jobs=self.step_config.get('n_jobs', 1), timeout=self.step_config.get('timeout', 7200), early_stopping_patience=self.step_config.get('early_stopping_patience', 20), sampler_type=self.step_config.get('sampler_type', 'tpe'), uncertainty_weight=0.3, confidence_calibration_weight=0.4, prediction_accuracy_weight=0.3)
+        return ProbabilisticOptimizationConfig(objectives=['total_profit', 'win_rate', 'sharpe_ratio'], n_trials = self.step_config.get('n_trials', 200), n_jobs = self.step_config.get('n_jobs', 1), timeout = self.step_config.get('timeout', 7200), early_stopping_patience = self.step_config.get('early_stopping_patience', 20), sampler_type = self.step_config.get('sampler_type', 'tpe'), uncertainty_weight = 0.3, confidence_calibration_weight = 0.4, prediction_accuracy_weight = 0.3)
 
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute step17 probabilistic Bayesian optimization."""
@@ -91,8 +95,8 @@ class Step17ProbabilisticBayesianOptimization:
         """Initialize all optimization components."""
         self.logger.info('🔧 Initializing optimization components...')
         if OPTUNA_AVAILABLE:
-            self.tactician_optimizer = ProbabilisticBayesianOptimizer(config=self.optimization_config, model_type='tactician', storage_url='sqlite:///step17_tactician_optimization.db')
-            self.analyst_optimizer = ProbabilisticBayesianOptimizer(config=self.optimization_config, model_type='analyst', storage_url='sqlite:///step17_analyst_optimization.db')
+            self.tactician_optimizer = ProbabilisticBayesianOptimizer(config = self.optimization_config, model_type='tactician', storage_url='sqlite:///step17_tactician_optimization.db')
+            self.analyst_optimizer = ProbabilisticBayesianOptimizer(config = self.optimization_config, model_type='analyst', storage_url='sqlite:///step17_analyst_optimization.db')
             self.integrator = ProbabilisticModelIntegrator({'optimization': {'n_trials': self.optimization_config.n_trials, 'n_jobs': self.optimization_config.n_jobs, 'early_stopping_patience': self.optimization_config.early_stopping_patience, 'sampler_type': self.optimization_config.sampler_type}})
             self.logger.info('✅ Probabilistic Bayesian optimizers initialized')
         else:
@@ -122,10 +126,10 @@ class Step17ProbabilisticBayesianOptimization:
         if self.training_manager and hasattr(self.training_manager, 'get_trading_history'):
             return await self.training_manager.get_trading_history()
         self.logger.warning('⚠️ Using synthetic historical data for testing')
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
+        dates = pd.date_range(start='2024-01-01', periods = 1000, freq='1min')
         np.random.seed(42)
         n_trades = 200
-        trade_dates = np.random.choice(dates, n_trades, replace=False)
+        trade_dates = np.random.choice(dates, n_trades, replace = False)
         win_rate = 0.6
         trades = []
         for i, trade_date in enumerate(trade_dates):
@@ -212,7 +216,7 @@ class Step17ProbabilisticBayesianOptimization:
         if self.integrator:
             try:
                 self.logger.info('🔍 Running integrator optimization...')
-                integrator_results = await self.integrator.run_comprehensive_optimization(market_data=optimization_data['market_data'], historical_predictions=optimization_data['historical_data'])
+                integrator_results = await self.integrator.run_comprehensive_optimization(market_data = optimization_data['market_data'], historical_predictions = optimization_data['historical_data'])
                 results['integrator'] = integrator_results
                 self.logger.info('✅ Integrator optimization completed')
             except Exception as e:
@@ -231,9 +235,9 @@ class Step17ProbabilisticBayesianOptimization:
 
         def tactician_factory(params: Dict[str, Any]) -> Any:
             from sklearn.ensemble import RandomForestRegressor
-            model = RandomForestRegressor(n_estimators=params.get('n_estimators', 100), max_depth=params.get('max_depth', 10), random_state=42, n_jobs=1)
+            model = RandomForestRegressor(n_estimators = params.get('n_estimators', 100), max_depth = params.get('max_depth', 10), random_state = 42, n_jobs = 1)
             return model
-        results = self.tactician_optimizer.optimize(X=X, y=y_combined, model_factory=tactician_factory, validation_split=0.2)
+        results = self.tactician_optimizer.optimize(X = X, y = y_combined, model_factory = tactician_factory, validation_split = 0.2)
         return results
 
     async def _optimize_analyst_parameters(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -246,10 +250,11 @@ class Step17ProbabilisticBayesianOptimization:
 
         def analyst_factory(params: Dict[str, Any]) -> Any:
             from sklearn.ensemble import RandomForestRegressor
-            model = RandomForestRegressor(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
+            model = RandomForestRegressor(n_estimators = params.get('n_estimators', 200), max_depth = params.get('max_depth', 15), random_state = 42, n_jobs = 1)
             return model
-        results = self.analyst_optimizer.optimize(X=X, y=y_combined, model_factory=analyst_factory, validation_split=0.2)
+        results = self.analyst_optimizer.optimize(X = X, y = y_combined, model_factory = analyst_factory, validation_split = 0.2)
         return results
+    @log_all_calls
 
     def _generate_optimization_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate summary of optimization results."""
@@ -287,6 +292,7 @@ class Step17ProbabilisticBayesianOptimization:
         analysis['recommendations'] = self._generate_analysis_recommendations(analysis)
         self.logger.info('✅ Optimization results analyzed')
         return analysis
+    @log_all_calls
 
     def _estimate_parameter_uncertainty(self, best_solutions: Dict[str, Any]) -> Dict[str, Any]:
         """Estimate uncertainty for optimized parameters."""
@@ -314,13 +320,14 @@ class Step17ProbabilisticBayesianOptimization:
             validation['improvements_detected'] = False
             validation['validation_confidence'] = 0.0
         return validation
+    @log_all_calls
 
     def _generate_analysis_recommendations(self, analysis: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on analysis."""
         recommendations = []
         for model_type, importance in analysis.get('parameter_importance', {}).items():
             if importance:
-                top_params = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:3]
+                top_params = sorted(importance.items(), key = lambda x: x[1], reverse = True)[:3]
                 recommendations.append(f"Focus on top {model_type} parameters: {', '.join([p[0] for p in top_params])}")
         for model_type, uncertainty in analysis.get('uncertainty_estimates', {}).items():
             if uncertainty:
@@ -400,16 +407,16 @@ class Step17ProbabilisticBayesianOptimization:
         """Store optimization results for future reference."""
         try:
             results_dir = Path('data/optimization/step17')
-            results_dir.mkdir(parents=True, exist_ok=True)
+            results_dir.mkdir(parents = True, exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'step17_optimization_results_{timestamp}.json'
             filepath = results_dir / filename
             with open(filepath, 'w') as f:
-                json.dump(final_report, f, indent=2, default=str)
+                json.dump(final_report, f, indent = 2, default = str)
             metadata_file = results_dir / 'step17_optimization_metadata.json'
             metadata = {'last_optimization': timestamp, 'total_parameters_optimized': final_report['optimization_summary']['total_parameters_optimized'], 'performance_improvements': final_report['optimization_summary']['performance_improvements'], 'optimization_status': final_report['optimization_summary']['optimization_status']}
             with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2, default=str)
+                json.dump(metadata, f, indent = 2, default = str)
             self.logger.info(f'✅ Optimization results stored to {filepath}')
         except Exception as e:
             self.logger.error(f'❌ Failed to store optimization results: {e}')
@@ -422,7 +429,7 @@ class Step17ProbabilisticBayesianOptimization:
         """Get current optimization status."""
         return {'step_name': self.step_name, 'optimization_completed': bool(self.optimization_results), 'total_parameters_optimized': 0, 'uncertainty_estimates_available': False, 'performance_improvements': {}, 'last_optimization': self.optimization_metadata.get('last_optimization'), 'recommendations': self.optimization_results.get('summary', {}).get('recommendations', [])}
 
-def create_step17_probabilistic_bayesian_optimization(config: Dict[str, Any], training_manager: Any=None) -> Any:
+def create_step17_probabilistic_bayesian_optimization(config: Dict[str, Any], training_manager: Any = None) -> Any:
     """Create step17 probabilistic Bayesian optimization instance."""
     return Step17ProbabilisticBayesianOptimization(config, training_manager)
 if __name__ == '__main__':

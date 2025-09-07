@@ -57,8 +57,8 @@ class SequentialFixer(BasePipeline):
     """
 
     def __init__(self, config: CodeQualityConfig | None = None):
-        # Initialize with default project root
-        super().__init__("/workspace/src")
+        # Initialize with default project root and pipeline name
+        super().__init__(project_root="/workspace/src", pipeline_name="sequential_fixer")
         
         # Get config with fallback
         if config is None:

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 """Model Explainer for Trading Pipeline.
 
@@ -9,13 +11,12 @@ to understand what features are most important for model predictions.
 """
 
 
-from .core.decorators import handles_errors, validates, log_call, traced
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 class ModelExplainer:
     """Comprehensive model explainer using SHAP and LIME."""
@@ -39,7 +40,11 @@ class ModelExplainer:
             from .lime_analyzer import LIMEAnalyzer
             from .interpretability_visualizer import InterpretabilityVisualizer
             from .interpretability_reporter import InterpretabilityReporter
-            
+            import json
+            import logging
+            import time
+            import typing
+
             self.shap_analyzer = SHAPAnalyzer(self.config)
             self.lime_analyzer = LIMEAnalyzer(self.config)
             self.visualizer = InterpretabilityVisualizer(self.config)
@@ -51,8 +56,8 @@ class ModelExplainer:
             self.logger.warning(f"⚠️ Some interpretability components not available: {e}")
             self.logger.warning("Proceeding with available components only")
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     async def explain_model(
@@ -101,12 +106,12 @@ class ModelExplainer:
             
             if self.shap_analyzer:
                 shap_results = await self.shap_analyzer.analyze_model(
-                    model=model,
-                    X_train=X_train,
-                    X_test=X_test,
-                    feature_names=feature_names,
-                    model_name=model_name,
-                    output_dir=output_dir
+                    model = model,
+                    X_train = X_train,
+                    X_test = X_test,
+                    feature_names = feature_names,
+                    model_name = model_name,
+                    output_dir = output_dir
                 )
                 results["shap_results"] = shap_results
                 print("✅ SHAP analysis completed successfully")
@@ -121,11 +126,11 @@ class ModelExplainer:
             
             if self.lime_analyzer:
                 lime_results = await self.lime_analyzer.analyze_model(
-                    model=model,
-                    X_test=X_test,
-                    feature_names=feature_names,
-                    model_name=model_name,
-                    output_dir=output_dir
+                    model = model,
+                    X_test = X_test,
+                    feature_names = feature_names,
+                    model_name = model_name,
+                    output_dir = output_dir
                 )
                 results["lime_results"] = lime_results
                 print("✅ LIME analysis completed successfully")
@@ -139,11 +144,11 @@ class ModelExplainer:
             self.logger.info("📊 STEP 3/4: Analyzing feature importance...")
             
             feature_importance = await self._analyze_feature_importance(
-                model=model,
-                X_train=X_train,
-                feature_names=feature_names,
-                shap_results=results.get("shap_results", {}),
-                lime_results=results.get("lime_results", {})
+                model = model,
+                X_train = X_train,
+                feature_names = feature_names,
+                shap_results = results.get("shap_results", {}),
+                lime_results = results.get("lime_results", {})
             )
             results["feature_importance"] = feature_importance
             print("✅ Feature importance analysis completed successfully")
@@ -158,8 +163,8 @@ class ModelExplainer:
             
             if self.visualizer:
                 visualizations = await self.visualizer.create_visualizations(
-                    results=results,
-                    output_dir=output_dir
+                    results = results,
+                    output_dir = output_dir
                 )
                 results["visualizations"] = visualizations
                 print("✅ Visualizations created successfully")
@@ -173,11 +178,11 @@ class ModelExplainer:
                 model_type = self.config.get("model_type", results.get("model_type", "general"))
                 
                 report_path = await self.reporter.generate_report(
-                    results=results,
-                    output_dir=output_dir,
-                    model_type=model_type,
-                    symbol=symbol,
-                    exchange=exchange
+                    results = results,
+                    output_dir = output_dir,
+                    model_type = model_type,
+                    symbol = symbol,
+                    exchange = exchange
                 )
                 results["report_path"] = report_path
                 print(f"📄 Comprehensive report generated: {report_path}")
@@ -199,7 +204,7 @@ class ModelExplainer:
             print(f"❌ Model interpretability analysis failed: {e}")
             raise
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _analyze_feature_importance(
@@ -264,7 +269,7 @@ class ModelExplainer:
                     combined_scores[feature] = np.mean(scores)
             
             # Sort by combined score
-            sorted_features = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_features = sorted(combined_scores.items(), key = lambda x: x[1], reverse = True)
             feature_importance["combined_ranking"] = dict(sorted_features)
             feature_importance["top_features"] = [feature for feature, _ in sorted_features[:10]]
             
@@ -290,7 +295,7 @@ class ModelExplainer:
             print(f"❌ Feature importance analysis failed: {e}")
             return feature_importance
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_insights(self, results: Dict[str, Any]) -> Dict[str, Any]:
@@ -379,7 +384,7 @@ class ModelExplainer:
             print(f"❌ Insight generation failed: {e}")
             return insights
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_model_type_specific_insights(
@@ -439,7 +444,7 @@ class ModelExplainer:
             self.logger.error(f"❌ Model type specific insights generation failed: {e}")
             return []
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_model_type_recommendations(
@@ -485,7 +490,7 @@ class ModelExplainer:
             self.logger.error(f"❌ Model type recommendations generation failed: {e}")
             return []
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_model_type_risk_assessment(
@@ -531,7 +536,7 @@ class ModelExplainer:
             self.logger.error(f"❌ Model type risk assessment generation failed: {e}")
             return []
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def explain_multiple_models(
@@ -567,16 +572,16 @@ class ModelExplainer:
                 self.logger.info(f"🔍 Analyzing model: {model_name}")
                 
                 model_results = await self.explain_model(
-                    model=model,
-                    X_train=X_train,
-                    X_test=X_test,
-                    y_train=y_train,
-                    y_test=y_test,
-                    feature_names=feature_names,
-                    model_name=model_name,
-                    symbol=symbol,
-                    exchange=exchange,
-                    output_dir=f"{output_dir}/{model_name}"
+                    model = model,
+                    X_train = X_train,
+                    X_test = X_test,
+                    y_train = y_train,
+                    y_test = y_test,
+                    feature_names = feature_names,
+                    model_name = model_name,
+                    symbol = symbol,
+                    exchange = exchange,
+                    output_dir = f"{output_dir}/{model_name}"
                 )
                 
                 results["individual_results"][model_name] = model_results
@@ -597,7 +602,7 @@ class ModelExplainer:
             
             # Save comprehensive results
             results_file = f"{output_dir}/multi_model_interpretability_results.json"
-            safe_json_dump(results, results_file, indent=2)
+            safe_json_dump(results, results_file, indent = 2)
             
             print(f"🎉 Multi-model interpretability analysis completed successfully!")
             print(f"📄 Results saved to: {results_file}")
@@ -611,7 +616,7 @@ class ModelExplainer:
             print(f"❌ Multi-model interpretability analysis failed: {e}")
             raise
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _perform_comparative_analysis(self, individual_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -655,7 +660,7 @@ class ModelExplainer:
                 # Find most consistent features
                 consistent_features = {k: v for k, v in feature_consistency.items() if v >= 0.5}
                 if consistent_features:
-                    most_consistent = sorted(consistent_features.items(), key=lambda x: x[1], reverse=True)[:5]
+                    most_consistent = sorted(consistent_features.items(), key = lambda x: x[1], reverse = True)[:5]
                     comparative_analysis["insights"].append(f"Most consistent features across models: {', '.join([f[0] for f in most_consistent])}")
             
             print("✅ Comparative analysis completed successfully")
@@ -668,7 +673,7 @@ class ModelExplainer:
             print(f"❌ Comparative analysis failed: {e}")
             return comparative_analysis
     
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     async def _generate_ensemble_insights(self, individual_results: Dict[str, Any]) -> Dict[str, Any]:

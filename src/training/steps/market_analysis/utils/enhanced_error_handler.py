@@ -1,5 +1,7 @@
 """Enhanced Error Handling System for Step 7 Enhanced Matrix Operations.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides comprehensive error handling with detailed context,
 recovery mechanisms, and error pattern tracking.
 """
@@ -12,7 +14,7 @@ import time
 
 class EnhancedErrorHandler:
     """Enhanced error handling with detailed context and recovery mechanisms."""
-    
+
     def __init__(self, logger):
         self.logger = logger
         self.error_history = []
@@ -64,22 +66,22 @@ class EnhancedErrorHandler:
         else:
             self.logger.warning(f"⚠️ Unknown recovery strategy: {strategy}")
             return False
-    
+
     def _retry_with_fallback(self, error_info: Dict[str, Any]) -> bool:
         """Retry operation with fallback parameters."""
         self.logger.info("🔄 Retrying with fallback parameters...")
         return True
-    
+
     def _skip_and_continue(self, error_info: Dict[str, Any]) -> bool:
         """Skip failed operation and continue with next."""
         self.logger.info("⏭️ Skipping failed operation and continuing...")
         return True
-    
+
     def _use_default_values(self, error_info: Dict[str, Any]) -> bool:
         """Use default values instead of computed values."""
         self.logger.info("🔧 Using default values...")
         return True
-    
+
     def _reduce_complexity(self, error_info: Dict[str, Any]) -> bool:
         """Reduce operation complexity and retry."""
         self.logger.info("📉 Reducing operation complexity...")

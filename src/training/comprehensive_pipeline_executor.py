@@ -1,4 +1,5 @@
 import numpy as np
+from src.utils.logger import system_logger
 
 '\nComprehensive Pipeline Executor with Integrated Data Quality Management.\n\nThis script provides a complete execution framework for steps 1-7 of the enhanced training pipeline,\nwith integrated data quality monitoring, compatibility validation, format verification, and proper indexing.\n'
 import asyncio
@@ -12,7 +13,7 @@ sys.path.insert(0, str(project_root))
 from .training.data_quality_monitor import DataQualityMonitor
 from .training.steps_1_7_comprehensive_executor import Steps1To7ComprehensiveExecutor
 from .utils.enhanced_mlflow_integration import log_step_metrics, log_step_report
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 class ComprehensivePipelineExecutor:
@@ -99,7 +100,7 @@ class ComprehensivePipelineExecutor:
         """Log quality summary for a specific step."""
         try:
             {'step_name': step_name, 'quality_score': quality_metrics.overall_score, 'quality_level': quality_metrics.quality_level.value, 'compatibility': compatibility_metrics.overall_compatible, 'format_match': format_metrics.format_match, 'index_valid': index_metrics.overall_valid, 'issues': quality_metrics.issues, 'warnings': quality_metrics.warnings, 'recommendations': quality_metrics.recommendations, 'timestamp': datetime.now().isoformat()}
-            log_step_metrics(config=self.config, step_name=f'{step_name}_quality_summary', metrics={'quality_score': quality_metrics.overall_score, 'compatibility': float(compatibility_metrics.overall_compatible), 'format_match': float(format_metrics.format_match), 'index_valid': float(index_metrics.overall_valid)}, additional_metadata={'step_name': step_name, 'quality_level': quality_metrics.quality_level.value, 'issues_count': len(quality_metrics.issues), 'warnings_count': len(quality_metrics.warnings)})
+            log_step_metrics(config = self.config, step_name = f'{step_name}_quality_summary', metrics={'quality_score': quality_metrics.overall_score, 'compatibility': float(compatibility_metrics.overall_compatible), 'format_match': float(format_metrics.format_match), 'index_valid': float(index_metrics.overall_valid)}, additional_metadata={'step_name': step_name, 'quality_level': quality_metrics.quality_level.value, 'issues_count': len(quality_metrics.issues), 'warnings_count': len(quality_metrics.warnings)})
             self.logger.info(f'✅ Quality summary logged for {step_name}')
         except Exception as e:
             self.logger.exception(f'❌ Failed to log quality summary for {step_name}: {e}')
@@ -112,7 +113,7 @@ class ComprehensivePipelineExecutor:
         self.logger.warning(f'   Issues: {quality_metrics.issues}')
         self.logger.warning(f'   Recommendations: {quality_metrics.recommendations}')
         try:
-            log_step_report(config=self.config, step_name=f'{step_name}_quality_alert', report_data={'alert_type': 'quality_alert', 'step_name': step_name, 'quality_score': quality_metrics.overall_score, 'quality_level': quality_metrics.quality_level.value, 'issues': quality_metrics.issues, 'warnings': quality_metrics.warnings, 'recommendations': quality_metrics.recommendations, 'timestamp': datetime.now().isoformat()}, report_type='quality_alert', additional_metadata={'step_name': step_name, 'alert_severity': 'warning' if quality_metrics.overall_score >= 0.6 else 'critical'})
+            log_step_report(config = self.config, step_name = f'{step_name}_quality_alert', report_data={'alert_type': 'quality_alert', 'step_name': step_name, 'quality_score': quality_metrics.overall_score, 'quality_level': quality_metrics.quality_level.value, 'issues': quality_metrics.issues, 'warnings': quality_metrics.warnings, 'recommendations': quality_metrics.recommendations, 'timestamp': datetime.now().isoformat()}, report_type='quality_alert', additional_metadata={'step_name': step_name, 'alert_severity': 'warning' if quality_metrics.overall_score >= 0.6 else 'critical'})
         except Exception as e:
             self.logger.exception(f'❌ Failed to log quality alert: {e}')
 
@@ -131,9 +132,9 @@ class ComprehensivePipelineExecutor:
             symbol = training_input.get('symbol', 'UNKNOWN')
             exchange = training_input.get('exchange', 'UNKNOWN')
             timeframe = training_input.get('timeframe', '1m')
-            report_name = log_step_report(config=self.config, step_name='comprehensive_pipeline_execution', report_data=comprehensive_report, report_type='comprehensive_execution_report', additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'overall_success': comprehensive_report['execution_summary']['overall_success'], 'overall_quality_score': comprehensive_report['quality_metrics']['overall_quality_score'], 'success_rate': comprehensive_report['execution_summary']['success_rate'], 'total_steps': 7, 'completed_steps': len(comprehensive_report['execution_summary']['completed_steps'])})
+            report_name = log_step_report(config = self.config, step_name='comprehensive_pipeline_execution', report_data = comprehensive_report, report_type='comprehensive_execution_report', additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'overall_success': comprehensive_report['execution_summary']['overall_success'], 'overall_quality_score': comprehensive_report['quality_metrics']['overall_quality_score'], 'success_rate': comprehensive_report['execution_summary']['success_rate'], 'total_steps': 7, 'completed_steps': len(comprehensive_report['execution_summary']['completed_steps'])})
             self.logger.info(f'✅ Comprehensive execution report logged: {report_name}')
-            log_step_metrics(config=self.config, step_name='comprehensive_pipeline_final_metrics', metrics={'overall_success': float(comprehensive_report['execution_summary']['overall_success']), 'overall_quality_score': comprehensive_report['quality_metrics']['overall_quality_score'], 'overall_compatibility_rate': comprehensive_report['quality_metrics']['overall_compatibility_rate'], 'overall_format_rate': comprehensive_report['quality_metrics']['overall_format_rate'], 'overall_index_rate': comprehensive_report['quality_metrics']['overall_index_rate'], 'success_rate': comprehensive_report['execution_summary']['success_rate'], 'total_execution_time': comprehensive_report['execution_summary']['total_execution_time']}, additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'completed_steps': comprehensive_report['execution_summary']['completed_steps'], 'failed_steps': comprehensive_report['execution_summary']['failed_steps']})
+            log_step_metrics(config = self.config, step_name='comprehensive_pipeline_final_metrics', metrics={'overall_success': float(comprehensive_report['execution_summary']['overall_success']), 'overall_quality_score': comprehensive_report['quality_metrics']['overall_quality_score'], 'overall_compatibility_rate': comprehensive_report['quality_metrics']['overall_compatibility_rate'], 'overall_format_rate': comprehensive_report['quality_metrics']['overall_format_rate'], 'overall_index_rate': comprehensive_report['quality_metrics']['overall_index_rate'], 'success_rate': comprehensive_report['execution_summary']['success_rate'], 'total_execution_time': comprehensive_report['execution_summary']['total_execution_time']}, additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'completed_steps': comprehensive_report['execution_summary']['completed_steps'], 'failed_steps': comprehensive_report['execution_summary']['failed_steps']})
         except Exception as e:
             self.logger.exception(f'❌ Failed to log comprehensive results: {e}')
 

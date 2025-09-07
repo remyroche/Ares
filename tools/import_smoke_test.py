@@ -35,38 +35,38 @@ def _maybe_stub_heavy_deps() -> None:
     stub(
         "numpy",
         SimpleNamespace(
-            array=lambda x, dtype=None: x,
-            mean=lambda x, axis=None: (sum(x) / len(x) if hasattr(x, "__len__") and len(x) > 0 else 0.0),
-            std=lambda x, axis=None: 0.0,
-            clip=lambda x, a, b: max(a, min(b, x)),
-            log=lambda x: math.log(x) if x else 0.0,
-            exp=lambda x: math.e ** x if x else 1.0,
-            min=lambda seq: min(seq) if seq else 0.0,
-            max=lambda seq: max(seq) if seq else 0.0,
+            array = lambda x, dtype = None: x,
+            mean = lambda x, axis = None: (sum(x) / len(x) if hasattr(x, "__len__") and len(x) > 0 else 0.0),
+            std = lambda x, axis = None: 0.0,
+            clip = lambda x, a, b: max(a, min(b, x)),
+            log = lambda x: math.log(x) if x else 0.0,
+            exp = lambda x: math.e ** x if x else 1.0,
+            min = lambda seq: min(seq) if seq else 0.0,
+            max = lambda seq: max(seq) if seq else 0.0,
         ),
     )
     # pandas
-    stub("pandas", SimpleNamespace(DataFrame=object, Series=object))
+    stub("pandas", SimpleNamespace(DataFrame = object, Series = object))
     # numba
     stub("numba", SimpleNamespace(njit=(lambda *a, **k: (lambda f: f))))
     # optuna
-    stub("optuna", SimpleNamespace(create_study=lambda **k: SimpleNamespace(optimize=lambda *a, **k: None)))
+    stub("optuna", SimpleNamespace(create_study = lambda **k: SimpleNamespace(optimize = lambda *a, **k: None)))
     # scipy.stats
-    stats = SimpleNamespace(norm=SimpleNamespace(cdf=lambda x: 0.5))
-    sys.modules["scipy"] = SimpleNamespace(stats=stats)
+    stats = SimpleNamespace(norm = SimpleNamespace(cdf = lambda x: 0.5))
+    sys.modules["scipy"] = SimpleNamespace(stats = stats)
     sys.modules["scipy.stats"] = stats
     # sklearn
     sys.modules.setdefault("sklearn", SimpleNamespace())
-    sys.modules.setdefault("sklearn.metrics", SimpleNamespace(accuracy_score=lambda *_a, **_k: 0.0))
-    sys.modules.setdefault("sklearn.model_selection", SimpleNamespace(train_test_split=lambda *a, **k: a))
+    sys.modules.setdefault("sklearn.metrics", SimpleNamespace(accuracy_score = lambda *_a, **_k: 0.0))
+    sys.modules.setdefault("sklearn.model_selection", SimpleNamespace(train_test_split = lambda *a, **k: a))
     sys.modules.setdefault(
         "sklearn.preprocessing",
-        SimpleNamespace(StandardScaler=type("StandardScaler", (), {"fit_transform": lambda self, X: X})),
+        SimpleNamespace(StandardScaler = type("StandardScaler", (), {"fit_transform": lambda self, X: X})),
     )
     sys.modules.setdefault(
         "sklearn.linear_model",
         SimpleNamespace(
-            LogisticRegression=type(
+            LogisticRegression = type(
                 "LogisticRegression",
                 (),
                 {"fit": (lambda self, X, y: None), "predict_proba": (lambda self, X: [[0.5, 0.5] for _ in range(len(X))])},
@@ -76,7 +76,7 @@ def _maybe_stub_heavy_deps() -> None:
     sys.modules.setdefault(
         "sklearn.ensemble",
         SimpleNamespace(
-            RandomForestClassifier=type(
+            RandomForestClassifier = type(
                 "RandomForestClassifier",
                 (),
                 {"fit": (lambda self, X, y: None), "predict_proba": (lambda self, X: [[0.5, 0.5] for _ in range(len(X))])},
@@ -85,7 +85,7 @@ def _maybe_stub_heavy_deps() -> None:
     )
     sys.modules.setdefault(
         "sklearn.svm",
-        SimpleNamespace(SVC=type("SVC", (), {"fit": (lambda self, X, y: None), "decision_function": (lambda self, X: [0.0 for _ in range(len(X))])})),
+        SimpleNamespace(SVC = type("SVC", (), {"fit": (lambda self, X, y: None), "decision_function": (lambda self, X: [0.0 for _ in range(len(X))])})),
     )
 
 

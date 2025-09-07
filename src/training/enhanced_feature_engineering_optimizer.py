@@ -1,5 +1,7 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 '\nEnhanced Feature Engineering Optimizer\n\nThis module optimizes the period optimization process itself using:\n1. Random Forest + SHAP for meta-optimization\n2. Mutual Information for parameter space reduction\n3. Adaptive parameter sampling based on performance\n4. Multi-objective optimization considering multiple metrics\n'
 import json
@@ -12,7 +14,7 @@ from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 
@@ -43,7 +45,7 @@ class EnhancedFeatureEngineeringOptimizer:
         return {'RSI': {'lookback_period': list(range(5, 61, 5)), 'overbought_threshold': list(range(65, 91, 5)), 'oversold_threshold': list(range(10, 36, 5))}, 'MACD': {'fast_period': list(range(5, 26, 1)), 'slow_period': list(range(20, 41, 2)), 'signal_period': list(range(5, 16, 1))}, 'Bollinger_Bands': {'lookback_period': list(range(10, 61, 5)), 'std_dev': [1.0, 1.5, 2.0, 2.5, 3.0, 3.5], 'squeeze_threshold': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]}, 'SMA': {'short_period': list(range(3, 26, 1)), 'long_period': list(range(20, 121, 5))}, 'EMA': {'short_period': list(range(3, 26, 1)), 'long_period': list(range(20, 121, 5))}, 'ATR': {'lookback_period': list(range(5, 36, 1))}, 'Stochastic': {'k_period': list(range(5, 36, 1)), 'd_period': list(range(3, 11, 1)), 'overbought': list(range(70, 91, 5)), 'oversold': list(range(10, 31, 5))}, 'ADX': {'lookback_period': list(range(5, 36, 1)), 'threshold': list(range(15, 41, 5))}, 'CCI': {'lookback_period': list(range(5, 36, 1)), 'constant': [0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04]}}
 
     @handles_errors(fallback={})
-    async def optimize_feature_parameters_enhanced(self, data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None=None, symbol: str='UNKNOWN', exchange: str='UNKNOWN', timeframe: str='1m') -> dict[str, Any]:
+    async def optimize_feature_parameters_enhanced(self, data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None = None, symbol: str='UNKNOWN', exchange: str='UNKNOWN', timeframe: str='1m') -> dict[str, Any]:
         """
         Enhanced feature parameter optimization with meta-optimization.
 
@@ -84,7 +86,7 @@ class EnhancedFeatureEngineeringOptimizer:
         optimized_space = {}
         for feature_name, base_params in self.base_feature_params.items():
             self.logger.info(f'🔍 Optimizing parameter space for {feature_name}...')
-            sample_combinations = self._generate_sample_combinations(base_params, n_samples=100)
+            sample_combinations = self._generate_sample_combinations(base_params, n_samples = 100)
             performance_metrics = []
             for params in sample_combinations:
                 feature_values = self._calculate_feature_with_params(data, feature_name, params)
@@ -101,7 +103,7 @@ class EnhancedFeatureEngineeringOptimizer:
         meta_results = {}
         for feature_name, param_space in optimized_param_space.items():
             self.logger.info(f'🧠 Meta-optimizing {feature_name}...')
-            study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=42), pruner=MedianPruner())
+            study = optuna.create_study(direction='maximize', sampler = TPESampler(seed = 42), pruner = MedianPruner())
 
             def objective(trial: Any) -> float:
                 params = self._sample_parameters_from_space(param_space['reduced_params'], trial)
@@ -109,11 +111,11 @@ class EnhancedFeatureEngineeringOptimizer:
                 if feature_values is None:
                     return 0.0
                 return self._calculate_multi_objective_score(feature_values, target, params)
-            study.optimize(objective, n_trials=self.meta_optimization_config['meta_optimization']['n_trials'], callbacks=[self._early_stopping_callback])
+            study.optimize(objective, n_trials = self.meta_optimization_config['meta_optimization']['n_trials'], callbacks=[self._early_stopping_callback])
             meta_results[feature_name] = {'best_params': study.best_params, 'best_value': study.best_value, 'n_trials': len(study.trials), 'optimization_history': study.trials_dataframe().to_dict('records')}
         return meta_results
 
-    async def _perform_multi_objective_optimization(self, data: pd.DataFrame, target: pd.Series, optimized_param_space: dict[str, Any], regimes: pd.Series | None=None) -> dict[str, Any]:
+    async def _perform_multi_objective_optimization(self, data: pd.DataFrame, target: pd.Series, optimized_param_space: dict[str, Any], regimes: pd.Series | None = None) -> dict[str, Any]:
         """Perform multi-objective optimization considering multiple metrics."""
         multi_obj_results = {}
         for feature_name, param_space in optimized_param_space.items():
@@ -129,7 +131,7 @@ class EnhancedFeatureEngineeringOptimizer:
             multi_obj_results[feature_name] = {'pareto_optimal_solutions': pareto_optimal, 'objective_weights': self.meta_optimization_config['multi_objective']['weights'], 'n_solutions': len(pareto_optimal)}
         return multi_obj_results
 
-    async def _perform_enhanced_feature_optimization(self, data: pd.DataFrame, target: pd.Series, optimized_param_space: dict[str, Any], regimes: pd.Series | None=None) -> dict[str, Any]:
+    async def _perform_enhanced_feature_optimization(self, data: pd.DataFrame, target: pd.Series, optimized_param_space: dict[str, Any], regimes: pd.Series | None = None) -> dict[str, Any]:
         """Perform enhanced feature optimization with optimized parameters."""
         enhanced_results = {}
         for feature_name, param_space in optimized_param_space.items():
@@ -155,12 +157,12 @@ class EnhancedFeatureEngineeringOptimizer:
             return {}
         param_data = []
         performance_scores = []
-        for combo, metrics in zip(parameter_combinations, performance_metrics, strict=False):
+        for combo, metrics in zip(parameter_combinations, performance_metrics, strict = False):
             flat_params = self._flatten_parameters(combo)
             param_data.append(flat_params)
             performance_scores.append(metrics['metrics']['overall_score'])
         param_df = pd.DataFrame(param_data)
-        rf = RandomForestRegressor(n_estimators=100, random_state=42)
+        rf = RandomForestRegressor(n_estimators = 100, random_state = 42)
         rf.fit(param_df, performance_scores)
         explainer = shap.TreeExplainer(rf)
         shap_values = explainer.shap_values(param_df)
@@ -186,7 +188,7 @@ class EnhancedFeatureEngineeringOptimizer:
             reduced_params[param_name] = selected_values
         return reduced_params
 
-    async def _calculate_all_objectives(self, feature_values: pd.Series, target: pd.Series, params: dict[str, Any], regimes: pd.Series | None=None) -> dict[str, float]:
+    async def _calculate_all_objectives(self, feature_values: pd.Series, target: pd.Series, params: dict[str, Any], regimes: pd.Series | None = None) -> dict[str, float]:
         """Calculate all objective scores for multi-objective optimization."""
         objectives = {}
         objectives['importance'] = await self._calculate_importance_score(feature_values, target)
@@ -200,7 +202,7 @@ class EnhancedFeatureEngineeringOptimizer:
         weights = self.meta_optimization_config['multi_objective']['weights']
         objectives = self.meta_optimization_config['multi_objective']['objectives']
         weighted_score = 0.0
-        for obj, weight in zip(objectives, weights, strict=False):
+        for obj, weight in zip(objectives, weights, strict = False):
             weighted_score += scores.get(obj, 0.0) * weight
         return weighted_score
 
@@ -236,7 +238,7 @@ class EnhancedFeatureEngineeringOptimizer:
 
     def _calculate_feature_with_params(self, data: pd.DataFrame, feature_name: str, params: dict[str, Any]) -> pd.Series | None:
         """Calculate feature with given parameters."""
-        from .training.feature_engineering_optimizer import FeatureEngineeringOptimizer
+        from .feature_engineering_optimizer import FeatureEngineeringOptimizer
         base_optimizer = FeatureEngineeringOptimizer(self.config)
         return base_optimizer._generate_synthetic_feature(data, feature_name, params)
 
@@ -247,9 +249,9 @@ class EnhancedFeatureEngineeringOptimizer:
         param_values = list(params.values())
         all_combinations = list(itertools.product(*param_values))
         if len(all_combinations) <= n_samples:
-            return [dict(zip(param_names, combo, strict=False)) for combo in all_combinations]
-        sampled_indices = np.random.choice(len(all_combinations), size=n_samples, replace=False)
-        return [dict(zip(param_names, all_combinations[i], strict=False)) for i in sampled_indices]
+            return [dict(zip(param_names, combo, strict = False)) for combo in all_combinations]
+        sampled_indices = np.random.choice(len(all_combinations), size = n_samples, replace = False)
+        return [dict(zip(param_names, all_combinations[i], strict = False)) for i in sampled_indices]
 
     def _flatten_parameters(self, params: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested parameters for analysis."""
@@ -271,18 +273,18 @@ class EnhancedFeatureEngineeringOptimizer:
         if isinstance(values[0], int | float):
             quantiles = np.linspace(0, 1, n_select)
             selected = [np.percentile(values, q * 100) for q in quantiles]
-            selected = [min(values, key=lambda x: abs(x - s)) for s in selected]
+            selected = [min(values, key = lambda x: abs(x - s)) for s in selected]
             return list(set(selected))
-        return list(np.random.choice(values, size=n_select, replace=False))
+        return list(np.random.choice(values, size = n_select, replace = False))
 
     async def _save_enhanced_optimization_results(self, results: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
         """Save enhanced optimization results to file."""
         output_dir = Path('data/enhanced_feature_engineering_optimization')
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents = True, exist_ok = True)
         filename = f'{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json'
         filepath = output_dir / filename
         with open(filepath, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+            json.dump(results, f, indent = 2, default = str)
         self.logger.info(f'💾 Saved enhanced optimization results to {filepath}')
 
     async def _calculate_performance_metrics(self, feature_values: pd.Series, target: pd.Series) -> dict[str, float]:
@@ -296,7 +298,7 @@ class EnhancedFeatureEngineeringOptimizer:
             weights = self.meta_optimization_config['multi_objective']['weights']
             objectives = self.meta_optimization_config['multi_objective']['objectives']
             overall_score = 0.0
-            for obj, weight in zip(objectives, weights, strict=False):
+            for obj, weight in zip(objectives, weights, strict = False):
                 overall_score += metrics.get(obj, 0.0) * weight
             metrics['overall_score'] = overall_score
         except Exception as e:
@@ -308,7 +310,7 @@ class EnhancedFeatureEngineeringOptimizer:
         try:
             X = feature_values.values.reshape(-1, 1)
             y = target.values
-            rf = RandomForestRegressor(n_estimators=100, random_state=42)
+            rf = RandomForestRegressor(n_estimators = 100, random_state = 42)
             rf.fit(X, y)
             explainer = shap.TreeExplainer(rf)
             shap_values = explainer.shap_values(X)
@@ -323,7 +325,7 @@ class EnhancedFeatureEngineeringOptimizer:
         try:
             X = feature_values.values.reshape(-1, 1)
             y = target.values
-            cv_scores = cross_val_score(RandomForestRegressor(n_estimators=50, random_state=42), X, y, cv=5, scoring='neg_mean_squared_error')
+            cv_scores = cross_val_score(RandomForestRegressor(n_estimators = 50, random_state = 42), X, y, cv = 5, scoring='neg_mean_squared_error')
             stability = 1.0 - np.std(cv_scores) / np.mean(np.abs(cv_scores))
             return max(0.0, min(1.0, stability))
         except Exception as e:
@@ -359,7 +361,7 @@ class EnhancedFeatureEngineeringOptimizer:
             objectives = {'importance': 0.0, 'stability': 0.0, 'diversity': 0.0, 'efficiency': 0.0}
             X = feature_values.values.reshape(-1, 1)
             y = target.values
-            rf = RandomForestRegressor(n_estimators=50, random_state=42)
+            rf = RandomForestRegressor(n_estimators = 50, random_state = 42)
             rf.fit(X, y)
             objectives['importance'] = rf.feature_importances_[0]
             objectives['stability'] = 0.8
@@ -385,13 +387,12 @@ class EnhancedFeatureEngineeringOptimizer:
     def _generate_param_combinations(self, params: dict[str, list]) -> list[dict[str, Any]]:
         """Generate all parameter combinations."""
         import itertools
-        from .core.decorators.errors import handles_errors
-
+        
         param_names = list(params.keys())
         param_values = list(params.values())
         combinations = []
         for combination in itertools.product(*param_values):
-            param_dict = dict(zip(param_names, combination, strict=False))
+            param_dict = dict(zip(param_names, combination, strict = False))
             combinations.append(param_dict)
         return combinations
 
@@ -405,7 +406,7 @@ class EnhancedFeatureEngineeringOptimizer:
                 importance_score = await self._calculate_importance_score(feature_values, target)
                 feature_scores.append({'params': params, 'importance': importance_score, 'feature_values': feature_values})
         if feature_scores:
-            feature_scores.sort(key=lambda x: x['importance'], reverse=True)
+            feature_scores.sort(key = lambda x: x['importance'], reverse = True)
             return feature_scores[:3]
         return []
 
@@ -419,7 +420,7 @@ class EnhancedFeatureEngineeringOptimizer:
                 importance_score = await self._calculate_importance_score(feature_values, target)
                 feature_scores.append({'params': params, 'importance': importance_score, 'feature_values': feature_values})
         if feature_scores:
-            feature_scores.sort(key=lambda x: x['importance'], reverse=True)
+            feature_scores.sort(key = lambda x: x['importance'], reverse = True)
             return feature_scores[:3]
         return []
 

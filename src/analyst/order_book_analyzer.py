@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 
@@ -36,12 +36,12 @@ class OrderBookAnalyzer:
             if df.empty:
                 return pd.DataFrame(columns=["price", "size"])  # empty
             # Group by price level if needed; take max size per price
-            grouped = df.groupby(price_col, as_index=False)[size_col].sum()
+            grouped = df.groupby(price_col, as_index = False)[size_col].sum()
             grouped = grouped.rename(columns={price_col: "price", size_col: "size"})
             return (
-                grouped.sort_values("size", ascending=False)
+                grouped.sort_values("size", ascending = False)
                 .head(top_k)
-                .reset_index(drop=True)
+                .reset_index(drop = True)
             )
         except Exception as e:
             self.logger.warning(f"identify_walls failed: {e}")
@@ -166,13 +166,13 @@ class OrderBookAnalyzer:
                 book,
                 price_col="bid_price",
                 size_col="bid_size",
-                top_k=10,
+                top_k = 10,
             )
             ask_walls = self.identify_walls(
                 book,
                 price_col="ask_price",
                 size_col="ask_size",
-                top_k=10,
+                top_k = 10,
             )
             wall_prices = []
             wall_prices.extend(

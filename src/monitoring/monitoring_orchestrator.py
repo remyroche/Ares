@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Monitoring Orchestrator for Enhanced ML Monitoring
 
@@ -15,7 +17,7 @@ from .utils.common import (
     safe_json_dump, safe_json_load, safe_file_exists,
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 
 # Import all monitoring components
 from .monitoring.enhanced_ml_monitor import (
@@ -102,7 +104,7 @@ class MonitoringOrchestrator:
         
         self.logger.info("Monitoring Orchestrator created")
     
-    @handles_errors(default_return=False, context="monitoring_orchestrator.initialize")
+    @handles_errors(default_return = False, context="monitoring_orchestrator.initialize")
     async def initialize(self) -> bool:
         """Initialize all monitoring components."""
         try:
@@ -143,7 +145,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error initializing monitoring orchestrator: {e}")
             return False
     
-    @handles_errors(default_return=None, context="monitoring_orchestrator.record_trade_decision")
+    @handles_errors(default_return = None, context="monitoring_orchestrator.record_trade_decision")
     async def record_trade_decision(self, decision: TradeDecision) -> None:
         """Record a trade decision with comprehensive monitoring."""
         try:
@@ -208,15 +210,15 @@ class MonitoringOrchestrator:
             model_contributions = []
             for model_decision in decision.ensemble_decision.model_decisions:
                 contribution = ModelContribution(
-                    model_id=model_decision.model_id,
-                    model_type=model_decision.model_type.value,
-                    contribution_score=model_decision.confidence * decision.ensemble_decision.model_weights.get(model_decision.model_id, 0.0),
-                    accuracy_contribution=model_decision.confidence,
-                    profit_contribution=0.0,  # Would need actual profit data
-                    risk_contribution=model_decision.risk_score,
-                    prediction_agreement=1.0 - decision.ensemble_decision.disagreement_level,
-                    feature_diversity=0.5,  # Would need feature analysis
-                    timestamp=decision.timestamp
+                    model_id = model_decision.model_id,
+                    model_type = model_decision.model_type.value,
+                    contribution_score = model_decision.confidence * decision.ensemble_decision.model_weights.get(model_decision.model_id, 0.0),
+                    accuracy_contribution = model_decision.confidence,
+                    profit_contribution = 0.0,  # Would need actual profit data
+                    risk_contribution = model_decision.risk_score,
+                    prediction_agreement = 1.0 - decision.ensemble_decision.disagreement_level,
+                    feature_diversity = 0.5,  # Would need feature analysis
+                    timestamp = decision.timestamp
                 )
                 model_contributions.append(contribution)
             
@@ -260,7 +262,7 @@ class MonitoringOrchestrator:
         except Exception as e:
             self.logger.error(f"Error checking export timing: {e}")
     
-    @handles_errors(default_return=False, context="monitoring_orchestrator.export_monitoring_data")
+    @handles_errors(default_return = False, context="monitoring_orchestrator.export_monitoring_data")
     async def export_monitoring_data(self) -> bool:
         """Export all monitoring data to CSV files."""
         try:
@@ -310,7 +312,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error exporting monitoring data: {e}")
             return False
     
-    @handles_errors(default_return=False, context="monitoring_orchestrator.integrate_trading_system")
+    @handles_errors(default_return = False, context="monitoring_orchestrator.integrate_trading_system")
     async def integrate_trading_system(self, trading_system: Any, 
                                      system_type: str, 
                                      system_id: Optional[str] = None) -> bool:
@@ -336,7 +338,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error integrating trading system: {e}")
             return False
     
-    @handles_errors(default_return=None, context="monitoring_orchestrator.get_ensemble_analysis")
+    @handles_errors(default_return = None, context="monitoring_orchestrator.get_ensemble_analysis")
     async def get_ensemble_analysis(self, ensemble_id: str) -> Dict[str, Any]:
         """Get comprehensive ensemble analysis."""
         try:
@@ -349,7 +351,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error getting ensemble analysis: {e}")
             return {'error': str(e)}
     
-    @handles_errors(default_return=None, context="monitoring_orchestrator.get_model_explanations")
+    @handles_errors(default_return = None, context="monitoring_orchestrator.get_model_explanations")
     async def get_model_explanations(self, model_id: str, features: np.ndarray, 
                                    model: Any) -> Dict[str, Any]:
         """Get model explanations using SHAP/LIME."""
@@ -365,7 +367,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error getting model explanations: {e}")
             return {'error': str(e)}
     
-    @handles_errors(default_return=False, context="monitoring_orchestrator.update_ensemble_weights")
+    @handles_errors(default_return = False, context="monitoring_orchestrator.update_ensemble_weights")
     async def update_ensemble_weights(self, ensemble_id: str, 
                                     model_performances: Dict[str, Dict[str, float]],
                                     current_weights: Dict[str, float]) -> Dict[str, float]:
@@ -418,7 +420,7 @@ class MonitoringOrchestrator:
             self.logger.error(f"Error getting comprehensive stats: {e}")
             return {'error': str(e)}
     
-    @handles_errors(default_return=False, context="monitoring_orchestrator.shutdown")
+    @handles_errors(default_return = False, context="monitoring_orchestrator.shutdown")
     async def shutdown(self) -> bool:
         """Shutdown the monitoring orchestrator gracefully."""
         try:
@@ -446,7 +448,7 @@ class MonitoringOrchestrator:
 
 
 # Factory function for easy initialization
-@handles_errors(default_return=None, context="monitoring_orchestrator.create_monitoring_orchestrator")
+@handles_errors(default_return = None, context="monitoring_orchestrator.create_monitoring_orchestrator")
 async def create_monitoring_orchestrator(config: Dict[str, Any]) -> Optional[MonitoringOrchestrator]:
     """Create and initialize a monitoring orchestrator."""
     try:

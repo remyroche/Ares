@@ -1,6 +1,8 @@
 
 
 from logging import error
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 """Performance Monitor Module."
 
 This module provides comprehensive performance monitoring for trading models,
@@ -16,10 +18,9 @@ from typing import Any
 import yaml
 from scipy import stats
 
-from .core.domain import handle_specific_errors
-from .utils.logger import system_logger
-from .utils.warning_symbols import failed, invalid, warning
-from .core.decorators.errors import handles_errors
+from src.utils.compat import handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import failed, invalid, warning
 import numpy as np
 import time
 

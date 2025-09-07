@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import csv
 import glob
 import os
@@ -59,6 +61,7 @@ def detect_file_format(file_path: Union[str, Path]) -> str | None:
 
 class DataFileReformatter:
     """Class to handle reformatting of data files with different formats."""
+    @log_important_calls
 
     def __init__(self, input_path: str, output_path: str) -> None:
         self.input_path = input_path
@@ -76,6 +79,7 @@ class DataFileReformatter:
                 return processor(infile, writer)
         except Exception:
             return False
+    @log_all_calls
 
     def _process_format1(self, infile: Any, writer: Any) -> bool:
         """Process semicolon-delimited format."""
@@ -96,6 +100,7 @@ class DataFileReformatter:
             return True
         except Exception:
             return False
+    @log_all_calls
 
     def _process_format2(self, infile: Any, writer: Any) -> bool:
         """Process mixed-delimiter format with agg_trade_id."""
@@ -119,6 +124,7 @@ class DataFileReformatter:
             return True
         except Exception:
             return False
+    @log_all_calls
 
     def _process_format3(self, infile: Any, writer: Any) -> bool:
         """Process format missing agg_trade_id column."""
@@ -144,7 +150,7 @@ def auto_reformat_aggtrades_files() -> None:
     """Automatically detect and reformat all aggtrades CSV files that don't follow the correct format."""
     data_cache_dir = 'data_cache'
     backup_dir = 'data_cache/backup_before_reformat'
-    os.makedirs(backup_dir, exist_ok=True)
+    os.makedirs(backup_dir, exist_ok = True)
     pattern = os.path.join(data_cache_dir, 'aggtrades_*_*.csv')
     files = glob.glob(pattern)
     files_to_reformat = []
@@ -176,7 +182,7 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
     """
     data_cache_dir = 'data_cache'
     backup_dir = 'data_cache/backup_before_reformat'
-    os.makedirs(backup_dir, exist_ok=True)
+    os.makedirs(backup_dir, exist_ok = True)
     pattern = os.path.join(data_cache_dir, f'aggtrades_{exchange}_{symbol}_*.csv')
     files = glob.glob(pattern)
     files_to_reformat = []
@@ -223,8 +229,9 @@ def create_dummy_files(input_dir: Any) -> None:
 
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
+    @log_important_calls
 
-    def __init__(self, input_directory: str, output_directory: str, write_header: bool=True) -> None:
+    def __init__(self, input_directory: str, output_directory: str, write_header: bool = True) -> None:
         self.input_directory = input_directory
         self.output_directory = output_directory
         self.write_header = write_header
@@ -239,11 +246,13 @@ class CSVNormalizer:
             return
         for filename in files_to_process:
             self._process_single_file(filename)
+    @log_all_calls
 
     def _setup_output_directory(self) -> None:
         """Create output directory if it doesn't exist."""
         if not os.path.exists(self.output_directory):
             os.makedirs(self.output_directory)
+    @log_all_calls
 
     def _get_csv_files(self) -> list[str]:
         """Get list of CSV files to process."""
@@ -251,6 +260,7 @@ class CSVNormalizer:
             return [f for f in os.listdir(self.input_directory) if f.endswith('.csv')]
         except FileNotFoundError:
             return []
+    @log_all_calls
 
     def _process_single_file(self, filename: str) -> None:
         """Process a single CSV file."""
@@ -266,6 +276,7 @@ class CSVNormalizer:
                     self.processors[format_type](infile, writer)
         except Exception:
             pass
+    @log_all_calls
 
     def _detect_file_format(self, infile: Any) -> str:
         """Detect the format of the CSV file."""
@@ -279,6 +290,7 @@ class CSVNormalizer:
             return 'unknown'
         except StopIteration:
             return 'empty'
+    @log_all_calls
 
     def _process_format1_file(self, infile: Any, writer: Any) -> None:
         """Process format 1 (semicolon-delimited without trade_id)."""
@@ -291,6 +303,7 @@ class CSVNormalizer:
                 row.append('')
             row.append('')
             writer.writerow(row)
+    @log_all_calls
 
     def _process_format2_file(self, infile: Any, writer: Any) -> None:
         """Process format 2 (mixed delimiters with agg_trade_id)."""
@@ -311,3 +324,4 @@ class CSVNormalizer:
                 continue
 if __name__ == '__main__':
     auto_reformat_aggtrades_files()
+import csv

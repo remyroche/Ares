@@ -1,4 +1,5 @@
 """Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring.
+from src.utils.logger import system_logger
 
 This module provides comprehensive function call monitoring, detailed outcome reporting,
 and health check mechanisms for the Step 1.5 data converter validator.
@@ -78,9 +79,9 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 from .config import CONFIG
-from .utils.base_validator import BaseValidator
+from src.utils.base_validator import BaseValidator
 from .utils.common_operations import safe_json_load
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 def check_dependencies() -> bool:
     """Check if all required dependencies are available."""
@@ -136,17 +137,17 @@ class FunctionCallMonitor:
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs) -> None:
-            return await self._monitor_call(func, args, kwargs, is_async=True)
+            return await self._monitor_call(func, args, kwargs, is_async = True)
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs) -> None:
-            return self._monitor_call(func, args, kwargs, is_async=False)
+            return self._monitor_call(func, args, kwargs, is_async = False)
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
 
-    async def _monitor_call(self, func: Callable, args: tuple, kwargs: dict, is_async: bool=False) -> None:
+    async def _monitor_call(self, func: Callable, args: tuple, kwargs: dict, is_async: bool = False) -> None:
         """Monitor a function call with comprehensive tracking."""
         call_id = f'{func.__name__}_{id(func)}_{int(time.time() * 1000000)}'
         start_time = time.time()
@@ -365,7 +366,7 @@ class HealthCheckSystem:
     async def _check_system_resources(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Check system resource availability and usage."""
         try:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_percent = psutil.cpu_percent(interval = 1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             status = 'HEALTHY'
@@ -416,7 +417,7 @@ class HealthCheckSystem:
                             if file.endswith('.parquet'):
                                 file_path = os.path.join(root, file)
                                 try:
-                                    df = pd.read_parquet(file_path, nrows=1)
+                                    df = pd.read_parquet(file_path, nrows = 1)
                                     if df.empty:
                                         issues.append(f'Empty parquet file: {file_path}')
                                 except Exception as e:
@@ -448,7 +449,7 @@ class HealthCheckSystem:
             data_dir = context.get('data_dir', 'data_cache')
             try:
                 if not os.path.exists(data_dir):
-                    os.makedirs(data_dir, exist_ok=True)
+                    os.makedirs(data_dir, exist_ok = True)
                 test_file = os.path.join(data_dir, 'health_check_test.tmp')
                 with open(test_file, 'w') as f:
                     f.write('test')
@@ -657,7 +658,7 @@ class Step1_5DataConverterValidator(BaseValidator):
                 await self._generate_comprehensive_validation_report(validation_artifacts, True)
                 return True
             self.logger.info('\n📋 STEP 2: Checking unified data structure...')
-            unified_structure = await self._check_unified_data_structure(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            unified_structure = await self._check_unified_data_structure(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             validation_artifacts['steps_completed'].append('unified_structure_check')
             validation_artifacts['validation_results']['unified_structure'] = unified_structure
             if unified_structure['found']:
@@ -668,7 +669,7 @@ class Step1_5DataConverterValidator(BaseValidator):
                 validation_artifacts['steps_completed'].append('files_validation')
                 validation_artifacts['validation_results']['files_validation'] = files_validation
                 self.logger.info('\n📋 STEP 4: Validating configuration file...')
-                config_validation = await self._validate_unified_config(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+                config_validation = await self._validate_unified_config(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
                 validation_artifacts['steps_completed'].append('config_validation')
                 validation_artifacts['validation_results']['config_validation'] = config_validation
                 overall_success = files_validation and config_validation
@@ -779,7 +780,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         """
         unified_base = os.path.join(data_dir, 'unified', exchange.lower(), symbol, timeframe)
         if os.path.exists(unified_base) and os.path.isdir(unified_base):
-            parquet_files = glob.glob(os.path.join(unified_base, '*.parquet'), recursive=True)
+            parquet_files = glob.glob(os.path.join(unified_base, '*.parquet'), recursive = True)
             return {'found': True, 'base_path': unified_base, 'parquet_files': parquet_files, 'file_count': len(parquet_files)}
         return {'found': False, 'base_path': unified_base, 'parquet_files': [], 'file_count': 0}
 
@@ -796,7 +797,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             bool: True if validation passed
         """
         try:
-            parquet_files = glob.glob(os.path.join(base_path, '*.parquet'), recursive=True)
+            parquet_files = glob.glob(os.path.join(base_path, '*.parquet'), recursive = True)
             if not parquet_files:
                 self.logger.error(f'❌ No parquet files found in {base_path}')
                 return False
@@ -804,7 +805,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             valid_files = 0
             total_records = 0
             for file_path in parquet_files:
-                file_validation = await self._validate_single_unified_file(file_path=file_path, symbol=symbol, exchange=exchange, timeframe=timeframe)
+                file_validation = await self._validate_single_unified_file(file_path = file_path, symbol = symbol, exchange = exchange, timeframe = timeframe)
                 if file_validation['valid']:
                     valid_files += 1
                     total_records += file_validation['records']

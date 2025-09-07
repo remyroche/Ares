@@ -6,9 +6,10 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, ValidationResult
 import logging
+from .logger import system_logger
 
 class ValidatedStepFactory:
     """Factory for creating validated steps with consistent pipeline standards validation."""
@@ -19,7 +20,7 @@ class ValidatedStepFactory:
         self.validation_history = []
         self.step_schemas = {'data_reading': 'unified', 'sr_optimization': 'unified', 'hmm_regime_discovery': 'unified', 'regime_data_splitting': 'unified', 'labeling': 'unified', 'feature_engineering': 'unified', 'matrix_operations': 'unified', 'feature_selection': 'unified', 'hmm_training': 'unified', 'regime_intelligence': 'unified', 'analyst_creation': 'unified', 'analyst_enhancement': 'unified', 'analyst_ensemble': 'unified', 'tactician_labeling': 'unified', 'tactician_training': 'unified', 'confidence_calibration': 'unified', 'parameter_optimization': 'unified', 'walk_forward_validation': 'unified', 'monte_carlo_validation': 'unified', 'ab_testing': 'unified', 'model_persistence': 'unified'}
 
-    def create_validated_step(self, step_class: Type, step_name: str, step_type: str=None) -> Type:
+    def create_validated_step(self, step_class: Type, step_name: str, step_type: str = None) -> Type:
         """
         Create a validated step class with pipeline standards validation.
         
@@ -140,7 +141,7 @@ class ValidatedStepFactory:
                 if 'timestamp' in fixed_data.columns:
                     if not fixed_data['timestamp'].is_monotonic_increasing:
                         self.logger.info('📈 Sorting data by timestamp')
-                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
                 try:
                     fixed_data = self.standards.enforce_schema(fixed_data, self.schema_name)
                     self.logger.info('✅ Applied schema enforcement')

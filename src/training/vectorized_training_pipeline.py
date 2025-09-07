@@ -1,4 +1,6 @@
 
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 # src/training/vectorized_training_pipeline.py
 
 
@@ -15,8 +17,7 @@ from .training.matrix_enhancement_manager import MatrixEnhancementManager
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -64,7 +65,7 @@ class VectorizedTrainingPipeline:
         self.pipeline_results = {}
         self.performance_metrics = {}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False)
     async def initialize(self) -> bool:
         """Initialize the vectorized training pipeline."""
         try:
@@ -87,7 +88,7 @@ class VectorizedTrainingPipeline:
             )
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None)
     async def enhance_training_data(
         self,
         training_data: dict[str, Any],
@@ -158,7 +159,7 @@ class VectorizedTrainingPipeline:
             )
             return {"error": str(e)}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None)
     async def _apply_vectorized_features(
         self,
         features_df: pd.DataFrame,
@@ -180,7 +181,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Vectorized feature application failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False)
     async def _apply_quality_gates(self, enhanced_data: dict[str, Any]) -> bool:
         """Apply quality gates to enhanced data."""
         try:
@@ -211,7 +212,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Quality gate application failed: {e}")
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None)
     async def optimize_for_performance(
         self,
         training_data: dict[str, Any],
@@ -241,7 +242,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Performance optimization failed: {e}")
             return {"error": str(e)}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None)
     async def optimize_for_memory(
         self,
         training_data: dict[str, Any],
@@ -275,7 +276,7 @@ class VectorizedTrainingPipeline:
             self.logger.exception(f"❌ Memory optimization failed: {e}")
             return {"error": str(e)}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None)
     async def optimize_for_accuracy(
         self,
         training_data: dict[str, Any],
@@ -313,7 +314,7 @@ class VectorizedTrainingPipeline:
                         nmf_enhanced,
                         spectral_enhanced,
                     ],
-                    axis=1,
+                    axis = 1,
                 )
 
                 optimized_data["features"] = combined_features

@@ -1,12 +1,12 @@
+from .core.decorators import handles_errors
 """
+from ..utils.logger import system_logger
 HMM Regime-Based A/B Testing Framework
 Integrates with existing per-HMM regime logic in the pipeline
 """
 from dataclasses import dataclass
 from scipy import stats
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 from typing import Any
 from typing import Dict
 import numpy as np
@@ -54,7 +54,7 @@ class HMMRegimeABTestingFramework:
         self.regime_predictor = None
         self.barrier_optimizer = None
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='HMM A/B testing initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='HMM A/B testing initialization')
     async def initialize(self) -> bool:
         """
         Initialize the A/B testing framework with existing HMM components.
@@ -128,7 +128,7 @@ class HMMRegimeABTestingFramework:
         configs = {regime: universal_config.copy() for regime in self.regime_names}
         return configs
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='HMM A/B test trade execution')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='HMM A/B test trade execution')
     async def execute_ab_test_trade(self, trade_input: Dict[str, Any], test_name: str, regime: str, timeframe: str) -> Optional[HMMRegimeABTestResult]:
         """
         Execute a trade with A/B test configuration for specific HMM regime.
@@ -154,7 +154,7 @@ class HMMRegimeABTestingFramework:
             else:
                 final_config = test_config
             trade_result = await self._execute_trade_with_ab_config(trade_input, final_config, regime, timeframe)
-            ab_result = HMMRegimeABTestResult(regime=regime, test_name=test_name, group=group, trade_id=trade_input['trade_id'], timestamp=datetime.now(), pnl=trade_result['pnl'], confidence=trade_result['confidence'], barriers_used=final_config, timeframe=timeframe, metadata=trade_result.get('metadata', {}))
+            ab_result = HMMRegimeABTestResult(regime = regime, test_name = test_name, group = group, trade_id = trade_input['trade_id'], timestamp = datetime.now(), pnl = trade_result['pnl'], confidence = trade_result['confidence'], barriers_used = final_config, timeframe = timeframe, metadata = trade_result.get('metadata', {}))
             self.test_results[test_name].append(ab_result)
             await self._update_test_metrics(test_name, ab_result)
             return ab_result
@@ -188,8 +188,8 @@ class HMMRegimeABTestingFramework:
         group_metrics['total_pnl'] += result.pnl
         group_metrics['trade_count'] += 1
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='HMM A/B test analysis')
-    async def analyze_ab_test_results(self, test_name: str, min_sample_size: int=50) -> Optional[Dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='HMM A/B test analysis')
+    async def analyze_ab_test_results(self, test_name: str, min_sample_size: int = 50) -> Optional[Dict[str, Any]]:
         """
         Analyze A/B test results for statistical significance.
         

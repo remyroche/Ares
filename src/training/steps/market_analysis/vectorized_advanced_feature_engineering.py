@@ -1,5 +1,7 @@
 
 import pandas as pd
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 '\nRefactored VectorizedAdvancedFeatureEngineering with reduced complexity and type hints.\nThis refactored version breaks down the massive engineer_features method into smaller,\nfocused methods with proper type annotations.\n'
 import asyncio
 import logging
@@ -45,8 +47,9 @@ class PreprocessingResult:
 
 class VectorizedAdvancedFeatureEngineeringRefactored:
     """Refactored version with reduced complexity and type hints"""
+    @log_important_calls
 
-    def __init__(self, config: dict[str, Any] | None=None, logger: logging.Logger | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, logger: logging.Logger | None = None) -> None:
         """Initialize the feature engineering system.
 
         Args:
@@ -58,6 +61,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         self.is_initialized = False
         self.feature_config = FeatureConfig()
         self._initialize_components()
+    @log_all_calls
 
     def _initialize_components(self) -> None:
         """Initialize all required components"""
@@ -70,17 +74,20 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         except Exception as e:
             self.logger.exception(f'❌ Failed to initialize components: {e}')
             raise
+    @log_all_calls
 
     def _initialize_feature_extractors(self) -> None:
         """Initialize feature extraction components"""
+    @log_all_calls
 
     def _initialize_preprocessors(self) -> None:
         """Initialize data preprocessing components"""
+    @log_all_calls
 
     def _initialize_validators(self) -> None:
         """Initialize data validation components"""
 
-    async def engineer_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None, sr_levels: dict[str, Any] | None=None) -> dict[str, Any]:
+    async def engineer_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None, sr_levels: dict[str, Any] | None = None) -> dict[str, Any]:
         """Engineer advanced features with reduced complexity.
 
         This is the main refactored method that orchestrates feature engineering
@@ -105,6 +112,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         features = await self._execute_feature_extraction(feature_tasks)
         final_features = await self._post_process_features(features)
         return self._validate_and_return_features(final_features)
+    @log_all_calls
 
     def _validate_initialization(self) -> bool:
         """Validate that the system is properly initialized"""
@@ -112,6 +120,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             self.logger.error('🚨 Feature engineering not initialized')
             return False
         return True
+    @log_all_calls
 
     def _log_input_data_info(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None) -> None:
         """Log information about input data"""
@@ -142,7 +151,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         processed_data = self._handle_irregular_intervals(processed_data)
         processed_data = self._fill_missing_values(processed_data, 'price')
         quality_improvement = self._calculate_quality_improvement(data, processed_data)
-        return PreprocessingResult(data=processed_data, original_shape=original_shape, preprocessed_shape=processed_data.shape, quality_improvement=quality_improvement, method='enhanced')
+        return PreprocessingResult(data = processed_data, original_shape = original_shape, preprocessed_shape = processed_data.shape, quality_improvement = quality_improvement, method='enhanced')
 
     async def _preprocess_volume_data(self, data: pd.DataFrame) -> PreprocessingResult:
         """Preprocess volume data"""
@@ -151,11 +160,12 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         processed_data = self._handle_irregular_intervals(processed_data)
         processed_data = self._fill_missing_values(processed_data, 'volume')
         quality_improvement = self._calculate_quality_improvement(data, processed_data)
-        return PreprocessingResult(data=processed_data, original_shape=original_shape, preprocessed_shape=processed_data.shape, quality_improvement=quality_improvement, method='enhanced')
+        return PreprocessingResult(data = processed_data, original_shape = original_shape, preprocessed_shape = processed_data.shape, quality_improvement = quality_improvement, method='enhanced')
 
     async def _preprocess_order_flow_data(self, data: pd.DataFrame) -> PreprocessingResult:
         """Preprocess order flow data"""
         return await self._preprocess_price_data(data)
+    @log_all_calls
 
     def _ensure_datetime_index(self, data: pd.DataFrame, data_type: str) -> pd.DataFrame:
         """Ensure data has a proper datetime index"""
@@ -170,14 +180,16 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         else:
             self.logger.warning(f'⚠️ Creating synthetic datetime index for {data_type}')
             start_time = pd.Timestamp('2024-01-01 00:00:00')
-            interval = pd.Timedelta(minutes=1)
+            interval = pd.Timedelta(minutes = 1)
             timestamps = [start_time + i * interval for i in range(len(data))]
             data.index = timestamps
         return data
+    @log_all_calls
 
     def _handle_irregular_intervals(self, data: pd.DataFrame) -> pd.DataFrame:
         """Handle irregular time intervals in data"""
         return data
+    @log_all_calls
 
     def _fill_missing_values(self, data: pd.DataFrame, data_type: str) -> pd.DataFrame:
         """Fill missing values based on data type"""
@@ -186,6 +198,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         if data_type == 'volume':
             return data.fillna(0)
         return data.fillna(method='ffill')
+    @log_all_calls
 
     def _calculate_quality_improvement(self, original: pd.DataFrame, processed: pd.DataFrame) -> float:
         """Calculate quality improvement metric"""
@@ -194,6 +207,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         if original_missing == 0:
             return 0.0
         return (original_missing - processed_missing) / original_missing
+    @log_all_calls
 
     def _create_feature_extraction_tasks(self, preprocessed_data: dict[str, pd.DataFrame], sr_levels: dict[str, Any] | None) -> list[asyncio.Task]:
         """Create async tasks for parallel feature extraction"""
@@ -210,7 +224,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
 
     async def _execute_feature_extraction(self, tasks: list[asyncio.Task]) -> dict[str, pd.DataFrame]:
         """Execute feature extraction tasks in parallel"""
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions = True)
         features = {}
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -230,7 +244,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         features['bb'] = self._calculate_bollinger_bands(price_data)
         features['volume_indicators'] = self._calculate_volume_indicators(price_data, volume_data)
         features['penetration'] = self._calculate_penetration_features(price_data)
-        return {'technical': pd.concat(features.values(), axis=1)}
+        return {'technical': pd.concat(features.values(), axis = 1)}
 
     async def _extract_microstructure_features(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """Extract market microstructure features"""
@@ -254,12 +268,14 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             interaction_features = await self._create_interaction_features(features)
             features['interaction'] = interaction_features
         return features
+    @log_all_calls
 
     def _handle_nan_values(self, df: pd.DataFrame, category: str) -> pd.DataFrame:
         """Handle NaN values in features"""
         if category in ['technical', 'microstructure']:
             return df.fillna(method='ffill').fillna(method='bfill')
         return df.fillna(0)
+    @log_all_calls
 
     def _scale_features(self, features: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """Scale features to standard range"""
@@ -268,6 +284,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
     async def _create_interaction_features(self, features: dict[str, pd.DataFrame]) -> pd.DataFrame:
         """Create interaction features between different feature categories"""
         return pd.DataFrame()
+    @log_all_calls
 
     def _validate_and_return_features(self, features: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Validate and prepare final feature output"""
@@ -279,6 +296,7 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
                 self.logger.warning(f'⚠️ Validation failed for {category} features')
         metadata = self._create_feature_metadata(validated_features)
         return {'features': validated_features, 'metadata': metadata}
+    @log_all_calls
 
     def _validate_feature_category(self, df: pd.DataFrame, category: str) -> bool:
         """Validate a feature category"""
@@ -289,58 +307,65 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
             self.logger.warning(f'⚠️ {category} has {nan_ratio:.2%} NaN values')
             return False
         return True
+    @log_all_calls
 
     def _create_feature_metadata(self, features: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Create metadata for the generated features"""
         return {'total_features': sum((df.shape[1] for df in features.values())), 'categories': list(features.keys()), 'feature_counts': {category: df.shape[1] for category, df in features.items()}, 'timestamp': pd.Timestamp.now()}
+    @log_all_calls
 
     def _calculate_moving_averages(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """Calculate various moving averages"""
-        ma_features = pd.DataFrame(index=price_data.index)
+        ma_features = pd.DataFrame(index = price_data.index)
         for period in [5, 10, 20, 50, 100, 200]:
             if len(price_data) >= period:
                 ma_features[f'ma_{period}'] = price_data['close'].rolling(period).mean()
-                ma_features[f'ema_{period}'] = price_data['close'].ewm(span=period).mean()
+                ma_features[f'ema_{period}'] = price_data['close'].ewm(span = period).mean()
         return ma_features
+    @log_all_calls
 
-    def _calculate_rsi(self, price_data: pd.DataFrame, period: int=14) -> pd.DataFrame:
+    def _calculate_rsi(self, price_data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Relative Strength Index"""
         delta = price_data['close'].diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
-        return pd.DataFrame({'rsi': rsi}, index=price_data.index)
+        return pd.DataFrame({'rsi': rsi}, index = price_data.index)
+    @log_all_calls
 
     def _calculate_macd(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """Calculate MACD indicators"""
-        exp1 = price_data['close'].ewm(span=12, adjust=False).mean()
-        exp2 = price_data['close'].ewm(span=26, adjust=False).mean()
+        exp1 = price_data['close'].ewm(span = 12, adjust = False).mean()
+        exp2 = price_data['close'].ewm(span = 26, adjust = False).mean()
         macd = exp1 - exp2
-        signal = macd.ewm(span=9, adjust=False).mean()
+        signal = macd.ewm(span = 9, adjust = False).mean()
         histogram = macd - signal
-        return pd.DataFrame({'macd': macd, 'macd_signal': signal, 'macd_histogram': histogram}, index=price_data.index)
+        return pd.DataFrame({'macd': macd, 'macd_signal': signal, 'macd_histogram': histogram}, index = price_data.index)
+    @log_all_calls
 
-    def _calculate_bollinger_bands(self, price_data: pd.DataFrame, period: int=20, std_dev: int=2) -> pd.DataFrame:
+    def _calculate_bollinger_bands(self, price_data: pd.DataFrame, period: int = 20, std_dev: int = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands"""
-        sma = price_data['close'].rolling(window=period).mean()
-        std = price_data['close'].rolling(window=period).std()
+        sma = price_data['close'].rolling(window = period).mean()
+        std = price_data['close'].rolling(window = period).std()
         upper_band = sma + std * std_dev
         lower_band = sma - std * std_dev
-        return pd.DataFrame({'bb_upper': upper_band, 'bb_middle': sma, 'bb_lower': lower_band, 'bb_width': upper_band - lower_band, 'bb_percent': (price_data['close'] - lower_band) / (upper_band - lower_band)}, index=price_data.index)
+        return pd.DataFrame({'bb_upper': upper_band, 'bb_middle': sma, 'bb_lower': lower_band, 'bb_width': upper_band - lower_band, 'bb_percent': (price_data['close'] - lower_band) / (upper_band - lower_band)}, index = price_data.index)
+    @log_all_calls
 
     def _calculate_volume_indicators(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.DataFrame:
         """Calculate volume-based indicators"""
-        volume_features = pd.DataFrame(index=price_data.index)
+        volume_features = pd.DataFrame(index = price_data.index)
         obv = (np.sign(price_data['close'].diff()) * volume_data['volume']).fillna(0).cumsum()
         volume_features['obv'] = obv
-        volume_features['volume_ma'] = volume_data['volume'].rolling(window=20).mean()
-        volume_features['volume_roc'] = volume_data['volume'].pct_change(periods=10)
+        volume_features['volume_ma'] = volume_data['volume'].rolling(window = 20).mean()
+        volume_features['volume_roc'] = volume_data['volume'].pct_change(periods = 10)
         return volume_features
+    @log_all_calls
     
     def _calculate_penetration_features(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """Calculate penetration depth features for S/R analysis"""
-        penetration_features = pd.DataFrame(index=price_data.index)
+        penetration_features = pd.DataFrame(index = price_data.index)
         
         # Calculate wick penetration (high/low vs open/close)
         penetration_features['upper_wick_penetration'] = (price_data['high'] - np.maximum(price_data['open'], price_data['close'])) / price_data['close']
@@ -372,10 +397,11 @@ class VectorizedAdvancedFeatureEngineeringRefactored:
         penetration_features['penetration_pattern'] = self._identify_penetration_patterns(penetration_features)
         
         return penetration_features
+    @log_all_calls
     
     def _identify_penetration_patterns(self, penetration_features: pd.DataFrame) -> pd.Series:
         """Identify penetration patterns"""
-        patterns = pd.Series(index=penetration_features.index, dtype='int64')
+        patterns = pd.Series(index = penetration_features.index, dtype='int64')
         
         # Pattern 1: High upper wick penetration (resistance testing)
         high_upper_wick = penetration_features['upper_wick_penetration'] > penetration_features['upper_wick_penetration'].rolling(20).quantile(0.8)

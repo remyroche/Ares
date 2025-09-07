@@ -1,11 +1,14 @@
 """Data Cleaner Component
 from .exceptions import (
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Handles data cleaning operations including duplicate removal, missing value handling, and outlier detection.
 )
 Extracted from step01_5_data_converter.py
 """
 from typing import Any, Optional, Union
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -20,8 +23,9 @@ class DataCleaner:
     - Data normalization and standardization
     - Time series specific cleaning
     """
+    @log_important_calls
 
-    def __init__(self, logger: logging.Logger=None) -> None:
+    def __init__(self, logger: logging.Logger = None) -> None:
         self.logger = logger or system_logger.getChild('DataCleaner')
 
     def remove_duplicates(self, df: pd.DataFrame, subset: Optional[list[str]]=None, keep: str='first') -> pd.DataFrame:
@@ -39,9 +43,9 @@ class DataCleaner:
         try:
             initial_rows = len(df)
             if subset:
-                df_cleaned = df.drop_duplicates(subset=subset, keep=keep)
+                df_cleaned = df.drop_duplicates(subset = subset, keep = keep)
             else:
-                df_cleaned = df.drop_duplicates(keep=keep)
+                df_cleaned = df.drop_duplicates(keep = keep)
             removed_rows = initial_rows - len(df_cleaned)
             if removed_rows > 0:
                 self.logger.info(f'✅ Removed {removed_rows} duplicate rows')
@@ -109,7 +113,7 @@ class DataCleaner:
             self.logger.warning(f'⚠️ Failed to fill missing values: {e}')
             return df
 
-    def detect_outliers(self, df: pd.DataFrame, columns: Optional[list[str]]=None, method: str='zscore', threshold: float=3.0) -> tuple[pd.DataFrame, dict[str, list[int]]]:
+    def detect_outliers(self, df: pd.DataFrame, columns: Optional[list[str]]=None, method: str='zscore', threshold: float = 3.0) -> tuple[pd.DataFrame, dict[str, list[int]]]:
         """
         Detect outliers in specified columns.
         
@@ -172,14 +176,14 @@ class DataCleaner:
                 all_outlier_indices = set()
                 for indices in outliers.values():
                     all_outlier_indices.update(indices)
-                df_cleaned = df_cleaned.drop(index=list(all_outlier_indices))
+                df_cleaned = df_cleaned.drop(index = list(all_outlier_indices))
                 self.logger.info(f'✅ Removed {len(all_outlier_indices)} rows containing outliers')
             elif method == 'cap':
                 for col, indices in outliers.items():
                     if col in df_cleaned.columns:
                         upper_cap = df_cleaned[col].quantile(0.99)
                         lower_cap = df_cleaned[col].quantile(0.01)
-                        df_cleaned.loc[indices, col] = df_cleaned.loc[indices, col].clip(lower=lower_cap, upper=upper_cap)
+                        df_cleaned.loc[indices, col] = df_cleaned.loc[indices, col].clip(lower = lower_cap, upper = upper_cap)
                 self.logger.info('✅ Capped outlier values to percentile bounds')
             elif method == 'nan':
                 for col, indices in outliers.items():
@@ -191,7 +195,7 @@ class DataCleaner:
             self.logger.error(f'❌ Error removing outliers: {e}')
             return df
 
-    def clean_time_series(self, df: pd.DataFrame, timestamp_col: str='timestamp', remove_weekends: bool=False, remove_holidays: bool=False, ensure_regular_intervals: bool=True) -> pd.DataFrame:
+    def clean_time_series(self, df: pd.DataFrame, timestamp_col: str='timestamp', remove_weekends: bool = False, remove_holidays: bool = False, ensure_regular_intervals: bool = True) -> pd.DataFrame:
         """
         Perform time series specific cleaning operations.
         
@@ -209,7 +213,7 @@ class DataCleaner:
             df_cleaned = df.copy()
             if timestamp_col in df_cleaned.columns:
                 if not pd.api.types.is_datetime64_any_dtype(df_cleaned[timestamp_col]):
-                    df_cleaned[timestamp_col] = pd.to_datetime(df_cleaned[timestamp_col], unit='ms', utc=True)
+                    df_cleaned[timestamp_col] = pd.to_datetime(df_cleaned[timestamp_col], unit='ms', utc = True)
                 df_cleaned = df_cleaned.sort_values(timestamp_col)
                 if remove_weekends:
                     weekday_mask = df_cleaned[timestamp_col].dt.dayofweek < 5

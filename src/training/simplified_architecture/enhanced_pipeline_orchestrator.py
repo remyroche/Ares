@@ -34,11 +34,11 @@ class PipelineResult:
     status: PipelineStatus
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    step_results: Dict[str, StepResult] = field(default_factory=dict)
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    artifacts: Dict[str, Path] = field(default_factory=dict)
+    step_results: Dict[str, StepResult] = field(default_factory = dict)
+    errors: List[str] = field(default_factory = list)
+    warnings: List[str] = field(default_factory = list)
+    metrics: Dict[str, Any] = field(default_factory = dict)
+    artifacts: Dict[str, Path] = field(default_factory = dict)
     execution_id: Optional[str] = None
     pipeline_name: Optional[str] = None
     pipeline_version: Optional[str] = None
@@ -81,11 +81,12 @@ class EnhancedPipelineOrchestrator:
     def __init__(self, config_path: Optional[Union[str, Path]]=None, config: Optional[PipelineConfiguration]=None, logger: Optional[logging.Logger]=None, di_container: Optional[EnhancedDIContainer]=None) -> None:
         self.logger = logger or logging.getLogger(__name__)
         self.di_container = di_container or EnhancedDIContainer(self.logger)
-        self.config_manager = ConfigurationManager(logger=self.logger)
+        self.config_manager = ConfigurationManager(logger = self.logger)
         if config:
             self.config = config
         elif config_path:
-            self.config = await self.config_manager.load_config(config_path)
+            import asyncio
+            self.config = asyncio.run(self.config_manager.load_config(config_path))
         else:
             raise ValueError('Either config_path or config must be provided')
         self._current_execution: Optional[PipelineResult] = None
@@ -95,7 +96,7 @@ class EnhancedPipelineOrchestrator:
         self._cancellation_requested = False
         self._register_core_services()
 
-    async def run(self, start_from_step: Optional[str]=None, stop_at_step: Optional[str]=None, parallel_execution: bool=True, checkpoint_interval: int=5) -> PipelineResult:
+    async def run(self, start_from_step: Optional[str]=None, stop_at_step: Optional[str]=None, parallel_execution: bool = True, checkpoint_interval: int = 5) -> PipelineResult:
         """
         Execute the complete pipeline.
         
@@ -113,7 +114,7 @@ class EnhancedPipelineOrchestrator:
         self._is_running = True
         self._cancellation_requested = False
         execution_id = f'pipeline_{int(time.time())}_{self.config.name}'
-        result = PipelineResult(status=PipelineStatus.PENDING, start_time=datetime.now(), execution_id=execution_id, pipeline_name=self.config.name, pipeline_version=self.config.version)
+        result = PipelineResult(status = PipelineStatus.PENDING, start_time = datetime.now(), execution_id = execution_id, pipeline_name = self.config.name, pipeline_version = self.config.version)
         self._current_execution = result
         try:
             self.logger.info(f'Starting pipeline execution: {self.config.name} v{self.config.version}')
@@ -140,7 +141,7 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             result.status = PipelineStatus.FAILED
             result.errors.append(str(e))
-            self.logger.error(f'Pipeline execution failed: {e}', exc_info=True)
+            self.logger.error(f'Pipeline execution failed: {e}', exc_info = True)
         finally:
             result.end_time = datetime.now()
             self._is_running = False
@@ -187,8 +188,8 @@ class EnhancedPipelineOrchestrator:
                 self.logger.info(f'Skipping disabled step: {step_config.name}')
                 continue
             try:
-                config = StepConfig(name=step_config.name, enabled=step_config.enabled, timeout_seconds=step_config.timeout_seconds, retry_count=step_config.retry_count, retry_delay_seconds=step_config.retry_delay_seconds, fail_fast=step_config.fail_fast, parameters=step_config.parameters, dependencies=step_config.dependencies, output_schema=step_config.output_schema, validation_rules=step_config.validation_rules, resource_limits=step_config.resource_limits, metadata=step_config.metadata)
-                step_instance = StepFactory.create_step(config, logger=self.logger.getChild(step_config.name), di_container=self.di_container)
+                config = StepConfig(name = step_config.name, enabled = step_config.enabled, timeout_seconds = step_config.timeout_seconds, retry_count = step_config.retry_count, retry_delay_seconds = step_config.retry_delay_seconds, fail_fast = step_config.fail_fast, parameters = step_config.parameters, dependencies = step_config.dependencies, output_schema = step_config.output_schema, validation_rules = step_config.validation_rules, resource_limits = step_config.resource_limits, metadata = step_config.metadata)
+                step_instance = StepFactory.create_step(config, logger = self.logger.getChild(step_config.name), di_container = self.di_container)
                 self.di_container.register_instance(f'step_{step_config.name}', step_instance, metadata={'step_config': step_config})
                 self._step_instances[step_config.name] = step_instance
                 self.logger.info(f'Initialized step: {step_config.name}')
@@ -260,7 +261,7 @@ class EnhancedPipelineOrchestrator:
                 step_index += 1
             else:
                 tasks = [self._execute_single_step(step.name) for step in ready_steps]
-                await asyncio.gather(*tasks, return_exceptions=True)
+                await asyncio.gather(*tasks, return_exceptions = True)
                 for step in ready_steps:
                     completed_steps.add(step.name)
                 step_index += len(ready_steps)
@@ -293,7 +294,7 @@ class EnhancedPipelineOrchestrator:
                     raise RuntimeError(f'Step {step_name} failed and fail_fast is enabled')
         except Exception as e:
             self.logger.error(f'Step {step_name} execution failed: {e}')
-            error_result = StepResult(status=StepStatus.FAILED, error=e, start_time=datetime.now(), end_time=datetime.now())
+            error_result = StepResult(status = StepStatus.FAILED, error = e, start_time = datetime.now(), end_time = datetime.now())
             self._current_execution.step_results[step_name] = error_result
             if step.config.fail_fast:
                 raise
@@ -303,11 +304,11 @@ class EnhancedPipelineOrchestrator:
         if not self._current_execution:
             return
         checkpoint_dir = Path('checkpoints')
-        checkpoint_dir.mkdir(exist_ok=True)
+        checkpoint_dir.mkdir(exist_ok = True)
         checkpoint_file = checkpoint_dir / f'{self._current_execution.execution_id}_checkpoint.json'
         try:
             with open(checkpoint_file, 'w') as f:
-                json.dump(self._current_execution.to_dict(), f, indent=2, default=str)
+                json.dump(self._current_execution.to_dict(), f, indent = 2, default = str)
             self.logger.info(f'Checkpoint saved: {checkpoint_file}')
         except Exception as e:
             self.logger.error(f'Failed to save checkpoint: {e}')
@@ -319,7 +320,7 @@ class EnhancedPipelineOrchestrator:
         for step in self._step_instances.values():
             cleanup_tasks.append(step.cleanup())
         if cleanup_tasks:
-            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            await asyncio.gather(*cleanup_tasks, return_exceptions = True)
         self._step_instances.clear()
         self.logger.info('Pipeline cleanup completed')
 
@@ -335,9 +336,9 @@ def create_pipeline(config_path: Union[str, Path], environment: Optional[Environ
     Returns:
         Configured pipeline orchestrator
     """
-    config_manager = ConfigurationManager(logger=logger)
+    config_manager = ConfigurationManager(logger = logger)
     config = config_manager.load_config(config_path, environment)
-    return EnhancedPipelineOrchestrator(config=config, logger=logger)
+    return EnhancedPipelineOrchestrator(config = config, logger = logger)
 
 async def example_usage() -> None:
     """Example of using the enhanced pipeline orchestrator."""

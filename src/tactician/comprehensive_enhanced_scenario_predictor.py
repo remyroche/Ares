@@ -148,59 +148,59 @@ class ComprehensiveEnhancedScenarioPredictor:
             volume_ma_ratio = volumes[-1] / np.mean(volumes[-self.feature_config['volume_ma_period']:]) if np.mean(volumes[-self.feature_config['volume_ma_period']:]) > 0 else 1.0
             features.extend([volume_trend, volume_ma_ratio])
             rsi_params = self.technical_indicators['RSI']
-            rsi = talib.RSI(close_prices, timeperiod=rsi_params['lookback_period'])
+            rsi = talib.RSI(close_prices, timeperiod = rsi_params['lookback_period'])
             features.append(rsi[-1] / 100 if not np.isnan(rsi[-1]) else 0.5)
             macd_params = self.technical_indicators['MACD']
-            macd, macd_signal, macd_hist = talib.MACD(close_prices, fastperiod=macd_params['fast_period'], slowperiod=macd_params['slow_period'], signalperiod=macd_params['signal_period'])
+            macd, macd_signal, macd_hist = talib.MACD(close_prices, fastperiod = macd_params['fast_period'], slowperiod = macd_params['slow_period'], signalperiod = macd_params['signal_period'])
             features.extend([macd[-1] if not np.isnan(macd[-1]) else 0.0, macd_signal[-1] if not np.isnan(macd_signal[-1]) else 0.0, macd_hist[-1] if not np.isnan(macd_hist[-1]) else 0.0])
             stoch_params = self.technical_indicators['Stochastic']
-            stoch_k, stoch_d = talib.STOCH(high_prices, low_prices, close_prices, fastk_period=stoch_params['k_period'], slowk_period=stoch_params['d_period'], slowd_period=stoch_params['d_period'])
+            stoch_k, stoch_d = talib.STOCH(high_prices, low_prices, close_prices, fastk_period = stoch_params['k_period'], slowk_period = stoch_params['d_period'], slowd_period = stoch_params['d_period'])
             features.extend([stoch_k[-1] / 100 if not np.isnan(stoch_k[-1]) else 0.5, stoch_d[-1] / 100 if not np.isnan(stoch_d[-1]) else 0.5])
             williams_r_params = self.technical_indicators['Williams_R']
-            williams_r = talib.WILLR(high_prices, low_prices, close_prices, timeperiod=williams_r_params['lookback_period'])
+            williams_r = talib.WILLR(high_prices, low_prices, close_prices, timeperiod = williams_r_params['lookback_period'])
             features.append(williams_r[-1] / -100 if not np.isnan(williams_r[-1]) else 0.5)
             roc_params = self.technical_indicators['ROC']
-            roc = talib.ROC(close_prices, timeperiod=roc_params['lookback_period'])
+            roc = talib.ROC(close_prices, timeperiod = roc_params['lookback_period'])
             features.append(roc[-1] if not np.isnan(roc[-1]) else 0.0)
             mom_params = self.technical_indicators['MOM']
-            mom = talib.MOM(close_prices, timeperiod=mom_params['lookback_period'])
+            mom = talib.MOM(close_prices, timeperiod = mom_params['lookback_period'])
             features.append(mom[-1] / current_price if not np.isnan(mom[-1]) else 0.0)
             trix_params = self.technical_indicators['TRIX']
-            trix = talib.TRIX(close_prices, timeperiod=trix_params['lookback_period'])
+            trix = talib.TRIX(close_prices, timeperiod = trix_params['lookback_period'])
             features.append(trix[-1] if not np.isnan(trix[-1]) else 0.0)
             ultosc_params = self.technical_indicators['ULTOSC']
-            ultosc = talib.ULTOSC(high_prices, low_prices, close_prices, timeperiod1=ultosc_params['period1'], timeperiod2=ultosc_params['period2'], timeperiod3=ultosc_params['period3'])
+            ultosc = talib.ULTOSC(high_prices, low_prices, close_prices, timeperiod1 = ultosc_params['period1'], timeperiod2 = ultosc_params['period2'], timeperiod3 = ultosc_params['period3'])
             features.append(ultosc[-1] / 100 if not np.isnan(ultosc[-1]) else 0.5)
             willr_params = self.technical_indicators['WILLR']
-            willr = talib.WILLR(high_prices, low_prices, close_prices, timeperiod=willr_params['lookback_period'])
+            willr = talib.WILLR(high_prices, low_prices, close_prices, timeperiod = willr_params['lookback_period'])
             features.append(willr[-1] / -100 if not np.isnan(willr[-1]) else 0.5)
             aroon_params = self.technical_indicators['AROON']
-            aroon_down, aroon_up = talib.AROON(high_prices, low_prices, timeperiod=aroon_params['lookback_period'])
+            aroon_down, aroon_up = talib.AROON(high_prices, low_prices, timeperiod = aroon_params['lookback_period'])
             features.extend([aroon_down[-1] / 100 if not np.isnan(aroon_down[-1]) else 0.5, aroon_up[-1] / 100 if not np.isnan(aroon_up[-1]) else 0.5])
             cci_params = self.technical_indicators['CCI']
-            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod=cci_params['lookback_period'])
+            cci = talib.CCI(high_prices, low_prices, close_prices, timeperiod = cci_params['lookback_period'])
             cci_normalized = (cci[-1] + 300) / 600 if not np.isnan(cci[-1]) else 0.5
             features.append(np.clip(cci_normalized, 0, 1))
             cmo_params = self.technical_indicators['CMO']
-            cmo = talib.CMO(close_prices, timeperiod=cmo_params['lookback_period'])
+            cmo = talib.CMO(close_prices, timeperiod = cmo_params['lookback_period'])
             cmo_normalized = (cmo[-1] + 100) / 200 if not np.isnan(cmo[-1]) else 0.5
             features.append(np.clip(cmo_normalized, 0, 1))
             sma_params = self.technical_indicators['SMA']
-            sma_short = talib.SMA(close_prices, timeperiod=sma_params['short_period'])
-            sma_long = talib.SMA(close_prices, timeperiod=sma_params['long_period'])
+            sma_short = talib.SMA(close_prices, timeperiod = sma_params['short_period'])
+            sma_long = talib.SMA(close_prices, timeperiod = sma_params['long_period'])
             sma_ratio = sma_short[-1] / sma_long[-1] if sma_long[-1] > 0 else 1.0
             features.append(sma_ratio if not np.isnan(sma_ratio) else 1.0)
             ema_params = self.technical_indicators['EMA']
-            ema_short = talib.EMA(close_prices, timeperiod=ema_params['short_period'])
-            ema_long = talib.EMA(close_prices, timeperiod=ema_params['long_period'])
+            ema_short = talib.EMA(close_prices, timeperiod = ema_params['short_period'])
+            ema_long = talib.EMA(close_prices, timeperiod = ema_params['long_period'])
             ema_ratio = ema_short[-1] / ema_long[-1] if ema_long[-1] > 0 else 1.0
             features.append(ema_ratio if not np.isnan(ema_ratio) else 1.0)
             dema_params = self.technical_indicators['DEMA']
-            dema = talib.DEMA(close_prices, timeperiod=dema_params['lookback_period'])
+            dema = talib.DEMA(close_prices, timeperiod = dema_params['lookback_period'])
             dema_ratio = current_price / dema[-1] if dema[-1] > 0 else 1.0
             features.append(dema_ratio if not np.isnan(dema_ratio) else 1.0)
             tema_params = self.technical_indicators['TEMA']
-            tema = talib.TEMA(close_prices, timeperiod=tema_params['lookback_period'])
+            tema = talib.TEMA(close_prices, timeperiod = tema_params['lookback_period'])
             tema_ratio = current_price / tema[-1] if tema[-1] > 0 else 1.0
             features.append(tema_ratio if not np.isnan(tema_ratio) else 1.0)
             if self.technical_indicators['HT_TRENDLINE']['enabled']:
@@ -210,46 +210,46 @@ class ComprehensiveEnhancedScenarioPredictor:
             else:
                 features.append(1.0)
             sar_params = self.technical_indicators['SAR']
-            sar = talib.SAR(high_prices, low_prices, acceleration=sar_params['acceleration'], maximum=sar_params['maximum'])
+            sar = talib.SAR(high_prices, low_prices, acceleration = sar_params['acceleration'], maximum = sar_params['maximum'])
             sar_ratio = current_price / sar[-1] if sar[-1] > 0 else 1.0
             features.append(sar_ratio if not np.isnan(sar_ratio) else 1.0)
             adx_params = self.technical_indicators['ADX']
-            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod=adx_params['lookback_period'])
+            adx = talib.ADX(high_prices, low_prices, close_prices, timeperiod = adx_params['lookback_period'])
             features.append(adx[-1] / 100 if not np.isnan(adx[-1]) else 0.5)
             dx_params = self.technical_indicators['DX']
-            dx = talib.DX(high_prices, low_prices, close_prices, timeperiod=dx_params['lookback_period'])
+            dx = talib.DX(high_prices, low_prices, close_prices, timeperiod = dx_params['lookback_period'])
             features.append(dx[-1] / 100 if not np.isnan(dx[-1]) else 0.5)
             minus_di_params = self.technical_indicators['MINUS_DI']
-            minus_di = talib.MINUS_DI(high_prices, low_prices, close_prices, timeperiod=minus_di_params['lookback_period'])
+            minus_di = talib.MINUS_DI(high_prices, low_prices, close_prices, timeperiod = minus_di_params['lookback_period'])
             features.append(minus_di[-1] / 100 if not np.isnan(minus_di[-1]) else 0.5)
             plus_di_params = self.technical_indicators['PLUS_DI']
-            plus_di = talib.PLUS_DI(high_prices, low_prices, close_prices, timeperiod=plus_di_params['lookback_period'])
+            plus_di = talib.PLUS_DI(high_prices, low_prices, close_prices, timeperiod = plus_di_params['lookback_period'])
             features.append(plus_di[-1] / 100 if not np.isnan(plus_di[-1]) else 0.5)
             minus_dm_params = self.technical_indicators['MINUS_DM']
-            minus_dm = talib.MINUS_DM(high_prices, low_prices, timeperiod=minus_dm_params['lookback_period'])
+            minus_dm = talib.MINUS_DM(high_prices, low_prices, timeperiod = minus_dm_params['lookback_period'])
             features.append(minus_dm[-1] / 100 if not np.isnan(minus_dm[-1]) else 0.5)
             plus_dm_params = self.technical_indicators['PLUS_DM']
-            plus_dm = talib.PLUS_DM(high_prices, low_prices, timeperiod=plus_dm_params['lookback_period'])
+            plus_dm = talib.PLUS_DM(high_prices, low_prices, timeperiod = plus_dm_params['lookback_period'])
             features.append(plus_dm[-1] / 100 if not np.isnan(plus_dm[-1]) else 0.5)
             midpoint_params = self.technical_indicators['MIDPOINT']
-            midpoint = talib.MIDPOINT(close_prices, timeperiod=midpoint_params['lookback_period'])
+            midpoint = talib.MIDPOINT(close_prices, timeperiod = midpoint_params['lookback_period'])
             midpoint_ratio = current_price / midpoint[-1] if midpoint[-1] > 0 else 1.0
             features.append(midpoint_ratio if not np.isnan(midpoint_ratio) else 1.0)
             midprice_params = self.technical_indicators['MIDPRICE']
-            midprice = talib.MIDPRICE(high_prices, low_prices, timeperiod=midprice_params['lookback_period'])
+            midprice = talib.MIDPRICE(high_prices, low_prices, timeperiod = midprice_params['lookback_period'])
             midprice_ratio = current_price / midprice[-1] if midprice[-1] > 0 else 1.0
             features.append(midprice_ratio if not np.isnan(midprice_ratio) else 1.0)
             t3_params = self.technical_indicators['T3']
-            t3 = talib.T3(close_prices, timeperiod=t3_params['lookback_period'], vfactor=t3_params['volume_factor'])
+            t3 = talib.T3(close_prices, timeperiod = t3_params['lookback_period'], vfactor = t3_params['volume_factor'])
             t3_ratio = current_price / t3[-1] if t3[-1] > 0 else 1.0
             features.append(t3_ratio if not np.isnan(t3_ratio) else 1.0)
             bb_params = self.technical_indicators['Bollinger_Bands']
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(close_prices, timeperiod=bb_params['lookback_period'], nbdevup=bb_params['std_dev'], nbdevdn=bb_params['std_dev'])
+            bb_upper, bb_middle, bb_lower = talib.BBANDS(close_prices, timeperiod = bb_params['lookback_period'], nbdevup = bb_params['std_dev'], nbdevdn = bb_params['std_dev'])
             bb_position = (current_price - bb_lower[-1]) / (bb_upper[-1] - bb_lower[-1]) if bb_upper[-1] != bb_lower[-1] else 0.5
             bb_squeeze = (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1] if bb_middle[-1] > 0 else 0.0
             features.extend([bb_position if not np.isnan(bb_position) else 0.5, bb_squeeze if not np.isnan(bb_squeeze) else 0.0])
             atr_params = self.technical_indicators['ATR']
-            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod=atr_params['lookback_period'])
+            atr = talib.ATR(high_prices, low_prices, close_prices, timeperiod = atr_params['lookback_period'])
             atr_normalized = atr[-1] / current_price if current_price > 0 else 0.0
             features.append(atr_normalized if not np.isnan(atr_normalized) else 0.0)
             if self.technical_indicators['TRANGE']['enabled']:
@@ -259,11 +259,11 @@ class ComprehensiveEnhancedScenarioPredictor:
             else:
                 features.append(0.0)
             var_params = self.technical_indicators['VAR']
-            var = talib.VAR(close_prices, timeperiod=var_params['lookback_period'])
+            var = talib.VAR(close_prices, timeperiod = var_params['lookback_period'])
             var_normalized = var[-1] / current_price ** 2 if current_price > 0 else 0.0
             features.append(var_normalized if not np.isnan(var_normalized) else 0.0)
             stddev_params = self.technical_indicators['STDDEV']
-            stddev = talib.STDDEV(close_prices, timeperiod=stddev_params['lookback_period'])
+            stddev = talib.STDDEV(close_prices, timeperiod = stddev_params['lookback_period'])
             stddev_normalized = stddev[-1] / current_price if current_price > 0 else 0.0
             features.append(stddev_normalized if not np.isnan(stddev_normalized) else 0.0)
             if self.technical_indicators['OBV']['enabled']:
@@ -279,11 +279,11 @@ class ComprehensiveEnhancedScenarioPredictor:
             else:
                 features.append(0.0)
             adosc_params = self.technical_indicators['ADOSC']
-            adosc = talib.ADOSC(high_prices, low_prices, close_prices, volumes, fastperiod=adosc_params['fast_period'], slowperiod=adosc_params['slow_period'])
+            adosc = talib.ADOSC(high_prices, low_prices, close_prices, volumes, fastperiod = adosc_params['fast_period'], slowperiod = adosc_params['slow_period'])
             adosc_normalized = adosc[-1] / 1000 if not np.isnan(adosc[-1]) else 0.0
             features.append(adosc_normalized)
             mfi_params = self.technical_indicators['MFI']
-            mfi = talib.MFI(high_prices, low_prices, close_prices, volumes, timeperiod=mfi_params['lookback_period'])
+            mfi = talib.MFI(high_prices, low_prices, close_prices, volumes, timeperiod = mfi_params['lookback_period'])
             features.append(mfi[-1] / 100 if not np.isnan(mfi[-1]) else 0.5)
             if self.technical_indicators['HT_DCPERIOD']['enabled']:
                 ht_dcperiod = talib.HT_DCPERIOD(close_prices)
@@ -311,15 +311,15 @@ class ComprehensiveEnhancedScenarioPredictor:
             else:
                 features.append(0.0)
             linearreg_params = self.technical_indicators['LINEARREG']
-            linearreg = talib.LINEARREG(close_prices, timeperiod=linearreg_params['lookback_period'])
+            linearreg = talib.LINEARREG(close_prices, timeperiod = linearreg_params['lookback_period'])
             linearreg_ratio = current_price / linearreg[-1] if linearreg[-1] > 0 else 1.0
             features.append(linearreg_ratio if not np.isnan(linearreg_ratio) else 1.0)
             tsf_params = self.technical_indicators['TSF']
-            tsf = talib.TSF(close_prices, timeperiod=tsf_params['lookback_period'])
+            tsf = talib.TSF(close_prices, timeperiod = tsf_params['lookback_period'])
             tsf_ratio = current_price / tsf[-1] if tsf[-1] > 0 else 1.0
             features.append(tsf_ratio if not np.isnan(tsf_ratio) else 1.0)
             stochrsi_params = self.technical_indicators['STOCHRSI']
-            stochrsi_fastk, stochrsi_fastd = talib.STOCHRSI(close_prices, fastk_period=stochrsi_params['fastk_period'], fastd_period=stochrsi_params['fastd_period'])
+            stochrsi_fastk, stochrsi_fastd = talib.STOCHRSI(close_prices, fastk_period = stochrsi_params['fastk_period'], fastd_period = stochrsi_params['fastd_period'])
             features.extend([stochrsi_fastk[-1] / 100 if not np.isnan(stochrsi_fastk[-1]) else 0.5, stochrsi_fastd[-1] / 100 if not np.isnan(stochrsi_fastd[-1]) else 0.5])
             price_range = (high_prices[-1] - low_prices[-1]) / current_price
             upper_shadow = (high_prices[-1] - current_price) / current_price

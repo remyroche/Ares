@@ -1,4 +1,5 @@
 """
+from ...utils.logger import system_logger
 Dependency Injection Container for Supervisor Module.
 
 This module provides a clean way to manage component dependencies
@@ -6,7 +7,7 @@ and their initialization, reducing coupling and improving testability.
 """
 from typing import Any, Dict
 from .config import CONFIG
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from .utils.state_manager import StateManager
 
 from .utils.model_manager import ModelManager

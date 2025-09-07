@@ -1,4 +1,5 @@
 '\nEnhanced Configuration Management Utilities\n\nThis module provides structured configuration management for the training pipeline.\n'
+from .logger import system_logger
 import json
 import logging
 from dataclasses import asdict, dataclass, field
@@ -6,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 try:
-    from src.utils.logger import system_logger
+    from .logger import system_logger
 except ImportError:
     system_logger = logging.getLogger('EnhancedConfigManagement')
 
@@ -129,8 +130,8 @@ class Step1_5Config:
 @dataclass
 class PipelineConfig:
     """Configuration for the entire pipeline."""
-    step01: Step1Config = field(default_factory=Step1Config)
-    step1_5: Step1_5Config = field(default_factory=Step1_5Config)
+    step01: Step1Config = field(default_factory = Step1Config)
+    step1_5: Step1_5Config = field(default_factory = Step1_5Config)
     environment: str = 'development'
     log_level: str = 'INFO'
     enable_metrics: bool = True
@@ -161,14 +162,14 @@ class PipelineConfig:
         """Create configuration from dictionary."""
         step1_config = Step1Config.from_dict(config_dict.get('step01', {}))
         step1_5_config = Step1_5Config.from_dict(config_dict.get('step1_5', {}))
-        return cls(step01=step1_config, step1_5=step1_5_config, environment=config_dict.get('environment', 'development'), log_level=config_dict.get('log_level', 'INFO'), enable_metrics=config_dict.get('enable_metrics', True), enable_profiling=config_dict.get('enable_profiling', False), default_symbol=config_dict.get('default_symbol', 'ETHUSDT'), default_exchange=config_dict.get('default_exchange', 'BINANCE'), default_timeframe=config_dict.get('default_timeframe', '1m'))
+        return cls(step01 = step1_config, step1_5 = step1_5_config, environment = config_dict.get('environment', 'development'), log_level = config_dict.get('log_level', 'INFO'), enable_metrics = config_dict.get('enable_metrics', True), enable_profiling = config_dict.get('enable_profiling', False), default_symbol = config_dict.get('default_symbol', 'ETHUSDT'), default_exchange = config_dict.get('default_exchange', 'BINANCE'), default_timeframe = config_dict.get('default_timeframe', '1m'))
 
 class ConfigManager:
     """Manager for configuration loading, validation, and saving."""
 
     def __init__(self, config_dir: str='config') -> None:
         self.config_dir = Path(config_dir)
-        self.config_dir.mkdir(exist_ok=True)
+        self.config_dir.mkdir(exist_ok = True)
         self.logger = system_logger.getChild('ConfigManager')
 
     def load_config(self, config_name: str='pipeline_config.json') -> PipelineConfig:
@@ -192,7 +193,7 @@ class ConfigManager:
         try:
             config_dict = config.to_dict()
             with open(config_path, 'w') as f:
-                json.dump(config_dict, f, indent=2)
+                json.dump(config_dict, f, indent = 2)
             self.logger.info(f'Saved configuration to {config_path}')
         except Exception as e:
             self.logger.error(f'Error saving configuration to {config_path}: {e}')
@@ -239,7 +240,8 @@ class ConfigManager:
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f'pipeline_config_{environment}.json'
-        config = await self.load_config(config_name)
+        import asyncio
+        config = asyncio.run(self.load_config(config_name))
         if config.environment != environment:
             config = self.create_environment_config(environment)
             self.save_config(config, config_name)

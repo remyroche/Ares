@@ -1,3 +1,4 @@
+from ...core.decorators import handles_errors
 """Data downloader adapter for training steps.
 
 This module provides a unified interface for downloading data
@@ -9,10 +10,9 @@ from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-from src.utils.decorators.errors import handles_errors
 
 
-@handles_errors(fallback=False)
+@handles_errors(fallback = False)
 async def download_all_data_with_consolidation(
     symbol: str,
     exchange_name: str,
@@ -45,13 +45,15 @@ async def download_all_data_with_consolidation(
             OptimizedDataDownloader,
             OptimizedDownloadConfig,
         )
+        import json
+        import logging
 
         opt_cfg = OptimizedDownloadConfig(
-            symbol=symbol,
-            exchange=exchange_name,
-            interval=interval,
-            lookback_years=lookback_years,
-            data_dir=data_dir,
+            symbol = symbol,
+            exchange = exchange_name,
+            interval = interval,
+            lookback_years = lookback_years,
+            data_dir = data_dir,
         )
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
@@ -68,11 +70,11 @@ async def download_all_data_with_consolidation(
         from src.backtesting.ares_data_downloader_clean import DownloadConfig as CleanDownloadConfig
 
         clean_cfg = CleanDownloadConfig(
-            symbol=symbol,
-            exchange=exchange_name,
-            interval=interval,
-            lookback_years=lookback_years,
-            data_dir=data_dir,
+            symbol = symbol,
+            exchange = exchange_name,
+            interval = interval,
+            lookback_years = lookback_years,
+            data_dir = data_dir,
         )
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()

@@ -1,5 +1,3 @@
-from .core.decorators import handles_errors
-from .core.domain import PipelineStage, PipelineValidationLevel, ensure_data_integrity, monitor_pipeline_performance, monitor_pipeline_step, monitor_step_execution, secure_step_execution, validate_pipeline_input, validate_pipeline_step
 import gc
 import json
 import os
@@ -7,33 +5,156 @@ import random
 import re
 import time
 import warnings
+import logging
+import glob
+import psutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import psutil
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
+from contextlib import contextmanager
+
 import numpy as np
 import pandas as pd
+
+from ..core.domain import PipelineStage, PipelineValidationLevel, ensure_data_integrity, monitor_pipeline_performance, monitor_pipeline_step, monitor_step_execution, secure_step_execution, validate_pipeline_input, validate_pipeline_step
+from ..core.decorators import handles_errors
+from ..utils.logger import system_logger
+from ..utils.datetime_utils import format_datetime, get_current_datetime
+from ..config.computational_optimization import get_computational_optimization_config
+from .enhanced_training_manager_optimized import (
+    CachedBacktester, ProgressiveEvaluator, ParallelBacktester, IncrementalTrainer,
+    StreamingDataProcessor, AdaptiveSampler, MemoryManager, MemoryEfficientDataManager,
+    _make_hashable
+)
+from ..utils.validator_orchestrator import ValidatorOrchestrator
+from ..utils.cross_step_validator import CrossStepValidator
+from ..utils.statistical_distribution_validation import StatisticalValidator
+from ..utils.feature_engineering_validation import FeatureEngineeringValidator
+from ..utils.model_performance_monitor import ModelPerformanceMonitor
+from ..utils.step_dependency_validator import StepDependencyValidator
+from .steps.market_analysis.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
+from .enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized
+
+class ComputationalOptimizationManager:
+    """Computational optimization manager for advanced parameter optimization."""
+
+    def __init__(self, config: dict, market_data, model_config: dict):
+        """Initialize computational optimization manager."""
+        self.config = config
+        self.market_data = market_data
+        self.model_config = model_config
+        self.logger = system_logger.getChild('ComputationalOptimizationManager')
+        self.optimization_statistics = {}
+        self.is_initialized = False
+
+    async def initialize(self, market_data, model_config: dict) -> None:
+        """Initialize the computational optimization manager."""
+        try:
+            self.market_data = market_data
+            self.model_config = model_config
+            self.is_initialized = True
+            self.optimization_statistics = {
+                'initialization_time': datetime.now().isoformat(),
+                'market_data_shape': market_data.shape if hasattr(market_data, 'shape') else 'unknown',
+                'model_config_keys': list(model_config.keys()) if model_config else [],
+                'optimization_method': 'computational_optimization'
+            }
+            self.logger.info('✅ Computational optimization manager initialized')
+        except Exception as e:
+            self.logger.error(f'❌ Failed to initialize computational optimization manager: {e}')
+            raise
+
+    async def optimize_parameters(self, objective_function, n_trials: int, use_surrogates: bool = True):
+        """Optimize parameters using computational optimization techniques."""
+        try:
+            if not self.is_initialized:
+                raise RuntimeError("ComputationalOptimizationManager not initialized")
+
+            self.logger.info(f'🚀 Starting computational optimization with {n_trials} trials')
+
+            # Basic parameter optimization using random search with bounds
+            best_params = {}
+            best_score = float('-inf')
+            trials_completed = 0
+
+            # Get optimization config
+            opt_config = self.config.get('computational_optimization', {})
+
+            # Perform optimization trials
+            for trial in range(n_trials):
+                # Generate random parameters (simplified version)
+                params = self._generate_random_params()
+
+                # Evaluate objective function
+                try:
+                    score = await objective_function(params)
+                    trials_completed += 1
+
+                    if score > best_score:
+                        best_score = score
+                        best_params = params
+                        self.logger.info(f'📈 New best score: {score:.4f} at trial {trial + 1}')
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Trial {trial + 1} failed: {e}')
+                    continue
+
+            # Update statistics
+            self.optimization_statistics.update({
+                'trials_completed': trials_completed,
+                'best_score': best_score,
+                'best_params': best_params,
+                'optimization_duration': (datetime.now() - datetime.fromisoformat(self.optimization_statistics['initialization_time'])).total_seconds(),
+                'use_surrogates': use_surrogates
+            })
+
+            result = {
+                'best_params': best_params,
+                'best_score': best_score,
+                'trials_completed': trials_completed,
+                'method': 'computational_optimization'
+            }
+
+            self.logger.info(f'✅ Computational optimization completed. Best score: {best_score:.4f}')
+            return result
+
+        except Exception as e:
+            self.logger.error(f'❌ Computational optimization failed: {e}')
+            raise
+
+    def _generate_random_params(self) -> dict:
+        """Generate random parameters for optimization."""
+        # Simplified parameter generation - in real implementation this would be more sophisticated
+        return {
+            'n_estimators': random.randint(50, 200),
+            'max_depth': random.randint(3, 10),
+            'learning_rate': random.uniform(0.01, 0.3),
+            'min_samples_split': random.randint(2, 20),
+            'min_samples_leaf': random.randint(1, 10)
+        }
+
+    def get_optimization_statistics(self) -> dict:
+        """Get optimization statistics."""
+        return self.optimization_statistics.copy()
+
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            self.optimization_statistics['cleanup_time'] = datetime.now().isoformat()
+            self.logger.info('🧹 Computational optimization manager cleaned up')
+        except Exception as e:
+            self.logger.error(f'❌ Error during cleanup: {e}')
+
+
+async def create_computational_optimization_manager(config: dict, market_data, model_config: dict):
+    """Create computational optimization manager."""
+    return ComputationalOptimizationManager(config, market_data, model_config)
 
 try:
     import pyarrow.parquet as pq
 except ImportError:
     pq = None
-warnings.filterwarnings('once', category=UserWarning)
-from contextlib import contextmanager
-from .config.computational_optimization import get_computational_optimization_config
-from .training.enhanced_training_manager_optimized import AdaptiveSampler, CachedBacktester, EnhancedTrainingManagerOptimized, IncrementalTrainer, MemoryEfficientDataManager, MemoryManager, ParallelBacktester, ProgressiveEvaluator, StreamingDataProcessor, _make_hashable
-from .training.optimization.computational_optimization_manager import create_computational_optimization_manager
-from .training.steps.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
-from .utils.model_performance_monitor import ModelPerformanceMonitor
-from .utils.logger import system_logger
-from .utils.step_dependency_validator import step_dependency_validator
-from .utils.validator_orchestrator import validator_orchestrator
-from .utils.cross_step_validation import CrossStepValidator
-from .utils.statistical_distribution_validation import StatisticalValidator
-from .utils.feature_engineering_validation import FeatureEngineeringValidator
-from .utils.common_operations import format_datetime, get_current_datetime
-import logging
+warnings.filterwarnings('once', category = UserWarning)
 
 def _is_relative_to(path: Path, base: Path) -> bool:
     """Return True if path is within base when resolved; False otherwise."""
@@ -51,10 +172,10 @@ def _safe_json_write(target: Path, obj: Any) -> None:
     - Sorts keys for deterministic diffs
     - fsyncs before atomic replace
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents = True, exist_ok = True)
     tmp = target.with_suffix(target.suffix + '.tmp')
     with tmp.open('w', encoding='utf-8', newline='\n') as f:
-        json.dump(obj, f, indent=2, sort_keys=True, ensure_ascii=False)
+        json.dump(obj, f, indent = 2, sort_keys = True, ensure_ascii = False)
         try:
             f.flush()
             os.fsync(f.fileno())
@@ -116,12 +237,12 @@ class TrainingManager:
         self.reporting_config = config.get('enhanced_reporting', {})
         self.enable_detailed_reporting = self.reporting_config.get('enable_detailed_reporting', True)
         self.pipeline_reports_dir = Path('reports/enhanced_training_pipeline')
-        self.pipeline_reports_dir.mkdir(parents=True, exist_ok=True)
+        self.pipeline_reports_dir.mkdir(parents = True, exist_ok = True)
         self.current_pipeline_execution_id = None
         self.step_reports = {}
         self.STEP_ORDER = ['step01_data_collection', 'step01_5_data_converter', 'step2_feature_engineering', 'step03_hmm_clustering', 'step04_regime_data_splitting', 'step5_triple_barrier_method', 'step6_feature_generation', 'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 'step14_tactician_labeling', 'step9_tactician_specialist_training', 'step10_confidence_calibration', 'step11_final_parameters_optimization', 'step12_walk_forward_validation', 'step13_monte_carlo_validation', 'step14_ab_testing', 'step15_saving', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
-        self.CRITICAL_ARTIFACTS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet', 'data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step2_feature_engineering': ['data/training/{exchange}_{symbol}_features_train.parquet', 'data/training/{exchange}_{symbol}_features_metadata.json'], 'step02_5_sr_optimization': ['data/optimization/sr_optimization_results.json', 'optimization_results.json'], 'step03_hmm_clustering': ['data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'], 'step4_processing_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet'], 'step5_regime_data_splitting': ['data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json'], 'step6_hmm_based_training': ['data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl'], 'step09_5_multi_timeframe_hmm_ensemble': ['models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json', 'models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib'], 'step6_5_unified_regime_intelligence': ['data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet'], 'step07_enhanced_matrix_operations': ['data/matrix_operations/{exchange}_{symbol}_{timeframe}_matrix_operations_results.json', 'data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet'], 'step08_advanced_feature_selection': ['data/selected_features/{exchange}_{symbol}_{timeframe}_top100_train.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_top100_val.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_top80_train.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_top80_val.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_top60_train.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_top60_val.parquet', 'data/selected_features/{exchange}_{symbol}_{timeframe}_interpretability_report.json'], 'step14_tactician_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet'], 'step9_tactician_specialist_training': ['data/training/{exchange}_{symbol}_{timeframe}_specialist_models.pkl'], 'step10_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_calibration_results.pkl'], 'step11_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_optimization_results.json'], 'step12_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_walk_forward_results.json'], 'step13_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json'], 'step14_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_ab_test_results.json'], 'step15_saving': ['data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl'], 'step16_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_results.pkl'], 'step17_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_results.json'], 'step18_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_results.json'], 'step19_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_results.json'], 'step20_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_results.json'], 'step21_saving': ['data/training/{exchange}_{symbol}_{timeframe}_extended_final_models.pkl']}
-        self.ARTIFACT_PATTERNS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_*_consolidated.*', 'data_cache/aggtrades_{exchange}_{symbol}_consolidated.*'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step02_data_reading': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step03_hmm_clustering': ['data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet', 'data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*', 'data/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json'], 'step04_5_triple_barrier_method': ['data/training/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_barrier_*.json'], 'step05_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_labeled_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_labels_*.json'], 'step06_feature_engineering': ['data/training/{exchange}_{symbol}_{timeframe}_engineered_features.*', 'data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*'], 'step7_regime_data_splitting': ['data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json', 'data/training/{exchange}_{symbol}_{timeframe}_regime_statistics.json'], 'step8_hmm_based_training': ['data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_training_results_*.json'], 'step8_5_unified_regime_intelligence': ['data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_intelligence_*.json'], 'step9_analyst_enhancement': ['data/training/{exchange}_{symbol}_{timeframe}_analyst_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_analyst_*.json'], 'step10_tactician_labeling': ['data/training/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet', 'data/training/{exchange}_{symbol}_{timeframe}_tactician_*.json'], 'step11_tactician_specialist_training': ['data/training/{exchange}_{symbol}_{timeframe}_specialist_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_specialist_*.json'], 'step10_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_calibration_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_calibration_*.json'], 'step11_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_optimization_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_best_params_*.json'], 'step12_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_walk_forward_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_validation_*.parquet'], 'step13_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet'], 'step14_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_ab_test_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet'], 'step15_saving': ['data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json'], 'step16_confidence_calibration': ['data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.json'], 'step17_final_parameters_optimization': ['data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_best_params_*.json'], 'step18_walk_forward_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_validation_*.parquet'], 'step19_monte_carlo_validation': ['data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_mc_results_*.parquet'], 'step20_ab_testing': ['data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_*.json', 'data/training/{exchange}_{symbol}_{timeframe}_extended_ab_results_*.parquet'], 'step21_saving': ['data/training/{exchange}_{symbol}_{timeframe}_extended_final_models_*.pkl', 'data/training/{exchange}_{symbol}_{timeframe}_extended_final_results_*.json']}
+        self.CRITICAL_ARTIFACTS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet', 'data_cache/parquet/aggtrades_{exchange}_{symbol}/**/*.parquet'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step2_feature_engineering': ['data_cache/{exchange}_{symbol}_features_train.parquet', 'data_cache/{exchange}_{symbol}_features_metadata.json'], 'step02_5_sr_optimization': ['data_cache/optimization/sr_optimization_results.json', 'data_cache/optimization_results.json'], 'step03_hmm_clustering': ['data_cache/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet'], 'step4_processing_labeling': ['data_cache/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet'], 'step5_regime_data_splitting': ['data_cache/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_regime_labels.json'], 'step6_hmm_based_training': ['data_cache/{exchange}_{symbol}_{timeframe}_hmm_models.pkl'], 'step09_5_multi_timeframe_hmm_ensemble': ['models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/ensemble_metadata.json', 'models/multi_timeframe_hmm_ensemble/{exchange}_{symbol}/meta_learner.joblib'], 'step6_5_unified_regime_intelligence': ['data_cache/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet'], 'step07_enhanced_matrix_operations': ['data_cache/matrix_operations/{exchange}_{symbol}_{timeframe}_matrix_operations_results.json', 'data_cache/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet'], 'step08_advanced_feature_selection': ['data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top100_train.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top100_val.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top80_train.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top80_val.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top60_train.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_top60_val.parquet', 'data_cache/selected_features/{exchange}_{symbol}_{timeframe}_interpretability_report.json'], 'step14_tactician_labeling': ['data_cache/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet'], 'step9_tactician_specialist_training': ['data_cache/{exchange}_{symbol}_{timeframe}_specialist_models.pkl'], 'step10_confidence_calibration': ['data_cache/{exchange}_{symbol}_{timeframe}_calibration_results.pkl'], 'step11_final_parameters_optimization': ['data_cache/{exchange}_{symbol}_{timeframe}_optimization_results.json'], 'step12_walk_forward_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_walk_forward_results.json'], 'step13_monte_carlo_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_monte_carlo_results.json'], 'step14_ab_testing': ['data_cache/{exchange}_{symbol}_{timeframe}_ab_test_results.json'], 'step15_saving': ['data_cache/{exchange}_{symbol}_{timeframe}_final_models.pkl'], 'step16_confidence_calibration': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_calibration_results.pkl'], 'step17_final_parameters_optimization': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_optimization_results.json'], 'step18_walk_forward_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_walk_forward_results.json'], 'step19_monte_carlo_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_results.json'], 'step20_ab_testing': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_ab_test_results.json'], 'step21_saving': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_final_models.pkl']}
+        self.ARTIFACT_PATTERNS = {'step01_data_collection': ['data_cache/klines_{exchange}_{symbol}_*_consolidated.*', 'data_cache/aggtrades_{exchange}_{symbol}_consolidated.*'], 'step01_5_data_converter': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step02_data_reading': ['data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet', 'data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json'], 'step03_hmm_clustering': ['data_cache/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_*.parquet', 'data_cache/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.*', 'data_cache/hmm_regimes/{exchange}_{symbol}_{timeframe}_regime_*.json'], 'step04_5_triple_barrier_method': ['data_cache/{exchange}_{symbol}_{timeframe}_triple_barrier_*.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_barrier_*.json'], 'step05_labeling': ['data_cache/{exchange}_{symbol}_{timeframe}_labeled_*.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_labels_*.json'], 'step06_feature_engineering': ['data_cache/{exchange}_{symbol}_{timeframe}_engineered_features.*', 'data_cache/{exchange}_{symbol}_{timeframe}_feature_metadata.*'], 'step7_regime_data_splitting': ['data_cache/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_regime_labels.json', 'data_cache/{exchange}_{symbol}_{timeframe}_regime_statistics.json'], 'step8_hmm_based_training': ['data_cache/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_training_results_*.json'], 'step8_5_unified_regime_intelligence': ['data_cache/{exchange}_{symbol}_{timeframe}_unified_intelligence_*.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_intelligence_*.json'], 'step9_analyst_enhancement': ['data_cache/{exchange}_{symbol}_{timeframe}_analyst_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_analyst_*.json'], 'step10_tactician_labeling': ['data_cache/{exchange}_{symbol}_{timeframe}_tactician_labels_*.parquet', 'data_cache/{exchange}_{symbol}_{timeframe}_tactician_*.json'], 'step11_tactician_specialist_training': ['data_cache/{exchange}_{symbol}_{timeframe}_specialist_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_specialist_*.json'], 'step10_confidence_calibration': ['data_cache/{exchange}_{symbol}_{timeframe}_calibration_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_calibration_*.json'], 'step11_final_parameters_optimization': ['data_cache/{exchange}_{symbol}_{timeframe}_optimization_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_best_params_*.json'], 'step12_walk_forward_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_walk_forward_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_validation_*.parquet'], 'step13_monte_carlo_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_monte_carlo_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_mc_results_*.parquet'], 'step14_ab_testing': ['data_cache/{exchange}_{symbol}_{timeframe}_ab_test_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_ab_results_*.parquet'], 'step15_saving': ['data_cache/{exchange}_{symbol}_{timeframe}_final_models_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_final_results_*.json'], 'step16_confidence_calibration': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_calibration_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_calibration_*.json'], 'step17_final_parameters_optimization': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_optimization_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_best_params_*.json'], 'step18_walk_forward_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_walk_forward_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_validation_*.parquet'], 'step19_monte_carlo_validation': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_mc_results_*.parquet'], 'step20_ab_testing': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_ab_test_*.json', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_ab_results_*.parquet'], 'step21_saving': ['data_cache/{exchange}_{symbol}_{timeframe}_extended_final_models_*.pkl', 'data_cache/{exchange}_{symbol}_{timeframe}_extended_final_results_*.json']}
         self.enhanced_training_config: dict[str, Any] = self.config.get('enhanced_training_manager', {})
         self.enhanced_training_interval: int = self.enhanced_training_config.get('enhanced_training_interval', 3600)
         self.max_enhanced_training_history: int = self.enhanced_training_config.get('max_enhanced_training_history', 100)
@@ -157,7 +278,7 @@ class TrainingManager:
         self.memory_manager: MemoryManager | None = None
         self.data_manager: MemoryEfficientDataManager | None = None
         self.checkpoint_dir = Path('checkpoints')
-        self.checkpoint_dir.mkdir(exist_ok=True)
+        self.checkpoint_dir.mkdir(exist_ok = True)
         self.enable_checkpointing = self.enhanced_training_config.get('enable_checkpointing', True)
         self.cached_backtester: CachedBacktester | None = None
         self.progressive_evaluator: ProgressiveEvaluator | None = None
@@ -168,11 +289,12 @@ class TrainingManager:
         self.memory_manager = MemoryManager()
         self.data_manager = MemoryEfficientDataManager()
         self.model_performance_monitor = ModelPerformanceMonitor(self.config)
-        self.step_dependency_validator = step_dependency_validator
+        self.step_dependency_validator = StepDependencyValidator()
         self.cross_step_validator = CrossStepValidator(self.logger)
         self.statistical_validator = StatisticalValidator(self.logger)
         self.feature_engineering_validator = FeatureEngineeringValidator(self.logger)
         self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
+        self.validator_orchestrator = ValidatorOrchestrator()
         self.optimization_config = self.config.get('computational_optimization', {})
         self._load_optimization_config()
         self.optimized_manager = EnhancedTrainingManagerOptimized(config)
@@ -182,7 +304,7 @@ class TrainingManager:
         self.label_reliability: dict[str, float] = {}
         self.activation_thresholds: dict[str, float] = {}
         self.artifacts_dir: Path = Path(self.enhanced_training_config.get('artifacts_dir', 'artifacts/meta_labeling'))
-        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir.mkdir(parents = True, exist_ok = True)
         env_force = os.getenv('FORCE_RERUN', '0') == '1' or os.getenv('FORCE', '0') == '1'
         self.force_rerun: bool = bool(self.enhanced_training_config.get('force_rerun', env_force))
         self.logger.info('Loaded optimization configuration')
@@ -213,9 +335,9 @@ class TrainingManager:
         start = time.time()
         try:
             yield
-            self._log_step_completion(name, start, step_times, success=True)
+            self._log_step_completion(name, start, step_times, success = True)
         except Exception:
-            self._log_step_completion(name, start, step_times, success=False)
+            self._log_step_completion(name, start, step_times, success = False)
             raise
 
     def _save_checkpoint(self, step_name: str, pipeline_state: dict[str, Any]) -> None:
@@ -234,7 +356,7 @@ class TrainingManager:
             exchange = checkpoint_data.get('exchange') or 'unknown'
             timeframe = checkpoint_data.get('timeframe') or 'unknown'
             ns_dir = self.checkpoint_dir / exchange / symbol / timeframe
-            ns_dir.mkdir(parents=True, exist_ok=True)
+            ns_dir.mkdir(parents = True, exist_ok = True)
             target_file = ns_dir / 'training_progress.json'
             _safe_json_write(target_file, checkpoint_data)
             self.logger.info(f'💾 Checkpoint saved: {step_name} -> {target_file}')
@@ -254,7 +376,7 @@ class TrainingManager:
             return None
         if not hasattr(self, 'checkpoint_dir'):
             self.checkpoint_dir = Path('checkpoints')
-            self.checkpoint_dir.mkdir(exist_ok=True)
+            self.checkpoint_dir.mkdir(exist_ok = True)
         try:
             symbol = getattr(self, 'current_symbol', 'unknown')
             exchange = getattr(self, 'current_exchange', 'unknown')
@@ -305,7 +427,7 @@ class TrainingManager:
         try:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
-            cpu_percent = process.cpu_percent(interval=0.1)
+            cpu_percent = process.cpu_percent(interval = 0.1)
             system_memory = psutil.virtual_memory()
             system_memory_percent = system_memory.percent
             return {'memory_mb': float(memory_mb), 'cpu_percent': float(cpu_percent), 'system_memory_percent': float(system_memory_percent), 'available_memory_gb': float(system_memory.available / 1024 / 1024 / 1024)}
@@ -334,7 +456,7 @@ class TrainingManager:
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             timeframe = pipeline_state.get('timeframe', '1m')
             checkpoint_dir = f'checkpoints/{exchange}/{symbol}/{timeframe}'
-            validation_result = await self.step_dependency_validator.validate_step_prerequisites(step_name=step_name, pipeline_state=pipeline_state, checkpoint_dir=checkpoint_dir, force_rerun=force_rerun)
+            validation_result = await self.step_dependency_validator.validate_step_prerequisites(step_name = step_name, pipeline_state = pipeline_state, checkpoint_dir = checkpoint_dir, force_rerun = force_rerun)
             if validation_result['valid']:
                 self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
                 return True
@@ -495,7 +617,7 @@ class TrainingManager:
         elapsed_time = sum(step_times.values())
         self._log_progress(completed_steps, 16, elapsed_time)
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid enhanced training manager configuration'), AttributeError: (False, 'Missing required enhanced training parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='enhanced training manager initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid enhanced training manager configuration'), AttributeError: (False, 'Missing required enhanced training parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='enhanced training manager initialization')
     async def initialize(self) -> bool:
         """Initialize enhanced training manager."
 
@@ -553,7 +675,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Enhanced Training Manager initialization failed: {e}')
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='configuration validation')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='configuration validation')
     def _validate_configuration(self) -> bool:
         """Validate enhanced training manager configuration."
 
@@ -581,7 +703,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Configuration validation failed: {e}')
             return False
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid enhanced training parameters'), AttributeError: (False, 'Missing enhanced training components'), KeyError: (False, 'Missing required enhanced training data')}, default_return=False, context='enhanced training execution')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid enhanced training parameters'), AttributeError: (False, 'Missing enhanced training components'), KeyError: (False, 'Missing required enhanced training data')}, default_return = False, context='enhanced training execution')
     async def execute_enhanced_training(self, enhanced_training_input: dict[str, Any]) -> bool:
         """Execute the comprehensive 16-step enhanced training pipeline."
 
@@ -645,7 +767,7 @@ class TrainingManager:
             self.is_training = False
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='enhanced training inputs validation')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='enhanced training inputs validation')
     def _validate_enhanced_training_inputs(self, enhanced_training_input: dict[str, Any]) -> bool:
         """Validate enhanced training input parameters."
 
@@ -670,13 +792,13 @@ class TrainingManager:
             self.logger.exception(f'❌ Enhanced training inputs validation failed: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='computational optimization initialization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='computational optimization initialization')
     async def _initialize_computational_optimization(self) -> bool:
         """Initialize computational optimization components."""
         try:
             self.logger.info('🚀 Initializing computational optimization components...')
             optimization_config = get_computational_optimization_config()
-            self.computational_optimization_manager = await create_computational_optimization_manager(config=optimization_config, market_data=pd.DataFrame(), model_config={})
+            self.computational_optimization_manager = await create_computational_optimization_manager(config = optimization_config, market_data = pd.DataFrame(), model_config={})
             if self.computational_optimization_manager:
                 self.logger.info('✅ Computational optimization components initialized successfully')
                 return True
@@ -686,7 +808,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Computational optimization initialization failed: {e}')
             return False
 
-    async def _execute_pipeline_step_with_validation(self, step_name: str, step_key: str, step_description: str, step_function: Any, step_args: dict, pipeline_state: dict, training_input: dict, step_times: dict, start_step_key: str, _should_run: Any, is_fatal: bool=True) -> bool:
+    async def _execute_pipeline_step_with_validation(self, step_name: str, step_key: str, step_description: str, step_function: Any, step_args: dict, pipeline_state: dict, training_input: dict, step_times: dict, start_step_key: str, _should_run: Any, is_fatal: bool = True) -> bool:
         """Execute a pipeline step with validation and error handling.
         
         Args:
@@ -741,11 +863,11 @@ class TrainingManager:
                 return False
         return True
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='comprehensive pipeline execution')
-    @validate_pipeline_step(step_name='comprehensive_pipeline', validation_level='WARNING', enable_rollback=True, max_retries=2)
-    @ensure_data_integrity(check_schema=True, check_constraints=True, validate_relationships=True)
-    @monitor_step_execution(enable_timing=True, enable_memory_monitoring=True, enable_progress_tracking=True)
-    @secure_step_execution(error_handling=True, rollback_on_failure=True, data_validation=True, resource_cleanup=True)
+    @handles_errors(exceptions=(Exception,), default_return = False, context='comprehensive pipeline execution')
+    @validate_pipeline_step(step_name='comprehensive_pipeline', validation_level='WARNING', enable_rollback = True, max_retries = 2)
+    @ensure_data_integrity(check_schema = True, check_constraints = True, validate_relationships = True)
+    @monitor_step_execution(enable_timing = True, enable_memory_monitoring = True, enable_progress_tracking = True)
+    @secure_step_execution(error_handling = True, rollback_on_failure = True, data_validation = True, resource_cleanup = True)
     async def _execute_comprehensive_pipeline(self, training_input: dict[str, Any]) -> bool:
         """Execute the comprehensive 16-step training pipeline."
 
@@ -763,7 +885,7 @@ class TrainingManager:
             symbol = _sanitize_identifier(symbol)
             exchange = _sanitize_identifier(exchange)
             timeframe = _sanitize_identifier(timeframe)
-            data_dir = 'data/training'
+            data_dir = 'data_cache'
             data_root = Path(data_dir)
             start_step = training_input.get('start_step', 'step01_data_collection')
             pipeline_state = {}
@@ -824,7 +946,7 @@ class TrainingManager:
                     step1_validation = await self._run_step_validator('step01_data_collection', training_input, pipeline_state)
                     if step1_validation and step1_validation.get('validation_passed', False):
                         self.logger.info('🎉 Step 1: Data Collection completed successfully and validation passed')
-                        enhanced_validation = await self._run_enhanced_validation(step_name='step01_data_collection', pipeline_state=pipeline_state, previous_step_name=None, training_input=training_input)
+                        enhanced_validation = await self._run_enhanced_validation(step_name='step01_data_collection', pipeline_state = pipeline_state, previous_step_name = None, training_input = training_input)
                         if enhanced_validation.get('validation_passed', False):
                             self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                         else:
@@ -862,15 +984,15 @@ class TrainingManager:
                         return False
                     step_start_1_5 = time.time()
                     try:
-                        from .training.steps.data_collection.enhanced_step1_5_data_converter import run_enhanced_step1_5
-                        step1_5_success = await self._execute_step1_5_with_qa(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir='data_cache', force_rerun=self.force_rerun, step1_5_run_step=run_enhanced_step1_5)
+                        from .steps.data_collection.enhanced_step1_5_data_converter import run_enhanced_step1_5
+                        step1_5_success = await self._execute_step1_5_with_qa(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir='data_cache', force_rerun = self.force_rerun, step1_5_run_step = run_enhanced_step1_5)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 1.5: {e}')
                         step1_5_success = False
                     if not step1_5_success:
-                        self._log_step_completion('Step 1.5: Data Converter', step_start_1_5, step_times, success=False)
+                        self._log_step_completion('Step 1.5: Data Converter', step_start_1_5, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 1.5: Data Converter', step_start_1_5, step_times, success=True)
+                    self._log_step_completion('Step 1.5: Data Converter', step_start_1_5, step_times, success = True)
                     pipeline_state['data_converter'] = {'status': 'SUCCESS' if step1_5_success else 'FAILED', 'success': bool(step1_5_success), 'completed': bool(step1_5_success)}
                     self._save_checkpoint('step01_5_data_converter', pipeline_state)
                     step_times['step01_5_data_converter'] = time.time() - step_start_1_5
@@ -878,7 +1000,7 @@ class TrainingManager:
                         step1_5_validation = await self._run_step_validator('step01_5_data_converter', training_input, pipeline_state)
                         if step1_5_validation and step1_5_validation.get('validation_passed', False):
                             self.logger.info('🎉 Step 1.5: Data Converter completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step01_5_data_converter', pipeline_state=pipeline_state, previous_step_name='step01_data_collection', training_input=training_input)
+                            enhanced_validation = await self._run_enhanced_validation(step_name='step01_5_data_converter', pipeline_state = pipeline_state, previous_step_name='step01_data_collection', training_input = training_input)
                             if enhanced_validation.get('validation_passed', False):
                                 self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                             else:
@@ -912,14 +1034,14 @@ class TrainingManager:
                         feature_config = self.config.get('vectorized_advanced_features', {})
                         if not feature_config:
                             feature_config = {'enable_difference_acceleration_features': True, 'enable_volatility_modeling': True, 'enable_correlation_analysis': True, 'enable_momentum_analysis': True, 'enable_liquidity_analysis': True, 'enable_candlestick_patterns': True, 'enable_sr_distance': True, 'enable_wavelet_transforms': True, 'enable_multi_timeframe': True, 'enable_meta_labeling': False, 'enable_explicit_meta_labels': False}
-                        step2_success = await self._execute_step2_with_qa(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, force_rerun=self.force_rerun, feature_config={'vectorized_advanced_features': feature_config})
+                        step2_success = await self._execute_step2_with_qa(symbol = symbol, exchange = exchange, data_dir = data_dir, timeframe = timeframe, force_rerun = self.force_rerun, feature_config={'vectorized_advanced_features': feature_config})
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 2: {e}')
                         step2_success = False
                     if not step2_success:
-                        self._log_step_completion('Step 2: Feature Engineering', step_start_2, step_times, success=False)
+                        self._log_step_completion('Step 2: Feature Engineering', step_start_2, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 2: Feature Engineering', step_start_2, step_times, success=True)
+                    self._log_step_completion('Step 2: Feature Engineering', step_start_2, step_times, success = True)
                     pipeline_state['feature_engineering'] = {'status': 'SUCCESS' if step2_success else 'FAILED', 'success': bool(step2_success), 'completed': bool(step2_success)}
                     self._save_checkpoint('step2_feature_engineering', pipeline_state)
                     step_times['step2_feature_engineering'] = time.time() - step_start_2
@@ -928,7 +1050,7 @@ class TrainingManager:
                             step2_validation = await self._run_step_validator('step2_feature_engineering', training_input, pipeline_state)
                             if step2_validation and step2_validation.get('validation_passed', False):
                                 self.logger.info('🎉 Step 2: Feature Engineering completed successfully and validation passed')
-                                enhanced_validation = await self._run_enhanced_validation(step_name='step2_feature_engineering', pipeline_state=pipeline_state, previous_step_name='step01_5_data_converter', training_input=training_input)
+                                enhanced_validation = await self._run_enhanced_validation(step_name='step2_feature_engineering', pipeline_state = pipeline_state, previous_step_name='step01_5_data_converter', training_input = training_input)
                                 if enhanced_validation.get('validation_passed', False):
                                     self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                                 else:
@@ -954,23 +1076,35 @@ class TrainingManager:
                         return False
                     step_start_2_5 = time.time()
                     try:
-                        from .training.steps import step2_5_sr_optimization
-                        step2_5_success = await step2_5_sr_optimization.run_step(config=self.config)
+                        from .steps import step2_5_sr_optimization
+                        step2_5_success = await step2_5_sr_optimization.run_step(config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 2.5: {e}')
                         step2_5_success = False
                     if not step2_5_success:
-                        self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=False)
+                        self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success=True)
+                    self._log_step_completion('Step 2.5: S/R Detection Optimization', step_start_2_5, step_times, success = True)
                     pipeline_state['sr_optimization'] = {'status': 'SUCCESS' if step2_5_success else 'FAILED', 'success': bool(step2_5_success), 'completed': bool(step2_5_success)}
                     self._save_checkpoint('step02_5_sr_optimization', pipeline_state)
                 if not step2_5_success:
                     return False
                 self.logger.info('➡️ Proceeding to Step 3: Enhanced HMM Clustering')
                 step3_args = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'lookback_days': self.lookback_days, 'force_rerun': self.force_rerun}
-                from .training.steps.market_analysis.step03_hmm_clustering import run_step as step3_run_step
-                step3_success = await self._execute_pipeline_step(step_name='step03_hmm_clustering', step_function=step3_run_step, step_args=step3_args, step_times=step_times, pipeline_state=pipeline_state, training_input=training_input, is_fatal=True, step_description='Step 3: Enhanced HMM Clustering')
+                from .steps.market_analysis.step03_hmm_clustering import run_step as step3_run_step
+                step3_success = await self._execute_pipeline_step_with_validation(
+                    step_name='step03_hmm_clustering',
+                    step_key='step03_hmm_clustering', 
+                    step_description='Step 3: Enhanced HMM Clustering',
+                    step_function=step3_run_step,
+                    step_args=step3_args,
+                    pipeline_state=pipeline_state,
+                    training_input=training_input,
+                    step_times=step_times,
+                    start_step_key=start_step_key,
+                    _should_run=_should_run,
+                    is_fatal=True
+                )
                 if not step3_success:
                     return False
                 self.logger.info('➡️ Proceeding to Step 4: Processing & Labeling')
@@ -989,15 +1123,15 @@ class TrainingManager:
                         return False
                     step_start_4 = time.time()
                     try:
-                        from .training.steps import step4_regime_data_splitting
-                        step4_success = await step4_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                        from .steps import step4_regime_data_splitting
+                        step4_success = await step4_regime_data_splitting.run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = self.force_rerun, config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 4: {e}')
                         step4_success = False
                     if not step4_success:
-                        self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=False)
+                        self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success=True)
+                    self._log_step_completion('Step 4: Regime Data Splitting', step_start_4, step_times, success = True)
                     pipeline_state['regime_data_splitting'] = {'status': 'SUCCESS' if step4_success else 'FAILED', 'success': bool(step4_success), 'completed': bool(step4_success)}
                     self._save_checkpoint('step04_regime_data_splitting', pipeline_state)
                     step_times['step04_regime_data_splitting'] = time.time() - step_start_4
@@ -1005,7 +1139,7 @@ class TrainingManager:
                         step4_validation = await self._run_step_validator('step04_regime_data_splitting', training_input, pipeline_state)
                         if step4_validation and step4_validation.get('validation_passed', False):
                             self.logger.info('🎉 Step 4: Regime Data Splitting completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state=pipeline_state, previous_step_name='step03_hmm_clustering', training_input=training_input)
+                            enhanced_validation = await self._run_enhanced_validation(step_name='step04_regime_data_splitting', pipeline_state = pipeline_state, previous_step_name='step03_hmm_clustering', training_input = training_input)
                             if enhanced_validation.get('validation_passed', False):
                                 self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                             else:
@@ -1031,15 +1165,15 @@ class TrainingManager:
                         return False
                     step_start_5 = time.time()
                     try:
-                        from .training.steps import step5_triple_barrier_method
-                        step5_success = await step5_triple_barrier_method.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                        from .steps import step5_triple_barrier_method
+                        step5_success = await step5_triple_barrier_method.run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = self.force_rerun, config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 5: {e}')
                         step5_success = False
                     if not step5_success:
-                        self._log_step_completion('Step 5: Triple Barrier Method', step_start_5, step_times, success=False)
+                        self._log_step_completion('Step 5: Triple Barrier Method', step_start_5, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 5: Triple Barrier Method', step_start_5, step_times, success=True)
+                    self._log_step_completion('Step 5: Triple Barrier Method', step_start_5, step_times, success = True)
                     pipeline_state['triple_barrier_method'] = {'status': 'SUCCESS' if step5_success else 'FAILED', 'success': bool(step5_success), 'completed': bool(step5_success)}
                     self._save_checkpoint('step5_triple_barrier_method', pipeline_state)
                     step_times['step5_triple_barrier_method'] = time.time() - step_start_5
@@ -1047,7 +1181,7 @@ class TrainingManager:
                         step5_validation = await self._run_step_validator('step5_triple_barrier_method', training_input, pipeline_state)
                         if step5_validation and step5_validation.get('validation_passed', False):
                             self.logger.info('🎉 Step 5: Triple Barrier Method completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step5_triple_barrier_method', pipeline_state=pipeline_state, previous_step_name='step04_regime_data_splitting', training_input=training_input)
+                            enhanced_validation = await self._run_enhanced_validation(step_name='step5_triple_barrier_method', pipeline_state = pipeline_state, previous_step_name='step04_regime_data_splitting', training_input = training_input)
                             if enhanced_validation.get('validation_passed', False):
                                 self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                             else:
@@ -1072,15 +1206,15 @@ class TrainingManager:
                         return False
                     step_start_6 = time.time()
                     try:
-                        from .training.steps import step6_labeling
-                        step6_success = await step6_labeling.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                        from .steps import step6_labeling
+                        step6_success = await step6_labeling.run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = self.force_rerun, config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 6: {e}')
                         step6_success = False
                     if not step6_success:
-                        self._log_step_completion('Step 6: Labeling', step_start_6, step_times, success=False)
+                        self._log_step_completion('Step 6: Labeling', step_start_6, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 6: Labeling', step_start_6, step_times, success=True)
+                    self._log_step_completion('Step 6: Labeling', step_start_6, step_times, success = True)
                     pipeline_state['labeling'] = {'status': 'SUCCESS' if step6_success else 'FAILED', 'success': bool(step6_success), 'completed': bool(step6_success)}
                     self._save_checkpoint('step6_labeling', pipeline_state)
                     step_times['step6_labeling'] = time.time() - step_start_6
@@ -1088,7 +1222,7 @@ class TrainingManager:
                         step6_validation = await self._run_step_validator('step6_labeling', training_input, pipeline_state)
                         if step6_validation and step6_validation.get('validation_passed', False):
                             self.logger.info('🎉 Step 6: Labeling completed successfully and validation passed')
-                            enhanced_validation = await self._run_enhanced_validation(step_name='step6_labeling', pipeline_state=pipeline_state, previous_step_name='step5_triple_barrier_method', training_input=training_input)
+                            enhanced_validation = await self._run_enhanced_validation(step_name='step6_labeling', pipeline_state = pipeline_state, previous_step_name='step5_triple_barrier_method', training_input = training_input)
                             if enhanced_validation.get('validation_passed', False):
                                 self.logger.info(f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})")
                             else:
@@ -1113,15 +1247,15 @@ class TrainingManager:
                         return False
                     step_start_7 = time.time()
                     try:
-                        from .training.steps import step7_feature_engineering
-                        step7_success = await step7_feature_engineering.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                        from .steps import step7_feature_engineering
+                        step7_success = await step7_feature_engineering.run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = self.force_rerun, config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 7: {e}')
                         step7_success = False
                     if not step7_success:
-                        self._log_step_completion('Step 7: Feature Engineering', step_start_7, step_times, success=False)
+                        self._log_step_completion('Step 7: Feature Engineering', step_start_7, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 7: Feature Engineering', step_start_7, step_times, success=True)
+                    self._log_step_completion('Step 7: Feature Engineering', step_start_7, step_times, success = True)
                     pipeline_state['feature_engineering'] = {'status': 'SUCCESS' if step7_success else 'FAILED', 'success': bool(step7_success), 'completed': bool(step7_success)}
                     self._save_checkpoint('step7_feature_engineering', pipeline_state)
                     step_times['step7_feature_engineering'] = time.time() - step_start_7
@@ -1149,15 +1283,15 @@ class TrainingManager:
                         return False
                     step_start_7 = time.time()
                     try:
-                        from .training.steps import step7_regime_data_splitting
-                        step7_success = await step7_regime_data_splitting.run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=self.force_rerun, config=self.config)
+                        from .steps import step7_regime_data_splitting
+                        step7_success = await step7_regime_data_splitting.run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = self.force_rerun, config = self.config)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 7: {e}')
                         step7_success = False
                     if not step7_success:
-                        self._log_step_completion('Step 7: Regime Data Splitting', step_start_7, step_times, success=False)
+                        self._log_step_completion('Step 7: Regime Data Splitting', step_start_7, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 7: Regime Data Splitting', step_start_7, step_times, success=True)
+                    self._log_step_completion('Step 7: Regime Data Splitting', step_start_7, step_times, success = True)
                     pipeline_state['regime_data_splitting'] = {'status': 'SUCCESS' if step7_success else 'FAILED', 'success': bool(step7_success), 'completed': bool(step7_success)}
                     self._save_checkpoint('step7_regime_data_splitting', pipeline_state)
                     step_times['step7_regime_data_splitting'] = time.time() - step_start_7
@@ -1187,15 +1321,15 @@ class TrainingManager:
                     try:
                         method_a_cfg = self.config.get('method_a_mixture_of_experts', {})
                         enable_multi_output = self.config.get('enable_multi_output', True)
-                        from .training.steps.model_training.step09_hmm_based_training import run_enhanced_regime_specific_step
-                        step08_success = await run_enhanced_regime_specific_step(symbol=symbol, data_dir=data_dir, method_a_mixture_of_experts=method_a_cfg, enable_multi_output=enable_multi_output)
+                        from .steps.model_training.step09_hmm_based_training import run_enhanced_regime_specific_step
+                        step08_success = await run_enhanced_regime_specific_step(symbol = symbol, data_dir = data_dir, method_a_mixture_of_experts = method_a_cfg, enable_multi_output = enable_multi_output)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 8: {e}')
                         step8_success = False
                     if not step8_success:
-                        self._log_step_completion('Step 8: Enhanced HMM-Based Training', step_start_8, step_times, success=False)
+                        self._log_step_completion('Step 8: Enhanced HMM-Based Training', step_start_8, step_times, success = False)
                         return False
-                    self._log_step_completion('Step 8: Enhanced HMM-Based Training', step_start_8, step_times, success=True)
+                    self._log_step_completion('Step 8: Enhanced HMM-Based Training', step_start_8, step_times, success = True)
                     pipeline_state['enhanced_hmm_based_training'] = {'status': 'SUCCESS' if step8_success else 'FAILED', 'success': bool(step8_success), 'completed': bool(step8_success)}
                     self._save_checkpoint('step8_enhanced_hmm_based_training', pipeline_state)
                     step_times['step8_enhanced_hmm_based_training'] = time.time() - step_start_8
@@ -1217,7 +1351,7 @@ class TrainingManager:
                     self._heartbeat('Step 9.5: Multi-Timeframe HMM Ensemble Training')
                     step_start_9_5 = time.time()
                     try:
-                        from .training.steps import step9_5_multi_timeframe_hmm_ensemble
+                        from .steps import step9_5_multi_timeframe_hmm_ensemble
                         regimes: list[str] = []
                         try:
                             rf_dir = os.path.join(data_dir, 'regime_forecasting')
@@ -1236,7 +1370,7 @@ class TrainingManager:
                                 regimes = sorted({r for r in regimes if r})
                         except Exception:
                             regimes = []
-                        step9_5_result = await step9_5_multi_timeframe_hmm_ensemble.run_step(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, lookback_days=self.lookback_days, regimes=regimes if regimes else None)
+                        step9_5_result = await step9_5_multi_timeframe_hmm_ensemble.run_step(symbol = symbol, exchange = exchange, data_dir = data_dir, timeframe = timeframe, lookback_days = self.lookback_days, regimes = regimes if regimes else None)
                         step9_5_success = bool(step9_5_result and step9_5_result.get('success', False))
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 9.5: {e}')
@@ -1246,7 +1380,7 @@ class TrainingManager:
                     if step9_5_result and isinstance(step9_5_result, dict) and ('per_regime' in step9_5_result):
                         pipeline_state['multi_timeframe_hmm_ensemble']['per_regime'] = step9_5_result['per_regime']
                     self._save_checkpoint('step09_5_multi_timeframe_hmm_ensemble', pipeline_state)
-                    self._log_step_completion('Step 9.5: Multi-Timeframe HMM Ensemble Training', step_start_9_5, step_times, success=bool(step9_5_success))
+                    self._log_step_completion('Step 9.5: Multi-Timeframe HMM Ensemble Training', step_start_9_5, step_times, success = bool(step9_5_success))
                     try:
                         step9_5_validation = await self._run_step_validator('step09_5_multi_timeframe_hmm_ensemble', training_input, pipeline_state)
                         if step9_5_validation and step9_5_validation.get('validation_passed', False):
@@ -1265,33 +1399,33 @@ class TrainingManager:
                     self._heartbeat('Step 6_5: Unified Regime Intelligence')
                     step_start_6_5 = time.time()
                     try:
-                        from .training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
-                        from .training.steps import step8_tactician_labeling
-                        from .training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
-                        from .training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
-                        from .analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
+                        from .steps.model_training.step12_analyst_enhancement_per_regime import RegimeAwareAnalystEnhancementStep
+                        from .steps import step8_tactician_labeling
+                        from .steps.model_training.step15_tactician_specialist_training_per_regime import RegimeAwareTacticianSpecialistTrainingStep
+                        from .steps.optimisation.step16_confidence_calibration_per_regime import RegimeAwareConfidenceCalibrationStep
+                        from ..analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
                         import pandas as _pd
-                        from .training.steps import step12_walk_forward_validation
-                        from .training.steps import step13_monte_carlo_validation
-                        from .training.steps import step14_ab_testing
-                        from .training.steps import step15_saving
-                        from .training.steps import step16_confidence_calibration
-                        from .training.steps import step17_final_parameters_optimization
-                        from .training.steps import step18_walk_forward_validation
-                        from .training.steps import step19_monte_carlo_validation
-                        from .training.steps import step20_ab_testing
-                        from .training.steps import step21_saving
-                        from .training.steps import step2_feature_engineering
+                        from .steps import step12_walk_forward_validation
+                        from .steps import step13_monte_carlo_validation
+                        from .steps import step14_ab_testing
+                        from .steps import step15_saving
+                        from .steps import step16_confidence_calibration
+                        from .steps import step17_final_parameters_optimization
+                        from .steps import step18_walk_forward_validation
+                        from .steps import step19_monte_carlo_validation
+                        from .steps import step20_ab_testing
+                        from .steps import step21_saving
+                        from .steps import step2_feature_engineering
                         from pathlib import Path
                         import glob
-                        from .training.steps.model_training.step10_unified_regime_intelligence import run_step as step6_5_run_step
-                        step6_5_success = await step6_5_run_step(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, lookback_days=self.lookback_days)
+                        from .steps.model_training.step10_unified_regime_intelligence import run_step as step6_5_run_step
+                        step6_5_success = await step6_5_run_step(symbol = symbol, exchange = exchange, data_dir = data_dir, timeframe = timeframe, lookback_days = self.lookback_days)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 6_5: {e}')
                         step6_5_success = False
                     pipeline_state['unified_regime_intelligence'] = {'status': 'SUCCESS' if step6_5_success else 'FAILED', 'success': bool(step6_5_success), 'completed': bool(step6_5_success)}
                     self._save_checkpoint('step6_5_unified_regime_intelligence', pipeline_state)
-                    self._log_step_completion('Step 6_5: Unified Regime Intelligence', step_start_6_5, step_times, success=bool(step6_5_success))
+                    self._log_step_completion('Step 6_5: Unified Regime Intelligence', step_start_6_5, step_times, success = bool(step6_5_success))
                     step6_5_validation = await self._run_step_validator('step6_5_unified_regime_intelligence', training_input, pipeline_state)
                     if step6_5_validation and step6_5_validation.get('validation_passed', False):
                         self.logger.info('🎉 Step 6_5: Unified Regime Intelligence completed successfully and validation passed')
@@ -1332,7 +1466,7 @@ class TrainingManager:
                     if not await self.validate_step_dependencies('step8_model_evaluation', pipeline_state, self.force_rerun):
                         self.logger.error('❌ Step 8 dependencies not met, skipping')
                         return False
-                    step8_success = await step8_tactician_labeling.run_step(symbol=symbol, data_dir=data_dir, timeframe='1m', exchange=exchange)
+                    step8_success = await step8_tactician_labeling.run_step(symbol = symbol, data_dir = data_dir, timeframe='1m', exchange = exchange)
                     if not step8_success:
                         return False
                     step8_validation = await self._run_step_validator('step8_tactician_labeling', {**training_input, 'timeframe': '1m'}, pipeline_state)
@@ -1406,8 +1540,8 @@ class TrainingManager:
                         label_names = sorted({c.replace('intensity_', '') for c in df_input.columns if isinstance(c, str) and c.startswith('intensity_')})
                         thresholds = self.get_activation_thresholds()
                         artifacts_dir = self.config.get('meta_labeling', {}).get('artifacts_dir', 'artifacts/meta_labeling')
-                        evaluator = MetaLabelRelevanceEvaluator(artifacts_dir=artifacts_dir, mi_threshold=0.01, sharpe_min_delta=0.0, synergy_mi_threshold=0.005, max_pairs=200)
-                        res = evaluator.evaluate_from_frame(df_input, label_names, thresholds, returns_col='close_returns', risk_free_rate=0.0)
+                        evaluator = MetaLabelRelevanceEvaluator(artifacts_dir = artifacts_dir, mi_threshold = 0.01, sharpe_min_delta = 0.0, synergy_mi_threshold = 0.005, max_pairs = 200)
+                        res = evaluator.evaluate_from_frame(df_input, label_names, thresholds, returns_col='close_returns', risk_free_rate = 0.0)
                     pipeline_state['active_meta_labels'] = res.get('active_labels', [])
                     pipeline_state['inactive_meta_labels'] = res.get('inactive_labels', [])
                     self.logger.info({'msg': 'meta_label_relevance', 'active': len(res.get('active_labels', [])), 'inactive': len(res.get('inactive_labels', []))})
@@ -1416,7 +1550,7 @@ class TrainingManager:
                 try:
                     artifacts_dir = self.config.get('meta_labeling', {}).get('artifacts_dir', 'artifacts/meta_labeling')
                     artifacts_root = Path(artifacts_dir)
-                    artifacts_root.mkdir(parents=True, exist_ok=True)
+                    artifacts_root.mkdir(parents = True, exist_ok = True)
                     reliability = pipeline_state.get('label_reliability', {}) if isinstance(pipeline_state, dict) else {}
                     if not reliability:
                         acc_map = {}
@@ -1444,25 +1578,25 @@ class TrainingManager:
 
                 async def _execute_step11() -> None:
                     if self.computational_optimization_manager:
-                        return await self._run_optimized_parameters_optimization(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                        return await self._run_optimized_parameters_optimization(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     else:
-                        from .training.steps import step11_final_parameters_optimization
-                        return await step11_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                step11_success = await self._execute_pipeline_step_with_validation(step_name='step11_final_parameters_optimization', step_key='step11_final_parameters_optimization', step_description='Step 11: Final Parameters Optimization', step_function=_execute_step11, step_args={}, pipeline_state=pipeline_state, training_input=training_input, step_times=step_times, start_step_key=start_step_key, _should_run=_should_run, is_fatal=True)
+                        from .steps import step11_final_parameters_optimization
+                        return await step11_final_parameters_optimization.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
+                step11_success = await self._execute_pipeline_step_with_validation(step_name='step11_final_parameters_optimization', step_key='step11_final_parameters_optimization', step_description='Step 11: Final Parameters Optimization', step_function = _execute_step11, step_args={}, pipeline_state = pipeline_state, training_input = training_input, step_times = step_times, start_step_key = start_step_key, _should_run = _should_run, is_fatal = True)
                 if not step11_success:
                     return False
 
                 async def _execute_step12() -> None:
-                    from .training.steps import step12_walk_forward_validation
-                    return await step12_walk_forward_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                step12_success = await self._execute_pipeline_step_with_validation(step_name='step12_walk_forward_validation', step_key='step12_walk_forward_validation', step_description='Step 12: Walk Forward Validation', step_function=_execute_step12, step_args={}, pipeline_state=pipeline_state, training_input=training_input, step_times=step_times, start_step_key=start_step_key, _should_run=_should_run, is_fatal=True)
+                    from .steps import step12_walk_forward_validation
+                    return await step12_walk_forward_validation.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
+                step12_success = await self._execute_pipeline_step_with_validation(step_name='step12_walk_forward_validation', step_key='step12_walk_forward_validation', step_description='Step 12: Walk Forward Validation', step_function = _execute_step12, step_args={}, pipeline_state = pipeline_state, training_input = training_input, step_times = step_times, start_step_key = start_step_key, _should_run = _should_run, is_fatal = True)
                 if not step12_success:
                     return False
 
                 async def _execute_step13() -> None:
-                    from .training.steps.model_training.validation.step19_monte_carlo_validation import run_step as step13_run_step
-                    return await step13_run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
-                step13_success = await self._execute_pipeline_step_with_validation(step_name='step13_monte_carlo_validation', step_key='step13_monte_carlo_validation', step_description='Step 13: Monte Carlo Validation', step_function=_execute_step13, step_args={}, pipeline_state=pipeline_state, training_input=training_input, step_times=step_times, start_step_key=start_step_key, _should_run=_should_run, is_fatal=True)
+                    from .steps.model_training.validation.step19_monte_carlo_validation import run_step as step13_run_step
+                    return await step13_run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
+                step13_success = await self._execute_pipeline_step_with_validation(step_name='step13_monte_carlo_validation', step_key='step13_monte_carlo_validation', step_description='Step 13: Monte Carlo Validation', step_function = _execute_step13, step_args={}, pipeline_state = pipeline_state, training_input = training_input, step_times = step_times, start_step_key = start_step_key, _should_run = _should_run, is_fatal = True)
                 if not step13_success:
                     return False
                 should_run_step14 = _should_run('step14_ab_testing')
@@ -1475,7 +1609,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step14_model_deployment', pipeline_state):
                         self.logger.error('❌ Step 14 dependencies not met, skipping')
                         return False
-                    step14_success = await step14_ab_testing.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step14_success = await step14_ab_testing.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step14_success:
                         return False
                     step14_validation = await self._run_step_validator('step14_ab_testing', training_input, pipeline_state)
@@ -1495,7 +1629,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step15_live_monitoring', pipeline_state):
                         self.logger.error('❌ Step 15 dependencies not met, skipping')
                         return False
-                    step15_success = await step15_saving.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step15_success = await step15_saving.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step15_success:
                         return False
                     step15_validation = await self._run_step_validator('step15_saving', training_input, pipeline_state)
@@ -1511,7 +1645,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step16_confidence_calibration', pipeline_state):
                         self.logger.error('❌ Step 16 dependencies not met, skipping')
                         return False
-                    step16_success = await step16_confidence_calibration.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step16_success = await step16_confidence_calibration.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step16_success:
                         return False
                     step16_validation = await self._run_step_validator('step16_confidence_calibration', training_input, pipeline_state)
@@ -1527,7 +1661,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step17_final_parameters_optimization', pipeline_state):
                         self.logger.error('❌ Step 17 dependencies not met, skipping')
                         return False
-                    step17_success = await step17_final_parameters_optimization.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step17_success = await step17_final_parameters_optimization.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step17_success:
                         return False
                     step17_validation = await self._run_step_validator('step17_final_parameters_optimization', training_input, pipeline_state)
@@ -1543,7 +1677,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step18_walk_forward_validation', pipeline_state):
                         self.logger.error('❌ Step 18 dependencies not met, skipping')
                         return False
-                    step18_success = await step18_walk_forward_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step18_success = await step18_walk_forward_validation.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step18_success:
                         return False
                     step18_validation = await self._run_step_validator('step18_walk_forward_validation', training_input, pipeline_state)
@@ -1559,7 +1693,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step19_monte_carlo_validation', pipeline_state):
                         self.logger.error('❌ Step 19 dependencies not met, skipping')
                         return False
-                    step19_success = await step19_monte_carlo_validation.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step19_success = await step19_monte_carlo_validation.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step19_success:
                         return False
                     step19_validation = await self._run_step_validator('step19_monte_carlo_validation', training_input, pipeline_state)
@@ -1575,7 +1709,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step20_ab_testing', pipeline_state):
                         self.logger.error('❌ Step 20 dependencies not met, skipping')
                         return False
-                    step20_success = await step20_ab_testing.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step20_success = await step20_ab_testing.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step20_success:
                         return False
                     step20_validation = await self._run_step_validator('step20_ab_testing', training_input, pipeline_state)
@@ -1591,7 +1725,7 @@ class TrainingManager:
                     if not await self._validate_step_dependencies('step21_saving', pipeline_state):
                         self.logger.error('❌ Step 21 dependencies not met, skipping')
                         return False
-                    step21_success = await step21_saving.run_step(symbol=symbol, data_dir=data_dir, timeframe=timeframe, exchange=exchange)
+                    step21_success = await step21_saving.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                     if not step21_success:
                         return False
                     step21_validation = await self._run_step_validator('step21_saving', training_input, pipeline_state)
@@ -1623,7 +1757,7 @@ class TrainingManager:
             self.logger.info('💾 Checkpoint saved - you can resume training later')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='optimized tools initialization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='optimized tools initialization')
     async def _initialize_optimized_tools(self) -> bool:
         """Initialize optimized tools and the optimized training manager."""
         try:
@@ -1634,10 +1768,10 @@ class TrainingManager:
             await self.optimized_manager.initialize()
             self.logger.info('   ✅ Optimized training manager initialized')
             if self.chunk_size:
-                self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
+                self.streaming_processor = StreamingDataProcessor(chunk_size = self.chunk_size)
                 self.logger.info('   ✅ Streaming processor initialized')
             if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
+                self.parallel_backtester = ParallelBacktester(n_workers = self.max_workers)
                 self.logger.info(f'   ✅ Parallel backtester initialized with {self.max_workers} workers')
             self.adaptive_sampler = AdaptiveSampler()
             self.logger.info('   ✅ Adaptive sampler initialized')
@@ -1650,7 +1784,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Failed to initialize optimized tools: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='optimized parameters optimization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='optimized parameters optimization')
     async def _run_optimized_parameters_optimization(self, symbol: str, data_dir: str, timeframe: str, exchange: str) -> bool:
         """Run optimized parameters optimization using computational optimization strategies."""
         try:
@@ -1688,10 +1822,10 @@ class TrainingManager:
             if self.enable_parallelization:
                 self.logger.info('🔄 Using parallel backtesting for optimization...')
                 param_combinations = self._generate_parameter_combinations()
-                with ParallelBacktester(n_workers=self.max_workers) as pb:
-                    (parallel_results, pb.evaluate_batch(param_combinations, market_data))
+                with ParallelBacktester(n_workers = self.max_workers) as pb:
+                    parallel_results = pb.evaluate_batch(param_combinations, market_data)
                 if parallel_results:
-                    (best_result, max(parallel_results, key=lambda x: x.get('score', -float('inf'))))
+                    best_result = max(parallel_results, key=lambda x: x.get('score', -float('inf')))
                     optimization_results = best_result
                     self.logger.info(f"✅ Parallel optimization completed. Best score: {best_result.get('score', 'N/A')}")
             elif self.enable_early_stopping and self.progressive_evaluator:
@@ -1710,7 +1844,7 @@ class TrainingManager:
                 self.logger.info('🔄 Using standard computational optimization...')
                 if self.computational_optimization_manager:
                     await self.computational_optimization_manager.initialize(market_data, {})
-                optimization_results = await self.computational_optimization_manager.optimize_parameters(objective_function=optimization_objective, n_trials=self.n_trials, use_surrogates=True)
+                optimization_results = await self.computational_optimization_manager.optimize_parameters(objective_function = optimization_objective, n_trials = self.n_trials, use_surrogates = True)
             if self.computational_optimization_manager:
                 self.optimization_statistics = self.computational_optimization_manager.get_optimization_statistics()
             else:
@@ -1736,7 +1870,7 @@ class TrainingManager:
         """Generate random parameters for optimization."""
         return {'param1': np.random.uniform(0.1, 1.0), 'param2': np.random.uniform(0.1, 1.0), 'param3': np.random.randint(1, 100)}
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='market data loading for optimization')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='market data loading for optimization')
     async def _load_market_data_for_optimization(self, symbol: str, data_dir: str, exchange: str) -> pd.DataFrame | None:
         """Load market data for optimization using optimized data manager."""
         try:
@@ -1782,7 +1916,7 @@ class TrainingManager:
     def get_memory_profile(self) -> dict[str, Any]:
         """Expose current memory profile using MemoryManager."""
         if self.memory_manager is None:
-            self.memory_manager = MemoryManager(memory_threshold=self.memory_threshold)
+            self.memory_manager = MemoryManager(memory_threshold = self.memory_threshold)
         return self.memory_manager.profile_memory_usage()
 
     def get_optimization_stats(self) -> dict[str, Any]:
@@ -1871,7 +2005,7 @@ class TrainingManager:
         except Exception as e:
             self.logger.debug(f'Error logging validation failure: {e}')
 
-    async def _run_step_validator(self, step_name: str, training_input: dict[str, Any], pipeline_state: dict[str, Any], validation_level: str='CRITICAL') -> dict[str, Any]:
+    async def _run_step_validator(self, step_name: str, training_input: dict[str, Any], pipeline_state: dict[str, Any], validation_level: str='CRITICAL', force_rerun: bool=False) -> dict[str, Any]:
         """Run validator for a specific step."
 
         Args:
@@ -1892,7 +2026,7 @@ class TrainingManager:
             if not dependency_validation['valid']:
                 self.logger.error(f"❌ Step dependencies failed for {step_name}: {dependency_validation['reason']}")
                 return {'step_name': step_name, 'validation_passed': False, 'error': f"Dependency validation failed: {dependency_validation['reason']}"}
-            validation_result = await validator_orchestrator.run_step_validator(step_name=step_name, training_input=training_input, pipeline_state=pipeline_state, config=self.config, validation_level=validation_level)
+            validation_result = await self.validator_orchestrator.run_step_validator(step_name = step_name, training_input = training_input, pipeline_state = pipeline_state, config = self.config, validation_level = validation_level)
             self.validation_results[step_name] = validation_result
             if validation_result.get('validation_passed', False):
                 self.logger.info(f'✅ {step_name} validation passed')
@@ -1924,7 +2058,7 @@ class TrainingManager:
             elif step_name == 'step2_feature_engineering':
                 symbol = training_input.get('symbol', 'ETHUSDT')
                 exchange = training_input.get('exchange', 'BINANCE')
-                features_path = Path(f'data/training/{exchange}_{symbol}_features_train.parquet')
+                features_path = Path(f'data_cache/{exchange}_{symbol}_features_train.parquet')
                 if features_path.exists():
                     current_data = pd.read_parquet(features_path)
             elif 'feature' in step_name.lower():
@@ -1943,7 +2077,7 @@ class TrainingManager:
                         if parquet_files:
                             prev_data = pd.read_parquet(parquet_files[0])
                 if prev_data is not None and current_data is not None:
-                    cross_step_result = self.cross_step_validator.validate_step_transition(previous_step_output=prev_data, current_step_input=current_data, previous_step_name=previous_step_name, current_step_name=step_name)
+                    cross_step_result = self.cross_step_validator.validate_step_transition(previous_step_output = prev_data, current_step_input = current_data, previous_step_name = previous_step_name, current_step_name = step_name)
                     enhanced_results['cross_step_validation'] = {'passed': cross_step_result.passed, 'quality_score': cross_step_result.quality_score, 'issues': len(cross_step_result.issues), 'warnings': len(cross_step_result.warnings)}
                     if not cross_step_result.passed:
                         enhanced_results['validation_passed'] = False
@@ -1954,7 +2088,7 @@ class TrainingManager:
                     columns_to_validate = ['open', 'high', 'low', 'close', 'volume']
                 elif 'feature' in step_name.lower():
                     columns_to_validate = None
-                stat_result = self.statistical_validator.validate_distribution(df=current_data, columns=columns_to_validate, check_stationarity=True)
+                stat_result = self.statistical_validator.validate_distribution(df = current_data, columns = columns_to_validate, check_stationarity = True)
                 enhanced_results['statistical_validation'] = {'passed': stat_result.passed, 'quality_score': stat_result.quality_score, 'issues': len(stat_result.issues), 'warnings': len(stat_result.warnings)}
                 if not stat_result.passed:
                     enhanced_results['validation_passed'] = False
@@ -1973,7 +2107,7 @@ class TrainingManager:
                                 original_data = pd.read_parquet(parquet_files[0])
                     if original_data is not None:
                         feature_config = training_input.get('feature_config', {})
-                        feature_result = self.feature_engineering_validator.validate_engineered_features(original_df=original_data, features_df=current_data, feature_config=feature_config, validate_calculations=True, check_dependencies=True)
+                        feature_result = self.feature_engineering_validator.validate_engineered_features(original_df = original_data, features_df = current_data, feature_config = feature_config, validate_calculations = True, check_dependencies = True)
                         enhanced_results['feature_validation'] = {'passed': feature_result.passed, 'quality_score': feature_result.quality_score, 'issues': len(feature_result.issues), 'warnings': len(feature_result.warnings)}
                         if not feature_result.passed:
                             enhanced_results['validation_passed'] = False
@@ -1996,16 +2130,16 @@ class TrainingManager:
             enhanced_results['error'] = str(e)
         return enhanced_results
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='step01_5_data_converter')
-    @monitor_pipeline_step(stage=PipelineStage.DATA_PREPROCESSING, validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True)
-    @validate_pipeline_input(required_params=['symbol', 'exchange', 'timeframe', 'data_dir'], required_directories=['data_cache'], min_memory_gb=4.0, min_disk_gb=2.0)
+    @handles_errors(exceptions=(Exception,), default_return = False, context='step01_5_data_converter')
+    @monitor_pipeline_step(stage = PipelineStage.DATA_PREPROCESSING, validation_level = PipelineValidationLevel.WARNING, enable_data_quality = True)
+    @validate_pipeline_input(required_params=['symbol', 'exchange', 'timeframe', 'data_dir'], required_directories=['data_cache'], min_memory_gb = 4.0, min_disk_gb = 2.0)
     async def _execute_step1_5_with_qa(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool, step1_5_run_step: callable) -> bool:
         """Execute step1_5_data_converter with enhanced reporting."""
         step_start_time = time.time()
         step_errors = []
         step_warnings = []
         try:
-            result = await step1_5_run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+            result = await step1_5_run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
             await self._generate_step_report('step01_5_data_converter', result, step_start_time, bool(result), step_errors, step_warnings)
             self.logger.info('✅ [QA] step1_5_data_converter completed with enhanced reporting')
             return result
@@ -2015,16 +2149,17 @@ class TrainingManager:
             await self._generate_step_report('step01_5_data_converter', None, step_start_time, False, step_errors, step_warnings)
             raise
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='step2_feature_engineering')
-    @monitor_pipeline_step(stage=PipelineStage.FEATURE_ENGINEERING, validation_level=PipelineValidationLevel.WARNING, enable_data_quality=True)
-    @monitor_pipeline_performance(enable_memory_tracking=True, enable_cpu_tracking=True, memory_threshold_gb=16.0, cpu_threshold_percent=90.0)
+    @handles_errors(exceptions=(Exception,), default_return = False, context='step2_feature_engineering')
+    @monitor_pipeline_step(stage = PipelineStage.FEATURE_ENGINEERING, validation_level = PipelineValidationLevel.WARNING, enable_data_quality = True)
+    @monitor_pipeline_performance(enable_memory_tracking = True, enable_cpu_tracking = True, memory_threshold_gb = 16.0, cpu_threshold_percent = 90.0)
     async def _execute_step2_with_qa(self, symbol: str, exchange: str, data_dir: str, timeframe: str, force_rerun: bool, feature_config: dict) -> bool:
         """Execute step2_feature_engineering with enhanced reporting."""
         step_start_time = time.time()
         step_errors = []
         step_warnings = []
         try:
-            result = await step2_feature_engineering.run_step(symbol=symbol, exchange=exchange, data_dir=data_dir, timeframe=timeframe, force_rerun=force_rerun, feature_config=feature_config)
+            from .steps import step2_feature_engineering
+            result = await step2_feature_engineering.run_step(symbol = symbol, exchange = exchange, data_dir = data_dir, timeframe = timeframe, force_rerun = force_rerun, feature_config = feature_config)
             await self._generate_step_report('step2_feature_engineering', result, step_start_time, bool(result), step_errors, step_warnings)
             self.logger.info('✅ [QA] step2_feature_engineering completed with enhanced reporting')
             return result
@@ -2034,7 +2169,7 @@ class TrainingManager:
             await self._generate_step_report('step2_feature_engineering', None, step_start_time, False, step_errors, step_warnings)
             raise
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='enhanced training history storage')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='enhanced training history storage')
     async def _store_enhanced_training_history(self, enhanced_training_input: dict[str, Any]) -> None:
         """Store enhanced training history."
 
@@ -2051,7 +2186,7 @@ class TrainingManager:
         except Exception as e:
             self.logger.exception(f'❌ Failed to store training history: {e}')
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='enhanced training results storage')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='enhanced training results storage')
     async def _store_enhanced_training_results(self) -> None:
         """Store enhanced training results."""
         try:
@@ -2061,7 +2196,7 @@ class TrainingManager:
         except Exception as e:
             self.logger.exception(f'❌ Failed to store enhanced training results: {e}')
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='enhanced training results getting')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='enhanced training results getting')
     def get_enhanced_training_results(self, enhanced_training_type: str | None) -> dict[str, Any]:
         """Get enhanced training results."
 
@@ -2080,7 +2215,7 @@ class TrainingManager:
             self.logger.exception(f'Failed to get enhanced training results: {e}')
             return {}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='enhanced training history getting')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='enhanced training history getting')
     def get_enhanced_training_history(self, limit: int | None) -> list[dict[str, Any]]:
         """Get enhanced training history."
 
@@ -2116,7 +2251,7 @@ class TrainingManager:
             dict: Validation results summary
 
         """
-        return {'validation_results': self.validation_results, 'validation_summary': validator_orchestrator.get_validation_summary(), 'failed_validations': validator_orchestrator.get_failed_validations()}
+        return {'validation_results': self.validation_results, 'validation_summary': self.validator_orchestrator.get_validation_summary(), 'failed_validations': self.validator_orchestrator.get_failed_validations()}
 
     def get_computational_optimization_results(self) -> dict[str, Any]:
         """Get computational optimization results and statistics."
@@ -2129,7 +2264,7 @@ class TrainingManager:
             return {'optimization_statistics': self.computational_optimization_manager.get_optimization_statistics(), 'enabled_optimizations': self.optimization_statistics, 'manager_available': True}
         return {'optimization_statistics': {}, 'enabled_optimizations': {}, 'manager_available': False}
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='enhanced training manager cleanup')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='enhanced training manager cleanup')
     async def stop(self) -> None:
         """Stop the enhanced training manager and cleanup resources."""
         try:
@@ -2223,7 +2358,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Enhanced Training Manager initialization failed: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='feature selection execution')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='feature selection execution')
     async def _execute_feature_selection(self, symbol: str, data_dir: str, timeframe: str, exchange: str) -> bool:
         """Execute comprehensive feature selection and pruning."
 
@@ -2271,7 +2406,7 @@ class TrainingManager:
                 self.logger.warning('⚠️ No features available for selection')
                 return True
             self.logger.info(f'📈 Loaded {len(features_df.columns)} features for selection')
-            selected_features = await self._execute_tiered_feature_selection(features_df=features_df, tier_1_count=tier_1_count, tier_2_count=tier_2_count, tier_3_count=tier_3_count, tier_4_count=tier_4_count, tier_5_count=tier_5_count, total_max_features=total_max_features)
+            selected_features = await self._execute_tiered_feature_selection(features_df = features_df, tier_1_count = tier_1_count, tier_2_count = tier_2_count, tier_3_count = tier_3_count, tier_4_count = tier_4_count, tier_5_count = tier_5_count, total_max_features = total_max_features)
             selected_features_path = Path(data_dir) / f'{symbol}_{exchange}_{timeframe}_selected_features.parquet'
             self.data_manager.save_to_parquet(selected_features, str(selected_features_path))
             self.logger.info('✅ Feature selection completed:')
@@ -2286,7 +2421,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Feature selection failed: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='tiered feature selection')
+    @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='tiered feature selection')
     async def _execute_tiered_feature_selection(self, features_df: pd.DataFrame, tier_1_count: int, tier_2_count: int, tier_3_count: int, tier_4_count: int, tier_5_count: int, total_max_features: int) -> pd.DataFrame:
         """Execute tiered feature selection strategy."
 
@@ -2306,21 +2441,21 @@ class TrainingManager:
         try:
             self.logger.info('🎯 Executing tiered feature selection...')
             feature_categories = self._categorize_features_by_tier(features_df)
-            selected_features = pd.DataFrame(index=features_df.index)
+            selected_features = pd.DataFrame(index = features_df.index)
             tier_1_features = self._select_tier_1_features(features_df, feature_categories['tier_1'], tier_1_count)
-            selected_features = pd.concat([selected_features, tier_1_features], axis=1)
+            selected_features = pd.concat([selected_features, tier_1_features], axis = 1)
             self.logger.info(f'   ✅ Tier 1: Selected {len(tier_1_features.columns)} core features')
             tier_2_features = self._select_tier_2_features(features_df, feature_categories['tier_2'], tier_2_count)
-            selected_features = pd.concat([selected_features, tier_2_features], axis=1)
+            selected_features = pd.concat([selected_features, tier_2_features], axis = 1)
             self.logger.info(f'   ✅ Tier 2: Selected {len(tier_2_features.columns)} normalized features')
             tier_3_features = self._select_tier_3_features(features_df, feature_categories['tier_3'], tier_3_count)
-            selected_features = pd.concat([selected_features, tier_3_features], axis=1)
+            selected_features = pd.concat([selected_features, tier_3_features], axis = 1)
             self.logger.info(f'   ✅ Tier 3: Selected {len(tier_3_features.columns)} interaction features')
             tier_4_features = self._select_tier_4_features(features_df, feature_categories['tier_4'], tier_4_count)
-            selected_features = pd.concat([selected_features, tier_4_features], axis=1)
+            selected_features = pd.concat([selected_features, tier_4_features], axis = 1)
             self.logger.info(f'   ✅ Tier 4: Selected {len(tier_4_features.columns)} lagged features')
             tier_5_features = self._select_tier_5_features(features_df, feature_categories['tier_5'], tier_5_count)
-            selected_features = pd.concat([selected_features, tier_5_features], axis=1)
+            selected_features = pd.concat([selected_features, tier_5_features], axis = 1)
             self.logger.info(f'   ✅ Tier 5: Selected {len(tier_5_features.columns)} causality features')
             if len(selected_features.columns) > total_max_features:
                 selected_features = self._apply_final_pruning(selected_features, total_max_features)
@@ -2545,9 +2680,9 @@ class TrainingManager:
                 return True
             artifacts_found = []
             for artifact_pattern in previous_artifacts:
-                substituted_pattern = artifact_pattern.format(exchange=exchange, symbol=symbol, timeframe=timeframe)
+                substituted_pattern = artifact_pattern.format(exchange = exchange, symbol = symbol, timeframe = timeframe)
                 if '**' in substituted_pattern:
-                    matching_files = glob.glob(substituted_pattern, recursive=True)
+                    matching_files = glob.glob(substituted_pattern, recursive = True)
                     if matching_files:
                         artifacts_found.append(f'{artifact_pattern} -> {len(matching_files)} files found')
                     elif Path(substituted_pattern).exists():
@@ -2594,7 +2729,7 @@ class TrainingManager:
         except Exception as e:
             self.logger.exception(f'❌ Error clearing artifacts for {step_name}: {e}')
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='track_step_performance')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='track_step_performance')
     async def _track_step_performance(self, step_type: str, step_name: str, data: Any, expected: Any) -> bool:
         """Track performance for a specific step."
         
@@ -2619,14 +2754,14 @@ class TrainingManager:
                     expected_array = np.zeros_like(data_array)
                 else:
                     expected_array = np.array(expected)
-                await self.model_performance_monitor.track_model_performance(model_type=step_type, model_name=step_name, predictions=data_array, actual_values=expected_array)
+                await self.model_performance_monitor.track_model_performance(model_type = step_type, model_name = step_name, predictions = data_array, actual_values = expected_array)
                 self.logger.info(f'📊 Performance tracked for {step_type}:{step_name}')
                 return True
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to track performance for {step_type}:{step_name}: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='track_model_performance')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='track_model_performance')
     async def _track_model_performance(self, model_type: str, step_name: str, model: Any, training_input: dict) -> bool:
         """Track performance for a trained model."
         
@@ -2644,14 +2779,14 @@ class TrainingManager:
                 sample_data = np.random.randn(100, 10)
                 predictions = model.predict(sample_data)
                 actual_values = np.random.randint(0, 2, len(predictions))
-                await self.model_performance_monitor.track_model_performance(model_type=model_type, model_name=step_name, predictions=predictions, actual_values=actual_values, confidence_scores=np.random.random(len(predictions)))
+                await self.model_performance_monitor.track_model_performance(model_type = model_type, model_name = step_name, predictions = predictions, actual_values = actual_values, confidence_scores = np.random.random(len(predictions)))
                 self.logger.info(f'📊 Model performance tracked for {model_type}:{step_name}')
                 return True
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to track model performance for {model_type}:{step_name}: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='track_optimization_performance')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='track_optimization_performance')
     async def _track_optimization_performance(self, opt_type: str, step_name: str, optimization_results: dict) -> bool:
         """Track performance for optimization results."
         
@@ -2669,14 +2804,14 @@ class TrainingManager:
                 n_trials = optimization_results.get('n_trials', 0)
                 optimization_time = optimization_results.get('optimization_time', 0.0)
                 metrics = {'best_score': best_score, 'n_trials': n_trials, 'optimization_time': optimization_time, 'efficiency': best_score / max(optimization_time, 1.0)}
-                await self.model_performance_monitor.track_model_performance(model_type=opt_type, model_name=step_name, predictions=np.array([best_score]), actual_values=np.array([best_score]), additional_metrics=metrics)
+                await self.model_performance_monitor.track_model_performance(model_type = opt_type, model_name = step_name, predictions = np.array([best_score]), actual_values = np.array([best_score]), additional_metrics = metrics)
                 self.logger.info(f'📊 Optimization performance tracked for {opt_type}:{step_name}')
                 return True
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to track optimization performance for {opt_type}:{step_name}: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='track_validation_performance')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='track_validation_performance')
     async def _track_validation_performance(self, val_type: str, step_name: str, validation_results: dict) -> bool:
         """Track performance for validation results."
         
@@ -2695,14 +2830,14 @@ class TrainingManager:
                 recall = validation_results.get('recall', 0.0)
                 f1_score = validation_results.get('f1_score', 0.0)
                 metrics = {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1_score': f1_score, 'validation_type': val_type}
-                await self.model_performance_monitor.track_model_performance(model_type=val_type, model_name=step_name, predictions=np.array([accuracy]), actual_values=np.array([accuracy]), additional_metrics=metrics)
+                await self.model_performance_monitor.track_model_performance(model_type = val_type, model_name = step_name, predictions = np.array([accuracy]), actual_values = np.array([accuracy]), additional_metrics = metrics)
                 self.logger.info(f'📊 Validation performance tracked for {val_type}:{step_name}')
                 return True
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to track validation performance for {val_type}:{step_name}: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='track_ab_testing_performance')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='track_ab_testing_performance')
     async def _track_ab_testing_performance(self, ab_type: str, step_name: str, ab_test_results: dict) -> bool:
         """Track performance for A/B testing results."
         
@@ -2721,7 +2856,7 @@ class TrainingManager:
                 statistical_significance = ab_test_results.get('statistical_significance', 0.0)
                 winner = ab_test_results.get('winner', 'none')
                 metrics = {'variant_a_score': variant_a_score, 'variant_b_score': variant_b_score, 'statistical_significance': statistical_significance, 'winner': winner, 'improvement': abs(variant_b_score - variant_a_score)}
-                await self.model_performance_monitor.track_model_performance(model_type=ab_type, model_name=step_name, predictions=np.array([max(variant_a_score, variant_b_score)]), actual_values=np.array([max(variant_a_score, variant_b_score)]), additional_metrics=metrics)
+                await self.model_performance_monitor.track_model_performance(model_type = ab_type, model_name = step_name, predictions = np.array([max(variant_a_score, variant_b_score)]), actual_values = np.array([max(variant_a_score, variant_b_score)]), additional_metrics = metrics)
                 self.logger.info(f'📊 A/B testing performance tracked for {ab_type}:{step_name}')
                 return True
         except Exception as e:
@@ -2748,7 +2883,7 @@ class TrainingManager:
             shared_report['pipeline_summary']['overall_success'] = shared_report['pipeline_summary']['failed_steps'] == 0
             shared_report['pipeline_summary']['total_duration'] = sum((step['execution_duration_seconds'] for step in shared_report['steps'].values()))
             with open(shared_report_path, 'w', encoding='utf-8') as f:
-                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
+                json.dump(shared_report, f, indent = 2, ensure_ascii = False, default = str)
             self.step_reports[step_name] = step_report_section
             status_emoji = '✅' if step_success else '❌'
             self.logger.info(f'{status_emoji} [STEP REPORT] {step_name} appended to shared report: {shared_report_path}')
@@ -2759,7 +2894,7 @@ class TrainingManager:
         """Create a summary of the step result."""
         try:
             if hasattr(result, 'shape'):
-                return {'type': 'DataFrame', 'shape': result.shape, 'columns_count': len(result.columns), 'memory_usage_mb': result.memory_usage(deep=True).sum() / 1024 ** 2 if hasattr(result, 'memory_usage') else None}
+                return {'type': 'DataFrame', 'shape': result.shape, 'columns_count': len(result.columns), 'memory_usage_mb': result.memory_usage(deep = True).sum() / 1024 ** 2 if hasattr(result, 'memory_usage') else None}
             elif isinstance(result, dict):
                 return {'type': 'dict', 'keys_count': len(result), 'keys': list(result.keys())[:10]}
             elif isinstance(result, (list, tuple)):
@@ -2781,7 +2916,7 @@ class TrainingManager:
         except Exception:
             return {'error': 'Could not retrieve system resources'}
 
-@handles_errors(exceptions=(Exception,), default_return=None, context='enhanced training manager setup')
+@handles_errors(exceptions=(Exception,), default_return = None, context='enhanced training manager setup')
 async def setup_enhanced_training_manager(config: dict[str, Any] | None) -> TrainingManager | None:
     """Setup and return a configured TrainingManager instance."
 

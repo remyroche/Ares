@@ -1,12 +1,17 @@
-# src/tactician/enhanced_execution_manager.py
+import datetime
+import logging
+import pandas as pd
+import time
+from typing import Any, Dict, List
 
 from .core.decorators import (
     handles_errors,
     traced,
     validates
 )
-
 from .utils.logger import get_logger
+
+# src/tactician/enhanced_execution_manager.py
 
 class EnhancedExecutionManager:
     """Enhanced execution manager for Tactician with high precision triple barrier completion.
@@ -34,8 +39,6 @@ class EnhancedExecutionManager:
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from .tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-        from .core.decorators.errors import handles_errors
-        import numpy as np
         
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
@@ -208,7 +211,7 @@ class EnhancedExecutionManager:
             
             # Get dynamic barriers for this timeframe
             barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
-                timeframe=timeframe
+                timeframe = timeframe
             )
             
             # Use the first barrier combination (ML model will select optimal one)

@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
 from .config import CONFIG, get_environment_settings
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 from .utils.warning_symbols import error, missing, warning
 
 from typing import Callable
 from typing import Any
+from ..core.decorators import handles_errors
 if TYPE_CHECKING:
     import logging
-from .core.decorators.errors import handles_errors
 
 class FirestoreManager:
     """
@@ -32,7 +32,7 @@ class FirestoreManager:
         self._initialized = False
         self._firestore_enabled = False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def initialize(self) -> None:
         """Asynchronously initializes the Firestore connection."""
         if self._initialized:
@@ -57,7 +57,7 @@ class FirestoreManager:
             self.logger.info(f'Firestore operations will use user_id: {self._user_id}')
             self.logger.info('Ensure Firestore Security Rules are configured for user data access.')
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _blocking_initialize(self) -> None:
         """Synchronous part of the initialization. Runs in a thread pool."""
         if not firebase_admin._apps:
@@ -70,7 +70,7 @@ class FirestoreManager:
         self._db = firestore.client()
         self._auth = auth
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _determine_user_id(self, initial_auth_token: str | None) -> None:
         """Determines the user ID for Firestore document paths."""
         if initial_auth_token:
@@ -80,8 +80,8 @@ class FirestoreManager:
             self._user_id = str(uuid.uuid4())
             self.logger.info(f'Using anonymous user ID for Firestore paths: {self._user_id}')
 
-    @handles_errors(fallback=None)
-    def _get_collection_path(self, collection_name: str, is_public: bool=False) -> str | None:
+    @handles_errors(fallback = None)
+    def _get_collection_path(self, collection_name: str, is_public: bool = False) -> str | None:
         """Constructs the full Firestore collection path."""
         if self._app_id is None:
             self.logger.error(error('App ID not set. Cannot construct collection path.'))
@@ -94,7 +94,7 @@ class FirestoreManager:
             return None
         return f'{base_path}/users/{self._user_id}/{collection_name}'
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _execute_blocking(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Helper to run any blocking function in a thread pool."""
         if not self._firestore_enabled or not self._initialized or (not self._db):
@@ -104,13 +104,13 @@ class FirestoreManager:
         p_func = partial(func, *args, **kwargs)
         return await loop.run_in_executor(None, p_func)
 
-    @handles_errors(fallback=False)
-    async def set_document(self, collection_name: str, doc_id: str, data: dict[str, Any], is_public: bool=False) -> bool:
+    @handles_errors(fallback = False)
+    async def set_document(self, collection_name: str, doc_id: str, data: dict[str, Any], is_public: bool = False) -> bool:
         """Sets a document with a specified ID (creates or overwrites)."""
         if not self._firestore_enabled:
             self.logger.debug(f'Firestore disabled. Skipping set_document for {collection_name}/{doc_id}.')
             return False
-        collection_path = self._get_collection_path(collection_name, is_public=False)
+        collection_path = self._get_collection_path(collection_name, is_public = False)
         if not collection_path:
             return False
 
@@ -127,8 +127,8 @@ class FirestoreManager:
             return True
         return False
 
-    @handles_errors(fallback=None)
-    async def get_document(self, collection_name: str, doc_id: str, is_public: bool=False) -> dict[str, Any] | None:
+    @handles_errors(fallback = None)
+    async def get_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> dict[str, Any] | None:
         """Retrieves a single document by its ID."""
         if not self._firestore_enabled:
             self.logger.debug(f'Firestore disabled. Skipping get_document for {collection_name}/{doc_id}.')
@@ -151,8 +151,8 @@ class FirestoreManager:
             self.logger.warning(missing(f'Document {doc_id} not found in {collection_name}.'))
         return result
 
-    @handles_errors(fallback=None)
-    async def add_document(self, collection_name: str, data: dict[str, Any], is_public: bool=False) -> str | None:
+    @handles_errors(fallback = None)
+    async def add_document(self, collection_name: str, data: dict[str, Any], is_public: bool = False) -> str | None:
         """Adds a document with an auto-generated ID."""
         if not self._firestore_enabled:
             self.logger.debug(f'Firestore disabled. Skipping add_document for {collection_name}.')
@@ -173,7 +173,7 @@ class FirestoreManager:
         return doc_id
 
     @handles_errors(fallback=[])
-    async def get_collection(self, collection_name: str, is_public: bool=False, query_filters: list[tuple[str, str, Any]] | None=None) -> list[dict[str, Any]]:
+    async def get_collection(self, collection_name: str, is_public: bool = False, query_filters: list[tuple[str, str, Any]] | None = None) -> list[dict[str, Any]]:
         """Retrieves all documents from a collection, optionally with filters."""
         if not self._firestore_enabled:
             self.logger.debug(f'Firestore disabled. Skipping get_collection for {collection_name}.')
@@ -197,8 +197,8 @@ class FirestoreManager:
             return docs
         return []
 
-    @handles_errors(fallback=False)
-    async def delete_document(self, collection_name: str, doc_id: str, is_public: bool=False) -> bool:
+    @handles_errors(fallback = False)
+    async def delete_document(self, collection_name: str, doc_id: str, is_public: bool = False) -> bool:
         """Deletes a document by its ID."""
         if not self._firestore_enabled:
             self.logger.debug(f'Firestore disabled. Skipping delete_document for {collection_name}/{doc_id}.')

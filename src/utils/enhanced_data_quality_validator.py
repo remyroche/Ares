@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from .logger import system_logger
 
 '\nEnhanced Data Quality Validation Utilities\n\nThis module provides comprehensive data quality validation capabilities for the training pipeline.\n'
 import logging
@@ -14,7 +15,7 @@ except ImportError:
 import datetime
 
 try:
-    from .utils.logger import system_logger
+    from .logger import system_logger
 except ImportError:
     system_logger = logging.getLogger('EnhancedDataQualityValidator')
 
@@ -35,9 +36,9 @@ class QualityThresholds:
 class QualityResult:
     """Result of data quality validation."""
     passed: bool = True
-    issues: list[str] = field(default_factory=list)
-    metrics: dict[str, Any] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory = list)
+    metrics: dict[str, Any] = field(default_factory = dict)
+    warnings: list[str] = field(default_factory = list)
 
     def add_issue(self, issue_type: str, description: str) -> None:
         """Add a quality issue."""
@@ -59,7 +60,7 @@ class QualityResult:
 class EnhancedDataQualityValidator:
     """Enhanced data quality validator with comprehensive checks."""
 
-    def __init__(self, thresholds: QualityThresholds | None=None) -> None:
+    def __init__(self, thresholds: QualityThresholds | None = None) -> None:
         self.thresholds = thresholds or QualityThresholds()
         self.logger = system_logger.getChild('DataQualityValidator')
 
@@ -74,7 +75,7 @@ class EnhancedDataQualityValidator:
             return result
         result.add_metric('rows', len(df))
         result.add_metric('columns', len(df.columns))
-        result.add_metric('memory_mb', df.memory_usage(deep=True).sum() / 1024 / 1024)
+        result.add_metric('memory_mb', df.memory_usage(deep = True).sum() / 1024 / 1024)
         self._validate_nan_values(df, result)
         self._validate_infinite_values(df, result)
         self._validate_constant_features(df, result)
@@ -156,13 +157,13 @@ class EnhancedDataQualityValidator:
             return
         issues = []
         try:
-            timestamps = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
+            timestamps = pd.to_datetime(df['timestamp'], unit='ms', utc = True, errors='coerce')
             invalid_timestamps = timestamps.isna().sum()
             if invalid_timestamps > 0:
                 issues.append({'type': 'invalid_timestamps', 'count': invalid_timestamps})
             valid_timestamps = timestamps.dropna()
             if len(valid_timestamps) > 1:
-                expected_interval = pd.Timedelta(minutes=1)
+                expected_interval = pd.Timedelta(minutes = 1)
                 time_diffs = valid_timestamps.diff().dropna()
                 large_gaps = time_diffs[time_diffs > expected_interval * 2]
                 if not large_gaps.empty:
@@ -296,7 +297,7 @@ def check_dataframe_health(df: pd.DataFrame) -> dict[str, Any]:
         return {'healthy': False, 'reason': 'DataFrame is None or empty'}
     nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns)) if len(df) > 0 and len(df.columns) > 0 else 0
     infinite_count = sum((np.isinf(df[col]).sum() for col in df.select_dtypes(include=[np.number]).columns))
-    health_status = {'healthy': True, 'shape': df.shape, 'memory_mb': df.memory_usage(deep=True).sum() / 1024 / 1024, 'nan_ratio': nan_ratio, 'infinite_count': infinite_count, 'issues': []}
+    health_status = {'healthy': True, 'shape': df.shape, 'memory_mb': df.memory_usage(deep = True).sum() / 1024 / 1024, 'nan_ratio': nan_ratio, 'infinite_count': infinite_count, 'issues': []}
     if nan_ratio > 0.1:
         health_status['healthy'] = False
         health_status['issues'].append('High NaN ratio')

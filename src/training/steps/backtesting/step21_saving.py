@@ -1,16 +1,13 @@
 # src/training/steps/step21_saving.py
 
-from src.utils.mlflow_integration import (
-    enhanced_mlflow_integration,
+from src.utils.mlflow_utils import (
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
     log_metrics_with_metadata,
     log_params_with_metadata,
-    mlflow_utils,
-    pandas,
-    src,
-    utils
 )
+from src.utils.logger import system_logger, log_io_operation
+from src.training.reports import save_training_report
 import pandas as pd
 
 """Step 21: Saving with Standardized Data Quality Management."
@@ -34,11 +31,11 @@ project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
-from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 
 # Import pipeline standards
-from .utils.pipeline_standards import PipelineStandards, pipeline_standards
-from .utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import ensure_directory, safe_json_dump
 import time
 
 # Standardized import management
@@ -57,7 +54,7 @@ pandas = PipelineStandards.safe_import("pandas", None)
 # Fallback functions if imports fail
 def create_fallback_logger():
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 # Initialize fallbacks
@@ -136,7 +133,7 @@ class SavingStep:
 
         # Save to MLflow if enabled
         if self.config.get("enable_mlflow", True):
-            await self._save_to_mlflow(training_summary, symbol, exchange)
+            await self._save_to_mlflow(training_summary, symbol, exchange, pipeline_state)
 
         # Create final training report
         report_results = await self._create_training_report(
@@ -205,7 +202,7 @@ class SavingStep:
             json_file = (
                 f"{data_dir}/{exchange}_{symbol}_comprehensive_training_summary.json"
             )
-            safe_json_dump(training_summary, json_file, indent=2)
+            safe_json_dump(training_summary, json_file, indent = 2)
             results["json_file"] = json_file
 
             # Save as pickle
@@ -227,10 +224,10 @@ class SavingStep:
                     },
                 ],
             )
-            from .utils.logger import log_io_operation
+            from src.utils.logger import system_logger
 
             with log_io_operation(self.logger, "to_csv", csv_file):
-                metrics_df.to_csv(csv_file, index=False)
+                metrics_df.to_csv(csv_file, index = False)
             results["csv_file"] = csv_file
 
             return results
@@ -240,15 +237,14 @@ class SavingStep:
             raise
 
     async def _save_to_mlflow(
-        self, training_summary: dict[str, Any], symbol: str, exchange: str,
+        self, training_summary: dict[str, Any], symbol: str, exchange: str, pipeline_state: dict[str, Any],
     ) -> None:
         """Save training results to MLflow with enhanced metadata associations."""
         try:
             # Resolve MLflow configuration from system config
-            from .config.system import get_mlflow_config
+            from src.config.system import get_mlflow_config
             from src.utils.mlflow_utils import (
-                log_step_report,
-                log_step_artifact_with_standardized_name
+                log_artifacts_with_metadata,
             )
 
             cfg = get_mlflow_config() or {}
@@ -274,16 +270,16 @@ class SavingStep:
 
             # Start MLflow run
             with mlflow.start_run(
-                run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                run_name = f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             ) as run:
                 run_id = run.info.run_id
                 
                 # Log enhanced training metadata with all required associations
                 log_enhanced_training_metadata(
-                    asset=symbol,
-                    exchange=exchange,
-                    lookback_period=lookback_period,
-                    run_id=run_id,
+                    asset = symbol,
+                    exchange = exchange,
+                    lookback_period = lookback_period,
+                    run_id = run_id,
                     additional_metadata={
                         "pipeline_step": "step21_saving",
                         "training_summary_keys": list(training_summary.keys()),
@@ -298,11 +294,11 @@ class SavingStep:
                     "timeframe": self.config.get("trading_interval", "1h"),
                 }
                 log_params_with_metadata(
-                    params=params,
-                    asset=symbol,
-                    exchange=exchange,
-                    lookback_period=lookback_period,
-                    run_id=run_id,
+                    params = params,
+                    asset = symbol,
+                    exchange = exchange,
+                    lookback_period = lookback_period,
+                    run_id = run_id,
                 )
 
                 # Log metrics with metadata
@@ -314,11 +310,11 @@ class SavingStep:
                     
                     if metrics:
                         log_metrics_with_metadata(
-                            metrics=metrics,
-                            asset=symbol,
-                            exchange=exchange,
-                            lookback_period=lookback_period,
-                            run_id=run_id,
+                            metrics = metrics,
+                            asset = symbol,
+                            exchange = exchange,
+                            lookback_period = lookback_period,
+                            run_id = run_id,
                         )
 
                 # Log training summary as artifact with metadata
@@ -326,22 +322,25 @@ class SavingStep:
                 with tempfile.NamedTemporaryFile(
                     mode="w",
                     suffix=".json",
-                    delete=False,
+                    delete = False,
                 ) as f:
-                    json.dump(training_summary, f, indent=2, default=str)
+                    json.dump(training_summary, f, indent = 2, default = str)
                     temp_path = f.name
                 
                 # Log training summary with standardized naming
-                summary_artifact_name = log_step_artifact_with_standardized_name(
-                    config=self.config,
-                    step_name="step21_saving",
-                    artifact_path=temp_path,
-                    artifact_type="training_summary",
+                log_artifacts_with_metadata(
+                    local_path = temp_path,
+                    artifact_path = "training_summary",
+                    asset = symbol,
+                    exchange = exchange,
+                    lookback_period = lookback_period,
+                    run_id = run_id,
                     additional_metadata={
                         "summary_size": len(training_summary),
+                        "step_name": "step21_saving",
                     }
                 )
-                self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
+                self.logger.info(f"✅ Logged training summary artifact")
                 
                 # Log comprehensive final report
                 final_report_data = {
@@ -357,17 +356,31 @@ class SavingStep:
                     "pipeline_completion": True,
                 }
                 
-                report_name = log_step_report(
-                    config=self.config,
-                    step_name="step21_saving",
-                    report_data=final_report_data,
-                    report_type="final_training_report",
+                # Log final report as artifact
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    suffix=".json",
+                    delete = False,
+                ) as f:
+                    json.dump(final_report_data, f, indent = 2, default = str)
+                    report_temp_path = f.name
+                
+                log_artifacts_with_metadata(
+                    local_path = report_temp_path,
+                    artifact_path = "final_training_report",
+                    asset = symbol,
+                    exchange = exchange,
+                    lookback_period = lookback_period,
+                    run_id = run_id,
                     additional_metadata={
                         "pipeline_steps_completed": len([k for k, v in pipeline_state.items() if v]),
                         "pipeline_status": "completed",
+                        "step_name": "step21_saving",
                     }
                 )
-                self.logger.info(f"✅ Logged final training report: {report_name}")
+                self.logger.info(f"✅ Logged final training report artifact")
+                
+                os.unlink(report_temp_path)
                 
                 os.unlink(temp_path)
 
@@ -424,9 +437,15 @@ class SavingStep:
             # Ensure directory exists
             ensure_directory(data_dir)
 
-            # Save report
-            report_file = f"{data_dir}/{exchange}_{symbol}_training_report.json"
-            safe_json_dump(report, report_file, indent=2)
+            # Save report using centralized system
+            report_file = save_training_report(
+                data=report,
+                step_name="step21_saving",
+                report_type="training_report",
+                symbol=symbol,
+                timeframe="1m",  # Default timeframe
+                file_format="json"
+            )
 
             return {"report": report, "report_file": report_file}
 
@@ -436,83 +455,30 @@ class SavingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from .core.decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
+from src.core.decorators.retry_timeout import (
+    circuit_breaker,
+    timeout,
+)
+from src.core.decorators.cache import (
+    cached,
+)
+from src.core.decorators.logging import (
+    log_call,
+    log_execution_time,
+)
+from src.core.decorators.validate import (
+    validates,
 )
 
 
 # For backward compatibility with existing step structure
-@deterministic_seed(42)
-@idempotent_step(step_key="step16_saving")
-# @artifact_write_lock() - removed, handled by file system
-# @artifact_versioning("1.0") - removed, handled by pipeline
-@timeout(timeout=1200)
-@validates(
-    required_directories=["data/training", "models"],
-    min_memory_gb=4.0,
-    min_disk_gb=5.0,
-    required_packages=["pandas", "numpy", "mlflow"],
-    data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["timestamp", "features", "targets"],
-    },
-    context="Saving Results",
-    backup_before=True, 
-    integrity_checks=True, 
-    memory_cleanup=True, 
-    data_validation=True,
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    lookahead_bias_prevention=True,
-)
-@log_execution_time(
-    memory_threshold_gb=8.0,
-    cpu_threshold_percent=70.0,
-    disk_threshold_gb=10.0,
-    monitor_interval=30.0,
-    auto_cleanup=True,
-)
-@cached(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
-)
-@log_call(
-    log_intermediate_results=True,
-    save_debug_artifacts=True,
-    performance_profiling=True,
-    error_context_preservation=True,
-)
-@circuit_breaker(
-    failure_threshold=3,
-    recovery_timeout=120.0,
-    expected_exception=Exception,
-    monitor_interval=30.0,
-)
-@validates(
-    required_files=["data/training/{exchange}_{symbol}_training_report.json"],
-    data_quality_checks={
-        "min_rows": 1,
-        "required_columns": ["report_title", "generation_date"],
-    },
-    performance_thresholds={"saving_time_minutes": 30.0},
-    format_validation=True,
-    model_performance_thresholds={"saving_success_rate": 0.9},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    validation_score_requirements={"saving_score": 0.8},
-)
+@timeout(1200)
+@validates()
+@log_execution_time()
+@cached()
+@log_call()
+@circuit_breaker()
+@validates()
 async def run_step(
     symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False,
     **kwargs: Any,

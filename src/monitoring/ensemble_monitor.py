@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Ensemble Monitor for Enhanced ML Monitoring
 
@@ -12,7 +14,7 @@ from collections import defaultdict, deque
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import datetime
 import logging
@@ -109,9 +111,9 @@ class EnsembleMonitor:
         
         # Storage
         self.ensemble_states: Dict[str, EnsembleState] = {}
-        self.performance_snapshots: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
-        self.model_contributions: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
-        self.weight_histories: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.performance_snapshots: Dict[str, deque] = defaultdict(lambda: deque(maxlen = 1000))
+        self.model_contributions: Dict[str, deque] = defaultdict(lambda: deque(maxlen = 1000))
+        self.weight_histories: Dict[str, deque] = defaultdict(lambda: deque(maxlen = 1000))
         
         # Performance tracking
         self.last_weight_update: Dict[str, datetime] = {}
@@ -119,7 +121,7 @@ class EnsembleMonitor:
         
         self.logger.info("Ensemble Monitor initialized")
     
-    @handles_errors(default_return=None, context="ensemble_monitor.update_ensemble_weights")
+    @handles_errors(default_return = None, context="ensemble_monitor.update_ensemble_weights")
     async def update_ensemble_weights(self, ensemble_id: str, 
                                     model_performances: Dict[str, Dict[str, float]],
                                     current_weights: Dict[str, float]) -> Dict[str, float]:
@@ -152,7 +154,7 @@ class EnsembleMonitor:
             
             self.logger.info(
                 f"Updated weights for ensemble {ensemble_id}: "
-                f"{dict(sorted(new_weights.items(), key=lambda x: x[1], reverse=True))}"
+                f"{dict(sorted(new_weights.items(), key = lambda x: x[1], reverse = True))}"
             )
             
             return new_weights
@@ -250,13 +252,13 @@ class EnsembleMonitor:
                             weight_history.append((timestamp, weights[model_id]))
                 
                 model_weights[model_id] = ModelWeight(
-                    model_id=model_id,
-                    model_type=performance.get('model_type', 'unknown'),
-                    weight=weight,
-                    confidence=performance.get('confidence', 0.5),
-                    performance_score=performance_score,
-                    last_updated=current_time,
-                    weight_history=weight_history[-10:]  # Keep last 10 updates
+                    model_id = model_id,
+                    model_type = performance.get('model_type', 'unknown'),
+                    weight = weight,
+                    confidence = performance.get('confidence', 0.5),
+                    performance_score = performance_score,
+                    last_updated = current_time,
+                    weight_history = weight_history[-10:]  # Keep last 10 updates
                 )
             
             # Calculate weight stability
@@ -267,14 +269,14 @@ class EnsembleMonitor:
             
             # Create ensemble state
             ensemble_state = EnsembleState(
-                ensemble_id=ensemble_id,
-                timestamp=current_time,
-                model_weights=model_weights,
-                total_models=len(new_weights),
-                active_models=sum(1 for w in new_weights.values() if w > 0),
-                weight_stability_score=weight_stability,
-                performance_trend=performance_trend,
-                last_rebalance=current_time if weight_stability < self.rebalance_threshold else None
+                ensemble_id = ensemble_id,
+                timestamp = current_time,
+                model_weights = model_weights,
+                total_models = len(new_weights),
+                active_models = sum(1 for w in new_weights.values() if w > 0),
+                weight_stability_score = weight_stability,
+                performance_trend = performance_trend,
+                last_rebalance = current_time if weight_stability < self.rebalance_threshold else None
             )
             
             self.ensemble_states[ensemble_id] = ensemble_state
@@ -344,7 +346,7 @@ class EnsembleMonitor:
         """Record weight history for the ensemble."""
         self.weight_histories[ensemble_id].append((timestamp, weights.copy()))
     
-    @handles_errors(default_return=None, context="ensemble_monitor.record_ensemble_performance")
+    @handles_errors(default_return = None, context="ensemble_monitor.record_ensemble_performance")
     async def record_ensemble_performance(self, ensemble_id: str, 
                                         performance_metrics: Dict[str, float],
                                         model_contributions: List[ModelContribution]):
@@ -354,23 +356,23 @@ class EnsembleMonitor:
             
             # Create performance snapshot
             snapshot = EnsemblePerformanceSnapshot(
-                ensemble_id=ensemble_id,
-                timestamp=current_time,
-                accuracy=performance_metrics.get('accuracy', 0.0),
-                precision=performance_metrics.get('precision', 0.0),
-                recall=performance_metrics.get('recall', 0.0),
-                f1_score=performance_metrics.get('f1_score', 0.0),
-                win_rate=performance_metrics.get('win_rate', 0.0),
-                profit_factor=performance_metrics.get('profit_factor', 1.0),
-                sharpe_ratio=performance_metrics.get('sharpe_ratio', 0.0),
-                max_drawdown=performance_metrics.get('max_drawdown', 0.0),
-                model_diversity_score=performance_metrics.get('model_diversity_score', 0.0),
-                consensus_quality=performance_metrics.get('consensus_quality', 0.0),
-                disagreement_level=performance_metrics.get('disagreement_level', 0.0),
-                weight_stability=performance_metrics.get('weight_stability', 0.0),
-                model_contributions=model_contributions,
-                weight_entropy=self._calculate_weight_entropy(ensemble_id),
-                dominant_model_share=self._calculate_dominant_model_share(ensemble_id)
+                ensemble_id = ensemble_id,
+                timestamp = current_time,
+                accuracy = performance_metrics.get('accuracy', 0.0),
+                precision = performance_metrics.get('precision', 0.0),
+                recall = performance_metrics.get('recall', 0.0),
+                f1_score = performance_metrics.get('f1_score', 0.0),
+                win_rate = performance_metrics.get('win_rate', 0.0),
+                profit_factor = performance_metrics.get('profit_factor', 1.0),
+                sharpe_ratio = performance_metrics.get('sharpe_ratio', 0.0),
+                max_drawdown = performance_metrics.get('max_drawdown', 0.0),
+                model_diversity_score = performance_metrics.get('model_diversity_score', 0.0),
+                consensus_quality = performance_metrics.get('consensus_quality', 0.0),
+                disagreement_level = performance_metrics.get('disagreement_level', 0.0),
+                weight_stability = performance_metrics.get('weight_stability', 0.0),
+                model_contributions = model_contributions,
+                weight_entropy = self._calculate_weight_entropy(ensemble_id),
+                dominant_model_share = self._calculate_dominant_model_share(ensemble_id)
             )
             
             # Store snapshot
@@ -429,7 +431,7 @@ class EnsembleMonitor:
             self.logger.error(f"Error calculating dominant model share: {e}")
             return 0.0
     
-    @handles_errors(default_return=None, context="ensemble_monitor.get_ensemble_analysis")
+    @handles_errors(default_return = None, context="ensemble_monitor.get_ensemble_analysis")
     async def get_ensemble_analysis(self, ensemble_id: str) -> Dict[str, Any]:
         """Get comprehensive analysis of ensemble performance and state."""
         try:

@@ -1,3 +1,6 @@
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 21: Model Persistence - Migrated to use BaseStep pattern.
 
 This step handles comprehensive model saving/loading with versioning.
@@ -11,13 +14,13 @@ from .model_serializer import ModelSerializer
 from .version_manager import VersionManager
 from .metadata_tracker import MetadataTracker
 from .model_registry import ModelRegistry
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 import time
 
 class ModelPersistenceStep(BaseStep):
     """Step 21: Model Persistence with comprehensive saving and versioning."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Model Persistence step.
@@ -26,6 +29,7 @@ class ModelPersistenceStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, '21', 'model_persistence')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -36,10 +40,12 @@ class ModelPersistenceStep(BaseStep):
         self.persistence_config = self._initialize_persistence_config()
         self.saved_artifacts: Dict[str, str] = {}
         self.artifact_metadata: Dict[str, Any] = {}
+    @log_all_calls
 
     def _initialize_persistence_config(self) -> Dict[str, Any]:
         """Initialize persistence configuration."""
         return {'base_dir': self.config.get('model_storage_dir', 'models'), 'enable_versioning': self.config.get('enable_versioning', True), 'compression': self.config.get('model_compression', True), 'save_formats': self.config.get('save_formats', ['pickle', 'joblib', 'onnx']), 'track_lineage': self.config.get('track_model_lineage', True), 'save_training_data_stats': self.config.get('save_training_data_stats', True), 'save_feature_importance': self.config.get('save_feature_importance', True), 'use_model_registry': self.config.get('use_model_registry', True), 'registry_backend': self.config.get('registry_backend', 'local'), 'enable_mlflow': self.config.get('enable_mlflow', False), 'mlflow_tracking_uri': self.config.get('mlflow_tracking_uri', None), 'create_backups': self.config.get('create_backups', True), 'backup_location': self.config.get('backup_location', 'model_backups'), 'max_backups': self.config.get('max_backups', 5)}
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate step inputs.
@@ -96,6 +102,7 @@ class ModelPersistenceStep(BaseStep):
         result = pipeline_state.copy()
         result['model_persistence_results'] = {'version': version_info, 'saved_artifacts': self.saved_artifacts, 'metadata': metadata, 'summary': self._create_persistence_summary()}
         return result
+    @log_all_calls
 
     def _collect_models(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Collect all models from pipeline state.
@@ -150,6 +157,7 @@ class ModelPersistenceStep(BaseStep):
             except Exception as e:
                 self.logger.error(f'Failed to save model {model_name}: {str(e)}')
         return saved_paths
+    @log_all_calls
 
     def _flatten_models(self, models: Any, prefix: str='') -> Dict[str, Any]:
         """Flatten nested model structures.
@@ -194,6 +202,7 @@ class ModelPersistenceStep(BaseStep):
         if self.persistence_config['save_training_data_stats']:
             metadata['training_data_stats'] = self._extract_training_stats(pipeline_state)
         return metadata
+    @log_all_calls
 
     def _extract_performance_metrics(self, model_name: str, evaluation_results: Dict[str, Any]) -> Dict[str, float]:
         """Extract performance metrics for a model."""
@@ -206,6 +215,7 @@ class ModelPersistenceStep(BaseStep):
                             metrics = tactic_results['average_metrics']
                             break
         return metrics
+    @log_all_calls
 
     def _extract_training_stats(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Extract training data statistics."""
@@ -237,10 +247,10 @@ class ModelPersistenceStep(BaseStep):
             importance_data = {'model_id': model_id, 'feature_importances': model.feature_importances_.tolist(), 'timestamp': datetime.now().isoformat()}
             base_dir = Path(self.persistence_config['base_dir'])
             version_dir = base_dir / version_info['version'] / 'feature_importance'
-            version_dir.mkdir(parents=True, exist_ok=True)
+            version_dir.mkdir(parents = True, exist_ok = True)
             file_path = version_dir / f'{model_id}_importance.json'
             with open(file_path, 'w') as f:
-                json.dump(importance_data, f, indent=2)
+                json.dump(importance_data, f, indent = 2)
             return str(file_path)
         except Exception as e:
             self.logger.warning(f'Failed to save feature importance: {str(e)}')
@@ -258,10 +268,10 @@ class ModelPersistenceStep(BaseStep):
         """
         base_dir = Path(self.persistence_config['base_dir'])
         version_dir = base_dir / version_info['version']
-        version_dir.mkdir(parents=True, exist_ok=True)
+        version_dir.mkdir(parents = True, exist_ok = True)
         metadata_path = version_dir / 'metadata.json'
         with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2, default=str)
+            json.dump(metadata, f, indent = 2, default = str)
         return str(metadata_path)
 
     async def _create_training_summary(self, pipeline_state: Dict[str, Any], saved_artifacts: Dict[str, str], metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,7 +314,7 @@ class ModelPersistenceStep(BaseStep):
         version_dir = base_dir / version_info['version']
         report_path = version_dir / 'training_report.json'
         with open(report_path, 'w') as f:
-            json.dump(training_summary, f, indent=2, default=str)
+            json.dump(training_summary, f, indent = 2, default = str)
         readable_report_path = version_dir / 'training_report.txt'
         with open(readable_report_path, 'w') as f:
             f.write('TRAINING REPORT\n')
@@ -328,6 +338,7 @@ class ModelPersistenceStep(BaseStep):
                     else:
                         f.write(f'{metric}: {value}\n')
         return str(report_path)
+    @log_all_calls
 
     def _create_persistence_summary(self) -> Dict[str, Any]:
         """Create persistence operation summary."""

@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 """
+from .logger import system_logger
+from .logger import system_logger
 Data Access Protection Framework
 
 This module provides comprehensive data access protection including:
@@ -13,12 +16,16 @@ import time
 from enum import Enum
 from pathlib import Path
 
-from .core.decorators import handles_errors, validates, log_call, traced, authenticated, requires_permission
 from .logger import system_logger
 import pandas as pd
 import numpy as np
 
 from .utils.data_utils import (
+import datetime
+import json
+import logging
+import typing
+
     safe_file_exists, safe_json_dump, safe_json_load, validate_dataframe_schema,
     validate_data_quality, safe_copy, generate_hash
 )
@@ -69,7 +76,7 @@ class DataAccessProtection:
         # Initialize security measures
         self._initialize_security_measures()
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     def _initialize_security_measures(self) -> bool:
@@ -99,8 +106,8 @@ class DataAccessProtection:
             self.logger.error(f"❌ Failed to initialize security measures: {e}")
             return False
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     def _validate_configuration(self) -> bool:
@@ -134,7 +141,7 @@ class DataAccessProtection:
             self.logger.error(f"❌ Security configuration validation failed: {e}")
             return False
 
-    @handles_errors(Exception, fallback=None, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _initialize_access_policies(self) -> None:
@@ -174,7 +181,7 @@ class DataAccessProtection:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize access policies: {e}")
 
-    @handles_errors(Exception, fallback=None, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _initialize_rate_limiting(self) -> None:
@@ -197,7 +204,7 @@ class DataAccessProtection:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize rate limiting: {e}")
 
-    @handles_errors(Exception, fallback=None, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _initialize_encryption(self) -> None:
@@ -215,8 +222,8 @@ class DataAccessProtection:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize encryption: {e}")
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     @authenticated
@@ -402,7 +409,7 @@ class DataAccessProtection:
             # For parquet files, check basic structure
             if file_extension == '.parquet':
                 try:
-                    df = pd.read_parquet(data_path, nrows=1)  # Read only first row for structure check
+                    df = pd.read_parquet(data_path, nrows = 1)  # Read only first row for structure check
                     if df.empty:
                         return {'valid': False, 'reason': 'Parquet file is empty'}
                 except Exception as e:
@@ -443,7 +450,7 @@ class DataAccessProtection:
         
         return permission_map.get(sensitivity_level, ['admin_access'])
 
-    @handles_errors(Exception, fallback=AccessLevel.READ_ONLY, log_level="ERROR")
+    @handles_errors(Exception, fallback = AccessLevel.READ_ONLY, log_level="ERROR")
     @log_call
     @traced
     def _determine_access_level(self, user_permissions: List[str], sensitivity_level: DataSensitivity) -> AccessLevel:
@@ -466,7 +473,7 @@ class DataAccessProtection:
         # For now, return empty list (no rate limiting)
         return []
 
-    @handles_errors(Exception, fallback=None, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _record_user_request(self, user_id: str, timestamp: float) -> None:
@@ -475,7 +482,7 @@ class DataAccessProtection:
         # For now, do nothing
         pass
 
-    @handles_errors(Exception, fallback=None, log_level="ERROR")
+    @handles_errors(Exception, fallback = None, log_level="ERROR")
     @log_call
     @traced
     def _log_access_attempt(
@@ -517,8 +524,8 @@ class DataAccessProtection:
         except Exception as e:
             self.logger.error(f"❌ Failed to log access attempt: {e}")
 
-    @handles_errors(Exception, fallback=pd.DataFrame(), log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = pd.DataFrame(), log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     def secure_data_read(
@@ -550,7 +557,7 @@ class DataAccessProtection:
                 raise ValueError(f"Unsupported file format: {file_extension}")
             
             # Validate data quality
-            quality_report = validate_data_quality(data, max_nan_ratio=0.1, check_duplicates=True)
+            quality_report = validate_data_quality(data, max_nan_ratio = 0.1, check_duplicates = True)
             if not quality_report['is_valid']:
                 self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
             
@@ -565,8 +572,8 @@ class DataAccessProtection:
             self.logger.error(f"❌ Secure data read failed: {e}")
             return pd.DataFrame()
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     def secure_data_write(
@@ -624,7 +631,7 @@ class DataAccessProtection:
             self.logger.error(f"❌ Secure data write failed: {e}")
             return False
 
-    @handles_errors(Exception, fallback=data, log_level="ERROR")
+    @handles_errors(Exception, fallback = data, log_level="ERROR")
     @log_call
     @traced
     def _sanitize_data(self, data: pd.DataFrame, access_level: AccessLevel) -> pd.DataFrame:
@@ -632,14 +639,14 @@ class DataAccessProtection:
         self.logger.info(f"🧹 Sanitizing data for access level: {access_level.value}")
         
         try:
-            sanitized_data = safe_copy(data, deep=True)
+            sanitized_data = safe_copy(data, deep = True)
             
             if access_level == AccessLevel.READ_ONLY:
                 # Remove sensitive columns for read-only access
                 sensitive_columns = ['label', 'prediction', 'confidence', 'probability']
                 columns_to_remove = [col for col in sensitive_columns if col in sanitized_data.columns]
                 if columns_to_remove:
-                    sanitized_data = sanitized_data.drop(columns=columns_to_remove)
+                    sanitized_data = sanitized_data.drop(columns = columns_to_remove)
                     self.logger.info(f"🔒 Removed sensitive columns: {columns_to_remove}")
             
             # Round numeric values to reduce precision for privacy
@@ -697,7 +704,7 @@ class DataAccessProtection:
             self.logger.error(f"❌ Failed to generate access statistics: {e}")
             return {}
 
-    @handles_errors(Exception, fallback=False, log_level="ERROR")
+    @handles_errors(Exception, fallback = False, log_level="ERROR")
     @log_call
     @traced
     def export_audit_log(self, output_path: str) -> bool:
@@ -712,7 +719,7 @@ class DataAccessProtection:
                 'statistics': self.get_access_statistics()
             }
             
-            safe_json_dump(audit_data, output_path, indent=2)
+            safe_json_dump(audit_data, output_path, indent = 2)
             
             self.logger.info(f"✅ Audit log exported successfully: {len(self.access_log)} records")
             return True

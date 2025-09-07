@@ -13,9 +13,9 @@ def cleanup_file(file_path: str):
     """Clean up a single file."""
     try:
         with open(file_path, encoding="utf-8") as f:
-            content=f.read()
+            content = f.read()
 
-        original_content=content
+        original_content = content
 
         # Remove debug print statements
         debug_patterns = [
@@ -24,10 +24,10 @@ def cleanup_file(file_path: str):
             r"print\(.*debug.*\)\s*\n",
         ]
         for _pattern in debug_patterns:
-            content=re.sub(r"", content, flags=re.IGNORECASE)
+            content = re.sub(r"", content, flags = re.IGNORECASE)
 
         # Remove type ignore comments (be careful with this)
-        content=re.sub(r"\s*# type: ignore.*\n", "\n", content)
+        content = re.sub(r"\s*# type: ignore.*\n", "\n", content)
 
         # Only write if content changed
         if content != original_content:

@@ -136,31 +136,31 @@ def get_default_timeframe_configs() -> list[TimeframeConfig]:
     return [
         TimeframeConfig(
             timeframe="1m",
-            weight=0.20,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.20,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="5m",
-            weight=0.30,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.30,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="15m",
-            weight=0.35,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.35,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="1h",
-            weight=0.15,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.15,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
     ]
 
@@ -174,9 +174,9 @@ def get_default_ensemble_config() -> EnsembleConfig:
     """
     return EnsembleConfig(
         meta_learner_type="lgbm",
-        enable_dynamic_weighting=True,
-        weight_update_frequency=100,
-        min_confidence_threshold=0.6,
+        enable_dynamic_weighting = True,
+        weight_update_frequency = 100,
+        min_confidence_threshold = 0.6,
         ensemble_method="meta_learner",
     )
 

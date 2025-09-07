@@ -1,10 +1,13 @@
 """Data Integrity Checker Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Validates data integrity and logical consistency for market data.
 Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional, Tuple
 from datetime import timedelta
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import pandas as pd
@@ -19,10 +22,12 @@ class DataIntegrityChecker:
     - Time series integrity validation
     - Cross-validation between related data points
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('DataIntegrityChecker')
         self.config = config or self._get_default_config()
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for integrity checks."""
@@ -55,6 +60,7 @@ class DataIntegrityChecker:
             time_valid = self._check_time_integrity(data, results)
             is_valid &= time_valid
         return (is_valid, results)
+    @log_all_calls
 
     def _check_ohlc_consistency(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Check OHLC data consistency."""
@@ -74,6 +80,7 @@ class DataIntegrityChecker:
             return False
         self.logger.info('✅ OHLC consistency check passed')
         return True
+    @log_all_calls
 
     def _check_negative_values(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Check for negative prices and volumes."""
@@ -81,7 +88,7 @@ class DataIntegrityChecker:
         is_valid = True
         price_columns = [col for col in ['open', 'high', 'low', 'close'] if col in data.columns]
         if price_columns:
-            negative_prices = (data[price_columns] < 0).any(axis=1)
+            negative_prices = (data[price_columns] < 0).any(axis = 1)
             negative_price_count = negative_prices.sum()
             negative_price_ratio = negative_price_count / len(data) if len(data) > 0 else 0
             max_negative = self.config['critical_thresholds']['max_negative_prices']
@@ -103,6 +110,7 @@ class DataIntegrityChecker:
                 results['detailed_analysis']['integrity'] = {}
             results['detailed_analysis']['integrity']['zero_volume_ratio'] = float(zero_volume_ratio)
         return is_valid
+    @log_all_calls
 
     def _check_extreme_movements(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Check for extreme price movements."""
@@ -128,6 +136,7 @@ class DataIntegrityChecker:
             largest_moves = price_changes.nlargest(min(5, extreme_move_count))
             results['detailed_analysis']['integrity']['largest_price_changes'] = {str(idx): float(val) for idx, val in largest_moves.items()}
         return True
+    @log_all_calls
 
     def _check_time_integrity(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Check time series integrity."""
@@ -146,7 +155,7 @@ class DataIntegrityChecker:
         time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
             max_gap_hours = self.config['critical_thresholds']['max_acceptable_gap_hours']
-            large_gaps = time_diffs > timedelta(hours=max_gap_hours)
+            large_gaps = time_diffs > timedelta(hours = max_gap_hours)
             if large_gaps.any():
                 gap_count = large_gaps.sum()
                 max_gap = time_diffs.max()
@@ -169,7 +178,7 @@ class DataIntegrityChecker:
         self.logger.info('Validating market-specific issues...')
         if self.config['integrity_checks']['check_for_market_gaps'] and isinstance(data.index, pd.DatetimeIndex):
             time_diffs = data.index.to_series().diff().dropna()
-            weekend_gaps = time_diffs[time_diffs > timedelta(hours=48)]
+            weekend_gaps = time_diffs[time_diffs > timedelta(hours = 48)]
             if len(weekend_gaps) > 0:
                 results['warnings'].append(f'Detected {len(weekend_gaps)} potential market gaps (weekends/holidays)')
         if 'volume' in data.columns:

@@ -1,4 +1,6 @@
 # src/tactician/position_division_strategy.py
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 """
 Position Division Strategy for tactical position management.
@@ -7,15 +9,14 @@ Defines strategies for multiple positions, take profit, stop loss, and position 
 from datetime import datetime
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.exceptions import (
-    error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
+from ..utils.logger import system_logger
+from src.core.errors import (
+    ValidationError,
+    NotFoundError,
+    BusinessRuleError,
+    DataIntegrityError,
 )
-from .core.decorators.errors import handles_errors
+from src.utils.warning_symbols import warning
 import numpy as np
 import logging
 import os
@@ -54,7 +55,7 @@ class PositionDivisionStrategy:
         self.position_history: list[dict[str, Any]] = []
         self.strategy_performance: dict[str, Any] = {}
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
+    @handles_errors(ValueError, AttributeError, fallback = False,
         context="position division strategy initialization",
     )
     async def initialize(self) -> bool:
@@ -69,7 +70,7 @@ class PositionDivisionStrategy:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid position division strategy configuration"))
+                self.logger.error(f"Invalid position division strategy configuration: {ValidationError('Configuration validation failed')}")
                 return False
 
             # Clear state
@@ -81,7 +82,7 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Position Division Strategy initialization failed: {e}"))
+            self.logger.exception(f"❌ Position Division Strategy initialization failed: {e}")
             return False
 
     def _validate_configuration(self) -> bool:
@@ -93,28 +94,28 @@ class PositionDivisionStrategy:
         """
         try:
             if self.max_positions <= 0:
-                self.logger.error(invalid("Max positions must be positive"))
+                self.logger.error("Validation error: Max positions must be positive")
                 return False
 
             if not 0 < self.position_size_limit <= 1:
-                self.logger.error(invalid("Position size limit must be between 0 and 1"))
+                self.logger.error("Validation error: Position size limit must be between 0 and 1")
                 return False
 
             if self.take_profit_pct <= 0:
-                self.logger.error(invalid("Take profit percentage must be positive"))
+                self.logger.error("Validation error: Take profit percentage must be positive")
                 return False
 
             if self.stop_loss_pct <= 0:
-                self.logger.error(invalid("Stop loss percentage must be positive"))
+                self.logger.error("Validation error: Stop loss percentage must be positive")
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handles_errors(ValueError, AttributeError, fallback=None,
+    @handles_errors(ValueError, AttributeError, fallback = None,
         context="position division calculation",
     )
     async def calculate_position_division(
@@ -161,7 +162,7 @@ class PositionDivisionStrategy:
             return strategy
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Position division calculation failed: {e}"))
+            self.logger.exception(f"❌ Position division calculation failed: {e}")
             return None
 
     def _calculate_num_positions(self, confidence_score: float) -> int:
@@ -189,7 +190,7 @@ class PositionDivisionStrategy:
             return min(5, self.max_positions)  # Low confidence = max positions
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating number of positions: {e}"))
+            self.logger.exception(f"❌ Error calculating number of positions: {e}")
             return 1
 
     def _calculate_position_sizes(
@@ -235,7 +236,7 @@ class PositionDivisionStrategy:
             return position_sizes
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating position sizes: {e}"))
+            self.logger.exception(f"❌ Error calculating position sizes: {e}")
             return [total_capital * 0.1]  # Fallback to 10%
 
     def _calculate_tp_sl_levels(self, market_conditions: dict[str, Any]) -> dict[str, list[float]]:
@@ -274,13 +275,13 @@ class PositionDivisionStrategy:
             }
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating TP/SL levels: {e}"))
+            self.logger.exception(f"❌ Error calculating TP/SL levels: {e}")
             return {
                 "take_profit": [self.take_profit_pct] * self.max_positions,
                 "stop_loss": [self.stop_loss_pct] * self.max_positions,
             }
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
+    @handles_errors(ValueError, AttributeError, fallback = False,
         context="position management",
     )
     async def add_position(
@@ -301,7 +302,7 @@ class PositionDivisionStrategy:
         try:
             # Check if we can add more positions
             if len(self.active_positions) >= self.max_positions:
-                self.logger.warning(warning(f"Cannot add position {position_id}: max positions reached"))
+                self.logger.warning(f"Cannot add position {position_id}: max positions reached")
                 return False
 
             # Add position
@@ -315,10 +316,10 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error adding position: {e}"))
+            self.logger.exception(f"❌ Error adding position: {e}")
             return False
 
-    @handles_errors(ValueError, AttributeError, fallback=False,
+    @handles_errors(ValueError, AttributeError, fallback = False,
         context="position closure",
     )
     async def close_position(
@@ -340,7 +341,7 @@ class PositionDivisionStrategy:
         """
         try:
             if position_id not in self.active_positions:
-                self.logger.warning(warning(f"Position {position_id} not found"))
+                self.logger.warning(f"Position {position_id} not found")
                 return False
 
             # Get position data
@@ -374,7 +375,7 @@ class PositionDivisionStrategy:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error closing position: {e}"))
+            self.logger.exception(f"❌ Error closing position: {e}")
             return False
 
     def _calculate_hold_time(self, entry_time: str) -> float:
@@ -395,7 +396,7 @@ class PositionDivisionStrategy:
             return (datetime.now() - entry_dt).total_seconds()
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating hold time: {e}"))
+            self.logger.exception(f"❌ Error calculating hold time: {e}")
             return 0.0
 
     def _update_performance_metrics(self, closure_record: dict[str, Any]) -> None:
@@ -422,7 +423,7 @@ class PositionDivisionStrategy:
             })
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error updating performance metrics: {e}"))
+            self.logger.exception(f"❌ Error updating performance metrics: {e}")
 
     def get_active_positions(self) -> dict[str, dict[str, Any]]:
         """
@@ -449,7 +450,7 @@ class PositionDivisionStrategy:
             return self.position_history.copy()
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error getting position history: {e}"))
+            self.logger.exception(f"❌ Error getting position history: {e}")
             return []
 
     def get_performance_metrics(self) -> dict[str, Any]:
@@ -480,7 +481,7 @@ class PositionDivisionStrategy:
             }
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error getting strategy summary: {e}"))
+            self.logger.exception(f"❌ Error getting strategy summary: {e}")
             return {}
 
     async def cleanup(self) -> None:
@@ -502,4 +503,4 @@ class PositionDivisionStrategy:
             self.logger.info("✅ Position Division Strategy cleanup completed")
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Position Division Strategy cleanup failed: {e}"))
+            self.logger.exception(f"❌ Position Division Strategy cleanup failed: {e}")

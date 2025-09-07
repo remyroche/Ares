@@ -9,7 +9,7 @@ from typing import Optional, Any, Callable
 from ..errors.base import AuthenticationError, AuthorizationError
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
-current_user_var: ContextVar[Optional['User']] = ContextVar('current_user', default=None)
+current_user_var: ContextVar[Optional['User']] = ContextVar('current_user', default = None)
 
 class PermissionType(Enum):
     """Types of permissions."""
@@ -99,7 +99,7 @@ def set_current_user(user: User | None) -> None:
     """Set the current user in context."""
     current_user_var.set(user)
 
-def authenticated(*, optional: bool=False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def authenticated(*, optional: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Require authentication for the decorated function.
 
@@ -112,7 +112,7 @@ def authenticated(*, optional: bool=False) -> Callable[[Callable[P, R]], Callabl
             user = get_current_user()
             return {"id": user.id, "username": user.username}
 
-        @authenticated(optional=True)
+        @authenticated(optional = True)
         def get_public_data() -> dict:
             user = get_current_user()
             if user:
@@ -135,7 +135,7 @@ def authenticated(*, optional: bool=False) -> Callable[[Callable[P, R]], Callabl
         return await func(*args, **kwargs)
     return uniform_wrapper('authenticated', sync_handler, async_handler)
 
-def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def requires_role(*roles: str, require_all: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Require specific roles for access.
 
@@ -148,7 +148,7 @@ def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P,
         def delete_user(user_id: str) -> bool:
             return database.delete_user(user_id)
 
-        @requires_role("editor", "admin", require_all=False)
+        @requires_role("editor", "admin", require_all = False)
         def edit_content(content_id: str) -> dict:
             return database.update_content(content_id)
     """
@@ -161,7 +161,7 @@ def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P,
         has_required_roles = user.has_all_roles(list(roles)) if require_all else user.has_any_role(list(roles))
         if not has_required_roles:
             msg = f"Missing required role(s): {', '.join(roles)}"
-            raise AuthorizationError(msg, required_permission=f"role:{','.join(roles)}", details={'required_roles': list(roles), 'user_roles': list(user.roles), 'require_all': require_all})
+            raise AuthorizationError(msg, required_permission = f"role:{','.join(roles)}", details={'required_roles': list(roles), 'user_roles': list(user.roles), 'require_all': require_all})
         return func(*args, **kwargs)
 
     async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
@@ -172,12 +172,12 @@ def requires_role(*roles: str, require_all: bool=False) -> Callable[[Callable[P,
         has_required_roles = user.has_all_roles(list(roles)) if require_all else user.has_any_role(list(roles))
         if not has_required_roles:
             msg = f"Missing required role(s): {', '.join(roles)}"
-            raise AuthorizationError(msg, required_permission=f"role:{','.join(roles)}", details={'required_roles': list(roles), 'user_roles': list(user.roles), 'require_all': require_all})
+            raise AuthorizationError(msg, required_permission = f"role:{','.join(roles)}", details={'required_roles': list(roles), 'user_roles': list(user.roles), 'require_all': require_all})
         return await func(*args, **kwargs)
     role_desc = 'all:' if require_all else 'any:'
     return uniform_wrapper(f"requires_role({role_desc}{','.join(roles)})", sync_handler, async_handler)
 
-def requires_permission(*permissions: str, require_all: bool=False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def requires_permission(*permissions: str, require_all: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Require specific permissions for access.
 
@@ -190,7 +190,7 @@ def requires_permission(*permissions: str, require_all: bool=False) -> Callable[
         def delete_user(user_id: str) -> bool:
             return database.delete_user(user_id)
 
-        @requires_permission("content.read", "content.write", require_all=True)
+        @requires_permission("content.read", "content.write", require_all = True)
         def update_content(content_id: str, data: dict) -> dict:
             return database.update_content(content_id, data)
     """
@@ -219,7 +219,7 @@ def requires_permission(*permissions: str, require_all: bool=False) -> Callable[
     perm_desc = 'all:' if require_all else 'any:'
     return uniform_wrapper(f"requires_permission({perm_desc}{','.join(permissions)})", sync_handler, async_handler)
 
-def owner_only(owner_field: str='user_id', param_name: str=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def owner_only(owner_field: str='user_id', param_name: str = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Ensure user can only access their own resources.
 
@@ -296,7 +296,7 @@ def owner_only(owner_field: str='user_id', param_name: str=None) -> Callable[[Ca
         return await func(*args, **kwargs)
     return uniform_wrapper(f'owner_only({owner_field})', sync_handler, async_handler)
 
-def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str] | None=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def rate_limit(*, calls: int = 10, period: float = 60.0, key_func: Callable[[], str] | None = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Rate limit function calls per user.
 
@@ -306,7 +306,7 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
         key_func: Function to generate rate limit key (defaults to user ID)
 
     Example:
-        @rate_limit(calls=5, period=60.0)
+        @rate_limit(calls = 5, period = 60.0)
         def send_email(to: str, subject: str) -> bool:
             # Max 5 emails per minute per user
             return email_service.send(to, subject)
@@ -333,7 +333,7 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
             retry_after = int(period - (current_time - oldest_call))
             from .core.errors.base import RateLimitError
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
-            raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
+            raise RateLimitError(msg, retry_after = retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)
         return func(*args, **kwargs)
 
@@ -347,7 +347,7 @@ def rate_limit(*, calls: int=10, period: float=60.0, key_func: Callable[[], str]
             from .core.errors.base import RateLimitError
 
             msg = f'Rate limit exceeded: {calls} calls per {period}s'
-            raise RateLimitError(msg, retry_after=retry_after, details={'limit': calls, 'period': period, 'key': key})
+            raise RateLimitError(msg, retry_after = retry_after, details={'limit': calls, 'period': period, 'key': key})
         call_times[key].append(current_time)
         return await func(*args, **kwargs)
     return uniform_wrapper(f'rate_limit({calls}/{period}s)', sync_handler, async_handler)

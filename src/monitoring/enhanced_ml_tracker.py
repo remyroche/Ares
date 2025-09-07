@@ -9,8 +9,8 @@ Provides compilation-safe scaffolding for enhanced ML tracking.
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 import logging
 
 
@@ -45,7 +45,7 @@ class EnhancedMLTracker:
             ValueError: (False, "Invalid tracker configuration"),
             AttributeError: (False, "Missing tracker parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="enhanced_ml_tracker.initialize",
     )
     async def initialize(self) -> bool:

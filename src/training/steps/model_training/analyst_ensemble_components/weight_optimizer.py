@@ -1,16 +1,19 @@
 
 import pandas as pd
 import numpy as np
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Weight optimization component for analyst ensemble creation."""
 from scipy.optimize import minimize
 from sklearn.metrics import accuracy_score, log_loss
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
-from .core.decorators.errors import handles_errors
 import logging
 
 class WeightOptimizer:
     """Handles weight optimization for ensemble models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the weight optimizer.
@@ -63,9 +66,9 @@ class WeightOptimizer:
             if features.empty:
                 return {ens_type: 1.0 / len(ensembles) for ens_type in ensembles}
             sample_size = min(5000, len(features))
-            sample_indices = np.random.choice(len(features), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features), sample_size, replace = False)
             X_sample = features.iloc[sample_indices]
-            y_sample = np.random.randint(0, 2, size=sample_size)
+            y_sample = np.random.randint(0, 2, size = sample_size)
             if self.optimization_method == 'scipy':
                 weights = await self._scipy_weight_optimization(ensembles, X_sample, y_sample)
             elif self.optimization_method == 'grid_search':
@@ -118,7 +121,7 @@ class WeightOptimizer:
         constraints = {'type': 'eq', 'fun': lambda w: w.sum() - 1}
         bounds = [(0, 1) for _ in range(n_ensembles)]
         initial_weights = np.ones(n_ensembles) / n_ensembles
-        result = minimize(objective, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints, options={'maxiter': self.max_iterations})
+        result = minimize(objective, initial_weights, method='SLSQP', bounds = bounds, constraints = constraints, options={'maxiter': self.max_iterations})
         if result.success:
             optimized_weights = result.x / result.x.sum()
         else:
@@ -168,8 +171,9 @@ class WeightOptimizer:
         if best_weights is None:
             best_weights = np.ones(n_ensembles) / n_ensembles
         return dict(zip(ensemble_names, best_weights))
+    @log_all_calls
 
-    def _generate_weight_grid(self, n_weights: int, step_size: float=0.1) -> List[np.ndarray]:
+    def _generate_weight_grid(self, n_weights: int, step_size: float = 0.1) -> List[np.ndarray]:
         """Generate a grid of weights that sum to 1.
         
         Args:

@@ -80,7 +80,7 @@ class CatBoostModel(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents = True, exist_ok = True)
         self.model.save_model(str(path))
 
     def load(self, path: Path) -> None:
@@ -105,9 +105,9 @@ class CatBoostTrainer(BaseModelTrainer):
         if validation_data is not None:
             X_val, y_val = validation_data
             eval_set = (X_val, y_val)
-        self.model.fit(X, y, eval_set=eval_set, early_stopping_rounds=10)
+        self.model.fit(X, y, eval_set = eval_set, early_stopping_rounds = 10)
         if hasattr(self.model, 'feature_importances_'):
-            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
+            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending = False)
         return CatBoostModel(self.model)
 
 def register_new_components() -> None:
@@ -120,11 +120,11 @@ def register_new_components() -> None:
 async def example_usage() -> None:
     """Example using the new components."""
     register_new_components()
-    bybit = ExchangeDataSourceFactory.create('bybit', api_key='your_api_key', api_secret='your_api_secret', testnet=True)
+    bybit = ExchangeDataSourceFactory.create('bybit', api_key='your_api_key', api_secret='your_api_secret', testnet = True)
     data = await bybit.fetch_data('BTCUSDT', datetime(2024, 1, 1), datetime(2024, 1, 2))
     print(f'\nFetched {len(data)} hours of data from Bybit')
     print(f'Columns: {data.columns.tolist()}')
-    catboost_trainer = ModelTrainerFactory.create('catboost', iterations=50, learning_rate=0.1, depth=4)
+    catboost_trainer = ModelTrainerFactory.create('catboost', iterations = 50, learning_rate = 0.1, depth = 4)
     features = pd.DataFrame({'feature1': np.random.randn(100), 'feature2': np.random.randn(100), 'feature3': np.random.randn(100)})
     labels = pd.Series(np.random.randint(0, 2, 100))
     print('\nTraining CatBoost model...')

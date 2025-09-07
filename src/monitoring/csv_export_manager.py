@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 CSV Export Manager for Enhanced ML Monitoring
 
@@ -14,7 +16,7 @@ import csv
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import datetime
@@ -60,7 +62,7 @@ class CSVExportManager:
         # Configuration
         self.export_config = ExportConfig(**config.get("csv_export", {}))
         self.export_dir = Path(self.export_config.export_directory)
-        self.export_dir.mkdir(exist_ok=True)
+        self.export_dir.mkdir(exist_ok = True)
         
         # Export tracking
         self.export_history: List[ExportMetadata] = []
@@ -68,7 +70,7 @@ class CSVExportManager:
         
         self.logger.info("CSV Export Manager initialized")
     
-    @handles_errors(default_return=False, context="csv_export_manager.export_trade_decisions")
+    @handles_errors(default_return = False, context="csv_export_manager.export_trade_decisions")
     async def export_trade_decisions(self, trade_decisions: List[Any], 
                                 export_id: Optional[str] = None,
                                 separate_by_mode: bool = True) -> bool:
@@ -140,12 +142,12 @@ class CSVExportManager:
             total_size = sum(f.stat().st_size for f in exported_files if f)
             
             metadata = ExportMetadata(
-                export_id=export_id,
-                timestamp=datetime.now(),
+                export_id = export_id,
+                timestamp = datetime.now(),
                 file_type="trade_decisions_by_mode",
-                record_count=total_records,
-                file_size_bytes=total_size,
-                export_duration_ms=export_duration
+                record_count = total_records,
+                file_size_bytes = total_size,
+                export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
             
@@ -185,12 +187,12 @@ class CSVExportManager:
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
-                export_id=export_id,
-                timestamp=datetime.now(),
+                export_id = export_id,
+                timestamp = datetime.now(),
                 file_type="trade_decisions",
-                record_count=len(df),
-                file_size_bytes=main_file.stat().st_size if main_file else 0,
-                export_duration_ms=export_duration
+                record_count = len(df),
+                file_size_bytes = main_file.stat().st_size if main_file else 0,
+                export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
             
@@ -545,7 +547,7 @@ class CSVExportManager:
         except Exception as e:
             self.logger.error(f"Error exporting trade decisions summary: {e}")
     
-    @handles_errors(default_return=False, context="csv_export_manager.export_daily_summaries")
+    @handles_errors(default_return = False, context="csv_export_manager.export_daily_summaries")
     async def export_daily_summaries(self, daily_summaries: List[Any], 
                                 export_id: Optional[str] = None) -> bool:
         """Export daily summary data to CSV."""
@@ -614,12 +616,12 @@ class CSVExportManager:
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
-                export_id=export_id,
-                timestamp=datetime.now(),
+                export_id = export_id,
+                timestamp = datetime.now(),
                 file_type="daily_summaries",
-                record_count=len(df),
-                file_size_bytes=main_file.stat().st_size if main_file else 0,
-                export_duration_ms=export_duration
+                record_count = len(df),
+                file_size_bytes = main_file.stat().st_size if main_file else 0,
+                export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
             
@@ -717,7 +719,7 @@ class CSVExportManager:
         except Exception as e:
             self.logger.error(f"Error exporting daily summary statistics: {e}")
     
-    @handles_errors(default_return=False, context="csv_export_manager.export_model_performances")
+    @handles_errors(default_return = False, context="csv_export_manager.export_model_performances")
     async def export_model_performances(self, model_performances: List[Any], 
                                     export_id: Optional[str] = None) -> bool:
         """Export model performance metrics to CSV."""
@@ -766,12 +768,12 @@ class CSVExportManager:
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
-                export_id=export_id,
-                timestamp=datetime.now(),
+                export_id = export_id,
+                timestamp = datetime.now(),
                 file_type="model_performances",
-                record_count=len(df),
-                file_size_bytes=main_file.stat().st_size if main_file else 0,
-                export_duration_ms=export_duration
+                record_count = len(df),
+                file_size_bytes = main_file.stat().st_size if main_file else 0,
+                export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
             
@@ -850,7 +852,7 @@ class CSVExportManager:
         except Exception as e:
             self.logger.error(f"Error exporting model performance summary: {e}")
     
-    @handles_errors(default_return=None, context="csv_export_manager._export_dataframe_to_csv")
+    @handles_errors(default_return = None, context="csv_export_manager._export_dataframe_to_csv")
     async def _export_dataframe_to_csv(self, df: pd.DataFrame, filename: str, 
                                     description: str) -> Optional[Path]:
         """Export DataFrame to CSV file with proper formatting."""
@@ -860,10 +862,10 @@ class CSVExportManager:
             # Export with proper formatting
             df.to_csv(
                 file_path,
-                index=False,
-                float_format=f'%.{self.export_config.decimal_precision}f',
-                date_format=self.export_config.date_format,
-                quoting=csv.QUOTE_NONNUMERIC
+                index = False,
+                float_format = f'%.{self.export_config.decimal_precision}f',
+                date_format = self.export_config.date_format,
+                quoting = csv.QUOTE_NONNUMERIC
             )
             
             self.logger.debug(f"Exported {description}: {file_path} ({len(df)} rows)")

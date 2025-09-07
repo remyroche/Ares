@@ -1,11 +1,14 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Refactored Raw Data Quality Checker
 This is a refactored version of raw_data_quality_checker.py that uses the extracted components.
 """
 import functools
 import warnings
 warnings.filterwarnings('ignore')
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.training.steps.data_quality_components import QualityMetricsCalculator, DataIntegrityChecker, AnomalyDetector
 import numpy as np
 import pandas as pd
@@ -19,13 +22,14 @@ class RawDataQualityChecker:
     This class now delegates specific quality checking tasks to specialized components
     while maintaining the same interface for backward compatibility.
     """
+    @log_important_calls
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild('RawDataQualityChecker')
         self.config = config or self._get_default_config()
-        self.metrics_calculator = QualityMetricsCalculator(config=self.config)
-        self.integrity_checker = DataIntegrityChecker(config=self.config)
-        self.anomaly_detector = AnomalyDetector(config=self.config)
+        self.metrics_calculator = QualityMetricsCalculator(config = self.config)
+        self.integrity_checker = DataIntegrityChecker(config = self.config)
+        self.anomaly_detector = AnomalyDetector(config = self.config)
 
     @staticmethod
     def ensure_datetime_index(func: Callable) -> None:
@@ -68,6 +72,7 @@ class RawDataQualityChecker:
                 return None
             return func(self, data, *args, **kwargs)
         return wrapper
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for quality checks."""
@@ -75,7 +80,7 @@ class RawDataQualityChecker:
 
     @ensure_datetime_index
     @validate_data_structure
-    def validate_raw_data(self, data: pd.DataFrame, symbol: str, exchange: str, auto_fix: bool=False, timeframe: str | None=None) -> tuple[dict[str, Any], pd.DataFrame]:
+    def validate_raw_data(self, data: pd.DataFrame, symbol: str, exchange: str, auto_fix: bool = False, timeframe: str | None = None) -> tuple[dict[str, Any], pd.DataFrame]:
         """
         Validate raw market data using extracted components.
         
@@ -110,7 +115,7 @@ class RawDataQualityChecker:
             results['warnings'].append(f"Detected {anomaly_results['summary']['total_anomalies']} anomalies in columns: {', '.join(anomaly_results['summary']['columns_with_anomalies'])}")
         results['detailed_analysis']['anomalies'] = anomaly_results
         self.logger.info('📈 Step 4: Calculating quality metrics...')
-        quality_report = self.metrics_calculator.generate_quality_report(data, symbol, exchange, include_recommendations=True)
+        quality_report = self.metrics_calculator.generate_quality_report(data, symbol, exchange, include_recommendations = True)
         results['detailed_analysis']['quality_metrics'] = quality_report['metrics']
         results['recommendations'] = quality_report['recommendations']
         results['data_quality_score'] = self.metrics_calculator.calculate_quality_score(results)
@@ -156,7 +161,7 @@ class RawDataQualityChecker:
                 fix_results['data_modified'] = True
             missing_before = fixed_data.isna().sum().sum()
             if missing_before > 0:
-                fixed_data = fixed_data.fillna(method='ffill', limit=5)
+                fixed_data = fixed_data.fillna(method='ffill', limit = 5)
                 numeric_cols = fixed_data.select_dtypes(include=[np.number]).columns
                 fixed_data[numeric_cols] = fixed_data[numeric_cols].fillna(0)
                 missing_after = fixed_data.isna().sum().sum()
@@ -165,8 +170,8 @@ class RawDataQualityChecker:
                     fix_results['data_modified'] = True
             ohlc_cols = ['open', 'high', 'low', 'close']
             if all((col in fixed_data.columns for col in ohlc_cols)):
-                fixed_data['high'] = fixed_data[ohlc_cols].max(axis=1)
-                fixed_data['low'] = fixed_data[ohlc_cols].min(axis=1)
+                fixed_data['high'] = fixed_data[ohlc_cols].max(axis = 1)
+                fixed_data['low'] = fixed_data[ohlc_cols].min(axis = 1)
                 fix_results['fixes_applied'].append('ohlc_consistency')
                 fix_results['data_modified'] = True
             for col in ohlc_cols:
@@ -180,6 +185,7 @@ class RawDataQualityChecker:
             self.logger.error(f'Error during auto-fix: {e}')
             fix_results['fixes_failed'].append(str(e))
         return (fixed_data, fix_results)
+    @log_all_calls
 
     def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str, Any]) -> pd.DataFrame | None:
         """Attempt to create datetime index from timestamp column."""
@@ -191,16 +197,17 @@ class RawDataQualityChecker:
             timestamp_col = timestamp_cols[0]
             if pd.api.types.is_numeric_dtype(data[timestamp_col]):
                 if data[timestamp_col].max() > 10000000000.0:
-                    data.index = pd.to_datetime(data[timestamp_col], unit='ms', utc=True)
+                    data.index = pd.to_datetime(data[timestamp_col], unit='ms', utc = True)
                 else:
-                    data.index = pd.to_datetime(data[timestamp_col], unit='s', utc=True)
+                    data.index = pd.to_datetime(data[timestamp_col], unit='s', utc = True)
             else:
-                data.index = pd.to_datetime(data[timestamp_col], utc=True)
+                data.index = pd.to_datetime(data[timestamp_col], utc = True)
             data = data.sort_index()
             return data
         except Exception as e:
             results['critical_issues'].append(f'Failed to create datetime index: {e}')
             return None
+    @log_all_calls
 
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
         """Determine timeframe from data intervals."""
@@ -216,11 +223,12 @@ class RawDataQualityChecker:
             mode_interval = mode_interval[0]
         minutes = mode_interval.total_seconds() / 60
         timeframe_map = {1: '1m', 3: '3m', 5: '5m', 15: '15m', 30: '30m', 60: '1h', 240: '4h', 1440: '1d'}
-        closest_tf = min(timeframe_map.keys(), key=lambda x: abs(x - minutes))
+        closest_tf = min(timeframe_map.keys(), key = lambda x: abs(x - minutes))
         if abs(closest_tf - minutes) / closest_tf < 0.1:
             return timeframe_map[closest_tf]
         else:
             return f'{int(minutes)}m'
+    @log_all_calls
 
     def _log_validation_summary(self, results: dict[str, Any]) -> None:
         """Log a summary of validation results."""
@@ -253,14 +261,14 @@ class RawDataQualityChecker:
         This method provides backward compatibility by delegating to
         the QualityMetricsCalculator component.
         """
-        return self.metrics_calculator.generate_quality_report(data, symbol, exchange, include_recommendations=True)
+        return self.metrics_calculator.generate_quality_report(data, symbol, exchange, include_recommendations = True)
 
-def validate_raw_data_quality(data: pd.DataFrame, symbol: str, exchange: str, config: dict[str, Any] | None=None) -> tuple[dict[str, Any], pd.DataFrame]:
+def validate_raw_data_quality(data: pd.DataFrame, symbol: str, exchange: str, config: dict[str, Any] | None = None) -> tuple[dict[str, Any], pd.DataFrame]:
     """Convenience function to validate raw data quality."""
     checker = RawDataQualityChecker(config)
     return checker.validate_raw_data(data, symbol, exchange)
 
-def validate_and_fix_data_quality_issues(data: pd.DataFrame, symbol: str, exchange: str, config: dict[str, Any] | None=None) -> tuple[pd.DataFrame, dict[str, Any]]:
+def validate_and_fix_data_quality_issues(data: pd.DataFrame, symbol: str, exchange: str, config: dict[str, Any] | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Convenience function to validate and fix data quality issues."""
     checker = RawDataQualityChecker(config)
     return checker.validate_and_fix_data_quality_issues(data, symbol, exchange)

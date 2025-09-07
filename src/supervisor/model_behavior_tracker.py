@@ -1,5 +1,7 @@
 
 from logging import error
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 '\nModel Behavior Tracker\n\nThis module enhances the existing performance monitoring system with comprehensive\nmodel behavior tracking, feature importance monitoring, and decision path analysis.\n'
 import asyncio
 import json
@@ -7,9 +9,9 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from .utils.logger import system_logger
-from .utils.warning_symbols import failed, initialization_error
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
+from ..utils.warning_symbols import failed, initialization_error
+from .performance_monitor import PerformanceMonitor
 import numpy as np
 import time
 
@@ -89,7 +91,7 @@ class ModelBehaviorTracker:
         self.reference_behavior: dict[str, dict[str, float]] = {}
         self.logger.info('🚀 Model Behavior Tracker initialized')
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid tracker configuration'), AttributeError: (False, 'Missing required tracker parameters')}, default_return=False, context='behavior tracker initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid tracker configuration'), AttributeError: (False, 'Missing required tracker parameters')}, default_return = False, context='behavior tracker initialization')
     async def initialize(self) -> bool:
         """Initialize the model behavior tracker."""
         try:
@@ -104,7 +106,7 @@ class ModelBehaviorTracker:
             self.logger.exception(f'❌ Model Behavior Tracker initialization failed: {e}')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_reference_behavior(self) -> None:
         """Load reference behavior data for stability calculations."""
         try:
@@ -113,7 +115,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error('Error loading reference behavior: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_behavior_tracking(self) -> None:
         """Initialize behavior tracking components."""
         try:
@@ -122,7 +124,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(initialization_error('Error initializing behavior tracking: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_feature_tracking(self) -> None:
         """Initialize feature importance tracking."""
         try:
@@ -131,7 +133,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(initialization_error('Error initializing feature tracking: {e}'))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_decision_path_tracking(self) -> None:
         """Initialize decision path tracking."""
         try:
@@ -140,7 +142,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(initialization_error('Error initializing decision path tracking: {e}'))
 
-    @handles_errors(error_handlers={Exception: (False, 'Behavior tracking failed')}, default_return=False, context='behavior tracking')
+    @handles_errors(error_handlers={Exception: (False, 'Behavior tracking failed')}, default_return = False, context='behavior tracking')
     async def start_tracking(self) -> bool:
         """Start the model behavior tracking."""
         try:
@@ -153,7 +155,7 @@ class ModelBehaviorTracker:
             self.logger.exception(failed('❌ Failed to start Model Behavior Tracker: {e}'))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _behavior_tracking_loop(self) -> None:
         """Continuous behavior tracking loop."""
         while self.is_tracking:
@@ -164,7 +166,7 @@ class ModelBehaviorTracker:
                 self.logger.exception(error('Error in behavior tracking loop: {e}'))
                 await asyncio.sleep(60)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _capture_behavior_snapshots(self) -> None:
         """Capture behavior snapshots for all models."""
         try:
@@ -178,7 +180,7 @@ class ModelBehaviorTracker:
                 decision_path_stability = self._calculate_decision_path_stability(model_id, performance)
                 confidence_calibration = self._calculate_confidence_calibration(model_id, performance)
                 theory_vs_reality_score = self._calculate_theory_vs_reality_score(model_id, performance)
-                snapshot = ModelBehaviorSnapshot(model_id=model_id, model_type=performance.get('model_type', 'ensemble'), timestamp=datetime.now(), prediction_consistency=prediction_consistency, confidence_trend=confidence_trend, feature_importance_stability=feature_importance_stability, prediction_drift=prediction_drift, ensemble_diversity=ensemble_diversity, decision_path_stability=decision_path_stability, confidence_calibration=confidence_calibration, theory_vs_reality_score=theory_vs_reality_score, metadata=performance.get('metadata', {}))
+                snapshot = ModelBehaviorSnapshot(model_id = model_id, model_type = performance.get('model_type', 'ensemble'), timestamp = datetime.now(), prediction_consistency = prediction_consistency, confidence_trend = confidence_trend, feature_importance_stability = feature_importance_stability, prediction_drift = prediction_drift, ensemble_diversity = ensemble_diversity, decision_path_stability = decision_path_stability, confidence_calibration = confidence_calibration, theory_vs_reality_score = theory_vs_reality_score, metadata = performance.get('metadata', {}))
                 if model_id not in self.behavior_history:
                     self.behavior_history[model_id] = []
                 self.behavior_history[model_id].append(snapshot)
@@ -267,7 +269,7 @@ class ModelBehaviorTracker:
             self.logger.exception(f'Error calculating theory vs reality score for {model_id}: {e}')
             return None
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop_tracking(self) -> None:
         """Stop the model behavior tracking."""
         try:
@@ -280,7 +282,7 @@ class ModelBehaviorTracker:
         except Exception:
             self.logger.exception(error('Error stopping behavior tracker: {e}'))
 
-    def get_behavior_history(self, model_id: str, limit: int | None=None) -> list[ModelBehaviorSnapshot]:
+    def get_behavior_history(self, model_id: str, limit: int | None = None) -> list[ModelBehaviorSnapshot]:
         """Get behavior history for a specific model."""
         history = self.behavior_history.get(model_id=[])
         if limit:
@@ -361,7 +363,7 @@ class ModelBehaviorTracker:
             summaries[model_id] = self.get_behavior_summary(model_id)
         return summaries
 
-    def export_behavior_data(self, filepath: str | None=None) -> str:
+    def export_behavior_data(self, filepath: str | None = None) -> str:
         """Export behavior data to file."""
         try:
             if not filepath:
@@ -369,7 +371,7 @@ class ModelBehaviorTracker:
                 filepath = f'reports/model_behavior_data_{timestamp}.json'
             export_data = {'behavior_history': {model_id: [asdict(snapshot) for snapshot in history] for model_id, history in self.behavior_history.items()}, 'behavior_summaries': self.get_all_behavior_summaries(), 'export_timestamp': datetime.now().isoformat()}
             with open(filepath, 'w') as f:
-                json.dump(export_data, f, indent=2, default=str)
+                json.dump(export_data, f, indent = 2, default = str)
             self.logger.info(f'📊 Behavior data exported to {filepath}')
             return filepath
         except Exception:

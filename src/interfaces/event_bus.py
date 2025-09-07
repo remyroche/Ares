@@ -6,15 +6,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable
 
-from .utils.logger import system_logger
-from .core.exceptions import (
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
     invalid,
     missing,
 )
-from .core.decorators import handles_errors
 import logging
 import time
 
@@ -73,7 +73,7 @@ class EventBus:
         ValueError,
         AttributeError,
         KeyError,
-        fallback=False,
+        fallback = False,
         log_level="ERROR",
     )
     async def initialize(self) -> bool:
@@ -90,7 +90,7 @@ class EventBus:
             self.logger.exception(failed(f"❌ Event Bus initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_event_bus_configuration(self) -> None:
         try:
             self.event_bus_config.setdefault("processing_interval", 10)
@@ -101,7 +101,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error loading event bus configuration: {e}"))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         try:
             if self.processing_interval <= 0:
@@ -116,7 +116,7 @@ class EventBus:
             self.logger.exception(error(f"Error validating configuration: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_event_processing(self) -> None:
         try:
             # Initialize event processing components
@@ -130,7 +130,7 @@ class EventBus:
 
     @handles_errors(
         Exception,
-        fallback=False,
+        fallback = False,
         log_level="ERROR"
     )
     async def run(self) -> bool:
@@ -146,7 +146,7 @@ class EventBus:
             self.is_running = False
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _process_events(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -164,7 +164,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error in event processing: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _dispatch_event(self, event: dict[str, Any]) -> None:
         try:
             event_type = event.get("type", "unknown")
@@ -206,7 +206,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error dispatching event: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Event Bus...")
         try:
@@ -216,7 +216,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error stopping event bus: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Subscribe to an event type."""
         try:
@@ -230,7 +230,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error subscribing to event: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def unsubscribe(
         self,
         event_type: EventType | str,
@@ -251,7 +251,7 @@ class EventBus:
         except Exception as e:
             self.logger.exception(error(f"Error unsubscribing from event: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def publish(self, event_type: EventType | str, data: Any) -> None:
         """Publish an event to the bus."""
         try:
@@ -293,7 +293,7 @@ class EventBus:
 event_bus: EventBus | None = None
 
 
-@handles_errors(fallback=None)
+@handles_errors(fallback = None)
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:
     try:
         global event_bus

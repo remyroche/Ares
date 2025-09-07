@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------------------
 # Logging setup
 # --------------------------------------------------------------------------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger=logging.getLogger(__name__)
+logging.basicConfig(level = logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------------------
@@ -73,20 +73,20 @@ class SyntaxErrorScanner:
     def __init__(
         self,
         *,
-        timeout_seconds: float=10.0,
+        timeout_seconds: float = 10.0,
         excluded_dirs: Sequence[str] | None = None,
         excluded_globs: Sequence[str] | None = None,
         file_extensions: Sequence[str] = (".py",),
     ) -> None:
-        self.timeout_seconds=timeout_seconds
+        self.timeout_seconds = timeout_seconds
         self.excluded_dirs = set(excluded_dirs or ()) | set(self.DEFAULT_EXCLUDED_DIRS)
-        self.excluded_globs=list(excluded_globs or [])
-        self.file_extensions=tuple(file_extensions)
+        self.excluded_globs = list(excluded_globs or [])
+        self.file_extensions = tuple(file_extensions)
 
         # Aggregates
         self.error_files: dict[str, list[str]] = defaultdict(list)
         self.error_types: Counter[str] = Counter()
-        self.total_errors: int=0
+        self.total_errors: int = 0
         self.files_processed: int = 0
 
     # ----------------------------
@@ -104,7 +104,7 @@ class SyntaxErrorScanner:
             for filename in filenames:
                 if not filename.endswith(self.file_extensions):
                     continue
-                file_path=Path(dirpath) / filename
+                file_path = Path(dirpath) / filename
                 if self._is_glob_excluded(file_path):
                     continue
                 yield file_path
@@ -116,7 +116,7 @@ class SyntaxErrorScanner:
     def _is_glob_excluded(self, file_path: Path) -> bool:
         if not self.excluded_globs:
             return False
-        as_posix=file_path.as_posix()
+        as_posix = file_path.as_posix()
         for pattern in self.excluded_globs:
             try:
                 if Path(as_posix).match(pattern) or file_path.match(pattern):
@@ -133,11 +133,11 @@ class SyntaxErrorScanner:
         classification (e.g., SyntaxError, IndentationError, TabError).
         """
         try:
-            result=subprocess.run(
+            result = subprocess.run(
                 [sys.executable, "-m", "py_compile", str(file_path)],
-                check=False, capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
+                check = False, capture_output = True,
+                text = True,
+                timeout = self.timeout_seconds,
             )
         except subprocess.TimeoutExpired:
             return ["TimeoutError: File took too long to compile"]
@@ -184,27 +184,27 @@ class SyntaxErrorScanner:
         if ":" in error_line:
             parts = error_line.split(":", 1)
             if len(parts) == 2:
-                message=parts[1].strip() or error_line
+                message = parts[1].strip() or error_line
 
         file_info="Unknown file"
         line_no: int | None = None
         m = re.search(r'File "([^"]+)", line (\d+)', error_line)
         if m:
-            file_info=m.group(1)
+            file_info = m.group(1)
             try:
-                line_no=int(m.group(2))
+                line_no = int(m.group(2))
             except Exception:
-                line_no=None
+                line_no = None
         else:
             fm = re.search(r'File "([^"]+)"', error_line)
             if fm:
-                file_info=fm.group(1)
+                file_info = fm.group(1)
 
         return error_type, message, file_info, line_no
 
-    def scan_directory(self, directory: Path, *, jobs: int=1) -> dict[str, object]:
+    def scan_directory(self, directory: Path, *, jobs: int = 1) -> dict[str, object]:
         logger.info(f"🔍 Scanning directory: {directory}")
-        python_files=list(self._iter_python_files(directory))
+        python_files = list(self._iter_python_files(directory))
         logger.info(f"📁 Found {len(python_files)} Python files")
 
         if not python_files:
@@ -219,20 +219,20 @@ class SyntaxErrorScanner:
         if jobs <= 1:
             for file_path in python_files:
                 self.files_processed += 1
-                errors=self.scan_file(file_path)
+                errors = self.scan_file(file_path)
                 if errors:
                     self.error_files[str(file_path)] = errors
                     self.total_errors += len(errors)
                     for err in errors:
-                        etype, _, _, _=self.parse_error_line(err)
+                        etype, _, _, _ = self.parse_error_line(err)
                         self.error_types[etype] += 1
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            with ThreadPoolExecutor(max_workers=jobs) as executor:
+            with ThreadPoolExecutor(max_workers = jobs) as executor:
                 future_to_file={executor.submit(self.scan_file, fp): fp for fp in python_files}
                 for future in as_completed(future_to_file):
-                    file_path=future_to_file[future]
+                    file_path = future_to_file[future]
                     self.files_processed += 1
                     try:
                         errors = future.result()
@@ -243,7 +243,7 @@ class SyntaxErrorScanner:
                         self.error_files[str(file_path)] = errors
                         self.total_errors += len(errors)
                         for err in errors:
-                            etype, _, _, _=self.parse_error_line(err)
+                            etype, _, _, _ = self.parse_error_line(err)
                             self.error_types[etype] += 1
 
         return {
@@ -284,25 +284,25 @@ class SyntaxErrorScanner:
         # Files with errors
         report_lines.append("📁 FILES WITH ERRORS")
         report_lines.append("-" * 40)
-        sorted_files=sorted(self.error_files.items(), key=lambda x: len(x[1]), reverse=True)
+        sorted_files = sorted(self.error_files.items(), key = lambda x: len(x[1]), reverse = True)
         for file_path, errors in sorted_files:
-            abs_path=os.path.abspath(file_path)
-            rel_path=os.path.relpath(file_path, ".")
+            abs_path = os.path.abspath(file_path)
+            rel_path = os.path.relpath(file_path, ".")
             report_lines.append(f"\n{rel_path} ({len(errors)} errors):")
             report_lines.append(f"   Location: {abs_path}")
 
             # Per-file error type breakdown
             file_error_types: Counter[str] = Counter()
             for e in errors:
-                etype, _, _, _=self.parse_error_line(e)
+                etype, _, _, _ = self.parse_error_line(e)
                 file_error_types[etype] += 1
             for etype, count in file_error_types.most_common():
                 report_lines.append(f"  - {etype}: {count}")
 
             # Show first few errors
             for i, err in enumerate(errors[:3]):
-                etype, msg, _, line_no=self.parse_error_line(err)
-                loc=f" at line {line_no}" if line_no is not None else ""
+                etype, msg, _, line_no = self.parse_error_line(err)
+                loc = f" at line {line_no}" if line_no is not None else ""
                 report_lines.append(f"    {i + 1}. {etype}{loc}: {msg[:100]}...")
             if len(errors) > 3:
                 report_lines.append(f"    ... and {len(errors) - 3} more errors")
@@ -312,8 +312,8 @@ class SyntaxErrorScanner:
         report_lines.append("DETAILED ERROR BREAKDOWN")
         report_lines.append("=" * 80)
         for file_path, errors in sorted_files:
-            rel=os.path.relpath(file_path, ".")
-            abs_path=os.path.abspath(file_path)
+            rel = os.path.relpath(file_path, ".")
+            abs_path = os.path.abspath(file_path)
             report_lines.append(f"\n{rel}:")
             report_lines.append(f"Location: {abs_path}")
             report_lines.append("-" * len(rel))
@@ -322,40 +322,40 @@ class SyntaxErrorScanner:
 
         report="\n".join(report_lines)
         if output_file is not None:
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.parent.mkdir(parents = True, exist_ok = True)
             output_file.write_text(report, encoding="utf-8")
             logger.info(f"📄 Report written to: {output_file}")
         return report
 
-    def get_files_by_error_count(self, min_errors: int=1) -> list[tuple[str, str, int]]:
+    def get_files_by_error_count(self, min_errors: int = 1) -> list[tuple[str, str, int]]:
         files: list[tuple[str, str, int]] = []
         for file_path, errors in self.error_files.items():
             if len(errors) >= min_errors:
-                rel=os.path.relpath(file_path, ".")
-                abs_path=os.path.abspath(file_path)
+                rel = os.path.relpath(file_path, ".")
+                abs_path = os.path.abspath(file_path)
                 files.append((rel, abs_path, len(errors)))
-        return sorted(files, key=lambda x: x[2], reverse=True)
+        return sorted(files, key = lambda x: x[2], reverse = True)
 
     def get_files_by_error_type(self, error_type: str) -> list[tuple[str, int]]:
         files: list[tuple[str, int]] = []
         for file_path, errors in self.error_files.items():
-            type_count=sum(1 for e in errors if self.parse_error_line(e)[0] == error_type)
+            type_count = sum(1 for e in errors if self.parse_error_line(e)[0] == error_type)
             if type_count > 0:
-                rel=os.path.relpath(file_path, ".")
+                rel = os.path.relpath(file_path, ".")
                 files.append((rel, type_count))
-        return sorted(files, key=lambda x: x[1], reverse=True)
+        return sorted(files, key = lambda x: x[1], reverse = True)
 
 
 # --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser=argparse.ArgumentParser(description="Scan Python files for syntax errors and generate reports.")
-    parser.add_argument("--root", type=str, default=".", help="Root directory to scan (default: .)")
-    parser.add_argument("--output", type=str, default="reports/syntax_error_report.txt", help="Path to write text report")
-    parser.add_argument("--json-output", type=str, default="reports/syntax_error_report.json", help="Optional JSON output path for summary + details")
-    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2), help="Number of concurrent jobs")
-    parser.add_argument("--timeout", type=float, default=10.0, help="Per-file compile timeout in seconds")
+    parser = argparse.ArgumentParser(description="Scan Python files for syntax errors and generate reports.")
+    parser.add_argument("--root", type = str, default=".", help="Root directory to scan (default: .)")
+    parser.add_argument("--output", type = str, default="reports/syntax_error_report.txt", help="Path to write text report")
+    parser.add_argument("--json-output", type = str, default="reports/syntax_error_report.json", help="Optional JSON output path for summary + details")
+    parser.add_argument("--jobs", type = int, default = max(1, (os.cpu_count() or 2) // 2), help="Number of concurrent jobs")
+    parser.add_argument("--timeout", type = float, default = 10.0, help="Per-file compile timeout in seconds")
     parser.add_argument(
         "--exclude-dir",
         action="append",
@@ -368,26 +368,26 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=[],
         help="Glob pattern to exclude files (can be specified multiple times)",
     )
-    parser.add_argument("--top", type=int, default=10, help="Show top N files with most errors")
+    parser.add_argument("--top", type = int, default = 10, help="Show top N files with most errors")
     parser.add_argument("--fail-on-error", action="store_true", help="Exit with non-zero code if any errors found")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     logger.info("🚀 Starting syntax error scanner")
-    args=_parse_args(argv)
+    args = _parse_args(argv)
 
-    root=Path(args.root).resolve()
-    output_path=Path(args.output).resolve() if args.output else None
-    json_output_path=Path(args.json_output).resolve() if args.json_output else None
+    root = Path(args.root).resolve()
+    output_path = Path(args.output).resolve() if args.output else None
+    json_output_path = Path(args.json_output).resolve() if args.json_output else None
 
-    scanner=SyntaxErrorScanner(
-        timeout_seconds=float(args.timeout),
-        excluded_dirs=args.exclude_dir,
-        excluded_globs=args.exclude_glob,
+    scanner = SyntaxErrorScanner(
+        timeout_seconds = float(args.timeout),
+        excluded_dirs = args.exclude_dir,
+        excluded_globs = args.exclude_glob,
     )
 
-    results=scanner.scan_directory(root, jobs=max(1, int(args.jobs)))
+    results = scanner.scan_directory(root, jobs = max(1, int(args.jobs)))
 
     logger.info("📊 Scan Summary:")
     logger.info(f"   Files processed: {results['files_processed']}")
@@ -400,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("\n" + "=" * 60)
     print("TOP FILES WITH MOST ERRORS")
     print("=" * 60)
-    top_files=scanner.get_files_by_error_count(min_errors=1)[: int(args.top)]
+    top_files = scanner.get_files_by_error_count(min_errors = 1)[: int(args.top)]
     if top_files:
         for i, (rel_path, _abs_path, count) in enumerate(top_files, 1):
             print(f"{i:2d}. {rel_path} ({count} errors)")
@@ -412,7 +412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("FILES BY ERROR TYPE")
     print("=" * 60)
     for error_type in ["SyntaxError", "IndentationError", "TabError"]:
-        files=scanner.get_files_by_error_type(error_type)
+        files = scanner.get_files_by_error_type(error_type)
         if files:
             print(f"\n{error_type} files:")
             for rel_path, count in files[:5]:
@@ -430,11 +430,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "error_count": len(errs),
                     "errors": errs,
                 }
-                for rel, errs in sorted(scanner.error_files.items(), key=lambda kv: len(kv[1]), reverse=True)
+                for rel, errs in sorted(scanner.error_files.items(), key = lambda kv: len(kv[1]), reverse = True)
             },
         }
-        json_output_path.parent.mkdir(parents=True, exist_ok=True)
-        json_output_path.write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
+        json_output_path.parent.mkdir(parents = True, exist_ok = True)
+        json_output_path.write_text(json.dumps(json_payload, indent = 2), encoding="utf-8")
         logger.info(f"📄 JSON report written to: {json_output_path}")
 
     logger.info("✅ Syntax error scanning completed!")

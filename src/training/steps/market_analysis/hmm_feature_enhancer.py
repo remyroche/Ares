@@ -1,8 +1,10 @@
 # src/training/steps/hmm_feature_enhancer.py
 
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from .core.decorators import traced, validates
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -10,13 +12,14 @@ import logging
 
 class HMMFeatureEnhancer:
     """Enhances HMM features with additional derived features for Step 5 compatibility."""
+    @log_important_calls
 
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild("HMMFeatureEnhancer")
 
     @traced(span_name="HMMFeatureEnhancer.enhance_hmm_features")
-    @validates(mode="warn", arg_index=0)
+    @validates(mode="warn", arg_index = 0)
     def enhance_hmm_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Enhance HMM features with additional derived features.
 
@@ -53,6 +56,7 @@ class HMMFeatureEnhancer:
         except Exception as e:
             self.logger.exception(f"🚨 HMM feature enhancement failed: {e}")
             return features_df
+    @log_all_calls
 
     def _add_regime_transition_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime transition and persistence features."""
@@ -67,7 +71,7 @@ class HMMFeatureEnhancer:
             state_columns = [col for col in df.columns if col.endswith("_p_state_")]
             if state_columns:
                 # Max probability state
-                df["dominant_state_prob"] = df[state_columns].max(axis=1)
+                df["dominant_state_prob"] = df[state_columns].max(axis = 1)
                 df["state_uncertainty"] = 1 - df["dominant_state_prob"]
 
                 # State entropy (measure of uncertainty)
@@ -82,6 +86,7 @@ class HMMFeatureEnhancer:
         except Exception as e:
             self.logger.warning(f"⚠️ Regime transition features failed: {e}")
             return df
+    @log_all_calls
 
     def _add_regime_stability_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime stability and consistency features."""
@@ -90,15 +95,15 @@ class HMMFeatureEnhancer:
             if "composite_cluster_id" in df.columns:
                 # Rolling regime consistency
                 df["regime_consistency_5"] = df["composite_cluster_id"].rolling(5).apply(
-                    lambda x: len(x.unique()) == 1, raw=False,
+                    lambda x: len(x.unique()) == 1, raw = False,
                 ).astype(float)
 
                 df["regime_consistency_10"] = df["composite_cluster_id"].rolling(10).apply(
-                    lambda x: len(x.unique()) == 1, raw=False,
+                    lambda x: len(x.unique()) == 1, raw = False,
                 ).astype(float)
 
                 df["regime_consistency_20"] = df["composite_cluster_id"].rolling(20).apply(
-                    lambda x: len(x.unique()) == 1, raw=False,
+                    lambda x: len(x.unique()) == 1, raw = False,
                 ).astype(float)
 
             # State probability stability
@@ -116,6 +121,7 @@ class HMMFeatureEnhancer:
         except Exception as e:
             self.logger.warning(f"⚠️ Regime stability features failed: {e}")
             return df
+    @log_all_calls
 
     def _add_regime_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime interaction and correlation features."""
@@ -150,6 +156,7 @@ class HMMFeatureEnhancer:
         except Exception as e:
             self.logger.warning(f"⚠️ Regime interaction features failed: {e}")
             return df
+    @log_all_calls
 
     def _add_missing_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add missing technical indicators from Step 5 requirements."""
@@ -192,7 +199,7 @@ class HMMFeatureEnhancer:
                     df["sma"] = df["close"].rolling(20).mean()
 
                 if "ema" not in df.columns and "close" in df.columns:
-                    df["ema"] = df["close"].ewm(span=20).mean()
+                    df["ema"] = df["close"].ewm(span = 20).mean()
 
                 # ATR (if not present)
                 if "atr" not in df.columns and all(col in df.columns for col in ["high", "low", "close"]):
@@ -204,6 +211,7 @@ class HMMFeatureEnhancer:
         except Exception as e:
             self.logger.warning(f"⚠️ Missing technical indicators failed: {e}")
             return df
+    @log_all_calls
 
     def _add_regime_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime-enhanced versions of existing features."""
@@ -235,10 +243,11 @@ class HMMFeatureEnhancer:
             self.logger.warning(f"⚠️ Regime-enhanced features failed: {e}")
             return df
 
+    @log_all_calls
     # Helper methods for calculations
     def _calculate_regime_persistence(self, regime_series: pd.Series) -> pd.Series:
         """Calculate how long we've been in the current regime."""
-        persistence = pd.Series(index=regime_series.index, dtype=float)
+        persistence = pd.Series(index = regime_series.index, dtype = float)
         current_regime = None
         current_count = 0
 
@@ -251,42 +260,49 @@ class HMMFeatureEnhancer:
             persistence.iloc[i] = current_count
 
         return persistence
+    @log_all_calls
 
     def _calculate_regime_transitions(self, regime_series: pd.Series) -> pd.Series:
         """Calculate number of regime transitions in rolling window."""
         transitions = (regime_series != regime_series.shift(1)).astype(int)
         return transitions.rolling(20).sum()
+    @log_all_calls
 
     def _calculate_regime_volatility(self, regime_series: pd.Series) -> pd.Series:
         """Calculate regime volatility (frequency of changes)."""
         changes = (regime_series != regime_series.shift(1)).astype(int)
         return changes.rolling(10).std()
+    @log_all_calls
 
     def _calculate_state_entropy(self, state_probs: pd.DataFrame) -> pd.Series:
         """Calculate entropy of state probabilities."""
         # Add small epsilon to avoid log(0)
         eps = 1e-10
         probs = state_probs + eps
-        return -(probs * np.log(probs)).sum(axis=1)
+        return -(probs * np.log(probs)).sum(axis = 1)
+    @log_all_calls
 
     def _calculate_state_stability(self, state_probs: pd.DataFrame) -> pd.Series:
         """Calculate stability of state probabilities."""
-        return 1 - state_probs.rolling(5).std().sum(axis=1)
+        return 1 - state_probs.rolling(5).std().sum(axis = 1)
 
+    @log_all_calls
     # Technical indicator calculations
     def _calculate_rsi(self, close: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI."""
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
+    @log_all_calls
 
     def _calculate_macd(self, close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD."""
-        ema_fast = close.ewm(span=fast).mean()
-        ema_slow = close.ewm(span=slow).mean()
+        ema_fast = close.ewm(span = fast).mean()
+        ema_slow = close.ewm(span = slow).mean()
         return ema_fast - ema_slow
+    @log_all_calls
 
     def _calculate_bb_position(self, close: pd.Series, period: int = 20, std_dev: float = 2) -> pd.Series:
         """Calculate Bollinger Bands position."""
@@ -295,6 +311,7 @@ class HMMFeatureEnhancer:
         upper_band = sma + (std * std_dev)
         lower_band = sma - (std * std_dev)
         return (close - lower_band) / (upper_band - lower_band)
+    @log_all_calls
 
     def _calculate_adx(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
         """Calculate ADX (simplified version)."""
@@ -302,8 +319,9 @@ class HMMFeatureEnhancer:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()
+    @log_all_calls
 
     def _calculate_cci(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20) -> pd.Series:
         """Calculate CCI."""
@@ -311,6 +329,7 @@ class HMMFeatureEnhancer:
         sma_tp = typical_price.rolling(period).mean()
         mad = typical_price.rolling(period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         return (typical_price - sma_tp) / (0.015 * mad)
+    @log_all_calls
 
     def _calculate_mfi(self, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 14) -> pd.Series:
         """Calculate MFI."""
@@ -321,15 +340,22 @@ class HMMFeatureEnhancer:
         negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(period).sum()
 
         return 100 - (100 / (1 + positive_flow / negative_flow))
+    @log_all_calls
 
     def _calculate_roc(self, close: pd.Series, period: int = 10) -> pd.Series:
         """Calculate ROC."""
         return ((close - close.shift(period)) / close.shift(period)) * 100
+    @log_all_calls
 
     def _calculate_atr(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
         """Calculate ATR."""
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()
+
+# src/training/steps/hmm_feature_enhancer.py
+
+
+from .core.decorators import traced, validates

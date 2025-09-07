@@ -584,8 +584,8 @@ async def get_training_modes():
             return {
                 "modes": {
                     "light": {
-                        "description": "Light training mode for quick testing (30 days)",
-                        "lookback_days": 30,
+                        "description": "Light training mode for quick testing (10 days)",
+                        "lookback_days": 10,
                         "max_trials": 10,
                         "n_trials": 5,
                         "computational_intensity": "low",

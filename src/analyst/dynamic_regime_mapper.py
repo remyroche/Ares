@@ -2,10 +2,10 @@ import json
 import logging
 import os
 from typing import Any
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import datetime
 import pandas as pd
+from .core.decorators import handles_errors
 
 class DynamicRegimeMapper:
     """
@@ -24,7 +24,7 @@ class DynamicRegimeMapper:
         self.auto_discover_regimes = config.get('auto_discover_regimes', True)
         self.regime_naming_strategy = config.get('regime_naming_strategy', 'archetype_based')
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """Initialize the dynamic regime mapper."""
         try:
@@ -37,7 +37,7 @@ class DynamicRegimeMapper:
             self.logger.exception(f'Failed to initialize Dynamic Regime Mapper: {e}')
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _discover_regimes_from_step1_7(self) -> bool:
         """Discover regimes by reading Step 1.7 HMM clustering results."""
         try:
@@ -57,7 +57,7 @@ class DynamicRegimeMapper:
             self.logger.exception(f'Error discovering regimes from Step 1.7: {e}')
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _process_meta_file(self, meta_file: str) -> bool:
         """Process a Step 1.7 meta file to extract regime information."""
         try:
@@ -160,7 +160,7 @@ class DynamicRegimeMapper:
     def get_archetype_description(self, cluster_id: int, timeframe: str='1m') -> str:
         """Get the archetype description for a specific cluster."""
         descriptions = self.archetype_descriptions.get(timeframe={})
-        return descriptions.get(cluster_id=f'Unknown archetype {cluster_id}')
+        return descriptions.get(cluster_id = f'Unknown archetype {cluster_id}')
 
     def get_cluster_centroid(self, cluster_id: int, timeframe: str='1m') -> list[float]:
         """Get the cluster centroid for a specific cluster."""
@@ -200,7 +200,7 @@ class DynamicRegimeMapper:
         try:
             mapping_data = {'timeframe': timeframe, 'regime_mapping': self.get_regime_mapping(timeframe), 'archetype_descriptions': self.archetype_descriptions.get(timeframe, {}), 'regime_summary': self.get_regime_summary(timeframe), 'discovery_timestamp': pd.Timestamp.now().isoformat()}
             with open(output_path, 'w') as f:
-                json.dump(mapping_data, f, indent=2)
+                json.dump(mapping_data, f, indent = 2)
             self.logger.info(f'Saved regime mapping to {output_path}')
             return True
         except Exception as e:

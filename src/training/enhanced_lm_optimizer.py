@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from src.utils.logger import system_logger
 
 # src/training/enhanced_lm_optimizer.py
 
@@ -35,7 +36,7 @@ from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Import Pydantic configuration
 import logging
@@ -269,7 +270,7 @@ class EnhancedLMOptimizer:
 
             # Create artifacts directory
             artifacts_dir = "artifacts/initialization_failure"
-            os.makedirs(artifacts_dir, exist_ok=True)
+            os.makedirs(artifacts_dir, exist_ok = True)
 
             # Save initialization status
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -283,7 +284,7 @@ class EnhancedLMOptimizer:
             }
 
             with open(status_file, "w") as f:
-                json.dump(status_data, f, indent=2)
+                json.dump(status_data, f, indent = 2)
 
             # Save successful component configurations
             if initialization_status.get("feature_selector"):
@@ -323,7 +324,7 @@ class EnhancedLMOptimizer:
 
                 feature_file = f"{artifacts_dir}/feature_selector_{timestamp}.json"
                 with open(feature_file, "w") as f:
-                    json.dump(feature_artifacts, f, indent=2)
+                    json.dump(feature_artifacts, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save feature selector artifacts: {e}")
 
@@ -337,7 +338,7 @@ class EnhancedLMOptimizer:
 
                 reg_file = f"{artifacts_dir}/regularization_manager_{timestamp}.json"
                 with open(reg_file, "w") as f:
-                    json.dump(reg_artifacts, f, indent=2)
+                    json.dump(reg_artifacts, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save regularization artifacts: {e}")
 
@@ -354,7 +355,7 @@ class EnhancedLMOptimizer:
 
                 optuna_file = f"{artifacts_dir}/optuna_study_{timestamp}.json"
                 with open(optuna_file, "w") as f:
-                    json.dump(optuna_artifacts, f, indent=2)
+                    json.dump(optuna_artifacts, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save Optuna artifacts: {e}")
 
@@ -378,38 +379,38 @@ class EnhancedLMOptimizer:
 
             # Configure advanced sampler
             if sampler_name == "tpe":
-                sampler = TPESampler(seed=42, n_startup_trials=10)
+                sampler = TPESampler(seed = 42, n_startup_trials = 10)
             elif sampler_name == "cmaes":
                 from optuna.samplers import CmaEsSampler
-                sampler = CmaEsSampler(seed=42)
+                sampler = CmaEsSampler(seed = 42)
             elif sampler_name == "random":
                 from optuna.samplers import RandomSampler
-                sampler = RandomSampler(seed=42)
+                sampler = RandomSampler(seed = 42)
             else:
-                sampler = TPESampler(seed=42, n_startup_trials=10)
+                sampler = TPESampler(seed = 42, n_startup_trials = 10)
 
             # Configure pruner
             if pruner_name == "median":
                 from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                pruner = MedianPruner(n_startup_trials = 5, n_warmup_steps = 10)
             elif pruner_name == "hyperband":
                 from optuna.pruners import HyperbandPruner
-                pruner = HyperbandPruner(min_resource=1, max_resource=100, reduction_factor=3)
+                pruner = HyperbandPruner(min_resource = 1, max_resource = 100, reduction_factor = 3)
             elif pruner_name == "threshold":
                 from optuna.pruners import ThresholdPruner
-                pruner = ThresholdPruner(lower=0.1, upper=0.9)
+                pruner = ThresholdPruner(lower = 0.1, upper = 0.9)
             else:
                 from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                pruner = MedianPruner(n_startup_trials = 5, n_warmup_steps = 10)
 
             # Create study with advanced configuration
             self.optuna_study = optuna.create_study(
                 direction="maximize",
-                sampler=sampler,
-                pruner=pruner,
-                storage=storage,
-                study_name=study_name,
-                load_if_exists=True,
+                sampler = sampler,
+                pruner = pruner,
+                storage = storage,
+                study_name = study_name,
+                load_if_exists = True,
             )
 
             # Initialize experiment tracking
@@ -437,7 +438,7 @@ class EnhancedLMOptimizer:
             # Try to initialize Weights & Biases
             try:
                 import wandb
-                wandb.init(project="ares-enhanced-lm-optimization", name=study_name, config=self.optimization_config)
+                wandb.init(project="ares-enhanced-lm-optimization", name = study_name, config = self.optimization_config)
                 self.wandb_available = True
                 self.logger.info("✅ Weights & Biases experiment tracking initialized")
             except ImportError:
@@ -592,7 +593,7 @@ class EnhancedLMOptimizer:
 
             # Create artifacts directory
             artifacts_dir = f"artifacts/optimization_failure/{step_name}"
-            os.makedirs(artifacts_dir, exist_ok=True)
+            os.makedirs(artifacts_dir, exist_ok = True)
 
             # Save optimization status
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -615,7 +616,7 @@ class EnhancedLMOptimizer:
             }
 
             with open(status_file, "w") as f:
-                json.dump(status_data, f, indent=2)
+                json.dump(status_data, f, indent = 2)
 
             # Save data samples for debugging
             data_sample_file = f"{artifacts_dir}/data_sample_{timestamp}.json"
@@ -625,12 +626,12 @@ class EnhancedLMOptimizer:
                 "features_info": {
                     "dtypes": features_df.dtypes.to_dict(),
                     "null_counts": features_df.isnull().sum().to_dict(),
-                    "memory_usage": features_df.memory_usage(deep=True).sum(),
+                    "memory_usage": features_df.memory_usage(deep = True).sum(),
                 },
             }
 
             with open(data_sample_file, "w") as f:
-                json.dump(data_sample, f, indent=2)
+                json.dump(data_sample, f, indent = 2)
 
             self.logger.info(f"📁 Optimization artifacts saved to {artifacts_dir}")
 
@@ -718,8 +719,8 @@ class EnhancedLMOptimizer:
                 # Use the persistent study for all batches to maintain learning
                 self.optuna_study.optimize(
                     objective,
-                    n_trials=n_trials_per_batch,
-                    timeout=timeout_per_batch,
+                    n_trials = n_trials_per_batch,
+                    timeout = timeout_per_batch,
                 )
 
                 batch_results.append({
@@ -793,7 +794,7 @@ class EnhancedLMOptimizer:
                     except:
                         pass  # Ignore logging errors in objective function
 
-                threading.Thread(target=log_trial, daemon=True).start()
+                threading.Thread(target = log_trial, daemon = True).start()
             except:
                 pass  # Ignore logging errors in objective function
 
@@ -828,7 +829,7 @@ class EnhancedLMOptimizer:
                     lookback_years = config.get('lookback_years', 2)
                     lookback_period = f"{lookback_years}_years"
                     
-                    with mlflow.start_run(nested=True) as run:
+                    with mlflow.start_run(nested = True) as run:
                         # Log hyperparameters with metadata
                         all_params = {
                             **params,
@@ -839,11 +840,11 @@ class EnhancedLMOptimizer:
                         }
                         
                         log_params_with_metadata(
-                            params=all_params,
-                            asset=symbol,
-                            exchange=exchange,
-                            lookback_period=lookback_period,
-                            run_id=run.info.run_id,
+                            params = all_params,
+                            asset = symbol,
+                            exchange = exchange,
+                            lookback_period = lookback_period,
+                            run_id = run.info.run_id,
                             additional_metadata={
                                 "optimization_type": "enhanced_lm_optimizer",
                                 "trial_type": "hyperparameter_optimization",
@@ -861,11 +862,11 @@ class EnhancedLMOptimizer:
                         }
                         
                         log_metrics_with_metadata(
-                            metrics=metrics,
-                            asset=symbol,
-                            exchange=exchange,
-                            lookback_period=lookback_period,
-                            run_id=run.info.run_id,
+                            metrics = metrics,
+                            asset = symbol,
+                            exchange = exchange,
+                            lookback_period = lookback_period,
+                            run_id = run.info.run_id,
                             additional_metadata={
                                 "optimization_type": "enhanced_lm_optimizer",
                                 "architecture": architecture,
@@ -972,7 +973,7 @@ class EnhancedLMOptimizer:
         """Evaluate model using domain-specific metrics for financial applications."""
         try:
             # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=3)
+            tscv = TimeSeriesSplit(n_splits = 3)
             scores = []
 
             for train_idx, val_idx in tscv.split(features_df):
@@ -1006,7 +1007,7 @@ class EnhancedLMOptimizer:
             # Fallback to standard cross-validation
             return cross_val_score(
                 model, features_df, target,
-                cv=TimeSeriesSplit(n_splits=3),
+                cv = TimeSeriesSplit(n_splits = 3),
                 scoring="accuracy" if model_type == "classification" else "neg_mean_squared_error",
             )
 
@@ -1107,7 +1108,7 @@ class EnhancedLMOptimizer:
         """Run neural network training loop with proper PyTorch implementation."""
         try:
             # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=3)
+            tscv = TimeSeriesSplit(n_splits = 3)
             scores = []
 
             for train_idx, val_idx in tscv.split(features_df):
@@ -1132,13 +1133,13 @@ class EnhancedLMOptimizer:
 
                 # Create data loaders
                 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-                train_loader = DataLoader(train_dataset, batch_size=params["batch_size"], shuffle=True)
+                train_loader = DataLoader(train_dataset, batch_size = params["batch_size"], shuffle = True)
 
                 # Optimizer
                 optimizer = optim.Adam(
                     model.parameters(),
-                    lr=params["learning_rate"],
-                    weight_decay=params["weight_decay"],
+                    lr = params["learning_rate"],
+                    weight_decay = params["weight_decay"],
                 )
 
                 # Training loop
@@ -1163,7 +1164,7 @@ class EnhancedLMOptimizer:
 
                     if model_type == "classification":
                         _, val_pred = torch.max(val_outputs, 1)
-                        val_pred_proba = torch.softmax(val_outputs, dim=1)[:, 1]
+                        val_pred_proba = torch.softmax(val_outputs, dim = 1)[:, 1]
                         score = self._calculate_classification_metrics(
                             y_val, val_pred.numpy(), val_pred_proba.numpy(),
                         )
@@ -1203,7 +1204,7 @@ class EnhancedLMOptimizer:
                 # Cross-validation evaluation
                 cv_scores = cross_val_score(
                     model, features_df, target,
-                    cv=TimeSeriesSplit(n_splits=5),
+                    cv = TimeSeriesSplit(n_splits = 5),
                     scoring="accuracy" if model_type == "classification" else "neg_mean_squared_error",
                 )
 
@@ -1250,7 +1251,7 @@ class EnhancedFeatureSelector:
             start_time = time.time()
 
             # Step 1: Variance threshold (remove low variance features)
-            variance_selector = VarianceThreshold(threshold=self.feature_selection_config["variance_threshold"])
+            variance_selector = VarianceThreshold(threshold = self.feature_selection_config["variance_threshold"])
             variance_selector.fit_transform(features_df)
             variance_features = features_df.columns[variance_selector.get_support()].tolist()
 
@@ -1326,7 +1327,7 @@ class EnhancedFeatureSelector:
                 methods_used.append("shap")
 
             # Select features based on voting score
-            sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_features = sorted(feature_scores.items(), key = lambda x: x[1], reverse = True)
             selected_features = [feature for feature, score in sorted_features[:target_features]]
 
             self.logger.info(f"📊 Ensemble feature selection used {len(methods_used)} methods: {methods_used}")
@@ -1354,7 +1355,7 @@ class EnhancedFeatureSelector:
         n_folds = 5
 
         # Time series cross-validation for stability analysis
-        tscv = TimeSeriesSplit(n_splits=n_folds)
+        tscv = TimeSeriesSplit(n_splits = n_folds)
 
         for _fold_idx, (train_idx, _val_idx) in enumerate(tscv.split(features_df)):
             X_train = features_df.iloc[train_idx]
@@ -1376,7 +1377,7 @@ class EnhancedFeatureSelector:
 
         # If not enough stable features, add top features by stability score
         if len(stable_features) < target_features:
-            sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
+            sorted_by_stability = sorted(feature_stability.items(), key = lambda x: x[1], reverse = True)
             additional_features = [
                 feature for feature, count in sorted_by_stability
                 if feature not in stable_features
@@ -1387,7 +1388,7 @@ class EnhancedFeatureSelector:
         stable_features = stable_features[:target_features]
 
         self.logger.info(f"📊 Feature stability analysis: {len(stable_features)} stable features selected")
-        self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)[:10])}")
+        self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items(), key = lambda x: x[1], reverse = True)[:10])}")
 
         return stable_features
 
@@ -1398,7 +1399,7 @@ class EnhancedFeatureSelector:
             corr_matrix = features_df.corr().abs()
 
             # Find upper triangle of correlation matrix
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
 
             # Find features with correlation above threshold
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
@@ -1415,9 +1416,9 @@ class EnhancedFeatureSelector:
         try:
             # Determine if classification or regression
             if target.dtype == "object" or len(target.unique()) < 10:
-                mi_scores = mutual_info_classif(features_df, target, random_state=42)
+                mi_scores = mutual_info_classif(features_df, target, random_state = 42)
             else:
-                mi_scores = mutual_info_regression(features_df, target, random_state=42)
+                mi_scores = mutual_info_regression(features_df, target, random_state = 42)
 
             # Get feature indices sorted by importance
             feature_indices = np.argsort(mi_scores)[::-1]
@@ -1435,9 +1436,9 @@ class EnhancedFeatureSelector:
         try:
             # Determine if classification or regression
             if target.dtype == "object" or len(target.unique()) < 10:
-                lasso = LogisticRegression(penalty="l1", solver="liblinear", random_state=42, max_iter=1000)
+                lasso = LogisticRegression(penalty="l1", solver="liblinear", random_state = 42, max_iter = 1000)
             else:
-                lasso = Lasso(alpha=0.01, random_state=42, max_iter=1000)
+                lasso = Lasso(alpha = 0.01, random_state = 42, max_iter = 1000)
 
             # Fit Lasso
             lasso.fit(features_df, target)
@@ -1448,7 +1449,7 @@ class EnhancedFeatureSelector:
                 # Handle multiclass case
                 if len(coef.shape) > 1:
                     # Use mean of absolute coefficients across classes
-                    coef = np.mean(np.abs(coef), axis=0)
+                    coef = np.mean(np.abs(coef), axis = 0)
                 else:
                     # Binary classification - coef is already 1D
                     coef = coef
@@ -1476,9 +1477,9 @@ class EnhancedFeatureSelector:
         try:
             # Determine if classification or regression
             if target.dtype == "object" or len(target.unique()) < 10:
-                rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                rf = RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
             else:
-                rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+                rf = RandomForestRegressor(n_estimators = 100, random_state = 42, n_jobs=-1)
 
             # Fit Random Forest
             rf.fit(features_df, target)
@@ -1499,9 +1500,9 @@ class EnhancedFeatureSelector:
         try:
             # Use LightGBM for SHAP analysis
             if target.dtype == "object" or len(target.unique()) < 10:
-                model = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
+                model = lgb.LGBMClassifier(n_estimators = 100, random_state = 42, verbose=-1)
             else:
-                model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+                model = lgb.LGBMRegressor(n_estimators = 100, random_state = 42, verbose=-1)
 
             # Fit model
             model.fit(features_df, target)
@@ -1515,7 +1516,7 @@ class EnhancedFeatureSelector:
                 shap_values = shap_values[0]
 
             # Calculate mean absolute SHAP values
-            mean_shap = np.mean(np.abs(shap_values), axis=0)
+            mean_shap = np.mean(np.abs(shap_values), axis = 0)
 
             # Select top features
             top_indices = np.argsort(mean_shap)[::-1][:target_features]
@@ -1565,18 +1566,18 @@ class EnhancedRegularizationManager:
                 reg_lambda = trial.suggest_float("reg_lambda", 0.001, 0.1)
 
                 model = lgb.LGBMClassifier(
-                    reg_alpha=reg_alpha,
-                    reg_lambda=reg_lambda,
-                    n_estimators=100,
-                    random_state=42,
+                    reg_alpha = reg_alpha,
+                    reg_lambda = reg_lambda,
+                    n_estimators = 100,
+                    random_state = 42,
                     verbose=-1,
                 )
 
-                scores = cross_val_score(model, features_df, target, cv=3, scoring="accuracy")
+                scores = cross_val_score(model, features_df, target, cv = 3, scoring="accuracy")
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "reg_alpha": study.best_params["reg_alpha"],
@@ -1598,7 +1599,7 @@ class EnhancedRegularizationManager:
 
                 # Create a simple neural network for testing
                 model = SimpleNNModel(
-                    input_size=features_df.shape[1],
+                    input_size = features_df.shape[1],
                     params={"dropout": dropout, "weight_decay": weight_decay},
                     model_type="classification",
                 )
@@ -1611,11 +1612,11 @@ class EnhancedRegularizationManager:
 
                     # Create data loader
                     dataset = TensorDataset(X_tensor, y_tensor)
-                    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+                    dataloader = DataLoader(dataset, batch_size = 32, shuffle = True)
 
                     # Training loop
                     model.train()
-                    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=weight_decay)
+                    optimizer = optim.Adam(model.parameters(), lr = 0.001, weight_decay = weight_decay)
                     criterion = nn.CrossEntropyLoss() if model_type == "classification" else nn.MSELoss()
 
                     for _epoch in range(10):  # Short training for optimization
@@ -1641,7 +1642,7 @@ class EnhancedRegularizationManager:
                     return 0.5  # Fallback score
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "weight_decay": study.best_params["weight_decay"],
@@ -1661,12 +1662,12 @@ class EnhancedRegularizationManager:
                 alpha = trial.suggest_float("alpha", 0.001, 0.1)
                 l1_ratio = trial.suggest_float("l1_ratio", 0.1, 0.9)
 
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-                scores = cross_val_score(model, features_df, target, cv=3, scoring="neg_mean_squared_error")
+                model = ElasticNet(alpha = alpha, l1_ratio = l1_ratio, random_state = 42)
+                scores = cross_val_score(model, features_df, target, cv = 3, scoring="neg_mean_squared_error")
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "alpha": study.best_params["alpha"],
@@ -1709,9 +1710,9 @@ class SimpleCNNModel(nn.Module):
 
         # Simple CNN for 1D data
         self.conv_layers = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1),
+            nn.Conv1d(1, 32, kernel_size = 3, padding = 1),
             nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, padding=1),
+            nn.Conv1d(32, 64, kernel_size = 3, padding = 1),
             nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
         )
@@ -1755,9 +1756,9 @@ class SimpleTCNModel(nn.Module):
             padding = (self.kernel_size - 1) * dilation
             conv = nn.Conv1d(
                 in_channels, out_channels,
-                kernel_size=self.kernel_size,
-                dilation=dilation,
-                padding=padding,
+                kernel_size = self.kernel_size,
+                dilation = dilation,
+                padding = padding,
             )
 
             # Residual block with proper residual connection
@@ -1820,13 +1821,13 @@ class SimpleTransformerModel(nn.Module):
         self.embedding = nn.Linear(input_size, params.get("hidden_size", 128))
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                d_model=params.get("hidden_size", 128),
-                nhead=8,
-                dim_feedforward=params.get("hidden_size", 128) * 4,
-                dropout=params.get("dropout", 0.2),
-                batch_first=True,
+                d_model = params.get("hidden_size", 128),
+                nhead = 8,
+                dim_feedforward = params.get("hidden_size", 128) * 4,
+                dropout = params.get("dropout", 0.2),
+                batch_first = True,
             ),
-            num_layers=params.get("num_layers", 2),
+            num_layers = params.get("num_layers", 2),
         )
         self.output_layer = nn.Linear(params.get("hidden_size", 128), 1 if model_type == "regression" else 2)
 
@@ -1835,5 +1836,5 @@ class SimpleTransformerModel(nn.Module):
         # Add sequence dimension for transformer
         x = x.unsqueeze(1)  # (batch_size, 1, hidden_size)
         x = self.transformer(x)
-        x = x.mean(dim=1)  # Global average pooling
+        x = x.mean(dim = 1)  # Global average pooling
         return self.output_layer(x)

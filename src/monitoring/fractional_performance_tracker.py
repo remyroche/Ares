@@ -23,7 +23,7 @@ class FractionalPerformanceTracker:
         """
         self.config = config
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents = True, exist_ok = True)
         self.logger = get_logger('FractionalPerformanceTracker')
         self.baseline_metrics = {}
         self.current_metrics = {}
@@ -111,7 +111,7 @@ class FractionalPerformanceTracker:
         try:
             data = {'baseline': self.baseline_metrics, 'current': self.current_metrics, 'historical': self.historical_metrics, 'last_updated': datetime.now().isoformat()}
             with open(self.metrics_file, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent = 2)
         except Exception as e:
             self.logger.exception(f'Failed to save metrics: {e}')
 
@@ -123,38 +123,38 @@ class FractionalPerformanceTracker:
             df = pd.DataFrame(self.historical_metrics)
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            fig.suptitle('Fractional Implementations Performance Dashboard', fontsize=16)
+            fig.suptitle('Fractional Implementations Performance Dashboard', fontsize = 16)
             if 'sharpe_ratio' in df.columns:
                 axes[0, 0].plot(df['timestamp'], df['sharpe_ratio'], label='Current')
                 if self.baseline_metrics.get('sharpe_ratio'):
-                    axes[0, 0].axhline(y=self.baseline_metrics['sharpe_ratio'], color='r', linestyle='--', label='Baseline')
+                    axes[0, 0].axhline(y = self.baseline_metrics['sharpe_ratio'], color='r', linestyle='--', label='Baseline')
                 axes[0, 0].set_title('Sharpe Ratio')
                 axes[0, 0].legend()
-                axes[0, 0].tick_params(axis='x', rotation=45)
+                axes[0, 0].tick_params(axis='x', rotation = 45)
             if 'max_drawdown' in df.columns:
                 axes[0, 1].plot(df['timestamp'], df['max_drawdown'], label='Current')
                 if self.baseline_metrics.get('max_drawdown'):
-                    axes[0, 1].axhline(y=self.baseline_metrics['max_drawdown'], color='r', linestyle='--', label='Baseline')
+                    axes[0, 1].axhline(y = self.baseline_metrics['max_drawdown'], color='r', linestyle='--', label='Baseline')
                 axes[0, 1].set_title('Maximum Drawdown')
                 axes[0, 1].legend()
-                axes[0, 1].tick_params(axis='x', rotation=45)
+                axes[0, 1].tick_params(axis='x', rotation = 45)
             if 'win_rate' in df.columns:
                 axes[1, 0].plot(df['timestamp'], df['win_rate'], label='Current')
                 if self.baseline_metrics.get('win_rate'):
-                    axes[1, 0].axhline(y=self.baseline_metrics['win_rate'], color='r', linestyle='--', label='Baseline')
+                    axes[1, 0].axhline(y = self.baseline_metrics['win_rate'], color='r', linestyle='--', label='Baseline')
                 axes[1, 0].set_title('Win Rate')
                 axes[1, 0].legend()
-                axes[1, 0].tick_params(axis='x', rotation=45)
+                axes[1, 0].tick_params(axis='x', rotation = 45)
             if 'profit_factor' in df.columns:
                 axes[1, 1].plot(df['timestamp'], df['profit_factor'], label='Current')
                 if self.baseline_metrics.get('profit_factor'):
-                    axes[1, 1].axhline(y=self.baseline_metrics['profit_factor'], color='r', linestyle='--', label='Baseline')
+                    axes[1, 1].axhline(y = self.baseline_metrics['profit_factor'], color='r', linestyle='--', label='Baseline')
                 axes[1, 1].set_title('Profit Factor')
                 axes[1, 1].legend()
-                axes[1, 1].tick_params(axis='x', rotation=45)
+                axes[1, 1].tick_params(axis='x', rotation = 45)
             plt.tight_layout()
             plot_file = self.output_dir / 'performance_dashboard.png'
-            plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+            plt.savefig(plot_file, dpi = 300, bbox_inches='tight')
             plt.close()
             self._create_html_dashboard(df)
         except Exception as e:
@@ -215,7 +215,7 @@ class FractionalPerformanceTracker:
         Returns:
             List of recent alerts
         """
-        cutoff_time = datetime.now() - timedelta(hours=24)
+        cutoff_time = datetime.now() - timedelta(hours = 24)
         recent_alerts = []
         for alert in self.performance_alerts:
             alert_time = datetime.fromisoformat(alert['timestamp'])
@@ -223,7 +223,7 @@ class FractionalPerformanceTracker:
                 recent_alerts.append(alert)
         return recent_alerts
 
-    def export_performance_report(self, output_file: str=None) -> str:
+    def export_performance_report(self, output_file: str = None) -> str:
         """Export comprehensive performance report.
 
         Args:
@@ -236,6 +236,6 @@ class FractionalPerformanceTracker:
             output_file = self.output_dir / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         report = {'report_generated': datetime.now().isoformat(), 'tracking_started': self.start_time.isoformat(), 'total_checks': self.check_count, 'baseline_metrics': self.baseline_metrics, 'current_metrics': self.current_metrics, 'performance_summary': self.get_performance_summary(), 'recent_alerts': self.get_alert_summary(), 'historical_metrics_count': len(self.historical_metrics), 'configuration': {'current_phase': self.config.current_phase, 'target_improvements': {'sharpe_ratio': self.config.target_sharpe_improvement, 'drawdown_reduction': self.config.target_drawdown_reduction, 'accuracy_improvement': self.config.target_accuracy_improvement}}}
         with open(output_file, 'w') as f:
-            json.dump(report, f, indent=2)
+            json.dump(report, f, indent = 2)
         self.logger.info(f'Performance report exported to: {output_file}')
         return str(output_file)

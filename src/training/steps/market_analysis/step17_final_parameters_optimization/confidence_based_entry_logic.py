@@ -1,4 +1,8 @@
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Confidence-Based Position Entry Logic for Step 17 Optimization.
+from src.utils.logger import system_logger
 
 This module implements advanced position entry logic that considers:
 1. Confidence levels for both 25% and 50% barrier predictions
@@ -9,9 +13,7 @@ This module implements advanced position entry logic that considers:
 from typing import Dict, Any, Tuple, Optional, List
 from dataclasses import dataclass
 
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
@@ -44,6 +46,7 @@ class EntryDecision:
 
 class ConfidenceBasedEntryLogic:
     """Implements confidence-based position entry logic with optimized barrier selection."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize confidence-based entry logic."""
@@ -125,6 +128,7 @@ class ConfidenceBasedEntryLogic:
         except Exception as e:
             self.logger.error(f"Error evaluating position entry: {e}")
             return None
+    @log_all_calls
     
     def _organize_predictions(
         self, 
@@ -140,6 +144,7 @@ class ConfidenceBasedEntryLogic:
             organized[pred.barrier_type][pred.timeframe] = pred
         
         return organized
+    @log_all_calls
     
     def _calculate_confidence_scores(
         self,
@@ -177,6 +182,7 @@ class ConfidenceBasedEntryLogic:
                 scores[key] = adjusted_confidence
         
         return scores
+    @log_all_calls
     
     def _optimize_weights_by_confidence(
         self, 
@@ -230,6 +236,7 @@ class ConfidenceBasedEntryLogic:
             "timeframe_1m_weight": timeframe_1m_weight,
             "timeframe_5m_weight": timeframe_5m_weight
         }
+    @log_all_calls
     
     def _calculate_combined_confidence(
         self,
@@ -264,6 +271,7 @@ class ConfidenceBasedEntryLogic:
         )
         
         return combined
+    @log_all_calls
     
     def _make_entry_decision(
         self,
@@ -360,6 +368,7 @@ class ConfidenceBasedEntryLogic:
             risk_adjusted_confidence=combined_confidence * (1 - market_context.get("risk_score", 0)),
             reasoning=reasoning
         )
+    @log_all_calls
     
     def _generate_entry_reasoning(
         self,

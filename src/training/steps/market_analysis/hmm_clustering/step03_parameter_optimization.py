@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 """Step 3: Parameter Optimization for HMM Regime Discovery.
 
 This module performs comprehensive parameter optimization for HMM regime discovery,
@@ -17,7 +19,6 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .core.decorators import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,
@@ -32,7 +33,7 @@ from .core.decorators import (
     with_tracing_span,
     validate_pipeline_step
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -758,9 +759,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
-    from .core.decorators import handles_errors
-    from .core.decorators.errors import handles_errors
-    
+            
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",

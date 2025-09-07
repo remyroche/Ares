@@ -54,24 +54,38 @@ class ValidationIssue:
 class ValidationResult:
     """Result of data validation."""
     passed: bool
-    issues: list[ValidationIssue] = field(default_factory=list)
-    warnings: list[ValidationIssue] = field(default_factory=list)
-    info: list[ValidationIssue] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory = list)
+    warnings: list[ValidationIssue] = field(default_factory = list)
+    info: list[ValidationIssue] = field(default_factory = list)
     quality_score: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory = dict)
 
 class PipelineStandards:
     """Centralized pipeline standards and utilities."""
-    DIRECTORY_STRUCTURE = {'raw_data': 'data_cache/{exchange}/{asset}', 'unified_data': 'data_cache/{exchange}/{asset}/unified', 'processed_data': 'data_cache/{exchange}/{asset}/processed', 'reports': 'data_cache/{exchange}/{asset}/reports', 'backup': 'data_cache/{exchange}/{asset}/backup', 'temp': 'data_cache/{exchange}/{asset}/temp'}
+    DIRECTORY_STRUCTURE = {
+        'raw_data': 'data_cache/{exchange}/{asset}',
+        'unified_data': 'data_cache/unified/{exchange}/{asset}/{timeframe}',
+        'unified_partitioned': 'data_cache/unified/{exchange}/{asset}/{timeframe}/exchange={exchange}/symbol={asset}/timeframe={timeframe}',
+        'processed_data': 'data_cache/{exchange}/{asset}/processed',
+        'reports': 'data_cache/{exchange}/{asset}/reports',
+        'backup': 'data_cache/{exchange}/{asset}/backup',
+        'temp': 'data_cache/{exchange}/{asset}/temp',
+        'parquet': 'data_cache/parquet',
+        'parquet_aggtrades': 'data_cache/parquet/aggtrades_{exchange}_{asset}',
+        'parquet_futures': 'data_cache/parquet/futures_{exchange}_{asset}',
+        'training': 'data_cache/training',
+        'models': 'data_cache/models',
+        'logs': 'data_cache/logs'
+    }
     FILE_NAMING = {'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet', 'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet', 'futures': 'futures_{exchange}_{asset}_consolidated.parquet', 'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet', 'unified_partitioned': 'unified/{exchange}/{asset}/{timeframe}/year={year}/month={month:02d}/day={day:02d}/part-0.parquet', 'validation_report': 'validation_report_{exchange}_{asset}_{timeframe}_{timestamp}.json', 'quality_report': 'quality_report_{exchange}_{asset}_{timeframe}_{timestamp}.json'}
-    SCHEMAS = {'klines': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}}, 'aggtrades': {'required_columns': ['timestamp', 'price', 'quantity'], 'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time', 'is_buyer_maker'], 'data_types': {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool'}}, 'futures': {'required_columns': ['timestamp', 'fundingRate'], 'optional_columns': ['symbol', 'mark_price', 'index_price', 'next_funding_time'], 'data_types': {'timestamp': 'int64', 'fundingRate': 'float64'}}, 'unified': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'funding_rate'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8'}}}
+    SCHEMAS = {'klines': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'quote_asset_volume': 'float64', 'number_of_trades': 'int64', 'taker_buy_base_asset_volume': 'float64', 'taker_buy_quote_asset_volume': 'float64'}}, 'aggtrades': {'required_columns': ['timestamp', 'price', 'quantity'], 'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time', 'is_buyer_maker'], 'data_types': {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool'}}, 'futures': {'required_columns': ['timestamp', 'fundingRate'], 'optional_columns': ['symbol', 'mark_price', 'index_price', 'next_funding_time'], 'data_types': {'timestamp': 'int64', 'fundingRate': 'float64'}}, 'unified': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'funding_rate'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}}}
     QUALITY_THRESHOLDS = {'min_rows': 100, 'max_null_percentage': 0.1, 'max_duplicate_percentage': 0.05, 'min_quality_score': 0.8, 'max_correlation': 0.95, 'timestamp_consistency_threshold': 0.99}
 
-    def __init__(self, logger: logging.Logger | None=None) -> None:
+    def __init__(self, logger: logging.Logger | None = None) -> None:
         self.logger = logger or logging.getLogger(__name__)
 
     @staticmethod
-    def safe_import(module_name: str, fallback_value: Any=None, logger: logging.Logger | None=None) -> Any:
+    def safe_import(module_name: str, fallback_value: Any = None, logger: logging.Logger | None = None) -> Any:
         """
         Safely import a module with consistent fallback pattern.
 
@@ -91,7 +105,7 @@ class PipelineStandards:
             return fallback_value
 
     @staticmethod
-    def validate_environment_dependencies(required_modules: list[str], logger: logging.Logger | None=None) -> dict[str, bool]:
+    def validate_environment_dependencies(required_modules: list[str], logger: logging.Logger | None = None) -> dict[str, bool]:
         """
         Validate that required dependencies are available.
 
@@ -133,7 +147,7 @@ class PipelineStandards:
             msg = f'Unknown path type: {path_type}'
             raise ValueError(msg)
         path_template = PipelineStandards.DIRECTORY_STRUCTURE[path_type]
-        return path_template.format(exchange=exchange.lower(), asset=asset.lower(), **kwargs)
+        return path_template.format(exchange = exchange.lower(), asset = asset.lower(), **kwargs)
 
     @staticmethod
     def standardize_timestamp(df: pd.DataFrame, column: str='timestamp', target_format: str='int64') -> None:
@@ -145,7 +159,7 @@ class PipelineStandards:
         try:
             if target_format == 'int64':
                 if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = (pd.to_datetime(df[column], utc=True).astype('int64') // 10 ** 6).astype('int64')
+                    df[column] = (pd.to_datetime(df[column], utc = True).astype('int64') // 10 ** 6).astype('int64')
                 else:
                     ts_numeric = pd.to_numeric(df[column], errors='coerce')
                     if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
@@ -154,13 +168,13 @@ class PipelineStandards:
                         df[column] = ts_numeric.astype('int64')
             elif target_format == 'datetime64[ns]':
                 if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    df[column] = pd.to_datetime(df[column], utc=True)
+                    df[column] = pd.to_datetime(df[column], utc = True)
                 else:
                     ts_numeric = pd.to_numeric(df[column], errors='coerce')
                     if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
-                        df[column] = pd.to_datetime(ts_numeric, unit='ns', utc=True)
+                        df[column] = pd.to_datetime(ts_numeric, unit='ns', utc = True)
                     else:
-                        df[column] = pd.to_datetime(ts_numeric, unit='ms', utc=True)
+                        df[column] = pd.to_datetime(ts_numeric, unit='ms', utc = True)
         except Exception as e:
             msg = f"Failed to standardize timestamp column '{column}': {e}"
             raise ValueError(msg)
@@ -179,37 +193,37 @@ class PipelineStandards:
         Returns:
             Validation result
         """
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         if column not in df.columns:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Timestamp column '{column}' not found"))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Timestamp column '{column}' not found"))
             return result
         try:
             null_count = df[column].isnull().sum()
             if null_count > 0:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Found {null_count} null timestamps', details={'null_count': null_count, 'total_count': len(df)}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Found {null_count} null timestamps', details={'null_count': null_count, 'total_count': len(df)}))
             if expected_format == 'int64':
                 if not pd.api.types.is_integer_dtype(df[column]):
                     result.passed = False
-                    result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Timestamp column '{column}' is not integer type", details={'actual_type': str(df[column].dtype)}))
+                    result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Timestamp column '{column}' is not integer type", details={'actual_type': str(df[column].dtype)}))
                 min_ts = df[column].min()
                 max_ts = df[column].max()
                 expected_min = pd.Timestamp('2000-01-01', tz='UTC').value // 10 ** 6
                 expected_max = pd.Timestamp('2030-01-01', tz='UTC').value // 10 ** 6
                 if min_ts < expected_min or max_ts > expected_max:
-                    result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Timestamp range outside expected bounds', details={'min_ts': min_ts, 'max_ts': max_ts, 'expected_min': expected_min, 'expected_max': expected_max}))
+                    result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Timestamp range outside expected bounds', details={'min_ts': min_ts, 'max_ts': max_ts, 'expected_min': expected_min, 'expected_max': expected_max}))
             elif expected_format == 'datetime64[ns]':
                 if not pd.api.types.is_datetime64_any_dtype(df[column]):
                     result.passed = False
-                    result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Timestamp column '{column}' is not datetime type", details={'actual_type': str(df[column].dtype)}))
+                    result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Timestamp column '{column}' is not datetime type", details={'actual_type': str(df[column].dtype)}))
             duplicate_count = df[column].duplicated().sum()
             if duplicate_count > 0:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Found {duplicate_count} duplicate timestamps', details={'duplicate_count': duplicate_count}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Found {duplicate_count} duplicate timestamps', details={'duplicate_count': duplicate_count}))
             if not df[column].is_monotonic_increasing:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Timestamps are not monotonically increasing'))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Timestamps are not monotonically increasing'))
         except Exception as e:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Error validating timestamp format: {e}'))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Error validating timestamp format: {e}'))
         return result
 
     @staticmethod
@@ -228,25 +242,25 @@ class PipelineStandards:
             msg = f'Unknown schema: {schema_name}'
             raise ValueError(msg)
         schema = PipelineStandards.SCHEMAS[schema_name]
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         missing_required = [col for col in schema['required_columns'] if col not in df.columns]
         if missing_required:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Missing required columns: {missing_required}', details={'missing_columns': missing_required}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Missing required columns: {missing_required}', details={'missing_columns': missing_required}))
         for column, expected_type in schema['data_types'].items():
             if column in df.columns:
                 actual_type = str(df[column].dtype)
                 if actual_type != expected_type:
-                    result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"Column '{column}' has type {actual_type}, expected {expected_type}", column=column, details={'actual_type': actual_type, 'expected_type': expected_type}))
+                    result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"Column '{column}' has type {actual_type}, expected {expected_type}", column = column, details={'actual_type': actual_type, 'expected_type': expected_type}))
         for column in schema['required_columns']:
             if column in df.columns:
                 null_count = df[column].isnull().sum()
                 if null_count > 0:
                     null_percentage = null_count / len(df)
                     if null_percentage > PipelineStandards.QUALITY_THRESHOLDS['max_null_percentage']:
-                        result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Column '{column}' has too many null values", column=column, details={'null_count': null_count, 'null_percentage': null_percentage}))
+                        result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Column '{column}' has too many null values", column = column, details={'null_count': null_count, 'null_percentage': null_percentage}))
                     else:
-                        result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"Column '{column}' has {null_count} null values", column=column, details={'null_count': null_count, 'null_percentage': null_percentage}))
+                        result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"Column '{column}' has {null_count} null values", column = column, details={'null_count': null_count, 'null_percentage': null_percentage}))
         return result
 
     @staticmethod
@@ -293,7 +307,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_data_quality(df: pd.DataFrame, schema_name: str, quality_thresholds: dict[str, Any] | None=None) -> ValidationResult:
+    def validate_data_quality(df: pd.DataFrame, schema_name: str, quality_thresholds: dict[str, Any] | None = None) -> ValidationResult:
         """
         Comprehensive data quality validation.
 
@@ -306,14 +320,14 @@ class PipelineStandards:
             Validation result with quality score
         """
         thresholds = quality_thresholds or PipelineStandards.QUALITY_THRESHOLDS
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         if df is None or df.empty:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='DataFrame is None or empty'))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='DataFrame is None or empty'))
             return result
         if len(df) < thresholds['min_rows']:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Too few rows: {len(df)} < {thresholds['min_rows']}", details={'row_count': len(df), 'min_required': thresholds['min_rows']}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Too few rows: {len(df)} < {thresholds['min_rows']}", details={'row_count': len(df), 'min_required': thresholds['min_rows']}))
         schema_result = PipelineStandards.validate_schema(df, schema_name)
         result.issues.extend(schema_result.issues)
         result.warnings.extend(schema_result.warnings)
@@ -324,12 +338,12 @@ class PipelineStandards:
         duplicate_count = df.duplicated().sum()
         duplicate_percentage = duplicate_count / len(df) if len(df) > 0 else 0
         if duplicate_percentage > thresholds['max_duplicate_percentage']:
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Too many duplicate rows: {duplicate_percentage:.2%}', details={'duplicate_count': duplicate_count, 'duplicate_percentage': duplicate_percentage}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Too many duplicate rows: {duplicate_percentage:.2%}', details={'duplicate_count': duplicate_count, 'duplicate_percentage': duplicate_percentage}))
         numeric_columns = df.select_dtypes(include=[np.number]).columns
         for column in numeric_columns:
             infinite_count = np.isinf(df[column]).sum()
             if infinite_count > 0:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"Column '{column}' has {infinite_count} infinite values", column=column, details={'infinite_count': infinite_count}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"Column '{column}' has {infinite_count} infinite values", column = column, details={'infinite_count': infinite_count}))
         total_checks = 5
         passed_checks = total_checks - len([i for i in result.issues if i.severity == DataQualityLevel.CRITICAL])
         result.quality_score = passed_checks / total_checks
@@ -337,7 +351,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def generate_file_name(file_type: str, exchange: str, asset: str, timeframe: str=None, **kwargs) -> str:
+    def generate_file_name(file_type: str, exchange: str, asset: str, timeframe: str = None, **kwargs) -> str:
         """
         Generate standardized file name.
 
@@ -387,7 +401,7 @@ class PipelineStandards:
         Returns:
             ValidationResult with consistency issues
         """
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         if len(data_dict) < 2:
             return result
         reference_df = None
@@ -396,7 +410,7 @@ class PipelineStandards:
                 reference_df = data_dict[step]
                 break
         if reference_df is None:
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='No reference dataframe found for consistency validation'))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='No reference dataframe found for consistency validation'))
             result.passed = False
             return result
         reference_length = len(reference_df)
@@ -406,10 +420,10 @@ class PipelineStandards:
                 continue
             df = data_dict[step]
             if len(df) != reference_length:
-                result.issues.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Row count mismatch in {step}: {len(df)} vs {reference_length}', details={'step': step, 'actual_count': len(df), 'expected_count': reference_length}))
+                result.issues.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Row count mismatch in {step}: {len(df)} vs {reference_length}', details={'step': step, 'actual_count': len(df), 'expected_count': reference_length}))
             common_columns = reference_columns.intersection(set(df.columns))
             if len(common_columns) < len(reference_columns) * 0.8:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Low column overlap in {step}: {len(common_columns)}/{len(reference_columns)}', details={'step': step, 'common_columns': len(common_columns), 'total_columns': len(reference_columns)}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Low column overlap in {step}: {len(common_columns)}/{len(reference_columns)}', details={'step': step, 'common_columns': len(common_columns), 'total_columns': len(reference_columns)}))
         result.passed = len(result.issues) == 0
         return result
 
@@ -426,7 +440,7 @@ class PipelineStandards:
         Returns:
             Lineage tracking information
         """
-        return {'source_step': source_step, 'transformations': transformations, 'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'columns': list(data.columns), 'memory_usage': data.memory_usage(deep=True).sum(), 'dtypes': data.dtypes.to_dict()}
+        return {'source_step': source_step, 'transformations': transformations, 'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'columns': list(data.columns), 'memory_usage': data.memory_usage(deep = True).sum(), 'dtypes': data.dtypes.to_dict()}
 
     @staticmethod
     def calculate_comprehensive_quality_score(data: Union[pd.DataFrame, Dict[str, Any]], context: str='general') -> float:
@@ -482,30 +496,30 @@ class PipelineStandards:
         Returns:
             ValidationResult with validation issues
         """
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         if features is None or original_data is None:
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='Features or original data is None'))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='Features or original data is None'))
             result.passed = False
             return result
         if len(features) != len(original_data):
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Feature count mismatch: {len(features)} vs {len(original_data)}', details={'feature_count': len(features), 'original_count': len(original_data)}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Feature count mismatch: {len(features)} vs {len(original_data)}', details={'feature_count': len(features), 'original_count': len(original_data)}))
             result.passed = False
         nan_counts = features.isnull().sum()
         high_nan_cols = nan_counts[nan_counts > len(features) * 0.1]
         if len(high_nan_cols) > 0:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Features with high NaN values: {list(high_nan_cols.index)}', details={'high_nan_features': list(high_nan_cols.index)}))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Features with high NaN values: {list(high_nan_cols.index)}', details={'high_nan_features': list(high_nan_cols.index)}))
         numeric_features = features.select_dtypes(include=[np.number])
         if len(numeric_features.columns) > 0:
             infinite_counts = np.isinf(numeric_features).sum()
             infinite_cols = infinite_counts[infinite_counts > 0]
             if len(infinite_cols) > 0:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Features with infinite values: {list(infinite_cols.index)}', details={'infinite_features': list(infinite_cols.index)}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Features with infinite values: {list(infinite_cols.index)}', details={'infinite_features': list(infinite_cols.index)}))
         constant_features = []
         for col in features.columns:
             if features[col].nunique() <= 1:
                 constant_features.append(col)
         if constant_features:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Constant features detected: {constant_features}', details={'constant_features': constant_features}))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Constant features detected: {constant_features}', details={'constant_features': constant_features}))
         result.quality_score = PipelineStandards.calculate_comprehensive_quality_score(features, 'features')
         return result
 pipeline_standards = PipelineStandards()

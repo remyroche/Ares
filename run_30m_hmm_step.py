@@ -18,7 +18,7 @@ sys.path.insert(0, str(project_root))
 
 async def run_30m_hmm_step():
     """Run step1_7_hmm_regime_discovery for 30m timeframe with artifact validation."""
-    logger=system_logger.getChild("Run30mHMMStep")
+    logger = system_logger.getChild("Run30mHMMStep")
 
     logger.info(
         "🔧 Starting step1_7_hmm_regime_discovery for 30m timeframe with artifact validation...",
@@ -38,11 +38,11 @@ async def run_30m_hmm_step():
     try:
         # Run the enhanced step1_7 with artifact validation
         success = await run_step(
-            symbol=symbol,
-            exchange=exchange,
-            data_dir=data_dir,
-            timeframe=timeframe,
-            lookback_days=lookback_days,
+            symbol = symbol,
+            exchange = exchange,
+            data_dir = data_dir,
+            timeframe = timeframe,
+            lookback_days = lookback_days,
         )
 
         if success:

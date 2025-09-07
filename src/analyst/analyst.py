@@ -9,30 +9,51 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+from src.utils.compat import handle_specific_errors
+from src.core.error_classes import execution_error, initialization_error
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 
-from .analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
-from src.utils.decorators import (
-    handles_errors,
-)
-from .core.decorators import traced
-from .core.domain import handle_specific_errors
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 try:
-    from .analyst.ml_confidence_predictor import MLConfidencePredictor
+    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 except Exception:  # pragma: no cover - optional at runtime
     MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
-from .utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
 )
 
+# Placeholder implementations for missing decorators and classes
+def validate_data_quality(validation_level: str = "WARNING"):
+    """Placeholder decorator for data quality validation."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def traced(operation_name: str):
+    """Placeholder decorator for tracing operations."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+class UnifiedRegimeClassifierFractal:
+    """Placeholder class for Unified Regime Classifier Fractal."""
+    def __init__(self, config: dict, exchange: str):
+        self.config = config
+        self.exchange = exchange
+
 if TYPE_CHECKING:
-    from .analyst.liquidation_risk_model import LiquidationRiskModel
-    from .analyst.market_health_analyzer import MarketHealthAnalyzer
-    from .training.dual_model_system import DualModelSystem
+    from src.analyst.liquidation_risk_model import LiquidationRiskModel
+    from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+    from src.training.dual_model_system import DualModelSystem
 import time
 
 
@@ -267,7 +288,7 @@ class Analyst:
     async def _initialize_dual_model_system(self) -> None:
         """Initialize Dual Model System."""
         try:
-            from .training.dual_model_system import setup_dual_model_system
+            from src.training.dual_model_system import setup_dual_model_system
 
             self.dual_model_system = await setup_dual_model_system(self.config)
             if self.dual_model_system:
@@ -288,7 +309,7 @@ class Analyst:
     async def _initialize_market_health_analyzer(self) -> None:
         """Initialize Market Health Analyzer."""
         try:
-            from .analyst.market_health_analyzer import setup_market_health_analyzer
+            from src.analyst.market_health_analyzer import setup_market_health_analyzer
 
             self.market_health_analyzer = await setup_market_health_analyzer(
                 self.config,
@@ -313,7 +334,7 @@ class Analyst:
     async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
         try:
-            from .analyst.liquidation_risk_model import setup_liquidation_risk_model
+            from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
             
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,

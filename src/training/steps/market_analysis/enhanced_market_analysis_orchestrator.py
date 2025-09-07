@@ -1,6 +1,12 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors, traced, log_execution_time, validates, circuit_breaker, timeout, retry
+from src.core.decorators.logging import audit_log, set_correlation_id
+from src.training.steps.market_analysis.enhanced_pipeline_decorators import comprehensive_pipeline_protection
 
 """
 Enhanced Market Analysis Orchestrator
@@ -12,26 +18,27 @@ leads to the next with proper validation and protection.
 import asyncio
 import time
 from pathlib import Path
-from src.utils.decorators.errors import handles_errors
 from src.utils.logger import system_logger
 from src.training.steps.market_analysis.enhanced_logging_metrics import EnhancedPipelineLogger
 from src.training.steps.market_analysis.progress_monitor import progress_monitor
-from src.core.decorators import traced, log_execution_time, audit_log, timeout, retry, circuit_breaker, set_correlation_id
 from src.utils.common_operations import get_current_datetime, get_logger, safe_file_exists, validate_data_quality, format_datetime, safe_json_dump
 from src.utils.data_quality_framework import DataQualityFramework
 from src.utils.validator_orchestrator import ValidatorOrchestrator
 from src.utils.step_dependency_validator import StepDependencyValidator
 from .step04_regime_data_splitting import RegimeDataSplittingStep
-from .step04_regime_data_splitting_validator import RegimeDataSplittingValidator
-from .step05_labeling import LabelingStep
-from .step05_labeling_validator import LabelingValidator
-from .step06_feature_engineering import FeatureEngineeringStep
-from .step06_feature_engineering_validator import FeatureEngineeringValidator
-from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
-from .step07_enhanced_matrix_operations_validator import MatrixOperationsValidator
-from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
-from .hmm_clustering import run_enhanced_step
+# Import validators
 from .enhanced_step_validator import EnhancedStepValidator
+from .step04_regime_data_splitting_validator import Step4RegimeDataSplittingValidator as RegimeDataSplittingValidator
+from .step05_labeling_validator import Step5LabelingValidator as LabelingValidator
+from .step06_feature_engineering_validator import Step6FeatureEngineeringValidator as FeatureEngineeringValidator
+from .step07_enhanced_matrix_operations_validator import Step7EnhancedMatrixOperationsValidator as MatrixOperationsValidator
+
+# Import step classes
+from .step05_labeling import LabelingStep
+from .step06_feature_engineering import FeatureEngineeringStep
+from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
+from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_step
 import json
 import logging
 
@@ -40,6 +47,7 @@ class MarketAnalysisPipelineOrchestrator:
     Enhanced orchestrator for market analysis pipeline with comprehensive
     validation, error handling, and observability.
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[Dict[str, Any]]=None) -> None:
         """Initialize the orchestrator with configuration."""
@@ -53,10 +61,6 @@ class MarketAnalysisPipelineOrchestrator:
         self.pipeline_state = {'current_step': None, 'completed_steps': [], 'failed_steps': [], 'start_time': None, 'end_time': None, 'correlation_id': None}
         self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': MatrixOperationsValidator(), 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
 
-    @handles_errors(ValueError, FileNotFoundError, TimeoutError, fallback=False)
-    @traced(operation_name='market_analysis_pipeline')
-    @log_execution_time
-    @audit_log(operation='market_analysis_pipeline')
     async def execute_pipeline(self, symbol: str, exchange: str, timeframe: str='1m', data_dir: str='data_cache', **kwargs) -> bool:
         """
         Execute the complete market analysis pipeline with comprehensive validation.
@@ -81,40 +85,38 @@ class MarketAnalysisPipelineOrchestrator:
             if not await self._validate_pipeline_prerequisites(symbol, exchange, timeframe, data_dir):
                 return False
             if self.step_configs['hmm_clustering']['enabled']:
-                if not await self._execute_step_with_validation(step_name='hmm_clustering', step_func=self._execute_hmm_clustering, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='hmm_clustering', step_func = self._execute_hmm_clustering, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             if self.step_configs['regime_splitting']['enabled']:
-                if not await self._execute_step_with_validation(step_name='regime_splitting', step_func=self._execute_regime_splitting, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='regime_splitting', step_func = self._execute_regime_splitting, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             if self.step_configs['labeling']['enabled']:
-                if not await self._execute_step_with_validation(step_name='labeling', step_func=self._execute_labeling, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='labeling', step_func = self._execute_labeling, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             if self.step_configs['feature_engineering']['enabled']:
-                if not await self._execute_step_with_validation(step_name='feature_engineering', step_func=self._execute_feature_engineering, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='feature_engineering', step_func = self._execute_feature_engineering, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             if self.step_configs['matrix_operations']['enabled']:
-                if not await self._execute_step_with_validation(step_name='matrix_operations', step_func=self._execute_matrix_operations, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='matrix_operations', step_func = self._execute_matrix_operations, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             if self.step_configs['feature_selection']['enabled']:
-                if not await self._execute_step_with_validation(step_name='feature_selection', step_func=self._execute_feature_selection, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs):
+                if not await self._execute_step_with_validation(step_name='feature_selection', step_func = self._execute_feature_selection, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
                     return False
             self.pipeline_state['end_time'] = get_current_datetime()
             self.pipeline_state['completed_steps'] = list(self.step_configs.keys())
             await self._save_pipeline_state(symbol, exchange, timeframe, data_dir)
             progress_monitor.stop_monitoring()
-            self.enhanced_logger.end_pipeline(success=True)
+            self.enhanced_logger.end_pipeline(success = True)
             return True
         except Exception as e:
             self.pipeline_state['end_time'] = get_current_datetime()
             error_message = str(e)
             self.logger.exception(f'💥 MARKET ANALYSIS PIPELINE FAILED: {error_message}')
             progress_monitor.stop_monitoring()
-            self.enhanced_logger.end_pipeline(success=False, error_message=error_message)
-            await self._save_pipeline_state(symbol, exchange, timeframe, data_dir, success=False)
+            self.enhanced_logger.end_pipeline(success = False, error_message = error_message)
+            await self._save_pipeline_state(symbol, exchange, timeframe, data_dir, success = False)
             return False
 
-    @handles_errors(FileNotFoundError, ValueError, fallback=False)
-    @validates(schema={'symbol': str, 'exchange': str, 'timeframe': str, 'data_dir': str})
     async def _validate_pipeline_prerequisites(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate prerequisites before starting the pipeline."""
         self.logger.info('🔍 Validating pipeline prerequisites...')
@@ -148,11 +150,6 @@ class MarketAnalysisPipelineOrchestrator:
         self.logger.info('✅ Pipeline prerequisites validated successfully')
         return True
 
-    @handles_errors(Exception, fallback=False)
-    @timeout(seconds=300)
-    @retry(attempts=3, delay=1.0, backoff=2.0)
-    @circuit_breaker(failure_threshold=3, recovery_timeout=60)
-    @traced(operation_name='execute_step_with_validation')
     async def _execute_step_with_validation(self, step_name: str, step_func: callable, **kwargs) -> bool:
         """Execute a pipeline step with comprehensive validation and error handling."""
         step_description = self._get_step_description(step_name)
@@ -160,14 +157,14 @@ class MarketAnalysisPipelineOrchestrator:
         step_number = step_config.get('step_number', 0)
         total_steps = len([s for s in self.step_configs.values() if s.get('enabled', True)])
         self.enhanced_logger.start_step(step_name, step_description, step_number, total_steps)
-        progress_monitor.update_step_progress(step_name, 0.0, 'Starting...', 'running', step_number=step_number, total_steps=total_steps)
+        progress_monitor.update_step_progress(step_name, 0.0, 'Starting...', 'running', step_number = step_number, total_steps = total_steps)
         self.logger.info(f'🔄 Executing step: {step_name}')
         self.pipeline_state['current_step'] = step_name
         try:
             progress_monitor.update_step_progress(step_name, 0.1, 'Validating prerequisites...', 'running')
             if not await self._validate_step_prerequisites(step_name, **kwargs):
                 progress_monitor.complete_step(step_name, False, 'Prerequisites validation failed')
-                self.enhanced_logger.end_step(step_name, success=False, error_message='Prerequisites validation failed')
+                self.enhanced_logger.end_step(step_name, success = False, error_message='Prerequisites validation failed')
                 return False
             progress_monitor.update_step_progress(step_name, 0.3, 'Executing step...', 'running')
             step_config = self.step_configs[step_name]
@@ -176,32 +173,33 @@ class MarketAnalysisPipelineOrchestrator:
                 self.logger.error(f'❌ Step {step_name} failed')
                 self.pipeline_state['failed_steps'].append(step_name)
                 progress_monitor.complete_step(step_name, False, 'Step execution failed')
-                self.enhanced_logger.end_step(step_name, success=False, error_message='Step execution failed')
+                self.enhanced_logger.end_step(step_name, success = False, error_message='Step execution failed')
                 return False
             progress_monitor.update_step_progress(step_name, 0.8, 'Validating output...', 'running')
             if not await self._validate_step_output(step_name, **kwargs):
                 progress_monitor.complete_step(step_name, False, 'Output validation failed')
-                self.enhanced_logger.end_step(step_name, success=False, error_message='Output validation failed')
+                self.enhanced_logger.end_step(step_name, success = False, error_message='Output validation failed')
                 return False
             self.logger.info(f'✅ Step {step_name} completed successfully')
             self.pipeline_state['completed_steps'].append(step_name)
             progress_monitor.complete_step(step_name, True, 'Completed successfully')
-            self.enhanced_logger.end_step(step_name, success=True)
+            self.enhanced_logger.end_step(step_name, success = True)
             return True
         except Exception as e:
             error_message = str(e)
             self.logger.exception(f'❌ Step {step_name} failed with exception: {error_message}')
             self.pipeline_state['failed_steps'].append(step_name)
             progress_monitor.complete_step(step_name, False, f'Failed: {error_message}')
-            self.enhanced_logger.end_step(step_name, success=False, error_message=error_message)
+            self.enhanced_logger.end_step(step_name, success = False, error_message = error_message)
             return False
+    @log_all_calls
 
     def _get_step_description(self, step_name: str) -> str:
         """Get a description for a pipeline step."""
         descriptions = {'hmm_clustering': 'HMM regime discovery and clustering', 'regime_splitting': 'Regime data splitting and preparation', 'labeling': 'Triple barrier method labeling', 'feature_engineering': 'Feature engineering and interaction creation', 'matrix_operations': 'Enhanced matrix operations and analysis', 'feature_selection': 'Advanced feature selection and optimization'}
         return descriptions.get(step_name, f'Pipeline step: {step_name}')
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def _validate_step_prerequisites(self, step_name: str, **kwargs) -> bool:
         """Validate prerequisites for a specific step."""
         self.logger.info(f'🔍 Validating prerequisites for step: {step_name}')
@@ -215,12 +213,12 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.warning(f'⚠️ Could not validate dependencies for {step_name}: {e}')
         return True
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def _validate_step_output(self, step_name: str, **kwargs) -> bool:
         """Validate the output of a specific step."""
         self.logger.info(f'🔍 Validating output for step: {step_name}')
         try:
-            validation_result = await self.enhanced_validator.validate_step_output(step_name=step_name, symbol=kwargs.get('symbol'), exchange=kwargs.get('exchange'), timeframe=kwargs.get('timeframe'), data_dir=kwargs.get('data_dir'))
+            validation_result = await self.enhanced_validator.validate_step_output(step_name = step_name, symbol = kwargs.get('symbol'), exchange = kwargs.get('exchange'), timeframe = kwargs.get('timeframe'), data_dir = kwargs.get('data_dir'))
             if not validation_result.get('valid', False):
                 self.logger.error(f"❌ Step {step_name} output validation failed: {validation_result.get('errors', [])}")
                 return False
@@ -232,15 +230,15 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.warning(f'⚠️ Could not validate output for {step_name}: {e}')
         return True
 
-    @comprehensive_pipeline_protection(required_columns=['open', 'high', 'low', 'close', 'volume'], max_memory_mb=2000, max_execution_time=300, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='hmm_clustering')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_hmm_clustering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute HMM clustering step with comprehensive regime quality metrics."""
         self.logger.info('🧠 Executing HMM clustering...')
         try:
-            success = await run_enhanced_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=kwargs.get('force_rerun', True))
+            success = await run_enhanced_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = kwargs.get('force_rerun', True))
             if success:
                 self.logger.info('✅ HMM clustering completed successfully')
                 try:
@@ -280,16 +278,16 @@ class MarketAnalysisPipelineOrchestrator:
             self.enhanced_logger.log_issue('hmm_clustering', 'exception', str(e), 'error')
             return False
 
-    @comprehensive_pipeline_protection(required_columns=['regime', 'open', 'high', 'low', 'close', 'volume'], max_memory_mb=1500, max_execution_time=180, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='regime_splitting')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_regime_splitting(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute regime data splitting step."""
         self.logger.info('📊 Executing regime data splitting...')
         try:
             regime_splitter = RegimeDataSplittingStep()
-            success = await regime_splitter.split_regime_data(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            success = await regime_splitter.split_regime_data(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             if success:
                 self.logger.info('✅ Regime data splitting completed successfully')
             else:
@@ -299,16 +297,16 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Regime data splitting failed with exception: {e}')
             return False
 
-    @comprehensive_pipeline_protection(required_columns=['regime', 'open', 'high', 'low', 'close', 'volume'], max_memory_mb=1200, max_execution_time=240, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='labeling')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute labeling step."""
         self.logger.info('🏷️ Executing labeling...')
         try:
             labeler = LabelingStep()
-            success = await labeler.create_labels(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            success = await labeler.create_labels(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             if success:
                 self.logger.info('✅ Labeling completed successfully')
             else:
@@ -318,16 +316,16 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Labeling failed with exception: {e}')
             return False
 
-    @comprehensive_pipeline_protection(required_columns=['regime', 'label', 'open', 'high', 'low', 'close', 'volume'], max_memory_mb=3000, max_execution_time=600, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='feature_engineering')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute feature engineering step with comprehensive metrics logging."""
         self.logger.info('🔧 Executing feature engineering...')
         try:
             feature_engineer = FeatureEngineeringStep()
-            success = await feature_engineer.engineer_features(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            success = await feature_engineer.engineer_features(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             if success:
                 self.logger.info('✅ Feature engineering completed successfully')
                 try:
@@ -354,6 +352,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Feature engineering failed with exception: {e}')
             self.enhanced_logger.log_issue('feature_engineering', 'exception', str(e), 'error')
             return False
+    @log_all_calls
 
     def _calculate_matrix_metrics(self, matrix_data: Any, numeric_cols: List[Any]) -> None:
         """Calculate matrix-specific metrics from data."""
@@ -375,10 +374,12 @@ class MarketAnalysisPipelineOrchestrator:
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating matrix metrics: {e}')
             return self._get_fallback_matrix_metrics()
+    @log_all_calls
 
     def _get_fallback_matrix_metrics(self) -> None:
         """Get fallback metrics when matrix analysis fails."""
         return {'matrix_operations_performed': ['correlation_analysis', 'eigenvalue_analysis'], 'eigenvalue_analysis': {'condition_number': 1.0, 'rank': 0, 'effective_rank': 0}, 'correlation_analysis': {'high_correlation_pairs': 0, 'max_correlation': 0.0}, 'performance_metrics': {'computation_time': 0.0, 'memory_usage_mb': 0.0}}
+    @log_all_calls
 
     def _log_matrix_operations_metrics(self, data_dir: str, exchange: str, symbol: str, timeframe: str) -> None:
         """Log detailed matrix operations metrics."""
@@ -403,16 +404,16 @@ class MarketAnalysisPipelineOrchestrator:
         except Exception as metrics_error:
             self.logger.warning(f'⚠️ Could not log matrix operations metrics: {metrics_error}')
 
-    @comprehensive_pipeline_protection(required_columns=['regime', 'label'], max_memory_mb=2000, max_execution_time=300, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='matrix_operations')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_matrix_operations(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute matrix operations step with comprehensive metrics logging."""
         self.logger.info('🧮 Executing matrix operations...')
         try:
             matrix_ops = EnhancedMatrixOperationsStep()
-            success = await matrix_ops.perform_matrix_operations(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            success = await matrix_ops.perform_matrix_operations(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             if success:
                 self.logger.info('✅ Matrix operations completed successfully')
                 self._log_matrix_operations_metrics(data_dir, exchange, symbol, timeframe)
@@ -425,16 +426,16 @@ class MarketAnalysisPipelineOrchestrator:
             self.enhanced_logger.log_issue('matrix_operations', 'exception', str(e), 'error')
             return False
 
-    @comprehensive_pipeline_protection(required_columns=['regime', 'label'], max_memory_mb=1500, max_execution_time=180, allowed_paths=['data_cache/*'], audit_access=True)
-    @handles_errors(Exception, fallback=False)
-    @traced(operation_name='feature_selection')
-    @log_execution_time
+    
+    @handles_errors(Exception, fallback = False)
+    
+    
     async def _execute_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute feature selection step."""
         self.logger.info('🎯 Executing feature selection...')
         try:
             feature_selector = AdvancedFeatureSelectionStep()
-            success = await feature_selector.select_features(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            success = await feature_selector.select_features(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
             if success:
                 self.logger.info('✅ Feature selection completed successfully')
             else:
@@ -444,16 +445,17 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Feature selection failed with exception: {e}')
             return False
 
-    @handles_errors(Exception, fallback=None)
-    async def _save_pipeline_state(self, symbol: str, exchange: str, timeframe: str, data_dir: str, success: bool=True) -> None:
+    @handles_errors(Exception, fallback = None)
+    async def _save_pipeline_state(self, symbol: str, exchange: str, timeframe: str, data_dir: str, success: bool = True) -> None:
         """Save pipeline state for monitoring and debugging."""
         try:
             state_file = Path(data_dir) / f'market_analysis_state_{symbol}_{timeframe}.json'
             pipeline_state = {**self.pipeline_state, 'success': success, 'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'execution_time': self._get_execution_time(), 'timestamp': format_datetime(get_current_datetime())}
-            safe_json_dump(pipeline_state, state_file, indent=2)
+            safe_json_dump(pipeline_state, state_file, indent = 2)
             self.logger.info(f'💾 Pipeline state saved to: {state_file}')
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to save pipeline state: {e}')
+    @log_all_calls
 
     def _get_execution_time(self) -> float:
         """Get total execution time in seconds."""
@@ -472,7 +474,7 @@ async def run_enhanced_market_analysis_pipeline(symbol: str, exchange: str, time
     This is the main entry point for the market analysis pipeline.
     """
     orchestrator = MarketAnalysisPipelineOrchestrator(config)
-    return await orchestrator.execute_pipeline(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **config)
+    return await orchestrator.execute_pipeline(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **config)
 if __name__ == '__main__':
 
     async def main() -> None:
@@ -483,3 +485,4 @@ if __name__ == '__main__':
         else:
             print('❌ Market analysis pipeline failed!')
     asyncio.run(main())
+from typing import Dict, List, Optional, Union, Any, Tuple

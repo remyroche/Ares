@@ -1,15 +1,16 @@
+from ..core.decorators import handles_errors
 '\nDomain-specific decorators built on top of core decorators.\n\nThis module provides specialized decorators for the trading system\nthat compose and extend the core decorator functionality.\n'
+from src.core.errors.base import ValidationError
 import logging
 from enum import Enum
 from functools import wraps
 from typing import Callable, List, Optional, TypeVar, Any
-from .core.decorators import cached, compose, handles_errors, log_call, log_execution_time, timeout, traced, validates
 from .core.errors import BusinessRuleError, DataIntegrityError, ValidationError
 import numpy as np
 import pandas as pd
 import time
 
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar('F', bound = Callable[..., Any])
 
 class ValidationLevel(str, Enum):
     """Validation level for data quality checks."""
@@ -24,7 +25,7 @@ class PerformanceLevel(str, Enum):
     MEDIUM = 'MEDIUM'
     LOW = 'LOW'
 
-def validate_data_quality(validation_level: ValidationLevel=ValidationLevel.WARNING, required_columns: Optional[List[str]]=None, min_rows: int=1, max_null_ratio: float=0.0, check_duplicates: bool=True, check_timestamps: bool=True, check_nan: bool=True, check_infinite: bool=True, check_constant: bool=True, check_correlation: bool=True, max_correlation_threshold: float=0.95, min_unique_values: int=2, context: str='data_validation', fail_on_issues: bool=False) -> Callable[[F], F]:
+def validate_data_quality(validation_level: ValidationLevel = ValidationLevel.WARNING, required_columns: Optional[List[str]]=None, min_rows: int = 1, max_null_ratio: float = 0.0, check_duplicates: bool = True, check_timestamps: bool = True, check_nan: bool = True, check_infinite: bool = True, check_constant: bool = True, check_correlation: bool = True, max_correlation_threshold: float = 0.95, min_unique_values: int = 2, context: str='data_validation', fail_on_issues: bool = False) -> Callable[[F], F]:
     """
     Comprehensive data quality validation decorator.
 
@@ -44,7 +45,7 @@ def validate_data_quality(validation_level: ValidationLevel=ValidationLevel.WARN
                     dfs_to_validate.append(value)
             issues = []
             for df in dfs_to_validate:
-                df_issues = _validate_dataframe(df, required_columns=required_columns, min_rows=min_rows, max_null_ratio=max_null_ratio, check_duplicates=check_duplicates, check_timestamps=check_timestamps, check_nan=check_nan, check_infinite=check_infinite, check_constant=check_constant, check_correlation=check_correlation, max_correlation_threshold=max_correlation_threshold, min_unique_values=min_unique_values)
+                df_issues = _validate_dataframe(df, required_columns = required_columns, min_rows = min_rows, max_null_ratio = max_null_ratio, check_duplicates = check_duplicates, check_timestamps = check_timestamps, check_nan = check_nan, check_infinite = check_infinite, check_constant = check_constant, check_correlation = check_correlation, max_correlation_threshold = max_correlation_threshold, min_unique_values = min_unique_values)
                 issues.extend(df_issues)
             if issues:
                 if validation_level == ValidationLevel.ERROR or fail_on_issues:
@@ -57,7 +58,7 @@ def validate_data_quality(validation_level: ValidationLevel=ValidationLevel.WARN
         return wrapper
     return decorator
 
-def _validate_dataframe(df: pd.DataFrame, required_columns: Optional[List[str]]=None, min_rows: int=1, max_null_ratio: float=0.0, check_duplicates: bool=True, check_timestamps: bool=True, check_nan: bool=True, check_infinite: bool=True, check_constant: bool=True, check_correlation: bool=True, max_correlation_threshold: float=0.95, min_unique_values: int=2) -> List[str]:
+def _validate_dataframe(df: pd.DataFrame, required_columns: Optional[List[str]]=None, min_rows: int = 1, max_null_ratio: float = 0.0, check_duplicates: bool = True, check_timestamps: bool = True, check_nan: bool = True, check_infinite: bool = True, check_constant: bool = True, check_correlation: bool = True, max_correlation_threshold: float = 0.95, min_unique_values: int = 2) -> List[str]:
     """Internal function to validate a DataFrame."""
     issues = []
     if required_columns:
@@ -95,7 +96,7 @@ def _validate_dataframe(df: pd.DataFrame, required_columns: Optional[List[str]]=
         numeric_df = df.select_dtypes(include=[np.number])
         if len(numeric_df.columns) > 1:
             corr_matrix = numeric_df.corr().abs()
-            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
             high_corr_pairs = []
             for col in upper_triangle.columns:
                 high_corr_cols = upper_triangle.index[upper_triangle[col] > max_correlation_threshold].tolist()
@@ -105,7 +106,7 @@ def _validate_dataframe(df: pd.DataFrame, required_columns: Optional[List[str]]=
                 issues.append(f'Highly correlated column pairs: {high_corr_pairs}')
     return issues
 
-def validate_feature_engineering_with_lookahead_bias_detection(lag_periods: int=1, check_future_data: bool=True, timestamp_column: str='timestamp') -> Callable[[F], F]:
+def validate_feature_engineering_with_lookahead_bias_detection(lag_periods: int = 1, check_future_data: bool = True, timestamp_column: str='timestamp') -> Callable[[F], F]:
     """Validate feature engineering and detect lookahead bias."""
 
     def decorator(func: F) -> F:
@@ -135,7 +136,7 @@ def monitor_step_execution(
     Can be used as either:
     - @monitor_step_execution
     - @monitor_step_execution()
-    - @monitor_step_execution(step_name="my_step", log_inputs=True, log_outputs=True)
+    - @monitor_step_execution(step_name="my_step", log_inputs = True, log_outputs = True)
     """
 
     def decorator(func: F) -> F:
@@ -144,15 +145,15 @@ def monitor_step_execution(
         # handling can be implemented by upstream observers if needed.
         return compose(
             log_execution_time(),
-            log_call(log_args=log_inputs, log_result=log_outputs),
-            traced(span_name=f"step.{name}")
+            log_call(log_args = log_inputs, log_result = log_outputs),
+            traced(span_name = f"step.{name}")
         )(func)
 
     if _func is None:
         return decorator
     return decorator(_func)
 
-def quality_gate(min_score: float=0.8, metrics: Optional[List[str]]=None, fail_on_breach: bool=True) -> Callable[[F], F]:
+def quality_gate(min_score: float = 0.8, metrics: Optional[List[str]]=None, fail_on_breach: bool = True) -> Callable[[F], F]:
     """Quality gate decorator to ensure minimum performance standards."""
 
     def decorator(func: F) -> F:
@@ -172,7 +173,7 @@ def quality_gate(min_score: float=0.8, metrics: Optional[List[str]]=None, fail_o
         return wrapper
     return decorator
 
-def secure_data_processing(mask_sensitive_columns: Optional[List[str]]=None, allowed_operations: Optional[List[str]]=None, audit: bool=True) -> Callable[[F], F]:
+def secure_data_processing(mask_sensitive_columns: Optional[List[str]]=None, allowed_operations: Optional[List[str]]=None, audit: bool = True) -> Callable[[F], F]:
     """Secure data processing with sensitive data protection."""
 
     def decorator(func: F) -> F:
@@ -190,7 +191,7 @@ def secure_data_processing(mask_sensitive_columns: Optional[List[str]]=None, all
         return wrapper
     return decorator
 
-def prevent_data_leakage(temporal_column: str='timestamp', lookback_only: bool=True, max_lookahead: int=0) -> Callable[[F], F]:
+def prevent_data_leakage(temporal_column: str='timestamp', lookback_only: bool = True, max_lookahead: int = 0) -> Callable[[F], F]:
     """Prevent data leakage in time series operations."""
 
     def decorator(func: F) -> F:
@@ -222,7 +223,7 @@ def ensure_data_integrity(
         # can be layered here in the future without breaking call sites.
         return compose(
             validates(),
-            handles_errors(fallback=None)
+            handles_errors(fallback = None)
         )(func)
 
     if _func is None:
@@ -247,14 +248,14 @@ def validate_pipeline_step(prerequisites: Optional[List[str]]=None, outputs: Opt
         return wrapper
     return decorator
 
-def validate_klines_data_quality(required_columns: List[str]=['open', 'high', 'low', 'close', 'volume'], check_ohlc_integrity: bool=True) -> Callable[[F], F]:
+def validate_klines_data_quality(required_columns: List[str]=['open', 'high', 'low', 'close', 'volume'], check_ohlc_integrity: bool = True) -> Callable[[F], F]:
     """Validate OHLC/klines data quality."""
 
     def decorator(func: F) -> F:
 
         @wraps(func)
         def wrapper(*args, **kwargs) -> None:
-            validator = validate_data_quality(required_columns=required_columns, check_nan=True, check_infinite=True, context='klines_validation')
+            validator = validate_data_quality(required_columns = required_columns, check_nan = True, check_infinite = True, context='klines_validation')
             validated_func = validator(func)
             result = validated_func(*args, **kwargs)
             if check_ohlc_integrity and isinstance(result, pd.DataFrame):
@@ -263,34 +264,34 @@ def validate_klines_data_quality(required_columns: List[str]=['open', 'high', 'l
                     if invalid_rows.any():
                         raise DataIntegrityError(f'Found {invalid_rows.sum()} rows where high < low')
                 if all((col in result.columns for col in ['open', 'high', 'low', 'close'])):
-                    invalid_high = result['high'] < result[['open', 'close']].max(axis=1)
+                    invalid_high = result['high'] < result[['open', 'close']].max(axis = 1)
                     if invalid_high.any():
                         raise DataIntegrityError(f'Found {invalid_high.sum()} rows with invalid high values')
-                    invalid_low = result['low'] > result[['open', 'close']].min(axis=1)
+                    invalid_low = result['low'] > result[['open', 'close']].min(axis = 1)
                     if invalid_low.any():
                         raise DataIntegrityError(f'Found {invalid_low.sum()} rows with invalid low values')
             return result
         return wrapper
     return decorator
 
-def validate_multi_timeframe_data_quality(timeframes: List[str]=['1m', '5m', '15m', '1h', '4h', '1d'], alignment_tolerance: int=1000) -> Callable[[F], F]:
+def validate_multi_timeframe_data_quality(timeframes: List[str]=['1m', '5m', '15m', '1h', '4h', '1d'], alignment_tolerance: int = 1000) -> Callable[[F], F]:
     """Validate multi-timeframe data quality and alignment."""
 
     def decorator(func: F) -> F:
-        return compose(validate_data_quality(context='multi_timeframe', check_timestamps=True), traced(name='validate.multi_timeframe'))(func)
+        return compose(validate_data_quality(context='multi_timeframe', check_timestamps = True), traced(name='validate.multi_timeframe'))(func)
     return decorator
 
-def create_step_decorator(step_name: str, validate_inputs: bool=True, monitor_performance: bool=True, handle_errors: bool=True, cache_results: bool=False, timeout_seconds: Optional[int]=None) -> Callable[[F], F]:
+def create_step_decorator(step_name: str, validate_inputs: bool = True, monitor_performance: bool = True, handle_errors: bool = True, cache_results: bool = False, timeout_seconds: Optional[int]=None) -> Callable[[F], F]:
     """Create a comprehensive decorator for a pipeline step."""
     decorators = []
     if handle_errors:
-        decorators.append(handles_errors(log_errors=True))
+        decorators.append(handles_errors(log_errors = True))
     if timeout_seconds:
-        decorators.append(timeout(seconds=timeout_seconds))
+        decorators.append(timeout(seconds = timeout_seconds))
     if validate_inputs:
         decorators.append(validates)
     if monitor_performance:
         decorators.append(monitor_step_execution(step_name))
     if cache_results:
-        decorators.append(cached(ttl=3600))
+        decorators.append(cached(ttl = 3600))
     return compose(*decorators)

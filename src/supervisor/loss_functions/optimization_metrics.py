@@ -1,3 +1,4 @@
+from ..core.decorators import handles_errors
 """
 Optimization Metrics Calculator Module.
 
@@ -8,10 +9,8 @@ This module handles metrics used for strategy optimization and parameter tuning.
 from typing import Any, Dict
 
 
-from .core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 

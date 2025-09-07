@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Circuit Breaker Module.
 
 This module implements the circuit breaker pattern for handling failures
@@ -6,15 +8,13 @@ in external services and preventing cascading failures.
 """
 import time
 from typing import Any, Callable
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
 
-    def __init__(self, failure_threshold: int=5, timeout: int=60) -> None:
+    def __init__(self, failure_threshold: int = 5, timeout: int = 60) -> None:
         """
         Initialize circuit breaker.
         
@@ -29,7 +29,7 @@ class CircuitBreaker:
         self.state = 'CLOSED'
         self.logger = system_logger.getChild('CircuitBreaker')
 
-    @handles_errors(exceptions=(ValueError, TypeError, AttributeError, RuntimeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, TypeError, AttributeError, RuntimeError), default_return = None)
     async def call(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute function with circuit breaker protection.

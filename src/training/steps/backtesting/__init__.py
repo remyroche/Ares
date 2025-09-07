@@ -1,4 +1,8 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.reports import save_training_report
+
 """Enhanced Backtesting Package for Trading Pipeline.
 
 This package contains all the components for backtesting with comprehensive validation,
@@ -15,13 +19,14 @@ error handling, and common utilities:
 import logging
 from pathlib import Path
 from .step18_walk_forward_validation_per_regime import WalkForwardValidationPerRegimeStep
-from .step19_monte_carlo_validation_per_regime import MonteCarloValidationPerRegimeStep
+from .step19_monte_carlo_validation_per_regime import PerRegimeMonteCarloValidationStep
 from .step20_ab_testing_per_regime import PerRegimeABTestingStep
+ABTestingPerRegimeStep = PerRegimeABTestingStep  # Alias for backward compatibility
 from .step21_saving import SavingStep
 from .comprehensive_reporting import generate_backtesting_report, generate_step_report, generate_detailed_regime_metrics_report
 from .utils.base_validator import BaseValidator
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
-from src.utils.trading_decorators import handles_errors, validates, traced, log_execution_time, timeout, error_boundary, compose, validate_data_quality, monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+from .utils.trading_decorators import handles_errors, validates, traced, log_execution_time, timeout, error_boundary, compose, validate_data_quality, monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 from typing import Any, Dict
 import numpy as np
 import json
@@ -31,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 class BacktestingPipelineConfig:
     """Configuration for the enhanced backtesting pipeline."""
+    @log_important_calls
 
     def __init__(self, **kwargs) -> None:
         self.symbol = kwargs.get('symbol', 'ETHUSDT')
@@ -52,6 +58,7 @@ class BacktestingPipelineConfig:
 
 class BacktestingPipelineValidator(BaseValidator):
     """Comprehensive validator for the backtesting pipeline."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__('backtesting_pipeline', config)
@@ -138,6 +145,7 @@ class BacktestingPipelineValidator(BaseValidator):
             return {'validation_passed': True, 'details': 'All prerequisites are satisfied'}
         except Exception as e:
             return {'validation_passed': False, 'error': f'Error validating prerequisites: {e}'}
+    @log_all_calls
 
     def _log_validation_failures(self, validation_results: Dict[str, Any]) -> None:
         """Log validation failures for debugging."""
@@ -146,16 +154,16 @@ class BacktestingPipelineValidator(BaseValidator):
                 error = result.get('error', 'Unknown error')
                 self.logger.error(f'❌ {step} validation failed: {error}')
 
-@compose(error_boundary(name='backtesting_pipeline'), traced(span_name='backtesting_pipeline'), log_execution_time, timeout(seconds=3600))
+@compose(error_boundary(name='backtesting_pipeline'), traced(span_name='backtesting_pipeline'), log_execution_time, timeout(seconds = 3600))
 @validate_pipeline_step(prerequisites=['step1_data_collection', 'step2_data_reading', 'step9_hmm_based_training'], outputs=['walk_forward_results', 'monte_carlo_results', 'ab_testing_results', 'model_saving_results'])
 async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, data_dir: Any, **config) -> Any:
     """Run the enhanced backtesting pipeline with comprehensive validation and error handling."""
     bt_logger = get_backtesting_logger(f'{symbol}_{exchange}_{timeframe}', log_dir='log/backtesting')
-    bt_logger.start_performance_monitoring(interval=10.0)
+    bt_logger.start_performance_monitoring(interval = 10.0)
     try:
         bt_logger.log_info('🚀 Starting Enhanced Backtesting Pipeline', 'INITIALIZATION')
         bt_logger.log_info(f'📊 Configuration: {symbol} on {exchange}, timeframe: {timeframe}', 'CONFIG')
-        pipeline_config = BacktestingPipelineConfig(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **config)
+        pipeline_config = BacktestingPipelineConfig(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **config)
         bt_logger.log_info('📋 Pipeline Configuration:', 'CONFIG')
         bt_logger.log_info(f'   • Symbol: {pipeline_config.symbol}', 'CONFIG')
         bt_logger.log_info(f'   • Exchange: {pipeline_config.exchange}', 'CONFIG')
@@ -204,8 +212,15 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
                             bt_logger.log_model_performance(walk_forward_results['model_performance'])
                         if 'risk_metrics' in walk_forward_results:
                             bt_logger.log_risk_metrics(walk_forward_results['risk_metrics'])
-                        step_report_file = Path(data_dir) / f"step_report_walk_forward_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-                        step_report = generate_step_report('walk_forward_validation', walk_forward_results, symbol, timeframe, data_dir, str(step_report_file))
+                        step_report_data = generate_step_report('walk_forward_validation', walk_forward_results, symbol, timeframe, data_dir)
+                        step_report_file = save_training_report(
+                            data=step_report_data,
+                            step_name="backtesting_walk_forward",
+                            report_type="step_report",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            file_format="json"
+                        )
                         bt_logger.log_success(f'Walk forward step report saved to: {step_report_file}', 'REPORTING')
                 except Exception as e:
                     bt_logger.log_error(e, 'WALK_FORWARD')
@@ -219,7 +234,7 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
             with bt_logger.step_timer('monte_carlo_validation'):
                 try:
                     bt_logger.log_info('🔄 Starting Monte Carlo validation', 'MONTE_CARLO')
-                    monte_carlo = MonteCarloValidationPerRegimeStep(pipeline_config.__dict__)
+                    monte_carlo = PerRegimeMonteCarloValidationStep(pipeline_config.__dict__)
                     monte_carlo_results = await monte_carlo.validate_monte_carlo(symbol, exchange, timeframe, data_dir)
                     pipeline_results['monte_carlo_results'] = monte_carlo_results
                     bt_logger.log_success('Monte Carlo validation completed', 'MONTE_CARLO')
@@ -231,8 +246,15 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
                             bt_logger.log_model_performance(monte_carlo_results['model_performance'])
                         if 'risk_metrics' in monte_carlo_results:
                             bt_logger.log_risk_metrics(monte_carlo_results['risk_metrics'])
-                        step_report_file = Path(data_dir) / f"step_report_monte_carlo_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-                        step_report = generate_step_report('monte_carlo_validation', monte_carlo_results, symbol, timeframe, data_dir, str(step_report_file))
+                        step_report_data = generate_step_report('monte_carlo_validation', monte_carlo_results, symbol, timeframe, data_dir)
+                        step_report_file = save_training_report(
+                            data=step_report_data,
+                            step_name="backtesting_monte_carlo",
+                            report_type="step_report",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            file_format="json"
+                        )
                         bt_logger.log_success(f'Monte Carlo step report saved to: {step_report_file}', 'REPORTING')
                 except Exception as e:
                     bt_logger.log_error(e, 'MONTE_CARLO')
@@ -258,8 +280,15 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
                             bt_logger.log_model_performance(ab_testing_results['model_performance'])
                         if 'risk_metrics' in ab_testing_results:
                             bt_logger.log_risk_metrics(ab_testing_results['risk_metrics'])
-                        step_report_file = Path(data_dir) / f"step_report_ab_testing_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-                        step_report = generate_step_report('ab_testing', ab_testing_results, symbol, timeframe, data_dir, str(step_report_file))
+                        step_report_data = generate_step_report('ab_testing', ab_testing_results, symbol, timeframe, data_dir)
+                        step_report_file = save_training_report(
+                            data=step_report_data,
+                            step_name="backtesting_ab_testing",
+                            report_type="step_report",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            file_format="json"
+                        )
                         bt_logger.log_success(f'A/B testing step report saved to: {step_report_file}', 'REPORTING')
                 except Exception as e:
                     bt_logger.log_error(e, 'AB_TESTING')
@@ -281,8 +310,15 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
                         bt_logger.log_info('Model Saving Results:', 'MODEL_SAVING')
                         for key, value in model_saving_results.items():
                             bt_logger.log_info(f'   • {key}: {value}', 'MODEL_SAVING')
-                        step_report_file = Path(data_dir) / f"step_report_model_saving_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-                        step_report = generate_step_report('model_saving', model_saving_results, symbol, timeframe, data_dir, str(step_report_file))
+                        step_report_data = generate_step_report('model_saving', model_saving_results, symbol, timeframe, data_dir)
+                        step_report_file = save_training_report(
+                            data=step_report_data,
+                            step_name="backtesting_model_saving",
+                            report_type="step_report",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            file_format="json"
+                        )
                         bt_logger.log_success(f'Model saving step report saved to: {step_report_file}', 'REPORTING')
                 except Exception as e:
                     bt_logger.log_error(e, 'MODEL_SAVING')
@@ -293,15 +329,39 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
         pipeline_results['end_time'] = get_current_datetime()
         pipeline_results['success'] = True
         results_file = Path(data_dir) / f'backtesting_pipeline_results_{symbol}_{timeframe}.json'
-        safe_json_dump(pipeline_results, results_file, indent=2)
+        safe_json_dump(pipeline_results, results_file, indent = 2)
         bt_logger.log_success(f'Pipeline results saved to: {results_file}', 'RESULTS')
-        report_file = Path(data_dir) / f'backtesting_report_{symbol}_{timeframe}.json'
-        logger_report = bt_logger.generate_report(str(report_file))
-        comprehensive_report_file = Path(data_dir) / f'comprehensive_backtesting_report_{symbol}_{timeframe}.json'
-        comprehensive_report = generate_backtesting_report(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, pipeline_results=pipeline_results, logger_data=logger_report, output_file=str(comprehensive_report_file))
+        logger_report_data = bt_logger.generate_report()
+        report_file = save_training_report(
+            data=logger_report_data,
+            step_name="backtesting_main",
+            report_type="backtesting_report",
+            symbol=symbol,
+            timeframe=timeframe,
+            file_format="json"
+        )
+        bt_logger.log_success(f'Backtesting report saved to: {report_file}', 'REPORTING')
+
+        comprehensive_report_data = generate_backtesting_report(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, pipeline_results=pipeline_results, logger_data=logger_report_data)
+        comprehensive_report_file = save_training_report(
+            data=comprehensive_report_data,
+            step_name="backtesting_main",
+            report_type="comprehensive_backtesting_report",
+            symbol=symbol,
+            timeframe=timeframe,
+            file_format="json"
+        )
         bt_logger.log_success(f'Comprehensive report saved to: {comprehensive_report_file}', 'REPORTING')
-        regime_metrics_file = Path(data_dir) / f"regime_cluster_metrics_{symbol}_{timeframe}_{format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')}.json"
-        regime_metrics_report = generate_detailed_regime_metrics_report(pipeline_results, str(regime_metrics_file))
+
+        regime_metrics_data = generate_detailed_regime_metrics_report(pipeline_results)
+        regime_metrics_file = save_training_report(
+            data=regime_metrics_data,
+            step_name="backtesting_main",
+            report_type="regime_cluster_metrics",
+            symbol=symbol,
+            timeframe=timeframe,
+            file_format="json"
+        )
         bt_logger.log_success(f'Detailed regime/cluster metrics report saved to: {regime_metrics_file}', 'REPORTING')
         bt_logger.log_performance_summary()
         bt_logger.log_success('🎉 Enhanced backtesting pipeline completed successfully', 'COMPLETION')
@@ -320,10 +380,17 @@ async def run_backtesting_pipeline(symbol: str, exchange: str, timeframe: Any, d
         bt_logger.log_error(e, 'PIPELINE_EXECUTION')
         bt_logger.log_quality_flag('PIPELINE_FAILURE', f'Pipeline execution failed: {e}', 'ERROR')
         bt_logger.log_performance_summary()
-        failure_report_file = Path(data_dir) / f'backtesting_failure_report_{symbol}_{timeframe}.json'
-        failure_report = bt_logger.generate_report(str(failure_report_file))
+        failure_report_data = bt_logger.generate_report()
+        failure_report_file = save_training_report(
+            data=failure_report_data,
+            step_name="backtesting_main",
+            report_type="failure_report",
+            symbol=symbol,
+            timeframe=timeframe,
+            file_format="json"
+        )
         return False
     finally:
         bt_logger.stop_performance_monitoring()
         bt_logger.cleanup()
-__all__ = ['WalkForwardValidationPerRegimeStep', 'WalkForwardValidationValidator', 'MonteCarloValidationPerRegimeStep', 'MonteCarloValidationValidator', 'ABTestingPerRegimeStep', 'ABTestingValidator', 'SavingStep', 'PerRegimeSavingStep', 'SavingValidator', 'run_backtesting_pipeline']
+__all__ = ['WalkForwardValidationPerRegimeStep', 'WalkForwardValidationValidator', 'PerRegimeMonteCarloValidationStep', 'MonteCarloValidationValidator', 'ABTestingPerRegimeStep', 'ABTestingValidator', 'SavingStep', 'PerRegimeSavingStep', 'SavingValidator', 'run_backtesting_pipeline']

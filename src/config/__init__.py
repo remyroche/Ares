@@ -13,7 +13,7 @@ from .trading import get_trading_config
 from .training import get_training_config
 from .validation import validate_complete_config
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import logging
 
 
@@ -129,3 +129,4 @@ def get_training_config_section() -> dict[str, Any]:
 
 
 # Create the main CONFIG object for backward compatibility
+CONFIG = get_complete_config()

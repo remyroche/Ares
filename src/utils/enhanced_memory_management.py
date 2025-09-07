@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 Enhanced Memory Management Utilities
 
 This module provides memory monitoring and optimization capabilities for the training pipeline.
@@ -22,7 +23,7 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 try:
-    from .utils.logger import system_logger
+    from .logger import system_logger
 
 except ImportError:
     system_logger = logging.getLogger('EnhancedMemoryManagement')
@@ -116,14 +117,14 @@ class MemoryMonitor:
         else:
             self.logger.info(f'💾 {status_msg}')
 
-def memory_efficient(max_memory_mb: float=1024.0, optimize_dtypes: bool=True) -> None:
+def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True) -> None:
     """Decorator for memory-efficient processing."""
 
     def decorator(func: Callable) -> Callable:
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs) -> None:
-            config = MemoryConfig(max_memory_mb=max_memory_mb)
+            config = MemoryConfig(max_memory_mb = max_memory_mb)
             monitor = MemoryMonitor(config)
             initial_memory = monitor.get_usage_mb()
             monitor.log_memory_status(f'before {func.__name__}')
@@ -147,7 +148,7 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame data types for memory efficiency."""
     if not PANDAS_AVAILABLE or df is None or df.empty:
         return df
-    original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
+    original_memory = df.memory_usage(deep = True).sum() / 1024 / 1024
     for col in df.select_dtypes(include=['float64']).columns:
         df[col] = pd.to_numeric(df[col], downcast='float')
     for col in df.select_dtypes(include=['int64']).columns:
@@ -155,7 +156,7 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.select_dtypes(include=['object']).columns:
         if df[col].nunique() / len(df[col]) < 0.5:
             df[col] = df[col].astype('category')
-    optimized_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
+    optimized_memory = df.memory_usage(deep = True).sum() / 1024 / 1024
     savings = original_memory - optimized_memory
     if savings > 0:
         logging.info(f'DataFrame optimization: {original_memory:.1f}MB -> {optimized_memory:.1f}MB (saved {savings:.1f}MB)')
@@ -185,7 +186,7 @@ class MemoryOptimizedProcessor:
         self.monitor = MemoryMonitor(config)
         self.logger = system_logger.getChild('MemoryOptimizedProcessor')
 
-    def process_in_chunks(self, df: pd.DataFrame, processor_func: Callable, chunk_size: int=10000) -> pd.DataFrame:
+    def process_in_chunks(self, df: pd.DataFrame, processor_func: Callable, chunk_size: int = 10000) -> pd.DataFrame:
         """Process DataFrame in chunks to manage memory usage."""
         if df is None or df.empty:
             return df
@@ -201,13 +202,13 @@ class MemoryOptimizedProcessor:
             if (i + 1) % 10 == 0:
                 self.monitor.log_memory_status(f'chunk {i + 1}/{len(chunks)}')
         if processed_chunks:
-            result = pd.concat(processed_chunks, ignore_index=True)
+            result = pd.concat(processed_chunks, ignore_index = True)
             self.logger.info(f'Completed processing: {len(processed_chunks)} chunks -> {result.shape}')
             return result
         else:
             return pd.DataFrame()
 
-    def stream_process(self, file_path: str, processor_func: Callable, chunk_size: int=10000) -> pd.DataFrame:
+    def stream_process(self, file_path: str, processor_func: Callable, chunk_size: int = 10000) -> pd.DataFrame:
         """Stream process a file to manage memory usage."""
         if not PANDAS_AVAILABLE:
             raise ImportError('pandas is required for stream processing')
@@ -215,7 +216,7 @@ class MemoryOptimizedProcessor:
         chunks = []
         chunk_count = 0
         try:
-            for chunk in pd.read_parquet(file_path, chunksize=chunk_size):
+            for chunk in pd.read_parquet(file_path, chunksize = chunk_size):
                 chunk_count += 1
                 self.logger.debug(f'Processing stream chunk {chunk_count}')
                 processed_chunk = processor_func(chunk)
@@ -231,7 +232,7 @@ class MemoryOptimizedProcessor:
             self.logger.error(f'Error during stream processing: {e}')
             raise
         if chunks:
-            result = pd.concat(chunks, ignore_index=True)
+            result = pd.concat(chunks, ignore_index = True)
             self.logger.info(f'Stream processing completed: {chunk_count} chunks -> {result.shape}')
             return result
         else:
@@ -248,8 +249,8 @@ def log_memory_status(context: str='') -> None:
     monitor = MemoryMonitor()
     monitor.log_memory_status(context)
 
-def trigger_gc_if_needed(max_memory_mb: float=1024.0) -> Dict[str, float]:
+def trigger_gc_if_needed(max_memory_mb: float = 1024.0) -> Dict[str, float]:
     """Trigger garbage collection if memory usage is high."""
-    config = MemoryConfig(max_memory_mb=max_memory_mb)
+    config = MemoryConfig(max_memory_mb = max_memory_mb)
     monitor = MemoryMonitor(config)
     return monitor.trigger_gc()

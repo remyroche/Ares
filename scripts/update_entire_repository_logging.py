@@ -12,7 +12,7 @@ import logging
 import typing
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -27,7 +27,7 @@ def get_warning_symbol_function(message: str, log_level: str="error") -> str:
     Returns:
         The appropriate warning symbol function name
     """
-    message_lower=message.lower()
+    message_lower = message.lower()
 
     # Error patterns
     if any(word in message_lower for word in ["failed", "failure", "fail"]):
@@ -168,7 +168,7 @@ def should_skip_file(file_path: str) -> bool:
         "*.cache",
     ]
 
-    file_path_lower=file_path.lower()
+    file_path_lower = file_path.lower()
 
     # Check if file matches any skip pattern
     for pattern in skip_patterns:
@@ -192,12 +192,12 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     Returns:
         Tuple of (number of changes made, number of lines processed)
     """
-    changes_made=0
+    changes_made = 0
 
     try:
         with open(file_path, encoding="utf-8") as f:
-            content=f.read()
-        original_content=content
+            content = f.read()
+        original_content = content
 
         # Patterns to match various logging and print statements
         patterns: list[tuple[str, str]] = [
@@ -237,21 +237,21 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         for pattern, default_func in patterns:
             # Find all matches
-            matches=list(re.finditer(pattern, content))
+            matches = list(re.finditer(pattern, content))
             for match in reversed(matches):  # Process in reverse to avoid index issues
-                message=match.group(1)
-                warning_func=get_warning_symbol_function(message, default_func)
+                message = match.group(1)
+                warning_func = get_warning_symbol_function(message, default_func)
 
                 # Create the replacement
                 if "logger." in pattern:
-                    log_method=pattern.split(".")[1].split("(")[0]
-                    new_call=f'logger.{log_method}({warning_func}("{message}"))'
+                    log_method = pattern.split(".")[1].split("(")[0]
+                    new_call = f'logger.{log_method}({warning_func}("{message}"))'
                 else:
-                    new_call=f'print({warning_func}("{message}"))'
+                    new_call = f'print({warning_func}("{message}"))'
 
                 # Replace the match
-                start, end=match.span()
-                content=content[:start] + new_call + content[end:]
+                start, end = match.span()
+                content = content[:start] + new_call + content[end:]
                 changes_made += 1
 
         # Only write if changes were made
@@ -281,14 +281,14 @@ def add_warning_symbols_import(file_path: str) -> bool:
     """
     try:
         with open(file_path, encoding="utf-8") as f:
-            content=f.read()
+            content = f.read()
 
         # Check if warning symbols are already imported
         if "from src.utils.warning_symbols import" in content:
             return False
 
         # Find the logger import line
-        logger_import_pattern=r"from src\.utils\.logger import.*"
+        logger_import_pattern = r"from src\.utils\.logger import.*"
         match = re.search(logger_import_pattern, content)
 
         if match:
@@ -309,7 +309,7 @@ def add_warning_symbols_import(file_path: str) -> bool:
             )
 
             # Insert after the logger import
-            new_content=content.replace(
+            new_content = content.replace(
                 match.group(0),
                 match.group(0) + "\n" + warning_import,
             )
@@ -321,7 +321,7 @@ def add_warning_symbols_import(file_path: str) -> bool:
             return True
 
         # Try to find any import line to add after
-        import_pattern=r"^import .*$|^from .* import .*$"
+        import_pattern = r"^import .*$|^from .* import .*$"
         lines = content.split("\n")
 
         for i, line in enumerate(lines):
@@ -387,11 +387,11 @@ def main() -> None:
     print(f"📁 Project root: {project_root}")
 
     # Find all Python files in the repository
-    python_files=find_python_files(project_root)
+    python_files = find_python_files(project_root)
 
     print(f"🔍 Found {len(python_files)} Python files to process")
 
-    total_changes=0
+    total_changes = 0
     total_files_processed = 0
     files_with_imports_added = 0
 
@@ -399,12 +399,12 @@ def main() -> None:
         print(f"\n📁 Processing {file_path.relative_to(project_root)}...")
 
         # Add warning symbols import if needed
-        import_added=add_warning_symbols_import(str(file_path))
+        import_added = add_warning_symbols_import(str(file_path))
         if import_added:
             files_with_imports_added += 1
 
         # Update logging messages
-        changes, _=update_file_logging_messages(str(file_path))
+        changes, _ = update_file_logging_messages(str(file_path))
 
         total_changes += changes
         if import_added:

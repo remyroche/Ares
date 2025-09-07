@@ -1,3 +1,4 @@
+from src.core.decorators import handles_errors
 #!/usr/bin/env python3
 """
 Enhanced Step Validator
@@ -10,32 +11,34 @@ import asyncio
 from pathlib import Path
 
 # Core decorators and utilities
-from .core.decorators import (
+from src.core.decorators import (
     handles_errors,
     traced,
     validates,
     log_execution_time,
 )
-from .utils.datetime_utils import (
-    get_current_datetime,
-    format_datetime,
-)
-from .utils.file_utils import (
-    safe_file_exists,
-    safe_json_load,
-)
-from .utils.validation import (
-    validate_dataframe,
-    validate_data_quality,
-)
-from .utils.logger import (
-    get_logger,
-)
-from .utils.data_quality_framework import DataQualityFramework
+# Temporarily commented out - modules don't exist
+# from .utils.datetime_utils import (
+#     get_current_datetime,
+#     format_datetime,
+# )
+# from .utils.file_utils import (
+#     safe_file_exists,
+#     safe_json_load,
+# )
+# from .utils.validation import (
+#     validate_dataframe,
+#     validate_data_quality,
+# )
+# from .utils.logger import (
+#     get_logger,
+# )
+# from .utils.data_quality_framework import DataQualityFramework
 import pandas as pd
 import logging
 import numpy as np
 import typing
+from typing import Optional, Dict, Any
 
 
 class EnhancedStepValidator:
@@ -141,7 +144,7 @@ class EnhancedStepValidator:
             },
         }
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     @traced(operation_name="validate_step_input")
     @log_execution_time
     async def validate_step_input(
@@ -187,9 +190,9 @@ class EnhancedStepValidator:
             data_path = Path(data_dir)
             for file_pattern in schema['input_files']:
                 file_name = file_pattern.format(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe
                 )
                 file_path = data_path / file_name
                 
@@ -227,7 +230,7 @@ class EnhancedStepValidator:
             validation_result['errors'].append(f"Validation exception: {str(e)}")
             return validation_result
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     @traced(operation_name="validate_step_output")
     @log_execution_time
     async def validate_step_output(
@@ -273,9 +276,9 @@ class EnhancedStepValidator:
             data_path = Path(data_dir)
             for file_pattern in schema['output_files']:
                 file_name = file_pattern.format(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe
                 )
                 file_path = data_path / file_name
                 
@@ -313,7 +316,7 @@ class EnhancedStepValidator:
             validation_result['errors'].append(f"Validation exception: {str(e)}")
             return validation_result
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def _validate_file_quality(
         self,
         file_path: str,
@@ -341,7 +344,7 @@ class EnhancedStepValidator:
             quality_result['file_info'] = {
                 'rows': len(df),
                 'columns': len(df.columns),
-                'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
+                'memory_usage_mb': df.memory_usage(deep = True).sum() / 1024 / 1024,
                 'file_size_mb': Path(file_path).stat().st_size / 1024 / 1024,
             }
             
@@ -391,7 +394,7 @@ class EnhancedStepValidator:
             quality_result['errors'].append(f"Quality validation exception: {str(e)}")
             return quality_result
 
-    @handles_errors(Exception, fallback=None)
+    @handles_errors(Exception, fallback = None)
     async def _validate_step_specific_quality(
         self,
         step_name: str,
@@ -484,7 +487,7 @@ class EnhancedStepValidator:
                 f"Low number of selected features: {len(selected_columns)} < {min_selected_features}"
             )
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     @traced(operation_name="validate_step_transition")
     @log_execution_time
     async def validate_step_transition(
@@ -567,7 +570,7 @@ class EnhancedStepValidator:
             transition_result['errors'].append(f"Transition validation exception: {str(e)}")
             return transition_result
 
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def _check_data_consistency(
         self,
         from_step: str,

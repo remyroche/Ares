@@ -7,12 +7,13 @@ from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 from typing import Callable
 import numpy as np
+from src.core.decorators import handles_errors
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, steps_dir)
 try:
-    from step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
+    from ..step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
     VALIDATION_AVAILABLE = True
 except ImportError as e:
     print(f'Warning: Step06 validation framework not available: {e}')
@@ -46,23 +47,12 @@ except ImportError as e:
         TIMEOUT = 'timeout'
     VALIDATION_AVAILABLE = False
 
+from src.core.decorators.logging import log_execution_time, log_call
+import datetime
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
-    from src.utils.centralized_decorators import handles_errors, traced
-except ImportError:
-
-    def handles_errors(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def traced(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-try:
-    from .utils.dataframe_guards import guard_dataframe_nulls, handle_errors, with_tracing_span
+    from src.utils.dataframe_guards import guard_dataframe_nulls, handle_errors, with_tracing_span
 except ImportError:
 
     def guard_dataframe_nulls(*args, **kwargs) -> None:
@@ -95,7 +85,7 @@ except Exception:
     numba = None
 if 'numba' in globals() and numba is not None:
 
-    @numba.jit(nopython=True, cache=True)
+    @numba.jit(nopython = True, cache = True)
     def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray, pt_mult: float, sl_mult: float, end_idx_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Numba-accelerated triple barrier labeling with profit tracking."
         
@@ -103,8 +93,8 @@ if 'numba' in globals() and numba is not None:
             labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
             profit_pcts: Actual profit/loss percentages at barrier hits
         """
-        labels = np.zeros(close.shape[0], dtype=np.int8)
-        profit_pcts = np.zeros(close.shape[0], dtype=np.float64)
+        labels = np.zeros(close.shape[0], dtype = np.int8)
+        profit_pcts = np.zeros(close.shape[0], dtype = np.float64)
         n = close.shape[0]
         for i in range(n - 1):
             entry_price = close[i]
@@ -138,8 +128,9 @@ class OptimizedTripleBarrierLabeling:
     Focuses specifically on triple barrier labeling without feature engineering.
     Now includes profit tracking for enhanced analysis.
     """
+    @log_important_calls
 
-    def __init__(self, profit_take_multiplier: float=0.002, stop_loss_multiplier: float=0.001, time_barrier_minutes: int=30, max_lookahead: int=100, binary_classification: bool=True) -> None:
+    def __init__(self, profit_take_multiplier: float = 0.002, stop_loss_multiplier: float = 0.001, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True) -> None:
         """Initialize the optimized triple barrier labeling."
 
         Args:
@@ -151,7 +142,7 @@ class OptimizedTripleBarrierLabeling:
             no hold (0) labels. If False, include hold labels (default: True)
 
         Note:
-            binary_classification=True is now the default to address label imbalance issues.
+            binary_classification = True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
         """
         self.profit_take_multiplier = profit_take_multiplier
@@ -167,10 +158,12 @@ class OptimizedTripleBarrierLabeling:
         else:
             self.logger.warning('⚠️ Triple barrier labeling configured for ternary classification (BUY/HOLD/SELL)')
             self.logger.warning('   → This may lead to label imbalance issues')
-            self.logger.warning('   → Consider using binary_classification=True for better results')
+            self.logger.warning('   → Consider using binary_classification = True for better results')
 
-    @step06_function_validator(function_type='labeling', validation_level=ValidationLevel.COMPREHENSIVE)
-    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='optimized_triple_barrier_labeling.vectorized')
+    @step06_function_validator(function_type='labeling', validation_level = ValidationLevel.COMPREHENSIVE)
+    @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.vectorized')
+    @log_execution_time
+    @validates
     @traced(span_name='TripleBarrier.apply_vectorized')
     def apply_triple_barrier_labeling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply a correct forward-looking Triple Barrier Method with profit tracking."
@@ -197,7 +190,7 @@ class OptimizedTripleBarrierLabeling:
                 if original in data.columns and canonical not in data.columns:
                     rename_map[original] = canonical
             if rename_map:
-                data = data.rename(columns=rename_map)
+                data = data.rename(columns = rename_map)
         except Exception:
             pass
         required_columns = ['close', 'high', 'low']
@@ -222,7 +215,7 @@ class OptimizedTripleBarrierLabeling:
             if not idx.is_monotonic_increasing or idx.has_duplicates:
                 self.logger.warning('DatetimeIndex not strictly increasing or has duplicates; disabling time barrier for labeling')
                 use_time_barrier = False
-        arange_n = np.arange(n, dtype=np.int64)
+        arange_n = np.arange(n, dtype = np.int64)
         end_by_lookahead = np.minimum(arange_n + 1 + int(self.max_lookahead), n)
         if use_time_barrier:
             try:
@@ -245,8 +238,8 @@ class OptimizedTripleBarrierLabeling:
             labels, profit_pcts = _numba_triple_barrier_labels(close.astype(np.float64), high.astype(np.float64), low.astype(np.float64), pt_mult, sl_mult, end_idx_arr.astype(np.int64))
         else:
             self.logger.info('🐍 Using Python vectorized triple barrier labeling with profit tracking')
-            labels = np.zeros(n, dtype=np.int8)
-            profit_pcts = np.zeros(n, dtype=np.float64)
+            labels = np.zeros(n, dtype = np.int8)
+            profit_pcts = np.zeros(n, dtype = np.float64)
             for i in range(n - 1):
                 entry_price = close[i]
                 profit_barrier = entry_price * (1.0 + pt_mult)
@@ -298,10 +291,10 @@ class OptimizedTripleBarrierLabeling:
             self.logger.info(f'   SHORT signals - Avg profit: {short_profits.mean():.4f}, Max: {short_profits.max():.4f}, Min: {short_profits.min():.4f}')
             self.logger.info(f"   Overall - Avg profit: {labeled_data['potential_profit_pct'].mean():.4f}, Std: {labeled_data['potential_profit_pct'].std():.4f}")
         if self.binary_classification:
-            self.logger.info('   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier; removing them balances the dataset for LONG vs SHORT classification.')
+            self.logger.info('   Reason: binary_classification = True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier; removing them balances the dataset for LONG vs SHORT classification.')
         distribution = dict(pd.Series(labeled_data['label']).value_counts())
-        next_returns = np.diff(close, append=close[-1])
-        next_sign_series = pd.Series(np.sign(next_returns), index=idx)
+        next_returns = np.diff(close, append = close[-1])
+        next_sign_series = pd.Series(np.sign(next_returns), index = idx)
         next_sign_filtered = next_sign_series.reindex(labeled_data.index).to_numpy()
         labels_arr = labeled_data['label'].to_numpy()
         long_mask = labels_arr == 1
@@ -313,8 +306,8 @@ class OptimizedTripleBarrierLabeling:
         self.logger.info("Diagnostics meaning: 'distribution' is LONG/SHORT counts after HOLD removal; '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return; 'overall' aggregates both sides. Profit tracking shows actual profit/loss percentages at barrier hits.")
         return labeled_data
 
-    @step06_function_validator(function_type='labeling', validation_level=ValidationLevel.DETAILED)
-    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='optimized_triple_barrier_labeling.parallel')
+    @step06_function_validator(function_type='labeling', validation_level = ValidationLevel.DETAILED)
+    @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.parallel')
     def apply_triple_barrier_labeling_parallel(self, data: pd.DataFrame, n_jobs: int=-1) -> pd.DataFrame:
         """Apply parallel Triple Barrier Method for labeling."
 
@@ -328,7 +321,8 @@ class OptimizedTripleBarrierLabeling:
         return self.apply_triple_barrier_labeling_vectorized(data)
 
     @step06_function_tracker
-    @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), context='optimized_triple_barrier_labeling.process_chunk')
+    @log_all_calls
+    @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.process_chunk')
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Process a single chunk of data."
 
@@ -340,7 +334,7 @@ class OptimizedTripleBarrierLabeling:
         """
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
-    @step06_function_validator(function_type='labeling', validation_level=ValidationLevel.BASIC)
+    @step06_function_validator(function_type='labeling', validation_level = ValidationLevel.BASIC)
     def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
         """Apply triple barrier labels and return only the labels series."
         
@@ -379,6 +373,7 @@ class OptimizedTripleBarrierLabeling:
         comprehensive_report = {'timestamp': datetime.now().isoformat(), 'validation_summary': validation_summary, 'internal_statistics': internal_stats, 'recommendations': self._generate_labeling_recommendations(internal_stats), 'function_call_analysis': self._analyze_labeling_function_calls(), 'performance_analysis': self._analyze_labeling_performance()}
         self.logger.info('✅ Comprehensive triple barrier labeling report generated')
         return comprehensive_report
+    @log_all_calls
 
     def _generate_labeling_recommendations(self, stats: dict[str, Any]) -> list[str]:
         """Generate recommendations based on triple barrier labeling execution statistics."""
@@ -392,10 +387,12 @@ class OptimizedTripleBarrierLabeling:
         if not stats['validation_status']['validation_framework_available']:
             recommendations.append('Enable validation framework for better error tracking and reporting')
         return recommendations
+    @log_all_calls
 
     def _analyze_labeling_function_calls(self) -> dict[str, Any]:
         """Analyze function call patterns for triple barrier labeling."""
         return {'vectorized_method_available': True, 'parallel_method_available': True, 'chunk_processing_available': True, 'convenience_method_available': True}
+    @log_all_calls
 
     def _analyze_labeling_performance(self) -> dict[str, Any]:
         """Analyze performance metrics for triple barrier labeling."""
@@ -412,7 +409,6 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     Returns:
         Dictionary with timing results
     """
-    import time
     start_time = time.time()
     time.sleep(0.1)
     original_time = time.time() - start_time
@@ -425,8 +421,8 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     parallel_time = time.time() - start_time
     return {'original_time': original_time, 'vectorized_time': vectorized_time, 'parallel_time': parallel_time, 'vectorized_speedup': original_time / vectorized_time, 'parallel_speedup': original_time / parallel_time}
 if __name__ == '__main__':
-    dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
-    data = pd.DataFrame({'open': np.random.uniform(100, 110, 1000), 'high': np.random.uniform(105, 115, 1000), 'low': np.random.uniform(95, 105, 1000), 'close': np.random.uniform(100, 110, 1000), 'volume': np.random.uniform(1000, 10000, 1000)}, index=dates)
+    dates = pd.date_range('2024-01-01', periods = 1000, freq='1min')
+    data = pd.DataFrame({'open': np.random.uniform(100, 110, 1000), 'high': np.random.uniform(105, 115, 1000), 'low': np.random.uniform(95, 105, 1000), 'close': np.random.uniform(100, 110, 1000), 'volume': np.random.uniform(1000, 10000, 1000)}, index = dates)
     optimizer = OptimizedTripleBarrierLabeling()
     labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
     results = benchmark_triple_barrier_methods(data)

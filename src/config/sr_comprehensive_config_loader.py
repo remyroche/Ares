@@ -1,4 +1,5 @@
 """
+from ..utils.logger import system_logger
 Comprehensive S/R Configuration Loader
 
 This module loads and merges S/R configurations from multiple sources.
@@ -9,7 +10,7 @@ from pathlib import Path
 import yaml
 from dataclasses import dataclass, asdict
 from src.config.config_sr import SRConfig, get_sr_config
-from src.utils.logger import system_logger
+from ..utils.logger import system_logger
 import json
 import logging
 
@@ -43,7 +44,7 @@ class SRComprehensiveConfigLoader:
         try:
             sr_optimization = get_sr_config()
             yaml_config = self._load_yaml_config()
-            self.config = SRComprehensiveConfig(sr_optimization=sr_optimization, sr_levels_manager=yaml_config.get('sr_levels_manager', {}), sr_trading_intelligence=yaml_config.get('sr_trading_intelligence', {}), sr_breakout_predictor=yaml_config.get('sr_breakout_predictor', {}), data_integration=yaml_config.get('data_integration', {}), performance=yaml_config.get('performance', {}), risk_management=yaml_config.get('risk_management', {}), reporting=yaml_config.get('reporting', {}), integrations=yaml_config.get('integrations', {}), testing=yaml_config.get('testing', {}), sr_comprehensive_integration=self._get_comprehensive_integration_config())
+            self.config = SRComprehensiveConfig(sr_optimization = sr_optimization, sr_levels_manager = yaml_config.get('sr_levels_manager', {}), sr_trading_intelligence = yaml_config.get('sr_trading_intelligence', {}), sr_breakout_predictor = yaml_config.get('sr_breakout_predictor', {}), data_integration = yaml_config.get('data_integration', {}), performance = yaml_config.get('performance', {}), risk_management = yaml_config.get('risk_management', {}), reporting = yaml_config.get('reporting', {}), integrations = yaml_config.get('integrations', {}), testing = yaml_config.get('testing', {}), sr_comprehensive_integration = self._get_comprehensive_integration_config())
             self.logger.info('✅ Comprehensive S/R configuration loaded successfully')
             return self.config
         except Exception as e:
@@ -71,7 +72,7 @@ class SRComprehensiveConfigLoader:
 
     def _get_default_config(self) -> SRComprehensiveConfig:
         """Get default configuration as fallback."""
-        return SRComprehensiveConfig(sr_optimization=get_sr_config(), sr_levels_manager={'storage_path': 'data/sr_levels', 'max_levels': 50, 'min_strength': 0.3, 'proximity_threshold': 0.005}, sr_trading_intelligence={'enable_real_time_updates': False, 'update_interval_seconds': 60}, sr_breakout_predictor={'enable_detailed_reporting': True, 'report_directory': 'reports/sr_optimization'}, data_integration={'symbol': 'BTCUSDT', 'exchange': 'BINANCE', 'timeframes': ['1m', '5m', '15m']}, performance={'enable_level_caching': True, 'cache_ttl_seconds': 300}, risk_management={'max_risk_per_trade': 0.02, 'default_stop_loss_pct': 0.02}, reporting={'log_level': 'INFO', 'enable_structured_logging': True}, integrations={'exchange_api': {'enable_rate_limiting': True, 'max_requests_per_second': 10}}, testing={'enable_mock_data': False, 'enable_backtesting': True}, sr_comprehensive_integration=self._get_comprehensive_integration_config())
+        return SRComprehensiveConfig(sr_optimization = get_sr_config(), sr_levels_manager={'storage_path': 'data/sr_levels', 'max_levels': 50, 'min_strength': 0.3, 'proximity_threshold': 0.005}, sr_trading_intelligence={'enable_real_time_updates': False, 'update_interval_seconds': 60}, sr_breakout_predictor={'enable_detailed_reporting': True, 'report_directory': 'reports/sr_optimization'}, data_integration={'symbol': 'BTCUSDT', 'exchange': 'BINANCE', 'timeframes': ['1m', '5m', '15m']}, performance={'enable_level_caching': True, 'cache_ttl_seconds': 300}, risk_management={'max_risk_per_trade': 0.02, 'default_stop_loss_pct': 0.02}, reporting={'log_level': 'INFO', 'enable_structured_logging': True}, integrations={'exchange_api': {'enable_rate_limiting': True, 'max_requests_per_second': 10}}, testing={'enable_mock_data': False, 'enable_backtesting': True}, sr_comprehensive_integration = self._get_comprehensive_integration_config())
 
     async def get_config_dict(self) -> Dict[str, Any]:
         """Get configuration as dictionary."""

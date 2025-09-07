@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from ..core.decorators import handles_errors
 
 """
 Domain-specific decorators for the trading system.
@@ -40,7 +41,7 @@ def memory_efficient(*args, **kwargs) -> None:
             return func
         return _decorator
 
-def comprehensive_validation(data_quality: bool=True, feature_engineering: bool=True, performance_monitoring: bool=True, **kwargs) -> callable:
+def comprehensive_validation(data_quality: bool = True, feature_engineering: bool = True, performance_monitoring: bool = True, **kwargs) -> callable:
     """Apply comprehensive validation combining multiple validators."""
     decorators = []
     if data_quality:
@@ -51,23 +52,23 @@ def comprehensive_validation(data_quality: bool=True, feature_engineering: bool=
         decorators.append(monitor_step_execution('comprehensive_validation'))
     return compose(*decorators)
 
-def idempotent_step(check_existing: bool=True, force_rerun: bool=False, cache_results: bool=True) -> callable:
+def idempotent_step(check_existing: bool = True, force_rerun: bool = False, cache_results: bool = True) -> callable:
     """Make a step idempotent with result caching."""
     decorators = [handles_errors()]
     if cache_results:
-        decorators.append(cached(ttl=7200))
+        decorators.append(cached(ttl = 7200))
     decorators.append(traced(name='idempotent_step'))
     return compose(*decorators)
 
-def time_budget_watchdog(max_seconds: int=300, warning_threshold: float=0.8, fail_on_timeout: bool=True) -> callable:
+def time_budget_watchdog(max_seconds: int = 300, warning_threshold: float = 0.8, fail_on_timeout: bool = True) -> callable:
     """Monitor execution time against a budget."""
     decorators = []
     if fail_on_timeout:
-        decorators.append(timeout(seconds=max_seconds))
-    decorators.append(monitor_step_execution('time_budget', performance_level=PerformanceLevel.HIGH))
+        decorators.append(timeout(seconds = max_seconds))
+    decorators.append(monitor_step_execution('time_budget', performance_level = PerformanceLevel.HIGH))
     return compose(*decorators)
 
-def enforce_ndarray(arg_positions: list=None, kwargs_names: list=None, output: bool=True) -> callable:
+def enforce_ndarray(arg_positions: list = None, kwargs_names: list = None, output: bool = True) -> callable:
     """Enforce numpy array types for specified arguments."""
     from functools import wraps
 
@@ -111,13 +112,13 @@ class PipelineValidationLevel:
     COMPREHENSIVE = 'comprehensive'
     STRICT = 'strict'
 
-def validate_pipeline_input(stage: str=None, level: str=PipelineValidationLevel.STANDARD, required_keys: list=None) -> callable:
+def validate_pipeline_input(stage: str = None, level: str = PipelineValidationLevel.STANDARD, required_keys: list = None) -> callable:
     """Validate pipeline input data."""
-    return validate_pipeline_step(prerequisites=required_keys, stage=stage)
+    return validate_pipeline_step(prerequisites = required_keys, stage = stage)
 
-def monitor_pipeline_step(stage: str, metrics_to_track: list=None, alert_on_anomaly: bool=True) -> callable:
+def monitor_pipeline_step(stage: str, metrics_to_track: list = None, alert_on_anomaly: bool = True) -> callable:
     """Monitor a specific pipeline step."""
-    return monitor_step_execution(step_name=f'pipeline.{stage}', performance_level=PerformanceLevel.HIGH, log_memory=True)
+    return monitor_step_execution(step_name = f'pipeline.{stage}', performance_level = PerformanceLevel.HIGH, log_memory = True)
 
 def validate_data_quality(**kwargs) -> bool:
     """Simple data quality validation decorator."""
@@ -182,16 +183,16 @@ class PipelineValidationLevel:
     STANDARD = 'standard'
     BASIC = 'basic'
 comprehensive_data_validation = validate_data_quality
-validate_constant_features = lambda: validate_data_quality(check_constant=True)
-validate_low_variance_features = lambda: validate_data_quality(check_constant=True, min_unique_values=3)
-validate_data_completeness = lambda: validate_data_quality(max_null_ratio=0.0)
-validate_datetime_index = lambda: validate_data_quality(check_timestamps=True)
+validate_constant_features = lambda: validate_data_quality(check_constant = True)
+validate_low_variance_features = lambda: validate_data_quality(check_constant = True, min_unique_values = 3)
+validate_data_completeness = lambda: validate_data_quality(max_null_ratio = 0.0)
+validate_datetime_index = lambda: validate_data_quality(check_timestamps = True)
 validate_memory_optimized_data_quality = lambda: compose(validate_data_quality(), optimize_memory_usage())
 validate_multi_timeframe_alignment = validate_multi_timeframe_data_quality
 validate_multi_timeframe_processing = validate_multi_timeframe_data_quality
 validate_file_operation = secure_data_processing
 validate_dataframe_operation = validate_data_quality
-validate_file_size = lambda max_size_mb=100: validates
+validate_file_size = lambda max_size_mb = 100: validates
 secure_file_path = secure_data_processing
 sanitize_string = secure_data_processing
 __all__ = ['ValidationLevel', 'PerformanceLevel', 'PipelineStage', 'PipelineValidationLevel', 'validate_data_quality', 'validate_feature_engineering_with_lookahead_bias_detection', 'validate_klines_data_quality', 'validate_multi_timeframe_data_quality', 'validate_ohlcv_data_quality', 'validate_wavelet_data_quality', 'validate_hmm_data_requirements', 'validate_hmm_regime_discovery', 'validate_step_comprehensive', 'validate_step2_operation', 'validate_step3_comprehensive', 'validate_step3_5_comprehensive', 'validate_step4_comprehensive', 'validate_step5_comprehensive', 'validate_step6_comprehensive', 'monitor_step_execution', 'monitor_feature_engineering', 'monitor_pipeline_performance', 'monitor_pipeline_step', 'quality_gate', 'secure_data_processing', 'prevent_data_leakage', 'ensure_data_integrity', 'secure_step_execution', 'validate_pipeline_step', 'validate_pipeline_input', 'optimize_memory_usage', 'enforce_ndarray', 'validate_feature_engineering_pipeline', 'artifact_versioning', 'deterministic_seed', 'idempotent_step', 'smart_validation_cache', 'create_step_decorator', 'comprehensive_validation', 'time_budget_watchdog', 'comprehensive_data_validation', 'validate_constant_features', 'validate_low_variance_features', 'validate_data_completeness', 'validate_datetime_index', 'validate_memory_optimized_data_quality', 'validate_multi_timeframe_alignment', 'validate_multi_timeframe_processing', 'validate_file_operation', 'validate_dataframe_operation', 'validate_file_size', 'secure_file_path', 'sanitize_string']

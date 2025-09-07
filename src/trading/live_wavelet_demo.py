@@ -1,9 +1,10 @@
 '\nLive Trading Wavelet Demo\n\nThis script demonstrates the computationally-aware wavelet integration\nfor live trading with performance monitoring and real-time signal generation.\n'
+from ..utils.logger import system_logger
 import asyncio
 import time
 import yaml
 from .trading.live_wavelet_integration import LiveWaveletIntegration
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import json
@@ -77,7 +78,7 @@ class LiveWaveletDemo:
         except Exception as e:
             self.logger.exception(f'Error generating demo data: {e}')
 
-    async def run_demo(self, duration: int=60) -> None:
+    async def run_demo(self, duration: int = 60) -> None:
         """
         Run the live wavelet demo.
 
@@ -193,7 +194,7 @@ async def main() -> None:
         if not success:
             print('Failed to initialize demo')
             return
-        await demo.run_demo(duration=60)
+        await demo.run_demo(duration = 60)
     except KeyboardInterrupt:
         print('\n🛑 Demo interrupted by user')
     except Exception as e:

@@ -1,4 +1,6 @@
 
+from .logger import system_logger
+from .core.decorators import handles_errors
 """
 Lookahead Bias Detection System
 
@@ -8,10 +10,7 @@ in financial machine learning pipelines.
 
 import re
 from typing import Any
-
-
-from .core.decorators.errors import handles_errors
-from .utils.logger import system_logger
+from .logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -247,8 +246,8 @@ class LookaheadBiasDetector:
         # Sort by absolute correlation
         sorted_features = sorted(
             correlations.items(),
-            key=lambda x: abs(x[1]),
-            reverse=True,
+            key = lambda x: abs(x[1]),
+            reverse = True,
         )
 
         # Check for dominance by few features
@@ -593,7 +592,7 @@ class LookaheadBiasDetector:
 
         results["recommendations"] = recommendations
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def validate_train_test_split(
         self,
         X_train: pd.DataFrame,
@@ -712,7 +711,7 @@ class LookaheadBiasDetector:
             "shift": r"\.shift\((\d+)\)",  # .shift(1)
             "pct_change": r"\.pct_change\((\d+)\)",  # .pct_change(1)
             "rolling_diff": r"\.rolling\(.*\)\.diff\((\d+)\)",  # .rolling(20).diff(1)
-            "ewm_diff": r"\.ewm\(.*\)\.diff\((\d+)\)",  # .ewm(span=20).diff(1)
+            "ewm_diff": r"\.ewm\(.*\)\.diff\((\d+)\)",  # .ewm(span = 20).diff(1)
         }
 
         # Analyze code for lagging patterns

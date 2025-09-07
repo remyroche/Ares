@@ -1,12 +1,14 @@
 from functools import cached_property
 from typing import Dict, Any, Optional, Callable
 import pandas as pd
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Unified Regime Handler for Consistent Per-HMM Regime Data Processing.\n\nThis module provides a centralized way to handle regime data across all training steps,\nensuring that steps 4-21 perform tasks on a per-HMM regime basis with consistent methods.\n'
 import asyncio
 from pathlib import Path
 from .utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators.errors import handles_errors
 import numpy as np
 import datetime
 import json
@@ -16,6 +18,7 @@ logger = get_logger('RegimeHandler')
 
 class RegimeHandler:
     """Unified handler for regime-specific data operations across all training steps."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         """Initialize the regime handler.
@@ -79,7 +82,7 @@ class RegimeHandler:
         return regime_ids
 
     @traced(span_name='filter_data_by_regime')
-    def filter_data_by_regime(self, data: pd.DataFrame, regime_id: int, preserve_context: bool=True, context_window: int=100) -> pd.DataFrame:
+    def filter_data_by_regime(self, data: pd.DataFrame, regime_id: int, preserve_context: bool = True, context_window: int = 100) -> pd.DataFrame:
         """Filter data for a specific regime.
         
         Args:
@@ -99,7 +102,7 @@ class RegimeHandler:
             regime_changes = regime_mask.ne(regime_mask.shift())
             regime_starts = data.index[regime_changes & regime_mask].tolist()
             regime_ends = data.index[regime_changes & ~regime_mask].tolist()
-            extended_mask = pd.Series(False, index=data.index)
+            extended_mask = pd.Series(False, index = data.index)
             for start_idx in regime_starts:
                 context_start = max(0, start_idx - context_window)
                 end_idx = None
@@ -122,7 +125,7 @@ class RegimeHandler:
 
     @traced(span_name='process_per_regime')
     @handles_errors
-    async def process_per_regime(self, data: pd.DataFrame, processing_func: Callable, symbol: str, exchange: str, timeframe: str, parallel: bool=True, **kwargs) -> Dict[int, Any]:
+    async def process_per_regime(self, data: pd.DataFrame, processing_func: Callable, symbol: str, exchange: str, timeframe: str, parallel: bool = True, **kwargs) -> Dict[int, Any]:
         """Process data for each regime using the provided function.
         
         Args:
@@ -221,13 +224,13 @@ class RegimeHandler:
                 elif isinstance(result, dict):
                     filename = f'{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.json'
                     filepath = output_dir / filename
-                    safe_json_dump(result, filepath, indent=2)
+                    safe_json_dump(result, filepath, indent = 2)
                     self.logger.info(f'✅ Saved regime {regime_id} JSON: {filepath}')
                 else:
                     self.logger.warning(f'⚠️ Unsupported result type for regime {regime_id}: {type(result)}')
             summary = {'step_name': step_name, 'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'total_regimes': len(results), 'successful_regimes': sum((1 for r in results.values() if r is not None)), 'regime_ids': list(results.keys()), 'result_type': result_type, 'timestamp': pd.Timestamp.now().isoformat()}
             summary_file = output_dir / f'{exchange}_{symbol}_{timeframe}_regime_processing_summary.json'
-            safe_json_dump(summary, summary_file, indent=2)
+            safe_json_dump(summary, summary_file, indent = 2)
             self.logger.info(f'✅ Saved regime processing summary: {summary_file}')
             return True
         except Exception as e:

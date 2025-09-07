@@ -6,18 +6,19 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 from src.utils.data_streaming_manager import DataStreamingManager
 from src.utils.cross_step_validator import CrossStepValidator
 from src.utils.advanced_quality_metrics import AdvancedQualityMetrics
 import logging
 import time
+from .logger import system_logger
 
 class EnhancedStepWrapper:
     """Enhanced step wrapper with comprehensive validation and streaming capabilities."""
 
-    def __init__(self, step_class: Type, step_name: str, enable_streaming: bool=True, enable_cross_step_validation: bool=True, enable_advanced_quality: bool=True) -> None:
+    def __init__(self, step_class: Type, step_name: str, enable_streaming: bool = True, enable_cross_step_validation: bool = True, enable_advanced_quality: bool = True) -> None:
         """
         Initialize enhanced step wrapper.
         
@@ -80,7 +81,7 @@ class EnhancedStepWrapper:
                 if input_data is None or not isinstance(input_data, pd.DataFrame):
                     return {'success': False, 'error': 'No valid DataFrame found in pipeline state', 'step_name': self.enhanced_step_name}
                 if self.enhanced_wrapper.enable_advanced_quality:
-                    quality_assessment = self.enhanced_wrapper.advanced_quality.comprehensive_quality_assessment(input_data, context='pre_execution', step_name=self.enhanced_step_name)
+                    quality_assessment = self.enhanced_wrapper.advanced_quality.comprehensive_quality_assessment(input_data, context='pre_execution', step_name = self.enhanced_step_name)
                     if quality_assessment.issues_found > 0:
                         self.logger.warning(f'⚠️ Quality issues detected: {quality_assessment.issues_found} issues, {quality_assessment.warnings_found} warnings')
                         for metric in quality_assessment.metrics:
@@ -112,7 +113,7 @@ class EnhancedStepWrapper:
                         else:
                             return chunk_data
                     try:
-                        processed_data = self.enhanced_wrapper.streaming_manager.process_large_dataset(input_data, process_chunk, combine_results=True)
+                        processed_data = self.enhanced_wrapper.streaming_manager.process_large_dataset(input_data, process_chunk, combine_results = True)
                         return {'success': True, 'dataframe': processed_data, 'enhancement_metadata': {'streaming_used': True, 'original_rows': len(input_data), 'processed_rows': len(processed_data)}}
                     except Exception as e:
                         self.logger.error(f'❌ Streaming execution failed: {e}')
@@ -129,7 +130,7 @@ class EnhancedStepWrapper:
                     return execution_result
                 enhancement_metadata = execution_result.get('enhancement_metadata', {})
                 if self.enhanced_wrapper.enable_advanced_quality:
-                    output_quality = self.enhanced_wrapper.advanced_quality.comprehensive_quality_assessment(output_data, context='post_execution', step_name=self.enhanced_step_name)
+                    output_quality = self.enhanced_wrapper.advanced_quality.comprehensive_quality_assessment(output_data, context='post_execution', step_name = self.enhanced_step_name)
                     current_avg = self.enhanced_wrapper.performance_metrics['average_quality_score']
                     total_executions = self.enhanced_wrapper.performance_metrics['successful_executions']
                     new_avg = (current_avg * (total_executions - 1) + output_quality.overall_score) / total_executions
@@ -176,7 +177,7 @@ class EnhancedPipelineManager:
         self.enhanced_steps = {}
         self.performance_summary = {'total_steps_enhanced': 0, 'total_executions': 0, 'total_successful_executions': 0, 'average_quality_score': 0.0, 'streaming_usage_count': 0}
 
-    def create_enhanced_step(self, step_class: Type, step_name: str, enable_streaming: bool=True, enable_cross_step_validation: bool=True, enable_advanced_quality: bool=True) -> Type:
+    def create_enhanced_step(self, step_class: Type, step_name: str, enable_streaming: bool = True, enable_cross_step_validation: bool = True, enable_advanced_quality: bool = True) -> Type:
         """Create enhanced step with all improvements."""
         wrapper = EnhancedStepWrapper(step_class, step_name, enable_streaming, enable_cross_step_validation, enable_advanced_quality)
         enhanced_step = wrapper.create_enhanced_step()

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from .logger import system_logger
 """Comprehensive Report Collector for Ares Trading System.
 
 This module provides a centralized system to collect and organize ALL reports
@@ -20,7 +21,7 @@ import functools
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from .utils.logger import system_logger
+from .logger import system_logger
 import logging
 import time
 import typing
@@ -162,12 +163,12 @@ class ReportCollector:
                     
                     # Collect the report
                     self.collect_report(
-                        report_content=result,
-                        report_name=function_name,
-                        report_type=report_type,
-                        symbol=symbol,
-                        exchange=exchange,
-                        step_name=step_name
+                        report_content = result,
+                        report_name = function_name,
+                        report_type = report_type,
+                        symbol = symbol,
+                        exchange = exchange,
+                        step_name = step_name
                     )
                 
                 return result
@@ -402,10 +403,10 @@ def collect_report(
     """Convenience function to collect a report using the global collector."""
     collector = get_report_collector()
     return collector.collect_report(
-        report_content=report_content,
-        report_name=report_name,
-        report_type=report_type,
-        symbol=symbol,
-        exchange=exchange,
-        step_name=step_name
+        report_content = report_content,
+        report_name = report_name,
+        report_type = report_type,
+        symbol = symbol,
+        exchange = exchange,
+        step_name = step_name
     )

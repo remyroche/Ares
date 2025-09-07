@@ -1,3 +1,4 @@
+from .core.decorators import handles_errors
 """
 Utility decorators for the Ares project.
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 _circuit_breaker_states: Dict[str, Dict[str, Any]] = {}
 
 
-def handles_errors(fallback=None, log_errors=True, reraise=False):
+def handles_errors(fallback = None, log_errors = True, reraise = False):
     """
     Decorator for handling errors in functions.
     
@@ -49,7 +50,7 @@ def handles_errors(fallback=None, log_errors=True, reraise=False):
     return decorator
 
 
-def log_execution_time(level="INFO", log_args=False):
+def log_execution_time(level="INFO", log_args = False):
     """
     Decorator to log function execution time.
     
@@ -83,7 +84,7 @@ def log_execution_time(level="INFO", log_args=False):
     return decorator
 
 
-def log_call(level="INFO", log_result=False):
+def log_call(level="INFO", log_result = False):
     """
     Decorator to log function calls.
     
@@ -108,7 +109,7 @@ def log_call(level="INFO", log_result=False):
     return decorator
 
 
-def traced(span_name=None, log_entry=True, log_exit=True):
+def traced(span_name = None, log_entry = True, log_exit = True):
     """
     Decorator for function tracing.
     
@@ -162,7 +163,7 @@ def validates(*validators, **kwargs):
     return decorator
 
 
-def cached(max_size=128, ttl=None):
+def cached(max_size = 128, ttl = None):
     """
     Decorator for function result caching.
     
@@ -178,7 +179,7 @@ def cached(max_size=128, ttl=None):
         def wrapper(*args, **kwargs):
             # Create cache key
             key_data = (args, tuple(sorted(kwargs.items())))
-            key = hashlib.md5(json.dumps(key_data, default=str).encode()).hexdigest()
+            key = hashlib.md5(json.dumps(key_data, default = str).encode()).hexdigest()
             
             # Check if cached result exists and is still valid
             if key in cache:
@@ -196,7 +197,7 @@ def cached(max_size=128, ttl=None):
             # Store in cache
             if len(cache) >= max_size:
                 # Remove oldest entry
-                oldest_key = min(cache_times.keys(), key=lambda k: cache_times[k])
+                oldest_key = min(cache_times.keys(), key = lambda k: cache_times[k])
                 del cache[oldest_key]
                 del cache_times[oldest_key]
             
@@ -209,7 +210,7 @@ def cached(max_size=128, ttl=None):
     return decorator
 
 
-def circuit_breaker(failure_threshold=5, recovery_timeout=60, expected_exception=Exception):
+def circuit_breaker(failure_threshold = 5, recovery_timeout = 60, expected_exception = Exception):
     """
     Circuit breaker decorator to prevent cascading failures.
     
@@ -268,7 +269,7 @@ def circuit_breaker(failure_threshold=5, recovery_timeout=60, expected_exception
     return decorator
 
 
-def retry(max_attempts=3, delay=1, backoff=2, exceptions=(Exception,)):
+def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
     """
     Decorator for retrying failed function calls.
     
@@ -277,6 +278,7 @@ def retry(max_attempts=3, delay=1, backoff=2, exceptions=(Exception,)):
         delay: Initial delay between retries in seconds (default: 1)
         backoff: Backoff multiplier for delay (default: 2)
         exceptions: Tuple of exceptions to catch and retry (default: (Exception,))
+            pass
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -300,7 +302,7 @@ def retry(max_attempts=3, delay=1, backoff=2, exceptions=(Exception,)):
     return decorator
 
 
-def authenticated(required_roles=None):
+def authenticated(required_roles = None):
     """
     Decorator for authentication and authorization.
     
@@ -354,7 +356,7 @@ def validate_schema(schema):
     return decorator
 
 
-def validate_dataframe(required_columns=None, required_dtypes=None):
+def validate_dataframe(required_columns = None, required_dtypes = None):
     """
     Decorator for DataFrame validation.
     
@@ -373,7 +375,7 @@ def validate_dataframe(required_columns=None, required_dtypes=None):
     return decorator
 
 
-def comprehensive_validation(validators=None):
+def comprehensive_validation(validators = None):
     """
     Decorator for comprehensive validation.
     
@@ -391,7 +393,7 @@ def comprehensive_validation(validators=None):
     return decorator
 
 
-def secure_data_processing(encrypt=False, audit=True):
+def secure_data_processing(encrypt = False, audit = True):
     """
     Decorator for secure data processing.
     
@@ -431,7 +433,7 @@ def compose(*decorators):
 class CachePolicy:
     """Cache policy configuration."""
     
-    def __init__(self, max_size=128, ttl=None, eviction_policy='LRU'):
+    def __init__(self, max_size = 128, ttl = None, eviction_policy='LRU'):
         self.max_size = max_size
         self.ttl = ttl
         self.eviction_policy = eviction_policy

@@ -51,13 +51,13 @@ class FunctionCallReport:
     call_id: str
     timestamp: datetime
     metrics: FunctionCallMetrics
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: Dict[str, Any] = field(default_factory = dict)
     return_value: Any = None
-    validation_results: Dict[str, Any] = field(default_factory=dict)
-    dependencies: List[str] = field(default_factory=list)
-    side_effects: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    recommendations: List[str] = field(default_factory=list)
+    validation_results: Dict[str, Any] = field(default_factory = dict)
+    dependencies: List[str] = field(default_factory = list)
+    side_effects: List[str] = field(default_factory = list)
+    warnings: List[str] = field(default_factory = list)
+    recommendations: List[str] = field(default_factory = list)
 
 class FallbackFunctionCallMonitor:
     """Fallback function call monitoring system."""
@@ -93,13 +93,13 @@ class FallbackFunctionCallMonitor:
         try:
             report_data = {'summary': self.get_call_summary(), 'call_history': [{'function_name': call.function_name, 'module_name': call.module_name, 'call_id': call.call_id, 'timestamp': call.timestamp.isoformat(), 'metrics': {'duration': call.metrics.duration, 'call_depth': call.metrics.call_depth, 'child_calls': call.metrics.child_calls, 'status': call.metrics.status.value, 'error_message': call.metrics.error_message}, 'validation_results': call.validation_results, 'dependencies': call.dependencies, 'side_effects': call.side_effects, 'warnings': call.warnings, 'recommendations': call.recommendations} for call in self.call_history]}
             with open(filepath, 'w') as f:
-                json.dump(report_data, f, indent=2)
+                json.dump(report_data, f, indent = 2)
             self.logger.info(f'📊 Detailed function call report exported to: {filepath}')
         except Exception as e:
             self.logger.error(f'❌ Failed to export detailed report: {e}')
 _fallback_monitor = FallbackFunctionCallMonitor()
 
-def monitor_function_calls_fallback(validation_level: ValidationLevel=ValidationLevel.STANDARD) -> None:
+def monitor_function_calls_fallback(validation_level: ValidationLevel = ValidationLevel.STANDARD) -> None:
     """Fallback decorator for monitoring function calls."""
 
     def decorator(func: Callable) -> Callable:
@@ -158,7 +158,7 @@ def validate_function_entry_fallback(function_type: str='generic') -> bool:
         return wrapper
     return decorator
 
-def handle_errors_fallback(fallback: bool=True) -> None:
+def handle_errors_fallback(fallback: bool = True) -> None:
     """Fallback decorator for handling errors."""
 
     def decorator(func: Callable) -> Callable:
@@ -217,8 +217,8 @@ def monitor_comprehensive_fallback(func: Callable) -> Callable:
 
 def handle_errors_basic_fallback(func: Callable) -> Callable:
     """Basic error handling decorator (fallback)."""
-    return handle_errors_fallback(fallback=True)(func)
+    return handle_errors_fallback(fallback = True)(func)
 
 def handle_errors_strict_fallback(func: Callable) -> Callable:
     """Strict error handling decorator (fallback)."""
-    return handle_errors_fallback(fallback=False)(func)
+    return handle_errors_fallback(fallback = False)(func)

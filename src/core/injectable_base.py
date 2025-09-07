@@ -18,7 +18,7 @@ class InjectableBase:
     Provides common dependency injection functionality and configuration support.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config: dict[str, Any] = config or {}
         self.logger = system_logger.getChild(self.__class__.__name__)
         self._initialized: bool = False
@@ -28,8 +28,8 @@ class InjectableBase:
                 try:
                     self.logger.error(str(message))
                 except Exception as e:
-                    print(f'Logger failed in shim_print: {e}', file=sys.stderr)
-                    print(f'Original message: {message}', file=sys.stderr)
+                    print(f'Logger failed in shim_print: {e}', file = sys.stderr)
+                    print(f'Original message: {message}', file = sys.stderr)
             self.print = _shim_print
 
     def configure(self, config: dict[str, Any]) -> None:
@@ -67,7 +67,7 @@ class TradingComponentBase(InjectableBase):
     components.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None, exchange_client: IExchangeClient | None=None, state_manager: IStateManager | None=None, event_bus: IEventBus | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, exchange_client: IExchangeClient | None = None, state_manager: IStateManager | None = None, event_bus: IEventBus | None = None) -> None:
         super().__init__(config)
         self.exchange_client: IExchangeClient | None = exchange_client
         self.state_manager: IStateManager | None = state_manager

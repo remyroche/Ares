@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import collections
 import time
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 
 class FunctionCallStatus(Enum):
@@ -64,6 +65,7 @@ class FunctionCallReport:
 
 class FunctionCallMonitor:
     """Comprehensive function call monitoring and validation system."""
+    @log_important_calls
     
     def __init__(self, logger: Any = None):
         self.logger = logger or logging.getLogger(__name__)

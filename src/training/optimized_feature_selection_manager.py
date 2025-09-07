@@ -1,6 +1,5 @@
 # src/training/optimized_feature_selection_manager.py
 
-from .core.decorators import handles_errors
 
 import json
 import time
@@ -8,6 +7,8 @@ import warnings
 from datetime import datetime
 from typing import Any
 import numpy as np
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 
 
 warnings.filterwarnings("ignore")
@@ -19,7 +20,7 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import pandas as pd
 import logging
 
@@ -298,8 +299,7 @@ class OptimizedFeatureSelectionManager:
     def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
-        from .core.decorators.errors import handles_errors
-        
+                
         vif_scores = []
         for i, _col in enumerate(features_df.columns):
             try:

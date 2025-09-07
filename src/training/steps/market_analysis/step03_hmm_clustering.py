@@ -1,4 +1,7 @@
 from typing import Any
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Step 3: Enhanced HMM Regime Discovery with All Improvements.\n\nThis module provides the main interface for enhanced HMM regime discovery with:\n1. Bayesian parameter optimization\n2. Enhanced regime discovery features\n3. Economic significance validation\n4. Ensemble clustering (HMM + K-means + DBSCAN)\n5. Enhanced ML transition detection (Random Forest + LGBM)\n6. Full MLflow integration and data persistence\n7. Standardized pipeline integration\n'
 import asyncio
 import sys
@@ -8,28 +11,17 @@ import json
 from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-try:
-    from src.utils.logger import system_logger
-except ImportError:
-    import logging
-    system_logger = logging.getLogger('Step3HMMClustering')
-try:
-    from src.training.steps.market_analysis.hmm_clustering import run_enhanced_step
-except ImportError:
-    run_enhanced_step = None
-try:
-    from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
-except ImportError:
-    run_validator = None
+from src.training.steps.market_analysis.hmm_clustering import run_enhanced_step
+from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
 from src.core.decorators import monitor_step03_functions, handle_step03_errors, validates, traced
-logger = system_logger.getChild('Step3HMMClustering')
 
 class HMMClusteringStep:
     """Step 3: Enhanced HMM Regime Discovery with full pipeline integration."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild('HMMClusteringStep')
+        self.logger = logger
         from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
         self.standards = _pipeline_standards
         self.start_time = None
@@ -70,7 +62,7 @@ class HMMClusteringStep:
             self.logger.info('=' * 60)
             self.logger.info('STEP 1: Enhanced HMM Regime Discovery')
             self.logger.info('=' * 60)
-            success = await run_enhanced_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun, **enhanced_config)
+            success = await run_enhanced_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun, **enhanced_config)
             if success:
                 self.logger.info('✅ Enhanced HMM regime discovery completed successfully')
                 pipeline_state['hmm_clustering_completed'] = True
@@ -80,7 +72,7 @@ class HMMClusteringStep:
                 pipeline_state['ml_transition_detection_used'] = True
                 config_file = Path(data_dir) / f'enhanced_step3_config_{symbol}_{timeframe}.json'
                 with open(config_file, 'w') as f:
-                    json.dump({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'config': enhanced_config, 'execution_time': time.time() - step_start, 'success': True, 'timestamp': datetime.now().isoformat()}, f, indent=2)
+                    json.dump({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'config': enhanced_config, 'execution_time': time.time() - step_start, 'success': True, 'timestamp': datetime.now().isoformat()}, f, indent = 2)
                 self.logger.info(f'💾 Configuration saved to: {config_file}')
                 await self._log_step3_artifacts_to_mlflow(training_input, pipeline_state)
             else:
@@ -116,7 +108,7 @@ class HMMClusteringStep:
 @handle_step03_errors
 @validates()
 @traced(span_name='run_step03_hmm_clustering')
-async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str=None, force_rerun: bool=False, **kwargs: Any) -> bool:
+async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the enhanced HMM clustering step with full pipeline integration.
 
     Args:
@@ -210,7 +202,7 @@ async def main() -> None:
     print(f'   Timeframe: {timeframe}')
     print(f'   Data directory: {data_dir}')
     print('=' * 80)
-    success = await run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=True)
+    success = await run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = True)
     if success:
         print('\n🎉 ENHANCED STEP 3 COMPLETED SUCCESSFULLY!')
         print('=' * 80)

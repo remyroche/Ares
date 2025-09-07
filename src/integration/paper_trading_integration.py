@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
+from ..utils.logger import system_logger
+from .core.decorators import handles_errors
 
 """
 Paper Trading Integration Module
@@ -18,9 +20,8 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
 import os
-from src.utils.decorators import handles_errors
 from .utils.comprehensive_logger import get_comprehensive_logger
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,

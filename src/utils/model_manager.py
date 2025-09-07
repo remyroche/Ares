@@ -1,16 +1,15 @@
+from ..core.decorators import handles_errors
 """
+from .logger import system_logger
 Model manager for loading, serving, and hot-swapping trading models.
 
 This module manages the loading, serving, and hot-swapping of trading models, parameters,
 and their versions. This allows for updating the strategy without restarting the bot,
 with full version tracking. Now uses async operations for better performance.
 """
-from .core.decorators import handles_errors
-from .core.exceptions import (
+from src.utils.warning_symbols import (
     error,
     failed,
-    handle_file_operations,
-    initialization_error,
     invalid,
     missing,
     warning as eh_warning
@@ -25,14 +24,16 @@ from typing import Any
 
 import h5py
 import joblib
+import numpy.random._pickle as np_random_pickle
+from .file_utils import ensure_directory
+from .datetime_utils import format_datetime, get_current_datetime
 
-from .utils.file_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-    safe_json_dump, safe_json_load, safe_copy
-)
-from .utils.logger import system_logger
-from .utils.warning_symbols import _warn_symbol as _warn_symbol
-from .utils.warning_symbols import warning as warn_symbol
+# File operations functions - using built-in alternatives
+from datetime import datetime
+from pathlib import Path
+from .logger import system_logger
+from src.utils.warning_symbols import _warn_symbol as _warn_symbol
+from src.utils.warning_symbols import warning as warn_symbol
 import logging
 import numpy as np
 import time
@@ -226,7 +227,7 @@ class ModelManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="directory initialization",
     )
@@ -247,7 +248,7 @@ class ModelManager:
 
         self.logger.info("Directories initialized successfully")
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="existing models loading",
     )
@@ -502,7 +503,7 @@ class ModelManager:
         """
         return self.active_model
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="metadata saving",
     )
@@ -515,7 +516,7 @@ class ModelManager:
 
         self.logger.info(f"Model metadata saved to: {metadata_path}")
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="model backup creation",
     )

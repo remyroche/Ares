@@ -1,5 +1,6 @@
 """
 from sklearn.neural_network import MLPClassifier
+from ...utils.logger import system_logger
 Multi-Timeframe Ensemble Integration
 
 This integrates multi-timeframe training into the existing ensemble system,
@@ -16,7 +17,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from .config import CONFIG
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 from ..utils.warning_symbols import error, failed, warning
 import json
@@ -28,7 +29,7 @@ class MultiTimeframeEnsemble:
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
     """
 
-    def __init__(self, model_name: str, regime: str, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, model_name: str, regime: str, config: dict[str, Any] | None = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
         self.regime = regime
@@ -150,14 +151,14 @@ class MultiTimeframeEnsemble:
         """Train XGBoost model."""
         try:
             self.logger.info('🌳 Training XGBoost model...')
-            model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42, verbose=-1)
+            model = lgb.LGBMClassifier(n_estimators = 100, learning_rate = 0.1, max_depth = 6, random_state = 42, verbose=-1)
             self.logger.info('🔄 Starting cross-validation...')
-            skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            skf = StratifiedKFold(n_splits = 3, shuffle = True, random_state = 42)
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), 1):
                 self.logger.info(f'📊 Fold {fold}/3: {len(train_idx)} train, {len(val_idx)} validation')
                 X_train, X_val = (X.iloc[train_idx], X.iloc[val_idx])
                 y_train, y_val = (y.iloc[train_idx], y.iloc[val_idx])
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric='logloss', early_stopping_rounds=10, verbose=False)
+                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric='logloss', early_stopping_rounds = 10, verbose = False)
             self.logger.info('✅ XGBoost model training completed')
             return model
         except Exception as e:
@@ -168,7 +169,7 @@ class MultiTimeframeEnsemble:
         """Train LSTM model (simplified for now)."""
         try:
             self.logger.info('🧠 Training LSTM model (simplified)...')
-            model = MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=200, random_state=42)
+            model = MLPClassifier(hidden_layer_sizes=(100, 50), max_iter = 200, random_state = 42)
             model.fit(X, y)
             self.logger.info('✅ LSTM model training completed')
             return model
@@ -180,7 +181,7 @@ class MultiTimeframeEnsemble:
         """Train Random Forest model."""
         try:
             self.logger.info('🌲 Training Random Forest model...')
-            model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
+            model = RandomForestClassifier(n_estimators = 100, max_depth = 10, random_state = 42)
             model.fit(X, y)
             self.logger.info('✅ Random Forest model training completed')
             return model
@@ -195,13 +196,13 @@ class MultiTimeframeEnsemble:
             datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
             if datetime_columns:
                 self.logger.info(f'Dropping datetime columns: {datetime_columns}')
-                data = data.drop(columns=datetime_columns)
+                data = data.drop(columns = datetime_columns)
             target_columns = ['target']
             object_columns = data.select_dtypes(include=['object']).columns.tolist()
             object_columns_to_drop = [col for col in object_columns if col not in target_columns]
             if object_columns_to_drop:
                 self.logger.info(f'Dropping object columns: {object_columns_to_drop}')
-                data = data.drop(columns=object_columns_to_drop)
+                data = data.drop(columns = object_columns_to_drop)
             excluded_columns = target_columns + ['timestamp']
             feature_columns = [col for col in data.columns if col not in excluded_columns]
             X = data[feature_columns].copy()
@@ -222,7 +223,7 @@ class MultiTimeframeEnsemble:
                 y = data['target']
                 self.logger.info('🎯 Using existing target column')
             else:
-                y = pd.Series(['HOLD'] * len(data), index=data.index)
+                y = pd.Series(['HOLD'] * len(data), index = data.index)
                 self.logger.warning('⚠️ No target column found, using synthetic HOLD targets')
             self.logger.debug(f'📊 Features shape: {X.shape}, Target shape: {y.shape}')
             return (X, y)
@@ -245,7 +246,7 @@ class MultiTimeframeEnsemble:
             predictions = model.predict(X).tolist()
             if hasattr(model, 'predict_proba'):
                 probas = model.predict_proba(X)
-                confidences = np.max(probas, axis=1).tolist()
+                confidences = np.max(probas, axis = 1).tolist()
                 self.logger.debug(f'📊 {timeframe}: {len(predictions)} predictions, avg confidence: {np.mean(confidences):.3f}')
             else:
                 confidences = [0.5] * len(predictions)
@@ -266,7 +267,7 @@ class MultiTimeframeEnsemble:
                 self.logger.error('❌ No valid meta-learner data')
                 return False
             self.logger.info(f'📊 Meta-learner data shape: {meta_data.shape}')
-            X_meta = meta_data.drop(['target', 'timestamp'], axis=1, errors='ignore')
+            X_meta = meta_data.drop(['target', 'timestamp'], axis = 1, errors='ignore')
             y_meta = meta_data['target']
             self.logger.info(f'📊 Meta features shape: {X_meta.shape}')
             self.logger.info(f'🎯 Meta target distribution: {y_meta.value_counts().to_dict()}')
@@ -277,7 +278,7 @@ class MultiTimeframeEnsemble:
             self.meta_scaler = StandardScaler()
             X_scaled = self.meta_scaler.fit_transform(X_meta)
             self.logger.info('🌳 Training LightGBM meta-learner...')
-            self.meta_learner = lgb.LGBMClassifier(n_estimators=50, learning_rate=0.1, max_depth=4, random_state=42, verbose=-1)
+            self.meta_learner = lgb.LGBMClassifier(n_estimators = 50, learning_rate = 0.1, max_depth = 4, random_state = 42, verbose=-1)
             self.meta_learner.fit(X_scaled, y_encoded)
             self.logger.info('✅ Meta-learner trained successfully')
             self.logger.info(f'📊 Meta-learner feature importance: {self.meta_learner.feature_importances_[:5]}...')
@@ -413,7 +414,7 @@ class MultiTimeframeEnsemble:
                 return ('HOLD', 0.0)
             pred_counts = {'BUY': 0, 'SELL': 0, 'HOLD': 0}
             total_confidence = 0.0
-            for pred, conf in zip(timeframe_predictions.values(), timeframe_confidences.values(), strict=False):
+            for pred, conf in zip(timeframe_predictions.values(), timeframe_confidences.values(), strict = False):
                 pred_counts[pred] += 1
                 total_confidence += conf
             final_prediction = max(pred_counts, key=pred_counts.get)
@@ -428,7 +429,7 @@ class MultiTimeframeEnsemble:
         """Save multi-timeframe ensemble model."""
         try:
             self.logger.info(f'💾 Saving multi-timeframe ensemble to {path}')
-            os.makedirs(path, exist_ok=True)
+            os.makedirs(path, exist_ok = True)
             for timeframe, model_info in self.timeframe_models.items():
                 model_path = os.path.join(path, f'{timeframe}_model.joblib')
                 joblib.dump(model_info['model'], model_path)

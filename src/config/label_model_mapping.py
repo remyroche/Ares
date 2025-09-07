@@ -42,15 +42,15 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
     """
     key = model_key.lower()
     try:
-        mapping: dict[str, Any] = {'xgboost': xgb.XGBClassifier(n_estimators=int(params.get('n_estimators', 400)), max_depth=int(params.get('max_depth', 5)), learning_rate=float(params.get('eta', params.get('learning_rate', 0.1))), subsample=float(params.get('subsample', 0.8)), colsample_bytree=float(params.get('colsample_bytree', 0.8)), random_state=42, n_jobs=-1, tree_method=str(params.get('tree_method', 'hist')), verbosity=0), 'lightgbm': lgb.LGBMClassifier(n_estimators=int(params.get('n_estimators', 400)), learning_rate=float(params.get('learning_rate', 0.05)), max_depth=int(params.get('max_depth', -1)), num_leaves=int(params.get('num_leaves', 64)), feature_fraction=float(params.get('feature_fraction', 0.8)), subsample=float(params.get('subsample', 0.8)), colsample_bytree=float(params.get('colsample_bytree', 0.8)), random_state=42, n_jobs=-1, verbose=-1), 'catboost': CatBoostClassifier(iterations=int(params.get('iterations', 500)), learning_rate=float(params.get('learning_rate', params.get('lr', 0.05))), depth=int(params.get('depth', 8)), l2_leaf_reg=float(params.get('l2_leaf_reg', 3)), random_seed=42, verbose=False), 'random_forest': RandomForestClassifier(n_estimators=int(params.get('n_estimators', 300)), max_depth=int(params.get('max_depth', 12)), random_state=42, n_jobs=-1), 'sgd_hinge': SGDClassifier(loss='hinge', alpha=float(params.get('alpha', 0.0001)), max_iter=int(params.get('max_iter', 1000)), random_state=42), 'sgd_elastic_net': SGDClassifier(loss='log_loss', penalty='elasticnet', alpha=float(params.get('alpha', 0.0001)), l1_ratio=float(params.get('l1_ratio', 0.5)), max_iter=int(params.get('max_iter', 1000)), random_state=42), 'logistic_regression': LogisticRegression(C=float(params.get('C', 1.0)), penalty=str(params.get('penalty', 'l2')), solver='liblinear' if params.get('penalty', 'l2') == 'l2' else 'saga', max_iter=1000, random_state=42)}
+        mapping: dict[str, Any] = {'xgboost': xgb.XGBClassifier(n_estimators = int(params.get('n_estimators', 400)), max_depth = int(params.get('max_depth', 5)), learning_rate = float(params.get('eta', params.get('learning_rate', 0.1))), subsample = float(params.get('subsample', 0.8)), colsample_bytree = float(params.get('colsample_bytree', 0.8)), random_state = 42, n_jobs=-1, tree_method = str(params.get('tree_method', 'hist')), verbosity = 0), 'lightgbm': lgb.LGBMClassifier(n_estimators = int(params.get('n_estimators', 400)), learning_rate = float(params.get('learning_rate', 0.05)), max_depth = int(params.get('max_depth', -1)), num_leaves = int(params.get('num_leaves', 64)), feature_fraction = float(params.get('feature_fraction', 0.8)), subsample = float(params.get('subsample', 0.8)), colsample_bytree = float(params.get('colsample_bytree', 0.8)), random_state = 42, n_jobs=-1, verbose=-1), 'catboost': CatBoostClassifier(iterations = int(params.get('iterations', 500)), learning_rate = float(params.get('learning_rate', params.get('lr', 0.05))), depth = int(params.get('depth', 8)), l2_leaf_reg = float(params.get('l2_leaf_reg', 3)), random_seed = 42, verbose = False), 'random_forest': RandomForestClassifier(n_estimators = int(params.get('n_estimators', 300)), max_depth = int(params.get('max_depth', 12)), random_state = 42, n_jobs=-1), 'sgd_hinge': SGDClassifier(loss='hinge', alpha = float(params.get('alpha', 0.0001)), max_iter = int(params.get('max_iter', 1000)), random_state = 42), 'sgd_elastic_net': SGDClassifier(loss='log_loss', penalty='elasticnet', alpha = float(params.get('alpha', 0.0001)), l1_ratio = float(params.get('l1_ratio', 0.5)), max_iter = int(params.get('max_iter', 1000)), random_state = 42), 'logistic_regression': LogisticRegression(C = float(params.get('C', 1.0)), penalty = str(params.get('penalty', 'l2')), solver='liblinear' if params.get('penalty', 'l2') == 'l2' else 'saga', max_iter = 1000, random_state = 42)}
         if key == 'hmm_gaussian':
             try:
 
                 class HMMWrapper:
 
-                    def __init__(self, n_states: int=4) -> None:
-                        self.hmm = GaussianHMM(n_components=n_states, covariance_type='diag', random_state=42)
-                        self.decoder = LogisticRegression(max_iter=500, random_state=42)
+                    def __init__(self, n_states: int = 4) -> None:
+                        self.hmm = GaussianHMM(n_components = n_states, covariance_type='diag', random_state = 42)
+                        self.decoder = LogisticRegression(max_iter = 500, random_state = 42)
                         self._fitted = False
 
                     def fit(self, x: Any, y: Any) -> HMMWrapper:
@@ -72,12 +72,12 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                     def predict(self, x: Any) -> np.ndarray:
                         proba = self.predict_proba(x)
                         return (proba[:, -1] > DEFAULT_PROBA_THRESHOLD).astype(int)
-                return HMMWrapper(n_states=int(params.get('n_states', 4)))
+                return HMMWrapper(n_states = int(params.get('n_states', 4)))
             except Exception:
                 return mapping['lightgbm']
-        return mapping.get(key, RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1))
+        return mapping.get(key, RandomForestClassifier(n_estimators = 200, max_depth = 10, random_state = 42, n_jobs=-1))
     except Exception:
-        return RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)
+        return RandomForestClassifier(n_estimators = 200, max_depth = 10, random_state = 42, n_jobs=-1)
 
 def select_model_for_label_timeframe(label: str, timeframe: str) -> None:
     return build_model(key, params)

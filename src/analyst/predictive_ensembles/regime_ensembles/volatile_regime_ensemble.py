@@ -25,17 +25,17 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
         """Trains multiple diverse base models for volatile regime detection."""
         self.logger.info('Training VolatileRegime base models...')
-        X_seq, y_seq_aligned_encoded = self._prepare_sequence_data(aligned_data, pd.Series(y_encoded, index=aligned_data.index))
+        X_seq, y_seq_aligned_encoded = self._prepare_sequence_data(aligned_data, pd.Series(y_encoded, index = aligned_data.index))
         num_classes = len(np.unique(y_encoded))
         if X_seq.size > 0:
-            self.models['lstm'] = self._train_dl_model(X_seq, y_seq_aligned_encoded, num_classes, is_transformer=False)
-            self.models['transformer'] = self._train_dl_model(X_seq, y_seq_aligned_encoded, num_classes, is_transformer=True)
+            self.models['lstm'] = self._train_dl_model(X_seq, y_seq_aligned_encoded, num_classes, is_transformer = False)
+            self.models['transformer'] = self._train_dl_model(X_seq, y_seq_aligned_encoded, num_classes, is_transformer = True)
         X_flat = aligned_data[self.flat_features].fillna(0)
         self.models['tabnet'] = self._train_tabnet_model(X_flat, y_encoded)
         self.logger.info('Tuning and training specialized Order Flow LGBM...')
         X_of = aligned_data[self.order_flow_features].fillna(0)
         of_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_of, y_encoded)
-        self.models['order_flow_lgbm'] = self._train_with_smote(LGBMClassifier(**of_params, random_state=42, verbose=-1), X_of, y_encoded)
+        self.models['order_flow_lgbm'] = self._train_with_smote(LGBMClassifier(**of_params, random_state = 42, verbose=-1), X_of, y_encoded)
         self.logger.info('Training Logistic Regression model with L1-L2 regularization...')
         self.models['logistic_regression'] = self._train_with_smote(self._get_regularized_logistic_regression(), X_flat, y_encoded)
         try:
@@ -45,7 +45,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.exception(failed('GARCH training failed: {e}'))
         self.logger.info('✅ VolatileRegime base models training completed')
 
-    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series=None) -> None:
+    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None) -> None:
         """Prepare sequence data for deep learning models."""
         try:
             sequence_length = self.dl_config['sequence_length']
@@ -64,7 +64,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.exception('Error preparing sequence data: {e}')
             return (np.array([]), np.array([]))
 
-    def _train_dl_model(self, X_seq: Any, y_seq_encoded: Any, num_classes: List[Any], is_transformer: bool=False) -> None:
+    def _train_dl_model(self, X_seq: Any, y_seq_encoded: Any, num_classes: List[Any], is_transformer: bool = False) -> None:
         """Train deep learning model (LSTM or Transformer)."""
         try:
             if len(X_seq) == 0:
@@ -80,8 +80,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     def _build_lstm_model(self, input_shape: Any, num_classes: List[Any], X_seq: Any, y_seq_encoded: Any) -> None:
         """Build LSTM model."""
         try:
-            inputs = Input(shape=input_shape)
-            x = LSTM(self.dl_config['lstm_units'], return_sequences=True)(inputs)
+            inputs = Input(shape = input_shape)
+            x = LSTM(self.dl_config['lstm_units'], return_sequences = True)(inputs)
             x = Dropout(self.dl_config['dropout_rate'])(x)
             x = LSTM(self.dl_config['lstm_units'] // 2)(x)
             x = Dropout(self.dl_config['dropout_rate'])(x)
@@ -89,9 +89,9 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             x = Dropout(self.dl_config['dropout_rate'])(x)
             x = Dense(32, activation='relu')(x)
             outputs = Dense(num_classes, activation='softmax')(x)
-            model = Model(inputs=inputs, outputs=outputs)
+            model = Model(inputs = inputs, outputs = outputs)
             model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-            model.fit(X_seq, y_seq_encoded, epochs=self.dl_config['epochs'], batch_size=self.dl_config['batch_size'], validation_split=0.2, verbose=0)
+            model.fit(X_seq, y_seq_encoded, epochs = self.dl_config['epochs'], batch_size = self.dl_config['batch_size'], validation_split = 0.2, verbose = 0)
             return model
         except Exception:
             self.logger.exception('Error building LSTM model: {e}')
@@ -100,8 +100,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     def _build_transformer_model(self, input_shape: Any, num_classes: List[Any], X_seq: Any, y_seq_encoded: Any) -> None:
         """Build Transformer model."""
         try:
-            inputs = Input(shape=input_shape)
-            x = MultiHeadAttention(num_heads=self.dl_config['transformer_heads'], key_dim=self.dl_config['transformer_key_dim'])(inputs, inputs)
+            inputs = Input(shape = input_shape)
+            x = MultiHeadAttention(num_heads = self.dl_config['transformer_heads'], key_dim = self.dl_config['transformer_key_dim'])(inputs, inputs)
             x = LayerNormalization()(x)
             x = Dropout(self.dl_config['dropout_rate'])(x)
             x = Dense(128, activation='relu')(x)
@@ -113,9 +113,9 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             x = Dropout(self.dl_config['dropout_rate'])(x)
             x = Dense(32, activation='relu')(x)
             outputs = Dense(num_classes, activation='softmax')(x)
-            model = Model(inputs=inputs, outputs=outputs)
+            model = Model(inputs = inputs, outputs = outputs)
             model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-            model.fit(X_seq, y_seq_encoded, epochs=self.dl_config['epochs'], batch_size=self.dl_config['batch_size'], validation_split=0.2, verbose=0)
+            model.fit(X_seq, y_seq_encoded, epochs = self.dl_config['epochs'], batch_size = self.dl_config['batch_size'], validation_split = 0.2, verbose = 0)
             return model
         except Exception:
             self.logger.exception('Error building Transformer model: {e}')
@@ -125,7 +125,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         """Train TabNet model."""
         try:
             tabnet = TabNetClassifier()
-            tabnet.fit(X_flat.values, y_flat_encoded, max_epochs=50, patience=20, batch_size=1024)
+            tabnet.fit(X_flat.values, y_flat_encoded, max_epochs = 50, patience = 20, batch_size = 1024)
             return tabnet
         except Exception:
             self.logger.exception(failed('TabNet training failed: {e}'))
@@ -135,7 +135,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
         """Train GARCH model for volatility modeling."""
         try:
             returns = aligned_data['close'].pct_change().dropna()
-            garch_model = arch_model(returns, vol='GARCH', p=1, q=1)
+            garch_model = arch_model(returns, vol='GARCH', p = 1, q = 1)
             return garch_model.fit(disp='off')
         except Exception:
             self.logger.exception(failed('GARCH model training failed: {e}'))
@@ -143,9 +143,9 @@ class VolatileRegimeEnsemble(BaseEnsemble):
 
     def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:
         """Generate meta-features specific to volatile regime detection."""
-        meta_features = pd.DataFrame(index=aligned_data.index)
+        meta_features = pd.DataFrame(index = aligned_data.index)
         if 'volatility_20' in aligned_data.columns:
-            meta_features['volatility_percentile'] = aligned_data['volatility_20'].rolling(100).rank(pct=True)
+            meta_features['volatility_percentile'] = aligned_data['volatility_20'].rolling(100).rank(pct = True)
             meta_features['volatility_acceleration'] = aligned_data['volatility_20'].diff()
             meta_features['volatility_momentum'] = aligned_data['volatility_20'] - aligned_data['volatility_20'].shift(5)
         if 'volume' in aligned_data.columns:
@@ -153,7 +153,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             meta_features['volume_volatility_ratio'] = meta_features['volume_volatility'] / aligned_data['volume'].rolling(20).mean()
         if 'close' in aligned_data.columns:
             meta_features['price_volatility'] = aligned_data['close'].pct_change().rolling(20).std()
-            meta_features['price_volatility_percentile'] = meta_features['price_volatility'].rolling(100).rank(pct=True)
+            meta_features['price_volatility_percentile'] = meta_features['price_volatility'].rolling(100).rank(pct = True)
         if 'volatility_regime' in aligned_data.columns:
             meta_features['volatility_regime_numeric'] = aligned_data['volatility_regime']
         return meta_features.fillna(0)
@@ -164,12 +164,12 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.warning('VolatileRegime ensemble not trained')
             return (0.5, 0.5)
         try:
-            base_predictions = self._get_base_model_predictions(current_features, is_live=True)
+            base_predictions = self._get_base_model_predictions(current_features, is_live = True)
             if not base_predictions:
                 return (0.5, 0.5)
             predictions = list(base_predictions.values())
             confidences = [0.8] * len(predictions)
-            weighted_pred = np.average(predictions, weights=confidences)
+            weighted_pred = np.average(predictions, weights = confidences)
             ensemble_confidence = np.mean(confidences)
             return (weighted_pred, ensemble_confidence)
         except Exception as e:

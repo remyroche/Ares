@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 
 from src.utils.warning_symbols import (
@@ -38,7 +38,7 @@ class UnifiedDataManager:
 
         # Database file paths
         self.unified_db_dir = os.path.join(data_dir, "unified_database")
-        os.makedirs(self.unified_db_dir, exist_ok=True)
+        os.makedirs(self.unified_db_dir, exist_ok = True)
 
         self.database_file = os.path.join(
             self.unified_db_dir,
@@ -162,7 +162,7 @@ class UnifiedDataManager:
 
             # Calculate cutoff date
             end_date = data.index.max()
-            start_date = end_date - timedelta(days=self.lookback_days)
+            start_date = end_date - timedelta(days = self.lookback_days)
 
             # Filter data
             filtered_data = data[data.index >= start_date].copy()
@@ -321,7 +321,7 @@ class UnifiedDataManager:
                         )
 
                     if samples_to_add:
-                        augmented = pd.concat([split_df, *samples_to_add], axis=0)
+                        augmented = pd.concat([split_df, *samples_to_add], axis = 0)
                         # Ensure temporal order and de-duplicate indices
                         augmented = augmented[
                             ~augmented.index.duplicated(keep="first")
@@ -486,7 +486,7 @@ class UnifiedDataManager:
         # Save metadata
 
         with open(self.metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata, f, indent = 2)
 
         self.logger.info(f"💾 Unified database saved to {self.database_file}")
         self.logger.info(f"📋 Metadata saved to {self.metadata_file}")
@@ -501,13 +501,13 @@ class UnifiedDataManager:
         # Prefer Parquet for DataFrame splits, fallback to Pickle
         try:
             train_data.to_parquet(
-                self.train_file_parquet, compression="snappy", index=False,
+                self.train_file_parquet, compression="snappy", index = False,
             )
             validation_data.to_parquet(
-                self.validation_file_parquet, compression="snappy", index=False,
+                self.validation_file_parquet, compression="snappy", index = False,
             )
             test_data.to_parquet(
-                self.test_file_parquet, compression="snappy", index=False,
+                self.test_file_parquet, compression="snappy", index = False,
             )
             self.logger.info("💾 Data splits saved (Parquet):")
             self.logger.info(f"  • Training: {self.train_file_parquet}")
@@ -543,7 +543,7 @@ class UnifiedDataManager:
             (
                 strategic_signals.to_frame(name="signal")
                 .reset_index()
-                .to_parquet(parquet_path, compression="snappy", index=False)
+                .to_parquet(parquet_path, compression="snappy", index = False)
             )
             self.logger.info(f"💾 Strategic signals saved (Parquet) to {parquet_path}")
         except Exception:
@@ -644,7 +644,7 @@ class UnifiedDataManager:
 
         parquet_path, pickle_path = split_files[split_type]
         try:
-            updated_data.to_parquet(parquet_path, compression="snappy", index=False)
+            updated_data.to_parquet(parquet_path, compression="snappy", index = False)
             self.logger.info(
                 f"💾 Updated {split_type} data (Parquet): {len(updated_data)} samples",
             )

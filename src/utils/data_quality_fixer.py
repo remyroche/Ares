@@ -2,8 +2,9 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, Tuple
-from src.utils.logger import system_logger
+from .logger import system_logger
 import logging
+from .logger import system_logger
 
 class DataQualityFixer:
     """Handles common data quality issues in trading data."""
@@ -75,7 +76,7 @@ class DataQualityFixer:
     def _fix_non_monotonic_index(self, data: pd.DataFrame, timestamp_column: str) -> Tuple[pd.DataFrame, bool]:
         """Fix non-monotonic timestamp index by sorting."""
         if not data[timestamp_column].is_monotonic_increasing:
-            data = data.sort_values(timestamp_column).reset_index(drop=True)
+            data = data.sort_values(timestamp_column).reset_index(drop = True)
             self.logger.info('📈 Sorted data by timestamp to fix non-monotonic index')
             return (data, True)
         return (data, False)

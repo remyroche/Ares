@@ -25,7 +25,7 @@ class StepOrchestrator:
     """Orchestrates training step execution with progress management using TrainingManager."""
 
     def __init__(
-        self, symbol: str, exchange: str, data_dir: str = "data/training"
+        self, symbol: str, exchange: str, data_dir: str = "data_cache"
     ) -> None:
         self.symbol = symbol
         self.exchange = exchange
@@ -40,7 +40,7 @@ class StepOrchestrator:
             "step01_data_collection",
             "step01_5_data_converter",
             "step02_data_reading",
-            "step2_5_sr_optimization",
+            "step02_5_sr_optimization",
             "step03_hmm_regime_discovery",
             "step04_regime_data_splitting",
             "step05_labeling",
@@ -106,7 +106,7 @@ class StepOrchestrator:
         except Exception as e:
             error_msg = f"Failed to setup enhanced training manager: {e}"
             self.logger.exception(error_msg)
-            self.print(failed + " " + error_msg)
+            self.print("❌ " + error_msg)
             return False
 
     def get_step_module(self, step_name: str) -> Any | None:
@@ -213,7 +213,7 @@ class StepOrchestrator:
             training_input = {
                 "symbol": self.symbol,
                 "exchange": self.exchange,
-                "timeframe": "1m",
+                "timeframe": "30m" if step_name == "step02_5_sr_optimization" else "1m",
                 "data_dir": self.data_dir,
                 "start_step": step_name,
                 "force_rerun": force_rerun,
@@ -334,7 +334,7 @@ class StepOrchestrator:
         training_input = {
             "symbol": self.symbol,
             "exchange": self.exchange,
-            "timeframe": "1m",
+            "timeframe": "30m" if start_step == "step02_5_sr_optimization" else "1m",
             "data_dir": self.data_dir,
             "start_step": start_step,
             "force_rerun": force_rerun,
@@ -343,19 +343,19 @@ class StepOrchestrator:
 
         # Execute the enhanced training pipeline
         result = await self.enhanced_training_manager.train(
-            symbol=self.symbol,
-            exchange=self.exchange,
-            start_step=start_step,
-            force_rerun=force_rerun,
+            symbol = self.symbol,
+            exchange = self.exchange,
+            start_step = start_step,
+            force_rerun = force_rerun,
         )
         success = result.get('success', False)
 
         if success:
             self.logger.info(
-                "✅ Enhanced 16-step training pipeline completed successfully",
+                "✅ Enhanced 21-step training pipeline completed successfully",
             )
             return True
-        self.print(failed + " ❌ Enhanced 16-step training pipeline failed")
+        self.print("❌ Enhanced 21-step training pipeline failed")
         return False
 
     async def execute_all_steps(

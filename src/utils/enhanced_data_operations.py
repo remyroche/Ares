@@ -396,8 +396,8 @@ class DataAnalyzer:
                     'high_low_spread': (data['high'] - data['low']).mean(),
                     'open_close_spread': (data['close'] - data['open']).mean(),
                     'body_size': abs(data['close'] - data['open']).mean(),
-                    'wick_size': ((data['high'] - data[['open', 'close']].max(axis=1)) + 
-                                 (data[['open', 'close']].min(axis=1) - data['low'])).mean()
+                    'wick_size': ((data['high'] - data[['open', 'close']].max(axis = 1)) + 
+                                 (data[['open', 'close']].min(axis = 1) - data['low'])).mean()
                 }
             
             return price_analysis
@@ -496,22 +496,22 @@ class DataAnalyzer:
             if 'close' in data.columns:
                 # Moving averages
                 indicators['moving_averages'] = {
-                    'sma_20': data['close'].rolling(window=20).mean(),
-                    'sma_50': data['close'].rolling(window=50).mean(),
-                    'ema_20': data['close'].ewm(span=20).mean(),
-                    'ema_50': data['close'].ewm(span=50).mean()
+                    'sma_20': data['close'].rolling(window = 20).mean(),
+                    'sma_50': data['close'].rolling(window = 50).mean(),
+                    'ema_20': data['close'].ewm(span = 20).mean(),
+                    'ema_50': data['close'].ewm(span = 50).mean()
                 }
                 
                 # RSI
                 delta = data['close'].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                gain = (delta.where(delta > 0, 0)).rolling(window = 14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
                 rs = gain / loss
                 indicators['rsi'] = 100 - (100 / (1 + rs))
                 
                 # Bollinger Bands
-                sma_20 = data['close'].rolling(window=20).mean()
-                std_20 = data['close'].rolling(window=20).std()
+                sma_20 = data['close'].rolling(window = 20).mean()
+                std_20 = data['close'].rolling(window = 20).std()
                 indicators['bollinger_bands'] = {
                     'upper': sma_20 + (std_20 * 2),
                     'middle': sma_20,

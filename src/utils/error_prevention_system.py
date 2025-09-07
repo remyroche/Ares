@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
+from .logger import system_logger
 
 class ErrorPreventionSystem:
     """Prevents error propagation between pipeline steps."""
@@ -118,7 +119,7 @@ class ErrorPreventionSystem:
                         self.logger.info(f'🗑️ Removed {removed} duplicate timestamps')
                 elif recommendation == 'sort_by_timestamp':
                     if 'timestamp' in fixed_data.columns:
-                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
                         fix_report['applied_fixes'].append('sorted_by_timestamp')
                         self.logger.info('📈 Sorted data by timestamp')
                 elif recommendation == 'set_datetime_index':

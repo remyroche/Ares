@@ -2,11 +2,64 @@
 # This file contains all configurable parameters for S/R detection optimization
 
 sr_detection_optimization:
-  # Optimization parameters
+  # Optimization parameters with overfitting prevention
   n_trials: 100
   cv_folds: 5
   test_size: 0.2
   optimization_timeout: 3600
+
+  # Cross-validation and validation settings
+  validation:
+    enable_walk_forward: true
+    walk_forward_windows: 10
+    minimum_observation_period: 1000  # Minimum bars per validation window
+    out_of_sample_ratio: 0.3  # 30% held out for final validation
+    early_stopping_rounds: 20  # Stop if no improvement for 20 rounds
+
+  # Overfitting detection
+  overfitting_detection:
+    enable_variance_inflation_check: true
+    max_parameter_variance_ratio: 2.0  # Flag if parameter variance > 2x mean
+    correlation_warning_threshold: 0.8  # Warn if parameter correlation > 0.8
+
+  # Feature selection optimization (using step07 logic)
+  feature_selection:
+    enable_mi_shap_preselection: true
+    max_features_for_ml: 50
+    enable_feature_importance_tracking: true
+    min_feature_importance_threshold: 0.001
+
+  # Step07 configuration for feature selection reuse
+  step07_enhanced_matrix_operations:
+    target_features: 50  # Match max_features_for_ml
+    removal_fraction: 0.4  # Remove 40% of features
+    enable_regime_selection: false  # Disable for SR optimization
+    enable_shap_filtering: true  # Use SHAP for ranking
+    output_dir: "data/matrix_operations"
+
+    # Enhanced GPU/MPS configuration for Mac M1/M2
+    gpu_acceleration:
+      enable_gpu: true  # Enable GPU/MPS acceleration
+      prefer_mps: true  # Prefer MPS on Mac M1/M2
+      use_float16: true  # Use float16 for MPS Neural Engine
+      memory_fraction: 0.8  # Use 80% of available memory
+      batch_size: 2048  # Optimized batch size for MPS
+      enable_memory_efficient_sdp: true  # MPS memory optimization
+
+    # Matrix computation settings
+    matrix_operations:
+      enable_correlation_matrix: true
+      enable_covariance_matrix: true
+      enable_feature_interaction: true
+      enable_eigen_decomposition: true
+      enable_regime_transition_matrix: false  # Disable for SR optimization
+
+    # Performance optimization
+    optimization:
+      enable_chunked_processing: true
+      enable_parallel_computation: true
+      memory_threshold_gb: 8.0
+      chunk_size: 1000
   
   # Performance thresholds
   performance_thresholds:
@@ -47,17 +100,47 @@ sr_detection_optimization:
       bounce_threshold: 0.008
       breakout_threshold: 0.015
       min_touches: 2
-      volume_spike_threshold: 1.6
+      volume_spike_threshold: 1.5
       fractal_period: 5
       pivot_period: 15
+    "1h":
+      touch_threshold: 0.003
+      bounce_threshold: 0.012
+      breakout_threshold: 0.025
+      min_touches: 2
+      volume_spike_threshold: 1.6
+      fractal_period: 5
+      pivot_period: 20
+    "4h":
+      touch_threshold: 0.005
+      bounce_threshold: 0.02
+      breakout_threshold: 0.04
+      min_touches: 2
+      volume_spike_threshold: 1.7
+      fractal_period: 5
+      pivot_period: 30
+    "1d":
+      touch_threshold: 0.01
+      bounce_threshold: 0.04
+      breakout_threshold: 0.08
+      min_touches: 1
+      volume_spike_threshold: 1.8
+      fractal_period: 5
+      pivot_period: 50
   
-  # Parameter ranges for optimization
+  # Parameter ranges for optimization (with regularization)
   parameter_ranges:
-    # Method weights
+    # Method weights (constrained to sum to ~1.0)
     fractal_weight: [0.1, 0.6]
     volume_weight: [0.1, 0.5]
     pivot_weight: [0.1, 0.4]
     atr_weight: [0.05, 0.3]
+
+    # Regularization parameters
+    regularization:
+      l1_penalty: [0.001, 0.1]  # L1 regularization for sparse parameters
+      l2_penalty: [0.001, 0.1]  # L2 regularization for parameter stability
+      parameter_correlation_penalty: [0.01, 0.2]  # Penalty for correlated parameters
     
     # Strength calculation weights
     touch_count_weight: [0.2, 0.5]
@@ -80,6 +163,15 @@ sr_detection_optimization:
       "30m":
         eps: [0.01, 0.025]
         min_samples: [4, 6]
+      "1h":
+        eps: [0.02, 0.05]
+        min_samples: [3, 5]
+      "4h":
+        eps: [0.04, 0.08]
+        min_samples: [2, 4]
+      "1d":
+        eps: [0.08, 0.15]
+        min_samples: [2, 3]
     
     # Multi-timeframe weights
     timeframe_weights:

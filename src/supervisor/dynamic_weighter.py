@@ -1,4 +1,6 @@
 import numpy as np
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 """Dynamic Weighter Module.
 
@@ -12,8 +14,7 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -87,7 +88,7 @@ class DynamicWeighter:
             AttributeError: (False, "Missing required dynamic weighter parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="dynamic weighter initialization",
     )
     async def initialize(self) -> bool:
@@ -120,7 +121,7 @@ class DynamicWeighter:
             self.logger.exception(f"❌ Dynamic Weighter initialization failed: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_weighter_configuration(self) -> None:
         """Load dynamic weighter configuration."""
         try:
@@ -149,7 +150,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error loading weighter configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """
         Validate dynamic weighter configuration.
@@ -188,7 +189,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_weighter_modules(self) -> None:
         """Initialize dynamic weighter modules."""
         try:
@@ -217,7 +218,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error initializing weighter modules: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_performance_weighting(self) -> None:
         """Initialize performance weighting components."""
         try:
@@ -233,7 +234,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error initializing performance weighting: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_risk_weighting(self) -> None:
         """Initialize risk weighting components."""
         try:
@@ -249,7 +250,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error initializing risk weighting: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_adaptive_weighting(self) -> None:
         """Initialize adaptive weighting components."""
         try:
@@ -265,7 +266,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error initializing adaptive weighting: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_momentum_weighting(self) -> None:
         """Initialize momentum weighting components."""
         try:
@@ -281,7 +282,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error initializing momentum weighting: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_volatility_weighting(self) -> None:
         """Initialize volatility weighting components."""
         try:
@@ -303,7 +304,7 @@ class DynamicWeighter:
             AttributeError: (False, "Missing weighting components"),
             KeyError: (False, "Missing required weighting data"),
         },
-        default_return=False,
+        default_return = False,
         context="dynamic weighting execution",
     )
     async def execute_weighting(self, weighting_input: dict[str, Any]) -> bool:
@@ -363,7 +364,7 @@ class DynamicWeighter:
             self.logger.exception(f"❌ Dynamic Weighting failed: {e}")
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_weighting_inputs(self, weighting_input: dict[str, Any]) -> bool:
         """
         Validate weighting inputs.
@@ -392,7 +393,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error validating weighting inputs: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_performance_weighting(
         self, _weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -418,7 +419,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error performing performance weighting: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_risk_weighting(
         self, _weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -444,7 +445,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error performing risk weighting: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_adaptive_weighting(
         self, _weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -796,7 +797,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error performing momentum optimization: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_momentum_weighting(
         self, _weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -982,7 +983,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error performing volatility optimization: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_volatility_weighting(
         self, _weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
@@ -1066,7 +1067,7 @@ class DynamicWeighter:
             )
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _update_weighting_history(self) -> None:
         """Store weighting results."""
         try:
@@ -1085,7 +1086,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error storing weighting results: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_weighting_results(
         self, weighting_type: str | None = None
     ) -> dict[str, Any]:
@@ -1107,7 +1108,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error getting weighting results: {e}")
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_weighting_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get weighting history.
@@ -1164,7 +1165,7 @@ class DynamicWeighter:
     # ENHANCED ENSEMBLE WEIGHTING METHODS
     # ============================================================================
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def update_model_weights_online(
         self,
         model_predictions: dict[str, float],
@@ -1192,7 +1193,7 @@ class DynamicWeighter:
                 # Initialize performance history if not exists
                 if model_name not in self.model_performances:
                     self.model_performances[model_name] = deque(
-                        maxlen=self.performance_window
+                        maxlen = self.performance_window
                     )
 
                 # Store performance data
@@ -1224,7 +1225,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error updating model weights online: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def get_regime_aware_weights(
         self, current_regime: str, model_names: list[str]
     ) -> dict[str, float]:
@@ -1268,7 +1269,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error calculating regime-aware weights: {e}")
             return {model: 1.0 / len(model_names) for model in model_names}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def get_uncertainty_aware_weights(
         self,
         model_predictions: dict[str, float],
@@ -1305,7 +1306,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error calculating uncertainty-aware weights: {e}")
             return {model: 1.0 / len(model_predictions) for model in model_predictions}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def calculate_enhanced_ensemble_weights(
         self,
         model_predictions: dict[str, float],
@@ -1422,7 +1423,7 @@ class DynamicWeighter:
             self.logger.exception(f"Error getting recent regime performance: {e}")
             return 0.5
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _normalize_weights(self) -> None:
         """Normalize model weights to sum to 1."""
         try:
@@ -1442,7 +1443,7 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error normalizing weights: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the dynamic weighter."""
         self.logger.info("🛑 Stopping Dynamic Weighter...")

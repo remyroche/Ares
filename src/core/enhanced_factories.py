@@ -5,7 +5,7 @@ This module provides factory classes that create trading components
 using proper dependency injection patterns.
 """
 from typing import Any
-from exchange.factory import ExchangeFactory
+from .exchange.factory import ExchangeFactory
 from .core.dependency_injection import DependencyContainer
 from .database.firestore_manager import FirestoreManager
 from .database.influxdb_manager import InfluxDBManager
@@ -63,7 +63,7 @@ class ExchangeClientFactory:
         self.container = container
         self.logger = system_logger.getChild('ExchangeClientFactory')
 
-    def create_exchange_client(self, exchange_name: str, config: dict[str, Any] | None=None) -> IExchangeClient:
+    def create_exchange_client(self, exchange_name: str, config: dict[str, Any] | None = None) -> IExchangeClient:
         """
         Create an exchange client with the specified configuration.
 

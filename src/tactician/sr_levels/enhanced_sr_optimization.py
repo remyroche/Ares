@@ -3,16 +3,17 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Optional
+from ...utils.logger import system_logger
+from ..core.decorators import handles_errors
 'Enhanced S/R Optimization Module.\n\nThis module integrates all enhanced S/R detection, validation, and confluence\ncomponents to provide comprehensive S/R optimization for step2_5.\n'
 from dataclasses import dataclass, field
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
+, traced
+from ...utils.logger import system_logger
 from .enhanced_sr_detection import EnhancedSRDetector, SRLevel
 from .enhanced_sr_validation import EnhancedSRValidator, ValidationResult, BacktestResult
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 import time
@@ -20,20 +21,20 @@ import time
 @dataclass
 class EnhancedOptimizationResult:
     """Enhanced S/R optimization result."""
-    detected_levels: List[SRLevel] = field(default_factory=list)
-    confluence_levels: List[ConfluenceLevel] = field(default_factory=list)
-    validation_results: List[ValidationResult] = field(default_factory=list)
+    detected_levels: List[SRLevel] = field(default_factory = list)
+    confluence_levels: List[ConfluenceLevel] = field(default_factory = list)
+    validation_results: List[ValidationResult] = field(default_factory = list)
     backtest_result: Optional[BacktestResult] = None
     optimization_score: float = 0.0
     detection_accuracy: float = 0.0
     validation_accuracy: float = 0.0
     confluence_quality: float = 0.0
-    optimized_parameters: Dict[str, Any] = field(default_factory=dict)
-    timeframe_weights: Dict[str, float] = field(default_factory=dict)
+    optimized_parameters: Dict[str, Any] = field(default_factory = dict)
+    timeframe_weights: Dict[str, float] = field(default_factory = dict)
     optimization_time: float = 0.0
     n_trials: int = 0
     market_regime: str = 'unknown'
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory = lambda: datetime.now().isoformat())
 
 class EnhancedSROptimizer:
     """Enhanced S/R optimizer integrating all advanced components."""
@@ -53,7 +54,7 @@ class EnhancedSROptimizer:
         self.optimization_results: List[EnhancedOptimizationResult] = []
         self.best_result: Optional[EnhancedOptimizationResult] = None
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='initialize enhanced S/R optimizer')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='initialize enhanced S/R optimizer')
     async def initialize(self) -> bool:
         """Initialize the enhanced S/R optimizer."""
         try:
@@ -88,7 +89,7 @@ class EnhancedSROptimizer:
             self.logger.error(f'Configuration validation failed: {e}')
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='run enhanced S/R optimization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='run enhanced S/R optimization')
     @traced(span_name='EnhancedSR.optimize')
     async def optimize_sr_detection(self, market_data: pd.DataFrame, multi_timeframe_data: Optional[Dict[str, pd.DataFrame]]=None) -> Optional[EnhancedOptimizationResult]:
         """
@@ -134,7 +135,7 @@ class EnhancedSROptimizer:
             self.logger.info('📊 Step 5: Calculate Performance Metrics...')
             performance_metrics = self._calculate_performance_metrics(detected_levels, validation_results, backtest_result, confluence_levels)
             optimization_time = (datetime.now() - start_time).total_seconds()
-            result = EnhancedOptimizationResult(detected_levels=detected_levels, confluence_levels=confluence_levels, validation_results=validation_results, backtest_result=backtest_result, optimization_score=performance_metrics['optimization_score'], detection_accuracy=performance_metrics['detection_accuracy'], validation_accuracy=performance_metrics['validation_accuracy'], confluence_quality=performance_metrics['confluence_quality'], optimized_parameters=optimized_parameters, timeframe_weights=self.confluence_detector.timeframe_weights, optimization_time=optimization_time, n_trials=self.n_trials, market_regime=self._detect_market_regime(market_data))
+            result = EnhancedOptimizationResult(detected_levels = detected_levels, confluence_levels = confluence_levels, validation_results = validation_results, backtest_result = backtest_result, optimization_score = performance_metrics['optimization_score'], detection_accuracy = performance_metrics['detection_accuracy'], validation_accuracy = performance_metrics['validation_accuracy'], confluence_quality = performance_metrics['confluence_quality'], optimized_parameters = optimized_parameters, timeframe_weights = self.confluence_detector.timeframe_weights, optimization_time = optimization_time, n_trials = self.n_trials, market_regime = self._detect_market_regime(market_data))
             self.optimization_results.append(result)
             if not self.best_result or result.optimization_score > self.best_result.optimization_score:
                 self.best_result = result

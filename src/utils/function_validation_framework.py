@@ -54,13 +54,13 @@ class ValidationIssue:
 class ValidationResult:
     """Result of function validation."""
     is_valid: bool
-    issues: List[ValidationIssue] = field(default_factory=list)
-    warnings: List[ValidationIssue] = field(default_factory=list)
-    errors: List[ValidationIssue] = field(default_factory=list)
-    critical_issues: List[ValidationIssue] = field(default_factory=list)
+    issues: List[ValidationIssue] = field(default_factory = list)
+    warnings: List[ValidationIssue] = field(default_factory = list)
+    errors: List[ValidationIssue] = field(default_factory = list)
+    critical_issues: List[ValidationIssue] = field(default_factory = list)
     validation_score: float = 1.0
     validation_time: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
 class FunctionValidator:
     """Comprehensive function validator."""
@@ -76,7 +76,7 @@ class FunctionValidator:
     def validate_function_entry(self, func: Callable, args: tuple, kwargs: dict, function_type: str='generic') -> ValidationResult:
         """Validate function entry with comprehensive checks."""
         start_time = datetime.now()
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult(is_valid = True)
         try:
             sig = inspect.signature(func)
             bound_args = sig.bind(*args, **kwargs)
@@ -92,7 +92,7 @@ class FunctionValidator:
             result.is_valid = len(result.critical_issues) == 0 and len(result.errors) == 0
         except Exception as e:
             result.is_valid = False
-            result.critical_issues.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.CRITICAL, message=f'Validation error: {str(e)}', details={'exception': str(e)}))
+            result.critical_issues.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.CRITICAL, message = f'Validation error: {str(e)}', details={'exception': str(e)}))
         finally:
             result.validation_time = (datetime.now() - start_time).total_seconds()
         return result
@@ -103,7 +103,7 @@ class FunctionValidator:
         expected_count = len(sig.parameters)
         actual_count = len(bound_args.arguments)
         if actual_count != expected_count:
-            result.warnings.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.WARNING, message=f'Parameter count mismatch: expected {expected_count}, got {actual_count}', details={'expected': expected_count, 'actual': actual_count}))
+            result.warnings.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.WARNING, message = f'Parameter count mismatch: expected {expected_count}, got {actual_count}', details={'expected': expected_count, 'actual': actual_count}))
 
     def _validate_required_parameters(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate required parameters."""
@@ -111,7 +111,7 @@ class FunctionValidator:
         required_params = rules.get('required_params', [])
         for param_name in required_params:
             if param_name not in bound_args.arguments:
-                result.errors.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.ERROR, message=f"Required parameter '{param_name}' is missing", parameter_name=param_name, recommendation=f'Provide the required parameter: {param_name}'))
+                result.errors.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.ERROR, message = f"Required parameter '{param_name}' is missing", parameter_name = param_name, recommendation = f'Provide the required parameter: {param_name}'))
 
     def _validate_parameter_types(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate parameter types."""
@@ -122,9 +122,9 @@ class FunctionValidator:
                 expected_type = param_types[param_name]
                 if isinstance(expected_type, tuple):
                     if not isinstance(value, expected_type):
-                        result.errors.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.ERROR, message=f"Parameter '{param_name}' type mismatch: expected one of {expected_type}, got {type(value)}", parameter_name=param_name, expected_value=expected_type, actual_value=type(value), recommendation=f"Ensure parameter '{param_name}' is of type {expected_type}"))
+                        result.errors.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.ERROR, message = f"Parameter '{param_name}' type mismatch: expected one of {expected_type}, got {type(value)}", parameter_name = param_name, expected_value = expected_type, actual_value = type(value), recommendation = f"Ensure parameter '{param_name}' is of type {expected_type}"))
                 elif not isinstance(value, expected_type):
-                    result.errors.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.ERROR, message=f"Parameter '{param_name}' type mismatch: expected {expected_type}, got {type(value)}", parameter_name=param_name, expected_value=expected_type, actual_value=type(value), recommendation=f"Ensure parameter '{param_name}' is of type {expected_type}"))
+                    result.errors.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.ERROR, message = f"Parameter '{param_name}' type mismatch: expected {expected_type}, got {type(value)}", parameter_name = param_name, expected_value = expected_type, actual_value = type(value), recommendation = f"Ensure parameter '{param_name}' is of type {expected_type}"))
 
     def _validate_parameter_values(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate parameter values."""
@@ -135,15 +135,15 @@ class FunctionValidator:
             if param_name in param_patterns and isinstance(value, str):
                 pattern = param_patterns[param_name]
                 if not re.match(pattern, value):
-                    result.warnings.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.WARNING, message=f"Parameter '{param_name}' value '{value}' does not match expected pattern", parameter_name=param_name, expected_value=pattern, actual_value=value, recommendation=f"Ensure parameter '{param_name}' matches pattern: {pattern}"))
+                    result.warnings.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.WARNING, message = f"Parameter '{param_name}' value '{value}' does not match expected pattern", parameter_name = param_name, expected_value = pattern, actual_value = value, recommendation = f"Ensure parameter '{param_name}' matches pattern: {pattern}"))
             if param_name in param_ranges and isinstance(value, str):
                 allowed_values = param_ranges[param_name]
                 if value not in allowed_values:
-                    result.warnings.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.WARNING, message=f"Parameter '{param_name}' value '{value}' is not in allowed range", parameter_name=param_name, expected_value=allowed_values, actual_value=value, recommendation=f'Use one of the allowed values: {allowed_values}'))
+                    result.warnings.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.WARNING, message = f"Parameter '{param_name}' value '{value}' is not in allowed range", parameter_name = param_name, expected_value = allowed_values, actual_value = value, recommendation = f'Use one of the allowed values: {allowed_values}'))
             if value is None and param_name in ['symbol', 'exchange', 'data_dir']:
-                result.critical_issues.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.CRITICAL, message=f"Critical parameter '{param_name}' is None", parameter_name=param_name, actual_value=value, recommendation=f"Provide a valid value for parameter '{param_name}'"))
+                result.critical_issues.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.CRITICAL, message = f"Critical parameter '{param_name}' is None", parameter_name = param_name, actual_value = value, recommendation = f"Provide a valid value for parameter '{param_name}'"))
             if isinstance(value, str) and value.strip() == '':
-                result.warnings.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.WARNING, message=f"Parameter '{param_name}' is empty string", parameter_name=param_name, actual_value=value, recommendation=f"Provide a non-empty value for parameter '{param_name}'"))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.WARNING, message = f"Parameter '{param_name}' is empty string", parameter_name = param_name, actual_value = value, recommendation = f"Provide a non-empty value for parameter '{param_name}'"))
 
     def _validate_security(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate security concerns."""
@@ -153,12 +153,12 @@ class FunctionValidator:
             if isinstance(value, str):
                 if 'path_traversal' in security_checks:
                     if '..' in value or value.startswith('/'):
-                        result.critical_issues.append(ValidationIssue(category=ValidationCategory.SECURITY_CHECK, severity=ValidationSeverity.CRITICAL, message=f"Potential path traversal detected in parameter '{param_name}'", parameter_name=param_name, actual_value=value, recommendation="Use relative paths and avoid '..' sequences"))
+                        result.critical_issues.append(ValidationIssue(category = ValidationCategory.SECURITY_CHECK, severity = ValidationSeverity.CRITICAL, message = f"Potential path traversal detected in parameter '{param_name}'", parameter_name = param_name, actual_value = value, recommendation="Use relative paths and avoid '..' sequences"))
                 if 'injection' in security_checks:
                     dangerous_patterns = [';', '|', '&', '`', '$', '$(', '${']
                     for pattern in dangerous_patterns:
                         if pattern in value:
-                            result.warnings.append(ValidationIssue(category=ValidationCategory.SECURITY_CHECK, severity=ValidationSeverity.WARNING, message=f"Potential injection pattern '{pattern}' detected in parameter '{param_name}'", parameter_name=param_name, actual_value=value, recommendation='Sanitize input to prevent injection attacks'))
+                            result.warnings.append(ValidationIssue(category = ValidationCategory.SECURITY_CHECK, severity = ValidationSeverity.WARNING, message = f"Potential injection pattern '{pattern}' detected in parameter '{param_name}'", parameter_name = param_name, actual_value = value, recommendation='Sanitize input to prevent injection attacks'))
 
     def _validate_business_logic(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate business logic constraints."""
@@ -178,7 +178,7 @@ class FunctionValidator:
         """Validate data integrity."""
         for param_name, value in bound_args.arguments.items():
             if isinstance(value, (list, dict)) and len(value) == 0:
-                result.warnings.append(ValidationIssue(category=ValidationCategory.BUSINESS_LOGIC, severity=ValidationSeverity.WARNING, message=f"Parameter '{param_name}' contains empty data", parameter_name=param_name, actual_value=value, recommendation='Ensure data contains valid entries'))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.BUSINESS_LOGIC, severity = ValidationSeverity.WARNING, message = f"Parameter '{param_name}' contains empty data", parameter_name = param_name, actual_value = value, recommendation='Ensure data contains valid entries'))
 
     def _validate_schema_compliance(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult) -> None:
         """Validate schema compliance."""
@@ -186,21 +186,21 @@ class FunctionValidator:
         data_param = bound_args.arguments.get('data')
         if schema_param and data_param:
             if isinstance(data_param, dict) and schema_param not in ['klines', 'aggtrades', 'unified']:
-                result.warnings.append(ValidationIssue(category=ValidationCategory.BUSINESS_LOGIC, severity=ValidationSeverity.WARNING, message=f"Unknown schema '{schema_param}'", parameter_name='schema', actual_value=schema_param, recommendation='Use one of: klines, aggtrades, unified'))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.BUSINESS_LOGIC, severity = ValidationSeverity.WARNING, message = f"Unknown schema '{schema_param}'", parameter_name='schema', actual_value = schema_param, recommendation='Use one of: klines, aggtrades, unified'))
 
     def _validate_file_existence(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult) -> None:
         """Validate file existence."""
         file_path_param = bound_args.arguments.get('file_path')
         if file_path_param and isinstance(file_path_param, str):
             if not os.path.exists(file_path_param):
-                result.warnings.append(ValidationIssue(category=ValidationCategory.BUSINESS_LOGIC, severity=ValidationSeverity.WARNING, message=f'File does not exist: {file_path_param}', parameter_name='file_path', actual_value=file_path_param, recommendation='Ensure file exists before processing'))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.BUSINESS_LOGIC, severity = ValidationSeverity.WARNING, message = f'File does not exist: {file_path_param}', parameter_name='file_path', actual_value = file_path_param, recommendation='Ensure file exists before processing'))
 
     def _validate_file_format(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult) -> None:
         """Validate file format."""
         file_path_param = bound_args.arguments.get('file_path')
         if file_path_param and isinstance(file_path_param, str):
             if not file_path_param.endswith(('.parquet', '.csv', '.json')):
-                result.warnings.append(ValidationIssue(category=ValidationCategory.BUSINESS_LOGIC, severity=ValidationSeverity.WARNING, message=f'Unsupported file format: {file_path_param}', parameter_name='file_path', actual_value=file_path_param, recommendation='Use supported formats: .parquet, .csv, .json'))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.BUSINESS_LOGIC, severity = ValidationSeverity.WARNING, message = f'Unsupported file format: {file_path_param}', parameter_name='file_path', actual_value = file_path_param, recommendation='Use supported formats: .parquet, .csv, .json'))
 
     def _validate_performance_concerns(self, func: Callable, bound_args: inspect.BoundArguments, result: ValidationResult, function_type: str) -> None:
         """Validate performance concerns."""
@@ -208,7 +208,7 @@ class FunctionValidator:
             if isinstance(value, (list, dict)):
                 size = len(value)
                 if size > 10000:
-                    result.warnings.append(ValidationIssue(category=ValidationCategory.PERFORMANCE_CHECK, severity=ValidationSeverity.WARNING, message=f"Large data parameter '{param_name}' with {size} items", parameter_name=param_name, actual_value=size, recommendation='Consider data chunking or streaming for large datasets'))
+                    result.warnings.append(ValidationIssue(category = ValidationCategory.PERFORMANCE_CHECK, severity = ValidationSeverity.WARNING, message = f"Large data parameter '{param_name}' with {size} items", parameter_name = param_name, actual_value = size, recommendation='Consider data chunking or streaming for large datasets'))
 
     def _calculate_validation_score(self, result: ValidationResult) -> float:
         """Calculate validation score based on issues."""
@@ -221,21 +221,21 @@ class FunctionValidator:
     def validate_function_output(self, func: Callable, return_value: Any, function_type: str='generic') -> ValidationResult:
         """Validate function output."""
         start_time = datetime.now()
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult(is_valid = True)
         try:
             if hasattr(func, '__annotations__') and 'return' in func.__annotations__:
                 expected_type = func.__annotations__['return']
                 if not isinstance(return_value, expected_type):
-                    result.errors.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.ERROR, message=f'Return type mismatch: expected {expected_type}, got {type(return_value)}', expected_value=expected_type, actual_value=type(return_value), recommendation=f'Ensure function returns {expected_type}'))
+                    result.errors.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.ERROR, message = f'Return type mismatch: expected {expected_type}, got {type(return_value)}', expected_value = expected_type, actual_value = type(return_value), recommendation = f'Ensure function returns {expected_type}'))
             if return_value is None and func.__name__ in ['execute', 'run_step', 'initialize']:
-                result.critical_issues.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.CRITICAL, message='Critical function returned None', actual_value=return_value, recommendation='Ensure critical functions return valid results'))
+                result.critical_issues.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.CRITICAL, message='Critical function returned None', actual_value = return_value, recommendation='Ensure critical functions return valid results'))
             if isinstance(return_value, (list, dict)) and len(return_value) == 0:
-                result.warnings.append(ValidationIssue(category=ValidationCategory.VALUE_CHECK, severity=ValidationSeverity.WARNING, message='Function returned empty collection', actual_value=return_value, recommendation='Consider returning meaningful data or None'))
+                result.warnings.append(ValidationIssue(category = ValidationCategory.VALUE_CHECK, severity = ValidationSeverity.WARNING, message='Function returned empty collection', actual_value = return_value, recommendation='Consider returning meaningful data or None'))
             result.validation_score = self._calculate_validation_score(result)
             result.is_valid = len(result.critical_issues) == 0 and len(result.errors) == 0
         except Exception as e:
             result.is_valid = False
-            result.critical_issues.append(ValidationIssue(category=ValidationCategory.TYPE_CHECK, severity=ValidationSeverity.CRITICAL, message=f'Output validation error: {str(e)}', details={'exception': str(e)}))
+            result.critical_issues.append(ValidationIssue(category = ValidationCategory.TYPE_CHECK, severity = ValidationSeverity.CRITICAL, message = f'Output validation error: {str(e)}', details={'exception': str(e)}))
         finally:
             result.validation_time = (datetime.now() - start_time).total_seconds()
         return result

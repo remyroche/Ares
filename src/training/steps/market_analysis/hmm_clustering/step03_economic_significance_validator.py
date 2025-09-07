@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 
 'Economic Significance Testing for Regime Validation - Pre-ML Model Approach.\n\nThis module validates that discovered regimes have economically meaningful differences\nBEFORE training ML models, using statistical tests on market data characteristics.\n'
 from scipy import stats
@@ -53,7 +53,7 @@ class EconomicSignificanceValidator:
     def _calculate_regime_returns(self, data: pd.DataFrame, regimes: np.ndarray) -> pd.Series:
         """Calculate returns for each regime."""
         returns = data['close'].pct_change()
-        regime_returns = pd.Series(index=data.index, dtype=float)
+        regime_returns = pd.Series(index = data.index, dtype = float)
         for regime in np.unique(regimes):
             regime_mask = regimes == regime
             regime_data = data[regime_mask]
@@ -239,8 +239,8 @@ class EconomicSignificanceValidator:
             regime_momentum_5 = momentum_5[regime_mask].dropna()
             regime_momentum_10 = momentum_10[regime_mask].dropna()
             if len(regime_momentum_5) > 20:
-                autocorr_5 = regime_momentum_5.autocorr(lag=1)
-                autocorr_10 = regime_momentum_10.autocorr(lag=1)
+                autocorr_5 = regime_momentum_5.autocorr(lag = 1)
+                autocorr_10 = regime_momentum_10.autocorr(lag = 1)
                 results[f'regime_{regime}_autocorr_5d'] = autocorr_5
                 results[f'regime_{regime}_autocorr_10d'] = autocorr_10
         return results
@@ -326,8 +326,8 @@ class EconomicSignificanceValidator:
             current_idx = regime_map[current_regime]
             next_idx = regime_map[next_regime]
             transition_matrix[current_idx, next_idx] += 1
-        row_sums = transition_matrix.sum(axis=1, keepdims=True)
-        transition_probabilities = np.divide(transition_matrix, row_sums, where=row_sums > 0)
+        row_sums = transition_matrix.sum(axis = 1, keepdims = True)
+        transition_probabilities = np.divide(transition_matrix, row_sums, where = row_sums > 0)
         readable_transitions = {}
         for i, from_regime in enumerate(unique_regimes):
             readable_transitions[f'from_regime_{from_regime}'] = {}

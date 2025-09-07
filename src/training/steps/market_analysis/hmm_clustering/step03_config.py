@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Union
 import json
 from pathlib import Path
+import logging
 
 
 @dataclass
@@ -27,11 +28,11 @@ class BayesianOptimizationConfig:
 @dataclass
 class HMMConfig:
     """Configuration for HMM clustering."""
-    n_components_range: List[int] = field(default_factory=lambda: [2, 8])
-    covariance_types: List[str] = field(default_factory=lambda: ["full", "tied", "diag", "spherical"])
-    n_iter_range: List[int] = field(default_factory=lambda: [50, 200])
-    tol_range: List[float] = field(default_factory=lambda: [1e-6, 1e-2])
-    reg_covar_range: List[float] = field(default_factory=lambda: [1e-7, 1e-2])
+    n_components_range: List[int] = field(default_factory = lambda: [2, 8])
+    covariance_types: List[str] = field(default_factory = lambda: ["full", "tied", "diag", "spherical"])
+    n_iter_range: List[int] = field(default_factory = lambda: [50, 200])
+    tol_range: List[float] = field(default_factory = lambda: [1e-6, 1e-2])
+    reg_covar_range: List[float] = field(default_factory = lambda: [1e-7, 1e-2])
     max_samples: int = 5000
     random_state: int = 42
 
@@ -39,12 +40,12 @@ class HMMConfig:
 @dataclass
 class EnsembleConfig:
     """Configuration for ensemble clustering."""
-    weights: Dict[str, float] = field(default_factory=lambda: {"hmm": 0.4, "kmeans": 0.3, "dbscan": 0.3})
-    kmeans_n_clusters_range: List[int] = field(default_factory=lambda: [10, 30])
+    weights: Dict[str, float] = field(default_factory = lambda: {"hmm": 0.4, "kmeans": 0.3, "dbscan": 0.3})
+    kmeans_n_clusters_range: List[int] = field(default_factory = lambda: [10, 30])
     kmeans_n_init: int = 10
     kmeans_max_iter: int = 300
-    dbscan_eps_range: List[float] = field(default_factory=lambda: [0.1, 2.0])
-    dbscan_min_samples_range: List[int] = field(default_factory=lambda: [5, 50])
+    dbscan_eps_range: List[float] = field(default_factory = lambda: [0.1, 2.0])
+    dbscan_min_samples_range: List[int] = field(default_factory = lambda: [5, 50])
     n_jobs: int = -1
     random_state: int = 42
 
@@ -67,7 +68,7 @@ class MLTransitionConfig:
     max_features: int = 100
     min_improvement: float = 0.001
     patience: int = 3
-    prediction_horizon: int = 3
+    prediction_horizon: int = 5
     random_state: int = 42
     
     # Random Forest parameters
@@ -92,13 +93,13 @@ class MLTransitionConfig:
 class FeatureEngineeringConfig:
     """Configuration for feature engineering."""
     # Price features
-    momentum_windows: List[int] = field(default_factory=lambda: [1, 2, 3, 5, 10, 20])
-    price_position_windows: List[int] = field(default_factory=lambda: [10, 20, 50])
-    volatility_windows: List[int] = field(default_factory=lambda: [5, 10, 20])
+    momentum_windows: List[int] = field(default_factory = lambda: [1, 2, 3, 5, 10, 20])
+    price_position_windows: List[int] = field(default_factory = lambda: [10, 20, 50])
+    volatility_windows: List[int] = field(default_factory = lambda: [5, 10, 20])
     
     # Volume features
-    volume_momentum_windows: List[int] = field(default_factory=lambda: [1, 2, 3, 5, 10, 20])
-    volume_ratio_windows: List[int] = field(default_factory=lambda: [5, 10, 20, 50])
+    volume_momentum_windows: List[int] = field(default_factory = lambda: [1, 2, 3, 5, 10, 20])
+    volume_ratio_windows: List[int] = field(default_factory = lambda: [5, 10, 20, 50])
     
     # Technical indicators
     rsi_window: int = 14
@@ -110,11 +111,11 @@ class FeatureEngineeringConfig:
     bb_std: float = 2.0
     
     # Moving averages
-    sma_windows: List[int] = field(default_factory=lambda: [20, 50])
-    ema_spans: List[int] = field(default_factory=lambda: [12, 26])
+    sma_windows: List[int] = field(default_factory = lambda: [20, 50])
+    ema_spans: List[int] = field(default_factory = lambda: [12, 26])
     
     # Lagged features
-    lag_periods: List[int] = field(default_factory=lambda: [1, 2, 3, 5, 10])
+    lag_periods: List[int] = field(default_factory = lambda: [1, 2, 3, 5, 10])
     
     # Feature processing
     max_features_before_pca: int = 50
@@ -150,14 +151,14 @@ class Step03Config:
     """Main configuration class for Step03."""
     
     # Component configurations
-    bayesian_optimization: BayesianOptimizationConfig = field(default_factory=BayesianOptimizationConfig)
-    hmm: HMMConfig = field(default_factory=HMMConfig)
-    ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
-    economic_validation: EconomicValidationConfig = field(default_factory=EconomicValidationConfig)
-    ml_transition: MLTransitionConfig = field(default_factory=MLTransitionConfig)
-    feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
-    memory: MemoryConfig = field(default_factory=MemoryConfig)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    bayesian_optimization: BayesianOptimizationConfig = field(default_factory = BayesianOptimizationConfig)
+    hmm: HMMConfig = field(default_factory = HMMConfig)
+    ensemble: EnsembleConfig = field(default_factory = EnsembleConfig)
+    economic_validation: EconomicValidationConfig = field(default_factory = EconomicValidationConfig)
+    ml_transition: MLTransitionConfig = field(default_factory = MLTransitionConfig)
+    feature_engineering: FeatureEngineeringConfig = field(default_factory = FeatureEngineeringConfig)
+    memory: MemoryConfig = field(default_factory = MemoryConfig)
+    logging: LoggingConfig = field(default_factory = LoggingConfig)
     
     # Global settings
     symbol: str = "ETHUSDT"
@@ -235,10 +236,10 @@ class Step03Config:
     def save_to_file(self, filepath: Union[str, Path]) -> None:
         """Save configuration to JSON file."""
         filepath = Path(filepath)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.parent.mkdir(parents = True, exist_ok = True)
         
         with open(filepath, 'w') as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(self.to_dict(), f, indent = 2)
     
     @classmethod
     def load_from_file(cls, filepath: Union[str, Path]) -> 'Step03Config':
@@ -270,29 +271,29 @@ DEFAULT_CONFIG = Step03Config()
 # Configuration presets
 PRESETS = {
     'fast': Step03Config(
-        bayesian_optimization=BayesianOptimizationConfig(n_trials=20, timeout_minutes=5),
-        hmm=HMMConfig(n_components_range=[2, 4], max_samples=2000),
-        ensemble=EnsembleConfig(kmeans_n_clusters_range=[5, 15]),
-        ml_transition=MLTransitionConfig(initial_features=10, max_features=50),
-        memory=MemoryConfig(chunk_size=5000)
+        bayesian_optimization = BayesianOptimizationConfig(n_trials = 20, timeout_minutes = 5),
+        hmm = HMMConfig(n_components_range=[2, 4], max_samples = 2000),
+        ensemble = EnsembleConfig(kmeans_n_clusters_range=[5, 15]),
+        ml_transition = MLTransitionConfig(initial_features = 10, max_features = 50),
+        memory = MemoryConfig(chunk_size = 5000)
     ),
     
     'thorough': Step03Config(
-        bayesian_optimization=BayesianOptimizationConfig(n_trials=200, timeout_minutes=60),
-        hmm=HMMConfig(n_components_range=[2, 10], max_samples=10000),
-        ensemble=EnsembleConfig(kmeans_n_clusters_range=[10, 50]),
-        ml_transition=MLTransitionConfig(initial_features=30, max_features=150),
-        memory=MemoryConfig(chunk_size=20000)
+        bayesian_optimization = BayesianOptimizationConfig(n_trials = 200, timeout_minutes = 60),
+        hmm = HMMConfig(n_components_range=[2, 10], max_samples = 10000),
+        ensemble = EnsembleConfig(kmeans_n_clusters_range=[10, 50]),
+        ml_transition = MLTransitionConfig(initial_features = 30, max_features = 150),
+        memory = MemoryConfig(chunk_size = 20000)
     ),
     
     'production': Step03Config(
-        bayesian_optimization=BayesianOptimizationConfig(n_trials=100, timeout_minutes=30),
-        hmm=HMMConfig(n_components_range=[3, 6], max_samples=5000),
-        ensemble=EnsembleConfig(kmeans_n_clusters_range=[15, 25]),
-        ml_transition=MLTransitionConfig(initial_features=20, max_features=100),
-        memory=MemoryConfig(chunk_size=10000, max_memory_usage_gb=16.0),
-        enable_caching=True,
-        enable_parallel_processing=True
+        bayesian_optimization = BayesianOptimizationConfig(n_trials = 100, timeout_minutes = 30),
+        hmm = HMMConfig(n_components_range=[3, 6], max_samples = 5000),
+        ensemble = EnsembleConfig(kmeans_n_clusters_range=[15, 25]),
+        ml_transition = MLTransitionConfig(initial_features = 20, max_features = 100),
+        memory = MemoryConfig(chunk_size = 10000, max_memory_usage_gb = 16.0),
+        enable_caching = True,
+        enable_parallel_processing = True
     )
 }
 

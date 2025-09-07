@@ -7,7 +7,7 @@ import numpy as np
 DUAL_CONF_BASELINE = 0.216
 DUAL_CONF_RANGE = 0.784
 
-def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: float, logger: logging.Logger=None) -> tuple[float, float]:
+def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: float, logger: logging.Logger = None) -> tuple[float, float]:
     """Compute dual and normalized confidence in [0,1].
 
     Returns (dual_confidence, normalized_confidence).
@@ -81,7 +81,7 @@ def aggregate_directional_confidences(models: Iterable[dict[str, Any]]) -> dict[
     final_confidence = _clamp01(abs(signed_avg))
     return {'direction': final_direction, 'confidence': final_confidence, 'signed_value': signed_avg, 'count': count_active}
 
-def aggregate_weighted_signals_step17(signals: Iterable[dict[str, Any]], step17_weights: dict[str, float]=None, use_multiplicative: bool=True, logger: logging.Logger=None) -> dict[str, Any]:
+def aggregate_weighted_signals_step17(signals: Iterable[dict[str, Any]], step17_weights: dict[str, float]=None, use_multiplicative: bool = True, logger: logging.Logger = None) -> dict[str, Any]:
     """
     Enhanced weighted signal aggregation with step17 optimization support.
     
@@ -157,7 +157,7 @@ def aggregate_weighted_signals_step17(signals: Iterable[dict[str, Any]], step17_
         logger.info({'msg': 'weighted_signal_aggregation', 'result': result, 'long_signals': len(long_signals), 'short_signals': len(short_signals)})
     return result
 
-def calculate_multi_output_confidence(direction_probability: float, direction_prediction: int, profit_prediction: float, current_price: float, predicted_price: float, direction_threshold: float=0.6, profit_threshold: float=0.001, price_threshold: float=0.005, min_ensemble_confidence: float=0.7) -> dict[str, Any]:
+def calculate_multi_output_confidence(direction_probability: float, direction_prediction: int, profit_prediction: float, current_price: float, predicted_price: float, direction_threshold: float = 0.6, profit_threshold: float = 0.001, price_threshold: float = 0.005, min_ensemble_confidence: float = 0.7) -> dict[str, Any]:
     """Calculate simplified confidence score for multi-output predictions.
 
     Since all predictions come from the same model, uses simple average
@@ -195,7 +195,7 @@ def calculate_multi_output_confidence(direction_probability: float, direction_pr
     final_confidence = _clamp01(final_confidence)
     return {'direction_confidence': _clamp01(direction_confidence), 'profit_confidence': _clamp01(profit_confidence), 'price_confidence': _clamp01(price_confidence), 'simple_confidence': _clamp01(simple_confidence), 'final_confidence': final_confidence, 'direction_prediction': direction_prediction, 'profit_prediction': profit_prediction, 'predicted_price': predicted_price}
 
-def calculate_multi_output_confidence_batch(direction_probabilities: np.ndarray, direction_predictions: np.ndarray, profit_predictions: np.ndarray, current_prices: np.ndarray, predicted_prices: np.ndarray, direction_threshold: float=0.6, profit_threshold: float=0.001, price_threshold: float=0.005, min_ensemble_confidence: float=0.7) -> dict[str, np.ndarray]:
+def calculate_multi_output_confidence_batch(direction_probabilities: np.ndarray, direction_predictions: np.ndarray, profit_predictions: np.ndarray, current_prices: np.ndarray, predicted_prices: np.ndarray, direction_threshold: float = 0.6, profit_threshold: float = 0.001, price_threshold: float = 0.005, min_ensemble_confidence: float = 0.7) -> dict[str, np.ndarray]:
     """Calculate simplified confidence scores for batch of multi-output predictions.
 
     Vectorized version of calculate_multi_output_confidence for numpy arrays.
@@ -232,7 +232,7 @@ def calculate_multi_output_confidence_batch(direction_probabilities: np.ndarray,
     final_confidence = np.clip(final_confidence, 0, 1)
     return {'direction_confidence': np.clip(direction_confidence, 0, 1), 'profit_confidence': np.clip(profit_confidence, 0, 1), 'price_confidence': np.clip(price_confidence, 0, 1), 'simple_confidence': np.clip(simple_confidence, 0, 1), 'final_confidence': final_confidence, 'direction_prediction': direction_predictions, 'profit_prediction': profit_predictions, 'predicted_price': predicted_prices}
 
-def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], threshold: float=0.7) -> np.ndarray:
+def get_confidence_threshold_signals(confidence_scores: dict[str, np.ndarray], threshold: float = 0.7) -> np.ndarray:
     """Get trading signals based on confidence threshold.
 
     Args:

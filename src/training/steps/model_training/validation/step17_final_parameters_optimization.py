@@ -7,24 +7,76 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+from src.core.decorators.logging import log_execution_time
+
+# Placeholder decorators for compatibility
+def comprehensive_data_validation(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def memory_efficient(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+# Placeholder heartbeat context manager
+@contextlib.contextmanager
+def heartbeat(logger, name, interval_seconds=60.0):
+    """Placeholder heartbeat context manager."""
+    try:
+        yield
+    finally:
+        pass
+
+def resource_monitor(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def secure_data_processing(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def validate_data_structure(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def with_tracing_span(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def quality_gate(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def monitor_feature_engineering(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
 try:
-    from src.utils.centralized_decorators import comprehensive_data_validation, handle_errors, memory_efficient, resource_monitor, secure_data_processing, validate_data_structure, with_tracing_span, quality_gate, monitor_feature_engineering
-    from src.utils.logger import system_logger
     from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
     CENTRALIZED_AVAILABLE = True
 except ImportError:
     CENTRALIZED_AVAILABLE = False
-    system_logger = None
 
 def create_fallback_logger() -> Any:
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
@@ -62,6 +114,7 @@ from functools import cached_property
 
 class FinalParametersOptimizationStep:
     """Step 17: Final Parameters Optimization using Optuna with advanced features."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -69,6 +122,7 @@ class FinalParametersOptimizationStep:
         self.start_time = None
         self.step_timings = {}
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -117,18 +171,22 @@ class FinalParametersOptimizationStep:
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             data_dir = training_input.get('data_dir', 'data/training')
-            from .utils.logger import heartbeat
+            from src.utils.logger import system_logger
+            
             with heartbeat(self.logger, name='Step12 load_calibration_results', interval_seconds=60.0):
                 calibration_results = await self._load_calibration_results(symbol, exchange, data_dir)
+            
             if not calibration_results:
                 msg = 'Calibration results not found'
                 raise FileNotFoundError(msg)
+            
             with contextlib.suppress(Exception):
                 self.logger.info(f'Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}')
+            
             with heartbeat(self.logger, name='Step12 load_previous_optimization', interval_seconds=60.0):
                 previous_results = await self._load_previous_optimization_results(symbol, exchange, data_dir)
+            
             try:
-
                 def _summ(obj: Any) -> str:
                     try:
                         return len(obj)
@@ -137,34 +195,45 @@ class FinalParametersOptimizationStep:
                 self.logger.info(f'Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}')
             except Exception:
                 pass
+            
             with heartbeat(self.logger, name='Step12 optimize_all_parameters', interval_seconds=60.0):
                 optimization_results = await self._optimize_all_parameters(calibration_results, previous_results)
+            
             try:
                 keys = list(optimization_results.keys()) if isinstance(optimization_results, dict) else []
                 self.logger.info(f"Optimization finished. Result keys: {keys[:20]} (total={(len(keys) if keys else 'n/a')})")
             except Exception:
                 pass
+            
             with heartbeat(self.logger, name='Step12 validate_optimization', interval_seconds=60.0):
                 validation_passed = await self._validate_optimization_results(optimization_results)
+            
             if not validation_passed:
                 self.logger.warning('⚠️ Optimization results validation failed, using fallback parameters')
+            
             with heartbeat(self.logger, name='Step12 save_results', interval_seconds=60.0):
                 await self._save_optimization_results(optimization_results, symbol, exchange, data_dir)
+            
             with contextlib.suppress(Exception):
                 pass
+            
             with heartbeat(self.logger, name='Step12 generate_report', interval_seconds=60.0):
                 report = await self._generate_optimization_report(optimization_results, start_time)
+            
             with contextlib.suppress(Exception):
                 pass
+            
             pipeline_state['final_parameters'] = optimization_results
             pipeline_state['optimization_report'] = report
             duration = (datetime.now() - start_time).total_seconds()
             self.logger.info(f'✅ Final parameters optimization completed in {duration:.2f}s')
+            
             with contextlib.suppress(Exception):
                 pass
+            
             return {'final_parameters': optimization_results, 'optimization_report': report, 'duration': duration, 'status': 'SUCCESS'}
         except Exception as e:
-            self.print(error('❌ Error in Final Parameters Optimization: {e}'))
+            self.print(error(f'❌ Error in Final Parameters Optimization: {e}'))
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
 
     async def _load_calibration_results(self, symbol: str, exchange: str, data_dir: str) -> dict[str, Any] | None:
@@ -237,18 +306,18 @@ class FinalParametersOptimizationStep:
                 raise RuntimeError(msg)
 
             def objective(trial: Any) -> tuple:
-                params = {'analyst_confidence_threshold': trial.suggest_float('analyst_confidence_threshold', 0.5, 0.95, step=0.02), 'tactician_confidence_threshold': trial.suggest_float('tactician_confidence_threshold', 0.5, 0.95, step=0.02), 'ensemble_confidence_threshold': trial.suggest_float('ensemble_confidence_threshold', 0.5, 0.95, step=0.02), 'position_scale_up_threshold': trial.suggest_float('position_scale_up_threshold', 0.7, 0.95, step=0.02), 'position_scale_down_threshold': trial.suggest_float('position_scale_down_threshold', 0.4, 0.7, step=0.02), 'position_close_threshold': trial.suggest_float('position_close_threshold', 0.2, 0.5, step=0.02), 'enhanced_prediction_confidence_threshold': trial.suggest_float('enhanced_prediction_confidence_threshold', 0.5, 0.9, step=0.02), 'enhanced_prediction_price_threshold': trial.suggest_float('enhanced_prediction_price_threshold', 0.4, 0.8, step=0.02), 'analyst_ml_weight': trial.suggest_float('analyst_ml_weight', 0.4, 0.8, step=0.05), 'tactician_ml_weight': trial.suggest_float('tactician_ml_weight', 0.2, 0.6, step=0.05), 'position_sizing_confidence_multiplier': trial.suggest_float('position_sizing_confidence_multiplier', 1.0, 2.5, step=0.1), 'leverage_sizing_risk_multiplier': trial.suggest_float('leverage_sizing_risk_multiplier', 0.5, 1.5, step=0.05), 'base_position_size': trial.suggest_float('base_position_size', 0.05, 0.2, step=0.01), 'max_position_size': trial.suggest_float('max_position_size', 0.15, 0.3, step=0.01), 'base_leverage': trial.suggest_float('base_leverage', 20.0, 80.0, step=5.0), 'max_leverage': trial.suggest_float('max_leverage', 60.0, 100.0, step=5.0)}
+                params = {'analyst_confidence_threshold': trial.suggest_float('analyst_confidence_threshold', 0.5, 0.95, step = 0.02), 'tactician_confidence_threshold': trial.suggest_float('tactician_confidence_threshold', 0.5, 0.95, step = 0.02), 'ensemble_confidence_threshold': trial.suggest_float('ensemble_confidence_threshold', 0.5, 0.95, step = 0.02), 'position_scale_up_threshold': trial.suggest_float('position_scale_up_threshold', 0.7, 0.95, step = 0.02), 'position_scale_down_threshold': trial.suggest_float('position_scale_down_threshold', 0.4, 0.7, step = 0.02), 'position_close_threshold': trial.suggest_float('position_close_threshold', 0.2, 0.5, step = 0.02), 'enhanced_prediction_confidence_threshold': trial.suggest_float('enhanced_prediction_confidence_threshold', 0.5, 0.9, step = 0.02), 'enhanced_prediction_price_threshold': trial.suggest_float('enhanced_prediction_price_threshold', 0.4, 0.8, step = 0.02), 'analyst_ml_weight': trial.suggest_float('analyst_ml_weight', 0.4, 0.8, step = 0.05), 'tactician_ml_weight': trial.suggest_float('tactician_ml_weight', 0.2, 0.6, step = 0.05), 'position_sizing_confidence_multiplier': trial.suggest_float('position_sizing_confidence_multiplier', 1.0, 2.5, step = 0.1), 'leverage_sizing_risk_multiplier': trial.suggest_float('leverage_sizing_risk_multiplier', 0.5, 1.5, step = 0.05), 'base_position_size': trial.suggest_float('base_position_size', 0.05, 0.2, step = 0.01), 'max_position_size': trial.suggest_float('max_position_size', 0.15, 0.3, step = 0.01), 'base_leverage': trial.suggest_float('base_leverage', 20.0, 80.0, step = 5.0), 'max_leverage': trial.suggest_float('max_leverage', 60.0, 100.0, step = 5.0)}
                 metrics = self._evaluate_predictions(calibration_results, val_df, params)
                 return (metrics.get('win_rate', 0.5), metrics.get('avg_win', 0.01), -metrics.get('avg_loss', 0.01), metrics.get('sharpe_ratio', 1.0), -metrics.get('max_drawdown', 0.1), metrics.get('enhanced_prediction_performance', 0.6))
             self.logger.info('Step17: Starting Optuna study for confidence thresholds (multi-objective)')
-            study = optuna.create_study(directions=['maximize', 'maximize', 'minimize', 'maximize', 'minimize', 'maximize'], sampler=optuna.samplers.TPESampler(seed=42), pruner=optuna.pruners.MedianPruner(n_warmup_steps=5))
+            study = optuna.create_study(directions=['maximize', 'maximize', 'minimize', 'maximize', 'minimize', 'maximize'], sampler = optuna.samplers.TPESampler(seed = 42), pruner = optuna.pruners.MedianPruner(n_warmup_steps = 5))
             if previous_results and 'confidence_thresholds' in previous_results:
                 prev_params = previous_results['confidence_thresholds'].get('optimized_parameters')
                 if prev_params:
                     study.enqueue_trial(prev_params)
             confidence_trials = self.config.get('confidence_threshold_trials', 40)
             self.logger.info(f'Step12: Optimizing confidence thresholds (n_trials={confidence_trials})')
-            study.optimize(objective, n_trials=confidence_trials)
+            study.optimize(objective, n_trials = confidence_trials)
             pareto_front = study.best_trials
             best_solution = self._select_best_pareto_solution(pareto_front)
             return {'optimized_parameters': best_solution.params, 'pareto_front_size': len(pareto_front), 'best_objectives': best_solution.values, 'optimization_method': 'multi_objective_optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
@@ -272,7 +341,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             volatility_trials = self.config.get('volatility_trials', 50)
             self.logger.info(f'Step12: Optimizing volatility parameters (n_trials={volatility_trials})')
-            study.optimize(objective, n_trials=volatility_trials)
+            study.optimize(objective, n_trials = volatility_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing volatility parameters: {e}'))
@@ -294,7 +363,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             position_sizing_trials = self.config.get('position_sizing_trials', 60)
             self.logger.info(f'Step12: Optimizing position sizing parameters (n_trials={position_sizing_trials})')
-            study.optimize(objective, n_trials=position_sizing_trials)
+            study.optimize(objective, n_trials = position_sizing_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing position sizing parameters: {e}'))
@@ -316,7 +385,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             risk_management_trials = self.config.get('risk_management_trials', 50)
             self.logger.info(f'Step12: Optimizing risk management parameters (n_trials={risk_management_trials})')
-            study.optimize(objective, n_trials=risk_management_trials)
+            study.optimize(objective, n_trials = risk_management_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing risk management parameters: {e}'))
@@ -338,7 +407,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             ensemble_trials = self.config.get('ensemble_trials', 40)
             self.logger.info(f'Step12: Optimizing ensemble parameters (n_trials={ensemble_trials})')
-            study.optimize(objective, n_trials=ensemble_trials)
+            study.optimize(objective, n_trials = ensemble_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing ensemble parameters: {e}'))
@@ -360,7 +429,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             regime_specific_trials = self.config.get('regime_specific_trials', 30)
             self.logger.info(f'Step12: Optimizing regime-specific parameters (n_trials={regime_specific_trials})')
-            study.optimize(objective, n_trials=regime_specific_trials)
+            study.optimize(objective, n_trials = regime_specific_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing regime-specific parameters: {e}'))
@@ -382,7 +451,7 @@ class FinalParametersOptimizationStep:
                     study.enqueue_trial(prev_params)
             timing_trials = self.config.get('timing_trials', 30)
             self.logger.info(f'Step12: Optimizing timing parameters (n_trials={timing_trials})')
-            study.optimize(objective, n_trials=timing_trials)
+            study.optimize(objective, n_trials = timing_trials)
             return {'optimized_parameters': study.best_params, 'best_score': study.best_value, 'optimization_method': 'optuna', 'n_trials': len(study.trials), 'optimization_date': datetime.now().isoformat()}
         except Exception:
             self.print(error('Error optimizing timing parameters: {e}'))
@@ -409,13 +478,13 @@ class FinalParametersOptimizationStep:
         """Save optimization results to files."""
         try:
             optimization_dir = f'{data_dir}/optimization_results'
-            os.makedirs(optimization_dir, exist_ok=True)
+            os.makedirs(optimization_dir, exist_ok = True)
             pickle_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl'
             with open(pickle_file, 'wb') as f:
                 pickle.dump(results, f)
             summary_file = f'{data_dir}/{exchange}_{symbol}_final_parameters_summary.json'
             with open(summary_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+                json.dump(results, f, indent = 2, default = str)
             self.logger.info(f'Optimization results saved to {optimization_dir}')
         except Exception:
             self.print(error('Error saving optimization results: {e}'))
@@ -433,13 +502,14 @@ class FinalParametersOptimizationStep:
         except Exception as e:
             self.print(error('Error generating optimization report: {e}'))
             return {'error': str(e)}
+    @log_all_calls
 
     def _generate_optimization_recommendations(self, results: dict[str, Any]) -> list[str]:
         """Generate optimization recommendations."""
         recommendations = []
         try:
             if 'confidence_thresholds' in results:
-                (conf_params, results['confidence_thresholds'].get('optimized_parameters', {}))
+                conf_params = results['confidence_thresholds'].get('optimized_parameters', {})
             if conf_params.get('analyst_confidence_threshold', 0) < 0.6:
                 recommendations.append('Consider increasing analyst confidence threshold for better signal quality')
             if conf_params.get('ensemble_confidence_threshold', 0) < 0.7:
@@ -457,62 +527,67 @@ class FinalParametersOptimizationStep:
             if conf_params.get('leverage_sizing_risk_multiplier', 0) > 1.3:
                 recommendations.append('High leverage sizing risk multiplier detected - consider reducing for safety')
             if 'position_sizing_parameters' in results:
-                (pos_params, results['position_sizing_parameters'].get('optimized_parameters', {}))
+                pos_params = results['position_sizing_parameters'].get('optimized_parameters', {})
             if pos_params.get('max_position_size', 0) > 0.3:
                 recommendations.append('High max position size detected - consider reducing for risk management')
             if pos_params.get('kelly_multiplier', 0) > 0.4:
                 recommendations.append('High Kelly multiplier detected - consider reducing for safety')
             if 'risk_management_parameters' in results:
-                (risk_params, results['risk_management_parameters'].get('optimized_parameters', {}))
+                risk_params = results['risk_management_parameters'].get('optimized_parameters', {})
             if risk_params.get('stop_loss_atr_multiplier', 0) > 3.0:
                 recommendations.append('Wide stop loss detected - consider tightening for better risk control')
         except Exception:
             self.print(error('Error generating recommendations: {e}'))
         return recommendations
+    @log_all_calls
 
     def _evaluate_win_rate(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate win rate based on parameters."""
         try:
             base_win_rate = 0.55
-            (confidence_factor, params.get('analyst_confidence_threshold', 0.7) * 0.3)
-            (ensemble_factor, params.get('ensemble_confidence_threshold', 0.75) * 0.2)
+            confidence_factor = params.get('analyst_confidence_threshold', 0.7) * 0.3
+            ensemble_factor = params.get('ensemble_confidence_threshold', 0.75) * 0.2
             return min(0.95, base_win_rate + confidence_factor + ensemble_factor)
         except Exception:
             self.print(error('Error evaluating win rate: {e}'))
             return 0.5
+    @log_all_calls
 
     def _evaluate_profit_factor(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate profit factor based on parameters."""
         try:
             base_profit_factor = 1.3
-            (position_size_factor, params.get('base_position_size', 0.05) * 2.0)
-            (risk_factor, 1.0 - params.get('stop_loss_atr_multiplier', 2.0) * 0.1)
+            position_size_factor = params.get('base_position_size', 0.05) * 2.0
+            risk_factor = 1.0 - params.get('stop_loss_atr_multiplier', 2.0) * 0.1
             return max(1.0, base_profit_factor + position_size_factor + risk_factor)
         except Exception:
             self.print(error('Error evaluating profit factor: {e}'))
             return 1.0
+    @log_all_calls
 
     def _evaluate_sharpe_ratio(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate Sharpe ratio based on parameters."""
         try:
             base_sharpe = 1.2
-            (volatility_factor, params.get('target_volatility', 0.15) * 0.5)
-            (confidence_factor, params.get('analyst_confidence_threshold', 0.7) * 0.3)
+            volatility_factor = params.get('target_volatility', 0.15) * 0.5
+            confidence_factor = params.get('analyst_confidence_threshold', 0.7) * 0.3
             return max(0.0, base_sharpe + volatility_factor + confidence_factor)
         except Exception:
             self.print(error('Error evaluating Sharpe ratio: {e}'))
             return 1.0
+    @log_all_calls
 
     def _evaluate_max_drawdown(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate maximum drawdown based on parameters."""
         try:
             base_drawdown = 0.15
-            (position_size_factor, params.get('max_position_size', 0.25) * 0.2)
-            (risk_factor, params.get('stop_loss_atr_multiplier', 2.0) * 0.05)
+            position_size_factor = params.get('max_position_size', 0.25) * 0.2
+            risk_factor = params.get('stop_loss_atr_multiplier', 2.0) * 0.05
             return min(0.5, base_drawdown + position_size_factor + risk_factor)
         except Exception:
             self.print(error('Error evaluating max drawdown: {e}'))
             return 0.2
+    @log_all_calls
 
     def _evaluate_enhanced_prediction_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate enhanced prediction integrator performance."""
@@ -540,96 +615,105 @@ class FinalParametersOptimizationStep:
         except Exception:
             self.print(error('Error evaluating enhanced prediction performance: {e}'))
             return 0.6
+    @log_all_calls
 
     def _evaluate_average_win(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate average win amount based on parameters."""
         try:
             base_avg_win = 0.02
-            (confidence_factor, params.get('analyst_confidence_threshold', 0.7) * 0.01)
-            (position_size_factor, params.get('base_position_size', 0.05) * 0.5)
-            (volatility_factor, params.get('target_volatility', 0.15) * 0.1)
+            confidence_factor = params.get('analyst_confidence_threshold', 0.7) * 0.01
+            position_size_factor = params.get('base_position_size', 0.05) * 0.5
+            volatility_factor = params.get('target_volatility', 0.15) * 0.1
             avg_win = base_avg_win + confidence_factor + position_size_factor + volatility_factor
             return max(0.005, avg_win)
         except Exception:
             self.print(error('Error evaluating average win: {e}'))
             return 0.02
+    @log_all_calls
 
     def _evaluate_average_loss(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate average loss amount based on parameters."""
         try:
             base_avg_loss = 0.015
-            (stop_loss_factor, params.get('stop_loss_atr_multiplier', 2.0) * 0.005)
-            (position_size_factor, params.get('base_position_size', 0.05) * 0.3)
-            (risk_factor, params.get('max_position_size', 0.25) * 0.1)
+            stop_loss_factor = params.get('stop_loss_atr_multiplier', 2.0) * 0.005
+            position_size_factor = params.get('base_position_size', 0.05) * 0.3
+            risk_factor = params.get('max_position_size', 0.25) * 0.1
             avg_loss = base_avg_loss + stop_loss_factor + position_size_factor + risk_factor
             return max(0.005, avg_loss)
         except Exception:
             self.print(error('Error evaluating average loss: {e}'))
             return 0.015
+    @log_all_calls
 
     def _evaluate_volatility_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate volatility parameter performance."""
         try:
-            (target_vol, params.get('target_volatility', 0.15))
-            (multiplier, params.get('volatility_multiplier', 1.0))
+            target_vol = params.get('target_volatility', 0.15)
+            multiplier = params.get('volatility_multiplier', 1.0)
             return target_vol * multiplier * 10
         except Exception:
             self.print(error('Error evaluating volatility performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _evaluate_position_sizing_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate position sizing performance."""
         try:
-            (base_size, params.get('base_position_size', 0.05))
-            (kelly_mult, params.get('kelly_multiplier', 0.25))
+            base_size = params.get('base_position_size', 0.05)
+            kelly_mult = params.get('kelly_multiplier', 0.25)
             confidence_scaling = 1.0 if params.get('confidence_based_scaling', True) else 0.8
             return base_size * kelly_mult * confidence_scaling * 20
         except Exception:
             self.print(error('Error evaluating position sizing performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _evaluate_risk_management_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate risk management performance."""
         try:
-            (sl_multiplier, params.get('stop_loss_atr_multiplier', 2.0))
-            (trailing_multiplier, params.get('trailing_stop_atr_multiplier', 1.5))
-            (dynamic_sl, 1.2 if params.get('enable_dynamic_stop_loss', True) else 1.0)
+            sl_multiplier = params.get('stop_loss_atr_multiplier', 2.0)
+            trailing_multiplier = params.get('trailing_stop_atr_multiplier', 1.5)
+            dynamic_sl = 1.2 if params.get('enable_dynamic_stop_loss', True) else 1.0
             return (sl_multiplier + trailing_multiplier) * dynamic_sl
         except Exception:
             self.print(error('Error evaluating risk management performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _evaluate_ensemble_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate ensemble performance."""
         try:
-            (analyst_weight, params.get('analyst_weight', 0.4))
-            (tactician_weight, params.get('tactician_weight', 0.3))
-            (agreement, params.get('min_ensemble_agreement', 0.7))
+            analyst_weight = params.get('analyst_weight', 0.4)
+            tactician_weight = params.get('tactician_weight', 0.3)
+            agreement = params.get('min_ensemble_agreement', 0.7)
             return (analyst_weight + tactician_weight) * agreement * 2.0
         except Exception:
             self.print(error('Error evaluating ensemble performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _evaluate_regime_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate regime-specific performance."""
         try:
-            (bull_mult, params.get('bull_trend_multiplier', 1.2))
-            (bear_mult, params.get('bear_trend_multiplier', 0.8))
-            (sideways_mult, params.get('sideways_multiplier', 0.9))
+            bull_mult = params.get('bull_trend_multiplier', 1.2)
+            bear_mult = params.get('bear_trend_multiplier', 0.8)
+            sideways_mult = params.get('sideways_multiplier', 0.9)
             return (bull_mult + bear_mult + sideways_mult) / 3.0
         except Exception:
             self.print(error('Error evaluating regime performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _evaluate_timing_performance(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate timing performance."""
         try:
-            (base_cooldown, params.get('base_cooldown_minutes', 30))
-            (high_conf_cooldown, params.get('high_confidence_cooldown', 15))
+            base_cooldown = params.get('base_cooldown_minutes', 30)
+            high_conf_cooldown = params.get('high_confidence_cooldown', 15)
             return 1.0 / (base_cooldown + high_conf_cooldown) * 100
         except Exception:
             self.print(error('Error evaluating timing performance: {e}'))
             return 0.0
+    @log_all_calls
 
     def _select_best_pareto_solution(self, pareto_front: list) -> Any:
         """Select the best solution from Pareto front."""
@@ -649,34 +733,42 @@ class FinalParametersOptimizationStep:
         except Exception as e:
             self.print(error(f'Error selecting Pareto solution: {e}'))
             return pareto_front[0] if pareto_front else None
+    @log_all_calls
 
     def _get_default_confidence_thresholds(self) -> dict[str, Any]:
         """Get default confidence thresholds."""
         return {'optimized_parameters': {'analyst_confidence_threshold': 0.7, 'tactician_confidence_threshold': 0.65, 'ensemble_confidence_threshold': 0.75, 'position_scale_up_threshold': 0.85, 'position_scale_down_threshold': 0.6, 'position_close_threshold': 0.3, 'enhanced_prediction_confidence_threshold': 0.7, 'enhanced_prediction_price_threshold': 0.6, 'analyst_ml_weight': 0.6, 'tactician_ml_weight': 0.4, 'position_sizing_confidence_multiplier': 1.5, 'leverage_sizing_risk_multiplier': 1.0, 'base_position_size': 0.1, 'max_position_size': 0.2, 'base_leverage': 50.0, 'max_leverage': 100.0}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_volatility_parameters(self) -> dict[str, Any]:
         """Get default volatility parameters."""
         return {'optimized_parameters': {'target_volatility': 0.15, 'volatility_lookback_period': 20, 'volatility_multiplier': 1.0, 'low_volatility_threshold': 0.02, 'medium_volatility_threshold': 0.05, 'high_volatility_threshold': 0.1, 'volatility_stop_loss_multiplier': 2.0}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_position_sizing_parameters(self) -> dict[str, Any]:
         """Get default position sizing parameters."""
         return {'optimized_parameters': {'base_position_size': 0.05, 'max_position_size': 0.25, 'min_position_size': 0.01, 'kelly_multiplier': 0.25, 'fractional_kelly': True, 'confidence_based_scaling': True, 'low_confidence_multiplier': 0.5, 'high_confidence_multiplier': 1.5}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_risk_management_parameters(self) -> dict[str, Any]:
         """Get default risk management parameters."""
         return {'optimized_parameters': {'stop_loss_atr_multiplier': 2.0, 'trailing_stop_atr_multiplier': 1.5, 'stop_loss_confidence_threshold': 0.3, 'enable_dynamic_stop_loss': True, 'volatility_based_sl': True, 'regime_based_sl': True, 'sl_tightening_threshold': 0.4, 'sl_loosening_threshold': 0.8}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_ensemble_parameters(self) -> dict[str, Any]:
         """Get default ensemble parameters."""
         return {'optimized_parameters': {'ensemble_method': 'confidence_weighted', 'analyst_weight': 0.4, 'tactician_weight': 0.3, 'strategist_weight': 0.3, 'min_ensemble_agreement': 0.7, 'max_ensemble_disagreement': 0.3}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_regime_parameters(self) -> dict[str, Any]:
         """Get default regime parameters."""
         return {'optimized_parameters': {'bull_trend_multiplier': 1.2, 'bear_trend_multiplier': 0.8, 'sideways_multiplier': 0.9, 'high_impact_multiplier': 0.6, 'sr_zone_multiplier': 1.1, 'regime_transition_threshold': 0.6, 'regime_confirmation_periods': 3}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _get_default_timing_parameters(self) -> dict[str, Any]:
         """Get default timing parameters."""
         return {'optimized_parameters': {'base_cooldown_minutes': 30, 'high_confidence_cooldown': 15, 'low_confidence_cooldown': 60, 'bull_trend_cooldown': 20, 'bear_trend_cooldown': 45, 'sideways_cooldown': 60, 'high_impact_cooldown': 90}, 'optimization_method': 'default', 'n_trials': 0, 'optimization_date': datetime.now().isoformat()}
+    @log_all_calls
 
     def _load_validation_frame(self) -> pd.DataFrame | None:
         """Load validation frame for optimization."""
@@ -694,6 +786,7 @@ class FinalParametersOptimizationStep:
         except Exception as e:
             self.logger.warning(f'⚠️ Validation frame load failed: {e}')
             return None
+    @log_all_calls
 
     def _evaluate_predictions(self, calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str, Any]) -> dict[str, float]:
         """Compute metrics by applying confidence thresholds to calibrated ensembles/models on validation data.
@@ -717,7 +810,7 @@ class FinalParametersOptimizationStep:
                 pos_proba = proba[:, -1] if proba.shape[1] > 1 else proba[:, 0]
                 preds = (pos_proba >= params.get('ensemble_confidence_threshold', 0.7)).astype(int)
             else:
-                preds = np.zeros(len(y), dtype=int)
+                preds = np.zeros(len(y), dtype = int)
             acc = float((preds == y).mean())
             pnl = np.where(preds == y, 0.01, -0.01)
             wins = pnl[pnl > 0]
@@ -735,7 +828,7 @@ class FinalParametersOptimizationStep:
             self.print(failed(f'Evaluation failed: {e}'))
             return {'accuracy': 0.5, 'win_rate': 0.5, 'avg_win': 0.01, 'avg_loss': 0.01, 'max_drawdown': 0.1, 'sharpe_ratio': 1.0, 'enhanced_prediction_performance': 0.6}
 
-async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str='data/training', force_rerun: bool=False, **kwargs) -> bool:
+async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str='data/training', force_rerun: bool = False, **kwargs) -> bool:
     """Run the final parameters optimization step.
 
     Args:

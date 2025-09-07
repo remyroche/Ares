@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ...utils.logger import system_logger
 """
 S/R Relevance Weight Optimizer
 
@@ -11,7 +12,7 @@ Optimizes the weights for the 5 relevance scoring factors:
 """
 import optuna
 from datetime import datetime
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -64,12 +65,12 @@ class SRRelevanceOptimizer:
             weights = {k: v / total for k, v in weights_raw.items()}
             performance = self._evaluate_weights(weights, historical_data, detected_sr_levels, actual_outcomes)
             return -performance
-        study = optuna.create_study(direction='minimize', pruner=optuna.pruners.MedianPruner(n_startup_trials=10))
+        study = optuna.create_study(direction='minimize', pruner = optuna.pruners.MedianPruner(n_startup_trials = 10))
 
         def callback(study: Any, trial: Any) -> None:
             if trial.number % 10 == 0:
                 self.logger.info(f'Trial {trial.number}: Best value = {-study.best_value:.4f}')
-        study.optimize(objective, n_trials=self.n_trials, callbacks=[callback])
+        study.optimize(objective, n_trials = self.n_trials, callbacks=[callback])
         best_params = study.best_params
         total = sum(best_params.values())
         optimized_weights = {k: v / total for k, v in best_params.items()}
@@ -88,7 +89,7 @@ class SRRelevanceOptimizer:
             total = sum(weights_dict.values())
             weights_norm = {k: v / total for k, v in weights_dict.items()}
             return -self._evaluate_weights(weights_norm, historical_data, detected_sr_levels, actual_outcomes)
-        result = differential_evolution(objective, bounds, maxiter=self.n_trials // 10, popsize=15, seed=42)
+        result = differential_evolution(objective, bounds, maxiter = self.n_trials // 10, popsize = 15, seed = 42)
         weights_array = result.x
         weights_dict = dict(zip(self.default_weights.keys(), weights_array))
         total = sum(weights_dict.values())
@@ -137,7 +138,7 @@ class SRRelevanceOptimizer:
             level_copy = level.copy()
             level_copy['relevance_score'] = score
             scored_levels.append(level_copy)
-        scored_levels.sort(key=lambda x: x['relevance_score'], reverse=True)
+        scored_levels.sort(key = lambda x: x['relevance_score'], reverse = True)
         if self.validation_metric == 'accuracy':
             return self._evaluate_accuracy(scored_levels, actual_outcomes)
         elif self.validation_metric == 'profit':

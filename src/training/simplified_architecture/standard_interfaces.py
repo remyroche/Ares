@@ -34,9 +34,9 @@ class StepResult:
     status: StepStatus
     data: Optional[Any] = None
     error: Optional[Exception] = None
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    artifacts: Dict[str, Path] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
+    metrics: Dict[str, Any] = field(default_factory = dict)
+    artifacts: Dict[str, Path] = field(default_factory = dict)
+    warnings: list[str] = field(default_factory = list)
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
@@ -61,8 +61,8 @@ class StepConfig:
     retry_count: int = 0
     retry_delay_seconds: int = 1
     fail_fast: bool = True
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    dependencies: list[str] = field(default_factory=list)
+    parameters: Dict[str, Any] = field(default_factory = dict)
+    dependencies: list[str] = field(default_factory = list)
 
 class IPipelineStep(ABC):
     """
@@ -169,7 +169,7 @@ class BasePipelineStep(IPipelineStep):
     Concrete steps should inherit from this class.
     """
 
-    def __init__(self, config: StepConfig, logger: logging.Logger=None) -> None:
+    def __init__(self, config: StepConfig, logger: logging.Logger = None) -> None:
         self.config = config
         self.logger = logger
         self._metrics: Dict[str, Any] = {}
@@ -194,13 +194,13 @@ class BasePipelineStep(IPipelineStep):
         
         Subclasses should implement _execute_impl instead of this method.
         """
-        result = StepResult(status=StepStatus.PENDING, start_time=datetime.now())
+        result = StepResult(status = StepStatus.PENDING, start_time = datetime.now())
         try:
             if not await self.validate_inputs(**kwargs):
                 raise ValueError('Input validation failed')
             result.status = StepStatus.RUNNING
             if self.config.timeout_seconds:
-                output = await asyncio.wait_for(self._execute_impl(**kwargs), timeout=self.config.timeout_seconds)
+                output = await asyncio.wait_for(self._execute_impl(**kwargs), timeout = self.config.timeout_seconds)
             else:
                 output = await self._execute_impl(**kwargs)
             result.data = output
@@ -282,7 +282,7 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
             raise ValueError('Data validation failed')
         if self.config.parameters.get('save_snapshot', False):
             snapshot_path = Path(f'data/snapshots/{self.name}_{int(time.time())}.parquet')
-            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.parent.mkdir(parents = True, exist_ok = True)
             data.to_parquet(snapshot_path)
             self.add_artifact('data_snapshot', snapshot_path)
         return data
@@ -317,7 +317,7 @@ class StepFactory:
         cls._step_registry[name] = step_class
 
     @classmethod
-    def create_step(cls, config: StepConfig, logger: logging.Logger=None) -> IPipelineStep:
+    def create_step(cls, config: StepConfig, logger: logging.Logger = None) -> IPipelineStep:
         """Create a step instance from configuration."""
         step_type = config.parameters.get('type', config.name)
         if step_type not in cls._step_registry:
@@ -328,14 +328,14 @@ class StepFactory:
 async def example_usage() -> None:
     """Example of using standard interfaces."""
     data_config = StepConfig(name='data_loader', parameters={'required_columns': ['open', 'high', 'low', 'close', 'volume'], 'save_snapshot': True})
-    labeling_config = StepConfig(name='labeling', timeout_seconds=30)
+    labeling_config = StepConfig(name='labeling', timeout_seconds = 30)
     data_step = StepFactory.create_step(data_config)
     labeling_step = StepFactory.create_step(labeling_config)
     data_result = await data_step.execute(source='data/raw/prices.parquet')
     if not data_result.is_success:
         print(f'Data loading failed: {data_result.error}')
         return
-    label_result = await labeling_step.execute(data=data_result.data)
+    label_result = await labeling_step.execute(data = data_result.data)
     if not label_result.is_success:
         print(f'Labeling failed: {label_result.error}')
         return

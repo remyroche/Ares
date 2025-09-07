@@ -2,13 +2,14 @@
 from datetime import datetime
 from typing import Any
 
+from src.utils.logger import system_logger
 from src.utils.decorators import (
     handles_errors,
     log_execution_time,
     retry,
     traced,
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Removed trading_decorators imports - using core decorators instead
 import logging

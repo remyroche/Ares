@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import TypeVar, Any, Callable
 from src.interfaces import IAnalyst, IStrategist, ISupervisor, ITactician
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 
@@ -31,7 +31,7 @@ class DependencyContainer:
     Enhanced dependency injection container with configuration management.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self._services: dict[Any, ServiceRegistration] = {}
         self._instances: dict[Any, Any] = {}
         self._scoped_instances: dict[str, dict[Any, Any]] = {}
@@ -40,22 +40,22 @@ class DependencyContainer:
         self._factories: dict[Any, Callable] = {}
         self.logger = system_logger.getChild('DependencyContainer')
 
-    def register(self, service_name: Any, service_type: type, implementation: type | None=None, singleton: bool=True, config: dict[str, Any] | None=None, dependencies: dict[str, str] | None=None, lifetime: str=ServiceLifetime.SINGLETON) -> None:
+    def register(self, service_name: Any, service_type: type, implementation: type | None = None, singleton: bool = True, config: dict[str, Any] | None = None, dependencies: dict[str, str] | None = None, lifetime: str = ServiceLifetime.SINGLETON) -> None:
         """Register a service with enhanced configuration support."""
         if lifetime not in {ServiceLifetime.SINGLETON, ServiceLifetime.TRANSIENT, ServiceLifetime.SCOPED}:
             lifetime = ServiceLifetime.SINGLETON if singleton else ServiceLifetime.TRANSIENT
-        self._services[service_name] = ServiceRegistration(service_type=service_type, implementation=implementation or service_type, singleton=singleton, config=config, dependencies=dependencies, lifetime=lifetime)
+        self._services[service_name] = ServiceRegistration(service_type = service_type, implementation = implementation or service_type, singleton = singleton, config = config, dependencies = dependencies, lifetime = lifetime)
         self.logger.debug(f"Registered service: {getattr(service_name, '__name__', str(service_name))} -> {service_type.__name__}")
 
-    def register_factory(self, service_name: Any, factory_func: Callable, lifetime: str=ServiceLifetime.SINGLETON, config: dict[str, Any] | None=None) -> None:
+    def register_factory(self, service_name: Any, factory_func: Callable, lifetime: str = ServiceLifetime.SINGLETON, config: dict[str, Any] | None = None) -> None:
         """Register a factory function for service creation."""
         self._factories[service_name] = factory_func
-        self._services[service_name] = ServiceRegistration(service_type=service_name if isinstance(service_name, type) else type(factory_func), implementation=None, singleton=lifetime == ServiceLifetime.SINGLETON, config=config, dependencies=None, lifetime=lifetime, factory=factory_func)
+        self._services[service_name] = ServiceRegistration(service_type = service_name if isinstance(service_name, type) else type(factory_func), implementation = None, singleton = lifetime == ServiceLifetime.SINGLETON, config = config, dependencies = None, lifetime = lifetime, factory = factory_func)
         self.logger.debug(f"Registered factory for: {getattr(service_name, '__name__', str(service_name))}")
 
     def register_instance(self, service_name: Any, instance: Any) -> None:
         """Register an already-created service instance (always singleton)."""
-        self._services[service_name] = ServiceRegistration(service_type=type(instance), implementation=type(instance), singleton=True, config=None, dependencies=None, lifetime=ServiceLifetime.SINGLETON, instance=instance)
+        self._services[service_name] = ServiceRegistration(service_type = type(instance), implementation = type(instance), singleton = True, config = None, dependencies = None, lifetime = ServiceLifetime.SINGLETON, instance = instance)
         self._instances[service_name] = instance
         self.logger.debug(f"Registered instance for: {getattr(service_name, '__name__', str(service_name))}")
 
@@ -74,7 +74,7 @@ class DependencyContainer:
             del self._scoped_instances[scope_id]
         self.logger.debug(f'Exited scope: {scope_id}')
 
-    def get_config(self, key: str, default: Any=None) -> Any:
+    def get_config(self, key: str, default: Any = None) -> Any:
         """Get configuration value with fallback."""
         return self._config.get(key, default)
 
@@ -168,22 +168,22 @@ class ComponentFactory:
         self.container = container
         self.logger = system_logger.getChild('ComponentFactory')
 
-    def create_analyst(self, config: dict[str, Any] | None=None) -> IAnalyst:
+    def create_analyst(self, config: dict[str, Any] | None = None) -> IAnalyst:
         """Create an analyst component."""
         msg = 'Analyst creation not implemented'
         raise NotImplementedError(msg)
 
-    def create_strategist(self, config: dict[str, Any] | None=None) -> IStrategist:
+    def create_strategist(self, config: dict[str, Any] | None = None) -> IStrategist:
         """Create a strategist component."""
         msg = 'Strategist creation not implemented'
         raise NotImplementedError(msg)
 
-    def create_tactician(self, config: dict[str, Any] | None=None) -> ITactician:
+    def create_tactician(self, config: dict[str, Any] | None = None) -> ITactician:
         """Create a tactician component."""
         msg = 'Tactician creation not implemented'
         raise NotImplementedError(msg)
 
-    def create_supervisor(self, config: dict[str, Any] | None=None) -> ISupervisor:
+    def create_supervisor(self, config: dict[str, Any] | None = None) -> ISupervisor:
         """Create a supervisor component."""
         msg = 'Supervisor creation not implemented'
         raise NotImplementedError(msg)

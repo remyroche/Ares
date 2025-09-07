@@ -1,12 +1,12 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import pandas as pd
+from .core.decorators import handles_errors
 
 '\nStep17 Optimized Tactician\n\nThis module implements a complete step17-optimized Tactician where ALL decision logic,\nposition sizing, leverage, and confidence calculations are configurable by step17.\n'
 import logging
 from datetime import datetime
 from typing import Any
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
-from .core.decorators.errors import handles_errors
 import numpy as np
 import time
 
@@ -101,7 +101,7 @@ class Step17OptimizedTactician:
             return False
 
     @handles_errors
-    async def generate_predictions(self, market_data: pd.DataFrame, analyst_barriers: dict[str, float], symbol: str, timeframe: str, analyst_confidence: float=0.5) -> dict[str, Any]:
+    async def generate_predictions(self, market_data: pd.DataFrame, analyst_barriers: dict[str, float], symbol: str, timeframe: str, analyst_confidence: float = 0.5) -> dict[str, Any]:
         """
         Generate predictions using comprehensive scenario analysis with step17 optimization.
 

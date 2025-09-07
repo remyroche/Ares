@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import src.utils.enhanced_data_validation
 import numpy as np
+from src.utils.logger import system_logger
 
 """
 Enhanced Data Collector with Real-time Validation
@@ -25,18 +26,21 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from typing import Any, Dict, List
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, 
     ValidationSeverity, ValidationError
 )
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import pandas as pd
+import logging
 
 logger = system_logger.getChild("EnhancedDataCollector")
 
 
 class EnhancedDataCollector:
     """Enhanced data collector with real-time validation."""
+    @log_important_calls
     
     def __init__(self, data_type: DataType, exchange: str, symbol: str, timeframe: str):
         self.data_type = data_type
@@ -121,6 +125,7 @@ class EnhancedDataCollector:
         except Exception as e:
             self.logger.exception(f"❌ Batch {self.collection_stats['total_batches']} failed: {e}")
             return False
+    @log_all_calls
     
     def _enrich_raw_data(self, raw_batch_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Enrich raw data with metadata fields."""
@@ -188,7 +193,7 @@ class EnhancedDataCollector:
         
         # Sort by timestamp
         if 'timestamp' in df.columns:
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = df.sort_values('timestamp').reset_index(drop = True)
         
         return df
     
@@ -199,6 +204,7 @@ class EnhancedDataCollector:
 
 class EnhancedDataCollectionManager:
     """Manager for enhanced data collection across multiple data types."""
+    @log_important_calls
     
     def __init__(self, exchange: str, symbol: str, timeframe: str):
         self.exchange = exchange.upper()
@@ -421,7 +427,7 @@ if __name__ == "__main__":
             exchange="BINANCE",
             symbol="ETHUSDT",
             timeframe="1m",
-            raw_data=raw_data
+            raw_data = raw_data
         )
         
         print("Collection Summary:", summary)

@@ -158,7 +158,7 @@ class RegimeFeatureUtils:
             'vol_of_vol_50': vol_of_vol_50.fillna(0).values,
             'volatility_regime': volatility_regime,
             'volatility_clustering': volatility_20.rolling(50).apply(
-                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0
+                lambda x: x.autocorr(lag = 1) if len(x) > 1 else 0
             ).fillna(0).values,
             'volatility_persistence': volatility_20.rolling(50).apply(
                 lambda x: np.corrcoef(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0

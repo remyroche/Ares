@@ -1,5 +1,7 @@
-import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import pandas as pd
+import numpy as np
 
 'Enhanced ML-Based Regime Transition Detection with Random Forest + LGBM.\n\nThis module implements the specific approach requested:\n1. Random Forest for feature selection (feature importance + permutation importance)\n2. LGBM iterative selection (starting with top 20 features, adding 10 at a time)\n3. Stop when performance plateaus or decreases\n'
 from sklearn.ensemble import RandomForestClassifier
@@ -15,6 +17,7 @@ warnings.filterwarnings('ignore')
 
 class EnhancedMLRegimeTransitionDetector:
     """Enhanced ML-based regime transition detector with Random Forest + LGBM."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -66,6 +69,7 @@ class EnhancedMLRegimeTransitionDetector:
             return training_results
         except Exception as e:
             return {'error': f'Training failed: {str(e)}'}
+    @log_all_calls
 
     def _prepare_transition_training_data(self, data: pd.DataFrame, regimes: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare training data for regime transition detection."""
@@ -80,17 +84,19 @@ class EnhancedMLRegimeTransitionDetector:
         transition_labels = transition_labels[valid_mask]
         transition_labels = self._handle_class_imbalance(transition_labels)
         return (features, transition_labels)
+    @log_all_calls
 
     def _create_transition_labels(self, regimes: np.ndarray) -> np.ndarray:
         """Create labels for regime transitions."""
-        transition_labels = np.zeros(len(regimes), dtype=int)
-        prediction_horizon = 3
+        transition_labels = np.zeros(len(regimes), dtype = int)
+        prediction_horizon = 5
         for i in range(len(regimes) - prediction_horizon):
             current_regime = regimes[i]
             future_regimes = regimes[i + 1:i + prediction_horizon + 1]
             if np.any(future_regimes != current_regime):
                 transition_labels[i] = 1
         return transition_labels
+    @log_all_calls
 
     def _create_comprehensive_transition_features(self, data: pd.DataFrame, regimes: np.ndarray) -> np.ndarray:
         """Create comprehensive features for transition prediction."""
@@ -109,8 +115,9 @@ class EnhancedMLRegimeTransitionDetector:
         feature_list.append(interaction_features)
         lagged_features = self._create_lagged_features(data, regimes)
         feature_list.append(lagged_features)
-        all_features = np.concatenate([f for f in feature_list if f is not None], axis=1)
+        all_features = np.concatenate([f for f in feature_list if f is not None], axis = 1)
         return all_features
+    @log_all_calls
 
     def _create_price_transition_features(self, data: pd.DataFrame) -> np.ndarray:
         """Create price-based transition features."""
@@ -132,7 +139,8 @@ class EnhancedMLRegimeTransitionDetector:
         for window in [5, 10, 20]:
             price_vol = data['close'].pct_change().rolling(window).std()
             features.append(price_vol.values.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _create_volume_transition_features(self, data: pd.DataFrame) -> np.ndarray:
         """Create volume-based transition features."""
@@ -149,7 +157,8 @@ class EnhancedMLRegimeTransitionDetector:
         features.append(volume_price_trend.values.reshape(-1, 1))
         volume_spikes = (data['volume'] > data['volume'].rolling(20).mean() + 2 * data['volume'].rolling(20).std()).astype(int)
         features.append(volume_spikes.values.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _create_volatility_transition_features(self, data: pd.DataFrame) -> np.ndarray:
         """Create volatility-based transition features."""
@@ -164,9 +173,10 @@ class EnhancedMLRegimeTransitionDetector:
         features.append(vol_of_vol.values.reshape(-1, 1))
         vol_regime = self._classify_volatility_regime(returns.rolling(20).std())
         features.append(vol_regime.values.reshape(-1, 1))
-        vol_clustering = volatility.rolling(50).apply(lambda x: x.autocorr(lag=1))
+        vol_clustering = volatility.rolling(50).apply(lambda x: x.autocorr(lag = 1))
         features.append(vol_clustering.values.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _create_regime_transition_features(self, regimes: np.ndarray) -> np.ndarray:
         """Create regime-based transition features."""
@@ -183,7 +193,8 @@ class EnhancedMLRegimeTransitionDetector:
         features.append(change_frequency.reshape(-1, 1))
         regime_encoded = self._encode_regimes(regimes)
         features.append(regime_encoded)
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(regimes), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(regimes), 0)
+    @log_all_calls
 
     def _create_technical_transition_features(self, data: pd.DataFrame) -> np.ndarray:
         """Create technical indicator transition features."""
@@ -202,7 +213,8 @@ class EnhancedMLRegimeTransitionDetector:
         features.append((atr / data['close']).values.reshape(-1, 1))
         adx = self._calculate_adx(data)
         features.append(adx.values.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _create_interaction_transition_features(self, data: pd.DataFrame, regimes: np.ndarray) -> np.ndarray:
         """Create interaction features for transition prediction."""
@@ -222,7 +234,8 @@ class EnhancedMLRegimeTransitionDetector:
         price_position = (data['close'] - data['low'].rolling(20).min()) / (data['high'].rolling(20).max() - data['low'].rolling(20).min())
         price_pos_regime_interaction = price_position * regimes.astype(float)
         features.append(price_pos_regime_interaction.values.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _create_lagged_features(self, data: pd.DataFrame, regimes: np.ndarray) -> np.ndarray:
         """Create lagged features for transition prediction."""
@@ -237,14 +250,16 @@ class EnhancedMLRegimeTransitionDetector:
         for lag in [1, 2, 3, 5]:
             lagged_regime = regimes.astype(float).shift(lag)
             features.append(lagged_regime.reshape(-1, 1))
-        return np.concatenate(features, axis=1) if features else np.array([]).reshape(len(data), 0)
+        return np.concatenate(features, axis = 1) if features else np.array([]).reshape(len(data), 0)
+    @log_all_calls
 
     def _handle_class_imbalance(self, labels: np.ndarray) -> np.ndarray:
         """Handle class imbalance in transition labels."""
         unique_classes = np.unique(labels)
-        class_weights = compute_class_weight('balanced', classes=unique_classes, y=labels)
+        class_weights = compute_class_weight('balanced', classes = unique_classes, y = labels)
         self.class_weights = dict(zip(unique_classes, class_weights))
         return labels
+    @log_all_calls
 
     def _random_forest_feature_selection(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Use Random Forest for initial feature selection."""
@@ -252,7 +267,7 @@ class EnhancedMLRegimeTransitionDetector:
         rf_model = RandomForestClassifier(**self.rf_params)
         rf_model.fit(X, y)
         feature_importance = rf_model.feature_importances_
-        perm_importance = permutation_importance(rf_model, X, y, n_repeats=10, random_state=self.random_state)
+        perm_importance = permutation_importance(rf_model, X, y, n_repeats = 10, random_state = self.random_state)
         perm_importance_mean = perm_importance.importances_mean
         combined_importance = 0.6 * feature_importance + 0.4 * perm_importance_mean
         feature_indices = np.argsort(combined_importance)[::-1]
@@ -260,6 +275,7 @@ class EnhancedMLRegimeTransitionDetector:
         print(f'   - Top 10 features by importance: {feature_indices[:10]}')
         print(f'   - Top 10 importance scores: {combined_importance[feature_indices[:10]]}')
         return {'feature_importance': feature_importance, 'permutation_importance': perm_importance_mean, 'combined_importance': combined_importance, 'feature_indices': feature_indices, 'rf_model': rf_model}
+    @log_all_calls
 
     def _lgbm_iterative_feature_selection(self, X: np.ndarray, y: np.ndarray, combined_importance: np.ndarray) -> Dict[str, Any]:
         """Use LGBM for iterative feature selection."""
@@ -270,17 +286,17 @@ class EnhancedMLRegimeTransitionDetector:
         best_features = current_features.copy()
         selection_history = []
         no_improvement_count = 0
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=self.random_state, stratify=y)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = self.random_state, stratify = y)
         while len(current_features) < min(self.max_features, len(feature_indices)):
             X_train_current = X_train[:, current_features]
             X_test_current = X_test[:, current_features]
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train_current)
             X_test_scaled = scaler.transform(X_test_current)
-            train_data = lgb.Dataset(X_train_scaled, label=y_train)
-            val_data = lgb.Dataset(X_test_scaled, label=y_test, reference=train_data)
-            lgb_model = lgb.train(self.lgb_params, train_data, valid_sets=[val_data], num_boost_round=1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
-            y_pred_proba = lgb_model.predict(X_test_scaled, num_iteration=lgb_model.best_iteration)
+            train_data = lgb.Dataset(X_train_scaled, label = y_train)
+            val_data = lgb.Dataset(X_test_scaled, label = y_test, reference = train_data)
+            lgb_model = lgb.train(self.lgb_params, train_data, valid_sets=[val_data], num_boost_round = 1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
+            y_pred_proba = lgb_model.predict(X_test_scaled, num_iteration = lgb_model.best_iteration)
             y_pred = (y_pred_proba > 0.5).astype(int)
             performance = f1_score(y_test, y_pred)
             selection_history.append({'n_features': len(current_features), 'features': current_features.copy(), 'performance': performance, 'feature_names': [f'feature_{i}' for i in current_features]})
@@ -296,7 +312,7 @@ class EnhancedMLRegimeTransitionDetector:
                 if len(current_features) > 25:
                     feature_importance = lgb_model.feature_importance(importance_type='gain')
                     feature_importance_dict = dict(zip(current_features, feature_importance))
-                    sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1])
+                    sorted_features = sorted(feature_importance_dict.items(), key = lambda x: x[1])
                     features_to_remove = [feat[0] for feat in sorted_features[:5]]
                     reduced_features = [f for f in current_features if f not in features_to_remove]
                     if len(reduced_features) >= 15:
@@ -305,10 +321,10 @@ class EnhancedMLRegimeTransitionDetector:
                         scaler_reduced = StandardScaler()
                         X_train_scaled_reduced = scaler_reduced.fit_transform(X_train_reduced)
                         X_test_scaled_reduced = scaler_reduced.transform(X_test_reduced)
-                        train_data_reduced = lgb.Dataset(X_train_scaled_reduced, label=y_train)
-                        val_data_reduced = lgb.Dataset(X_test_scaled_reduced, label=y_test, reference=train_data_reduced)
-                        lgb_model_reduced = lgb.train(self.lgb_params, train_data_reduced, valid_sets=[val_data_reduced], num_boost_round=1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
-                        y_pred_proba_reduced = lgb_model_reduced.predict(X_test_scaled_reduced, num_iteration=lgb_model_reduced.best_iteration)
+                        train_data_reduced = lgb.Dataset(X_train_scaled_reduced, label = y_train)
+                        val_data_reduced = lgb.Dataset(X_test_scaled_reduced, label = y_test, reference = train_data_reduced)
+                        lgb_model_reduced = lgb.train(self.lgb_params, train_data_reduced, valid_sets=[val_data_reduced], num_boost_round = 1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
+                        y_pred_proba_reduced = lgb_model_reduced.predict(X_test_scaled_reduced, num_iteration = lgb_model_reduced.best_iteration)
                         y_pred_reduced = (y_pred_proba_reduced > 0.5).astype(int)
                         performance_reduced = f1_score(y_test, y_pred_reduced)
                         print(f'   Reduced features: {len(reduced_features)}, Performance: {performance_reduced:.4f}')
@@ -339,19 +355,20 @@ class EnhancedMLRegimeTransitionDetector:
         print(f'   - Best features: {len(best_features)}')
         print(f'   - Feature indices: {best_features}')
         return {'selected_features': best_features, 'best_performance': best_performance, 'selection_history': selection_history}
+    @log_all_calls
 
     def _train_final_lgbm_model(self, X: np.ndarray, y: np.ndarray, selected_features: np.ndarray) -> Dict[str, Any]:
         """Train final LGBM model with selected features."""
         print('🔍 Training final LGBM model...')
         X_selected = X[:, selected_features]
-        X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.2, random_state=self.random_state, stratify=y)
+        X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size = 0.2, random_state = self.random_state, stratify = y)
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
-        train_data = lgb.Dataset(X_train_scaled, label=y_train)
-        val_data = lgb.Dataset(X_test_scaled, label=y_test, reference=train_data)
-        final_model = lgb.train(self.lgb_params, train_data, valid_sets=[val_data], num_boost_round=1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
-        y_pred_proba = final_model.predict(X_test_scaled, num_iteration=final_model.best_iteration)
+        train_data = lgb.Dataset(X_train_scaled, label = y_train)
+        val_data = lgb.Dataset(X_test_scaled, label = y_test, reference = train_data)
+        final_model = lgb.train(self.lgb_params, train_data, valid_sets=[val_data], num_boost_round = 1000, callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)])
+        y_pred_proba = final_model.predict(X_test_scaled, num_iteration = final_model.best_iteration)
         y_pred = (y_pred_proba > 0.5).astype(int)
         performance = {'f1_score': f1_score(y_test, y_pred), 'roc_auc': roc_auc_score(y_test, y_pred_proba), 'accuracy': np.mean(y_test == y_pred)}
         print(f'✅ Final LGBM model trained')
@@ -362,6 +379,7 @@ class EnhancedMLRegimeTransitionDetector:
         self.best_performance = performance['f1_score']
         self.selected_features = selected_features
         return {'model': final_model, 'scaler': scaler, 'performance': performance, 'selected_features': selected_features}
+    @log_all_calls
 
     def _generate_training_summary(self, training_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate training summary."""
@@ -379,7 +397,7 @@ class EnhancedMLRegimeTransitionDetector:
             features = self._create_comprehensive_transition_features(data, regimes)
             features_selected = features[:, self.selected_features]
             features_scaled = self.final_scaler.transform(features_selected)
-            transition_probabilities = self.best_lgb_model.predict(features_scaled, num_iteration=self.best_lgb_model.best_iteration)
+            transition_probabilities = self.best_lgb_model.predict(features_scaled, num_iteration = self.best_lgb_model.best_iteration)
             transition_predictions = (transition_probabilities > 0.5).astype(int)
             return {'transition_predictions': transition_predictions, 'transition_probabilities': transition_probabilities, 'confidence_scores': transition_probabilities, 'model_used': 'lgbm_final', 'selected_features': self.selected_features}
         except Exception as e:
@@ -408,15 +426,17 @@ class EnhancedMLRegimeTransitionDetector:
         except Exception as e:
             print(f'Failed to load models: {e}')
             return False
+    @log_all_calls
 
     def _classify_volatility_regime(self, volatility: pd.Series) -> pd.Series:
         """Classify volatility regime."""
         low_threshold = volatility.rolling(100).quantile(0.33)
         high_threshold = volatility.rolling(100).quantile(0.67)
-        regime = pd.Series(1, index=volatility.index)
+        regime = pd.Series(1, index = volatility.index)
         regime[volatility > high_threshold] = 3
         regime[(volatility > low_threshold) & (volatility <= high_threshold)] = 2
         return regime.fillna(1)
+    @log_all_calls
 
     def _calculate_regime_persistence(self, regimes: np.ndarray) -> np.ndarray:
         """Calculate regime persistence."""
@@ -431,6 +451,7 @@ class EnhancedMLRegimeTransitionDetector:
                 current_regime = regimes[i]
             persistence[i] = current_count
         return persistence
+    @log_all_calls
 
     def _calculate_regime_stability(self, regimes: np.ndarray) -> np.ndarray:
         """Calculate regime stability."""
@@ -441,6 +462,7 @@ class EnhancedMLRegimeTransitionDetector:
             recent_regimes = regimes[start_idx:i + 1]
             stability[i] = 1 / (1 + np.std(recent_regimes))
         return stability
+    @log_all_calls
 
     def _calculate_transition_probability(self, regimes: np.ndarray) -> np.ndarray:
         """Calculate transition probability."""
@@ -454,8 +476,8 @@ class EnhancedMLRegimeTransitionDetector:
             current_idx = regime_map[regimes[i]]
             next_idx = regime_map[regimes[i + 1]]
             transition_matrix[current_idx, next_idx] += 1
-        row_sums = transition_matrix.sum(axis=1, keepdims=True)
-        transition_matrix = np.divide(transition_matrix, row_sums, where=row_sums > 0)
+        row_sums = transition_matrix.sum(axis = 1, keepdims = True)
+        transition_matrix = np.divide(transition_matrix, row_sums, where = row_sums > 0)
         transition_probs = np.zeros(len(regimes))
         for i in range(len(regimes)):
             current_idx = regime_map[regimes[i]]
@@ -463,6 +485,7 @@ class EnhancedMLRegimeTransitionDetector:
             other_probs[current_idx] = 0
             transition_probs[i] = np.sum(other_probs)
         return transition_probs
+    @log_all_calls
 
     def _calculate_regime_duration(self, regimes: np.ndarray) -> np.ndarray:
         """Calculate regime duration."""
@@ -477,6 +500,7 @@ class EnhancedMLRegimeTransitionDetector:
                 current_regime = regimes[i]
             duration[i] = current_duration
         return duration
+    @log_all_calls
 
     def _calculate_regime_change_frequency(self, regimes: np.ndarray) -> np.ndarray:
         """Calculate regime change frequency."""
@@ -488,6 +512,7 @@ class EnhancedMLRegimeTransitionDetector:
             changes = np.sum(np.diff(recent_regimes) != 0)
             change_freq[i] = changes / len(recent_regimes)
         return change_freq
+    @log_all_calls
 
     def _encode_regimes(self, regimes: np.ndarray) -> np.ndarray:
         """Encode regimes as one-hot vectors."""
@@ -499,34 +524,38 @@ class EnhancedMLRegimeTransitionDetector:
         for i, regime in enumerate(unique_regimes):
             regime_encoded[regimes == regime, i] = 1
         return regime_encoded
+    @log_all_calls
 
-    def _calculate_rsi(self, prices: pd.Series, window: int=14) -> pd.Series:
+    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate RSI."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
         return rsi
+    @log_all_calls
 
-    def _calculate_macd(self, prices: pd.Series, fast: int=12, slow: int=26) -> pd.Series:
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
         """Calculate MACD."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
+    @log_all_calls
 
-    def _calculate_bollinger_bands(self, prices: pd.Series, window: int=20, num_std: float=2) -> Tuple[pd.Series, pd.Series]:
+    def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series]:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        sma = prices.rolling(window = window).mean()
+        std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
         bb_lower = sma - std * num_std
         bb_position = (prices - bb_lower) / (bb_upper - bb_lower)
         bb_width = (bb_upper - bb_lower) / sma
         return (bb_position, bb_width)
+    @log_all_calls
 
-    def _calculate_atr(self, data: pd.DataFrame, window: int=14) -> pd.Series:
+    def _calculate_atr(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate ATR."""
         high = data['high']
         low = data['low']
@@ -534,11 +563,12 @@ class EnhancedMLRegimeTransitionDetector:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=window).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = window).mean()
         return atr
+    @log_all_calls
 
-    def _calculate_adx(self, data: pd.DataFrame, window: int=14) -> pd.Series:
+    def _calculate_adx(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate ADX."""
         high = data['high']
         low = data['low']
@@ -546,23 +576,23 @@ class EnhancedMLRegimeTransitionDetector:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         dm_plus = high - high.shift(1)
         dm_minus = low.shift(1) - low
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
         dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
-        tr_smooth = tr.rolling(window=window).mean()
-        dm_plus_smooth = dm_plus.rolling(window=window).mean()
-        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        tr_smooth = tr.rolling(window = window).mean()
+        dm_plus_smooth = dm_plus.rolling(window = window).mean()
+        dm_minus_smooth = dm_minus.rolling(window = window).mean()
         di_plus = 100 * (dm_plus_smooth / tr_smooth)
         di_minus = 100 * (dm_minus_smooth / tr_smooth)
         dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=window).mean()
+        adx = dx.rolling(window = window).mean()
         return adx
 if __name__ == '__main__':
     np.random.seed(42)
     n_samples = 2000
-    regimes = np.zeros(n_samples, dtype=int)
+    regimes = np.zeros(n_samples, dtype = int)
     regimes[500:1000] = 1
     regimes[1000:1500] = 2
     regimes[1500:] = 1
@@ -583,3 +613,4 @@ if __name__ == '__main__':
     print(f"Mean confidence: {np.mean(predictions.get('confidence_scores', [0])):.4f}")
     detector.save_models('enhanced_transition_models.joblib')
     print('Models saved successfully')
+import pandas as pd

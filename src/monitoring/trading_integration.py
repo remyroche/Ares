@@ -1,4 +1,6 @@
+from src.core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Trading Integration for Enhanced ML Monitoring
 
 Integrates the enhanced monitoring system with backtesting, paper trading,
@@ -7,7 +9,7 @@ and live trading systems to capture comprehensive trade decision data.
 import time
 import uuid
 from .utils.common_operations import get_current_datetime, format_datetime, ensure_directory
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from src.monitoring.enhanced_ml_monitoring import EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradeDecision, TradingMode, ModelType
 from .monitoring.explainability_integration import ExplainabilityIntegrator
 import numpy as np
@@ -42,7 +44,7 @@ class TradingSystemIntegrator:
         self.decision_callbacks: Dict[str, List[Callable]] = {}
         self.logger.info('Trading System Integrator initialized')
 
-    @handles_errors(default_return=False, context='trading_integration.integrate_backtesting')
+    @handles_errors(default_return = False, context='trading_integration.integrate_backtesting')
     async def integrate_backtesting(self, backtesting_system: Any, system_id: str='backtesting') -> bool:
         """Integrate monitoring with backtesting system."""
         try:
@@ -57,7 +59,7 @@ class TradingSystemIntegrator:
             self.logger.error(f'Error integrating backtesting system: {e}')
             return False
 
-    @handles_errors(default_return=False, context='trading_integration.integrate_paper_trading')
+    @handles_errors(default_return = False, context='trading_integration.integrate_paper_trading')
     async def integrate_paper_trading(self, paper_trading_system: Any, system_id: str='paper_trading') -> bool:
         """Integrate monitoring with paper trading system."""
         try:
@@ -72,7 +74,7 @@ class TradingSystemIntegrator:
             self.logger.error(f'Error integrating paper trading system: {e}')
             return False
 
-    @handles_errors(default_return=False, context='trading_integration.integrate_live_trading')
+    @handles_errors(default_return = False, context='trading_integration.integrate_live_trading')
     async def integrate_live_trading(self, live_trading_system: Any, system_id: str='live_trading') -> bool:
         """Integrate monitoring with live trading system."""
         try:
@@ -142,7 +144,7 @@ class TradingSystemIntegrator:
         except Exception as e:
             self.logger.error(f'Error hooking live trading system: {e}')
 
-    @handles_errors(default_return=None, context='trading_integration._capture_trading_decision')
+    @handles_errors(default_return = None, context='trading_integration._capture_trading_decision')
     async def _capture_trading_decision(self, system_id: str, trading_mode: TradingMode, *args, **kwargs) -> Optional[TradeDecision]:
         """Capture a trading decision with full context and explanations."""
         try:
@@ -156,7 +158,7 @@ class TradingSystemIntegrator:
             overall_confidence = self._calculate_overall_confidence(trading_indicators, ensemble_decision)
             overall_risk_score = self._calculate_overall_risk_score(trading_indicators, ensemble_decision)
             action, position_size, stop_loss, take_profit = await self._extract_final_decision(*args, **kwargs)
-            trade_decision = TradeDecision(decision_id=decision_id, context=context, trading_mode=trading_mode, timestamp=datetime.now(), trading_indicators=trading_indicators, overall_confidence=overall_confidence, overall_risk_score=overall_risk_score, ensemble_decision=ensemble_decision, action=action, position_size=position_size, stop_loss=stop_loss, take_profit=take_profit, execution_time_ms=(time.time() - start_time) * 1000)
+            trade_decision = TradeDecision(decision_id = decision_id, context = context, trading_mode = trading_mode, timestamp = datetime.now(), trading_indicators = trading_indicators, overall_confidence = overall_confidence, overall_risk_score = overall_risk_score, ensemble_decision = ensemble_decision, action = action, position_size = position_size, stop_loss = stop_loss, take_profit = take_profit, execution_time_ms=(time.time() - start_time) * 1000)
             await self.enhanced_monitor.record_trade_decision(trade_decision)
             if system_id in self.active_integrations:
                 self.active_integrations[system_id]['decisions_captured'] += 1
@@ -178,7 +180,7 @@ class TradingSystemIntegrator:
             for key in ['volatility', 'trend', 'volume_profile', 'support_resistance']:
                 if key in kwargs:
                     market_conditions[key] = kwargs[key]
-            return TradeContext(exchange=exchange, token=token, timestamp=datetime.now(), price=price, volume=volume, timeframe=timeframe, regime=regime, market_conditions=market_conditions if market_conditions else None)
+            return TradeContext(exchange = exchange, token = token, timestamp = datetime.now(), price = price, volume = volume, timeframe = timeframe, regime = regime, market_conditions = market_conditions if market_conditions else None)
         except Exception as e:
             self.logger.error(f'Error extracting decision context: {e}')
             return None
@@ -192,7 +194,7 @@ class TradingSystemIntegrator:
                 if key in kwargs:
                     value = kwargs[key]
                     if isinstance(value, (int, float)):
-                        indicators.append(TradingIndicator(name=name, value=value, weight=kwargs.get(f'{key}_weight', 0.1), confidence=kwargs.get(f'{key}_confidence', 0.5), risk_score=kwargs.get(f'{key}_risk', 0.5), description=f'{name} indicator value'))
+                        indicators.append(TradingIndicator(name = name, value = value, weight = kwargs.get(f'{key}_weight', 0.1), confidence = kwargs.get(f'{key}_confidence', 0.5), risk_score = kwargs.get(f'{key}_risk', 0.5), description = f'{name} indicator value'))
             return indicators
         except Exception as e:
             self.logger.error(f'Error extracting trading indicators: {e}')
@@ -212,10 +214,10 @@ class TradingSystemIntegrator:
             model_decisions = await self._extract_model_decisions(kwargs)
             consensus_score = self._calculate_consensus_score(model_decisions)
             disagreement_level = self._calculate_disagreement_level(model_decisions)
-            return EnsembleDecision(ensemble_id=ensemble_id, final_prediction=final_prediction, final_confidence=final_confidence, final_risk_score=final_risk_score, model_weights=model_weights, model_decisions=model_decisions, voting_mechanism=voting_mechanism, consensus_score=consensus_score, disagreement_level=disagreement_level)
+            return EnsembleDecision(ensemble_id = ensemble_id, final_prediction = final_prediction, final_confidence = final_confidence, final_risk_score = final_risk_score, model_weights = model_weights, model_decisions = model_decisions, voting_mechanism = voting_mechanism, consensus_score = consensus_score, disagreement_level = disagreement_level)
         except Exception as e:
             self.logger.error(f'Error extracting ensemble decision: {e}')
-            return EnsembleDecision(ensemble_id='unknown', final_prediction=0.0, final_confidence=0.0, final_risk_score=0.5, model_weights={}, model_decisions=[], voting_mechanism='unknown', consensus_score=0.0, disagreement_level=1.0)
+            return EnsembleDecision(ensemble_id='unknown', final_prediction = 0.0, final_confidence = 0.0, final_risk_score = 0.5, model_weights={}, model_decisions=[], voting_mechanism='unknown', consensus_score = 0.0, disagreement_level = 1.0)
 
     def _extract_model_weights_from_predictions(self, kwargs: Dict[str, Any]) -> Dict[str, float]:
         """Extract model weights from prediction arguments."""
@@ -252,7 +254,7 @@ class TradingSystemIntegrator:
                         feature_name = key.replace(f'model_{model_id}_feature_', '')
                         if isinstance(value, (int, float)):
                             feature_importance[feature_name] = value
-                model_decision = MLModelDecision(model_id=model_id, model_type=ModelType(model_type) if model_type in [e.value for e in ModelType] else ModelType.HMM, prediction=prediction, confidence=confidence, risk_score=risk_score, feature_importance=feature_importance, processing_time_ms=processing_time, model_version=model_version)
+                model_decision = MLModelDecision(model_id = model_id, model_type = ModelType(model_type) if model_type in [e.value for e in ModelType] else ModelType.HMM, prediction = prediction, confidence = confidence, risk_score = risk_score, feature_importance = feature_importance, processing_time_ms = processing_time, model_version = model_version)
                 model_decisions.append(model_decision)
         except Exception as e:
             self.logger.error(f'Error extracting model decisions: {e}')
@@ -332,7 +334,7 @@ class TradingSystemIntegrator:
         except Exception as e:
             self.logger.error(f'Error capturing prediction context: {e}')
 
-    @handles_errors(default_return=False, context='trading_integration.force_export')
+    @handles_errors(default_return = False, context='trading_integration.force_export')
     async def force_export(self) -> bool:
         """Force export of all monitoring data."""
         try:

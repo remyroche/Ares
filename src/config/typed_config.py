@@ -13,12 +13,12 @@ class TypedConfigManager:
     Type-safe configuration manager with runtime validation.
     """
 
-    def __init__(self, config_path: str | None=None) -> None:
+    def __init__(self, config_path: str | None = None) -> None:
         self._config_path = config_path
         self._config: ConfigDict | None = None
         self._validator = TypeValidator()
 
-    def load_config(self, config_path: str | None=None) -> ConfigDict:
+    def load_config(self, config_path: str | None = None) -> ConfigDict:
         """
         Load and validate configuration from file.
 
@@ -169,7 +169,7 @@ json.JSONDecodeError: If configuration file is invalid JSON
         except RuntimeTypeError:
             return False
 
-    def save_config(self, config: ConfigDict, path: str | None=None) -> None:
+    def save_config(self, config: ConfigDict, path: str | None = None) -> None:
         """
         Save configuration to file.
 
@@ -180,7 +180,7 @@ json.JSONDecodeError: If configuration file is invalid JSON
         save_path = Path(path or self._config_path or 'config.json')
         validated_config = validate_config(config)
         with open(save_path, 'w') as f:
-            json.dump(validated_config, f, indent=2, default=str)
+            json.dump(validated_config, f, indent = 2, default = str)
         logger.info(f'Configuration saved to {save_path}')
 _global_config_manager: TypedConfigManager | None = None
 

@@ -24,7 +24,7 @@ class SROptimizationConfig:
 
     # Performance thresholds
     performance_thresholds: dict[str, float] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "min_sharpe_ratio": 0.5,
             "max_drawdown": -0.15,
             "min_win_rate": 0.55,
@@ -35,7 +35,7 @@ class SROptimizationConfig:
 
     # Method weight optimization ranges
     method_weight_ranges: dict[str, dict[str, float]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "fractal_weight": {"min": 0.1, "max": 0.6},
             "volume_weight": {"min": 0.1, "max": 0.5},
             "pivot_weight": {"min": 0.1, "max": 0.4},
@@ -45,7 +45,7 @@ class SROptimizationConfig:
 
     # Strength weight optimization ranges
     strength_weight_ranges: dict[str, dict[str, float]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "touch_count_weight": {"min": 0.2, "max": 0.5},
             "total_volume_weight": {"min": 0.1, "max": 0.4},
             "level_age_weight": {"min": 0.1, "max": 0.4},
@@ -56,7 +56,7 @@ class SROptimizationConfig:
 
     # DBSCAN optimization ranges
     dbscan_ranges: dict[str, dict[str, Any]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "dbscan_eps": {"min": 0.005, "max": 0.02},
             "dbscan_min_samples": {"min": 2, "max": 6, "type": "int"},
         }
@@ -64,7 +64,7 @@ class SROptimizationConfig:
 
     # Timeframe weight optimization ranges
     timeframe_weight_ranges: dict[str, dict[str, float]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "tf_15m_weight": {"min": 0.15, "max": 0.3},
             "tf_1h_weight": {"min": 0.2, "max": 0.35},
             "tf_4h_weight": {"min": 0.15, "max": 0.3},
@@ -74,7 +74,7 @@ class SROptimizationConfig:
 
     # Advanced method optimization ranges
     advanced_ranges: dict[str, dict[str, float]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "fibonacci_sensitivity": {"min": 0.5, "max": 0.9},
             "elliott_confidence_threshold": {"min": 0.4, "max": 0.8},
             "order_flow_hvn_threshold": {"min": 1.2, "max": 2.0},
@@ -90,7 +90,7 @@ class SROptimizationConfig:
     # Market regime optimization
     enable_regime_optimization: bool = False
     regime_periods: list[str] = field(
-        default_factory=lambda: [
+        default_factory = lambda: [
             "bull_market",
             "bear_market",
             "sideways_market",
@@ -101,7 +101,7 @@ class SROptimizationConfig:
     # Multi-timeframe optimization
     enable_multi_timeframe_optimization: bool = True
     timeframes: list[str] = field(
-        default_factory=lambda: [
+        default_factory = lambda: [
             "1m",
             "5m",
             "15m",

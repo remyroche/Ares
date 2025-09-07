@@ -19,6 +19,7 @@ from src.utils.common_operations import (
     safe_json_dump,
     safe_json_load
 )
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import json
 import numpy as np
 import time
@@ -88,6 +89,7 @@ class ErrorReport:
 
 class DataCollectionError(Exception):
     """Base exception for data collection errors."""
+    @log_important_calls
     
     def __init__(
         self,
@@ -108,118 +110,127 @@ class DataCollectionError(Exception):
 
 class DataQualityError(DataCollectionError):
     """Exception for data quality issues."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.HIGH,
-            category=ErrorCategory.DATA_QUALITY,
-            context=context,
-            recovery_strategy=RecoveryStrategy.SKIP,
+            message = message,
+            severity = ErrorSeverity.HIGH,
+            category = ErrorCategory.DATA_QUALITY,
+            context = context,
+            recovery_strategy = RecoveryStrategy.SKIP,
             **kwargs
         )
 
 
 class NetworkError(DataCollectionError):
     """Exception for network-related errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.MEDIUM,
-            category=ErrorCategory.NETWORK,
-            context=context,
-            recovery_strategy=RecoveryStrategy.RETRY,
+            message = message,
+            severity = ErrorSeverity.MEDIUM,
+            category = ErrorCategory.NETWORK,
+            context = context,
+            recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
 
 
 class StorageError(DataCollectionError):
     """Exception for storage-related errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.HIGH,
-            category=ErrorCategory.STORAGE,
-            context=context,
-            recovery_strategy=RecoveryStrategy.RETRY,
+            message = message,
+            severity = ErrorSeverity.HIGH,
+            category = ErrorCategory.STORAGE,
+            context = context,
+            recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
 
 
 class ValidationError(DataCollectionError):
     """Exception for validation errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.MEDIUM,
-            category=ErrorCategory.VALIDATION,
-            context=context,
-            recovery_strategy=RecoveryStrategy.SKIP,
+            message = message,
+            severity = ErrorSeverity.MEDIUM,
+            category = ErrorCategory.VALIDATION,
+            context = context,
+            recovery_strategy = RecoveryStrategy.SKIP,
             **kwargs
         )
 
 
 class ProcessingError(DataCollectionError):
     """Exception for data processing errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.HIGH,
-            category=ErrorCategory.PROCESSING,
-            context=context,
-            recovery_strategy=RecoveryStrategy.RETRY,
+            message = message,
+            severity = ErrorSeverity.HIGH,
+            category = ErrorCategory.PROCESSING,
+            context = context,
+            recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
 
 
 class ConfigurationError(DataCollectionError):
     """Exception for configuration errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.CRITICAL,
-            category=ErrorCategory.CONFIGURATION,
-            context=context,
-            recovery_strategy=RecoveryStrategy.ABORT,
+            message = message,
+            severity = ErrorSeverity.CRITICAL,
+            category = ErrorCategory.CONFIGURATION,
+            context = context,
+            recovery_strategy = RecoveryStrategy.ABORT,
             **kwargs
         )
 
 
 class PermissionError(DataCollectionError):
     """Exception for permission errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.HIGH,
-            category=ErrorCategory.PERMISSION,
-            context=context,
-            recovery_strategy=RecoveryStrategy.ABORT,
+            message = message,
+            severity = ErrorSeverity.HIGH,
+            category = ErrorCategory.PERMISSION,
+            context = context,
+            recovery_strategy = RecoveryStrategy.ABORT,
             **kwargs
         )
 
 
 class TimeoutError(DataCollectionError):
     """Exception for timeout errors."""
+    @log_important_calls
     
     def __init__(self, message: str, context: Optional[ErrorContext] = None, **kwargs):
         super().__init__(
-            message=message,
-            severity=ErrorSeverity.MEDIUM,
-            category=ErrorCategory.TIMEOUT,
-            context=context,
-            recovery_strategy=RecoveryStrategy.RETRY,
+            message = message,
+            severity = ErrorSeverity.MEDIUM,
+            category = ErrorCategory.TIMEOUT,
+            context = context,
+            recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
 
 
 class EnhancedErrorHandler:
     """Enhanced error handler with comprehensive error management."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -230,7 +241,7 @@ class EnhancedErrorHandler:
         self.retry_delays = config.get('retry_delays', [1, 2, 4])  # seconds
         
         # Ensure error log directory exists
-        self.error_log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.error_log_file.parent.mkdir(parents = True, exist_ok = True)
     
     def handle_error(
         self,
@@ -250,16 +261,16 @@ class EnhancedErrorHandler:
             
             # Create error report
             error_report = ErrorReport(
-                error_id=error_id,
-                timestamp=format_datetime(get_current_datetime()),
-                severity=severity,
-                category=category,
-                error_type=type(error).__name__,
-                error_message=str(error),
-                context=context,
-                stack_trace=traceback.format_exc(),
-                recovery_strategy=recovery_strategy,
-                retry_count=retry_count
+                error_id = error_id,
+                timestamp = format_datetime(get_current_datetime()),
+                severity = severity,
+                category = category,
+                error_type = type(error).__name__,
+                error_message = str(error),
+                context = context,
+                stack_trace = traceback.format_exc(),
+                recovery_strategy = recovery_strategy,
+                retry_count = retry_count
             )
             
             # Store error report
@@ -278,15 +289,15 @@ class EnhancedErrorHandler:
             # Create a minimal error report
             return ErrorReport(
                 error_id="error_handler_failed",
-                timestamp=format_datetime(get_current_datetime()),
-                severity=ErrorSeverity.CRITICAL,
-                category=ErrorCategory.UNKNOWN,
-                error_type=type(error).__name__,
-                error_message=str(error),
-                context=context,
-                stack_trace=traceback.format_exc(),
-                recovery_strategy=RecoveryStrategy.ABORT,
-                retry_count=retry_count
+                timestamp = format_datetime(get_current_datetime()),
+                severity = ErrorSeverity.CRITICAL,
+                category = ErrorCategory.UNKNOWN,
+                error_type = type(error).__name__,
+                error_message = str(error),
+                context = context,
+                stack_trace = traceback.format_exc(),
+                recovery_strategy = RecoveryStrategy.ABORT,
+                retry_count = retry_count
             )
     
     async def execute_with_error_handling(
@@ -347,12 +358,14 @@ class EnhancedErrorHandler:
         
         # Should not reach here
         raise Exception(f"Unexpected error in execute_with_error_handling for {context.operation}")
+    @log_all_calls
     
     def _generate_error_id(self, error: Exception, context: ErrorContext) -> str:
         """Generate a unique error ID."""
         import hashlib
         error_info = f"{type(error).__name__}_{context.operation}_{context.step_name}_{context.symbol}_{context.exchange}"
         return hashlib.md5(error_info.encode()).hexdigest()[:12]
+    @log_all_calls
     
     def _determine_severity(self, error: Exception) -> ErrorSeverity:
         """Determine error severity based on error type."""
@@ -364,6 +377,7 @@ class EnhancedErrorHandler:
             return ErrorSeverity.MEDIUM
         else:
             return ErrorSeverity.LOW
+    @log_all_calls
     
     def _determine_category(self, error: Exception) -> ErrorCategory:
         """Determine error category based on error type."""
@@ -385,6 +399,7 @@ class EnhancedErrorHandler:
             return ErrorCategory.TIMEOUT
         else:
             return ErrorCategory.UNKNOWN
+    @log_all_calls
     
     def _determine_recovery_strategy(
         self,
@@ -407,6 +422,7 @@ class EnhancedErrorHandler:
             return RecoveryStrategy.SKIP
         else:
             return RecoveryStrategy.ABORT
+    @log_all_calls
     
     def _log_error(self, error_report: ErrorReport) -> None:
         """Log error with appropriate level."""
@@ -430,6 +446,7 @@ class EnhancedErrorHandler:
             self.logger.warning(log_message)
         else:
             self.logger.info(log_message)
+    @log_all_calls
     
     def _save_error_report(self, error_report: ErrorReport) -> None:
         """Save error report to file."""

@@ -33,7 +33,7 @@ def generate_correlation_id() -> str:
     return uuid.uuid4().hex
 
 @contextmanager
-def correlation_context(correlation_id: str | None=None) -> None:
+def correlation_context(correlation_id: str | None = None) -> None:
     """Context manager that sets a correlation ID for the duration of the block."""
     token = None
     cid = correlation_id or generate_correlation_id()
@@ -55,15 +55,15 @@ class CorrelationIdFilter(logging.Filter):
             pass
         return True
 
-def get_json_formatter(datefmt: str | None=None) -> logging.Formatter:
+def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
     """Return a JSON formatter with standard fields plus correlation IDs.
 
     Falls back to a plain formatter if python-json-logger is unavailable.
     """
     fmt = '%(asctime)s %(levelname)s %(name)s %(message)s %(correlation_id)s %(session_id)s'
     if jsonlogger is None:
-        return logging.Formatter(fmt=fmt, datefmt=datefmt)
-    return jsonlogger.JsonFormatter(fmt=fmt, timestamp=True, json_ensure_ascii=False, json_indent=None, datefmt=datefmt)
+        return logging.Formatter(fmt = fmt, datefmt = datefmt)
+    return jsonlogger.JsonFormatter(fmt = fmt, timestamp = True, json_ensure_ascii = False, json_indent = None, datefmt = datefmt)
 try:
     from starlette.middleware.base import BaseHTTPMiddleware
 

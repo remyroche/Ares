@@ -27,25 +27,25 @@ import logging
 import typing
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-logger=system_logger.getChild("MultiTimeframeHMMTraining")
+logger = system_logger.getChild("MultiTimeframeHMMTraining")
 
 
-@validate_dataframe_operation("load_timeframe", validate_before=False, validate_after=True)
+@validate_dataframe_operation("load_timeframe", validate_before = False, validate_after = True)
 def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load HMM cluster data for a specific timeframe."""
     # Look for HMM composite cluster data
-    hmm_data_path=os.path.join(
+    hmm_data_path = os.path.join(
         data_dir,
         f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
     )
 
     if os.path.exists(hmm_data_path):
         logger.info(f"📂 Loading HMM data from {hmm_data_path}")
-        data=pd.read_parquet(hmm_data_path)
+        data = pd.read_parquet(hmm_data_path)
         logger.info(f"📊 Loaded {len(data)} rows for {timeframe}")
         return data
 
@@ -57,41 +57,48 @@ def create_ensemble_config() -> EnsembleConfig:
     """Create ensemble configuration with specified timeframes."""
     timeframes=[
         TimeframeConfig(
-            timeframe="1h",
-            weight=0.25,  # Equal weight initially
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            timeframe="1m",
+            weight = 0.2,  # Equal weight initially
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="5m",
-            weight=0.25,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.2,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="15m",
-            weight=0.25,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.2,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
         TimeframeConfig(
             timeframe="30m",
-            weight=0.25,
-            min_samples=50,
-            enable_hazard_model=True,
-            enable_price_prediction=False,
+            weight = 0.2,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
+        ),
+        TimeframeConfig(
+            timeframe="1h",
+            weight = 0.2,
+            min_samples = 50,
+            enable_hazard_model = True,
+            enable_price_prediction = False,
         ),
     ]
 
     return EnsembleConfig(
-        timeframes=timeframes,
+        timeframes = timeframes,
         meta_learner_type="lgbm",
-        enable_dynamic_weighting=True,
-        weight_update_frequency=100,
-        min_confidence_threshold=0.6,
+        enable_dynamic_weighting = True,
+        weight_update_frequency = 100,
+        min_confidence_threshold = 0.6,
         ensemble_method="meta_learner",  # Use meta-learner for better performance
     )
 
@@ -132,36 +139,36 @@ def validate_data_quality(timeframe_data: dict[str, pd.DataFrame]) -> bool:
 
 def main() -> bool:
     """Main training function."""
-    parser=argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
+    parser = argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
     parser.add_argument(
         "--symbol",
-        type=str,
-        required=True,
+        type = str,
+        required = True,
         help="Trading symbol (e.g., ETHUSDT)",
     )
-    parser.add_argument("--exchange", type=str, default="BINANCE", help="Exchange name")
+    parser.add_argument("--exchange", type = str, default="BINANCE", help="Exchange name")
     parser.add_argument(
         "--data-dir",
-        type=str,
+        type = str,
         default="data/training",
         help="Data directory",
     )
     parser.add_argument(
         "--timeframes",
-        type=str,
+        type = str,
         default="1h,5m,15m,30m",
         help="Comma-separated list of timeframes",
     )
     parser.add_argument(
         "--ensemble-method",
-        type=str,
+        type = str,
         default="meta_learner",
         choices=["weighted_average", "meta_learner", "stacking"],
         help="Ensemble combination method",
     )
     parser.add_argument(
         "--meta-learner",
-        type=str,
+        type = str,
         default="lgbm",
         choices=["lgbm", "random_forest", "logistic"],
         help="Meta-learner type",
@@ -173,12 +180,12 @@ def main() -> bool:
     )
     parser.add_argument(
         "--min-confidence",
-        type=float,
-        default=0.6,
+        type = float,
+        default = 0.6,
         help="Minimum confidence threshold for predictions",
     )
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     logger.info("🚀 Starting Multi-Timeframe HMM Ensemble Training")
     logger.info(f"📊 Symbol: {args.symbol}")
@@ -195,11 +202,11 @@ def main() -> bool:
     timeframe_data: dict[str, pd.DataFrame] = {}
     for timeframe in timeframes:
         logger.info(f"📂 Loading data for {timeframe}...")
-        data=load_timeframe_data(
-            symbol=args.symbol,
-            exchange=args.exchange,
-            timeframe=timeframe,
-            data_dir=args.data_dir,
+        data = load_timeframe_data(
+            symbol = args.symbol,
+            exchange = args.exchange,
+            timeframe = timeframe,
+            data_dir = args.data_dir,
         )
         if not data.empty:
             timeframe_data[timeframe] = data
@@ -216,18 +223,18 @@ def main() -> bool:
         return False
 
     # Create ensemble configuration
-    config=create_ensemble_config()
-    config.ensemble_method=args.ensemble_method
+    config = create_ensemble_config()
+    config.ensemble_method = args.ensemble_method
     config.meta_learner_type = args.meta_learner
     config.enable_dynamic_weighting = args.enable_dynamic_weighting
     config.min_confidence_threshold = args.min_confidence
 
     # Update timeframe weights to match loaded data
     available_timeframes: list[str] = list(timeframe_data.keys())
-    equal_weight=1.0 / len(available_timeframes)
+    equal_weight = 1.0 / len(available_timeframes)
     for tf_config in config.timeframes:
         if tf_config.timeframe in available_timeframes:
-            tf_config.weight=equal_weight
+            tf_config.weight = equal_weight
         else:
             tf_config.weight = 0.0
 
@@ -236,10 +243,10 @@ def main() -> bool:
     )
 
     # Create and train ensemble
-    ensemble=MultiTimeframeHMMEnsemble(config, args.symbol, args.exchange)
+    ensemble = MultiTimeframeHMMEnsemble(config, args.symbol, args.exchange)
 
     logger.info("🎯 Training multi-timeframe HMM ensemble...")
-    success=ensemble.train_ensemble(timeframe_data)
+    success = ensemble.train_ensemble(timeframe_data)
 
     if success:
         logger.info(
@@ -247,7 +254,7 @@ def main() -> bool:
         )
 
         # Get ensemble status
-        status=ensemble.get_ensemble_status()
+        status = ensemble.get_ensemble_status()
         logger.info("📊 Ensemble Status:")
         logger.info(f"   - Trained: {status['trained']}")
         logger.info(f"   - Timeframes: {status['timeframes']}")
@@ -265,7 +272,7 @@ def main() -> bool:
                 test_data[tf] = data.tail(10)  # Use last 10 rows for testing
 
         if test_data:
-            prediction=ensemble.predict(test_data)
+            prediction = ensemble.predict(test_data)
             logger.info(
                 f"🎯 Test prediction: {prediction.get('prediction')} (confidence: {prediction.get('confidence', 0.0):.3f})",
             )

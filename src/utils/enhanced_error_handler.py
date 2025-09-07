@@ -36,7 +36,7 @@ class ErrorContext:
     line_number: int
     timestamp: datetime
     call_stack: List[str]
-    local_variables: Dict[str, Any] = field(default_factory=dict)
+    local_variables: Dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class ErrorRecord:
@@ -103,16 +103,16 @@ class EnhancedErrorHandler:
             while tb:
                 call_stack.append(f'{tb.tb_frame.f_code.co_filename}:{tb.tb_lineno} in {tb.tb_frame.f_code.co_name}')
                 tb = tb.tb_next
-            return ErrorContext(function_name=func.__name__, module_name=func.__module__ if hasattr(func, '__module__') else 'unknown', line_number=line_number, timestamp=datetime.now(), call_stack=call_stack, local_variables=local_vars)
+            return ErrorContext(function_name = func.__name__, module_name = func.__module__ if hasattr(func, '__module__') else 'unknown', line_number = line_number, timestamp = datetime.now(), call_stack = call_stack, local_variables = local_vars)
         except Exception:
-            return ErrorContext(function_name=func.__name__, module_name=func.__module__ if hasattr(func, '__module__') else 'unknown', line_number=0, timestamp=datetime.now(), call_stack=[])
+            return ErrorContext(function_name = func.__name__, module_name = func.__module__ if hasattr(func, '__module__') else 'unknown', line_number = 0, timestamp = datetime.now(), call_stack=[])
 
     def handle_error(self, func: Callable, exception: Exception, args: tuple, kwargs: dict) -> Tuple[bool, Any]:
         error_id = self._generate_error_id()
         context = self._create_error_context(func, exception)
         category = self._categorize_error(exception)
         severity = self._assess_error_severity(exception, context)
-        error_record = ErrorRecord(error_id=error_id, error_type=type(exception).__name__, error_message=str(exception), error_category=category, error_severity=severity, context=context, stack_trace=traceback.format_exc())
+        error_record = ErrorRecord(error_id = error_id, error_type = type(exception).__name__, error_message = str(exception), error_category = category, error_severity = severity, context = context, stack_trace = traceback.format_exc())
         self._log_error_details(error_record)
         with self._lock:
             self.error_records.append(error_record)
@@ -137,7 +137,7 @@ class EnhancedErrorHandler:
         return {'total_errors': total_errors, 'recent_errors': [{'error_id': record.error_id, 'function_name': record.context.function_name, 'error_type': record.error_type, 'error_message': record.error_message, 'category': record.error_category.value, 'severity': record.error_severity.value, 'timestamp': record.context.timestamp.isoformat()} for record in self.error_records[-10:]]}
 _global_error_handler = EnhancedErrorHandler()
 
-def handle_errors_with_tracking(fallback: bool=True) -> None:
+def handle_errors_with_tracking(fallback: bool = True) -> None:
 
     def decorator(func: Callable) -> Callable:
 
@@ -181,7 +181,7 @@ def log_error_summary(logger: logging.Logger) -> None:
     logger.info(f"   Total errors: {summary['total_errors']}")
 
 def handle_errors_basic(func: Callable) -> Callable:
-    return handle_errors_with_tracking(fallback=True)(func)
+    return handle_errors_with_tracking(fallback = True)(func)
 
 def handle_errors_strict(func: Callable) -> Callable:
-    return handle_errors_with_tracking(fallback=False)(func)
+    return handle_errors_with_tracking(fallback = False)(func)

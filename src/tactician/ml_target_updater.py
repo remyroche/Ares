@@ -1,4 +1,6 @@
 # src/tactician/ml_target_updater.py
+from ...utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 
 
@@ -13,15 +15,15 @@ from typing import Any
 
 
 from .analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
-from .utils.logger import system_logger
-from .core.exceptions import (
+from ...utils.logger import system_logger
+from ...utils.warning_symbols import (
     error,
     failed,
-    initialization_error,
     invalid,
     missing,
+    warning,
 )
-from .core.decorators.errors import handles_errors
+from ...core.decorators.validate import validate_dataframe
 import numpy as np
 import pandas as pd
 import logging
@@ -73,7 +75,7 @@ class MLTargetUpdater:
         self.update_task: asyncio.Task | None = None
         self.is_running = False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """
         Initialize the ML Target Updater.
@@ -127,7 +129,7 @@ class MLTargetUpdater:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def start_updating(self) -> bool:
         """
         Start continuous target updating.
@@ -150,7 +152,7 @@ class MLTargetUpdater:
             self.logger.exception(failed(f"❌ Failed to start ML target updating: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop_updating(self) -> bool:
         """
         Stop continuous target updating.
@@ -283,7 +285,7 @@ class MLTargetUpdater:
 
     @validate_dataframe(
         columns=["open", "high", "low", "close", "volume"],
-        min_rows=20
+        min_rows = 20
     )
     async def _generate_target_prediction(
         self,
@@ -305,9 +307,9 @@ class MLTargetUpdater:
         try:
             # Use ML target predictor to generate new target
             prediction = await self.ml_target_predictor.predict_target(
-                symbol=symbol,
-                market_data=market_data,
-                position_data=position_data,
+                symbol = symbol,
+                market_data = market_data,
+                position_data = position_data,
             )
 
             if prediction is None:
@@ -362,7 +364,7 @@ class MLTargetUpdater:
 
     @validate_dataframe(
         columns=["timestamp", "open", "high", "low", "close", "volume"],
-        min_rows=1
+        min_rows = 1
     )
     async def _get_market_data(self, symbol: str) -> pd.DataFrame | None:
         """

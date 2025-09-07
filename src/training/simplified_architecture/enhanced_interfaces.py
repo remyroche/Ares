@@ -49,9 +49,9 @@ class StepResult:
     status: StepStatus
     data: Optional[Any] = None
     error: Optional[Exception] = None
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    artifacts: Dict[str, Path] = field(default_factory=dict)
-    warnings: List[str] = field(default_factory=list)
+    metrics: Dict[str, Any] = field(default_factory = dict)
+    artifacts: Dict[str, Path] = field(default_factory = dict)
+    warnings: List[str] = field(default_factory = list)
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     execution_id: Optional[str] = None
@@ -106,12 +106,12 @@ class StepConfig:
     retry_delay_seconds: int = 1
     fail_fast: bool = True
     priority: StepPriority = StepPriority.NORMAL
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    dependencies: List[str] = field(default_factory=list)
+    parameters: Dict[str, Any] = field(default_factory = dict)
+    dependencies: List[str] = field(default_factory = list)
     output_schema: Optional[Dict[str, Any]] = None
-    validation_rules: List[Dict[str, Any]] = field(default_factory=list)
-    resource_limits: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    validation_rules: List[Dict[str, Any]] = field(default_factory = list)
+    resource_limits: Dict[str, Any] = field(default_factory = dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
     def validate(self) -> List[str]:
         """Validate configuration and return list of errors."""
@@ -373,10 +373,10 @@ class BasePipelineStep(IPipelineStep):
         """
         execution_id = f"{self.name}_{int(time.time())}_{self._execution_count}"
         result = StepResult(
-            status=StepStatus.PENDING,
-            start_time=datetime.now(),
-            execution_id=execution_id,
-            step_version=self.version
+            status = StepStatus.PENDING,
+            start_time = datetime.now(),
+            execution_id = execution_id,
+            step_version = self.version
         )
 
         self._execution_count += 1
@@ -396,7 +396,7 @@ class BasePipelineStep(IPipelineStep):
             if self.config.timeout_seconds:
                 output = await asyncio.wait_for(
                     self._execute_impl(**kwargs),
-                    timeout=self.config.timeout_seconds
+                    timeout = self.config.timeout_seconds
                 )
             else:
                 output = await self._execute_impl(**kwargs)
@@ -417,7 +417,7 @@ class BasePipelineStep(IPipelineStep):
         except Exception as e:
             result.status = StepStatus.FAILED
             result.error = e
-            self.logger.error(f"Step {self.name} failed: {e}", exc_info=True)
+            self.logger.error(f"Step {self.name} failed: {e}", exc_info = True)
 
         finally:
             result.end_time = datetime.now()
@@ -592,7 +592,7 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
             'total_columns': len(data.columns),
             'null_percentage': (data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100,
             'duplicate_rows': data.duplicated().sum(),
-            'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024
+            'memory_usage_mb': data.memory_usage(deep = True).sum() / 1024 / 1024
         }
 
     async def _execute_impl(self, source: str, **kwargs) -> pd.DataFrame:
@@ -605,7 +605,7 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
         
         if self.config.parameters.get('save_snapshot', False):
             snapshot_path = Path(f'data/snapshots/{self.name}_{int(time.time())}.parquet')
-            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.parent.mkdir(parents = True, exist_ok = True)
             data.to_parquet(snapshot_path)
             self.add_artifact('data_snapshot', snapshot_path)
         

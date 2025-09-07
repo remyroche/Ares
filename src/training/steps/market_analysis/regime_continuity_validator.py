@@ -83,12 +83,12 @@ class RegimeContinuityValidator:
                 validation_score *= 0.95
             recommendations = self._generate_recommendations(issues, warnings, validation_score)
             is_valid = len(issues) == 0 and validation_score >= 0.8
-            result = ContinuityValidationResult(step_name=step_name, is_valid=is_valid, validation_score=validation_score, issues=issues, warnings=warnings, recommendations=recommendations, validated_at=datetime.now())
+            result = ContinuityValidationResult(step_name = step_name, is_valid = is_valid, validation_score = validation_score, issues = issues, warnings = warnings, recommendations = recommendations, validated_at = datetime.now())
             self.logger.info(f"📊 Continuity validation for {step_name}: {('✅ PASSED' if is_valid else '❌ FAILED')} (score: {validation_score:.2f})")
             return result
         except Exception as e:
             self.logger.exception(f'❌ Error validating continuity for {step_name}: {e}')
-            return ContinuityValidationResult(step_name=step_name, is_valid=False, validation_score=0.0, issues=[f'Validation error: {str(e)}'], warnings=[], recommendations=['Fix validation error and retry'], validated_at=datetime.now())
+            return ContinuityValidationResult(step_name = step_name, is_valid = False, validation_score = 0.0, issues=[f'Validation error: {str(e)}'], warnings=[], recommendations=['Fix validation error and retry'], validated_at = datetime.now())
 
     @traced(span_name='validate_regime_coverage')
     async def _validate_regime_coverage(self, step_name: str, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Dict[str, Any]:
@@ -219,7 +219,7 @@ class RegimeContinuityValidator:
         Returns:
             Expected time difference or None
         """
-        timeframe_mapping = {'1m': pd.Timedelta(minutes=1), '5m': pd.Timedelta(minutes=5), '15m': pd.Timedelta(minutes=15), '30m': pd.Timedelta(minutes=30), '1h': pd.Timedelta(hours=1), '4h': pd.Timedelta(hours=4), '1d': pd.Timedelta(days=1)}
+        timeframe_mapping = {'1m': pd.Timedelta(minutes = 1), '5m': pd.Timedelta(minutes = 5), '15m': pd.Timedelta(minutes = 15), '30m': pd.Timedelta(minutes = 30), '1h': pd.Timedelta(hours = 1), '4h': pd.Timedelta(hours = 4), '1d': pd.Timedelta(days = 1)}
         return timeframe_mapping.get(timeframe)
 
     @traced(span_name='validate_feature_consistency')
@@ -386,7 +386,7 @@ class RegimeContinuityValidator:
         """
         try:
             training_dir = Path(data_dir) / 'training'
-            training_dir.mkdir(parents=True, exist_ok=True)
+            training_dir.mkdir(parents = True, exist_ok = True)
             validation_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_continuity_validation.json'
             safe_json_dump(validation_results, validation_file)
             self.logger.info(f'✅ Saved validation results: {validation_file}')

@@ -129,12 +129,12 @@ class HMMRegimeBarrierOptimizer:
         """
         try:
             export_dir = Path('data_cache/hmm_barriers')
-            export_dir.mkdir(parents=True, exist_ok=True)
+            export_dir.mkdir(parents = True, exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'hmm_regime_barriers_{timestamp}.json'
             filepath = export_dir / filename
             with open(filepath, 'w') as f:
-                json.dump(self.barrier_map, f, indent=2, default=str)
+                json.dump(self.barrier_map, f, indent = 2, default = str)
             self.logger.info(f'✅ Barrier map exported to {filepath}')
             return str(filepath)
         except Exception as e:

@@ -1,3 +1,4 @@
+from ...core.decorators import handles_errors
 
 """HMM-Based Training Step Validator"""
 
@@ -5,8 +6,7 @@ from typing import Dict, Any
 import pandas as pd
 from pathlib import Path
 
-from ....core.decorators import handles_errors, validates, log_call, traced
-from ....utils.logger import system_logger
+from src.utils.logger import system_logger
 from ....utils.common_operations import safe_file_exists, validate_dataframe_schema
 import logging
 
@@ -18,8 +18,8 @@ class HMMTrainingValidator:
         self.logger = system_logger.getChild('HMMTrainingValidator')
         self.validation_results: Dict[str, Any] = {}
 
-    @handles_errors(exceptions=(Exception,), default_return=False, log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(exceptions=(Exception,), default_return = False, log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
     async def validate_training_step(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
@@ -88,7 +88,7 @@ class HMMTrainingValidator:
         if not exchange or exchange not in valid_exchanges:
             errors.append(f"Exchange must be one of: {valid_exchanges}")
         
-        valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        valid_timeframes = ['1m', '5m', '15m', '30m', '1h']
         if not timeframe or timeframe not in valid_timeframes:
             errors.append(f"Timeframe must be one of: {valid_timeframes}")
         

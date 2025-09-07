@@ -1,5 +1,7 @@
 """Dynamic Regime Count Optimization.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module automatically determines the optimal number of regimes based on multiple criteria:
 1. Information Criteria (AIC, BIC, ICL)
 2. Cross-validation with regime stability
@@ -17,6 +19,7 @@ warnings.filterwarnings('ignore')
 
 class DynamicRegimeCountOptimizer:
     """Automatically optimize the number of regimes using multiple criteria with enhanced optimization."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -57,6 +60,7 @@ class DynamicRegimeCountOptimizer:
         print('  🎯 Combining optimization results...')
         optimal_regimes = self._combine_optimization_results(ic_results, cv_results, economic_results, persistence_results, market_adaptation, enhanced_results, balance_results, stability_results)
         return {'optimal_n_regimes': optimal_regimes['n_regimes'], 'optimization_score': optimal_regimes['score'], 'information_criteria': ic_results, 'cross_validation': cv_results, 'economic_significance': economic_results, 'regime_persistence': persistence_results, 'market_adaptation': market_adaptation, 'enhanced_optimization': enhanced_results, 'regime_balance': balance_results, 'regime_stability': stability_results, 'all_scores': optimal_regimes['all_scores'], 'recommendation': optimal_regimes['recommendation']}
+    @log_all_calls
 
     def _analyze_information_criteria(self, features: np.ndarray) -> Dict[str, Any]:
         """Analyze information criteria (AIC, BIC, ICL) for different regime counts."""
@@ -64,7 +68,7 @@ class DynamicRegimeCountOptimizer:
         for n_regimes in range(self.min_regimes, self.max_regimes + 1):
             try:
                 from hmmlearn.hmm import GaussianHMM
-                model = GaussianHMM(n_components=n_regimes, covariance_type='full', random_state=42)
+                model = GaussianHMM(n_components = n_regimes, covariance_type='full', random_state = 42)
                 model.fit(features)
                 log_likelihood = model.score(features)
                 n_params = n_regimes * (n_regimes - 1) + n_regimes * features.shape[1] * (features.shape[1] + 1) / 2
@@ -94,12 +98,13 @@ class DynamicRegimeCountOptimizer:
             best_icl_idx = np.argmin(results['icl_scores'])
             results['best_icl'] = {'n_regimes': results['n_regimes_tested'][best_icl_idx], 'score': results['icl_scores'][best_icl_idx]}
         return results
+    @log_all_calls
 
     def _cross_validation_analysis(self, data: pd.DataFrame, features: np.ndarray) -> Dict[str, Any]:
         """Perform cross-validation analysis for regime stability."""
         from sklearn.model_selection import TimeSeriesSplit
         results = {'cv_scores': [], 'stability_scores': [], 'n_regimes_tested': [], 'best_cv': None}
-        tscv = TimeSeriesSplit(n_splits=self.cv_folds)
+        tscv = TimeSeriesSplit(n_splits = self.cv_folds)
         for n_regimes in range(self.min_regimes, self.max_regimes + 1):
             cv_scores = []
             stability_scores = []
@@ -108,7 +113,7 @@ class DynamicRegimeCountOptimizer:
                     X_train = features[train_idx]
                     X_val = features[val_idx]
                     from hmmlearn.hmm import GaussianHMM
-                    model = GaussianHMM(n_components=n_regimes, covariance_type='full', random_state=42)
+                    model = GaussianHMM(n_components = n_regimes, covariance_type='full', random_state = 42)
                     model.fit(X_train)
                     val_regimes = model.predict(X_val)
                     stability = self._calculate_regime_stability(val_regimes)
@@ -129,6 +134,7 @@ class DynamicRegimeCountOptimizer:
             best_cv_idx = np.argmax(results['cv_scores'])
             results['best_cv'] = {'n_regimes': results['n_regimes_tested'][best_cv_idx], 'score': results['cv_scores'][best_cv_idx], 'stability': results['stability_scores'][best_cv_idx]}
         return results
+    @log_all_calls
 
     def _economic_significance_analysis(self, data: pd.DataFrame, features: np.ndarray) -> Dict[str, Any]:
         """Analyze economic significance of different regime counts."""
@@ -141,7 +147,7 @@ class DynamicRegimeCountOptimizer:
         for n_regimes in range(self.min_regimes, self.max_regimes + 1):
             try:
                 from hmmlearn.hmm import GaussianHMM
-                model = GaussianHMM(n_components=n_regimes, covariance_type='full', random_state=42)
+                model = GaussianHMM(n_components = n_regimes, covariance_type='full', random_state = 42)
                 model.fit(features)
                 regimes = model.predict(features)
                 min_length = min(len(regimes), len(returns))
@@ -164,6 +170,7 @@ class DynamicRegimeCountOptimizer:
             best_economic_idx = np.argmax(results['economic_scores'])
             results['best_economic'] = {'n_regimes': results['n_regimes_tested'][best_economic_idx], 'score': results['economic_scores'][best_economic_idx], 'sharpe_ratios': results['sharpe_ratios'][best_economic_idx], 'return_differences': results['return_differences'][best_economic_idx]}
         return results
+    @log_all_calls
 
     def _regime_persistence_analysis(self, data: pd.DataFrame, features: np.ndarray) -> Dict[str, Any]:
         """Analyze regime persistence for different regime counts."""
@@ -171,7 +178,7 @@ class DynamicRegimeCountOptimizer:
         for n_regimes in range(self.min_regimes, self.max_regimes + 1):
             try:
                 from hmmlearn.hmm import GaussianHMM
-                model = GaussianHMM(n_components=n_regimes, covariance_type='full', random_state=42)
+                model = GaussianHMM(n_components = n_regimes, covariance_type='full', random_state = 42)
                 model.fit(features)
                 regimes = model.predict(features)
                 persistence_score = self._calculate_persistence_score(regimes)
@@ -188,6 +195,7 @@ class DynamicRegimeCountOptimizer:
             best_persistence_idx = np.argmax(results['persistence_scores'])
             results['best_persistence'] = {'n_regimes': results['n_regimes_tested'][best_persistence_idx], 'score': results['persistence_scores'][best_persistence_idx], 'transition_rate': results['transition_rates'][best_persistence_idx]}
         return results
+    @log_all_calls
 
     def _adapt_to_market_conditions(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Adapt regime count based on current market conditions."""
@@ -212,6 +220,7 @@ class DynamicRegimeCountOptimizer:
             market_condition = 'sideways_calm'
             recommended_regimes = 2
         return {'recommended_regimes': recommended_regimes, 'market_condition': market_condition, 'volatility': volatility, 'trend': trend}
+    @log_all_calls
 
     def _run_enhanced_optimization_methods(self, features: np.ndarray) -> Dict[str, Any]:
         """Run enhanced optimization methods (Elbow, Gap Statistic, Silhouette)."""
@@ -223,6 +232,7 @@ class DynamicRegimeCountOptimizer:
         if self.use_silhouette_analysis:
             results['silhouette_analysis'] = self._silhouette_analysis(features)
         return results
+    @log_all_calls
 
     def _elbow_method_analysis(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform elbow method analysis for optimal regime count."""
@@ -230,7 +240,7 @@ class DynamicRegimeCountOptimizer:
         inertias = []
         n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
         for n_regimes in n_regimes_range:
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters = n_regimes, random_state = 42, n_init = 10)
             kmeans.fit(features)
             inertias.append(kmeans.inertia_)
         if len(inertias) >= 3:
@@ -243,6 +253,7 @@ class DynamicRegimeCountOptimizer:
         else:
             elbow_n_regimes = self.min_regimes
         return {'optimal_n_regimes': elbow_n_regimes, 'inertias': inertias, 'n_regimes_tested': list(n_regimes_range), 'elbow_index': elbow_idx if len(inertias) >= 3 else 0}
+    @log_all_calls
 
     def _gap_statistic_analysis(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform gap statistic analysis for optimal regime count."""
@@ -250,14 +261,14 @@ class DynamicRegimeCountOptimizer:
         gap_scores = []
         n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
         for n_regimes in n_regimes_range:
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters = n_regimes, random_state = 42, n_init = 10)
             kmeans.fit(features)
             log_inertia_actual = np.log(kmeans.inertia_)
             n_samples, n_features = features.shape
             reference_inertias = []
             for _ in range(10):
-                reference_data = np.random.uniform(features.min(axis=0), features.max(axis=0), (n_samples, n_features))
-                kmeans_ref = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+                reference_data = np.random.uniform(features.min(axis = 0), features.max(axis = 0), (n_samples, n_features))
+                kmeans_ref = KMeans(n_clusters = n_regimes, random_state = 42, n_init = 10)
                 kmeans_ref.fit(reference_data)
                 reference_inertias.append(kmeans_ref.inertia_)
             log_inertia_reference = np.log(np.mean(reference_inertias))
@@ -266,6 +277,7 @@ class DynamicRegimeCountOptimizer:
         optimal_idx = np.argmax(gap_scores)
         optimal_n_regimes = n_regimes_range[optimal_idx]
         return {'optimal_n_regimes': optimal_n_regimes, 'gap_scores': gap_scores, 'n_regimes_tested': list(n_regimes_range), 'optimal_index': optimal_idx}
+    @log_all_calls
 
     def _silhouette_analysis(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform silhouette analysis for optimal regime count."""
@@ -276,7 +288,7 @@ class DynamicRegimeCountOptimizer:
         for n_regimes in n_regimes_range:
             if n_regimes >= len(features):
                 break
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters = n_regimes, random_state = 42, n_init = 10)
             labels = kmeans.fit_predict(features)
             if len(np.unique(labels)) > 1:
                 score = silhouette_score(features, labels)
@@ -291,6 +303,7 @@ class DynamicRegimeCountOptimizer:
             optimal_n_regimes = self.min_regimes
             optimal_score = -1
         return {'optimal_n_regimes': optimal_n_regimes, 'silhouette_scores': silhouette_scores, 'n_regimes_tested': list(n_regimes_range), 'optimal_score': optimal_score, 'optimal_index': optimal_idx if valid_scores else 0}
+    @log_all_calls
 
     def _analyze_regime_balance(self, features: np.ndarray) -> Dict[str, Any]:
         """Analyze regime balance for different regime counts."""
@@ -298,7 +311,7 @@ class DynamicRegimeCountOptimizer:
         balance_scores = []
         n_regimes_range = range(self.min_regimes, self.max_regimes + 1)
         for n_regimes in n_regimes_range:
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters = n_regimes, random_state = 42, n_init = 10)
             labels = kmeans.fit_predict(features)
             regime_sizes = [np.sum(labels == i) for i in range(n_regimes)]
             total_samples = len(labels)
@@ -315,6 +328,7 @@ class DynamicRegimeCountOptimizer:
         optimal_idx = np.argmax(balance_scores)
         optimal_n_regimes = n_regimes_range[optimal_idx]
         return {'optimal_n_regimes': optimal_n_regimes, 'balance_scores': balance_scores, 'n_regimes_tested': list(n_regimes_range), 'optimal_index': optimal_idx}
+    @log_all_calls
 
     def _analyze_regime_stability(self, features: np.ndarray) -> Dict[str, Any]:
         """Analyze regime stability across different regime counts."""
@@ -324,7 +338,7 @@ class DynamicRegimeCountOptimizer:
         for n_regimes in n_regimes_range:
             stability_results = []
             for seed in range(5):
-                kmeans = KMeans(n_clusters=n_regimes, random_state=seed, n_init=10)
+                kmeans = KMeans(n_clusters = n_regimes, random_state = seed, n_init = 10)
                 labels = kmeans.fit_predict(features)
                 stability_results.append(labels)
             if len(stability_results) > 1:
@@ -340,6 +354,7 @@ class DynamicRegimeCountOptimizer:
         optimal_idx = np.argmax(stability_scores)
         optimal_n_regimes = n_regimes_range[optimal_idx]
         return {'optimal_n_regimes': optimal_n_regimes, 'stability_scores': stability_scores, 'n_regimes_tested': list(n_regimes_range), 'optimal_index': optimal_idx}
+    @log_all_calls
 
     def _calculate_label_consistency(self, labels1: np.ndarray, labels2: np.ndarray) -> float:
         """Calculate consistency between two label assignments."""
@@ -349,6 +364,7 @@ class DynamicRegimeCountOptimizer:
             return 0.0
         consistency = adjusted_rand_score(labels1, labels2)
         return max(0.0, consistency)
+    @log_all_calls
 
     def _combine_optimization_results(self, ic_results: Dict, cv_results: Dict, economic_results: Dict, persistence_results: Dict, market_adaptation: Dict, enhanced_results: Dict, balance_results: Dict, stability_results: Dict) -> Dict[str, Any]:
         """Combine all optimization results to determine optimal regime count."""
@@ -386,6 +402,7 @@ class DynamicRegimeCountOptimizer:
             optimal_score = 0.0
         recommendation = self._generate_recommendation(optimal_n_regimes, optimal_score, recommendations, market_adaptation)
         return {'n_regimes': optimal_n_regimes, 'score': optimal_score, 'all_scores': regime_scores, 'recommendation': recommendation}
+    @log_all_calls
 
     def _generate_recommendation(self, optimal_n_regimes: int, score: float, recommendations: List[Dict], market_adaptation: Dict) -> str:
         """Generate a human-readable recommendation."""
@@ -399,6 +416,7 @@ class DynamicRegimeCountOptimizer:
             confidence = 'low'
         recommendation = f"\n        Optimal regime count: {optimal_n_regimes}\n        Confidence: {confidence} ({score:.2f})\n        Market condition: {market_adaptation['market_condition']}\n        Agreeing methods: {agreement_count}/{len(recommendations)}\n        \n        Rationale:\n        - Information criteria suggest {optimal_n_regimes} regimes\n        - Cross-validation shows good stability\n        - Economic significance is meaningful\n        - Regime persistence is appropriate\n        - Market conditions support this choice\n        "
         return recommendation.strip()
+    @log_all_calls
 
     def _calculate_regime_stability(self, regimes: np.ndarray) -> float:
         """Calculate regime stability."""
@@ -407,6 +425,7 @@ class DynamicRegimeCountOptimizer:
         changes = np.sum(np.diff(regimes) != 0)
         stability = 1.0 - changes / (len(regimes) - 1)
         return max(0.0, stability)
+    @log_all_calls
 
     def _calculate_economic_score(self, returns: pd.Series, regimes: np.ndarray) -> float:
         """Calculate economic significance score."""
@@ -422,6 +441,7 @@ class DynamicRegimeCountOptimizer:
         return_means = list(regime_returns.values())
         economic_score = np.var(return_means)
         return min(economic_score * 1000, 1.0)
+    @log_all_calls
 
     def _calculate_regime_sharpe_ratios(self, returns: pd.Series, regimes: np.ndarray) -> List[float]:
         """Calculate Sharpe ratios for each regime."""
@@ -434,6 +454,7 @@ class DynamicRegimeCountOptimizer:
                     sharpe = regime_returns.mean() / regime_returns.std()
                     sharpe_ratios.append(sharpe)
         return sharpe_ratios
+    @log_all_calls
 
     def _calculate_return_differences(self, returns: pd.Series, regimes: np.ndarray) -> float:
         """Calculate differences in returns between regimes."""
@@ -446,6 +467,7 @@ class DynamicRegimeCountOptimizer:
             return 0.0
         return_means = list(regime_returns.values())
         return np.std(return_means)
+    @log_all_calls
 
     def _calculate_persistence_score(self, regimes: np.ndarray) -> float:
         """Calculate regime persistence score."""
@@ -458,6 +480,7 @@ class DynamicRegimeCountOptimizer:
         avg_duration = np.mean(durations)
         persistence_score = min(avg_duration / 50, 1.0)
         return persistence_score
+    @log_all_calls
 
     def _calculate_transition_rate(self, regimes: np.ndarray) -> float:
         """Calculate regime transition rate."""
@@ -466,3 +489,14 @@ class DynamicRegimeCountOptimizer:
         changes = np.sum(np.diff(regimes) != 0)
         transition_rate = changes / (len(regimes) - 1)
         return transition_rate
+
+"""
+Dynamic Regime Count Optimization.
+
+This module automatically determines the optimal number of regimes based on multiple criteria:
+1. Information Criteria (AIC, BIC, ICL)
+2. Cross-validation with regime stability
+3. Market condition adaptation
+4. Economic significance testing
+5. Regime persistence analysis
+"""

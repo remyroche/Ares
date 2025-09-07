@@ -20,20 +20,20 @@ class RegimeType(Enum):
 @dataclass
 class RegimeSpecificConstraints:
     """Constraints for regime-specific parameter optimization."""
-    tp_multiplier_range: list[float] = field(default_factory=lambda: [1.5, 4.0])
-    sl_multiplier_range: list[float] = field(default_factory=lambda: [0.8, 2.0])
-    position_size_range: list[float] = field(default_factory=lambda: [0.05, 0.25])
-    profit_take_multiplier_range: list[float] = field(default_factory=lambda: [0.01, 0.05])
-    stop_loss_multiplier_range: list[float] = field(default_factory=lambda: [0.005, 0.03])
-    time_barrier_minutes_range: list[int] = field(default_factory=lambda: [15, 120])
-    max_lookahead_range: list[int] = field(default_factory=lambda: [50, 200])
-    volatility_multiplier_range: list[float] = field(default_factory=lambda: [0.5, 2.0])
-    trend_multiplier_range: list[float] = field(default_factory=lambda: [0.5, 2.0])
-    volume_multiplier_range: list[float] = field(default_factory=lambda: [0.5, 2.0])
-    tp_atr_multiplier_range: list[float] = field(default_factory=lambda: [1.0, 4.0])
-    sl_atr_multiplier_range: list[float] = field(default_factory=lambda: [0.5, 2.0])
-    trailing_stop_range: list[float] = field(default_factory=lambda: [0.0, 0.02])
-    break_even_threshold_range: list[float] = field(default_factory=lambda: [0.005, 0.02])
+    tp_multiplier_range: list[float] = field(default_factory = lambda: [1.5, 4.0])
+    sl_multiplier_range: list[float] = field(default_factory = lambda: [0.8, 2.0])
+    position_size_range: list[float] = field(default_factory = lambda: [0.05, 0.25])
+    profit_take_multiplier_range: list[float] = field(default_factory = lambda: [0.01, 0.05])
+    stop_loss_multiplier_range: list[float] = field(default_factory = lambda: [0.005, 0.03])
+    time_barrier_minutes_range: list[int] = field(default_factory = lambda: [15, 120])
+    max_lookahead_range: list[int] = field(default_factory = lambda: [50, 200])
+    volatility_multiplier_range: list[float] = field(default_factory = lambda: [0.5, 2.0])
+    trend_multiplier_range: list[float] = field(default_factory = lambda: [0.5, 2.0])
+    volume_multiplier_range: list[float] = field(default_factory = lambda: [0.5, 2.0])
+    tp_atr_multiplier_range: list[float] = field(default_factory = lambda: [1.0, 4.0])
+    sl_atr_multiplier_range: list[float] = field(default_factory = lambda: [0.5, 2.0])
+    trailing_stop_range: list[float] = field(default_factory = lambda: [0.0, 0.02])
+    break_even_threshold_range: list[float] = field(default_factory = lambda: [0.005, 0.02])
 
 @dataclass
 class RegimeSpecificOptimizationConfig:
@@ -43,9 +43,9 @@ class RegimeSpecificOptimizationConfig:
     n_trials_per_regime: int = 100
     timeout_minutes_per_regime: int = 60
     cv_folds: int = 5
-    objectives: list[str] = field(default_factory=lambda: ['sharpe_ratio', 'win_rate', 'profit_factor', 'regime_accuracy'])
-    objective_weights: dict[str, float] = field(default_factory=lambda: {'sharpe_ratio': 0.3, 'win_rate': 0.25, 'profit_factor': 0.25, 'regime_accuracy': 0.2})
-    regime_constraints: dict[str, RegimeSpecificConstraints] = field(default_factory=lambda: {'BULL_TREND': RegimeSpecificConstraints(tp_multiplier_range=[2.5, 5.0], sl_multiplier_range=[1.2, 2.5], position_size_range=[0.1, 0.25], profit_take_multiplier_range=[0.02, 0.04], stop_loss_multiplier_range=[0.01, 0.02]), 'BEAR_TREND': RegimeSpecificConstraints(tp_multiplier_range=[2.0, 4.5], sl_multiplier_range=[1.0, 2.2], position_size_range=[0.08, 0.2], profit_take_multiplier_range=[0.015, 0.035], stop_loss_multiplier_range=[0.008, 0.018]), 'SIDEWAYS_RANGE': RegimeSpecificConstraints(tp_multiplier_range=[1.5, 3.0], sl_multiplier_range=[0.8, 1.8], position_size_range=[0.06, 0.15], profit_take_multiplier_range=[0.01, 0.025], stop_loss_multiplier_range=[0.005, 0.015]), 'HIGH_IMPACT_CANDLE': RegimeSpecificConstraints(tp_multiplier_range=[1.8, 3.5], sl_multiplier_range=[0.9, 2.0], position_size_range=[0.05, 0.12], profit_take_multiplier_range=[0.025, 0.045], stop_loss_multiplier_range=[0.012, 0.025]), 'SR_ZONE_ACTION': RegimeSpecificConstraints(tp_multiplier_range=[2.0, 4.0], sl_multiplier_range=[1.0, 2.2], position_size_range=[0.08, 0.18], profit_take_multiplier_range=[0.018, 0.035], stop_loss_multiplier_range=[0.009, 0.02]), 'VOLATILE_MARKET': RegimeSpecificConstraints(tp_multiplier_range=[2.2, 4.2], sl_multiplier_range=[1.1, 2.3], position_size_range=[0.06, 0.14], profit_take_multiplier_range=[0.025, 0.045], stop_loss_multiplier_range=[0.012, 0.025]), 'LOW_VOLATILITY': RegimeSpecificConstraints(tp_multiplier_range=[1.8, 3.2], sl_multiplier_range=[0.9, 1.9], position_size_range=[0.08, 0.2], profit_take_multiplier_range=[0.015, 0.03], stop_loss_multiplier_range=[0.007, 0.016]), 'TRENDING_MARKET': RegimeSpecificConstraints(tp_multiplier_range=[2.3, 4.5], sl_multiplier_range=[1.1, 2.4], position_size_range=[0.09, 0.22], profit_take_multiplier_range=[0.02, 0.04], stop_loss_multiplier_range=[0.01, 0.02]), 'MEAN_REVERSION': RegimeSpecificConstraints(tp_multiplier_range=[1.6, 3.2], sl_multiplier_range=[0.8, 1.8], position_size_range=[0.07, 0.16], profit_take_multiplier_range=[0.012, 0.028], stop_loss_multiplier_range=[0.006, 0.015])})
+    objectives: list[str] = field(default_factory = lambda: ['sharpe_ratio', 'win_rate', 'profit_factor', 'regime_accuracy'])
+    objective_weights: dict[str, float] = field(default_factory = lambda: {'sharpe_ratio': 0.3, 'win_rate': 0.25, 'profit_factor': 0.25, 'regime_accuracy': 0.2})
+    regime_constraints: dict[str, RegimeSpecificConstraints] = field(default_factory = lambda: {'BULL_TREND': RegimeSpecificConstraints(tp_multiplier_range=[2.5, 5.0], sl_multiplier_range=[1.2, 2.5], position_size_range=[0.1, 0.25], profit_take_multiplier_range=[0.02, 0.04], stop_loss_multiplier_range=[0.01, 0.02]), 'BEAR_TREND': RegimeSpecificConstraints(tp_multiplier_range=[2.0, 4.5], sl_multiplier_range=[1.0, 2.2], position_size_range=[0.08, 0.2], profit_take_multiplier_range=[0.015, 0.035], stop_loss_multiplier_range=[0.008, 0.018]), 'SIDEWAYS_RANGE': RegimeSpecificConstraints(tp_multiplier_range=[1.5, 3.0], sl_multiplier_range=[0.8, 1.8], position_size_range=[0.06, 0.15], profit_take_multiplier_range=[0.01, 0.025], stop_loss_multiplier_range=[0.005, 0.015]), 'HIGH_IMPACT_CANDLE': RegimeSpecificConstraints(tp_multiplier_range=[1.8, 3.5], sl_multiplier_range=[0.9, 2.0], position_size_range=[0.05, 0.12], profit_take_multiplier_range=[0.025, 0.045], stop_loss_multiplier_range=[0.012, 0.025]), 'SR_ZONE_ACTION': RegimeSpecificConstraints(tp_multiplier_range=[2.0, 4.0], sl_multiplier_range=[1.0, 2.2], position_size_range=[0.08, 0.18], profit_take_multiplier_range=[0.018, 0.035], stop_loss_multiplier_range=[0.009, 0.02]), 'VOLATILE_MARKET': RegimeSpecificConstraints(tp_multiplier_range=[2.2, 4.2], sl_multiplier_range=[1.1, 2.3], position_size_range=[0.06, 0.14], profit_take_multiplier_range=[0.025, 0.045], stop_loss_multiplier_range=[0.012, 0.025]), 'LOW_VOLATILITY': RegimeSpecificConstraints(tp_multiplier_range=[1.8, 3.2], sl_multiplier_range=[0.9, 1.9], position_size_range=[0.08, 0.2], profit_take_multiplier_range=[0.015, 0.03], stop_loss_multiplier_range=[0.007, 0.016]), 'TRENDING_MARKET': RegimeSpecificConstraints(tp_multiplier_range=[2.3, 4.5], sl_multiplier_range=[1.1, 2.4], position_size_range=[0.09, 0.22], profit_take_multiplier_range=[0.02, 0.04], stop_loss_multiplier_range=[0.01, 0.02]), 'MEAN_REVERSION': RegimeSpecificConstraints(tp_multiplier_range=[1.6, 3.2], sl_multiplier_range=[0.8, 1.8], position_size_range=[0.07, 0.16], profit_take_multiplier_range=[0.012, 0.028], stop_loss_multiplier_range=[0.006, 0.015])})
     early_stopping_patience: int = 20
     early_stopping_delta: float = 0.001
     enable_pruning: bool = True
@@ -53,8 +53,8 @@ class RegimeSpecificOptimizationConfig:
     enable_statistical_testing: bool = True
     confidence_level: float = 0.95
     min_sample_size: int = 50
-    regime_id_to_name: dict[int, str] = field(default_factory=dict)
-    regime_name_to_id: dict[str, int] = field(default_factory=dict)
+    regime_id_to_name: dict[int, str] = field(default_factory = dict)
+    regime_name_to_id: dict[str, int] = field(default_factory = dict)
     min_sharpe_ratio: float = 0.5
     min_win_rate: float = 0.55
     min_profit_factor: float = 1.3
@@ -129,7 +129,7 @@ def merge_optuna_configs(base_config: HyperparameterOptimizationConfig, regime_c
     merged_config['regime_specific_optimization']['regime_constraints'] = regime_constraints_dict
     return merged_config
 
-def get_regime_optimization_config_for_regime(regime_name: str, base_config: RegimeSpecificOptimizationConfig | None=None) -> dict[str, Any]:
+def get_regime_optimization_config_for_regime(regime_name: str, base_config: RegimeSpecificOptimizationConfig | None = None) -> dict[str, Any]:
     """Get optimization configuration for a specific regime."""
     if base_config is None:
         base_config = DEFAULT_REGIME_SPECIFIC_OPTIMIZATION_CONFIG

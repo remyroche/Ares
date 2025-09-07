@@ -8,7 +8,7 @@ from typing import Any
 
 
 from .training.data_manager import UnifiedDataManager
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import pandas as pd
@@ -33,10 +33,10 @@ def get_data_manager(
 
     """
     return UnifiedDataManager(
-        data_dir=data_dir,
-        symbol=symbol,
-        exchange=exchange,
-        lookback_days=lookback_days or 730,
+        data_dir = data_dir,
+        symbol = symbol,
+        exchange = exchange,
+        lookback_days = lookback_days or 730,
     )
 
 
@@ -108,7 +108,7 @@ def load_validation_data_for_optimization(
         y_val_np = np.clip(y_val_np, -1, 1)
 
         logger.info(f"Loaded validation data: X={X_val_np.shape}, y={y_val_np.shape}")
-        logger.info(f"Target distribution: {np.unique(y_val_np, return_counts=True)}")
+        logger.info(f"Target distribution: {np.unique(y_val_np, return_counts = True)}")
 
         return X_val_np, y_val_np
 

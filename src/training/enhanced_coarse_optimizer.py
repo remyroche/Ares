@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
 
 try:
     from pytorch_tabnet.tab_model import TabNetClassifier
@@ -31,8 +32,8 @@ try:
 except ImportError:
     LSTM_AVAILABLE = False
     nn = None
-from .database.sqlite_manager import SQLiteManager
-from .utils.logger import system_logger
+from ..database.sqlite_manager import SQLiteManager
+from src.utils.logger import system_logger
 from .utils.warning_symbols import error, failed, warning
 import logging
 
@@ -41,7 +42,7 @@ class EnhancedCoarseOptimizer:
     and wider hyperparameter search. Uses functional programming approach and multiprocessing.
     """
 
-    def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str, optimal_target_params: dict, klines_data: pd.DataFrame, agg_trades_data: pd.DataFrame, futures_data: pd.DataFrame, blank_training_mode: bool=False) -> None:
+    def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str, optimal_target_params: dict, klines_data: pd.DataFrame, agg_trades_data: pd.DataFrame, futures_data: pd.DataFrame, blank_training_mode: bool = False) -> None:
         """Initializes the Enhanced Coarse Optimizer."""
         self.db_manager = db_manager
         self.symbol = symbol
@@ -100,7 +101,7 @@ class EnhancedCoarseOptimizer:
             self.print(failed('Memory monitoring failed: {e}'))
             return False
 
-    def _track_optimization_progress(self, stage: str, progress: float, details: dict[str, Any] | None=None) -> None:
+    def _track_optimization_progress(self, stage: str, progress: float, details: dict[str, Any] | None = None) -> None:
         """Track optimization progress with detailed metrics."""
         self.optimization_progress = progress
         self.current_stage = stage
@@ -121,7 +122,7 @@ class EnhancedCoarseOptimizer:
             return self._sequential_feature_selection(features, X, y)
         self.logger.info(f"🔄 Parallel feature selection with {self.resources['max_workers']} workers")
         feature_chunks = np.array_split(features, self.resources['max_workers'])
-        with ProcessPoolExecutor(max_workers=self.resources['max_workers']) as executor:
+        with ProcessPoolExecutor(max_workers = self.resources['max_workers']) as executor:
             future_to_chunk = {executor.submit(self._calculate_feature_importance_chunk, chunk, X, y): chunk for chunk in feature_chunks if len(chunk) > 0}
             results = {}
             completed = 0
@@ -147,7 +148,7 @@ class EnhancedCoarseOptimizer:
             try:
                 feature_data = X[[feature]]
                 target_data = y
-                valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
+                valid_mask = ~(feature_data.isnull().any(axis = 1) | target_data.isnull())
                 if valid_mask.sum() < 10:
                     results[feature] = 0.0
                     continue
@@ -156,7 +157,7 @@ class EnhancedCoarseOptimizer:
                 if len(clean_feature) < 10:
                     results[feature] = 0.0
                     continue
-                importance = mutual_info_classif(clean_feature, clean_target, random_state=42)[0]
+                importance = mutual_info_classif(clean_feature, clean_target, random_state = 42)[0]
                 results[feature] = float(importance)
             except Exception:
                 results[feature] = 0.0
@@ -170,7 +171,7 @@ class EnhancedCoarseOptimizer:
             try:
                 feature_data = X[[feature]]
                 target_data = y
-                valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
+                valid_mask = ~(feature_data.isnull().any(axis = 1) | target_data.isnull())
                 if valid_mask.sum() < 10:
                     results[feature] = 0.0
                     continue
@@ -179,7 +180,7 @@ class EnhancedCoarseOptimizer:
                 if len(clean_feature) < 10:
                     results[feature] = 0.0
                     continue
-                importance = mutual_info_classif(clean_feature, clean_target, random_state=42)[0]
+                importance = mutual_info_classif(clean_feature, clean_target, random_state = 42)[0]
                 results[feature] = float(importance)
             except Exception:
                 results[feature] = 0.0
@@ -189,7 +190,7 @@ class EnhancedCoarseOptimizer:
 
     def _robust_shap_analysis(self, X_sample: pd.DataFrame, y_sample: pd.Series) -> dict[str, float]:
         """Robust SHAP analysis with multiple fallback strategies."""
-        models_to_try = [('lightgbm', lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1)), ('catboost', CatBoostClassifier(iterations=50, random_state=42, verbose=False)), ('xgboost', xgb.XGBClassifier(n_estimators=50, random_state=42, verbose=0))]
+        models_to_try = [('lightgbm', lgb.LGBMClassifier(n_estimators = 50, random_state = 42, verbosity=-1)), ('catboost', CatBoostClassifier(iterations = 50, random_state = 42, verbose = False)), ('xgboost', xgb.XGBClassifier(n_estimators = 50, random_state = 42, verbose = 0))]
         for model_name, model in models_to_try:
             try:
                 self.logger.info(f'🤖 Trying SHAP analysis with {model_name}')
@@ -205,8 +206,8 @@ class EnhancedCoarseOptimizer:
                 shap_values = explainer.shap_values(X_sample)
                 if isinstance(shap_values, list):
                     shap_values = np.array(shap_values)
-                feature_importance = np.mean(np.abs(shap_values), axis=0)
-                results = dict(zip(X_sample.columns, feature_importance, strict=False))
+                feature_importance = np.mean(np.abs(shap_values), axis = 0)
+                results = dict(zip(X_sample.columns, feature_importance, strict = False))
                 self.logger.info(f'✅ SHAP analysis successful with {model_name}')
                 return results
             except Exception:
@@ -226,7 +227,7 @@ class EnhancedCoarseOptimizer:
 
     def _enhanced_cross_validation(self, model: Any, X: pd.DataFrame, y: pd.Series) -> dict[str, dict[str, float]]:
         """Enhanced cross-validation with multiple metrics."""
-        tscv = TimeSeriesSplit(n_splits=5, test_size=int(len(X) * 0.2), gap=0)
+        tscv = TimeSeriesSplit(n_splits = 5, test_size = int(len(X) * 0.2), gap = 0)
         metrics = {'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
         self.logger.info('🔄 Running enhanced cross-validation...')
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
@@ -236,9 +237,9 @@ class EnhancedCoarseOptimizer:
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_val)
                 metrics['accuracy'].append(accuracy_score(y_val, y_pred))
-                metrics['precision'].append(precision_score(y_val, y_pred, average='weighted', zero_division=0))
-                metrics['recall'].append(recall_score(y_val, y_pred, average='weighted', zero_division=0))
-                metrics['f1'].append(f1_score(y_val, y_pred, average='weighted', zero_division=0))
+                metrics['precision'].append(precision_score(y_val, y_pred, average='weighted', zero_division = 0))
+                metrics['recall'].append(recall_score(y_val, y_pred, average='weighted', zero_division = 0))
+                metrics['f1'].append(f1_score(y_val, y_pred, average='weighted', zero_division = 0))
                 progress = (fold + 1) / 5 * 100
                 self._track_optimization_progress('Cross-Validation', progress, {'fold': fold + 1, 'total_folds': 5})
             except Exception:
@@ -278,7 +279,7 @@ class EnhancedCoarseOptimizer:
         self.logger.info('🧹 ENHANCED DATA CLEANING:')
         self.logger.info('=' * 50)
         original_shape = data.shape
-        original_memory = data.memory_usage(deep=True).sum() / 1024 ** 2
+        original_memory = data.memory_usage(deep = True).sum() / 1024 ** 2
         self.logger.info('📊 Initial data state:')
         self.logger.info(f'   - Shape: {original_shape}')
         self.logger.info(f'   - Memory: {original_memory:.2f} MB')
@@ -302,7 +303,7 @@ class EnhancedCoarseOptimizer:
                 upper_bound = Q3 + 3 * IQR
                 outliers = ((cleaned_data[col] < lower_bound) | (cleaned_data[col] > upper_bound)).sum()
                 if outliers > 0:
-                    cleaned_data[col] = cleaned_data[col].clip(lower=lower_bound, upper=upper_bound)
+                    cleaned_data[col] = cleaned_data[col].clip(lower = lower_bound, upper = upper_bound)
                     outlier_counts += outliers
                     self.logger.info(f'   📊 {col}: Clipped {outliers} outliers to bounds [{lower_bound:.4f}, {upper_bound:.4f}]')
         missing_before = cleaned_data.isnull().sum().sum()
@@ -318,14 +319,14 @@ class EnhancedCoarseOptimizer:
             missing_after = cleaned_data.isnull().sum().sum()
             filled_count = missing_before - missing_after
             self.logger.info(f'   ✅ Filled {filled_count} missing values')
-        memory_before = cleaned_data.memory_usage(deep=True).sum() / 1024 ** 2
+        memory_before = cleaned_data.memory_usage(deep = True).sum() / 1024 ** 2
         cleaned_data = self._optimize_dtypes(cleaned_data)
-        memory_after = cleaned_data.memory_usage(deep=True).sum() / 1024 ** 2
+        memory_after = cleaned_data.memory_usage(deep = True).sum() / 1024 ** 2
         memory_saved = memory_before - memory_after
         if memory_saved > 0:
             self.logger.info(f'   ✅ Memory optimization: {memory_before:.2f} MB → {memory_after:.2f} MB (saved {memory_saved:.2f} MB)')
         final_shape = cleaned_data.shape
-        final_memory = cleaned_data.memory_usage(deep=True).sum() / 1024 ** 2
+        final_memory = cleaned_data.memory_usage(deep = True).sum() / 1024 ** 2
         self.logger.info('📊 Final data state:')
         self.logger.info(f'   - Shape: {final_shape}')
         self.logger.info(f'   - Memory: {final_memory:.2f} MB')
@@ -403,8 +404,8 @@ class EnhancedCoarseOptimizer:
             target_columns = ['target']
         feature_columns = [col for col in data.columns if col not in target_columns]
         X = data[feature_columns]
-        y = data[target_columns[0]] if target_columns else pd.Series(dtype=float)
-        valid_mask = ~(X.isnull().any(axis=1) | y.isnull())
+        y = data[target_columns[0]] if target_columns else pd.Series(dtype = float)
+        valid_mask = ~(X.isnull().any(axis = 1) | y.isnull())
         X = X[valid_mask]
         y = y[valid_mask]
         self.logger.info(f'✅ Data separated: X shape {X.shape}, y shape {y.shape}')
@@ -416,7 +417,7 @@ class EnhancedCoarseOptimizer:
         try:
             features = list(X.columns)
             feature_importance = self._parallel_feature_selection(features, X, y)
-            sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+            sorted_features = sorted(feature_importance.items(), key = lambda x: x[1], reverse = True)
             top_n = max(10, int(len(sorted_features) * 0.3))
             selected_features = [f[0] for f in sorted_features[:top_n]]
             self.logger.info(f'Selected {len(selected_features)} features out of {len(features)}')
@@ -437,7 +438,7 @@ class EnhancedCoarseOptimizer:
         for param_name, param_range in config['param_ranges'].items():
             if isinstance(param_range, tuple):
                 if isinstance(param_range[0], float):
-                    params[param_name] = trial.suggest_float(param_name, param_range[0], param_range[1], log=True)
+                    params[param_name] = trial.suggest_float(param_name, param_range[0], param_range[1], log = True)
                 else:
                     params[param_name] = trial.suggest_int(param_name, param_range[0], param_range[1])
             elif isinstance(param_range, list):
@@ -470,9 +471,9 @@ class EnhancedCoarseOptimizer:
             return model_class(**params)
         except Exception:
             self.print(failed('Failed to create {model_type} model: {e}'))
-            return RandomForestClassifier(n_estimators=100, random_state=42)
+            return RandomForestClassifier(n_estimators = 100, random_state = 42)
 
-    def run_hyperparameter_optimization(self, X: pd.DataFrame, y: pd.Series, features: list[str], n_trials: int=50) -> dict[str, Any]:
+    def run_hyperparameter_optimization(self, X: pd.DataFrame, y: pd.Series, features: list[str], n_trials: int = 50) -> dict[str, Any]:
         """Run hyperparameter optimization using functional approach."""
         self.logger.info('Running hyperparameter optimization...')
         try:
@@ -505,13 +506,13 @@ class EnhancedCoarseOptimizer:
                 except Exception:
                     self.print(failed('Model training failed: {e}'))
                     return 0.0
-            study = optuna.create_study(direction='maximize', pruner=SuccessiveHalvingPruner(min_resource=1, reduction_factor=3, min_early_stopping_rate=0.0), sampler=optuna.samplers.TPESampler(n_startup_trials=10, n_ei_candidates=24, multivariate=True, group=True))
+            study = optuna.create_study(direction='maximize', pruner = SuccessiveHalvingPruner(min_resource = 1, reduction_factor = 3, min_early_stopping_rate = 0.0), sampler = optuna.samplers.TPESampler(n_startup_trials = 10, n_ei_candidates = 24, multivariate = True, group = True))
 
             def progress_callback(study: Any, trial: Any) -> None:
                 progress = (trial.number + 1) / n_trials * 100
                 self._track_optimization_progress('Hyperparameter Optimization', progress, {'trial': trial.number + 1, 'total_trials': n_trials, 'best_value': study.best_value if study.best_value else 0.0})
-            study.optimize(objective, n_trials=n_trials, callbacks=[progress_callback])
-            top_trials = sorted(study.trials, key=lambda t: t.value, reverse=True)[:max(5, int(n_trials * 0.1))]
+            study.optimize(objective, n_trials = n_trials, callbacks=[progress_callback])
+            top_trials = sorted(study.trials, key = lambda t: t.value, reverse = True)[:max(5, int(n_trials * 0.1))]
             ranges = {}
             if top_trials:
                 all_param_names = set()
@@ -576,7 +577,7 @@ class EnhancedCoarseOptimizer:
                 msg = 'Failed to prepare data'
                 raise ValueError(msg)
             selected_features = self.run_feature_selection(X, y)
-            best_params = self.run_hyperparameter_optimization(X, y, selected_features, n_trials=50 if not self.blank_training_mode else 3)
+            best_params = self.run_hyperparameter_optimization(X, y, selected_features, n_trials = 50 if not self.blank_training_mode else 3)
             self.validate_optimization_results(best_params)
             self._generate_optimization_report(selected_features, best_params)
             self._monitor_memory_usage()

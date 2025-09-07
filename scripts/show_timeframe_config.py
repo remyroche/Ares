@@ -13,7 +13,7 @@ from pathlib import Path
 from src.config import CONFIG
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -42,7 +42,7 @@ def show_timeframe_config():
     # Group timeframes by trading style
     trading_styles={}
     for tf, info in timeframes.items():
-        style=info.get("trading_style", "unknown")
+        style = info.get("trading_style", "unknown")
         if style not in trading_styles:
             trading_styles[style] = []
         trading_styles[style].append((tf, info))
@@ -72,10 +72,10 @@ def show_timeframe_config():
     )
 
     # Show ensemble weights for default set
-    default_timeframes=timeframe_sets.get(default_set, {}).get("timeframes", [])
+    default_timeframes = timeframe_sets.get(default_set, {}).get("timeframes", [])
     if default_timeframes:
         print("\n⚖️  Ensemble Weights for Default Set:")
-        total_weight=0
+        total_weight = 0
         for tf in default_timeframes:
             weight = timeframes.get(tf, {}).get("ensemble_weight", 0)
             total_weight += weight
@@ -126,7 +126,7 @@ def show_timeframe_details(timeframe: str):
 def main():
     """Main function."""
     if len(sys.argv) > 1:
-        timeframe=sys.argv[1]
+        timeframe = sys.argv[1]
         show_timeframe_details(timeframe)
     else:
         show_timeframe_config()

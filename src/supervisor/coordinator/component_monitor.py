@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Component Monitor Module.
 
 This module monitors individual trading system components (Analyst, Strategist, 
@@ -9,10 +11,8 @@ Tactician, etc.) for health, performance, and feature extraction.
 from datetime import datetime
 from typing import Any, Dict, List
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from .utils.warning_symbols import error
-from .core.decorators.errors import handles_errors
 import logging
 import time
 

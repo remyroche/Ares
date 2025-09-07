@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Online Learning Manager Module.
 
 This module manages online learning for model weighting based on performance,
@@ -9,10 +11,8 @@ adapting model weights dynamically based on their recent performance.
 from collections import defaultdict
 from typing import Any, Dict, List
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from .utils.warning_symbols import error
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 

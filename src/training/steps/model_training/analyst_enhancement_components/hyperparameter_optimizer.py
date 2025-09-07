@@ -2,16 +2,19 @@
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Hyperparameter optimization component for analyst enhancement."""
 import optuna
 from sklearn.model_selection import cross_val_score
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import logging
 import numpy as np
 
 class HyperparameterOptimizer:
     """Handles hyperparameter optimization for analyst models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the hyperparameter optimizer.
@@ -26,6 +29,7 @@ class HyperparameterOptimizer:
         self.n_jobs = self.config.get('n_jobs', -1)
         self.pruning = self.config.get('pruning', True)
         self.search_spaces = self._initialize_search_spaces()
+    @log_all_calls
 
     def _initialize_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Initialize model-specific hyperparameter search spaces."""
@@ -51,22 +55,23 @@ class HyperparameterOptimizer:
             self.logger.warning(f'No search space defined for model type: {model_type}')
             return {}
         self.logger.info(f'Starting HPO for {model_type} in regime {regime_id}')
-        study = optuna.create_study(direction='maximize', pruner=optuna.pruners.MedianPruner() if self.pruning else None, sampler=optuna.samplers.TPESampler(seed=42))
+        study = optuna.create_study(direction='maximize', pruner = optuna.pruners.MedianPruner() if self.pruning else None, sampler = optuna.samplers.TPESampler(seed = 42))
 
         def objective(trial: Any) -> float:
             params = self._suggest_params(trial, model_type)
             model_with_params = self._create_model_with_params(model, params)
             try:
-                scores = cross_val_score(model_with_params, X_train, y_train, cv=3, scoring='accuracy', n_jobs=1)
+                scores = cross_val_score(model_with_params, X_train, y_train, cv = 3, scoring='accuracy', n_jobs = 1)
                 return scores.mean()
             except Exception as e:
                 self.logger.warning(f'Trial failed: {str(e)}')
                 return 0.0
-        study.optimize(objective, n_trials=self.n_trials, timeout=self.timeout, n_jobs=1, show_progress_bar=False)
+        study.optimize(objective, n_trials = self.n_trials, timeout = self.timeout, n_jobs = 1, show_progress_bar = False)
         best_params = study.best_params
         best_score = study.best_value
         self.logger.info(f'HPO completed for {model_type}: Best score = {best_score:.4f}, Trials = {len(study.trials)}')
         return best_params
+    @log_all_calls
 
     def _get_model_type(self, model: Any) -> str:
         """Determine the type of model."""
@@ -81,6 +86,7 @@ class HyperparameterOptimizer:
             return 'neural_network'
         else:
             return 'unknown'
+    @log_all_calls
 
     def _suggest_params(self, trial: optuna.Trial, model_type: str) -> Dict[str, Any]:
         """Suggest parameters for a specific model type."""
@@ -95,6 +101,7 @@ class HyperparameterOptimizer:
             elif isinstance(param_range, list):
                 params[param_name] = trial.suggest_categorical(param_name, param_range)
         return params
+    @log_all_calls
 
     def _create_model_with_params(self, base_model: Any, params: Dict[str, Any]) -> Any:
         """Create a new model instance with suggested parameters."""

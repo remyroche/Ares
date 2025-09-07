@@ -2,12 +2,14 @@ from typing import Optional
 from typing import Dict
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Triple Barrier Parameter Optimizer for Step 17.\n\nThis module optimizes triple barrier parameters during the training process,\nensuring that barrier values are tuned for optimal performance.\n'
 import optuna
 from dataclasses import dataclass
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 
@@ -27,6 +29,7 @@ class BarrierOptimizationResult:
 
 class TripleBarrierOptimizer:
     """Optimizes triple barrier parameters for different market regimes."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the triple barrier optimizer."""
@@ -39,7 +42,7 @@ class TripleBarrierOptimizer:
         self.regime_specific = self.optim_config.get('regime_specific', True)
         self.min_samples_per_regime = self.optim_config.get('min_samples_per_regime', 1000)
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='optimize triple barriers')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='optimize triple barriers')
     @traced(span_name='TripleBarrier.optimize')
     async def optimize_barriers(self, market_data: pd.DataFrame, regime_labels: Optional[pd.Series]=None) -> Dict[str, BarrierOptimizationResult]:
         """
@@ -77,15 +80,15 @@ class TripleBarrierOptimizer:
                 self.logger.warning(f'Regime {regime} has insufficient samples ({len(regime_data)}), skipping')
                 continue
             self.logger.info(f'Optimizing regime {regime} with {len(regime_data)} samples...')
-            study = optuna.create_study(direction='maximize', study_name=f'triple_barrier_regime_{regime}')
+            study = optuna.create_study(direction='maximize', study_name = f'triple_barrier_regime_{regime}')
 
             def objective(trial: Any) -> None:
                 return self._barrier_objective(trial, regime_data, regime)
-            study.optimize(objective, n_trials=self.n_trials, n_jobs=1)
+            study.optimize(objective, n_trials = self.n_trials, n_jobs = 1)
             best_params = study.best_params
             best_value = study.best_value
             metrics = self._calculate_barrier_metrics(regime_data, best_params['profit_multiplier'], best_params['stop_multiplier'], best_params['time_barrier'])
-            results[f'regime_{regime}'] = BarrierOptimizationResult(optimal_profit_multiplier=best_params['profit_multiplier'], optimal_stop_multiplier=best_params['stop_multiplier'], optimal_time_barrier=best_params['time_barrier'], optimization_score=best_value, sharpe_ratio=metrics['sharpe_ratio'], win_rate=metrics['win_rate'], profit_factor=metrics['profit_factor'], max_drawdown=metrics['max_drawdown'], n_trials=len(study.trials), best_trial=study.best_trial.number)
+            results[f'regime_{regime}'] = BarrierOptimizationResult(optimal_profit_multiplier = best_params['profit_multiplier'], optimal_stop_multiplier = best_params['stop_multiplier'], optimal_time_barrier = best_params['time_barrier'], optimization_score = best_value, sharpe_ratio = metrics['sharpe_ratio'], win_rate = metrics['win_rate'], profit_factor = metrics['profit_factor'], max_drawdown = metrics['max_drawdown'], n_trials = len(study.trials), best_trial = study.best_trial.number)
         return results
 
     async def _optimize_global_barriers(self, market_data: pd.DataFrame) -> BarrierOptimizationResult:
@@ -95,11 +98,12 @@ class TripleBarrierOptimizer:
 
         def objective(trial: Any) -> None:
             return self._barrier_objective(trial, market_data, 'global')
-        study.optimize(objective, n_trials=self.n_trials, n_jobs=1)
+        study.optimize(objective, n_trials = self.n_trials, n_jobs = 1)
         best_params = study.best_params
         best_value = study.best_value
         metrics = self._calculate_barrier_metrics(market_data, best_params['profit_multiplier'], best_params['stop_multiplier'], best_params['time_barrier'])
-        return BarrierOptimizationResult(optimal_profit_multiplier=best_params['profit_multiplier'], optimal_stop_multiplier=best_params['stop_multiplier'], optimal_time_barrier=best_params['time_barrier'], optimization_score=best_value, sharpe_ratio=metrics['sharpe_ratio'], win_rate=metrics['win_rate'], profit_factor=metrics['profit_factor'], max_drawdown=metrics['max_drawdown'], n_trials=len(study.trials), best_trial=study.best_trial.number)
+        return BarrierOptimizationResult(optimal_profit_multiplier = best_params['profit_multiplier'], optimal_stop_multiplier = best_params['stop_multiplier'], optimal_time_barrier = best_params['time_barrier'], optimization_score = best_value, sharpe_ratio = metrics['sharpe_ratio'], win_rate = metrics['win_rate'], profit_factor = metrics['profit_factor'], max_drawdown = metrics['max_drawdown'], n_trials = len(study.trials), best_trial = study.best_trial.number)
+    @log_all_calls
 
     def _barrier_objective(self, trial: optuna.Trial, data: pd.DataFrame, regime: str) -> float:
         """Objective function for barrier optimization."""
@@ -109,10 +113,11 @@ class TripleBarrierOptimizer:
         labels = self._apply_triple_barrier(data, profit_mult, stop_mult, time_barrier)
         score = self._calculate_objective_score(data, labels)
         return score
+    @log_all_calls
 
     def _apply_triple_barrier(self, data: pd.DataFrame, profit_mult: float, stop_mult: float, time_barrier: int) -> pd.Series:
         """Apply triple barrier labeling with given parameters."""
-        labels = pd.Series(index=data.index, dtype=int)
+        labels = pd.Series(index = data.index, dtype = int)
         labels[:] = 0
         close_prices = data['close'].values
         high_prices = data['high'].values
@@ -131,6 +136,7 @@ class TripleBarrierOptimizer:
                     labels.iloc[i] = -1
                     break
         return labels
+    @log_all_calls
 
     def _calculate_objective_score(self, data: pd.DataFrame, labels: pd.Series) -> float:
         """Calculate objective score for optimization."""
@@ -143,6 +149,7 @@ class TripleBarrierOptimizer:
         balance_penalty = abs(win_rate - 0.5)
         score = signal_rate * (1 - balance_penalty) * win_rate
         return score
+    @log_all_calls
 
     def _calculate_barrier_metrics(self, data: pd.DataFrame, profit_mult: float, stop_mult: float, time_barrier: int) -> Dict[str, float]:
         """Calculate detailed metrics for barrier configuration."""
@@ -163,6 +170,7 @@ class TripleBarrierOptimizer:
         drawdown = (cumulative_returns - running_max) / running_max
         max_drawdown = abs(drawdown.min())
         return {'sharpe_ratio': sharpe_ratio, 'win_rate': win_rate, 'profit_factor': profit_factor, 'max_drawdown': max_drawdown}
+    @log_all_calls
 
     def _log_optimization_results(self, results: Dict[str, BarrierOptimizationResult]) -> None:
         """Log optimization results."""

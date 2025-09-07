@@ -4,9 +4,10 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import pandas as pd
 import numpy as np
 import pandas as pd
+import pandas as pd
 
 try:
-    import pandas as pd
+    pass
 except ImportError:
     pd = None
 
@@ -16,6 +17,8 @@ def _check_pandas_available() -> None:
         raise ImportError('pandas is required for this operation but is not available. Please install pandas.')
 from typing import Optional
 from typing import Tuple
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Regime Continuity Manager for Per-HMM Regime Pipeline.\n\nThis module ensures that regime information flows consistently through all pipeline steps,\nmaintaining regime context and metadata throughout the entire training process.\n'
 from pathlib import Path
 from datetime import datetime
@@ -24,9 +27,6 @@ from enum import Enum
 from src.utils.pipeline_standards import pipeline_standards
 from src.utils.logger import get_logger
 from src.utils.decorators import traced
-import json
-import logging
-import time
 
 logger = get_logger('RegimeContinuityManager')
 
@@ -50,7 +50,8 @@ class RegimeMetadata:
     updated_at: datetime
     status: RegimeStatus = RegimeStatus.PENDING
     step_status: Dict[str, RegimeStatus] = None
-
+    
+    @log_all_calls
     def __post_init__(self) -> None:
         if self.step_status is None:
             self.step_status = {}
@@ -68,7 +69,8 @@ class StepRegimeContext:
     status: RegimeStatus = RegimeStatus.PENDING
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = None
-
+    
+    @log_all_calls
     def __post_init__(self) -> None:
         if self.metadata is None:
             self.metadata = {}
@@ -154,12 +156,13 @@ class RegimeContinuityManager:
                 regime_mask = regime_data['composite_cluster_id'] == regime_id
                 regime_subset = regime_data[regime_mask]
                 characteristics = self._analyze_regime_characteristics(regime_subset)
-                metadata = RegimeMetadata(regime_id=regime_id, regime_name=f'Regime_{regime_id}', market_characteristics=characteristics, data_points=len(regime_subset), time_range=(regime_subset['timestamp'].min(), regime_subset['timestamp'].max()), created_at=datetime.now(), updated_at=datetime.now())
+                metadata = RegimeMetadata(regime_id = regime_id, regime_name = f'Regime_{regime_id}', market_characteristics = characteristics, data_points = len(regime_subset), time_range=(regime_subset['timestamp'].min(), regime_subset['timestamp'].max()), created_at = datetime.now(), updated_at = datetime.now())
                 self.regime_metadata[regime_id] = metadata
                 self.logger.info(f'📊 Extracted metadata for regime {regime_id}: {len(regime_subset)} points')
         except Exception as e:
             self.logger.exception(f'❌ Error extracting regime metadata: {e}')
-
+    
+    @log_all_calls
     def _analyze_regime_characteristics(self, regime_data: Any) -> Dict[str, Any]:
         _check_pandas_available()
         'Analyze characteristics of a specific regime.\n        \n        Args:\n            regime_data: Data for a specific regime\n            \n        Returns:\n            Dictionary of regime characteristics\n        '
@@ -188,12 +191,13 @@ class RegimeContinuityManager:
             for step_name in self.regime_aware_steps:
                 self.step_contexts[step_name] = {}
                 for regime_id in self.regime_metadata.keys():
-                    context = StepRegimeContext(step_name=step_name, regime_id=regime_id, input_data_path=f'{data_dir}/training/{exchange}_{symbol}_{timeframe}_step_{step_name}_input_regime_{regime_id}.parquet', output_data_path=f'{data_dir}/training/{exchange}_{symbol}_{timeframe}_step_{step_name}_output_regime_{regime_id}.parquet', configuration=self._get_step_configuration(step_name, regime_id), processing_start=datetime.now())
+                    context = StepRegimeContext(step_name = step_name, regime_id = regime_id, input_data_path = f'{data_dir}/training/{exchange}_{symbol}_{timeframe}_step_{step_name}_input_regime_{regime_id}.parquet', output_data_path = f'{data_dir}/training/{exchange}_{symbol}_{timeframe}_step_{step_name}_output_regime_{regime_id}.parquet', configuration = self._get_step_configuration(step_name, regime_id), processing_start = datetime.now())
                     self.step_contexts[step_name][regime_id] = context
             self.logger.info(f'✅ Initialized step contexts for {len(self.regime_aware_steps)} steps')
         except Exception as e:
             self.logger.exception(f'❌ Error initializing step contexts: {e}')
-
+    
+    @log_all_calls
     def _get_step_configuration(self, step_name: str, regime_id: int) -> Dict[str, Any]:
         """Get configuration for a specific step and regime.
         
@@ -315,7 +319,7 @@ class RegimeContinuityManager:
         """
         try:
             training_dir = Path(data_dir) / 'training'
-            training_dir.mkdir(parents=True, exist_ok=True)
+            training_dir.mkdir(parents = True, exist_ok = True)
             regime_metadata_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_continuity_metadata.json'
             regime_data = {regime_id: {**asdict(metadata), 'status': metadata.status.value, 'step_status': {step: status.value for step, status in metadata.step_status.items()}} for regime_id, metadata in self.regime_metadata.items()}
             safe_json_dump(regime_data, regime_metadata_file)

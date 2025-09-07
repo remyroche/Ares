@@ -8,15 +8,16 @@ from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import cross_val_score
 from torch import nn
 import pandas as pd
+import lightgbm as lgb
 
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
 )
-from .analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
+from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
+from src.utils.logger import system_logger
 
 # Ensure these imports are correct relative to the project root
-from .config import CONFIG
-from .utils.logger import system_logger
+from src.config import CONFIG
 import numpy as np
 import logging
 
@@ -86,7 +87,7 @@ class RegularizationManager:
         except Exception as e:
             self.logger.error(
                 f"Failed to apply regularization configuration to ensembles: {e}",
-                exc_info=True,
+                exc_info = True,
             )
 
     def _apply_regularization_to_single_ensemble(
@@ -209,7 +210,7 @@ class RegularizationManager:
         except Exception as e:
             self.logger.error(
                 f"Failed to validate regularization configuration: {e}",
-                exc_info=True,
+                exc_info = True,
             )
             return False
 
@@ -257,28 +258,28 @@ class RegularizationManager:
 
                 if model_type == "classification":
                     model = lgb.LGBMClassifier(
-                        reg_alpha=reg_alpha,
-                        reg_lambda=reg_lambda,
-                        n_estimators=100,
-                        random_state=42,
+                        reg_alpha = reg_alpha,
+                        reg_lambda = reg_lambda,
+                        n_estimators = 100,
+                        random_state = 42,
                         verbose=-1,
                     )
                     scoring = "accuracy"
                 else:
                     model = lgb.LGBMRegressor(
-                        reg_alpha=reg_alpha,
-                        reg_lambda=reg_lambda,
-                        n_estimators=100,
-                        random_state=42,
+                        reg_alpha = reg_alpha,
+                        reg_lambda = reg_lambda,
+                        n_estimators = 100,
+                        random_state = 42,
                         verbose=-1,
                     )
                     scoring = "neg_mean_squared_error"
 
-                scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
+                scores = cross_val_score(model, features_df, target, cv = 3, scoring = scoring)
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "reg_alpha": study.best_params["reg_alpha"],
@@ -305,9 +306,9 @@ class RegularizationManager:
 
                 # Create a simple neural network for testing
                 model = self._create_simple_nn_model(
-                    input_size=features_df.shape[1],
+                    input_size = features_df.shape[1],
                     params={"dropout": dropout, "weight_decay": weight_decay},
-                    model_type=model_type,
+                    model_type = model_type,
                 )
 
                 # Train and evaluate the model with real metrics
@@ -337,7 +338,7 @@ class RegularizationManager:
                         criterion = torch.nn.MSELoss()
 
                     # Simple training loop
-                    optimizer = torch.optim.Adam(model.parameters(), weight_decay=weight_decay)
+                    optimizer = torch.optim.Adam(model.parameters(), weight_decay = weight_decay)
 
                     model.train()
                     for _epoch in range(10):  # Short training for optimization
@@ -362,7 +363,7 @@ class RegularizationManager:
                     return 0.5  # Fallback score
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "weight_decay": study.best_params["weight_decay"],
@@ -386,13 +387,13 @@ class RegularizationManager:
                 alpha = trial.suggest_float("alpha", 0.001, 0.1)
                 l1_ratio = trial.suggest_float("l1_ratio", 0.1, 0.9)
 
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
+                model = ElasticNet(alpha = alpha, l1_ratio = l1_ratio, random_state = 42)
                 scoring = "neg_mean_squared_error" if model_type == "regression" else "accuracy"
-                scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
+                scores = cross_val_score(model, features_df, target, cv = 3, scoring = scoring)
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "alpha": study.best_params["alpha"],

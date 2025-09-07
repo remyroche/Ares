@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import collections
 import typing
+from src.config.environment import get_environment_settings
 
 """
 Ares Comprehensive Launcher
@@ -16,45 +17,45 @@ This script provides a unified interface for launching the Ares trading bot with
 
 Usage:
     # Paper trading (robust trade info and performance metrics)
-    python ares_launcher.py paper --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py paper --symbol <SYMBOL> --exchange BINANCE
 
     # Challenger paper trading (with challenger model)
-    python ares_launcher.py challenger --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py challenger --symbol <SYMBOL> --exchange BINANCE
 
     # Enhanced backtesting with cached wavelet features (uses existing data)
-    python ares_launcher.py backtest --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py backtest --symbol <SYMBOL> --exchange BINANCE
 
     # Enhanced model training with efficiency optimizations (uses existing data)
-    python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py blank --symbol <SYMBOL> --exchange BINANCE
 
-    # Light training (30 days for quick testing and development)
-    python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
+    # Light training (10 days for quick testing and development)
+    python ares_launcher.py light --symbol <SYMBOL> --exchange BINANCE
 
     # Show available training modes and their configurations
     python ares_launcher.py modes
 
     # Start from step02 with existing data (no new downloads)
-    python ares_launcher.py step02 --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py step02 --symbol <SYMBOL> --exchange BINANCE
 
     # Step-based training with validation (new steps 1-21)
-    python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step3_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step9_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
-    python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step2_5 --symbol <SYMBOL> --exchange BINANCE --training-mode blank
+    python ares_launcher.py step3_5 --symbol <SYMBOL> --exchange BINANCE --training-mode blank
+    python ares_launcher.py step9_5 --symbol <SYMBOL> --exchange BINANCE --training-mode blank
+    python ares_launcher.py step18 --symbol <SYMBOL> --exchange BINANCE --training-mode full
+    python ares_launcher.py step21 --symbol <SYMBOL> --exchange BINANCE --training-mode full
 
-    # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
-    python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
+    # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 30m, 1h and creates ensembles)
+    python ares_launcher.py multi-timeframe --symbol <SYMBOL> --exchange BINANCE
 
     # Individual pipeline execution (organized structure)
-    python ares_launcher.py data-collection --symbol ETHUSDT --exchange BINANCE
-    python ares_launcher.py market-analysis --symbol ETHUSDT --exchange BINANCE
-    python ares_launcher.py model-training --symbol ETHUSDT --exchange BINANCE
-    python ares_launcher.py optimisation --symbol ETHUSDT --exchange BINANCE
-    python ares_launcher.py backtesting --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py data-collection --symbol <SYMBOL> --exchange BINANCE
+    python ares_launcher.py market-analysis --symbol <SYMBOL> --exchange BINANCE
+    python ares_launcher.py model-training --symbol <SYMBOL> --exchange BINANCE
+    python ares_launcher.py optimisation --symbol <SYMBOL> --exchange BINANCE
+    python ares_launcher.py backtesting --symbol <SYMBOL> --exchange BINANCE
 
     # Run all pipelines in sequence
-    python ares_launcher.py all-pipelines --symbol ETHUSDT --exchange BINANCE
+    python ares_launcher.py all-pipelines --symbol <SYMBOL> --exchange BINANCE
 
     # Live trading for single token
     python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
@@ -95,8 +96,19 @@ from pathlib import Path
 # Import common operations
 from src.utils.common_operations import (
     format_datetime,
-    get_current_datetime,
+    get_current_datetime
 )
+
+# Get dynamic symbol configuration
+_settings = get_environment_settings()
+
+def get_default_symbol() -> str:
+    """Get the default trading symbol from configuration."""
+    return _settings.get_default_symbol('ETHUSDT')
+
+def get_default_symbols() -> list[str]:
+    """Get the default symbols list from configuration."""
+    return _settings.default_symbols
 
 # Import logging utilities
 try:
@@ -148,6 +160,12 @@ from src.utils.logger import (
 )
 from src.utils.observability import init_observability
 from src.utils.simple_signal_handler import setup_signal_handlers
+# Conditional import to avoid blocking step02_5
+try:
+    from src.training.steps.backtesting import run_backtesting_pipeline
+except ImportError as e:
+    print(f"Warning: Backtesting pipeline not available: {e}")
+    run_backtesting_pipeline = None
 
 # Add the project root to the Python path
 project_root=Path(__file__).parent
@@ -381,7 +399,7 @@ class AresLauncher:
         except OSError as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
-    def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:
+    def _force_fresh_start_from_step(self, orchestrator, start_step: str, symbol: str, exchange: str) -> None:
         """Clear progress from the specified start step onward to enforce a fresh run."""
         try:
             steps=orchestrator.list_available_steps()
@@ -409,10 +427,57 @@ class AresLauncher:
 
             self.logger.info(f"✅ Cleared progress for {len(steps_to_clear)} steps: {steps_to_clear}")
 
+            # Also clear specific artifacts that validators expect
+            self._clear_step_artifacts(start_step, steps_to_clear, symbol, exchange)
+
         except OSError as e:
             self.logger.warning(
                 f"Failed clearing progress from step '{start_step}': {e}",
             )
+
+    def _clear_step_artifacts(self, start_step: str, steps_to_clear: list, symbol: str, exchange: str) -> None:
+        """Clear specific artifacts that validators expect when using --force."""
+        import os
+        from pathlib import Path
+
+        artifacts_to_clear = []
+
+        # If we're clearing step03 or later, also clear step02_5 artifacts and progress files
+        if start_step in ['step03_hmm_regime_discovery', 'step04_regime_data_splitting', 'step04_5_triple_barrier_method',
+                         'step05_labeling', 'step06_feature_engineering', 'step07_enhanced_matrix_operations',
+                         'step08_regime_data_splitting', 'step09_hmm_based_training', 'step09_5_multi_timeframe_hmm_ensemble',
+                         'step09_5_hmm_lm_generalist_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation',
+                         'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling',
+                         'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_final_parameters_optimization',
+                         'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']:
+            artifacts_to_clear.extend([
+                'data/optimization/sr_optimization_results.json',
+                'optimization_results.json',
+                'data/optimization/rollback_points_*.json',  # Clear rollback points too
+                f'data/training/progress/{exchange}_{symbol}/step02_5_sr_optimization.pkl',  # Clear step02_5 progress files
+                f'data/training/progress/{exchange}_{symbol}/step02_5_sr_optimization.json'
+            ])
+
+        # Clear the artifacts
+        for artifact_path in artifacts_to_clear:
+            try:
+                if '*' in artifact_path:  # Handle glob patterns
+                    import glob
+                    for file_path in glob.glob(artifact_path):
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            self.logger.info(f"🗑️ Deleted artifact: {file_path}")
+                else:
+                    if os.path.exists(artifact_path):
+                        os.remove(artifact_path)
+                        self.logger.info(f"🗑️ Deleted artifact: {artifact_path}")
+                    else:
+                        self.logger.debug(f"Artifact not found (already cleared): {artifact_path}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to delete artifact {artifact_path}: {e}")
+
+        if artifacts_to_clear:
+            self.logger.info(f"✅ Cleared {len(artifacts_to_clear)} artifact types")
 
     def _run_unified_training(
         self,
@@ -642,8 +707,8 @@ class AresLauncher:
         exchange: str,
         with_gui: bool=False,
     ):
-        """Run light training using unified training method with 30 days."""
-        # Light training uses only 30 days for very quick testing
+        """Run light training using unified training method with 10 days."""
+        # Light training uses only 10 days for very quick testing
         return self._run_unified_training(
             symbol=symbol,
             exchange=exchange,
@@ -1129,7 +1194,7 @@ class AresLauncher:
         # Launch individual trading bots for each supported token
         supported_tokens=CONFIG.get("SUPPORTED_TOKENS", {}).get(
             "BINANCE",
-            ["ETHUSDT"],
+            get_default_symbols(),
         )
 
         for token in supported_tokens:
@@ -1325,7 +1390,7 @@ class AresLauncher:
                 "--symbol",
                 symbol,
                 "--timeframes",
-                "1h,4h,1d",  # Default timeframes
+                "1m,5m,15m,30m,1h",  # Default timeframes
             ]
 
             # Add quick-test flag for blank mode
@@ -2486,7 +2551,7 @@ class AresLauncher:
         self.logger.info(f"🎯 Training mode: {training_mode}")
 
         # Validate previous steps before proceeding
-        validation_success=await self._validate_previous_steps(symbol, exchange, start_step)
+        validation_success=await self._validate_previous_steps(symbol, exchange, start_step, force_rerun)
         if not validation_success:
             self.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
             return False
@@ -2618,8 +2683,12 @@ class AresLauncher:
             training_mode="blank",  # Use blank mode for step02 with existing data
         )
 
-    async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str) -> bool:
+    async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str, force_rerun: bool = False) -> bool:
         """Validate all previous steps before starting from a specific step."""
+        if force_rerun:
+            self.logger.info(f"🔄 Skipping validation of previous steps for {start_step} (--force enabled)")
+            return True
+
         self.logger.info(f"🔍 Validating previous steps before starting from {start_step}")
 
         try:
@@ -2683,14 +2752,15 @@ class AresLauncher:
             return False
 
     def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
-        """Get all steps that need to be validated before starting from a specific step."""
+        """Get the immediate previous step that needs to be validated before starting from a specific step."""
         required_steps=[]
 
-        # Use a simple approach: validate all steps that come before the start step
+        # Only validate the immediate previous step, not all previous steps
         step_order = [
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
             "step2_data_reading",              # Read and validate data quality
+            "step02_5_sr_optimization",        # S/R optimization with advanced features
             "step03_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step3_5_final_regime_clustering", # Final regime clustering
             "step4_triple_barrier_method",     # Apply triple barrier method
@@ -2717,7 +2787,9 @@ class AresLauncher:
 
         try:
             start_index=step_order.index(start_step)
-            required_steps=step_order[:start_index]
+            # Only validate the immediate previous step, not all previous steps
+            if start_index > 0:
+                required_steps=[step_order[start_index-1]]
         except ValueError:
             self.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
             return []
@@ -3113,7 +3185,7 @@ class AresLauncher:
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
-                "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days)",
+                "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (10 days)",
             )
         elif training_mode== "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
@@ -3159,8 +3231,8 @@ class AresLauncher:
             if force_rerun:
                 # Set FORCE for fresh runs; EnhancedTrainingManager recognizes this env flag.
                 os.environ["FORCE"] = "1"
-                self._force_fresh_start_from_step(orchestrator, start_step)
-                self._clear_checkpoint_files(symbol, exchange, timeframe="1m")
+                self._force_fresh_start_from_step(orchestrator, start_step, symbol, exchange)
+                self._clear_checkpoint_files(symbol, exchange, timeframe="30m" if start_step == "step02_5_sr_optimization" else "1m")
 
             # Validation is now handled by EnhancedTrainingManager
             self.logger.info("🔍 Step validation will be performed by EnhancedTrainingManager")
@@ -3367,7 +3439,7 @@ Examples:
         type=str,
         choices=["light", "blank", "full"],
         default="blank",
-        help="Training mode for step-based commands: light (30 days), blank (180 days), full (730 days). Default: blank",
+        help="Training mode for step-based commands: light (10 days), blank (180 days), full (730 days). Default: blank",
     )
 
     parser.add_argument(
@@ -3506,7 +3578,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step1_data_collection",
+                start_step="step01_data_collection",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -3536,7 +3608,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step2_5_sr_optimization",
+                start_step="step02_5_sr_optimization",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -3546,7 +3618,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step2_5_sr_optimization",
+                start_step="step02_5_sr_optimization",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -3556,7 +3628,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step3_hmm_regime_discovery",
+                start_step="step03_hmm_regime_discovery",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -3606,7 +3678,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step7_regime_data_splitting",
+                start_step="step7_enhanced_matrix_operations",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

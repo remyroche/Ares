@@ -4,8 +4,9 @@ This adapter wraps the existing unified data converter implementation so it fits
 the BaseStep execution contract and the pipeline orchestration.
 """
 from typing import Any, Dict, Tuple
-from .training.base_step import BaseStep
-from .core.decorators import handles_errors
+from src.training.base_step import BaseStep
+from src.core.decorators.errors import handles_errors
+from .step01_5_data_converter import run_step
 
 class DataConverterStep(BaseStep):
     """Step 01_5: Data Converter implemented using BaseStep contract."""
@@ -24,6 +25,7 @@ class DataConverterStep(BaseStep):
         params = self._extract_conversion_parameters(training_input)
         conversion_success = await self._run_conversion_step(params)
         self._update_pipeline_state(pipeline_state, params, conversion_success)
+        pipeline_state['step01_5_data_converter_completed'] = True
         return pipeline_state
 
     def _extract_conversion_parameters(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -33,11 +35,11 @@ class DataConverterStep(BaseStep):
     async def _run_conversion_step(self, params: Dict[str, Any]) -> bool:
         """Run the actual conversion step."""
         self.logger.info('🔄 Running unified data converter (Step 01_5)...')
-        return await run_step_15(symbol=params['symbol'], exchange=params['exchange'], timeframe=params['timeframe'], data_dir=params['data_dir'], force_rerun=params['force_rerun'])
+        return await run_step(symbol = params['symbol'], exchange = params['exchange'], timeframe = params['timeframe'], data_dir = params['data_dir'], force_rerun = params['force_rerun'])
 
     def _update_pipeline_state(self, pipeline_state: Dict[str, Any], params: Dict[str, Any], conversion_success: bool) -> None:
         """Update pipeline state with conversion results."""
-        from .training.steps.data_preparation.step01_5_data_converter import UnifiedDataConverter
+        from .step01_5_data_converter import UnifiedDataConverter
         
         converter = UnifiedDataConverter({})
         unified_path = converter.get_unified_data_path(params['symbol'], params['exchange'], params['timeframe'])

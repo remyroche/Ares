@@ -1,3 +1,4 @@
+from .core.decorators import handles_errors
 """S/R Configuration Loader.
 
 This module loads and validates S/R optimization configuration from YAML files,
@@ -80,7 +81,7 @@ class SRConfigLoader:
         self.config_path = config_path or 'src/config/sr_optimization_config.yaml'
         self._config: Optional[SROptimizationConfig] = None
 
-    @handles_errors(exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return=None, context='load S/R configuration')
+    @handles_errors(exceptions=(FileNotFoundError, yaml.YAMLError, ValueError), default_return = None, context='load S/R configuration')
     def load_config(self) -> Optional[SROptimizationConfig]:
         """Load S/R optimization configuration from YAML file."""
         try:
@@ -109,17 +110,17 @@ class SRConfigLoader:
         try:
             opt_config = config_data.get('sr_detection_optimization', {})
             perf_thresholds_data = opt_config.get('performance_thresholds', {})
-            performance_thresholds = SRPerformanceThresholds(min_sr_validation_score=perf_thresholds_data.get('min_sr_validation_score', 0.6), min_bounce_rate=perf_thresholds_data.get('min_bounce_rate', 0.5), max_false_breakout_rate=perf_thresholds_data.get('max_false_breakout_rate', 0.4), min_volume_confirmation=perf_thresholds_data.get('min_volume_confirmation', 0.4), min_level_detection_accuracy=perf_thresholds_data.get('min_level_detection_accuracy', 0.3))
+            performance_thresholds = SRPerformanceThresholds(min_sr_validation_score = perf_thresholds_data.get('min_sr_validation_score', 0.6), min_bounce_rate = perf_thresholds_data.get('min_bounce_rate', 0.5), max_false_breakout_rate = perf_thresholds_data.get('max_false_breakout_rate', 0.4), min_volume_confirmation = perf_thresholds_data.get('min_volume_confirmation', 0.4), min_level_detection_accuracy = perf_thresholds_data.get('min_level_detection_accuracy', 0.3))
             timeframe_configs = {}
             timeframe_data = opt_config.get('timeframe_config', {})
             for tf, tf_config in timeframe_data.items():
-                timeframe_configs[tf] = SRTimeframeConfig(touch_threshold=tf_config.get('touch_threshold', 0.001), bounce_threshold=tf_config.get('bounce_threshold', 0.003), breakout_threshold=tf_config.get('breakout_threshold', 0.008), min_touches=tf_config.get('min_touches', 3), volume_spike_threshold=tf_config.get('volume_spike_threshold', 1.5), fractal_period=tf_config.get('fractal_period', 5), pivot_period=tf_config.get('pivot_period', 10))
+                timeframe_configs[tf] = SRTimeframeConfig(touch_threshold = tf_config.get('touch_threshold', 0.001), bounce_threshold = tf_config.get('bounce_threshold', 0.003), breakout_threshold = tf_config.get('breakout_threshold', 0.008), min_touches = tf_config.get('min_touches', 3), volume_spike_threshold = tf_config.get('volume_spike_threshold', 1.5), fractal_period = tf_config.get('fractal_period', 5), pivot_period = tf_config.get('pivot_period', 10))
             param_ranges_data = opt_config.get('parameter_ranges', {})
-            parameter_ranges = SRParameterRanges(fractal_weight=tuple(param_ranges_data.get('fractal_weight', [0.1, 0.6])), volume_weight=tuple(param_ranges_data.get('volume_weight', [0.1, 0.5])), pivot_weight=tuple(param_ranges_data.get('pivot_weight', [0.1, 0.4])), atr_weight=tuple(param_ranges_data.get('atr_weight', [0.05, 0.3])), touch_count_weight=tuple(param_ranges_data.get('touch_count_weight', [0.2, 0.5])), total_volume_weight=tuple(param_ranges_data.get('total_volume_weight', [0.1, 0.4])), level_age_weight=tuple(param_ranges_data.get('level_age_weight', [0.1, 0.4])), bounce_rate_weight=tuple(param_ranges_data.get('bounce_rate_weight', [0.1, 0.4])), isolation_score_weight=tuple(param_ranges_data.get('isolation_score_weight', [0.05, 0.3])), tf_15m_weight=tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_15m_weight', [0.15, 0.3])), tf_1h_weight=tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_1h_weight', [0.2, 0.35])), tf_4h_weight=tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_4h_weight', [0.15, 0.3])), tf_1d_weight=tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_1d_weight', [0.05, 0.2])), fibonacci_sensitivity=tuple(param_ranges_data.get('fibonacci_sensitivity', [0.5, 0.9])), elliott_confidence_threshold=tuple(param_ranges_data.get('elliott_confidence_threshold', [0.4, 0.8])), order_flow_hvn_threshold=tuple(param_ranges_data.get('order_flow_hvn_threshold', [1.1, 2.0])))
+            parameter_ranges = SRParameterRanges(fractal_weight = tuple(param_ranges_data.get('fractal_weight', [0.1, 0.6])), volume_weight = tuple(param_ranges_data.get('volume_weight', [0.1, 0.5])), pivot_weight = tuple(param_ranges_data.get('pivot_weight', [0.1, 0.4])), atr_weight = tuple(param_ranges_data.get('atr_weight', [0.05, 0.3])), touch_count_weight = tuple(param_ranges_data.get('touch_count_weight', [0.2, 0.5])), total_volume_weight = tuple(param_ranges_data.get('total_volume_weight', [0.1, 0.4])), level_age_weight = tuple(param_ranges_data.get('level_age_weight', [0.1, 0.4])), bounce_rate_weight = tuple(param_ranges_data.get('bounce_rate_weight', [0.1, 0.4])), isolation_score_weight = tuple(param_ranges_data.get('isolation_score_weight', [0.05, 0.3])), tf_15m_weight = tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_15m_weight', [0.15, 0.3])), tf_1h_weight = tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_1h_weight', [0.2, 0.35])), tf_4h_weight = tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_4h_weight', [0.15, 0.3])), tf_1d_weight = tuple(param_ranges_data.get('timeframe_weights', {}).get('tf_1d_weight', [0.05, 0.2])), fibonacci_sensitivity = tuple(param_ranges_data.get('fibonacci_sensitivity', [0.5, 0.9])), elliott_confidence_threshold = tuple(param_ranges_data.get('elliott_confidence_threshold', [0.4, 0.8])), order_flow_hvn_threshold = tuple(param_ranges_data.get('order_flow_hvn_threshold', [1.1, 2.0])))
             caching_config = config_data.get('caching', {})
             error_handling_config = config_data.get('error_handling', {})
             memory_management_config = config_data.get('memory_management', {})
-            return SROptimizationConfig(n_trials=opt_config.get('n_trials', 100), cv_folds=opt_config.get('cv_folds', 5), test_size=opt_config.get('test_size', 0.2), optimization_timeout=opt_config.get('optimization_timeout', 3600), performance_thresholds=performance_thresholds, timeframe_configs=timeframe_configs, parameter_ranges=parameter_ranges, caching_config=caching_config, error_handling_config=error_handling_config, memory_management_config=memory_management_config)
+            return SROptimizationConfig(n_trials = opt_config.get('n_trials', 100), cv_folds = opt_config.get('cv_folds', 5), test_size = opt_config.get('test_size', 0.2), optimization_timeout = opt_config.get('optimization_timeout', 3600), performance_thresholds = performance_thresholds, timeframe_configs = timeframe_configs, parameter_ranges = parameter_ranges, caching_config = caching_config, error_handling_config = error_handling_config, memory_management_config = memory_management_config)
         except Exception as e:
             self.logger.error(f'Failed to parse configuration: {e}')
             return None
@@ -220,10 +221,10 @@ class SRConfigLoader:
                 self.logger.warning('No configuration to save')
                 return False
             output_file = Path(output_path or self.config_path)
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.parent.mkdir(parents = True, exist_ok = True)
             config_dict = self._config_to_dict(self._config)
             with open(output_file, 'w') as f:
-                yaml.dump(config_dict, f, default_flow_style=False, indent=2)
+                yaml.dump(config_dict, f, default_flow_style = False, indent = 2)
             self.logger.info(f'✅ Configuration saved to {output_file}')
             return True
         except Exception as e:

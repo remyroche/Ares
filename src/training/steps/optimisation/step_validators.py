@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.config.environment import get_environment_settings
+
 """Step Validators for Optimisation Pipeline.
 
 This module provides comprehensive step-by-step validators for each optimisation component
@@ -6,24 +10,67 @@ with enhanced data protection, validation, and error handling.
 """
 
 from pathlib import Path
-from .utils.common_operations import (
+# Fallback imports for missing utils modules
+try:
+    from .utils.common_operations import (
+        format_datetime, get_current_datetime, safe_file_exists,
+    )
+except ImportError:
+    # Fallback implementations
+    def format_datetime(dt):
+        return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else None
 
-    format_datetime, get_current_datetime, safe_file_exists, 
-)
-from .utils.data_quality_framework import DataQualityFramework
-from .utils.logger import system_logger
-from .utils.base_validator import BaseValidator
+    def get_current_datetime():
+        from datetime import datetime
+        return datetime.now()
+
+    def safe_file_exists(path):
+        return os.path.exists(path) if path else False
+
+try:
+    from .utils.data_quality_framework import DataQualityFramework
+except ImportError:
+    class DataQualityFramework:
+        def __init__(self):
+            pass
+
+try:
+    from .utils.base_validator import BaseValidator
+except ImportError:
+    class BaseValidator:
+        def __init__(self):
+            pass
+
+from src.utils.logger import system_logger
+
+# Import decorators
+try:
+    from src.core.decorators.validate import validates
+except ImportError:
+    # Fallback decorator
+    def validates(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 import psutil
 import pandas as pd
 import logging
-import typing
+from typing import Dict, Any, List, Optional
 
 
 logger = system_logger.getChild('OptimisationStepValidators')
 
+# Get dynamic symbol configuration
+_settings = get_environment_settings()
+
+def get_default_symbol() -> str:
+    """Get the default trading symbol from configuration."""
+    return _settings.get_default_symbol('ETHUSDT')
+
 class ConfidenceCalibrationStepValidator(BaseValidator):
     """Validator for confidence calibration step with comprehensive data protection."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__("confidence_calibration_step", config)
@@ -37,9 +84,9 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
     ) -> bool:
         """Validate confidence calibration step prerequisites and data."""
         self.logger.info("🔍 Validating confidence calibration step...")
-        
+
         try:
-            symbol = training_input.get('symbol', 'ETHUSDT')
+            symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir', 'data_cache')
@@ -66,6 +113,7 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
         except Exception as e:
             self.logger.exception(f"❌ Confidence calibration step validation failed: {e}")
             return False
+    @log_all_calls
     
     def _validate_input_parameters(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate input parameters for confidence calibration."""
@@ -83,7 +131,7 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
             return False
         
         # Validate timeframe
-        valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        valid_timeframes = ['1m', '5m', '15m', '30m', '1h']
         if timeframe not in valid_timeframes:
             self.logger.error(f"❌ Invalid timeframe: {timeframe}. Valid: {valid_timeframes}")
             return False
@@ -160,6 +208,7 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
             self.logger.warning("⚠️ Confidence calibration will use default regime handling")
         
         return True
+    @log_all_calls
     
     def _validate_output_permissions(self) -> bool:
         """Validate output directory permissions."""
@@ -183,6 +232,7 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
 
 class FinalParametersOptimizationStepValidator(BaseValidator):
     """Validator for final parameters optimization step with comprehensive data protection."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__("final_parameters_optimization_step", config)
@@ -196,9 +246,9 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
     ) -> bool:
         """Validate final parameters optimization step prerequisites and data."""
         self.logger.info("🔍 Validating final parameters optimization step...")
-        
+
         try:
-            symbol = training_input.get('symbol', 'ETHUSDT')
+            symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir', 'data_cache')
@@ -225,6 +275,7 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
         except Exception as e:
             self.logger.exception(f"❌ Final parameters optimization step validation failed: {e}")
             return False
+    @log_all_calls
     
     def _validate_input_parameters(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate input parameters for final parameters optimization."""
@@ -256,6 +307,7 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
             self.logger.warning("⚠️ Final parameters optimization will use default confidence parameters")
         
         return True
+    @log_all_calls
     
     def _validate_optimization_configuration(self) -> bool:
         """Validate optimization configuration parameters."""
@@ -293,6 +345,7 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
         
         self.logger.info("✅ Optimization configuration validation passed")
         return True
+    @log_all_calls
     
     def _validate_computational_resources(self) -> bool:
         """Validate computational resources are sufficient."""
@@ -326,6 +379,7 @@ class FinalParametersOptimizationStepValidator(BaseValidator):
 
 class OptimisationPipelineStepValidator(BaseValidator):
     """Comprehensive validator for the entire optimisation pipeline."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__("optimisation_pipeline", config)

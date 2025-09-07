@@ -1,5 +1,7 @@
 """Enhanced Logging System for Backtesting Pipeline.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides comprehensive logging with emojis, progress tracking,
 quality assessment, and detailed error reporting for the backtesting pipeline.
 """
@@ -18,8 +20,9 @@ import typing
 
 class BacktestingLogger:
     """Enhanced logger for backtesting pipeline with comprehensive monitoring."""
+    @log_important_calls
 
-    def __init__(self, name: str, log_dir: str='log', enable_console: bool=True) -> None:
+    def __init__(self, name: str, log_dir: str='log', enable_console: bool = True) -> None:
         self.name = name
         self.log_dir = Path(log_dir)
         self.enable_console = enable_console
@@ -54,12 +57,12 @@ class BacktestingLogger:
         self.logger.info(f'📁 Log file: {log_file}')
         self.logger.info(f"🖥️ Console output: {('Enabled' if self.enable_console else 'Disabled')}")
 
-    def start_performance_monitoring(self, interval: float=5.0) -> None:
+    def start_performance_monitoring(self, interval: float = 5.0) -> None:
         """Start performance monitoring in background thread."""
         if self.monitoring:
             return
         self.monitoring = True
-        self.monitor_thread = threading.Thread(target=self._monitor_performance, args=(interval,), daemon=True)
+        self.monitor_thread = threading.Thread(target = self._monitor_performance, args=(interval,), daemon = True)
         self.monitor_thread.start()
         self.logger.info(f'📊 Performance monitoring started (interval: {interval}s)')
 
@@ -67,8 +70,9 @@ class BacktestingLogger:
         """Stop performance monitoring."""
         self.monitoring = False
         if self.monitor_thread:
-            self.monitor_thread.join(timeout=1.0)
+            self.monitor_thread.join(timeout = 1.0)
         self.logger.info('📊 Performance monitoring stopped')
+    @log_all_calls
 
     def _monitor_performance(self, interval: float) -> None:
         """Background performance monitoring."""
@@ -110,8 +114,9 @@ class BacktestingLogger:
         else:
             self.logger.info(f'📈 {step}: {progress_bar} {progress:.1f}%')
         self.progress_data[step] = {'progress': progress, 'message': message, 'timestamp': time.time()}
+    @log_all_calls
 
-    def _create_progress_bar(self, progress: float, width: int=20) -> str:
+    def _create_progress_bar(self, progress: float, width: int = 20) -> str:
         """Create a visual progress bar."""
         filled = int(width * progress / 100)
         bar = '█' * filled + '░' * (width - filled)
@@ -314,9 +319,10 @@ class BacktestingLogger:
         total_time = time.time() - self.start_time
         report = {'execution_summary': {'total_time_seconds': total_time, 'start_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'end_time': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'logger_name': self.name}, 'step_times': self.step_times, 'progress_data': self.progress_data, 'quality_flags': self.quality_flags, 'errors': self.errors, 'warnings': self.warnings, 'performance_metrics': self.performance_metrics, 'quality_assessment': self._assess_overall_quality()}
         if output_file:
-            safe_json_dump(report, output_file, indent=2)
+            safe_json_dump(report, output_file, indent = 2)
             self.logger.info(f'📋 Report saved to: {output_file}')
         return report
+    @log_all_calls
 
     def _assess_overall_quality(self) -> Dict[str, Any]:
         """Assess overall quality of the execution."""
@@ -332,6 +338,7 @@ class BacktestingLogger:
         else:
             quality_level = 'EXCELLENT'
         return {'quality_level': quality_level, 'error_count': error_count, 'warning_count': warning_count, 'quality_flag_count': quality_flag_count, 'recommendations': self._generate_recommendations()}
+    @log_all_calls
 
     def _generate_recommendations(self) -> List[str]:
         """Generate recommendations based on quality assessment."""
@@ -351,6 +358,7 @@ class BacktestingLogger:
         if not recommendations:
             recommendations.append('✅ No issues detected - execution quality is excellent')
         return recommendations
+    @log_important_calls
 
     def cleanup(self) -> None:
         """Cleanup resources."""
@@ -371,3 +379,10 @@ def cleanup_global_logger() -> None:
     if _global_logger:
         _global_logger.cleanup()
         _global_logger = None
+
+
+"""Enhanced Logging System for Backtesting Pipeline.
+
+This module provides comprehensive logging with emojis, progress tracking,
+and structured output for backtesting operations.
+"""

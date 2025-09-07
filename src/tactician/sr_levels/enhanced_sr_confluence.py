@@ -1,13 +1,14 @@
 from typing import List
 from typing import Dict
 from typing import Any
+from ...utils.logger import system_logger
+from ..core.decorators import handles_errors
 'Enhanced Multi-Timeframe S/R Confluence Detection Module.\n\nThis module provides advanced multi-timeframe S/R confluence detection\nwith sophisticated weighting and validation algorithms.\n'
 from dataclasses import dataclass
 import warnings
 warnings.filterwarnings('ignore')
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+, traced
+from ...utils.logger import system_logger
 import numpy as np
 import datetime
 import logging
@@ -46,15 +47,15 @@ class EnhancedSRConfluenceDetector:
         """Initialize enhanced S/R confluence detector."""
         self.config = config
         self.logger = system_logger.getChild('EnhancedSRConfluenceDetector')
-        self.timeframes = config.get('timeframes', ['1m', '5m', '15m', '30m', '1h', '4h'])
-        self.timeframe_weights = config.get('timeframe_weights', {'1m': 0.1, '5m': 0.2, '15m': 0.3, '30m': 0.3, '1h': 0.2, '4h': 0.1})
+        self.timeframes = config.get('timeframes', ['1m', '5m', '15m', '30m', '1h', '4h', '1d'])
+        self.timeframe_weights = config.get('timeframe_weights', {'1m': 0.1, '5m': 0.2, '15m': 0.3, '30m': 0.3, '1h': 0.2, '4h': 0.1, '1d': 0.05})
         self.confluence_threshold = config.get('confluence_threshold', 0.001)
         self.min_timeframes = config.get('min_timeframes', 2)
         self.min_confluence_score = config.get('min_confluence_score', 0.6)
         self.validation_period = config.get('validation_period', 100)
         self.volume_confirmation_threshold = config.get('volume_confirmation_threshold', 1.5)
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='detect multi-timeframe confluence')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='detect multi-timeframe confluence')
     @traced(span_name='EnhancedSR.detect_confluence')
     def detect_confluence(self, multi_timeframe_levels: Dict[str, List[Any]]) -> Optional[ConfluenceResult]:
         """
@@ -74,7 +75,7 @@ class EnhancedSRConfluenceDetector:
             confluence_levels = self._create_confluence_levels(confluence_zones, multi_timeframe_levels)
             validated_levels = self._validate_confluence_levels(confluence_levels, multi_timeframe_levels)
             confluence_metrics = self._calculate_confluence_metrics(validated_levels)
-            result = ConfluenceResult(confluence_levels=validated_levels, total_levels=len(validated_levels), high_confluence_levels=len([l for l in validated_levels if l.confluence_score > 0.8]), avg_confluence_score=np.mean([l.confluence_score for l in validated_levels]) if validated_levels else 0.0, timeframe_coverage=confluence_metrics['timeframe_coverage'], strength_distribution=confluence_metrics['strength_distribution'], validation_metrics=confluence_metrics['validation_metrics'])
+            result = ConfluenceResult(confluence_levels = validated_levels, total_levels = len(validated_levels), high_confluence_levels = len([l for l in validated_levels if l.confluence_score > 0.8]), avg_confluence_score = np.mean([l.confluence_score for l in validated_levels]) if validated_levels else 0.0, timeframe_coverage = confluence_metrics['timeframe_coverage'], strength_distribution = confluence_metrics['strength_distribution'], validation_metrics = confluence_metrics['validation_metrics'])
             self.logger.info(f'✅ Detected {len(validated_levels)} confluence levels')
             return result
         except Exception as e:
@@ -206,7 +207,7 @@ class EnhancedSRConfluenceDetector:
                 touch_count = self._calculate_total_touches(zone, multi_timeframe_levels)
                 volume_confirmation = self._calculate_volume_confirmation(zone, multi_timeframe_levels)
                 age_bars = self._calculate_average_age(zone, multi_timeframe_levels)
-                confluence_level = ConfluenceLevel(price=zone['price'], strength=zone['total_strength'] / len(zone['levels']), type=zone['type'], timeframes=zone['timeframes'], timeframe_weights=zone['timeframe_weights'], confluence_score=zone['confluence_score'], validation_score=0.0, touch_count=touch_count, volume_confirmation=volume_confirmation, age_bars=age_bars, metadata={'zone_id': f'zone_{len(confluence_levels)}', 'level_count': len(zone['levels']), 'timeframe_count': len(zone['timeframes']), 'creation_time': datetime.now().isoformat()})
+                confluence_level = ConfluenceLevel(price = zone['price'], strength = zone['total_strength'] / len(zone['levels']), type = zone['type'], timeframes = zone['timeframes'], timeframe_weights = zone['timeframe_weights'], confluence_score = zone['confluence_score'], validation_score = 0.0, touch_count = touch_count, volume_confirmation = volume_confirmation, age_bars = age_bars, metadata={'zone_id': f'zone_{len(confluence_levels)}', 'level_count': len(zone['levels']), 'timeframe_count': len(zone['timeframes']), 'creation_time': datetime.now().isoformat()})
                 confluence_levels.append(confluence_level)
             return confluence_levels
         except Exception as e:

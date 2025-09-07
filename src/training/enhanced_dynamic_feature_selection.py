@@ -7,7 +7,7 @@ from scipy.spatial.distance import squareform
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE, f_classif, mutual_info_classif
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 
@@ -15,6 +15,7 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.cluster.hierarchy import fcluster
 import logging
 import time
+from .core.decorators import handles_errors
 
 
 # src/training/enhanced_dynamic_feature_selection.py
@@ -186,14 +187,14 @@ class EnhancedDynamicFeatureSelection:
         nan_ratio = features_df.isna().sum() / len(features_df)
         max_nan_ratio = min(0.2, 1.0 / np.sqrt(len(features_df)))  # Adaptive threshold
         high_nan_features = nan_ratio[nan_ratio > max_nan_ratio].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
             if np.isinf(features_df[col]).any():
                 inf_features.append(col)
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Remove constant features (very low variance)
         constant_threshold = 1e-10
@@ -204,7 +205,7 @@ class EnhancedDynamicFeatureSelection:
                 or features_df[col].var() < constant_threshold
             ):
                 constant_features.append(col)
-        features_df = features_df.drop(columns=constant_features)
+        features_df = features_df.drop(columns = constant_features)
 
         # Fill remaining NaN values intelligently
         features_df = (
@@ -246,7 +247,7 @@ class EnhancedDynamicFeatureSelection:
             self.adaptive_correlation_threshold = 0.85
 
         # Compute adaptive mutual information threshold
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
         mi_percentiles = np.percentile(mi_scores, [10, 25, 50, 75, 90])
         self.adaptive_mi_threshold = mi_percentiles[25]  # 25th percentile
 
@@ -273,7 +274,7 @@ class EnhancedDynamicFeatureSelection:
         low_variance_features = variances[
             variances < self.adaptive_variance_threshold
         ].index.tolist()
-        features_df = features_df.drop(columns=low_variance_features)
+        features_df = features_df.drop(columns = low_variance_features)
 
         metadata = {
             "removed_low_variance": len(low_variance_features),
@@ -341,35 +342,35 @@ class EnhancedDynamicFeatureSelection:
         """Stage 5: Multi-method feature importance ranking."""
 
         # Method 1: Mutual Information
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(
-            ascending=False
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores, index = features_df.columns).sort_values(
+            ascending = False
         )
 
         # Method 2: Random Forest Importance
         rf_model = RandomForestClassifier(
-            n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+            n_estimators = 100, max_depth = 10, random_state = 42, n_jobs=-1
         )
         rf_model.fit(features_df, target)
         rf_importance = pd.Series(
-            rf_model.feature_importances_, index=features_df.columns
-        ).sort_values(ascending=False)
+            rf_model.feature_importances_, index = features_df.columns
+        ).sort_values(ascending = False)
 
         # Method 3: F-statistic
         f_scores, _ = f_classif(features_df, target)
-        f_ranking = pd.Series(f_scores, index=features_df.columns).sort_values(
-            ascending=False
+        f_ranking = pd.Series(f_scores, index = features_df.columns).sort_values(
+            ascending = False
         )
 
         # Method 4: LightGBM Importance
         try:
             lgb_model = lgb.LGBMClassifier(
-                n_estimators=100, random_state=42, verbose=-1
+                n_estimators = 100, random_state = 42, verbose=-1
             )
             lgb_model.fit(features_df, target)
             lgb_importance = pd.Series(
-                lgb_model.feature_importances_, index=features_df.columns
-            ).sort_values(ascending=False)
+                lgb_model.feature_importances_, index = features_df.columns
+            ).sort_values(ascending = False)
         except Exception as e:
             self.logger.warning(f"LightGBM importance computation failed: {e}")
             lgb_importance = rf_importance  # Fallback to RF importance
@@ -388,7 +389,7 @@ class EnhancedDynamicFeatureSelection:
             "random_forest": rf_importance,
             "f_statistic": f_ranking,
             "lightgbm": lgb_importance,
-            "ensemble": ensemble_scores.sort_values(ascending=False),
+            "ensemble": ensemble_scores.sort_values(ascending = False),
         }
 
         metadata = {
@@ -415,7 +416,7 @@ class EnhancedDynamicFeatureSelection:
         for category, features in self.feature_categories.items():
             if features:
                 # Get importance scores for this category
-                category_scores = ensemble_scores[features].sort_values(ascending=False)
+                category_scores = ensemble_scores[features].sort_values(ascending = False)
 
                 # Select top features from this category (with limits)
                 n_to_select = min(
@@ -470,7 +471,7 @@ class EnhancedDynamicFeatureSelection:
         category_top_features = []
         for features in self.feature_categories.values():
             if features:
-                category_scores = ensemble_scores[features].sort_values(ascending=False)
+                category_scores = ensemble_scores[features].sort_values(ascending = False)
                 category_top_features.extend(category_scores.head(3).index.tolist())
 
         # Combine and deduplicate
@@ -520,11 +521,11 @@ class EnhancedDynamicFeatureSelection:
 
         # Add interaction features to the dataframe
         if interaction_features:
-            interaction_df = pd.DataFrame(interaction_features, index=features_df.index)
-            features_df = pd.concat([features_df, interaction_df], axis=1)
+            interaction_df = pd.DataFrame(interaction_features, index = features_df.index)
+            features_df = pd.concat([features_df, interaction_df], axis = 1)
 
             # Remove any interaction features that are constant or have NaN values
-            interaction_df_clean = interaction_df.dropna(axis=1)
+            interaction_df_clean = interaction_df.dropna(axis = 1)
             constant_interactions = []
             for col in interaction_df_clean.columns:
                 if (
@@ -534,7 +535,7 @@ class EnhancedDynamicFeatureSelection:
                     constant_interactions.append(col)
 
             if constant_interactions:
-                features_df = features_df.drop(columns=constant_interactions)
+                features_df = features_df.drop(columns = constant_interactions)
                 interaction_features = {
                     k: v
                     for k, v in interaction_features.items()
@@ -566,10 +567,10 @@ class EnhancedDynamicFeatureSelection:
         # Use Recursive Feature Elimination with LightGBM for final selection
         try:
             estimator = lgb.LGBMClassifier(
-                n_estimators=100, random_state=42, verbose=-1
+                n_estimators = 100, random_state = 42, verbose=-1
             )
             rfe = RFE(
-                estimator=estimator, n_features_to_select=self.target_features, step=1
+                estimator = estimator, n_features_to_select = self.target_features, step = 1
             )
 
             # Fit RFE
@@ -630,7 +631,7 @@ class EnhancedDynamicFeatureSelection:
                 # Use a subset of the data for efficiency
                 sample_size = min(1000, len(linkage_matrix))
                 sample_indices = np.random.choice(
-                    len(linkage_matrix), sample_size, replace=False
+                    len(linkage_matrix), sample_size, replace = False
                 )
                 sample_linkage = linkage_matrix[sample_indices]
 
@@ -906,7 +907,7 @@ class EnhancedDynamicFeatureSelection:
             filepath = f"{data_dir}/{filename}"
 
             with open(filepath, "w") as f:
-                json.dump(metadata, f, indent=2, default=str)
+                json.dump(metadata, f, indent = 2, default = str)
 
             self.logger.info(f"💾 Feature selection metadata saved to {filepath}")
 
@@ -938,7 +939,7 @@ class EnhancedDynamicFeatureSelection:
             # Find high correlations
             high_corr_pairs = []
             upper_tri = corr_matrix.where(
-                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+                np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool)
             )
 
             for col in upper_tri.columns:
@@ -953,19 +954,19 @@ class EnhancedDynamicFeatureSelection:
                     )
 
             # Sort by correlation strength
-            high_corr_pairs.sort(key=lambda x: x["correlation"], reverse=True)
+            high_corr_pairs.sort(key = lambda x: x["correlation"], reverse = True)
 
             return {
                 "correlation_matrix_shape": corr_matrix.shape,
                 "high_correlation_pairs": high_corr_pairs[:20],  # Top 20
                 "mean_correlation": float(
                     corr_matrix.values[
-                        np.triu_indices_from(corr_matrix.values, k=1)
+                        np.triu_indices_from(corr_matrix.values, k = 1)
                     ].mean()
                 ),
                 "max_correlation": float(
                     corr_matrix.values[
-                        np.triu_indices_from(corr_matrix.values, k=1)
+                        np.triu_indices_from(corr_matrix.values, k = 1)
                     ].max()
                 ),
             }

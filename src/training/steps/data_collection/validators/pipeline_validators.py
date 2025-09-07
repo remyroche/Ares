@@ -22,7 +22,9 @@ from src.core.domain.decorators import (
     ensure_data_integrity
 )
 import pandas as pd
-from .utils.common_operations import (
+import datetime
+import typing
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )
@@ -77,12 +79,12 @@ class DataCollectionValidator:
             data_path = Path(data_dir)
             if not data_path.exists():
                 return ValidationReport(
-                    step_name=step_name,
-                    result=ValidationResult.FAILED,
-                    message=f"Data directory does not exist: {data_dir}",
+                    step_name = step_name,
+                    result = ValidationResult.FAILED,
+                    message = f"Data directory does not exist: {data_dir}",
                     details={"data_dir": data_dir},
-                    timestamp=format_datetime(get_current_datetime()),
-                    execution_time=time.time() - start_time,
+                    timestamp = format_datetime(get_current_datetime()),
+                    execution_time = time.time() - start_time,
                     warnings=[],
                     errors=[f"Data directory not found: {data_dir}"]
                 )
@@ -157,9 +159,9 @@ class DataCollectionValidator:
                 message = "Data collection validation passed successfully"
             
             report = ValidationReport(
-                step_name=step_name,
-                result=result,
-                message=message,
+                step_name = step_name,
+                result = result,
+                message = message,
                 details={
                     "symbol": symbol,
                     "exchange": exchange,
@@ -170,10 +172,10 @@ class DataCollectionValidator:
                     "total_files_found": len(existing_files),
                     "total_files_expected": len(required_files)
                 },
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
-                warnings=warnings,
-                errors=errors
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
+                warnings = warnings,
+                errors = errors
             )
             
             self.validation_reports.append(report)
@@ -182,24 +184,24 @@ class DataCollectionValidator:
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
-                step_name=step_name,
-                result=ValidationResult.FAILED,
-                message=f"Validation error: {e}",
+                step_name = step_name,
+                result = ValidationResult.FAILED,
+                message = f"Validation error: {e}",
                 details={"error": str(e)},
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
                 warnings=[],
                 errors=[str(e)]
             )
     
     @monitor_step_execution(step_name="data_converter_validation")
     @validate_data_quality(
-        validation_level=ValidationLevel.WARNING,
+        validation_level = ValidationLevel.WARNING,
         required_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'],
-        min_rows=100,
-        max_null_ratio=0.05,
-        check_duplicates=True,
-        check_timestamps=True,
+        min_rows = 100,
+        max_null_ratio = 0.05,
+        check_duplicates = True,
+        check_timestamps = True,
         context='data_converter_validation'
     )
     async def validate_step1_5_data_converter(
@@ -222,12 +224,12 @@ class DataCollectionValidator:
             
             if not converted_file.exists():
                 return ValidationReport(
-                    step_name=step_name,
-                    result=ValidationResult.FAILED,
-                    message=f"Converted data file not found: {converted_file}",
+                    step_name = step_name,
+                    result = ValidationResult.FAILED,
+                    message = f"Converted data file not found: {converted_file}",
                     details={"expected_file": str(converted_file)},
-                    timestamp=format_datetime(get_current_datetime()),
-                    execution_time=time.time() - start_time,
+                    timestamp = format_datetime(get_current_datetime()),
+                    execution_time = time.time() - start_time,
                     warnings=[],
                     errors=[f"Converted file not found: {converted_file}"]
                 )
@@ -264,11 +266,11 @@ class DataCollectionValidator:
                 # Check OHLC integrity
                 ohlc_issues = []
                 if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
-                    invalid_high = df['high'] < df[['open', 'close']].max(axis=1)
+                    invalid_high = df['high'] < df[['open', 'close']].max(axis = 1)
                     if invalid_high.any():
                         ohlc_issues.append(f"Found {invalid_high.sum()} rows where high < max(open, close)")
                     
-                    invalid_low = df['low'] > df[['open', 'close']].min(axis=1)
+                    invalid_low = df['low'] > df[['open', 'close']].min(axis = 1)
                     if invalid_low.any():
                         ohlc_issues.append(f"Found {invalid_low.sum()} rows where low > min(open, close)")
                     
@@ -288,7 +290,7 @@ class DataCollectionValidator:
                     df_sorted = df.sort_values('timestamp')
                     time_diffs = df_sorted['timestamp'].diff().dropna()
                     if len(time_diffs) > 0:
-                        expected_interval = pd.Timedelta(minutes=1)  # 1-minute intervals
+                        expected_interval = pd.Timedelta(minutes = 1)  # 1-minute intervals
                         irregular_intervals = time_diffs[time_diffs != expected_interval]
                         if len(irregular_intervals) > 0:
                             warnings.append(f"Found {len(irregular_intervals)} irregular time intervals")
@@ -311,9 +313,9 @@ class DataCollectionValidator:
                     message = "Data converter validation passed successfully"
                 
                 report = ValidationReport(
-                    step_name=step_name,
-                    result=result,
-                    message=message,
+                    step_name = step_name,
+                    result = result,
+                    message = message,
                     details={
                         "symbol": symbol,
                         "exchange": exchange,
@@ -329,10 +331,10 @@ class DataCollectionValidator:
                             "high_lt_low": invalid_hl.sum() if 'invalid_hl' in locals() else 0
                         }
                     },
-                    timestamp=format_datetime(get_current_datetime()),
-                    execution_time=time.time() - start_time,
-                    warnings=warnings,
-                    errors=errors
+                    timestamp = format_datetime(get_current_datetime()),
+                    execution_time = time.time() - start_time,
+                    warnings = warnings,
+                    errors = errors
                 )
                 
                 self.validation_reports.append(report)
@@ -340,12 +342,12 @@ class DataCollectionValidator:
                 
             except Exception as e:
                 return ValidationReport(
-                    step_name=step_name,
-                    result=ValidationResult.FAILED,
-                    message=f"Cannot read converted data file: {e}",
+                    step_name = step_name,
+                    result = ValidationResult.FAILED,
+                    message = f"Cannot read converted data file: {e}",
                     details={"file": str(converted_file), "error": str(e)},
-                    timestamp=format_datetime(get_current_datetime()),
-                    execution_time=time.time() - start_time,
+                    timestamp = format_datetime(get_current_datetime()),
+                    execution_time = time.time() - start_time,
                     warnings=[],
                     errors=[str(e)]
                 )
@@ -353,12 +355,12 @@ class DataCollectionValidator:
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
-                step_name=step_name,
-                result=ValidationResult.FAILED,
-                message=f"Validation error: {e}",
+                step_name = step_name,
+                result = ValidationResult.FAILED,
+                message = f"Validation error: {e}",
                 details={"error": str(e)},
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
                 warnings=[],
                 errors=[str(e)]
             )
@@ -366,7 +368,7 @@ class DataCollectionValidator:
     @monitor_step_execution(step_name="data_reading_validation")
     @validate_klines_data_quality(
         required_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'],
-        check_ohlc_integrity=True
+        check_ohlc_integrity = True
     )
     async def validate_step2_data_reading(
         self,
@@ -465,9 +467,9 @@ class DataCollectionValidator:
                 message = "Data reading validation passed successfully"
             
             report = ValidationReport(
-                step_name=step_name,
-                result=result,
-                message=message,
+                step_name = step_name,
+                result = result,
+                message = message,
                 details={
                     "symbol": symbol,
                     "exchange": exchange,
@@ -475,10 +477,10 @@ class DataCollectionValidator:
                     "validation_results": validation_results,
                     "files_checked": len(processed_files)
                 },
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
-                warnings=all_warnings,
-                errors=all_errors
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
+                warnings = all_warnings,
+                errors = all_errors
             )
             
             self.validation_reports.append(report)
@@ -487,12 +489,12 @@ class DataCollectionValidator:
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
-                step_name=step_name,
-                result=ValidationResult.FAILED,
-                message=f"Validation error: {e}",
+                step_name = step_name,
+                result = ValidationResult.FAILED,
+                message = f"Validation error: {e}",
                 details={"error": str(e)},
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
                 warnings=[],
                 errors=[str(e)]
             )
@@ -605,12 +607,12 @@ class PipelineStepValidator:
                 message = f"Prerequisites not met for {self.step_name}"
             
             return ValidationReport(
-                step_name=f"{self.step_name}_prerequisites",
-                result=result,
-                message=message,
+                step_name = f"{self.step_name}_prerequisites",
+                result = result,
+                message = message,
                 details={"prerequisites_met": prerequisites_met},
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
                 warnings=[],
                 errors=[]
             )
@@ -618,12 +620,12 @@ class PipelineStepValidator:
         except Exception as e:
             self.logger.exception(f"Error validating prerequisites for {self.step_name}: {e}")
             return ValidationReport(
-                step_name=f"{self.step_name}_prerequisites",
-                result=ValidationResult.FAILED,
-                message=f"Prerequisite validation error: {e}",
+                step_name = f"{self.step_name}_prerequisites",
+                result = ValidationResult.FAILED,
+                message = f"Prerequisite validation error: {e}",
                 details={"error": str(e)},
-                timestamp=format_datetime(get_current_datetime()),
-                execution_time=time.time() - start_time,
+                timestamp = format_datetime(get_current_datetime()),
+                execution_time = time.time() - start_time,
                 warnings=[],
                 errors=[str(e)]
             )

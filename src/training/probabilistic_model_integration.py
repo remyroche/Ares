@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 '\nProbabilistic Model Integration for Tactician and Analyst\n\nThis module provides seamless integration between the probabilistic Bayesian optimizer\nand your existing Tactician and Analyst models, enabling end-to-end optimization\nof probabilistic outputs and uncertainty quantification.\n'
 import asyncio
@@ -51,32 +51,32 @@ class ProbabilisticModelIntegrator:
             msg = f'Unknown model type: {model_type}'
             raise ValueError(msg)
         target = self.model_targets[model_type]
-        config = ProbabilisticOptimizationConfig(objectives=target.optimization_objectives, n_trials=self.config.get('optimization', {}).get('n_trials', 100), n_jobs=self.config.get('optimization', {}).get('n_jobs', 1), early_stopping_patience=self.config.get('optimization', {}).get('early_stopping_patience', 10), sampler_type=self.config.get('optimization', {}).get('sampler_type', 'tpe'))
-        optimizer = ProbabilisticBayesianOptimizer(config=config, model_type=model_type, storage_url=f'sqlite:///probabilistic_{model_type}_optimization.db')
+        config = ProbabilisticOptimizationConfig(objectives = target.optimization_objectives, n_trials = self.config.get('optimization', {}).get('n_trials', 100), n_jobs = self.config.get('optimization', {}).get('n_jobs', 1), early_stopping_patience = self.config.get('optimization', {}).get('early_stopping_patience', 10), sampler_type = self.config.get('optimization', {}).get('sampler_type', 'tpe'))
+        optimizer = ProbabilisticBayesianOptimizer(config = config, model_type = model_type, storage_url = f'sqlite:///probabilistic_{model_type}_optimization.db')
         self.optimizers[model_type] = optimizer
         return optimizer
 
-    async def optimize_tactician_model(self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: dict[str, Any] | None=None) -> dict[str, Any]:
+    async def optimize_tactician_model(self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: dict[str, Any] | None = None) -> dict[str, Any]:
         """Optimize the Tactician model using probabilistic Bayesian optimization."""
         self.logger.info('🚀 Starting Tactician model optimization...')
         if 'tactician' not in self.optimizers:
             self.create_optimizer('tactician')
         optimizer = self.optimizers['tactician']
         X, y = self._prepare_tactician_optimization_data(market_data, historical_predictions)
-        results = optimizer.optimize(X=X, y=y, model_factory=self._create_tactician_model_factory(), validation_split=0.2)
+        results = optimizer.optimize(X = X, y = y, model_factory = self._create_tactician_model_factory(), validation_split = 0.2)
         self.optimization_history['tactician'] = results
         await self._apply_tactician_optimization_results(results)
         self.logger.info('✅ Tactician model optimization completed!')
         return results
 
-    async def optimize_analyst_model(self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: dict[str, Any] | None=None) -> dict[str, Any]:
+    async def optimize_analyst_model(self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: dict[str, Any] | None = None) -> dict[str, Any]:
         """Optimize the Analyst model using probabilistic Bayesian optimization."""
         self.logger.info('🚀 Starting Analyst model optimization...')
         if 'analyst' not in self.optimizers:
             self.create_optimizer('analyst')
         optimizer = self.optimizers['analyst']
         X, y = self._prepare_analyst_optimization_data(market_data, historical_predictions)
-        results = optimizer.optimize(X=X, y=y, model_factory=self._create_analyst_model_factory(), validation_split=0.2)
+        results = optimizer.optimize(X = X, y = y, model_factory = self._create_analyst_model_factory(), validation_split = 0.2)
         self.optimization_history['analyst'] = results
         await self._apply_analyst_optimization_results(results)
         self.logger.info('✅ Analyst model optimization completed!')
@@ -96,7 +96,7 @@ class ProbabilisticModelIntegrator:
         if 'prediction_accuracy' in historical_predictions.columns:
             features.append(historical_predictions['prediction_accuracy'].fillna(0.5))
         X = np.column_stack([f.values for f in features if len(f) > 0])
-        y = np.random.choice([0, 1], size=len(X), p=[0.4, 0.6])
+        y = np.random.choice([0, 1], size = len(X), p=[0.4, 0.6])
         return (X, y)
 
     def _prepare_analyst_optimization_data(self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -113,7 +113,7 @@ class ProbabilisticModelIntegrator:
         if 'regime_prediction' in historical_predictions.columns:
             features.append(historical_predictions['regime_prediction'].fillna(0.5))
         X = np.column_stack([f.values for f in features if len(f) > 0])
-        y = np.random.choice([0, 1, 2], size=len(X), p=[0.3, 0.4, 0.3])
+        y = np.random.choice([0, 1, 2], size = len(X), p=[0.3, 0.4, 0.3])
         return (X, y)
 
     def _create_tactician_model_factory(self) -> None:
@@ -121,7 +121,7 @@ class ProbabilisticModelIntegrator:
 
         def factory(params: dict[str, Any]) -> None:
             from sklearn.ensemble import RandomForestClassifier
-            return RandomForestClassifier(n_estimators=params.get('n_estimators', 100), max_depth=params.get('max_depth', 10), random_state=42, n_jobs=1)
+            return RandomForestClassifier(n_estimators = params.get('n_estimators', 100), max_depth = params.get('max_depth', 10), random_state = 42, n_jobs = 1)
         return factory
 
     def _create_analyst_model_factory(self) -> None:
@@ -130,7 +130,7 @@ class ProbabilisticModelIntegrator:
         def factory(params: dict[str, Any]) -> None:
             from sklearn.ensemble import RandomForestClassifier
 
-            return RandomForestClassifier(n_estimators=params.get('n_estimators', 200), max_depth=params.get('max_depth', 15), random_state=42, n_jobs=1)
+            return RandomForestClassifier(n_estimators = params.get('n_estimators', 200), max_depth = params.get('max_depth', 15), random_state = 42, n_jobs = 1)
         return factory
 
     async def _apply_tactician_optimization_results(self, results: dict[str, Any]) -> None:
@@ -226,7 +226,7 @@ class ProbabilisticModelIntegrator:
                         status['recommendations'].append(f'{model_type.capitalize()} predictions could be more confident (sharpness: {sharp_score:.3f})')
         return status
 
-    def plot_optimization_results(self, model_type: str, save_path: str | None=None) -> None:
+    def plot_optimization_results(self, model_type: str, save_path: str | None = None) -> None:
         """Plot optimization results for a specific model type."""
         if model_type not in self.optimizers:
             self.logger.warning(f'No optimizer found for {model_type}')

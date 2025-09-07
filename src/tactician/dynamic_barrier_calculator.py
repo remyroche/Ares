@@ -5,12 +5,19 @@ from typing import Any, Dict, Tuple
 
 import yaml
 
-from .core.decorators import handles_errors, traced
-from .utils.logger import get_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import get_logger
 import numpy as np
 import json
 import logging
+from src.core.decorators import handles_errors
+try:
+    from src.core.decorators import traced
+except ImportError:
+    # Fallback decorator if traced is not available
+    def traced(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class DynamicBarrierCalculator:
@@ -116,7 +123,7 @@ class DynamicBarrierCalculator:
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
 
     @handles_errors(default_return=(0.001, 0.00025), context="dynamic_barrier_calculator.calculate_dynamic_barriers" )
-    @traced("DynamicBarrier.calculateBarriers")
+    @traced(span_name="DynamicBarrier.calculateBarriers")
     def calculate_dynamic_barriers(
         self, 
         timeframe: str = "1m"

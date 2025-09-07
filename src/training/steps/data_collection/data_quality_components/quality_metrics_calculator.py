@@ -1,9 +1,12 @@
 """Quality Metrics Calculator Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Calculates various data quality metrics and scores for market data.
 Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import datetime
 import logging
@@ -18,10 +21,12 @@ class QualityMetricsCalculator:
     - Generating quality reports
     - Tracking quality trends over time
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('QualityMetricsCalculator')
         self.config = config or self._get_default_config()
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for quality metrics."""
@@ -92,8 +97,8 @@ class QualityMetricsCalculator:
             metrics['volume_consistency'] = {'negative_count': int(negative_volume.sum()), 'zero_count': int(zero_volume.sum()), 'negative_ratio': float(negative_volume.sum() / len(data)) if len(data) > 0 else 0, 'zero_ratio': float(zero_volume.sum() / len(data)) if len(data) > 0 else 0}
         price_cols = [col for col in ['open', 'high', 'low', 'close'] if col in data.columns]
         if price_cols:
-            negative_prices = (data[price_cols] < 0).any(axis=1)
-            zero_prices = (data[price_cols] == 0).any(axis=1)
+            negative_prices = (data[price_cols] < 0).any(axis = 1)
+            zero_prices = (data[price_cols] == 0).any(axis = 1)
             metrics['price_consistency'] = {'negative_count': int(negative_prices.sum()), 'zero_count': int(zero_prices.sum()), 'negative_ratio': float(negative_prices.sum() / len(data)) if len(data) > 0 else 0, 'zero_ratio': float(zero_prices.sum() / len(data)) if len(data) > 0 else 0}
         consistency_scores = []
         if metrics['ohlc_consistency']:
@@ -117,7 +122,7 @@ class QualityMetricsCalculator:
         """
         metrics = {'data_age': {}, 'update_frequency': {}, 'gap_analysis': {}, 'overall_timeliness': 0.0}
         if isinstance(data.index, pd.DatetimeIndex):
-            now = pd.Timestamp.now(tz=data.index.tz)
+            now = pd.Timestamp.now(tz = data.index.tz)
             latest_timestamp = data.index.max()
             oldest_timestamp = data.index.min()
             metrics['data_age'] = {'latest_data_age_hours': float((now - latest_timestamp).total_seconds() / 3600), 'oldest_data_age_days': float((now - oldest_timestamp).total_seconds() / 86400), 'data_span_days': float((latest_timestamp - oldest_timestamp).total_seconds() / 86400)}
@@ -150,7 +155,7 @@ class QualityMetricsCalculator:
                 metrics['data_type_validity'][col] = is_valid_type
                 validity_scores.append(1.0 if is_valid_type else 0.0)
         if all((col in data.columns for col in ['open', 'high', 'low', 'close'])):
-            positive_prices = (data[['open', 'high', 'low', 'close']] > 0).all(axis=1)
+            positive_prices = (data[['open', 'high', 'low', 'close']] > 0).all(axis = 1)
             metrics['range_validity']['positive_prices_ratio'] = float(positive_prices.sum() / len(data)) if len(data) > 0 else 0
             validity_scores.append(metrics['range_validity']['positive_prices_ratio'])
         if 'volume' in data.columns:
@@ -160,7 +165,7 @@ class QualityMetricsCalculator:
         metrics['overall_validity'] = float(np.mean(validity_scores)) if validity_scores else 0.0
         return metrics
 
-    def generate_quality_report(self, data: pd.DataFrame, symbol: str, exchange: str, include_recommendations: bool=True) -> dict[str, Any]:
+    def generate_quality_report(self, data: pd.DataFrame, symbol: str, exchange: str, include_recommendations: bool = True) -> dict[str, Any]:
         """
         Generate comprehensive data quality report.
         
@@ -188,6 +193,7 @@ class QualityMetricsCalculator:
         if include_recommendations:
             report['recommendations'] = self._generate_recommendations(report['metrics'])
         return report
+    @log_all_calls
 
     def _generate_recommendations(self, metrics: dict[str, Any]) -> list[str]:
         """Generate recommendations based on quality metrics."""

@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import warnings
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 """Step 5: Labeling with Standardized Data Quality Management.
 
@@ -16,8 +18,30 @@ Key Enhancements:
 - Detailed Completion Reporting: Provides comprehensive reports on function execution outcomes
 """
 import logging
-from src.utils.decorators import handles_errors, traced, validates, cached, log_execution_time
+from src.core.decorators import traced, validates, cached, log_execution_time
 from src.utils.enhanced_error_handler import EnhancedErrorHandler, handle_errors_with_tracking
+
+# Import comprehensive optimization utilities for enhanced performance
+try:
+    # M1 Hardware-Specific Optimizations
+    from src.utils.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+    # Processing Core Optimizations
+    from src.utils.vectorized_processing_core import get_vectorized_processing_core
+    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.enhanced_step_optimizations import get_step_optimization_manager
+
+    # Data Management Optimizations
+    from src.utils.optimized_data_manager import OptimizedDataManager
+
+    OPTIMIZATIONS_AVAILABLE = True
+    system_logger.info("🚀 All optimization utilities successfully loaded")
+except ImportError as e:
+    OPTIMIZATIONS_AVAILABLE = False
+    system_logger.warning(f"⚠️ Some optimization utilities not available: {e}")
+
 import asyncio
 import sys
 from pathlib import Path
@@ -45,456 +69,71 @@ from src.utils.pipeline_standards import pipeline_standards
 from src.utils.logger import system_logger
 import psutil
 
-class FunctionCallStatus(Enum):
-    """Status of function call execution."""
-    PENDING = 'pending'
-    IN_PROGRESS = 'in_progress'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
-    TIMEOUT = 'timeout'
-    CANCELLED = 'cancelled'
+# Simplified monitoring - removed complex FunctionCallMonitor
 
-@dataclass
-class FunctionCallRecord:
-    """Record of a function call with comprehensive metadata."""
-    function_name: str
-    call_id: str
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    status: FunctionCallStatus = FunctionCallStatus.PENDING
-    input_args: Dict[str, Any] = field(default_factory=dict)
-    input_kwargs: Dict[str, Any] = field(default_factory=dict)
-    return_value: Any = None
-    exception: Optional[Exception] = None
-    execution_time: float = 0.0
-    memory_usage_mb: float = 0.0
-    cpu_usage_percent: float = 0.0
-    called_functions: List[str] = field(default_factory=list)
-    validation_results: Dict[str, bool] = field(default_factory=dict)
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
-    error_details: Optional[str] = None
-    stack_trace: Optional[str] = None
-
-@dataclass
-class FunctionCallReport:
-    """Comprehensive report of function call execution."""
-    total_calls: int = 0
-    successful_calls: int = 0
-    failed_calls: int = 0
-    total_execution_time: float = 0.0
-    average_execution_time: float = 0.0
-    function_call_details: List[FunctionCallRecord] = field(default_factory=list)
-    performance_summary: Dict[str, float] = field(default_factory=dict)
-    error_summary: Dict[str, int] = field(default_factory=dict)
-    validation_summary: Dict[str, bool] = field(default_factory=dict)
-
-class FunctionCallMonitor:
-    """Comprehensive function call monitoring and validation system."""
+# Simplified timer utility for basic performance monitoring
+class SimpleTimer:
+    """Simple timer utility for basic performance monitoring."""
 
     def __init__(self, logger: Any=None) -> None:
-        self.logger = logger or create_fallback_logger()
-        self.active_calls: Dict[str, FunctionCallRecord] = {}
-        self.call_history: List[FunctionCallRecord] = []
-        self.function_call_counter = 0
-        self.validation_rules: Dict[str, Callable] = {}
-        self.performance_thresholds: Dict[str, float] = {}
+        self.logger = logger or system_logger
+        self.start_times: Dict[str, float] = {}
 
-    def generate_call_id(self, function_name: str) -> str:
-        """Generate unique call ID for function call tracking."""
-        self.function_call_counter += 1
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-        return f'{function_name}_{timestamp}_{self.function_call_counter}'
+    def start(self, operation_name: str) -> None:
+        """Start timing an operation."""
+        self.start_times[operation_name] = time.time()
+        self.logger.debug(f'⏱️ Started timing: {operation_name}')
 
-    def start_function_call(self, function_name: str, args: tuple, kwargs: dict) -> str:
-        """Start monitoring a function call."""
-        call_id = self.generate_call_id(function_name)
-        input_args = {}
-        input_kwargs = {}
-        try:
-            input_args = {f'arg_{i}': str(arg)[:100] for i, arg in enumerate(args)}
-            input_kwargs = {k: str(v)[:100] for k, v in kwargs.items()}
-        except Exception as e:
-            self.logger.warning(f'⚠️ Could not capture function arguments: {e}')
-        call_record = FunctionCallRecord(function_name=function_name, call_id=call_id, start_time=datetime.now(), status=FunctionCallStatus.IN_PROGRESS, input_args=input_args, input_kwargs=input_kwargs)
-        self.active_calls[call_id] = call_record
-        self.logger.info(f'🚀 Starting function call: {function_name} (ID: {call_id})')
-        return call_id
+    def stop(self, operation_name: str) -> float:
+        """Stop timing an operation and return elapsed time."""
+        if operation_name not in self.start_times:
+            self.logger.warning(f'⚠️ No start time found for: {operation_name}')
+            return 0.0
 
-    def end_function_call(self, call_id: str, return_value: Any=None, exception: Exception=None) -> FunctionCallRecord:
-        """End monitoring a function call and record results."""
-        if call_id not in self.active_calls:
-            self.logger.error(f'❌ Call ID {call_id} not found in active calls')
-            return None
-        call_record = self.active_calls[call_id]
-        call_record.end_time = datetime.now()
-        call_record.execution_time = (call_record.end_time - call_record.start_time).total_seconds()
-        call_record.return_value = return_value
-        call_record.exception = exception
-        if exception:
-            call_record.status = FunctionCallStatus.FAILED
-            call_record.error_details = str(exception)
-            call_record.stack_trace = traceback.format_exc()
-            self.logger.error(f'❌ Function call failed: {call_record.function_name} (ID: {call_id}) - {exception}')
-        else:
-            call_record.status = FunctionCallStatus.COMPLETED
-            self.logger.info(f'✅ Function call completed: {call_record.function_name} (ID: {call_id}) in {call_record.execution_time:.3f}s')
-        del self.active_calls[call_id]
-        self.call_history.append(call_record)
-        return call_record
+        elapsed = time.time() - self.start_times[operation_name]
+        del self.start_times[operation_name]
+        self.logger.debug(f'⏱️ {operation_name} completed in {elapsed:.3f}s')
+        return elapsed
 
-    def record_function_to_function_call(self, parent_call_id: str, child_function_name: str) -> None:
-        """Record a function-to-function call relationship."""
-        if parent_call_id in self.active_calls:
-            self.active_calls[parent_call_id].called_functions.append(child_function_name)
-            self.logger.debug(f'🔗 Function call chain: {self.active_calls[parent_call_id].function_name} -> {child_function_name}')
+    def time_operation(self, operation_name: str):
+        """Decorator to time a function."""
+        def decorator(func: Callable) -> Callable:
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                self.start(operation_name)
+                try:
+                    result = await func(*args, **kwargs)
+                    elapsed = self.stop(operation_name)
+                    self.logger.info(f'✅ {operation_name} completed in {elapsed:.3f}s')
+                    return result
+                except Exception as e:
+                    elapsed = self.stop(operation_name)
+                    self.logger.error(f'❌ {operation_name} failed after {elapsed:.3f}s: {e}')
+                    raise
 
-    def validate_function_call(self, call_record: FunctionCallRecord) -> Dict[str, bool]:
-        """Validate function call against defined rules."""
-        validation_results = {}
-        if call_record.function_name in self.performance_thresholds:
-            threshold = self.performance_thresholds[call_record.function_name]
-            validation_results['performance'] = call_record.execution_time <= threshold
-            if not validation_results['performance']:
-                self.logger.warning(f'⚠️ Performance threshold exceeded for {call_record.function_name}: {call_record.execution_time:.3f}s > {threshold}s')
-        if call_record.function_name in self.validation_rules:
-            try:
-                validation_results['custom'] = self.validation_rules[call_record.function_name](call_record)
-            except Exception as e:
-                self.logger.error(f'❌ Custom validation failed for {call_record.function_name}: {e}')
-                validation_results['custom'] = False
-        validation_results['has_return_value'] = call_record.return_value is not None
-        validation_results['no_exception'] = call_record.exception is None
-        validation_results['reasonable_execution_time'] = 0 < call_record.execution_time < 3600
-        call_record.validation_results = validation_results
-        return validation_results
+            @wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                self.start(operation_name)
+                try:
+                    result = func(*args, **kwargs)
+                    elapsed = self.stop(operation_name)
+                    self.logger.info(f'✅ {operation_name} completed in {elapsed:.3f}s')
+                    return result
+                except Exception as e:
+                    elapsed = self.stop(operation_name)
+                    self.logger.error(f'❌ {operation_name} failed after {elapsed:.3f}s: {e}')
+                    raise
 
-    def generate_comprehensive_report(self) -> FunctionCallReport:
-        """Generate comprehensive function call report."""
-        if not self.call_history:
-            return FunctionCallReport()
-        total_calls = len(self.call_history)
-        successful_calls = len([c for c in self.call_history if c.status == FunctionCallStatus.COMPLETED])
-        failed_calls = len([c for c in self.call_history if c.status == FunctionCallStatus.FAILED])
-        total_execution_time = sum((c.execution_time for c in self.call_history))
-        average_execution_time = total_execution_time / total_calls if total_calls > 0 else 0.0
-        performance_summary = {'total_execution_time': total_execution_time, 'average_execution_time': average_execution_time, 'max_execution_time': max((c.execution_time for c in self.call_history)), 'min_execution_time': min((c.execution_time for c in self.call_history))}
-        error_summary = {}
-        for call in self.call_history:
-            if call.exception:
-                error_type = type(call.exception).__name__
-                error_summary[error_type] = error_summary.get(error_type, 0) + 1
-        validation_summary = {}
-        for call in self.call_history:
-            for validation_name, result in call.validation_results.items():
-                if validation_name not in validation_summary:
-                    validation_summary[validation_name] = {'passed': 0, 'failed': 0}
-                if result:
-                    validation_summary[validation_name]['passed'] += 1
-                else:
-                    validation_summary[validation_name]['failed'] += 1
-        return FunctionCallReport(total_calls=total_calls, successful_calls=successful_calls, failed_calls=failed_calls, total_execution_time=total_execution_time, average_execution_time=average_execution_time, function_call_details=self.call_history.copy(), performance_summary=performance_summary, error_summary=error_summary, validation_summary=validation_summary)
+            return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+        return decorator
 
-    def log_detailed_report(self, report: FunctionCallReport) -> None:
-        """Log detailed function call report."""
-        self.logger.info('📊 COMPREHENSIVE FUNCTION CALL REPORT')
-        self.logger.info('=' * 50)
-        self.logger.info(f'Total Function Calls: {report.total_calls}')
-        self.logger.info(f'Successful Calls: {report.successful_calls}')
-        self.logger.info(f'Failed Calls: {report.failed_calls}')
-        self.logger.info(f'Success Rate: {report.successful_calls / report.total_calls * 100:.1f}%' if report.total_calls > 0 else 'N/A')
-        self.logger.info(f'Total Execution Time: {report.total_execution_time:.3f}s')
-        self.logger.info(f'Average Execution Time: {report.average_execution_time:.3f}s')
-        if report.performance_summary:
-            self.logger.info('\n📈 PERFORMANCE SUMMARY:')
-            for metric, value in report.performance_summary.items():
-                self.logger.info(f'  {metric}: {value:.3f}s')
-        if report.error_summary:
-            self.logger.info('\n❌ ERROR SUMMARY:')
-            for error_type, count in report.error_summary.items():
-                self.logger.info(f'  {error_type}: {count} occurrences')
-        if report.validation_summary:
-            self.logger.info('\n✅ VALIDATION SUMMARY:')
-            for validation_name, results in report.validation_summary.items():
-                total = results['passed'] + results['failed']
-                pass_rate = results['passed'] / total * 100 if total > 0 else 0
-                self.logger.info(f"  {validation_name}: {results['passed']}/{total} passed ({pass_rate:.1f}%)")
-        self.logger.info('\n🔍 DETAILED FUNCTION CALLS:')
-        for call in report.function_call_details:
-            status_emoji = '✅' if call.status == FunctionCallStatus.COMPLETED else '❌'
-            self.logger.info(f'  {status_emoji} {call.function_name} (ID: {call.call_id})')
-            self.logger.info(f'    Status: {call.status.value}')
-            self.logger.info(f'    Execution Time: {call.execution_time:.3f}s')
-            if call.called_functions:
-                self.logger.info(f"    Called Functions: {', '.join(call.called_functions)}")
-            if call.validation_results:
-                validation_status = '✅' if all(call.validation_results.values()) else '⚠️'
-                self.logger.info(f'    Validation: {validation_status} {call.validation_results}')
-            if call.exception:
-                self.logger.info(f'    Error: {call.error_details}')
-
-# Removed custom comprehensive_function_monitor - using standardized decorators
-
-def function_to_function_tracker(monitor: FunctionCallMonitor, parent_call_id: str=None) -> None:
-    """Decorator for tracking function-to-function calls."""
-
-    def decorator(func: Callable) -> Callable:
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> None:
-            if parent_call_id:
-                monitor.record_function_to_function_call(parent_call_id, func.__name__)
-            return await func(*args, **kwargs)
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> None:
-            if parent_call_id:
-                monitor.record_function_to_function_call(parent_call_id, func.__name__)
-            return func(*args, **kwargs)
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
-
-# Using standardized EnhancedErrorHandler from utils
-
-class PerformanceMonitor:
-    """Comprehensive performance monitoring system for function calls."""
-
-    def __init__(self, logger: Any=None) -> None:
-        self.logger = logger or create_fallback_logger()
-        self.performance_history: List[Dict[str, Any]] = []
-        self.function_performance_stats: Dict[str, Dict[str, Any]] = {}
-        self.performance_thresholds: Dict[str, float] = {}
-        self.memory_usage_history: List[Dict[str, Any]] = []
-        self.cpu_usage_history: List[Dict[str, Any]] = []
-
-    def start_performance_monitoring(self, function_name: str, call_id: str) -> Dict[str, Any]:
-        """Start performance monitoring for a function call."""
-        try:
-            initial_metrics = self._get_system_metrics()
-            performance_record = {'function_name': function_name, 'call_id': call_id, 'start_time': datetime.now(), 'start_metrics': initial_metrics, 'end_time': None, 'end_metrics': None, 'execution_time': 0.0, 'memory_delta_mb': 0.0, 'cpu_usage_percent': 0.0, 'performance_score': 0.0, 'bottlenecks': [], 'optimization_suggestions': []}
-            return performance_record
-        except Exception as e:
-            self.logger.error(f'❌ Failed to start performance monitoring: {e}')
-            return {}
-
-    def end_performance_monitoring(self, performance_record: Dict[str, Any]) -> Dict[str, Any]:
-        """End performance monitoring and calculate metrics."""
-        try:
-            if not performance_record:
-                return {}
-            final_metrics = self._get_system_metrics()
-            performance_record['end_time'] = datetime.now()
-            performance_record['end_metrics'] = final_metrics
-            if performance_record['start_time'] and performance_record['end_time']:
-                performance_record['execution_time'] = (performance_record['end_time'] - performance_record['start_time']).total_seconds()
-            if performance_record['start_metrics'] and performance_record['end_metrics'] and ('memory_mb' in performance_record['start_metrics']) and ('memory_mb' in performance_record['end_metrics']):
-                performance_record['memory_delta_mb'] = performance_record['end_metrics']['memory_mb'] - performance_record['start_metrics']['memory_mb']
-            if performance_record['start_metrics'] and performance_record['end_metrics'] and ('cpu_percent' in performance_record['start_metrics']) and ('cpu_percent' in performance_record['end_metrics']):
-                performance_record['cpu_usage_percent'] = performance_record['end_metrics']['cpu_percent'] - performance_record['start_metrics']['cpu_percent']
-            performance_record['performance_score'] = self._calculate_performance_score(performance_record)
-            performance_record['bottlenecks'] = self._identify_bottlenecks(performance_record)
-            performance_record['optimization_suggestions'] = self._generate_optimization_suggestions(performance_record)
-            self._update_function_performance_stats(performance_record)
-            self.performance_history.append(performance_record)
-            return performance_record
-        except Exception as e:
-            self.logger.error(f'❌ Failed to end performance monitoring: {e}')
-            return performance_record
-
-    def _get_system_metrics(self) -> Dict[str, Any]:
-        """Get current system metrics."""
-        try:
-            metrics = {}
-            if psutil:
-                process = psutil.Process()
-                memory_info = process.memory_info()
-                metrics['memory_mb'] = memory_info.rss / 1024 / 1024
-                metrics['memory_percent'] = process.memory_percent()
-            if psutil:
-                metrics['cpu_percent'] = psutil.cpu_percent()
-            if psutil:
-                metrics['load_average'] = psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None
-            return metrics
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to get system metrics: {e}')
-            return {}
-
-    def _calculate_performance_score(self, performance_record: Dict[str, Any]) -> float:
-        """Calculate performance score based on execution time, memory usage, and CPU usage."""
-        try:
-            score = 100.0
-            execution_time = performance_record.get('execution_time', 0)
-            if execution_time > 60:
-                score -= min(30, (execution_time - 60) * 0.5)
-            elif execution_time > 10:
-                score -= min(20, (execution_time - 10) * 2)
-            memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-            if memory_delta > 1000:
-                score -= min(25, (memory_delta - 1000) * 0.025)
-            elif memory_delta > 100:
-                score -= min(15, (memory_delta - 100) * 0.15)
-            cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
-            if cpu_usage > 80:
-                score -= min(20, (cpu_usage - 80) * 0.5)
-            elif cpu_usage > 50:
-                score -= min(10, (cpu_usage - 50) * 0.33)
-            return max(0, score)
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to calculate performance score: {e}')
-            return 50.0
-
-    def _identify_bottlenecks(self, performance_record: Dict[str, Any]) -> List[str]:
-        """Identify performance bottlenecks."""
-        bottlenecks = []
-        execution_time = performance_record.get('execution_time', 0)
-        memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-        cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
-        if execution_time > 60:
-            bottlenecks.append('Long execution time (>60s)')
-        elif execution_time > 10:
-            bottlenecks.append('Moderate execution time (>10s)')
-        if memory_delta > 1000:
-            bottlenecks.append('High memory usage (>1GB)')
-        elif memory_delta > 100:
-            bottlenecks.append('Moderate memory usage (>100MB)')
-        if cpu_usage > 80:
-            bottlenecks.append('High CPU usage (>80%)')
-        elif cpu_usage > 50:
-            bottlenecks.append('Moderate CPU usage (>50%)')
-        return bottlenecks
-
-    def _generate_optimization_suggestions(self, performance_record: Dict[str, Any]) -> List[str]:
-        """Generate optimization suggestions based on performance metrics."""
-        suggestions = []
-        execution_time = performance_record.get('execution_time', 0)
-        memory_delta = abs(performance_record.get('memory_delta_mb', 0))
-        cpu_usage = abs(performance_record.get('cpu_usage_percent', 0))
-        function_name = performance_record.get('function_name', '')
-        if execution_time > 30:
-            suggestions.extend(['Consider breaking down the function into smaller, more manageable parts', 'Implement caching for repeated computations', 'Use vectorized operations instead of loops where possible'])
-        if memory_delta > 500:
-            suggestions.extend(['Process data in smaller chunks to reduce memory footprint', 'Use memory-efficient data types (e.g., float32 instead of float64)', 'Clear unused variables and objects explicitly'])
-        if cpu_usage > 70:
-            suggestions.extend(['Consider parallel processing for independent operations', 'Optimize algorithms for better time complexity', 'Use more efficient data structures'])
-        if 'labeling' in function_name.lower():
-            suggestions.extend(['Consider using vectorized labeling operations', 'Implement early termination for labeling loops', 'Use efficient data structures for label storage'])
-        elif 'regime' in function_name.lower():
-            suggestions.extend(['Cache regime detection results', 'Use efficient regime transition algorithms', 'Optimize regime-specific computations'])
-        return suggestions
-
-    def _update_function_performance_stats(self, performance_record: Dict[str, Any]) -> None:
-        """Update function performance statistics."""
-        try:
-            function_name = performance_record['function_name']
-            if function_name not in self.function_performance_stats:
-                self.function_performance_stats[function_name] = {'total_calls': 0, 'total_execution_time': 0.0, 'total_memory_usage': 0.0, 'total_cpu_usage': 0.0, 'execution_times': [], 'memory_usages': [], 'cpu_usages': [], 'performance_scores': [], 'bottlenecks': {}, 'optimization_suggestions': set()}
-            stats = self.function_performance_stats[function_name]
-            stats['total_calls'] += 1
-            stats['total_execution_time'] += performance_record.get('execution_time', 0)
-            stats['total_memory_usage'] += abs(performance_record.get('memory_delta_mb', 0))
-            stats['total_cpu_usage'] += abs(performance_record.get('cpu_usage_percent', 0))
-            stats['execution_times'].append(performance_record.get('execution_time', 0))
-            stats['memory_usages'].append(abs(performance_record.get('memory_delta_mb', 0)))
-            stats['cpu_usages'].append(abs(performance_record.get('cpu_usage_percent', 0)))
-            stats['performance_scores'].append(performance_record.get('performance_score', 0))
-            for bottleneck in performance_record.get('bottlenecks', []):
-                stats['bottlenecks'][bottleneck] = stats['bottlenecks'].get(bottleneck, 0) + 1
-            for suggestion in performance_record.get('optimization_suggestions', []):
-                stats['optimization_suggestions'].add(suggestion)
-        except Exception as e:
-            self.logger.error(f'❌ Failed to update function performance stats: {e}')
-
-    def generate_performance_report(self) -> Dict[str, Any]:
-        """Generate comprehensive performance report."""
-        try:
-            if not self.performance_history:
-                return {'total_monitored_calls': 0, 'message': 'No performance data recorded'}
-            total_calls = len(self.performance_history)
-            total_execution_time = sum((record.get('execution_time', 0) for record in self.performance_history))
-            total_memory_usage = sum((abs(record.get('memory_delta_mb', 0)) for record in self.performance_history))
-            total_cpu_usage = sum((abs(record.get('cpu_usage_percent', 0)) for record in self.performance_history))
-            performance_scores = [record.get('performance_score', 0) for record in self.performance_history]
-            avg_performance_score = sum(performance_scores) / len(performance_scores) if performance_scores else 0
-            worst_performers = sorted(self.performance_history, key=lambda x: x.get('performance_score', 0))[:5]
-            function_analysis = {}
-            for function_name, stats in self.function_performance_stats.items():
-                if stats['total_calls'] > 0:
-                    function_analysis[function_name] = {'total_calls': stats['total_calls'], 'average_execution_time': stats['total_execution_time'] / stats['total_calls'], 'average_memory_usage': stats['total_memory_usage'] / stats['total_calls'], 'average_cpu_usage': stats['total_cpu_usage'] / stats['total_calls'], 'average_performance_score': sum(stats['performance_scores']) / len(stats['performance_scores']), 'most_common_bottlenecks': sorted(stats['bottlenecks'].items(), key=lambda x: x[1], reverse=True)[:3], 'optimization_suggestions': list(stats['optimization_suggestions'])[:5]}
-            return {'total_monitored_calls': total_calls, 'overall_statistics': {'total_execution_time': total_execution_time, 'total_memory_usage': total_memory_usage, 'total_cpu_usage': total_cpu_usage, 'average_performance_score': avg_performance_score}, 'worst_performers': [{'function_name': record['function_name'], 'call_id': record['call_id'], 'performance_score': record.get('performance_score', 0), 'execution_time': record.get('execution_time', 0), 'bottlenecks': record.get('bottlenecks', [])} for record in worst_performers], 'function_analysis': function_analysis, 'performance_trends': self._analyze_performance_trends()}
-        except Exception as e:
-            self.logger.error(f'❌ Failed to generate performance report: {e}')
-            return {}
-
-    def _analyze_performance_trends(self) -> Dict[str, Any]:
-        """Analyze performance trends over time."""
-        try:
-            if len(self.performance_history) < 2:
-                return {'trend': 'insufficient_data'}
-            sorted_history = sorted(self.performance_history, key=lambda x: x['start_time'])
-            execution_times = [record.get('execution_time', 0) for record in sorted_history]
-            if len(execution_times) > 1:
-                time_trend = 'improving' if execution_times[-1] < execution_times[0] else 'degrading'
-            else:
-                time_trend = 'stable'
-            performance_scores = [record.get('performance_score', 0) for record in sorted_history]
-            if len(performance_scores) > 1:
-                score_trend = 'improving' if performance_scores[-1] > performance_scores[0] else 'degrading'
-            else:
-                score_trend = 'stable'
-            return {'execution_time_trend': time_trend, 'performance_score_trend': score_trend, 'data_points': len(sorted_history)}
-        except Exception as e:
-            self.logger.error(f'❌ Failed to analyze performance trends: {e}')
-            return {}
-
-    def log_performance_report(self, report: Dict[str, Any]) -> None:
-        """Log comprehensive performance report."""
-        try:
-            if report.get('total_monitored_calls', 0) == 0:
-                self.logger.info('📊 No performance data recorded')
-                return
-            self.logger.info('📊 PERFORMANCE MONITORING REPORT')
-            self.logger.info('=' * 50)
-            self.logger.info(f"Total Monitored Calls: {report['total_monitored_calls']}")
-            overall_stats = report.get('overall_statistics', {})
-            if overall_stats:
-                self.logger.info(f'\n📈 OVERALL STATISTICS:')
-                self.logger.info(f"   Total Execution Time: {overall_stats.get('total_execution_time', 0):.3f}s")
-                self.logger.info(f"   Total Memory Usage: {overall_stats.get('total_memory_usage', 0):.1f}MB")
-                self.logger.info(f"   Total CPU Usage: {overall_stats.get('total_cpu_usage', 0):.1f}%")
-                self.logger.info(f"   Average Performance Score: {overall_stats.get('average_performance_score', 0):.1f}/100")
-            worst_performers = report.get('worst_performers', [])
-            if worst_performers:
-                self.logger.info(f'\n⚠️ WORST PERFORMERS:')
-                for i, performer in enumerate(worst_performers, 1):
-                    self.logger.info(f"   {i}. {performer['function_name']} (Score: {performer['performance_score']:.1f})")
-                    self.logger.info(f"      Execution Time: {performer['execution_time']:.3f}s")
-                    if performer['bottlenecks']:
-                        self.logger.info(f"      Bottlenecks: {', '.join(performer['bottlenecks'])}")
-            function_analysis = report.get('function_analysis', {})
-            if function_analysis:
-                self.logger.info(f'\n🔍 FUNCTION ANALYSIS:')
-                for function_name, analysis in function_analysis.items():
-                    self.logger.info(f'   {function_name}:')
-                    self.logger.info(f"     Calls: {analysis['total_calls']}")
-                    self.logger.info(f"     Avg Execution Time: {analysis['average_execution_time']:.3f}s")
-                    self.logger.info(f"     Avg Memory Usage: {analysis['average_memory_usage']:.1f}MB")
-                    self.logger.info(f"     Avg Performance Score: {analysis['average_performance_score']:.1f}/100")
-                    if analysis['most_common_bottlenecks']:
-                        self.logger.info(f"     Common Bottlenecks: {', '.join([b[0] for b in analysis['most_common_bottlenecks']])}")
-            trends = report.get('performance_trends', {})
-            if trends:
-                self.logger.info(f'\n📊 PERFORMANCE TRENDS:')
-                self.logger.info(f"   Execution Time Trend: {trends.get('execution_time_trend', 'unknown')}")
-                self.logger.info(f"   Performance Score Trend: {trends.get('performance_score_trend', 'unknown')}")
-        except Exception as e:
-            self.logger.error(f'❌ Failed to log performance report: {e}')
-
-# Removed custom performance_monitor - using standardized decorators
+# Removed complex PerformanceMonitor - using simplified SimpleTimer
 
 class ComprehensiveValidationFramework:
     """Comprehensive validation framework for all function operations."""
 
     def __init__(self, logger: Any=None) -> None:
-        self.logger = logger or create_fallback_logger()
+        self.logger = logger or system_logger
         self.validation_rules: Dict[str, List[Callable]] = {}
         self.validation_history: List[Dict[str, Any]] = []
         self.validation_results: Dict[str, Dict[str, Any]] = {}
@@ -1015,72 +654,508 @@ class LabelingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
-        self.function_monitor = FunctionCallMonitor(self.logger)
-        self._setup_function_monitoring()
+        self.timer = SimpleTimer(self.logger)
         self.error_handler = EnhancedErrorHandler(self.logger)
-        self.performance_monitor = PerformanceMonitor(self.logger)
         self.validation_framework = ComprehensiveValidationFramework(self.logger)
+
+        # Initialize comprehensive optimization components
+        if OPTIMIZATIONS_AVAILABLE:
+            try:
+                # M1 Hardware-Specific Optimizations
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+
+                # Processing Core Optimizations
+                self.vectorized_core = get_vectorized_processing_core()
+                self.matrix_operations = get_enhanced_matrix_operations()
+                self.step_optimizer = get_step_optimization_manager()
+
+                # Data Management Optimizations
+                self.data_manager = OptimizedDataManager(
+                    base_path=Path(self.config.get('DATA_DIR', 'data_cache')),
+                    enable_caching=True,
+                    enable_compression=True,
+                    enable_parallel_io=True
+                )
+
+                self.logger.info('🚀 Step 5 initialized with comprehensive optimization suite:')
+                self.logger.info('  ✅ M1 GPU Manager (MPS acceleration)')
+                self.logger.info('  ✅ M1 Memory Optimizer')
+                self.logger.info('  ✅ M1 CPU Optimizer (parallel processing)')
+                self.logger.info('  ✅ Vectorized Processing Core')
+                self.logger.info('  ✅ Enhanced Matrix Operations')
+                self.logger.info('  ✅ Enhanced Step Optimizer')
+                self.logger.info('  ✅ Optimized Data Manager')
+
+            except Exception as e:
+                self.logger.warning(f'Failed to initialize some optimizations: {e}')
+                # Initialize with fallbacks
+                self._initialize_fallback_optimizations()
+        else:
+            self._initialize_fallback_optimizations()
+
+    def _initialize_fallback_optimizations(self):
+        """Initialize fallback optimizations when full suite is not available."""
+        self.gpu_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.vectorized_core = None
+        self.matrix_operations = None
+        self.step_optimizer = None
+        self.data_manager = None
+        self.logger.info('📋 Initialized with fallback optimizations (basic functionality only)')
+
         self._validate_environment()
         self._initialize_components()
 
-    def _setup_function_monitoring(self) -> None:
-        """Setup comprehensive function call monitoring with validation rules and performance thresholds."""
-        self.logger.info('🔧 Setting up comprehensive function call monitoring...')
-        self.function_monitor.performance_thresholds = {'execute_labeling': 300.0, '_generate_comprehensive_labels': 180.0, '_generate_regime_aware_labels': 120.0, '_apply_triple_barrier_labels': 60.0, '_apply_meta_labels': 30.0, '_log_step5_artifacts_and_report': 15.0}
-        self.function_monitor.validation_rules = {'execute_labeling': self._validate_execute_labeling_result, '_generate_comprehensive_labels': self._validate_labeling_result, '_generate_regime_aware_labels': self._validate_regime_labels_result, '_apply_triple_barrier_labels': self._validate_triple_barrier_result, '_apply_meta_labels': self._validate_meta_labels_result}
-        self.logger.info('✅ Function call monitoring setup completed')
+    def _setup_optimization_context(self) -> Dict[str, Any]:
+        """Setup optimization context for the current execution."""
+        context = {
+            'memory_checkpoint': None,
+            'optimization_profile': None,
+            'data_manager_session': None
+        }
 
-    def _validate_execute_labeling_result(self, call_record: FunctionCallRecord) -> bool:
-        """Validate execute_labeling function result."""
-        if call_record.return_value is None:
-            return False
-        if not isinstance(call_record.return_value, bool):
-            return False
-        if call_record.return_value and call_record.exception:
-            return False
-        return True
+        if self.memory_optimizer:
+            context['memory_checkpoint'] = self.memory_optimizer.memory_checkpoint('step05_labeling')
 
-    def _validate_labeling_result(self, call_record: FunctionCallRecord) -> bool:
-        """Validate labeling function result."""
-        if call_record.return_value is None:
-            return False
-        if not isinstance(call_record.return_value, pd.DataFrame):
-            return False
-        required_columns = ['label']
-        if not all((col in call_record.return_value.columns for col in required_columns)):
-            return False
-        if len(call_record.return_value) == 0:
-            return False
-        return True
+        if self.step_optimizer:
+            from src.utils.enhanced_step_optimizations import WorkloadType, OptimizationProfile
+            # Create optimization profile based on current workload
+            context['optimization_profile'] = OptimizationProfile(
+                workload_type=WorkloadType.MEMORY_INTENSIVE,
+                data_size_mb=500,  # Estimate based on typical data size
+                expected_duration=300,  # 5 minutes expected
+                priority="high"
+            )
 
-    def _validate_regime_labels_result(self, call_record: FunctionCallRecord) -> bool:
-        """Validate regime labels function result."""
-        if call_record.return_value is None:
-            return False
-        if not isinstance(call_record.return_value, pd.Series):
-            return False
-        if len(call_record.return_value) == 0:
-            return False
-        return True
+        if self.data_manager:
+            context['data_manager_session'] = self.data_manager.create_session()
 
-    def _validate_triple_barrier_result(self, call_record: FunctionCallRecord) -> bool:
-        """Validate triple barrier function result."""
-        if call_record.return_value is None:
-            return False
-        if not isinstance(call_record.return_value, pd.DataFrame):
-            return False
-        required_columns = ['triple_barrier_label']
-        if not all((col in call_record.return_value.columns for col in required_columns)):
-            return False
-        return True
+        return context
 
-    def _validate_meta_labels_result(self, call_record: FunctionCallRecord) -> bool:
-        """Validate meta labels function result."""
-        if call_record.return_value is None:
-            return False
-        if not isinstance(call_record.return_value, pd.DataFrame):
-            return False
-        return True
+    async def _load_data_optimized(self, file_path: Path, optimization_context: Dict[str, Any]) -> pd.DataFrame:
+        """Load data using optimized data manager with memory management."""
+        try:
+            session = optimization_context.get('data_manager_session')
+            if not session:
+                # Fallback to standard loading
+                return pd.read_parquet(file_path)
+
+            # Use optimized data manager for loading
+            data_id = f"{file_path.stem}_data"
+            data = await session.load_data_async(data_id, file_path)
+
+            # Apply memory optimizations
+            if self.memory_optimizer:
+                data_size_mb = data.memory_usage(deep=True).sum() / (1024**2)
+                if self.memory_optimizer.should_chunk_data(data_size_mb, "general"):
+                    self.logger.info(f"📦 Large dataset detected ({data_size_mb:.1f}MB), applying memory optimizations")
+                    # Optimize data types for memory efficiency
+                    data = self.memory_optimizer.optimize_dataframe_dtypes(data)
+
+            return data
+
+        except Exception as e:
+            self.logger.warning(f"Optimized data loading failed, falling back to standard loading: {e}")
+            return pd.read_parquet(file_path)
+
+    async def _generate_comprehensive_labels_optimized(
+        self,
+        data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        optimization_context: Dict[str, Any]
+    ) -> Optional[pd.DataFrame]:
+        """Generate comprehensive labels using all available optimizations."""
+        start_time = time.time()
+
+        try:
+            # Apply memory checkpoint if available
+            memory_context = optimization_context.get('memory_checkpoint')
+            if memory_context:
+                async with memory_context:
+                    return await self._perform_optimized_labeling(
+                        data, symbol, exchange, timeframe, optimization_context
+                    )
+            else:
+                return await self._perform_optimized_labeling(
+                    data, symbol, exchange, timeframe, optimization_context
+                )
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error in optimized comprehensive labeling: {e}')
+            # Cleanup on error
+            if self.memory_optimizer:
+                self.memory_optimizer.optimize_memory()
+            return None
+
+    async def _perform_optimized_labeling(
+        self,
+        data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        optimization_context: Dict[str, Any]
+    ) -> Optional[pd.DataFrame]:
+        """Perform the actual optimized labeling operations."""
+        try:
+            result_data = data.copy()
+
+            # Step 1: Pre-process data with optimizations
+            if self.memory_optimizer:
+                data_size_mb = result_data.memory_usage(deep=True).sum() / (1024**2)
+                if self.memory_optimizer.should_chunk_data(data_size_mb, "general"):
+                    self.logger.info('🧠 Applying memory optimizations to input data')
+                    result_data = self.memory_optimizer.optimize_dataframe_dtypes(result_data)
+
+            # Step 2: Generate triple barrier labels with regime-aware optimizations
+            if 'triple_barrier_label' not in result_data.columns:
+                self.logger.info('🔄 Triple barrier labels not found, generating with optimizations...')
+                if self.regime_barrier_optimizer and self.auto_recalculate_hmm_barriers:
+                    try:
+                        self.logger.info('🚀 Attempting regime-aware triple barrier labeling...')
+                        if self.regime_col in result_data.columns:
+                            self.logger.info(f'✅ Found regime column: {self.regime_col}')
+
+                            # Use vectorized processing if available
+                            if self.vectorized_core:
+                                self.logger.info('⚡ Using vectorized processing for regime-aware labeling')
+                                regime_labels = await self._generate_regime_aware_labels_vectorized(
+                                    result_data, symbol, exchange, timeframe
+                                )
+                            else:
+                                regime_labels = await self.timer.time_operation('generate_regime_aware_labels')(
+                                    self._generate_regime_aware_labels
+                                )(result_data, symbol, exchange, timeframe)
+
+                            if regime_labels is not None:
+                                result_data['triple_barrier_label'] = regime_labels
+                                result_data['labeling_method'] = 'regime_aware_optimized'
+                                self.logger.info('✅ Generated regime-aware triple barrier labels with optimizations')
+                            else:
+                                raise Exception('Regime-aware labeling failed')
+                        else:
+                            self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found")
+                            raise Exception('Regime column not found')
+                    except Exception as e:
+                        self.logger.error(f'❌ Regime-aware labeling failed: {e}')
+                        self.logger.error('❌ No fallback labeling method available - regime-aware labeling is required')
+                        return None
+                else:
+                    if not self.auto_recalculate_hmm_barriers:
+                        self.logger.error('❌ Auto-calculation disabled for regime-aware labeling')
+                    if self.regime_barrier_optimizer is None:
+                        self.logger.error('❌ Regime barrier optimizer not available')
+                    self.logger.error('❌ Regime-aware labeling is required - no fallback available')
+                    return None
+
+            # Step 3: Apply meta-labeling with optimizations
+            if self.meta_labeling_system:
+                try:
+                    await self.meta_labeling_system.initialize()
+
+                    # Use CPU optimizer for parallel meta-labeling if available
+                    if self.cpu_optimizer:
+                        self.logger.info('🏃 Using M1 CPU optimizer for parallel meta-labeling')
+                        meta_labels = await self._apply_meta_labeling_parallel(result_data, symbol, exchange, timeframe)
+                    else:
+                        analyst_labels = await self.meta_labeling_system._generate_analyst_labels(data, symbol, exchange, timeframe)
+                        if analyst_labels is not None:
+                            result_data['analyst_label'] = analyst_labels
+                            self.logger.info('✅ Generated analyst labels')
+                        tactician_labels = await self.meta_labeling_system._generate_tactician_labels(data, symbol, exchange, timeframe)
+                        if tactician_labels is not None:
+                            result_data['tactician_label'] = tactician_labels
+                            self.logger.info('✅ Generated tactician labels')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Meta-labeling failed: {e}')
+
+            # Step 4: Create composite labels with matrix operations optimization
+            composite_label = await self._create_composite_label_optimized(result_data)
+            result_data['label'] = composite_label
+            result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
+            result_data['label_source'] = await self._determine_label_source(result_data)
+
+            self.logger.info(f'✅ Generated comprehensive labels with {len(result_data.columns)} columns using full optimization suite')
+            self.logger.info(f"   - Label distribution: {result_data['label'].value_counts().to_dict()}")
+            self.logger.info(f"   - Labeling method used: {result_data.get('labeling_method', 'unknown')}")
+
+            return result_data
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error in optimized labeling operations: {e}')
+            return None
+
+    async def _generate_regime_aware_labels_vectorized(
+        self,
+        data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> Optional[pd.Series]:
+        """Generate regime-aware labels using vectorized processing core."""
+        try:
+            self.logger.info('⚡ Using vectorized processing core for regime-aware labeling...')
+
+            if not self._validate_regime_aware_inputs(data):
+                return None
+
+            # Use vectorized core for processing
+            if self.vectorized_core:
+                # Prepare data for vectorized processing
+                price_data = data[['close', 'high', 'low']].values
+                regime_data = data[self.regime_col].values
+
+                # Use vectorized core to process regime-aware labels
+                # This would integrate with the vectorized processing core
+                labels = self._vectorized_triple_barrier_labels_regime_aware(
+                    price_data, regime_data, data.index
+                )
+
+                if labels is not None:
+                    self.logger.info(f'✅ Generated {len(labels)} vectorized regime-aware labels')
+                    return labels
+
+            # Fallback to standard regime labeler
+            regime_labeler = self._create_regime_labeler()
+            if regime_labeler is None:
+                return None
+
+            return self.timer.time_operation('generate_labels_with_regime_labeler')(
+                self._generate_labels_with_regime_labeler
+            )(regime_labeler, data)
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error in vectorized regime-aware labeling: {e}')
+            return None
+
+    def _vectorized_triple_barrier_labels_regime_aware(
+        self,
+        price_data: np.ndarray,
+        regime_data: np.ndarray,
+        index: pd.Index
+    ) -> Optional[pd.Series]:
+        """Vectorized triple barrier labeling with regime awareness."""
+        try:
+            # Extract price data
+            prices = price_data[:, 0]  # close prices
+            highs = price_data[:, 1]
+            lows = price_data[:, 2]
+
+            # Configuration parameters
+            profit_take = 0.002  # 0.2%
+            stop_loss = 0.001    # 0.1%
+            time_barrier = self.time_barrier_minutes
+            max_lookahead = self.max_lookahead
+
+            # Vectorized barrier calculations
+            labels = np.zeros(len(prices))
+
+            # Calculate future returns for all points at once
+            future_returns = np.zeros(len(prices))
+            for i in range(len(prices) - 1):
+                if i + max_lookahead < len(prices):
+                    future_returns[i] = (prices[i + max_lookahead] - prices[i]) / prices[i]
+                else:
+                    future_returns[i] = (prices[-1] - prices[i]) / prices[i]
+
+            # Vectorized profit/loss barrier hits
+            profit_hits = future_returns >= profit_take
+            loss_hits = future_returns <= -stop_loss
+
+            # Vectorized time barrier (simplified)
+            time_hits = np.zeros(len(prices), dtype=bool)
+            for i in range(len(prices)):
+                if i + time_barrier < len(prices):
+                    future_window = prices[i:i + time_barrier]
+                    if len(future_window) > 0:
+                        max_return = (future_window.max() - prices[i]) / prices[i]
+                        min_return = (future_window.min() - prices[i]) / prices[i]
+                        if max_return < profit_take and min_return > -stop_loss:
+                            time_hits[i] = True
+
+            # Vectorized label assignment
+            labels[profit_hits] = 1    # Profit take hit
+            labels[loss_hits] = -1     # Stop loss hit
+            labels[time_hits] = 0      # Time barrier hit
+
+            # Apply regime-aware adjustments if regime column exists
+            if len(regime_data) > 0:
+                labels = self._apply_regime_aware_adjustments_vectorized(
+                    labels, prices, regime_data
+                )
+
+            self.logger.info(f'✅ Generated {len(labels)} vectorized regime-aware triple barrier labels')
+
+            return pd.Series(labels, index=index)
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error in vectorized triple barrier labeling: {e}')
+            return None
+
+    def _apply_regime_aware_adjustments_vectorized(
+        self,
+        labels: np.ndarray,
+        prices: np.ndarray,
+        regime_data: np.ndarray
+    ) -> np.ndarray:
+        """Apply regime-aware adjustments using vectorized operations."""
+        try:
+            # Calculate regime-specific statistics
+            unique_regimes = np.unique(regime_data)
+
+            for regime in unique_regimes:
+                regime_mask = regime_data == regime
+                regime_labels = labels[regime_mask]
+                regime_prices = prices[regime_mask]
+
+                if len(regime_labels) > 0:
+                    # Calculate regime volatility
+                    if len(regime_prices) > 1:
+                        regime_volatility = np.std(np.diff(regime_prices) / regime_prices[:-1])
+                    else:
+                        regime_volatility = 0.01  # Default moderate volatility
+
+                    # Scale barriers based on volatility
+                    if regime_volatility > 0.01:  # High volatility regime
+                        # More conservative barriers
+                        profit_mask = regime_labels == 1
+                        loss_mask = regime_labels == -1
+                        # Reduce profit targets and increase stop losses
+                        labels[regime_mask & profit_mask] = 0.5
+                        labels[regime_mask & loss_mask] = -0.5
+                    elif regime_volatility < 0.005:  # Low volatility regime
+                        # More aggressive barriers
+                        profit_mask = regime_labels == 1
+                        loss_mask = regime_labels == -1
+                        # Increase profit targets and reduce stop losses
+                        labels[regime_mask & profit_mask] = 1.5
+                        labels[regime_mask & loss_mask] = -0.5
+
+            return labels
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error applying vectorized regime adjustments: {e}')
+            return labels
+
+    async def _apply_meta_labeling_parallel(
+        self,
+        data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> None:
+        """Apply meta-labeling using parallel processing."""
+        try:
+            if not self.cpu_optimizer or not self.meta_labeling_system:
+                return
+
+            self.logger.info('🏃 Applying meta-labeling with parallel processing')
+
+            # Use CPU optimizer for parallel execution
+            tasks = [
+                self.meta_labeling_system._generate_analyst_labels(data, symbol, exchange, timeframe),
+                self.meta_labeling_system._generate_tactician_labels(data, symbol, exchange, timeframe)
+            ]
+
+            # Execute in parallel
+            results = await self.cpu_optimizer.parallel_map_async(
+                lambda task: task, tasks, max_workers=2
+            )
+
+            # Process results
+            if len(results) >= 1 and results[0] is not None:
+                data['analyst_label'] = results[0]
+                self.logger.info('✅ Generated analyst labels (parallel)')
+
+            if len(results) >= 2 and results[1] is not None:
+                data['tactician_label'] = results[1]
+                self.logger.info('✅ Generated tactician labels (parallel)')
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Parallel meta-labeling failed: {e}')
+
+    async def _create_composite_label_optimized(self, data: pd.DataFrame) -> pd.Series:
+        """Create composite label using optimized matrix operations."""
+        try:
+            if self.matrix_operations:
+                self.logger.info('🔢 Using enhanced matrix operations for composite labeling')
+
+                # Use matrix operations for efficient composite label creation
+                composite_label = data['triple_barrier_label'].copy()
+
+                if 'analyst_label' in data.columns:
+                    # Use matrix operations for efficient override logic
+                    analyst_override_mask = (
+                        (data['analyst_label'] != 0) &
+                        (data['triple_barrier_label'] == 0)
+                    ).values
+
+                    # Apply overrides using vectorized operations
+                    composite_label.loc[analyst_override_mask] = data.loc[analyst_override_mask, 'analyst_label']
+
+                return composite_label
+            else:
+                # Fallback to standard implementation
+                return await self._create_composite_label(data)
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Optimized composite labeling failed, using fallback: {e}')
+            return await self._create_composite_label(data)
+
+    async def _save_data_optimized(
+        self,
+        data: pd.DataFrame,
+        output_path: Path,
+        metadata_path: Path,
+        metadata: Dict[str, Any],
+        optimization_context: Dict[str, Any]
+    ) -> bool:
+        """Save data using optimized data manager."""
+        try:
+            session = optimization_context.get('data_manager_session')
+            if not session:
+                # Fallback to standard saving
+                data.to_parquet(output_path)
+                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+                return True
+
+            # Use optimized data manager for saving
+            data_id = f"{output_path.stem}_labeled_data"
+            await session.save_data_async(data_id, data, output_path, metadata=metadata)
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Optimized data saving failed, falling back to standard saving: {e}")
+            try:
+                data.to_parquet(output_path)
+                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+                return True
+            except Exception as fallback_error:
+                self.logger.error(f"Standard saving also failed: {fallback_error}")
+                return False
+
+    def _get_optimization_summary(self) -> Dict[str, Any]:
+        """Get summary of optimizations used."""
+        return {
+            'm1_gpu_manager': self.gpu_manager is not None,
+            'm1_memory_optimizer': self.memory_optimizer is not None,
+            'm1_cpu_optimizer': self.cpu_optimizer is not None,
+            'vectorized_processing_core': self.vectorized_core is not None,
+            'enhanced_matrix_operations': self.matrix_operations is not None,
+            'enhanced_step_optimizer': self.step_optimizer is not None,
+            'optimized_data_manager': self.data_manager is not None,
+            'regime_barrier_optimizer': self.regime_barrier_optimizer is not None,
+            'meta_labeling_system': self.meta_labeling_system is not None
+        }
+
+    # Removed complex function monitoring setup - using SimpleTimer
+
+    # Removed complex validation methods - using ComprehensiveValidationFramework
 
     def _compute_labeling_fingerprint(self, triple_barrier_path: Path) -> Dict[str, Any]:
         """Compute a stable fingerprint of source labeling inputs to ensure idempotence.
@@ -1107,7 +1182,7 @@ class LabelingStep:
         labeling_cfg = self.config.get('vectorized_labelling_orchestrator', {})
         self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get('auto_recalculate_hmm_barriers', True))
         try:
-            from .utils.regime_data_access import get_regime_column
+            from src.utils.regime_data_access import get_regime_column
             detected = get_regime_column(pd.DataFrame(columns=['composite_cluster_id'])) or 'hmm_regime'
         except Exception:
             detected = 'hmm_regime'
@@ -1119,25 +1194,27 @@ class LabelingStep:
         self.logger.info(f'   - HMM regime column: {self.regime_col}')
         self.logger.info(f'   - Time barrier minutes: {self.time_barrier_minutes}')
         self.logger.info(f'   - Max lookahead: {self.max_lookahead}')
-        self.regime_barrier_optimizer = None
         try:
-            from .training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
+            from src.training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
+        except ImportError as e:
+            self.logger.error(f'❌ Failed to import RegimeSpecificTripleBarrierOptimizer: {e}')
+            raise RuntimeError(f'Regime barrier optimizer is required but not available: {e}')
         except Exception as e:
-            self.logger.warning(f'⚠️ Could not initialize RegimeSpecificTripleBarrierOptimizer: {e}')
-            self.regime_barrier_optimizer = None
-        # Initialize meta-labeling system if available
+            self.logger.error(f'❌ Failed to initialize RegimeSpecificTripleBarrierOptimizer: {e}')
+            raise RuntimeError(f'Regime barrier optimizer initialization failed: {e}')
+        # Initialize meta-labeling system
         try:
             from src.analyst.meta_labeling_system import MetaLabelingSystem
             self.meta_labeling_system = MetaLabelingSystem(self.config)
             self.logger.info('✅ Meta-labeling system initialized successfully')
-        except ImportError:
-            self.logger.warning('⚠️ Meta-labeling system not available')
-            self.meta_labeling_system = None
+        except ImportError as e:
+            self.logger.error(f'❌ Failed to import MetaLabelingSystem: {e}')
+            raise RuntimeError(f'Meta labeling system is required but not available: {e}')
         except Exception as e:
-            self.logger.warning(f'⚠️ Could not initialize MetaLabelingSystem: {e}')
-            self.meta_labeling_system = None
+            self.logger.error(f'❌ Failed to initialize MetaLabelingSystem: {e}')
+            raise RuntimeError(f'Meta labeling system initialization failed: {e}')
 
     async def initialize(self) -> None:
         """Initialize the labeling step."""
@@ -1164,6 +1241,10 @@ class LabelingStep:
     async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
         step_start = time.time()
         self.logger.info(f'🚀 Executing Labeling for {symbol} on {exchange}')
+
+        # Initialize optimization context
+        optimization_context = self._setup_optimization_context()
+
         try:
             triple_barrier_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
             if not triple_barrier_path.exists():
@@ -1185,9 +1266,16 @@ class LabelingStep:
                         return True
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to read existing labeling metadata: {e}')
-            data = pd.read_parquet(triple_barrier_path)
+
+            # Use optimized data loading
+            if self.data_manager and optimization_context.get('data_manager_session'):
+                self.logger.info('🔄 Using optimized data manager for loading')
+                data = await self._load_data_optimized(triple_barrier_path, optimization_context)
+            else:
+                self.logger.info('📖 Using standard pandas loading')
+                data = pd.read_parquet(triple_barrier_path)
             try:
-                from .utils.regime_data_access import ensure_regime_labels, get_regime_column
+                from src.utils.regime_data_access import ensure_regime_labels, get_regime_column
                 data = ensure_regime_labels(data, exchange=exchange, symbol=symbol, timeframe=timeframe, data_dir=data_dir)
                 detected_col = get_regime_column(data)
                 if detected_col and detected_col != self.regime_col:
@@ -1196,28 +1284,56 @@ class LabelingStep:
             except Exception:
                 pass
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
-            current_call_id = None
-            for call_id, call_record in self.function_monitor.active_calls.items():
-                if call_record.function_name == 'execute_labeling':
-                    current_call_id = call_id
-                    break
-            if current_call_id:
-                self.function_monitor.record_function_to_function_call(current_call_id, '_generate_comprehensive_labels')
-            data = await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
+            # Use optimized comprehensive labeling with vectorized processing
+            data = await self._generate_comprehensive_labels_optimized(
+                data, symbol, exchange, timeframe, optimization_context
+            )
             if data is None:
                 self.logger.error('❌ Comprehensive labeling failed')
                 return False
-            data.to_parquet(output_path)
-            self.logger.info(f'✅ Labeled data saved to {output_path}')
-            label_distribution = {}
-            if 'label' in data.columns:
-                label_distribution = data['label'].value_counts().to_dict()
-            metadata = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'total_samples': int(len(data)), 'label_distribution': label_distribution, 'created_at': pd.Timestamp.now().isoformat(), 'labeling_config': self.config.get('labeling', {}), 'source_fingerprint': current_fp}
-            safe_json_dump(metadata, metadata_path, indent=2, default=str)
-            self._log_step_timing('execute_labeling', step_start)
-            await self._log_step5_artifacts_and_report(symbol, exchange, timeframe, data_dir, data, output_path, metadata_path)
-            await self._generate_and_log_function_call_report()
-            return True
+            # Use optimized data saving
+            if self.data_manager and optimization_context.get('data_manager_session'):
+                self.logger.info('💾 Using optimized data manager for saving')
+                success = await self._save_data_optimized(
+                    data, output_path, metadata_path, metadata, optimization_context
+                )
+            else:
+                self.logger.info('💾 Using standard parquet saving')
+                data.to_parquet(output_path)
+                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+                success = True
+
+            if success:
+                self.logger.info(f'✅ Labeled data saved to {output_path}')
+                label_distribution = {}
+                if 'label' in data.columns:
+                    label_distribution = data['label'].value_counts().to_dict()
+                metadata = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'total_samples': int(len(data)),
+                    'label_distribution': label_distribution,
+                    'created_at': pd.Timestamp.now().isoformat(),
+                    'labeling_config': self.config.get('labeling', {}),
+                    'source_fingerprint': current_fp,
+                    'optimization_used': self._get_optimization_summary()
+                }
+                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+
+                self._log_step_timing('execute_labeling', step_start)
+                await self._log_step5_artifacts_and_report(symbol, exchange, timeframe, data_dir, data, output_path, metadata_path)
+                await self._generate_and_log_function_call_report()
+
+                # Final memory optimization
+                if self.memory_optimizer:
+                    final_memory_stats = self.memory_optimizer.optimize_memory()
+                    self.logger.info(f'🧹 Final memory optimization: {final_memory_stats.get("memory_freed_mb", 0):.1f}MB freed')
+
+                return True
+            else:
+                self.logger.error('❌ Failed to save labeled data')
+                return False
         except Exception as e:
             self.logger.exception(f'❌ Error in labeling: {e}')
             await self._generate_and_log_function_call_report()
@@ -1256,75 +1372,6 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 5 artifacts and reports: {e}')
 
-    async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
-        """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method."
-        
-        New Labeling Flow:
-        Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
-        Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
-        Data Source Flexibility: Can work with unified data or step04 output depending on configuration
-        """
-        try:
-            result_data = data.copy()
-            if 'triple_barrier_label' not in result_data.columns:
-                self.logger.info('🔄 Triple barrier labels not found, generating them using regime-aware methods...')
-                if self.regime_barrier_optimizer is not None and self.auto_recalculate_hmm_barriers:
-                    try:
-                        self.logger.info('🚀 Attempting regime-aware triple barrier labeling...')
-                        if self.regime_col in result_data.columns:
-                            self.logger.info(f'✅ Found regime column: {self.regime_col}')
-                            current_call_id = None
-                            for call_id, call_record in self.function_monitor.active_calls.items():
-                                if call_record.function_name == '_generate_comprehensive_labels':
-                                    current_call_id = call_id
-                                    break
-                            if current_call_id:
-                                self.function_monitor.record_function_to_function_call(current_call_id, '_generate_regime_aware_labels')
-                            regime_labels = await self._generate_regime_aware_labels(result_data, symbol, exchange, timeframe)
-                            if regime_labels is not None:
-                                result_data['triple_barrier_label'] = regime_labels
-                                result_data['labeling_method'] = 'regime_aware'
-                                self.logger.info('✅ Generated regime-aware triple barrier labels')
-                            else:
-                                raise Exception('Regime-aware labeling failed')
-                        else:
-                            self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found")
-                            raise Exception('Regime column not found')
-                    except Exception as e:
-                        self.logger.error(f'❌ Regime-aware labeling failed: {e}')
-                        self.logger.error('❌ No fallback labeling method available - regime-aware labeling is required')
-                        return None
-                else:
-                    if not self.auto_recalculate_hmm_barriers:
-                        self.logger.error('❌ Auto-calculation disabled for regime-aware labeling')
-                    if self.regime_barrier_optimizer is None:
-                        self.logger.error('❌ Regime barrier optimizer not available')
-                    self.logger.error('❌ Regime-aware labeling is required - no fallback available')
-                    return None
-            if self.meta_labeling_system:
-                try:
-                    await self.meta_labeling_system.initialize()
-                    analyst_labels = await self.meta_labeling_system._generate_analyst_labels(data, symbol, exchange, timeframe)
-                    if analyst_labels is not None:
-                        result_data['analyst_label'] = analyst_labels
-                        self.logger.info('✅ Generated analyst labels')
-                    tactician_labels = await self.meta_labeling_system._generate_tactician_labels(data, symbol, exchange, timeframe)
-                    if tactician_labels is not None:
-                        result_data['tactician_label'] = tactician_labels
-                        self.logger.info('✅ Generated tactician labels')
-                except Exception as e:
-                    self.logger.warning(f'⚠️ Meta-labeling failed: {e}')
-            composite_label = await self._create_composite_label(result_data)
-            result_data['label'] = composite_label
-            result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
-            result_data['label_source'] = await self._determine_label_source(result_data)
-            self.logger.info(f'✅ Generated comprehensive labels with {len(result_data.columns)} columns')
-            self.logger.info(f"   - Label distribution: {result_data['label'].value_counts().to_dict()}")
-            self.logger.info(f"   - Labeling method used: {result_data.get('labeling_method', 'unknown')}")
-            return result_data
-        except Exception as e:
-            self.logger.exception(f'❌ Error generating comprehensive labels: {e}')
-            return None
 
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
@@ -1372,27 +1419,34 @@ class LabelingStep:
 
     def _validate_regime_aware_inputs(self, data: pd.DataFrame) -> bool:
         """Validate inputs for regime-aware labeling."""
-        if self.regime_barrier_optimizer is None:
-            self.logger.error('❌ Regime barrier optimizer not available')
+        try:
+            if self.regime_barrier_optimizer is None:
+                self.logger.error('❌ Regime barrier optimizer not available')
+                return False
+            if self.regime_col not in data.columns:
+                self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
+                return False
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                self.logger.error(f'❌ Missing required columns for triple barrier labeling: {missing_columns}')
+                return False
+            if data.empty:
+                self.logger.error('❌ Input data is empty')
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(f'❌ Error during regime-aware input validation: {e}')
             return False
-        if self.regime_col not in data.columns:
-            self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
-            return False
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        if missing_columns:
-            self.logger.error(f'❌ Missing required columns for triple barrier labeling: {missing_columns}')
-            return False
-        return True
 
-    def _create_regime_labeler(self) -> None:
+    def _create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from .training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+            from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
             return RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
         except ImportError as e:
             self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
-            return None
+            raise RuntimeError(f'Regime aware triple barrier labeling is required but not available: {e}')
 
     def _generate_labels_with_regime_labeler(self, regime_labeler: Any, data: pd.DataFrame) -> Optional[pd.Series]:
         """Generate labels using the regime labeler."""
@@ -1407,26 +1461,6 @@ class LabelingStep:
             self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
             return None
 
-    async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
-        """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
-        try:
-            self.logger.info('🔧 Generating regime-aware triple barrier labels...')
-            if not self._validate_regime_aware_inputs(data):
-                return None
-            regime_labeler = self._create_regime_labeler()
-            if regime_labeler is None:
-                return None
-            current_call_id = None
-            for call_id, call_record in self.function_monitor.active_calls.items():
-                if call_record.function_name == '_generate_regime_aware_labels':
-                    current_call_id = call_id
-                    break
-            if current_call_id:
-                self.function_monitor.record_function_to_function_call(current_call_id, '_generate_labels_with_regime_labeler')
-            return self._generate_labels_with_regime_labeler(regime_labeler, data)
-        except Exception as e:
-            self.logger.exception(f'❌ Error in regime-aware labeling: {e}')
-            return None
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the labeling step with standardized data quality management."

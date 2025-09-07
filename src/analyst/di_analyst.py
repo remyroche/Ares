@@ -1,3 +1,4 @@
+from src.core.error_classes import execution_error, initialization_error
 from .core.decorators import handles_errors
 '\nDependency injection-aware Analyst implementation.\n\nThis module provides an Analyst implementation that properly supports\ndependency injection patterns and modern architectural practices.\n'
 import logging
@@ -21,7 +22,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
     configuration management, and modern architectural patterns.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None, exchange_client: IExchangeClient | None=None, state_manager: IStateManager | None=None, event_bus: IEventBus | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, exchange_client: IExchangeClient | None = None, state_manager: IStateManager | None = None, event_bus: IEventBus | None = None) -> None:
         super().__init__(config, exchange_client, state_manager, event_bus)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.is_analyzing = False
@@ -71,7 +72,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         self.event_bus.subscribe(EventType.MARKET_DATA_RECEIVED.value, self.analyze_market_data)
         self.logger.debug('Event subscriptions set up')
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='market data analysis')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='market data analysis')
     async def analyze_market_data(self, market_data: MarketData) -> AnalysisResult | None:
         """Analyze market data and return analysis result."""
         if not self.is_initialized or not self._validate_dependencies():
@@ -124,7 +125,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                     features.update(feature_result.get('features', {}))
                     technical_indicators.update(feature_result.get('technical_indicators', {}))
                     support_resistance.update(feature_result.get('support_resistance', {}))
-            return AnalysisResult(timestamp=market_data.timestamp, symbol=market_data.symbol, confidence=confidence, signal=signal, features=features, technical_indicators=technical_indicators, market_regime=market_regime, support_resistance=support_resistance, risk_metrics=risk_metrics)
+            return AnalysisResult(timestamp = market_data.timestamp, symbol = market_data.symbol, confidence = confidence, signal = signal, features = features, technical_indicators = technical_indicators, market_regime = market_regime, support_resistance = support_resistance, risk_metrics = risk_metrics)
         except Exception:
             self.print(failed('Comprehensive analysis failed: {e}'))
             return None
@@ -146,7 +147,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             for result in self.analysis_history:
                 result_time = datetime.fromisoformat(result['timestamp'])
                 if result.get('symbol') == symbol and start_date <= result_time <= end_date:
-                    analysis_result = AnalysisResult(timestamp=result_time, symbol=result['symbol'], confidence=result['confidence'], signal=result['signal'], features={}, technical_indicators={}, market_regime=result['market_regime'], support_resistance={}, risk_metrics={})
+                    analysis_result = AnalysisResult(timestamp = result_time, symbol = result['symbol'], confidence = result['confidence'], signal = result['signal'], features={}, technical_indicators={}, market_regime = result['market_regime'], support_resistance={}, risk_metrics={})
                     filtered_results.append(analysis_result)
             return filtered_results
         except Exception:

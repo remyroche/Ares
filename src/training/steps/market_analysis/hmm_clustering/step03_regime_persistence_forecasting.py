@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 
@@ -16,6 +18,7 @@ warnings.filterwarnings('ignore')
 
 class RegimePersistenceForecaster:
     """Regime persistence modeling and forecasting system."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -47,6 +50,7 @@ class RegimePersistenceForecaster:
         else:
             analyst_integration = {}
         return {'duration_analysis': duration_analysis, 'persistence_models': persistence_models, 'transition_models': transition_models, 'forecast_models': forecast_models, 'analyst_integration': analyst_integration, 'model_quality': self._assess_model_quality(persistence_models, transition_models, forecast_models)}
+    @log_all_calls
 
     def _analyze_regime_durations(self, regimes: np.ndarray) -> Dict[str, Any]:
         """Analyze regime durations and persistence patterns."""
@@ -75,6 +79,7 @@ class RegimePersistenceForecaster:
             if len(durations) > 0:
                 duration_stats[regime] = {'mean_duration': np.mean(durations), 'median_duration': np.median(durations), 'std_duration': np.std(durations), 'min_duration': np.min(durations), 'max_duration': np.max(durations), 'count': len(durations), 'durations': durations}
         return {'regime_durations': regime_durations, 'duration_stats': duration_stats, 'total_regimes': len(np.unique(regimes)), 'total_durations': len(regime_durations)}
+    @log_all_calls
 
     def _build_persistence_models(self, duration_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Build persistence models for each regime."""
@@ -101,10 +106,11 @@ class RegimePersistenceForecaster:
             except:
                 pass
             if models:
-                best_model = min(models.values(), key=lambda x: x['aic'])
+                best_model = min(models.values(), key = lambda x: x['aic'])
                 persistence_models[regime] = best_model
                 persistence_models[regime]['survival_function'] = self._create_survival_function(best_model['type'], best_model['params'])
         return persistence_models
+    @log_all_calls
 
     def _build_transition_models(self, regimes: np.ndarray) -> Dict[str, Any]:
         """Build transition probability models."""
@@ -119,7 +125,7 @@ class RegimePersistenceForecaster:
             from_idx = np.where(unique_regimes == from_regime)[0][0]
             to_idx = np.where(unique_regimes == to_regime)[0][0]
             transition_matrix[from_idx, to_idx] += 1
-        row_sums = transition_matrix.sum(axis=1)
+        row_sums = transition_matrix.sum(axis = 1)
         for i in range(n_regimes):
             if row_sums[i] > 0:
                 transition_matrix[i, :] /= row_sums[i]
@@ -129,6 +135,7 @@ class RegimePersistenceForecaster:
             transition_stats[from_regime] = {'most_likely_transition': unique_regimes[np.argmax(transition_matrix[i, :])], 'transition_probability': np.max(transition_matrix[i, :]), 'transition_entropy': -np.sum(transition_matrix[i, :] * np.log(transition_matrix[i, :] + 1e-10))}
         transition_models['transition_stats'] = transition_stats
         return transition_models
+    @log_all_calls
 
     def _build_forecasting_models(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
         """Build forecasting models for regime transitions."""
@@ -157,6 +164,7 @@ class RegimePersistenceForecaster:
             except Exception as e:
                 print(f'Error building forecast model for horizon {horizon}h: {e}')
         return forecast_models
+    @log_all_calls
 
     def _prepare_forecasting_features(self, data: pd.DataFrame, regimes: np.ndarray) -> Optional[pd.DataFrame]:
         """Prepare features for regime forecasting."""
@@ -174,13 +182,14 @@ class RegimePersistenceForecaster:
             regime_features = self._create_regime_features(regimes)
             features.extend(regime_features)
             if features:
-                feature_df = pd.concat(features, axis=1)
+                feature_df = pd.concat(features, axis = 1)
                 feature_df.columns = [f'feature_{i}' for i in range(len(features))]
                 return feature_df.dropna()
             return None
         except Exception as e:
             print(f'Error preparing forecasting features: {e}')
             return None
+    @log_all_calls
 
     def _create_regime_features(self, regimes: np.ndarray) -> List[pd.Series]:
         """Create regime-based features for forecasting."""
@@ -188,11 +197,12 @@ class RegimePersistenceForecaster:
         features.append(pd.Series(regimes, name='current_regime'))
         regime_duration = self._calculate_regime_duration_series(regimes)
         features.append(regime_duration)
-        regime_changes = np.diff(regimes, prepend=regimes[0]) != 0
+        regime_changes = np.diff(regimes, prepend = regimes[0]) != 0
         features.append(pd.Series(regime_changes.astype(int), name='regime_change'))
         stability = self._calculate_regime_stability_series(regimes)
         features.append(stability)
         return features
+    @log_all_calls
 
     def _calculate_regime_duration_series(self, regimes: np.ndarray) -> pd.Series:
         """Calculate regime duration for each time point."""
@@ -205,8 +215,9 @@ class RegimePersistenceForecaster:
                 current_duration = 1
             durations[i] = current_duration
         return pd.Series(durations, name='regime_duration')
+    @log_all_calls
 
-    def _calculate_regime_stability_series(self, regimes: np.ndarray, window: int=20) -> pd.Series:
+    def _calculate_regime_stability_series(self, regimes: np.ndarray, window: int = 20) -> pd.Series:
         """Calculate regime stability over rolling window."""
         stability = np.zeros(len(regimes))
         for i in range(window, len(regimes)):
@@ -214,6 +225,7 @@ class RegimePersistenceForecaster:
             changes = np.sum(np.diff(window_regimes) != 0)
             stability[i] = 1.0 - changes / (window - 1)
         return pd.Series(stability, name='regime_stability')
+    @log_all_calls
 
     def _train_forecast_model(self, features: pd.DataFrame, regimes: np.ndarray, horizon: int) -> Optional[Dict[str, Any]]:
         """Train forecasting model for specific horizon."""
@@ -227,13 +239,14 @@ class RegimePersistenceForecaster:
             y = target[:min_length]
             if len(X) < 50:
                 return None
-            model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+            model = RandomForestRegressor(n_estimators = 100, max_depth = 10, random_state = 42, n_jobs=-1)
             model.fit(X, y)
             feature_importance = dict(zip(features.columns, model.feature_importances_))
             return {'model': model, 'horizon': horizon, 'feature_importance': feature_importance, 'training_samples': len(X), 'model_type': 'random_forest'}
         except Exception as e:
             print(f'Error training forecast model for horizon {horizon}: {e}')
             return None
+    @log_all_calls
 
     def _integrate_analyst_forecasting(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
         """Integrate with existing analyst forecasting logic."""
@@ -249,10 +262,11 @@ class RegimePersistenceForecaster:
         except Exception as e:
             print(f'Error integrating with analyst forecasting: {e}')
             return {'integration_success': False, 'error': str(e)}
+    @log_all_calls
 
     def _prepare_analyst_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare features in format expected by analyst predictor."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         if 'close' in data.columns:
             features['returns'] = data['close'].pct_change()
             features['volatility'] = features['returns'].rolling(20).std()
@@ -260,6 +274,7 @@ class RegimePersistenceForecaster:
         if 'volume' in data.columns:
             features['volume_ratio'] = data['volume'] / data['volume'].rolling(20).mean()
         return features.fillna(0)
+    @log_all_calls
 
     def _create_hmm_probabilities(self, regimes: np.ndarray) -> np.ndarray:
         """Create HMM probabilities from regime sequence."""
@@ -286,6 +301,7 @@ class RegimePersistenceForecaster:
             forecasts['ml'] = ml_forecast
         combined_forecast = self._combine_forecasts(forecasts)
         return {'individual_forecasts': forecasts, 'combined_forecast': combined_forecast, 'forecast_confidence': self._calculate_forecast_confidence(forecasts), 'forecast_horizon': self.forecast_horizon}
+    @log_all_calls
 
     def _forecast_persistence(self, current_regime: int, persistence_models: Dict[str, Any]) -> Dict[str, Any]:
         """Forecast using persistence models."""
@@ -298,6 +314,7 @@ class RegimePersistenceForecaster:
         survival_prob = survival_func(self.forecast_horizon)
         regime_change_prob = 1 - survival_prob
         return {'forecast': 'regime_change' if regime_change_prob > 0.5 else 'regime_persistence', 'regime_change_probability': regime_change_prob, 'survival_probability': survival_prob, 'confidence': abs(regime_change_prob - 0.5) * 2, 'model_type': model['type']}
+    @log_all_calls
 
     def _forecast_transitions(self, current_regime: int, transition_models: Dict[str, Any]) -> Dict[str, Any]:
         """Forecast using transition models."""
@@ -314,6 +331,7 @@ class RegimePersistenceForecaster:
         most_likely_regime = regime_mapping[most_likely_idx]
         transition_prob = transition_probs[most_likely_idx]
         return {'forecast': 'regime_change' if most_likely_regime != current_regime else 'regime_persistence', 'next_regime': most_likely_regime, 'transition_probability': transition_prob, 'confidence': transition_prob, 'all_transitions': {regime_mapping[i]: prob for i, prob in enumerate(transition_probs)}}
+    @log_all_calls
 
     def _forecast_ml(self, current_data: pd.DataFrame, current_regime: int, forecast_models: Dict[str, Any]) -> Dict[str, Any]:
         """Forecast using ML models."""
@@ -335,6 +353,7 @@ class RegimePersistenceForecaster:
         avg_change_prob = np.mean([p['regime_change_probability'] for p in predictions.values()])
         avg_confidence = np.mean([p['confidence'] for p in predictions.values()])
         return {'forecast': 'regime_change' if avg_change_prob > 0.5 else 'regime_persistence', 'regime_change_probability': avg_change_prob, 'confidence': avg_confidence, 'individual_predictions': predictions}
+    @log_all_calls
 
     def _combine_forecasts(self, forecasts: Dict[str, Any]) -> Dict[str, Any]:
         """Combine different forecasting approaches."""
@@ -354,6 +373,7 @@ class RegimePersistenceForecaster:
             combined_change_prob /= total_weight
             combined_confidence /= total_weight
         return {'forecast': 'regime_change' if combined_change_prob > 0.5 else 'regime_persistence', 'regime_change_probability': combined_change_prob, 'confidence': combined_confidence, 'approach_weights': weights}
+    @log_all_calls
 
     def _calculate_forecast_confidence(self, forecasts: Dict[str, Any]) -> float:
         """Calculate overall forecast confidence."""
@@ -366,6 +386,7 @@ class RegimePersistenceForecaster:
         if confidences:
             return np.mean(confidences)
         return 0.0
+    @log_all_calls
 
     def _assess_model_quality(self, persistence_models: Dict, transition_models: Dict, forecast_models: Dict) -> Dict[str, Any]:
         """Assess quality of built models."""
@@ -387,6 +408,7 @@ class RegimePersistenceForecaster:
             quality_scores['forecasting'] = 0.0
         overall_quality = np.mean(list(quality_scores.values()))
         return {'individual_scores': quality_scores, 'overall_quality': overall_quality, 'model_count': {'persistence': len(persistence_models), 'transitions': 1 if transition_models else 0, 'forecasting': len(forecast_models)}}
+    @log_all_calls
 
     def _estimate_data_frequency(self, data: pd.DataFrame) -> int:
         """Estimate data frequency in minutes."""
@@ -405,6 +427,7 @@ class RegimePersistenceForecaster:
         else:
             frequency_minutes = 1
         return max(1, frequency_minutes)
+    @log_all_calls
 
     def _calculate_aic(self, data: np.ndarray, distribution: Any, params: Tuple) -> float:
         """Calculate AIC for distribution fit."""
@@ -415,6 +438,7 @@ class RegimePersistenceForecaster:
             return aic
         except:
             return np.inf
+    @log_all_calls
 
     def _create_survival_function(self, dist_type: str, params: Tuple) -> None:
         """Create survival function for distribution."""
@@ -426,3 +450,4 @@ class RegimePersistenceForecaster:
             return lambda t: weibull_min.sf(t, *params)
         else:
             return lambda t: 0.5
+from typing import Dict, List, Optional, Union, Any, Tuple

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Daily Summary Tracker for Enhanced ML Monitoring
 
@@ -15,7 +17,7 @@ from pathlib import Path
 from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import collections
@@ -113,7 +115,7 @@ class DailySummaryTracker:
         
         # Export paths
         self.export_dir = Path(self.export_directory)
-        self.export_dir.mkdir(exist_ok=True)
+        self.export_dir.mkdir(exist_ok = True)
         
         # Current day tracking - separate by mode
         self.current_date = date.today()
@@ -121,7 +123,7 @@ class DailySummaryTracker:
         
         self.logger.info("Daily Summary Tracker initialized")
     
-    @handles_errors(default_return=None, context="daily_summary_tracker.add_trade")
+    @handles_errors(default_return = None, context="daily_summary_tracker.add_trade")
     async def add_trade(self, trade_decision: Any) -> None:
         """Add a trade decision to the current day's tracking."""
         try:
@@ -304,38 +306,38 @@ class DailySummaryTracker:
             last_trade_time = max(t.timestamp for t in trades) if trades else None
             
             return DailyTradeSummary(
-                date=trade_date,
-                trading_mode=trading_mode,
-                total_trades=total_trades,
-                long_trades=long_trades,
-                short_trades=short_trades,
-                hold_trades=hold_trades,
-                dominant_regime=dominant_regime,
-                regime_distribution=dict(regime_distribution),
-                regime_stability_avg=regime_stability_avg,
-                total_pnl=total_pnl,
-                realized_pnl=realized_pnl,
-                unrealized_pnl=unrealized_pnl,
-                win_rate=win_rate,
-                profit_factor=profit_factor,
-                sharpe_ratio=sharpe_ratio,
-                max_drawdown=max_drawdown,
-                avg_position_size=avg_position_size,
-                avg_confidence=avg_confidence,
-                avg_risk_score=avg_risk_score,
-                total_volume=total_volume,
-                model_accuracy_avg=model_accuracy_avg,
-                ensemble_consensus_avg=ensemble_consensus_avg,
-                model_disagreement_avg=model_disagreement_avg,
-                var_95=var_95,
-                max_loss=max_loss,
-                max_gain=max_gain,
-                execution_time_avg_ms=execution_time_avg_ms,
-                successful_trades=successful_trades,
-                failed_trades=failed_trades,
-                first_trade_time=first_trade_time,
-                last_trade_time=last_trade_time,
-                summary_generated_at=datetime.now()
+                date = trade_date,
+                trading_mode = trading_mode,
+                total_trades = total_trades,
+                long_trades = long_trades,
+                short_trades = short_trades,
+                hold_trades = hold_trades,
+                dominant_regime = dominant_regime,
+                regime_distribution = dict(regime_distribution),
+                regime_stability_avg = regime_stability_avg,
+                total_pnl = total_pnl,
+                realized_pnl = realized_pnl,
+                unrealized_pnl = unrealized_pnl,
+                win_rate = win_rate,
+                profit_factor = profit_factor,
+                sharpe_ratio = sharpe_ratio,
+                max_drawdown = max_drawdown,
+                avg_position_size = avg_position_size,
+                avg_confidence = avg_confidence,
+                avg_risk_score = avg_risk_score,
+                total_volume = total_volume,
+                model_accuracy_avg = model_accuracy_avg,
+                ensemble_consensus_avg = ensemble_consensus_avg,
+                model_disagreement_avg = model_disagreement_avg,
+                var_95 = var_95,
+                max_loss = max_loss,
+                max_gain = max_gain,
+                execution_time_avg_ms = execution_time_avg_ms,
+                successful_trades = successful_trades,
+                failed_trades = failed_trades,
+                first_trade_time = first_trade_time,
+                last_trade_time = last_trade_time,
+                summary_generated_at = datetime.now()
             )
             
         except Exception as e:
@@ -345,36 +347,36 @@ class DailySummaryTracker:
     def _create_empty_summary(self, trade_date: date, trading_mode: str = "all") -> DailyTradeSummary:
         """Create an empty summary for a day with no trades."""
         return DailyTradeSummary(
-            date=trade_date,
-            trading_mode=trading_mode,
-            total_trades=0,
-            long_trades=0,
-            short_trades=0,
-            hold_trades=0,
+            date = trade_date,
+            trading_mode = trading_mode,
+            total_trades = 0,
+            long_trades = 0,
+            short_trades = 0,
+            hold_trades = 0,
             dominant_regime="none",
             regime_distribution={},
-            regime_stability_avg=0.0,
-            total_pnl=0.0,
-            realized_pnl=0.0,
-            unrealized_pnl=0.0,
-            win_rate=0.0,
-            profit_factor=0.0,
-            sharpe_ratio=0.0,
-            max_drawdown=0.0,
-            avg_position_size=0.0,
-            avg_confidence=0.0,
-            avg_risk_score=0.0,
-            total_volume=0.0,
-            model_accuracy_avg=0.0,
-            ensemble_consensus_avg=0.0,
-            model_disagreement_avg=0.0,
-            var_95=0.0,
-            max_loss=0.0,
-            max_gain=0.0,
-            execution_time_avg_ms=0.0,
-            successful_trades=0,
-            failed_trades=0,
-            summary_generated_at=datetime.now()
+            regime_stability_avg = 0.0,
+            total_pnl = 0.0,
+            realized_pnl = 0.0,
+            unrealized_pnl = 0.0,
+            win_rate = 0.0,
+            profit_factor = 0.0,
+            sharpe_ratio = 0.0,
+            max_drawdown = 0.0,
+            avg_position_size = 0.0,
+            avg_confidence = 0.0,
+            avg_risk_score = 0.0,
+            total_volume = 0.0,
+            model_accuracy_avg = 0.0,
+            ensemble_consensus_avg = 0.0,
+            model_disagreement_avg = 0.0,
+            var_95 = 0.0,
+            max_loss = 0.0,
+            max_gain = 0.0,
+            execution_time_avg_ms = 0.0,
+            successful_trades = 0,
+            failed_trades = 0,
+            summary_generated_at = datetime.now()
         )
     
     def _calculate_max_drawdown(self, pnls: List[float]) -> float:
@@ -413,16 +415,16 @@ class DailySummaryTracker:
                             regime_risks.append(trade.overall_risk_score)
                         
                         regime_performance = RegimePerformance(
-                            regime_id=regime_id,
-                            regime_name=regime_id,  # Could be enhanced with actual names
-                            trade_count=count,
-                            win_rate=regime_wins / count if count > 0 else 0.0,
-                            avg_pnl=np.mean(regime_pnls) if regime_pnls else 0.0,
-                            total_pnl=sum(regime_pnls),
-                            profit_factor=0.0,  # Would need more complex calculation
-                            sharpe_ratio=0.0,   # Would need more complex calculation
-                            avg_confidence=np.mean(regime_confidences) if regime_confidences else 0.0,
-                            avg_risk_score=np.mean(regime_risks) if regime_risks else 0.0
+                            regime_id = regime_id,
+                            regime_name = regime_id,  # Could be enhanced with actual names
+                            trade_count = count,
+                            win_rate = regime_wins / count if count > 0 else 0.0,
+                            avg_pnl = np.mean(regime_pnls) if regime_pnls else 0.0,
+                            total_pnl = sum(regime_pnls),
+                            profit_factor = 0.0,  # Would need more complex calculation
+                            sharpe_ratio = 0.0,   # Would need more complex calculation
+                            avg_confidence = np.mean(regime_confidences) if regime_confidences else 0.0,
+                            avg_risk_score = np.mean(regime_risks) if regime_risks else 0.0
                         )
                         
                         self.regime_performances[regime_id].append(regime_performance)
@@ -430,7 +432,7 @@ class DailySummaryTracker:
         except Exception as e:
             self.logger.error(f"Error updating regime performances: {e}")
     
-    @handles_errors(default_return=False, context="daily_summary_tracker._export_daily_summary")
+    @handles_errors(default_return = False, context="daily_summary_tracker._export_daily_summary")
     async def _export_daily_summary(self, summary: DailyTradeSummary) -> bool:
         """Export daily summary to CSV."""
         try:
@@ -449,7 +451,7 @@ class DailySummaryTracker:
             # Export to CSV with trading mode in filename
             filename = f"daily_summary_{summary.trading_mode}_{summary.date.strftime('%Y%m%d')}.csv"
             filepath = self.export_dir / filename
-            df.to_csv(filepath, index=False)
+            df.to_csv(filepath, index = False)
             
             self.logger.info(f"Exported daily summary for {summary.date} to {filepath}")
             return True
@@ -458,7 +460,7 @@ class DailySummaryTracker:
             self.logger.error(f"Error exporting daily summary: {e}")
             return False
     
-    @handles_errors(default_return=None, context="daily_summary_tracker.get_daily_summary")
+    @handles_errors(default_return = None, context="daily_summary_tracker.get_daily_summary")
     async def get_daily_summary(self, target_date: Optional[date] = None) -> Optional[DailyTradeSummary]:
         """Get daily summary for a specific date."""
         try:
@@ -471,7 +473,7 @@ class DailySummaryTracker:
             self.logger.error(f"Error getting daily summary: {e}")
             return None
     
-    @handles_errors(default_return=None, context="daily_summary_tracker.get_summary_range")
+    @handles_errors(default_return = None, context="daily_summary_tracker.get_summary_range")
     async def get_summary_range(self, start_date: date, end_date: date) -> List[DailyTradeSummary]:
         """Get daily summaries for a date range."""
         try:
@@ -481,7 +483,7 @@ class DailySummaryTracker:
             while current_date <= end_date:
                 if current_date in self.daily_summaries:
                     summaries.append(self.daily_summaries[current_date])
-                current_date += timedelta(days=1)
+                current_date += timedelta(days = 1)
             
             return summaries
             
@@ -489,7 +491,7 @@ class DailySummaryTracker:
             self.logger.error(f"Error getting summary range: {e}")
             return []
     
-    @handles_errors(default_return=None, context="daily_summary_tracker.get_regime_performance")
+    @handles_errors(default_return = None, context="daily_summary_tracker.get_regime_performance")
     async def get_regime_performance(self, regime_id: str, days: int = 30) -> List[RegimePerformance]:
         """Get regime performance for the last N days."""
         try:
@@ -503,7 +505,7 @@ class DailySummaryTracker:
             self.logger.error(f"Error getting regime performance: {e}")
             return []
     
-    @handles_errors(default_return=False, context="daily_summary_tracker.export_summary_csv")
+    @handles_errors(default_return = False, context="daily_summary_tracker.export_summary_csv")
     async def export_summary_csv(self, start_date: Optional[date] = None, 
                             end_date: Optional[date] = None) -> bool:
         """Export daily summaries to a comprehensive CSV file."""
@@ -544,7 +546,7 @@ class DailySummaryTracker:
             # Export to CSV
             filename = f"daily_summaries_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}.csv"
             filepath = self.export_dir / filename
-            df.to_csv(filepath, index=False)
+            df.to_csv(filepath, index = False)
             
             self.logger.info(f"Exported {len(summaries)} daily summaries to {filepath}")
             return True

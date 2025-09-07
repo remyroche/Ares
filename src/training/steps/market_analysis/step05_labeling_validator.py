@@ -2,6 +2,7 @@
 from typing import Dict
 import pandas as pd
 from typing import Any
+from src.utils.logger import system_logger
 #!/usr/bin/env python3
 """Validator for Step 5: Labeling.
 
@@ -96,7 +97,7 @@ class Step5LabelingValidator(BaseValidator):
             self.logger.exception(f"❌ Step 5 validation failed: {error_context}")
             return False
 
-    @smart_validation_cache(ttl_seconds=300)  # Cache for 5 minutes
+    @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
     async def _validate_labeled_file(self, labeled_file: Path) -> bool:
         """Validate a labeled data file with caching."""
         try:
@@ -112,13 +113,13 @@ class Step5LabelingValidator(BaseValidator):
 
             # Use BaseValidator's DataFrame validation
             df_valid, df_metrics = self.validate_dataframe_quality(
-                df=df,
-                min_rows=100,
+                df = df,
+                min_rows = 100,
                 required_columns=["timestamp", "label"],
-                check_data_types=True,
-                check_value_ranges=True,
-                check_duplicates=True,
-                check_temporal_consistency=True
+                check_data_types = True,
+                check_value_ranges = True,
+                check_duplicates = True,
+                check_temporal_consistency = True
             )
 
             if not df_valid:
@@ -150,7 +151,7 @@ class Step5LabelingValidator(BaseValidator):
             self.logger.exception(f"❌ Failed to validate labeled file: {error_context}")
             return False
 
-    @smart_validation_cache(ttl_seconds=600)  # Cache for 10 minutes
+    @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
     async def _validate_metadata_file(self, metadata_file: Path) -> bool:
         """Validate the labeling metadata file with caching."""
         try:
@@ -281,7 +282,7 @@ class Step5LabelingValidator(BaseValidator):
                             df = pd.read_parquet(file_path)
                             # Use BaseValidator's DataFrame validation
                             df_valid, df_metrics = self.validate_dataframe_quality(
-                                df, min_rows=100, check_data_types=True
+                                df, min_rows = 100, check_data_types = True
                             )
                             validation_result["details"][f"{Path(file_path).stem}_rows"] = len(df)
                             validation_result["details"][f"{Path(file_path).stem}_columns"] = list(df.columns)
@@ -382,4 +383,4 @@ if __name__ == "__main__":
     test_state = {}
     
     result = asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent = 2))

@@ -3,11 +3,11 @@ import json
 import pandas as pd
 from typing import Any
 from logging import warning
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
+from ..utils.logger import system_logger
 
 from .database.influxdb_manager import InfluxDBManager
 import time
+from ..core.decorators import handles_errors
 
 try:
     INFLUXDB_AVAILABLE = True
@@ -42,10 +42,10 @@ class PrecomputedFeaturesManager:
             self.db_manager = None
             self.logger.warning('InfluxDB not available - features will be stored locally only')
         self.feature_categories: dict[str, str] = {'candle': 'Candlestick patterns and formations', 'volatility': 'Volatility-based indicators and regimes', 'volume': 'Volume-based analysis and flow', 'momentum': 'Momentum and oscillator indicators', 'technical': 'Technical analysis indicators', 'price': 'Price-based features and changes', 'time': 'Time-based and cyclical features', 'ml_enhanced': 'Machine learning enhanced features', 'triple_barrier': 'Triple barrier labeling results', 'autoencoder': 'Autoencoder-generated features'}
-        self.timeframes: list[str] = ['1m', '5m', '15m', '30m']
+        self.timeframes: list[str] = ['1m', '5m', '15m', '30m', '1h']
         self.price_difference_features: set[str] = {'price_change', 'price_momentum', 'gap_size', 'dist_to_resistance', 'dist_to_support', 'price_return', 'log_return'}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """Initialize the precomputed features manager."""
         self.logger.info('🚀 Initializing PrecomputedFeaturesManager...')
@@ -96,8 +96,8 @@ class PrecomputedFeaturesManager:
             raise ValueError(msg)
         return (category, timeframe, name)
 
-    @handles_errors(fallback=False)
-    async def store_features(self, features_df: pd.DataFrame, symbol: str, metadata: dict[str, Any] | None=None) -> bool:
+    @handles_errors(fallback = False)
+    async def store_features(self, features_df: pd.DataFrame, symbol: str, metadata: dict[str, Any] | None = None) -> bool:
         """
         Store precomputed features in the database.
 
@@ -120,13 +120,13 @@ class PrecomputedFeaturesManager:
         if metadata:
             features_df_copy['metadata'] = json.dumps(metadata)
         if self.db_manager is not None:
-            self.db_manager.write_api.write(bucket=self.db_manager.bucket, record=features_df_copy, data_frame_measurement_name='precomputed_features', data_frame_tag_columns=['symbol'])
+            self.db_manager.write_api.write(bucket = self.db_manager.bucket, record = features_df_copy, data_frame_measurement_name='precomputed_features', data_frame_tag_columns=['symbol'])
         await self._store_feature_metadata(features_df.columns.tolist(), symbol, metadata)
         self.logger.info(f'✅ Successfully stored features for {symbol}')
         return True
 
-    @handles_errors(fallback=pd.DataFrame())
-    async def retrieve_features(self, symbol: str, feature_names: list[str] | None=None, start_time: str | None=None, end_time: str | None=None, category_filter: str | None=None, timeframe_filter: str | None=None) -> pd.DataFrame:
+    @handles_errors(fallback = pd.DataFrame())
+    async def retrieve_features(self, symbol: str, feature_names: list[str] | None = None, start_time: str | None = None, end_time: str | None = None, category_filter: str | None = None, timeframe_filter: str | None = None) -> pd.DataFrame:
         """
         Retrieve precomputed features from the database.
 
@@ -156,11 +156,11 @@ class PrecomputedFeaturesManager:
         elif end_time:
             time_range = f'|> range(stop: {end_time})'
         query = f'''\n        from(bucket: "{self.db_manager.bucket}")\n          {time_range}\n          |> filter(fn: (r) => r["_measurement"] == "precomputed_features")\n          |> filter(fn: (r) => {' and '.join(query_filters)})\n          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")\n        '''
-        df = self.db_manager.query_api.query_data_frame(query, org=self.db_manager.org)
+        df = self.db_manager.query_api.query_data_frame(query, org = self.db_manager.org)
         if isinstance(df, list):
             if not df:
                 return pd.DataFrame()
-            df = pd.concat(df, ignore_index=True)
+            df = pd.concat(df, ignore_index = True)
         if df.empty:
             return pd.DataFrame()
         if category_filter or timeframe_filter:
@@ -200,7 +200,7 @@ class PrecomputedFeaturesManager:
                         df_copy[col] = df_copy[col].pct_change()
         return df_copy.fillna(0)
 
-    def _apply_feature_filters(self, df: pd.DataFrame, category_filter: str | None=None, timeframe_filter: str | None=None) -> pd.DataFrame:
+    def _apply_feature_filters(self, df: pd.DataFrame, category_filter: str | None = None, timeframe_filter: str | None = None) -> pd.DataFrame:
         """Apply category and timeframe filters to the DataFrame."""
         filtered_columns: list[str] = []
         for col in df.columns:
@@ -220,7 +220,7 @@ class PrecomputedFeaturesManager:
         """Create tables for storing feature metadata."""
         self.logger.info('Feature metadata storage configured')
 
-    async def _store_feature_metadata(self, feature_names: list[str], symbol: str, metadata: dict[str, Any] | None=None) -> None:
+    async def _store_feature_metadata(self, feature_names: list[str], symbol: str, metadata: dict[str, Any] | None = None) -> None:
         """Store metadata about the features."""
         if self.db_manager is None:
             return
@@ -239,9 +239,9 @@ class PrecomputedFeaturesManager:
         metadata_df = pd.DataFrame(metadata_records)
         metadata_df['timestamp'] = datetime.now()
         metadata_df = metadata_df.set_index('timestamp')
-        self.db_manager.write_api.write(bucket=self.db_manager.bucket, record=metadata_df, data_frame_measurement_name='feature_metadata', data_frame_tag_columns=['symbol', 'category', 'timeframe'])
+        self.db_manager.write_api.write(bucket = self.db_manager.bucket, record = metadata_df, data_frame_measurement_name='feature_metadata', data_frame_tag_columns=['symbol', 'category', 'timeframe'])
 
-    def get_available_features(self, category: str | None=None, timeframe: str | None=None) -> list[str]:
+    def get_available_features(self, category: str | None = None, timeframe: str | None = None) -> list[str]:
         """
         Get list of available feature names based on filters.
 

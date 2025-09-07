@@ -1,8 +1,11 @@
 """Anomaly Detector Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Detects various types of anomalies in market data.
 Extracted from raw_data_quality_checker.py
 """
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import pandas as pd
@@ -18,10 +21,12 @@ class AnomalyDetector:
     - Volume anomaly detection
     - Multi-dimensional anomaly detection
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('AnomalyDetector')
         self.config = config or self._get_default_config()
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for anomaly detection."""
@@ -55,6 +60,7 @@ class AnomalyDetector:
         self._generate_anomaly_summary(results)
         results['recommendations'] = self._generate_anomaly_recommendations(results)
         return results
+    @log_all_calls
 
     def _detect_statistical_anomalies(self, data: pd.DataFrame, columns: List[str], results: dict[str, Any]) -> None:
         """Detect statistical anomalies using z-score, IQR, and MAD methods."""
@@ -96,6 +102,7 @@ class AnomalyDetector:
             anomalies['indices'] = sorted(list(all_indices))
             if anomalies['indices']:
                 results['anomalies'][col] = anomalies
+    @log_all_calls
 
     def _detect_pattern_anomalies(self, data: pd.DataFrame, columns: List[str], results: dict[str, Any]) -> None:
         """Detect anomalies based on unusual patterns."""
@@ -105,8 +112,8 @@ class AnomalyDetector:
             if col not in data.columns:
                 continue
             if col in ['volume', 'close']:
-                rolling_mean = data[col].rolling(window=self.config['statistical_params']['rolling_window']).mean()
-                rolling_std = data[col].rolling(window=self.config['statistical_params']['rolling_window']).std()
+                rolling_mean = data[col].rolling(window = self.config['statistical_params']['rolling_window']).mean()
+                rolling_std = data[col].rolling(window = self.config['statistical_params']['rolling_window']).std()
                 if rolling_mean is not None and rolling_std is not None:
                     deviations = np.abs(data[col] - rolling_mean) / rolling_std
                     pattern_anomaly_mask = deviations > 3
@@ -115,6 +122,7 @@ class AnomalyDetector:
                         pattern_anomalies[col] = {'type': 'sudden_change', 'indices': pattern_anomaly_indices, 'count': len(pattern_anomaly_indices)}
         if pattern_anomalies:
             results['detailed_analysis']['pattern_anomalies'] = pattern_anomalies
+    @log_all_calls
 
     def _detect_time_based_anomalies(self, data: pd.DataFrame, results: dict[str, Any]) -> None:
         """Detect time-based anomalies like unusual trading hours or gaps."""
@@ -151,8 +159,8 @@ class AnomalyDetector:
         if volume_col not in data.columns:
             return results
         volume = data[volume_col]
-        rolling_mean = volume.rolling(window=self.config['volume_params']['rolling_window']).mean()
-        rolling_std = volume.rolling(window=self.config['volume_params']['rolling_window']).std()
+        rolling_mean = volume.rolling(window = self.config['volume_params']['rolling_window']).mean()
+        rolling_std = volume.rolling(window = self.config['volume_params']['rolling_window']).std()
         spike_threshold = self.config['volume_params']['spike_threshold']
         volume_spikes = volume > rolling_mean * spike_threshold
         results['volume_spikes'] = data.index[volume_spikes.fillna(False)].tolist()
@@ -197,6 +205,7 @@ class AnomalyDetector:
             results['price_reversals'][col] = reversals
             results['statistics'][col] = {'mean_return': float(returns.mean()), 'std_return': float(returns.std()), 'max_return': float(returns.max()), 'min_return': float(returns.min()), 'spike_count': len(results['price_spikes'][col]), 'drop_count': len(results['price_drops'][col]), 'reversal_count': len(results['price_reversals'][col])}
         return results
+    @log_all_calls
 
     def _generate_anomaly_summary(self, results: dict[str, Any]) -> None:
         """Generate summary of all detected anomalies."""
@@ -216,6 +225,7 @@ class AnomalyDetector:
             for anomaly_type, time_data in results['detailed_analysis']['time_anomalies'].items():
                 total_anomalies += time_data.get('count', 0)
         results['summary'] = {'total_anomalies': total_anomalies, 'columns_with_anomalies': anomaly_columns, 'anomaly_types_detected': list(results.get('detailed_analysis', {}).keys())}
+    @log_all_calls
 
     def _generate_anomaly_recommendations(self, results: dict[str, Any]) -> List[str]:
         """Generate recommendations based on detected anomalies."""

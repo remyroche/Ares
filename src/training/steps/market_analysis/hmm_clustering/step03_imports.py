@@ -10,6 +10,7 @@ import importlib
 import logging
 from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ INTERNAL_MODULES = {
 
 class ImportManager:
     """Manages imports and resolves circular dependencies."""
+    @log_important_calls
     
     def __init__(self):
         self._imported_modules = {}

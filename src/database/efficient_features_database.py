@@ -3,14 +3,14 @@ import pickle
 from datetime import datetime
 from typing import Any
 from .config import CONFIG
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 from src.utils.warning_symbols import error, missing, warning
-from .core.decorators.errors import handles_errors
 import pandas as pd
 import numpy as np
 import json
 import logging
 import time
+from ..core.decorators import handles_errors
 
 class EfficientFeaturesDatabase:
     """
@@ -26,12 +26,12 @@ class EfficientFeaturesDatabase:
         self.compression = self.db_config.get('compression', True)
         self.chunk_size = self.db_config.get('chunk_size', 10000)
         self.base_storage_dir = self.db_config.get('storage_directory', os.path.join(CONFIG.get('DATA_DIR', 'data'), 'precomputed_features'))
-        os.makedirs(self.base_storage_dir, exist_ok=True)
+        os.makedirs(self.base_storage_dir, exist_ok = True)
         self.database_cache = {}
         self.metadata_cache = {}
         self.is_initialized = False
 
-    @handles_errors(exceptions=(OSError, PermissionError, ValueError), default_return=False)
+    @handles_errors(exceptions=(OSError, PermissionError, ValueError), default_return = False)
     async def initialize(self) -> bool:
         """Initialize the efficient features database."""
         try:
@@ -44,7 +44,7 @@ class EfficientFeaturesDatabase:
             self.logger.exception(f'❌ Error initializing EfficientFeaturesDatabase: {e}')
             return False
 
-    def _generate_database_name(self, symbol: str, exchange: str, start_date: str=None, timestamp: str=None) -> str:
+    def _generate_database_name(self, symbol: str, exchange: str, start_date: str = None, timestamp: str = None) -> str:
         """
         Generate database name using the specified convention.
 
@@ -120,7 +120,7 @@ class EfficientFeaturesDatabase:
                 try:
                     cols = getattr(self, 'feature_columns', None)
                     if isinstance(cols, list) and len(cols) > 0:
-                        data = pd.read_parquet(db_path, columns=cols)
+                        data = pd.read_parquet(db_path, columns = cols)
                     else:
                         data = pd.read_parquet(db_path)
                 except Exception:
@@ -146,7 +146,7 @@ class EfficientFeaturesDatabase:
         return categories
 
     @handles_errors(exceptions=(ValueError, KeyError, OSError), default_return=(None, []))
-    async def find_existing_database(self, symbol: str, exchange: str, start_time: pd.Timestamp=None, end_time: pd.Timestamp=None) -> tuple[str | None, list[tuple[pd.Timestamp, pd.Timestamp]]]:
+    async def find_existing_database(self, symbol: str, exchange: str, start_time: pd.Timestamp = None, end_time: pd.Timestamp = None) -> tuple[str | None, list[tuple[pd.Timestamp, pd.Timestamp]]]:
         """
         Find existing database for symbol/exchange and determine missing time ranges.
 
@@ -191,7 +191,7 @@ class EfficientFeaturesDatabase:
             self.print(error('Error finding existing database: {e}'))
             return (None, [(start_time, end_time)] if start_time and end_time else [])
 
-    @handles_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return=pd.DataFrame())
+    @handles_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return = pd.DataFrame())
     async def load_database(self, database_name: str) -> pd.DataFrame:
         """Load a precomputed features database."""
         try:
@@ -220,8 +220,8 @@ class EfficientFeaturesDatabase:
             self.print(error('Error loading database {database_name}: {e}'))
             return pd.DataFrame()
 
-    @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return=False)
-    async def save_database(self, data: pd.DataFrame, symbol: str, exchange: str, database_name: str=None) -> bool:
+    @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return = False)
+    async def save_database(self, data: pd.DataFrame, symbol: str, exchange: str, database_name: str = None) -> bool:
         """
         Save precomputed features to database.
 
@@ -248,7 +248,7 @@ class EfficientFeaturesDatabase:
                 data.index = pd.to_datetime(data.index, unit='ms')
             if self.storage_format == 'pickle':
                 with open(db_path, 'wb') as f:
-                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(data, f, protocol = pickle.HIGHEST_PROTOCOL)
             elif self.storage_format == 'parquet':
                 if self.compression:
                     data.to_parquet(db_path, compression='snappy')
@@ -256,7 +256,7 @@ class EfficientFeaturesDatabase:
                     data.to_parquet(db_path)
             elif self.storage_format == 'hdf5':
                 if self.compression:
-                    data.to_hdf(db_path, key='features', mode='w', complevel=9, complib='zlib')
+                    data.to_hdf(db_path, key='features', mode='w', complevel = 9, complib='zlib')
                 else:
                     data.to_hdf(db_path, key='features', mode='w')
             file_stat = os.stat(db_path)
@@ -270,7 +270,7 @@ class EfficientFeaturesDatabase:
             self.logger.exception(f'❌ Error saving database: {e}')
             return False
 
-    @handles_errors(exceptions=(ValueError, KeyError, OSError, pd.errors.EmptyDataError), default_return=False)
+    @handles_errors(exceptions=(ValueError, KeyError, OSError, pd.errors.EmptyDataError), default_return = False)
     async def update_database(self, new_data: pd.DataFrame, existing_database_name: str) -> bool:
         """
         Update an existing database with new data - only processes new rows.
@@ -300,7 +300,7 @@ class EfficientFeaturesDatabase:
                 self.logger.info('No new timestamps found, database already up-to-date')
                 return True
             self.logger.info(f'Identified {len(truly_new_data)} truly new rows to add to database')
-            combined_data = pd.concat([existing_data, truly_new_data], axis=0)
+            combined_data = pd.concat([existing_data, truly_new_data], axis = 0)
             combined_data = combined_data.sort_index()
             metadata = self.metadata_cache.get(existing_database_name, {})
             symbol = metadata.get('symbol', 'UNKNOWN')
@@ -314,7 +314,7 @@ class EfficientFeaturesDatabase:
             self.print(error('❌ Error updating database: {e}'))
             return False
 
-    @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return=False)
+    @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return = False)
     async def _save_database_with_timestamp_update(self, data: pd.DataFrame, symbol: str, exchange: str, database_name: str) -> bool:
         """
         Save database and explicitly update file timestamp.
@@ -338,7 +338,7 @@ class EfficientFeaturesDatabase:
                 data.index = pd.to_datetime(data.index, unit='ms')
             if self.storage_format == 'pickle':
                 with open(db_path, 'wb') as f:
-                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(data, f, protocol = pickle.HIGHEST_PROTOCOL)
             elif self.storage_format == 'parquet':
                 if self.compression:
                     data.to_parquet(db_path, compression='snappy')
@@ -346,7 +346,7 @@ class EfficientFeaturesDatabase:
                     data.to_parquet(db_path)
             elif self.storage_format == 'hdf5':
                 if self.compression:
-                    data.to_hdf(db_path, key='features', mode='w', complevel=9, complib='zlib')
+                    data.to_hdf(db_path, key='features', mode='w', complevel = 9, complib='zlib')
                 else:
                     data.to_hdf(db_path, key='features', mode='w')
             current_time = datetime.now()
@@ -363,7 +363,7 @@ class EfficientFeaturesDatabase:
             self.logger.exception(f'❌ Error saving database with timestamp: {e}')
             return False
 
-    def get_database_list(self, symbol: str=None, exchange: str=None) -> list[dict[str, Any]]:
+    def get_database_list(self, symbol: str = None, exchange: str = None) -> list[dict[str, Any]]:
         """Get list of available databases with optional filtering."""
         databases = []
         for db_name, metadata in self.metadata_cache.items():
@@ -372,7 +372,7 @@ class EfficientFeaturesDatabase:
             if exchange and metadata.get('exchange', '').upper() != exchange.upper():
                 continue
             databases.append({'name': db_name, 'metadata': metadata.copy()})
-        databases.sort(key=lambda x: x['metadata'].get('last_modified', datetime.min), reverse=True)
+        databases.sort(key = lambda x: x['metadata'].get('last_modified', datetime.min), reverse = True)
         return databases
 
     def get_database_stats(self) -> dict[str, Any]:
@@ -384,8 +384,8 @@ class EfficientFeaturesDatabase:
         exchanges = {meta.get('exchange') for meta in self.metadata_cache.values()}
         return {'total_databases': total_databases, 'total_size_bytes': total_size, 'total_size_mb': total_size / (1024 * 1024), 'total_records': total_records, 'unique_symbols': len(symbols), 'unique_exchanges': len(exchanges), 'symbols': list(symbols), 'exchanges': list(exchanges), 'storage_format': self.storage_format, 'compression_enabled': self.compression}
 
-    @handles_errors(exceptions=(OSError, PermissionError, ValueError), default_return=None)
-    async def cleanup_old_databases(self, keep_latest_n: int=5) -> None:
+    @handles_errors(exceptions=(OSError, PermissionError, ValueError), default_return = None)
+    async def cleanup_old_databases(self, keep_latest_n: int = 5) -> None:
         """Clean up old databases, keeping only the latest N for each symbol/exchange pair."""
         try:
             symbol_exchange_groups = {}
@@ -396,7 +396,7 @@ class EfficientFeaturesDatabase:
                 symbol_exchange_groups[key].append((db_name, metadata))
             deleted_count = 0
             for databases in symbol_exchange_groups.values():
-                databases.sort(key=lambda x: x[1].get('last_modified', datetime.min), reverse=True)
+                databases.sort(key = lambda x: x[1].get('last_modified', datetime.min), reverse = True)
                 for db_name, metadata in databases[keep_latest_n:]:
                     try:
                         db_path = metadata.get('file_path')

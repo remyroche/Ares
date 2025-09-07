@@ -4,10 +4,11 @@ import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .training.enhanced_training_manager import EnhancedTrainingManager
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 async def run_pipeline_with_step08(symbol: str='BTCUSDT', exchange: str='binance', timeframe: str='1m', start_step: str='step06_feature_engineering') -> Any:
@@ -36,7 +37,7 @@ async def run_pipeline_with_step08(symbol: str='BTCUSDT', exchange: str='binance
     logger.info('      • 60 features (linear models)')
     logger.info('  Step 9: HMM Model Training (uses Step 8 outputs)')
     try:
-        success = await training_manager.train(symbol=symbol, exchange=exchange, timeframe=timeframe, start_step=start_step)
+        success = await training_manager.train(symbol = symbol, exchange = exchange, timeframe = timeframe, start_step = start_step)
         if success:
             logger.info('\n✅ Pipeline completed successfully!')
             report_path = f'data/selected_features/{exchange}_{symbol}_{timeframe}_selection_report.json'
@@ -75,7 +76,7 @@ async def main() -> None:
         start_step = sys.argv[3]
     else:
         start_step = 'step06_feature_engineering'
-    success = await run_pipeline_with_step08(symbol=symbol, exchange=exchange, start_step=start_step)
+    success = await run_pipeline_with_step08(symbol = symbol, exchange = exchange, start_step = start_step)
     sys.exit(0 if success else 1)
 if __name__ == '__main__':
     print('=' * 60)

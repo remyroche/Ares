@@ -19,10 +19,10 @@ import typing
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level = logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-logger=logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ScanType(Enum):
@@ -66,71 +66,71 @@ class ScanManager:
                 name="Code Formatting",
                 description="Format code using ruff formatter",
                 command="poetry run ruff format .",
-                enabled=True,
+                enabled = True,
             ),
             ScanType.LINTING.value: ScanFeature(
                 name="Code Linting",
                 description="Check code style and potential issues using ruff",
                 command="poetry run ruff check . --fix",
-                enabled=True,
+                enabled = True,
             ),
             ScanType.TYPE_CHECKING.value: ScanFeature(
                 name="Static Type Checking",
                 description="Perform static type checking using mypy",
                 command="poetry run mypy --ignore-missing-imports --package src",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.COMPLEXITY.value: ScanFeature(
                 name="Cyclomatic Complexity Analysis",
                 description="Analyze code complexity using radon",
                 command="poetry run radon cc src/ -s -nc",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.MAINTAINABILITY.value: ScanFeature(
                 name="Maintainability Index",
                 description="Calculate maintainability index using radon",
                 command="poetry run radon mi src/ -s -nc",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.DEAD_CODE.value: ScanFeature(
                 name="Dead Code Detection",
                 description="Find unused code using vulture",
                 command="poetry run vulture src/",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.CIRCULAR_IMPORTS.value: ScanFeature(
                 name="Circular Import Detection",
                 description="Detect circular imports using pylint",
-                command="poetry run pylint --disable=all --enable=cyclic-import src/",
-                enabled=True, ignore_errors=True,
+                command="poetry run pylint --disable = all --enable = cyclic-import src/",
+                enabled = True, ignore_errors = True,
             ),
             ScanType.SECURITY.value: ScanFeature(
                 name="Security Analysis",
                 description="Check for security vulnerabilities using bandit",
                 command="poetry run bandit -r src/ -f json",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.PERFORMANCE.value: ScanFeature(
                 name="Performance Analysis",
                 description="Analyze performance issues using pyflakes",
                 command="poetry run pyflakes src/",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
             ScanType.DOCUMENTATION.value: ScanFeature(
                 name="Documentation Check",
                 description="Check documentation coverage using pydocstyle",
                 command="poetry run pydocstyle src/",
-                enabled=True, ignore_errors=True,
+                enabled = True, ignore_errors = True,
             ),
         }
 
-    def run_scan(self, scan_type: str, verbose: bool=False) -> bool:
+    def run_scan(self, scan_type: str, verbose: bool = False) -> bool:
         """Run a specific scan"""
         if scan_type not in self.features:
             print(error(f"Unknown scan type: {scan_type}"))
             return False
 
-        feature=self.features[scan_type]
+        feature = self.features[scan_type]
 
         if not feature.enabled:
             print(warning(f"Feature '{feature.name}' is disabled"))
@@ -145,18 +145,18 @@ class ScanManager:
             print("-" * 50)
 
         try:
-            result=subprocess.run(
+            result = subprocess.run(
                 feature.command.split(),
-                capture_output=True,
-                text=True,
-                timeout=feature.timeout,
-                check=False,
+                capture_output = True,
+                text = True,
+                timeout = feature.timeout,
+                check = False,
             )
 
             if result.stdout:
                 print(result.stdout)
             if result.stderr:
-                print(result.stderr, file=sys.stderr)
+                print(result.stderr, file = sys.stderr)
 
             if result.returncode== 0:
                 logger.info(f"✓ {feature.name} completed successfully")
@@ -180,7 +180,7 @@ class ScanManager:
             print(failed(f"✗ {feature.name} failed with error: {e}"))
             return False
 
-    def run_all_scans(self, verbose: bool=False) -> dict[str, bool]:
+    def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
         """Run all enabled scans and return results"""
         results={}
 
@@ -197,7 +197,7 @@ class ScanManager:
     def enable_feature(self, scan_type: str) -> bool:
         """Enable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled=True
+            self.features[scan_type].enabled = True
             logger.info(f"Enabled feature: {self.features[scan_type].name}")
             return True
         print(error(f"Unknown feature: {scan_type}"))
@@ -206,7 +206,7 @@ class ScanManager:
     def disable_feature(self, scan_type: str) -> bool:
         """Disable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled=False
+            self.features[scan_type].enabled = False
             logger.info(f"Disabled feature: {self.features[scan_type].name}")
             return True
         print(error(f"Unknown feature: {scan_type}"))
@@ -228,9 +228,9 @@ class ScanManager:
 
     def get_summary(self, results: dict[str, bool]) -> str:
         """Generate a summary of scan results"""
-        total=len(results)
-        passed=sum(1 for result in results.values() if result)
-        failed=total - passed
+        total = len(results)
+        passed = sum(1 for result in results.values() if result)
+        failed = total - passed
 
         summary = "\nScan Summary:\n"
         summary += f"Total scans: {total}\n"
@@ -249,7 +249,7 @@ class ScanManager:
 
 def main():
     """Main entry point"""
-    parser=argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Run comprehensive code analysis scans",
     )
     parser.add_argument(
@@ -277,9 +277,9 @@ def main():
         help="Disable a specific feature",
     )
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
-    scan_manager=ScanManager()
+    scan_manager = ScanManager()
 
     # Handle list command
     if args.list:
@@ -302,7 +302,7 @@ def main():
         if args.scan_type== ScanType.ALL.value:
             results = scan_manager.run_all_scans(args.verbose)
         else:
-            success=scan_manager.run_scan(args.scan_type, args.verbose)
+            success = scan_manager.run_scan(args.scan_type, args.verbose)
             results={args.scan_type: success}
     else:
         # Default to running all scans

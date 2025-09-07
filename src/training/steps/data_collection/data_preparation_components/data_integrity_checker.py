@@ -1,7 +1,9 @@
 """Data Integrity Checker - Validates data integrity and relationships."""
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import hashlib
 from datetime import datetime, timedelta
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 import pandas as pd
 from typing import Any
@@ -12,12 +14,14 @@ import time
 
 class DataIntegrityChecker:
     """Checks data integrity including relationships, constraints, and consistency."""
+    @log_important_calls
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize DataIntegrityChecker with configuration."""
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild('DataIntegrityChecker')
         self.standards = pipeline_standards
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for integrity checking."""
@@ -114,7 +118,7 @@ class DataIntegrityChecker:
             if len(time_diffs) > 0:
                 mode_diff = time_diffs.mode()[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
                 results['temporal_info']['detected_frequency'] = str(mode_diff)
-                max_gap = timedelta(minutes=self.config['max_time_gap_minutes'])
+                max_gap = timedelta(minutes = self.config['max_time_gap_minutes'])
                 large_gaps = time_diffs[time_diffs > max_gap]
                 if len(large_gaps) > 0:
                     results['warnings'].append(f"Found {len(large_gaps)} time gaps larger than {self.config['max_time_gap_minutes']} minutes")
@@ -282,6 +286,7 @@ class DataIntegrityChecker:
             results['is_valid'] = False
             results['violations'].append(f'Referential integrity check failed: {e}')
         return results
+    @log_all_calls
 
     def _calculate_integrity_score(self, results: dict[str, Any]) -> float:
         """Calculate overall integrity score."""
@@ -290,6 +295,7 @@ class DataIntegrityChecker:
         score -= len(results.get('warnings', [])) * 2
         score = max(0.0, min(100.0, score))
         return round(score, 2)
+    @log_all_calls
 
     def _calculate_data_fingerprint(self, data: pd.DataFrame) -> str:
         """Calculate a fingerprint/hash of the data for verification."""
@@ -324,7 +330,7 @@ class DataIntegrityChecker:
                     results['differences'].append(f'Shape mismatch: {data1.shape} vs {data2.shape}')
                 elif not data1.equals(data2):
                     results['is_consistent'] = False
-                    diff_mask = (data1 != data2).any(axis=1)
+                    diff_mask = (data1 != data2).any(axis = 1)
                     diff_count = diff_mask.sum()
                     results['differences'].append(f'Found {diff_count} rows with differences')
                     results['similarity_score'] = (1 - diff_count / len(data1)) * 100
@@ -366,3 +372,5 @@ class DataIntegrityChecker:
             results['is_consistent'] = False
             results['error'] = str(e)
         return results
+"""Data Integrity Checker - Validates data integrity and relationships."""
+import hashlib

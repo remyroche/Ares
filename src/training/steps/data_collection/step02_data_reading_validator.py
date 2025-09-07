@@ -15,10 +15,13 @@ import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
-from .utils.common_operations import safe_json_load, ensure_directory, safe_json_dump
+from src.utils.logger import system_logger
+from src.utils.common_operations import safe_json_load, ensure_directory, safe_json_dump
+from src.training.reports import save_training_report
 import pandas as pd
 
+import json
+import logging
 # Import the comprehensive function monitoring framework from step02
 from .utils.monitoring import (
     comprehensive_function_monitoring,
@@ -31,11 +34,11 @@ logger = system_logger.getChild('Step2DataReadingValidator')
 
 
 @comprehensive_function_monitoring(
-    validate_inputs=True,
-    validate_outputs=True,
-    track_performance=True,
-    timeout_seconds=30,
-    retry_attempts=1
+    validate_inputs = True,
+    validate_outputs = True,
+    track_performance = True,
+    timeout_seconds = 30,
+    retry_attempts = 1
 )
 async def _validate_directory_structure(data_dir: str, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate directory structure exists."""
@@ -50,13 +53,14 @@ async def _validate_directory_structure(data_dir: str, exchange: str, symbol: st
             'error': error_msg
         }
     
-    data_files = list(unified_data_path.glob('*.parquet'))
+    # Look for parquet files recursively in the directory structure
+    data_files = list(unified_data_path.rglob('*.parquet'))
     if not data_files:
         error_msg = f'No parquet files found in {unified_data_path}'
         logger.error(f'❌ {error_msg}')
         return {
-            'step_name': 'step02_data_reading', 
-            'validation_passed': False, 
+            'step_name': 'step02_data_reading',
+            'validation_passed': False,
             'error': error_msg
         }
     
@@ -68,11 +72,11 @@ async def _validate_directory_structure(data_dir: str, exchange: str, symbol: st
 
 
 @comprehensive_function_monitoring(
-    validate_inputs=True,
-    validate_outputs=True,
-    track_performance=True,
-    timeout_seconds=60,
-    retry_attempts=1
+    validate_inputs = True,
+    validate_outputs = True,
+    track_performance = True,
+    timeout_seconds = 60,
+    retry_attempts = 1
 )
 async def _validate_data_files(data_files: list, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate data files and load the latest one."""
@@ -106,11 +110,11 @@ async def _validate_data_files(data_files: list, exchange: str, symbol: str, tim
 
 
 @comprehensive_function_monitoring(
-    validate_inputs=True,
-    validate_outputs=True,
-    track_performance=True,
-    timeout_seconds=120,
-    retry_attempts=1
+    validate_inputs = True,
+    validate_outputs = True,
+    track_performance = True,
+    timeout_seconds = 120,
+    retry_attempts = 1
 )
 async def _validate_data_content(data: pd.DataFrame, exchange: str, symbol: str, timeframe: str) -> Dict[str, Any]:
     """Validate data content and structure."""
@@ -224,11 +228,11 @@ async def _validate_data_content(data: pd.DataFrame, exchange: str, symbol: str,
 
 
 @comprehensive_function_monitoring(
-    validate_inputs=True,
-    validate_outputs=True,
-    track_performance=True,
-    timeout_seconds=300,
-    retry_attempts=1
+    validate_inputs = True,
+    validate_outputs = True,
+    track_performance = True,
+    timeout_seconds = 300,
+    retry_attempts = 1
 )
 async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
     """Run validation for Step 2: Data Reading.
@@ -254,19 +258,30 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         if not validation_result['validation_passed']:
             return validation_result
             
+        # Store data_files for later use
+        data_files = validation_result['data_files']
+
         # Validate data files
-        validation_result = await _validate_data_files(
-            validation_result['data_files'], exchange, symbol, timeframe
+        file_validation_result = await _validate_data_files(
+            data_files, exchange, symbol, timeframe
         )
-        if not validation_result['validation_passed']:
-            return validation_result
+        if not file_validation_result['validation_passed']:
+            return file_validation_result
+
+        # Merge results
+        validation_result.update(file_validation_result)
+        validation_result['data_files'] = data_files
             
         # Validate data content
-        validation_result = await _validate_data_content(
+        content_validation_result = await _validate_data_content(
             validation_result['data'], exchange, symbol, timeframe
         )
-        if not validation_result['validation_passed']:
-            return validation_result
+        if not content_validation_result['validation_passed']:
+            return content_validation_result
+
+        # Merge results and preserve data_files
+        validation_result.update(content_validation_result)
+        validation_result['data_files'] = data_files
         
         # Load validation metadata if available
         validation_report_path = Path(data_dir) / f'{exchange}_{symbol}_{timeframe}_validation_report.json'
@@ -308,11 +323,11 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         }
 
 @comprehensive_function_monitoring(
-    validate_inputs=True,
-    validate_outputs=True,
-    track_performance=True,
-    timeout_seconds=60,
-    retry_attempts=1
+    validate_inputs = True,
+    validate_outputs = True,
+    track_performance = True,
+    timeout_seconds = 60,
+    retry_attempts = 1
 )
 async def generate_validation_function_report(
     training_input: Dict[str, Any], 
@@ -326,14 +341,9 @@ async def generate_validation_function_report(
         # Get function interaction report
         function_report = function_monitor.get_function_interaction_report()
         
-        # Save detailed validation report
-        reports_dir = ensure_directory(Path(data_dir) / 'reports' / 'validation_monitoring')
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Prepare report data
         symbol = training_input.get('symbol', 'UNKNOWN')
         exchange = training_input.get('exchange', 'UNKNOWN')
-        
-        report_filename = f'step02_validation_function_report_{exchange}_{symbol}_{timestamp}.json'
-        report_path = reports_dir / report_filename
         
         # Combine validation results with function monitoring data
         comprehensive_report = {
@@ -371,8 +381,17 @@ async def generate_validation_function_report(
                 ]
             }
         }
-        
-        
+
+        # Save the comprehensive report using centralized system
+        report_path = save_training_report(
+            data=comprehensive_report,
+            step_name="step02_data_reading_validator",
+            report_type="validation_function_report",
+            symbol=symbol,
+            timeframe=training_input.get('timeframe', '1m'),
+            file_format="json"
+        )
+
         # Log comprehensive summary
         logger.info('📊 Validation Function Report Summary:')
         logger.info(f'   - Validation passed: {validation_result.get("validation_passed", False)}')
@@ -395,6 +414,16 @@ async def generate_validation_function_report(
             for error_type, count in function_report.error_summary.items():
                 logger.info(f'     * {error_type}: {count} occurrences')
         
+        # Save the comprehensive report
+        report_path = save_training_report(
+            data=comprehensive_report,
+            step_name="step02_data_reading_validator",
+            report_type="validation_function_report",
+            symbol=symbol,
+            timeframe=training_input.get('timeframe', '1m'),
+            file_format="json"
+        )
+
         logger.info(f'✅ Validation function report saved to: {report_path}')
         
         return {

@@ -12,6 +12,9 @@ from .core.interfaces import (
     BasePipelineStep, IDataStep, StepResult, StepStatus, StepConfig
 )
 import pandas as pd
+import logging
+import numpy as np
+import typing
 
 @dataclass
 class DataQualityMetrics:
@@ -95,7 +98,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
 
         # Calculate date range
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_days)
+        start_date = end_date - timedelta(days = lookback_days)
         
         self.logger.info(f"Loading data from {exchange_name} for {symbol} ({timeframe}) from {start_date} to {end_date}")
         
@@ -224,7 +227,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         
         # Simple Moving Averages
         for period in [5, 10, 20, 50]:
-            data[f'sma_{period}'] = data['close'].rolling(window=period).mean()
+            data[f'sma_{period}'] = data['close'].rolling(window = period).mean()
         
         # Price change
         data['price_change'] = data['close'].pct_change()
@@ -239,11 +242,11 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
     def get_data_quality_metrics(self, data: pd.DataFrame) -> DataQualityMetrics:
         """Get comprehensive data quality metrics."""
         metrics = DataQualityMetrics(
-            total_rows=len(data),
-            total_columns=len(data.columns),
+            total_rows = len(data),
+            total_columns = len(data.columns),
             null_percentage=(data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100,
-            duplicate_rows=data.duplicated().sum(),
-            memory_usage_mb=data.memory_usage(deep=True).sum() / 1024 / 1024
+            duplicate_rows = data.duplicated().sum(),
+            memory_usage_mb = data.memory_usage(deep = True).sum() / 1024 / 1024
         )
         
         # Date range
@@ -299,7 +302,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         # Save snapshot if requested
         if self.config.parameters.get('save_snapshot', False):
             snapshot_path = Path(f'data/snapshots/{self.name}_{int(time.time())}.parquet')
-            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.parent.mkdir(parents = True, exist_ok = True)
             data.to_parquet(snapshot_path)
             self.add_artifact('data_snapshot', snapshot_path)
         
@@ -368,7 +371,7 @@ class DataConverterStep(BasePipelineStep, IDataStep):
         # Standardize column names
         column_mapping = self.config.parameters.get('column_mapping', {})
         if column_mapping:
-            data = data.rename(columns=column_mapping)
+            data = data.rename(columns = column_mapping)
             self.add_metric('columns_renamed', len(column_mapping))
         
         # Ensure required columns exist
@@ -388,11 +391,11 @@ class DataConverterStep(BasePipelineStep, IDataStep):
     def get_data_quality_metrics(self, data: pd.DataFrame) -> DataQualityMetrics:
         """Get data quality metrics after conversion."""
         return DataQualityMetrics(
-            total_rows=len(data),
-            total_columns=len(data.columns),
+            total_rows = len(data),
+            total_columns = len(data.columns),
             null_percentage=(data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100,
-            duplicate_rows=data.duplicated().sum(),
-            memory_usage_mb=data.memory_usage(deep=True).sum() / 1024 / 1024
+            duplicate_rows = data.duplicated().sum(),
+            memory_usage_mb = data.memory_usage(deep = True).sum() / 1024 / 1024
         )
 
     async def _execute_impl(self, **kwargs) -> Dict[str, Any]:
@@ -402,7 +405,7 @@ class DataConverterStep(BasePipelineStep, IDataStep):
             raise ValueError("No data provided for conversion")
         
         # Load and validate
-        data = await self.load_data("", data=data)
+        data = await self.load_data("", data = data)
         if not await self.validate_data(data):
             raise ValueError('Data validation failed')
         

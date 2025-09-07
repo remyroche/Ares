@@ -16,7 +16,9 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
-from .utils.common_operations import (
+import os
+import typing
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )
@@ -105,9 +107,9 @@ class PerformanceMonitor:
         
         self.monitoring = True
         self.monitor_thread = threading.Thread(
-            target=self._monitor_loop,
+            target = self._monitor_loop,
             args=(interval,),
-            daemon=True
+            daemon = True
         )
         self.monitor_thread.start()
         self.logger.info("Performance monitoring started")
@@ -116,7 +118,7 @@ class PerformanceMonitor:
         """Stop monitoring system performance."""
         self.monitoring = False
         if self.monitor_thread:
-            self.monitor_thread.join(timeout=5.0)
+            self.monitor_thread.join(timeout = 5.0)
         self.logger.info("Performance monitoring stopped")
     
     def _monitor_loop(self, interval: float) -> None:
@@ -136,19 +138,19 @@ class PerformanceMonitor:
             # Memory usage
             memory = psutil.virtual_memory()
             self.metrics.append(MetricData(
-                timestamp=format_datetime(get_current_datetime()),
-                metric_type=MetricType.MEMORY_USAGE,
-                value=memory.percent,
+                timestamp = format_datetime(get_current_datetime()),
+                metric_type = MetricType.MEMORY_USAGE,
+                value = memory.percent,
                 unit="percent",
                 context={"available": memory.available, "total": memory.total}
             ))
             
             # CPU usage
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval = 0.1)
             self.metrics.append(MetricData(
-                timestamp=format_datetime(get_current_datetime()),
-                metric_type=MetricType.CPU_USAGE,
-                value=cpu_percent,
+                timestamp = format_datetime(get_current_datetime()),
+                metric_type = MetricType.CPU_USAGE,
+                value = cpu_percent,
                 unit="percent",
                 context={}
             ))
@@ -156,8 +158,8 @@ class PerformanceMonitor:
             # Disk usage
             disk = psutil.disk_usage('/')
             self.metrics.append(MetricData(
-                timestamp=format_datetime(get_current_datetime()),
-                metric_type=MetricType.DISK_USAGE,
+                timestamp = format_datetime(get_current_datetime()),
+                metric_type = MetricType.DISK_USAGE,
                 value=(disk.used / disk.total) * 100,
                 unit="percent",
                 context={"used": disk.used, "total": disk.total, "free": disk.free}
@@ -170,7 +172,7 @@ class PerformanceMonitor:
         """Get current system metrics."""
         try:
             memory = psutil.virtual_memory()
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval = 0.1)
             disk = psutil.disk_usage('/')
             
             return {
@@ -215,7 +217,7 @@ class StepMonitor:
         """Start monitoring a step."""
         self.start_time = time.time()
         self.status = MonitorStatus.RUNNING
-        self.performance_monitor.start_monitoring(interval=0.5)
+        self.performance_monitor.start_monitoring(interval = 0.5)
         self.logger.info(f"Started monitoring step: {self.step_name}")
     
     def end_step(self, status: MonitorStatus = MonitorStatus.COMPLETED) -> None:
@@ -261,17 +263,17 @@ class StepMonitor:
             duration = time.time() - self.start_time
         
         return StepMetrics(
-            step_name=self.step_name,
-            start_time=format_datetime(get_current_datetime()) if self.start_time else "",
-            end_time=format_datetime(get_current_datetime()) if self.end_time else None,
-            duration=duration,
-            status=self.status,
-            memory_peak=self.memory_peak,
-            cpu_peak=self.cpu_peak,
-            data_processed=self.data_processed,
-            errors=self.errors,
-            warnings=self.warnings,
-            custom_metrics=self.custom_metrics
+            step_name = self.step_name,
+            start_time = format_datetime(get_current_datetime()) if self.start_time else "",
+            end_time = format_datetime(get_current_datetime()) if self.end_time else None,
+            duration = duration,
+            status = self.status,
+            memory_peak = self.memory_peak,
+            cpu_peak = self.cpu_peak,
+            data_processed = self.data_processed,
+            errors = self.errors,
+            warnings = self.warnings,
+            custom_metrics = self.custom_metrics
         )
 
 
@@ -297,7 +299,7 @@ class PipelineMonitor:
         self.monitoring_file = Path(config.get('monitoring_file', f'logs/pipeline_monitor_{pipeline_id}.json'))
         
         # Ensure monitoring directory exists
-        self.monitoring_file.parent.mkdir(parents=True, exist_ok=True)
+        self.monitoring_file.parent.mkdir(parents = True, exist_ok = True)
     
     def start_pipeline(self, total_steps: int) -> None:
         """Start monitoring the pipeline."""
@@ -353,20 +355,20 @@ class PipelineMonitor:
         step_metrics = [monitor.get_step_metrics() for monitor in self.step_monitors.values()]
         
         return PipelineMetrics(
-            pipeline_id=self.pipeline_id,
-            start_time=format_datetime(get_current_datetime()) if self.start_time else "",
-            end_time=format_datetime(get_current_datetime()) if self.end_time else None,
-            total_duration=total_duration,
-            status=self.status,
-            steps_completed=self.steps_completed,
-            steps_total=self.steps_total,
-            total_memory_peak=self.total_memory_peak,
-            total_cpu_peak=self.total_cpu_peak,
-            total_data_processed=self.total_data_processed,
-            total_errors=self.total_errors,
-            total_warnings=self.total_warnings,
-            step_metrics=step_metrics,
-            custom_metrics=self.custom_metrics
+            pipeline_id = self.pipeline_id,
+            start_time = format_datetime(get_current_datetime()) if self.start_time else "",
+            end_time = format_datetime(get_current_datetime()) if self.end_time else None,
+            total_duration = total_duration,
+            status = self.status,
+            steps_completed = self.steps_completed,
+            steps_total = self.steps_total,
+            total_memory_peak = self.total_memory_peak,
+            total_cpu_peak = self.total_cpu_peak,
+            total_data_processed = self.total_data_processed,
+            total_errors = self.total_errors,
+            total_warnings = self.total_warnings,
+            step_metrics = step_metrics,
+            custom_metrics = self.custom_metrics
         )
     
     def get_progress(self) -> Dict[str, Any]:

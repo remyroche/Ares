@@ -8,7 +8,7 @@ from typing import Any
 
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config.fractional_implementations_config import get_fractional_config
@@ -29,17 +29,17 @@ class BaselinePerformanceAnalyzer:
         Args:
             config_dict: Optional configuration overrides
         """
-        self.config=get_fractional_config(config_dict)
-        self.logger=get_logger("BaselinePerformanceAnalyzer")
+        self.config = get_fractional_config(config_dict)
+        self.logger = get_logger("BaselinePerformanceAnalyzer")
 
         # Initialize performance tracker
-        self.performance_tracker=FractionalPerformanceTracker(
+        self.performance_tracker = FractionalPerformanceTracker(
             self.config,
             output_dir="data/fractional_performance/baseline",
         )
 
         # Test data parameters
-        self.test_data_size=self.config.test_data_size
+        self.test_data_size = self.config.test_data_size
         self.validation_split = self.config.validation_split
 
     def generate_test_data(self) -> pd.DataFrame:
@@ -53,7 +53,7 @@ class BaselinePerformanceAnalyzer:
         np.random.seed(42)  # For reproducible results
 
         # Generate price data with realistic characteristics
-        base_price=100
+        base_price = 100
         returns = np.random.normal(0.0001, 0.02, self.test_data_size)  # Small positive drift
         prices=[base_price]
 
@@ -61,7 +61,7 @@ class BaselinePerformanceAnalyzer:
             prices.append(prices[-1] * (1 + ret))
 
         # Create OHLCV data
-        data=pd.DataFrame({
+        data = pd.DataFrame({
             "open": prices,
             "high": [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
             "low": [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
@@ -74,7 +74,7 @@ class BaselinePerformanceAnalyzer:
         data["low"] = np.minimum(data["low"], data["close"])
 
         # Add datetime index
-        data.index=pd.date_range("2023-01-01", periods=len(data), freq="1min")
+        data.index = pd.date_range("2023-01-01", periods = len(data), freq="1min")
 
         self.logger.info(f"Generated test data with shape: {data.shape}")
         return data
@@ -96,15 +96,15 @@ class BaselinePerformanceAnalyzer:
             )
 
             # Use current binary labeling
-            labeler=OptimizedTripleBarrierLabeling(
-                profit_take_multiplier=0.002,
-                stop_loss_multiplier=0.001,
-                time_barrier_minutes=30,
-                max_lookahead=100,
-                binary_classification=True,
+            labeler = OptimizedTripleBarrierLabeling(
+                profit_take_multiplier = 0.002,
+                stop_loss_multiplier = 0.001,
+                time_barrier_minutes = 30,
+                max_lookahead = 100,
+                binary_classification = True,
             )
 
-            labeled_data=labeler.apply_triple_barrier_labeling_vectorized(data)
+            labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
 
             self.logger.info(f"Baseline labeling complete: {len(labeled_data)} samples labeled")
             return labeled_data
@@ -112,7 +112,7 @@ class BaselinePerformanceAnalyzer:
         except Exception as e:
             self.logger.exception(f"Failed to run baseline labeling: {e}")
             # Fallback: create simple binary labels
-            data["label"] = np.random.choice([-1, 1], size=len(data), p=[0.4, 0.6])
+            data["label"] = np.random.choice([-1, 1], size = len(data), p=[0.4, 0.6])
             return data
 
     def run_baseline_feature_engineering(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -128,7 +128,7 @@ class BaselinePerformanceAnalyzer:
 
         try:
             # Simple baseline features
-            features=data.copy()
+            features = data.copy()
 
             # Price-based features
             features["returns"] = features["close"].pct_change()
@@ -145,7 +145,7 @@ class BaselinePerformanceAnalyzer:
             features["volume_ratio"] = features["volume"] / features["volume_sma"]
 
             # Remove NaN values
-            features=features.dropna()
+            features = features.dropna()
 
             self.logger.info(f"Baseline feature engineering complete: {len(features)} samples")
             return features
@@ -154,12 +154,12 @@ class BaselinePerformanceAnalyzer:
             self.logger.exception(f"Failed to run baseline feature engineering: {e}")
             return data
 
-    def _calculate_rsi(self, prices: pd.Series, period: int=14) -> pd.Series:
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI indicator."""
-        delta=prices.diff()
-        gain=(delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss=(-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs=gain / loss
+        delta = prices.diff()
+        gain=(delta.where(delta > 0, 0)).rolling(window = period).mean()
+        loss=(-delta.where(delta < 0, 0)).rolling(window = period).mean()
+        rs = gain / loss
         return 100 - (100 / (1 + rs))
 
     def train_baseline_model(self, features: pd.DataFrame) -> dict[str, Any]:
@@ -182,30 +182,30 @@ class BaselinePerformanceAnalyzer:
             feature_columns=[col for col in features.columns
                              if col not in ["open", "high", "low", "close", "volume", "label"]]
 
-            X=features[feature_columns].fillna(0)
-            y=features["label"]
+            X = features[feature_columns].fillna(0)
+            y = features["label"]
 
             # Split data
-            X_train, X_test, y_train, y_test=train_test_split(
-                X, y, test_size=self.validation_split, random_state=42,
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size = self.validation_split, random_state = 42,
             )
 
             # Train model
-            model=RandomForestClassifier(n_estimators=100, random_state=42)
+            model = RandomForestClassifier(n_estimators = 100, random_state = 42)
             model.fit(X_train, y_train)
 
             # Predictions
-            y_pred=model.predict(X_test)
+            y_pred = model.predict(X_test)
 
             # Calculate metrics
-            accuracy=accuracy_score(y_test, y_pred)
+            accuracy = accuracy_score(y_test, y_pred)
 
             # Calculate trading metrics
-            trading_metrics=self._calculate_trading_metrics(features, y_pred)
+            trading_metrics = self._calculate_trading_metrics(features, y_pred)
 
             metrics={
                 "model_accuracy": accuracy,
-                "feature_importance": dict(zip(feature_columns, model.feature_importances_, strict=False)),
+                "feature_importance": dict(zip(feature_columns, model.feature_importances_, strict = False)),
                 **trading_metrics,
             }
 
@@ -235,8 +235,8 @@ class BaselinePerformanceAnalyzer:
         """
         try:
             # Simple backtest simulation
-            returns=data["close"].pct_change().dropna()
-            signals=predictions[:-1]  # Align with returns
+            returns = data["close"].pct_change().dropna()
+            signals = predictions[:-1]  # Align with returns
 
             # Calculate strategy returns
             strategy_returns = signals * returns
@@ -246,17 +246,17 @@ class BaselinePerformanceAnalyzer:
 
             # Maximum drawdown
             cumulative_returns=(1 + strategy_returns).cumprod()
-            running_max=cumulative_returns.expanding().max()
+            running_max = cumulative_returns.expanding().max()
             drawdown=(cumulative_returns - running_max) / running_max
-            max_drawdown=drawdown.min()
+            max_drawdown = drawdown.min()
 
             # Win rate
             win_rate=(strategy_returns > 0).mean()
 
             # Profit factor
-            gross_profit=strategy_returns[strategy_returns > 0].sum()
-            gross_loss=abs(strategy_returns[strategy_returns < 0].sum())
-            profit_factor=gross_profit / gross_loss if gross_loss > 0 else 1.0
+            gross_profit = strategy_returns[strategy_returns > 0].sum()
+            gross_loss = abs(strategy_returns[strategy_returns < 0].sum())
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else 1.0
 
             return {
                 "sharpe_ratio": sharpe_ratio,
@@ -287,16 +287,16 @@ class BaselinePerformanceAnalyzer:
         self.logger.info("Starting baseline performance analysis")
 
         # Generate test data
-        test_data=self.generate_test_data()
+        test_data = self.generate_test_data()
 
         # Run baseline labeling
-        labeled_data=self.run_baseline_triple_barrier_labeling(test_data)
+        labeled_data = self.run_baseline_triple_barrier_labeling(test_data)
 
         # Run baseline feature engineering
-        features=self.run_baseline_feature_engineering(labeled_data)
+        features = self.run_baseline_feature_engineering(labeled_data)
 
         # Train baseline model
-        model_metrics=self.train_baseline_model(features)
+        model_metrics = self.train_baseline_model(features)
 
         # Compile baseline metrics
         baseline_metrics={
@@ -339,12 +339,12 @@ class BaselinePerformanceAnalyzer:
         }
 
         # Save report
-        output_file=Path("data/fractional_performance/baseline/baseline_report.json")
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file = Path("data/fractional_performance/baseline/baseline_report.json")
+        output_file.parent.mkdir(parents = True, exist_ok = True)
 
         with open(output_file, "w") as f:
             import json
-            json.dump(report, f, indent=2, default=str)
+            json.dump(report, f, indent = 2, default = str)
 
         self.logger.info(f"Baseline report exported to: {output_file}")
 
@@ -354,10 +354,10 @@ def main():
     print("🔍 Establishing baseline performance metrics...")
 
     # Initialize analyzer
-    analyzer=BaselinePerformanceAnalyzer()
+    analyzer = BaselinePerformanceAnalyzer()
 
     # Run baseline analysis
-    baseline_metrics=analyzer.run_baseline_analysis()
+    baseline_metrics = analyzer.run_baseline_analysis()
 
     # Print results
     print("\n📊 Baseline Performance Metrics:")

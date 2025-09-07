@@ -1,22 +1,21 @@
-import src.utils.warning_symbols
-import numpy as np
-
-# src/tactician/ml_target_validator.py
-
-
 """
 ML Target Validator for validating machine learning targets and predictions.
 """
+
+import logging
+import time
 from datetime import datetime
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.exceptions import (
-    error,
-    failed,
+import numpy as np
+import pandas as pd
+
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors, validates
+from src.core.error_classes import (
     initialization_error,
-    invalid,
-    missing,
+    validation_error,
+    execution_error,
 )
 
 
@@ -50,7 +49,7 @@ class MLTargetValidator:
         self.min_target_value = self.validator_config.get("min_target_value", -1.0)
         self.max_target_value = self.validator_config.get("max_target_value", 1.0)
 
-    @core_handles_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="ML target validator initialization",
@@ -67,7 +66,7 @@ class MLTargetValidator:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid ML target validator configuration"))
+                self.logger.error(validation_error("Invalid ML target validator configuration"))
                 return False
 
             # Clear history
@@ -78,7 +77,7 @@ class MLTargetValidator:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ ML Target Validator initialization failed: {e}"))
+            self.logger.exception(execution_error(f"❌ ML Target Validator initialization execution_error: {e}"))
             return False
 
     def _validate_configuration(self) -> bool:
@@ -90,33 +89,33 @@ class MLTargetValidator:
         """
         try:
             if self.validation_interval <= 0:
-                self.logger.error(invalid("Validation interval must be positive"))
+                self.logger.error(validation_error("Validation interval must be positive"))
                 return False
 
             if self.max_history <= 0:
-                self.logger.error(invalid("Max history must be positive"))
+                self.logger.error(validation_error("Max history must be positive"))
                 return False
 
             if not 0 <= self.min_confidence_threshold <= 1:
-                self.logger.error(invalid("Min confidence threshold must be between 0 and 1"))
+                self.logger.error(validation_error("Min confidence threshold must be between 0 and 1"))
                 return False
 
             if not 0 <= self.max_confidence_threshold <= 1:
-                self.logger.error(invalid("Max confidence threshold must be between 0 and 1"))
+                self.logger.error(validation_error("Max confidence threshold must be between 0 and 1"))
                 return False
 
             if self.min_confidence_threshold >= self.max_confidence_threshold:
-                self.logger.error(invalid("Min confidence threshold must be less than max confidence threshold"))
+                self.logger.error(validation_error("Min confidence threshold must be less than max confidence threshold"))
                 return False
 
             if self.min_target_value >= self.max_target_value:
-                self.logger.error(invalid("Min target value must be less than max target value"))
+                self.logger.error(validation_error("Min target value must be less than max target value"))
                 return False
 
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.exception(execution_error(f"❌ Configuration validation execution_error: {e}"))
             return False
 
     @validates(
@@ -127,7 +126,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML target validation",
     )
-    @core_handles_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="target validation",
@@ -207,16 +206,16 @@ class MLTargetValidator:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Target validation failed: {e}"))
+            self.logger.exception(execution_error(f"❌ Target validation execution_error: {e}"))
 
-            # Record failed validation
+            # Record execution_error validation
             validation_record = {
                 "timestamp": datetime.now().isoformat(),
                 "symbol": target_data.get("symbol", "unknown"),
                 "target_value": target_data.get("target_value"),
                 "confidence": target_data.get("confidence"),
                 "is_valid": False,
-                "validation_notes": f"Validation failed: {e}",
+                "validation_notes": f"Validation execution_error: {e}",
             }
 
             self._add_to_history(validation_record)
@@ -230,7 +229,7 @@ class MLTargetValidator:
         check_timestamps=False,
         context="ML prediction validation",
     )
-    @core_handles_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="prediction validation",
@@ -304,9 +303,9 @@ class MLTargetValidator:
             return True
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Prediction validation failed: {e}"))
+            self.logger.exception(execution_error(f"❌ Prediction validation execution_error: {e}"))
 
-            # Record failed validation
+            # Record execution_error validation
             validation_record = {
                 "timestamp": datetime.now().isoformat(),
                 "symbol": prediction_data.get("symbol", "unknown"),
@@ -314,7 +313,7 @@ class MLTargetValidator:
                 "prediction_value": prediction_data.get("prediction_value"),
                 "confidence": prediction_data.get("confidence"),
                 "is_valid": False,
-                "validation_notes": f"Validation failed: {e}",
+                "validation_notes": f"Validation execution_error: {e}",
             }
 
             self._add_to_history(validation_record)
@@ -335,7 +334,7 @@ class MLTargetValidator:
                 self.history = self.history[-self.max_history:]
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error adding to history: {e}"))
+            self.logger.exception(execution_error(f"❌ Error adding to history: {e}"))
 
     def get_validation_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
@@ -353,7 +352,7 @@ class MLTargetValidator:
             return self.history.copy()
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error getting validation history: {e}"))
+            self.logger.exception(execution_error(f"❌ Error getting validation history: {e}"))
             return []
 
     def get_validation_statistics(self) -> dict[str, Any]:
@@ -368,14 +367,14 @@ class MLTargetValidator:
                 return {
                     "total_validations": 0,
                     "valid_count": 0,
-                    "invalid_count": 0,
+                    "validation_error_count": 0,
                     "success_rate": 0.0,
                     "average_confidence": 0.0,
                 }
 
             total_validations = len(self.history)
             valid_count = sum(1 for record in self.history if record.get("is_valid", False))
-            invalid_count = total_validations - valid_count
+            validation_error_count = total_validations - valid_count
             success_rate = valid_count / total_validations if total_validations > 0 else 0.0
 
             # Calculate average confidence
@@ -385,13 +384,13 @@ class MLTargetValidator:
             return {
                 "total_validations": total_validations,
                 "valid_count": valid_count,
-                "invalid_count": invalid_count,
+                "validation_error_count": validation_error_count,
                 "success_rate": success_rate,
                 "average_confidence": average_confidence,
             }
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ Error calculating validation statistics: {e}"))
+            self.logger.exception(execution_error(f"❌ Error calculating validation statistics: {e}"))
             return {}
 
     def get_status(self) -> dict[str, Any]:
@@ -423,4 +422,4 @@ class MLTargetValidator:
             self.logger.info("✅ ML Target Validator cleanup completed")
 
         except Exception as e:
-            self.logger.exception(failed(f"❌ ML Target Validator cleanup failed: {e}"))
+            self.logger.exception(execution_error(f"❌ ML Target Validator cleanup execution_error: {e}"))

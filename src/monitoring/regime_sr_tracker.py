@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Regime and Support/Resistance Tracker (minimal scaffold)
 
@@ -9,8 +11,7 @@ Scaffolding for regime detection and S/R tracking.
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 
 
@@ -34,7 +35,7 @@ class RegimeSRTracker:
             ValueError: (False, "Invalid regime tracker configuration"),
             AttributeError: (False, "Missing regime tracker parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="regime_sr_tracker.initialize",
     )
     async def initialize(self) -> bool:

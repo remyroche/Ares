@@ -1,4 +1,6 @@
 # examples/wavelet_caching_workflow.py
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 
 
 """Complete workflow example for wavelet feature caching and backtesting.
@@ -6,7 +8,6 @@
 Demonstrates the full pipeline from pre-computation to fast backtesting.
 """
 
-from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
 import time

@@ -32,7 +32,7 @@ class FractionalLabelingConfig:
 
     # Regime-specific configurations
     regime_specific_configs: dict[str, dict[str, Any]] = field(
-        default_factory=lambda: {
+        default_factory = lambda: {
             "trending": {
                 "distance_weight": 0.5,
                 "time_weight": 0.3,
@@ -77,11 +77,11 @@ class FractionalDifferentiationConfig:
 
     # Column configurations
     price_columns: list[str] = field(
-        default_factory=lambda: ["close", "high", "low", "open"]
+        default_factory = lambda: ["close", "high", "low", "open"]
     )
-    volume_columns: list[str] = field(default_factory=lambda: ["volume"])
+    volume_columns: list[str] = field(default_factory = lambda: ["volume"])
     exclude_columns: list[str] = field(
-        default_factory=lambda: ["timestamp", "datetime", "date"]
+        default_factory = lambda: ["timestamp", "datetime", "date"]
     )
 
     # Performance settings
@@ -123,10 +123,10 @@ class FractionalImplementationsConfig:
 
     # Sub-configurations
     fractional_labeling: FractionalLabelingConfig = field(
-        default_factory=FractionalLabelingConfig
+        default_factory = FractionalLabelingConfig
     )
     fractional_differentiation: FractionalDifferentiationConfig = field(
-        default_factory=FractionalDifferentiationConfig
+        default_factory = FractionalDifferentiationConfig
     )
 
 

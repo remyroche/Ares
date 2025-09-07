@@ -1,3 +1,4 @@
+from src.core.decorators import handles_errors
 """Validator for Step 14: Monte Carlo Validation."""
 
 import asyncio
@@ -19,8 +20,8 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.training.steps.config import CONFIG
-from src.training.steps.utils.base_validator import BaseValidator
+from .training.steps.config import CONFIG
+from .training.steps.utils.base_validator import BaseValidator
 
 import json
 import asyncio as _asyncio
@@ -29,8 +30,9 @@ import logging
 import time
 
 
-import numpy as np
 
+
+import numpy as np
 
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
@@ -38,7 +40,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> bool:
@@ -512,4 +514,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run( await test_validator())
+    _asyncio.run(test_validator())

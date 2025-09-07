@@ -2,6 +2,8 @@
 
 import pandas as pd
 import numpy as np
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Live Trading Wavelet Analyzer - Computationally Aware Implementation
 
@@ -18,10 +20,8 @@ from typing import Any
 
 import pywt
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 from .utils.warning_symbols import warning, initialization_error
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
 import logging
 
 
@@ -76,15 +76,15 @@ class LiveWaveletAnalyzer:
         self.confidence_threshold = config.get("confidence_threshold", 0.7)
 
         # Performance tracking
-        self.computation_times = deque(maxlen=100)
-        self.signal_history = deque(maxlen=1000)
+        self.computation_times = deque(maxlen = 100)
+        self.signal_history = deque(maxlen = 1000)
         self.is_initialized = False
 
         # Threading for async computation
         self.computation_lock = threading.Lock()
         self.latest_signal: WaveletSignal | None = None
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         """Initialize the live wavelet analyzer."""
         try:
@@ -97,8 +97,8 @@ class LiveWaveletAnalyzer:
             self._precompute_wavelet_coeffs()
 
             # Initialize sliding window
-            self.price_window = deque(maxlen=self.sliding_window_size)
-            self.volume_window = deque(maxlen=self.sliding_window_size)
+            self.price_window = deque(maxlen = self.sliding_window_size)
+            self.volume_window = deque(maxlen = self.sliding_window_size)
 
             self.is_initialized = True
             self.logger.info("✅ Live Wavelet Analyzer initialized successfully")
@@ -133,7 +133,7 @@ class LiveWaveletAnalyzer:
             # Create a dummy signal for coefficient computation
             dummy_signal = np.random.randn(self.sliding_window_size).astype(
                 np.float32,
-                copy=False,
+                copy = False,
             )
 
             # Pre-compute DWT coefficients structure
@@ -142,8 +142,8 @@ class LiveWaveletAnalyzer:
             self.dwt_coeffs_structure = pywt.wavedec(
                 dummy_signal,
                 self.wavelet_obj,
-                level=level,
-                mode=self.padding_mode,
+                level = level,
+                mode = self.padding_mode,
             )
 
             self.logger.info("✅ Pre-computed wavelet coefficients")
@@ -160,7 +160,7 @@ class LiveWaveletAnalyzer:
         except Exception:
             return max(1, self.decomposition_level)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def generate_signal(
         self,
         price_data: pd.DataFrame,
@@ -286,7 +286,7 @@ class LiveWaveletAnalyzer:
             if not price_array.flags.c_contiguous:
                 price_array = np.ascontiguousarray(price_array)
             if price_array.dtype != np.float32:
-                price_array = price_array.astype(np.float32, copy=False)
+                price_array = price_array.astype(np.float32, copy = False)
 
             # Compute DWT (fastest wavelet transform)
             if not hasattr(self, "wavelet_obj"):
@@ -295,8 +295,8 @@ class LiveWaveletAnalyzer:
             coeffs = pywt.wavedec(
                 price_array,
                 self.wavelet_obj,
-                level=level,
-                mode=self.padding_mode,
+                level = level,
+                mode = self.padding_mode,
             )
 
             # Extract key features efficiently
@@ -371,23 +371,23 @@ class LiveWaveletAnalyzer:
 
             # Create signal
             return WaveletSignal(
-                timestamp=time.time(),
-                signal_type=signal_type,
-                confidence=confidence,
-                energy_level=avg_energy,
-                entropy_level=avg_entropy,
-                computation_time=0.0,  # Will be set by caller
+                timestamp = time.time(),
+                signal_type = signal_type,
+                confidence = confidence,
+                energy_level = avg_energy,
+                entropy_level = avg_entropy,
+                computation_time = 0.0,  # Will be set by caller
             )
 
         except Exception as e:
             self.logger.exception(f"Error generating trading signal: {e}")
             return WaveletSignal(
-                timestamp=time.time(),
+                timestamp = time.time(),
                 signal_type="hold",
-                confidence=0.0,
-                energy_level=0.0,
-                entropy_level=0.0,
-                computation_time=0.0,
+                confidence = 0.0,
+                energy_level = 0.0,
+                entropy_level = 0.0,
+                computation_time = 0.0,
             )
 
     def get_performance_stats(self) -> dict[str, Any]:

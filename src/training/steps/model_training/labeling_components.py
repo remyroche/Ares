@@ -4,16 +4,20 @@ from typing import Any
 import pandas as pd
 from typing import Optional
 import numpy as np
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Labeling components for the labeling step.
 
 This module contains specialized labeling components including
 triple barrier labeling with regime awareness.
 """
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 class TripleBarrierLabeler:
     """Implements triple barrier labeling method."""
+    @log_important_calls
 
     def __init__(self, barrier_config: Dict[str, Any]) -> None:
         """Initialize triple barrier labeler.
@@ -46,6 +50,7 @@ class TripleBarrierLabeler:
         labeled_data = self._add_label_features(labeled_data)
         self._log_labeling_summary(labeled_data)
         return labeled_data
+    @log_all_calls
 
     def _standard_labeling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply standard triple barrier labeling.
@@ -58,7 +63,7 @@ class TripleBarrierLabeler:
         """
         n_samples = len(data)
         labels = np.zeros(n_samples)
-        label_metadata = {'exit_index': np.full(n_samples, -1, dtype=int), 'holding_period': np.zeros(n_samples, dtype=int), 'exit_return': np.zeros(n_samples), 'exit_reason': [''] * n_samples, 'max_profit': np.zeros(n_samples), 'max_loss': np.zeros(n_samples)}
+        label_metadata = {'exit_index': np.full(n_samples, -1, dtype = int), 'holding_period': np.zeros(n_samples, dtype = int), 'exit_return': np.zeros(n_samples), 'exit_reason': [''] * n_samples, 'max_profit': np.zeros(n_samples), 'max_loss': np.zeros(n_samples)}
         close_prices = data['close'].values
         for i in range(n_samples - self.min_holding_period):
             entry_price = close_prices[i]
@@ -119,7 +124,7 @@ class TripleBarrierLabeler:
         regime_barriers = self._calculate_regime_barriers(regime_characteristics)
         n_samples = len(data)
         labels = np.zeros(n_samples)
-        label_metadata = {'exit_index': np.full(n_samples, -1, dtype=int), 'holding_period': np.zeros(n_samples, dtype=int), 'exit_return': np.zeros(n_samples), 'exit_reason': [''] * n_samples, 'regime_at_entry': np.zeros(n_samples, dtype=int), 'regime_at_exit': np.zeros(n_samples, dtype=int), 'used_profit_barrier': np.zeros(n_samples), 'used_loss_barrier': np.zeros(n_samples)}
+        label_metadata = {'exit_index': np.full(n_samples, -1, dtype = int), 'holding_period': np.zeros(n_samples, dtype = int), 'exit_return': np.zeros(n_samples), 'exit_reason': [''] * n_samples, 'regime_at_entry': np.zeros(n_samples, dtype = int), 'regime_at_exit': np.zeros(n_samples, dtype = int), 'used_profit_barrier': np.zeros(n_samples), 'used_loss_barrier': np.zeros(n_samples)}
         close_prices = data['close'].values
         for i in range(n_samples - self.min_holding_period):
             entry_regime = regime_labels[i] if i < len(regime_labels) else 0
@@ -174,6 +179,7 @@ class TripleBarrierLabeler:
         if 'regime_label' not in labeled_data.columns and len(regime_labels) == len(labeled_data):
             labeled_data['regime_label'] = regime_labels
         return labeled_data
+    @log_all_calls
 
     def _calculate_regime_barriers(self, regime_characteristics: Dict[str, Any]) -> Dict[int, Dict[str, float]]:
         """Calculate regime-specific barrier parameters.
@@ -193,6 +199,7 @@ class TripleBarrierLabeler:
                 regime_barriers[regime_id] = {'profit_taking': self.profit_taking * volatility_multiplier, 'stop_loss': self.stop_loss * volatility_multiplier, 'max_holding': int(self.max_holding_period / volatility_multiplier)}
                 self.logger.info(f"Regime {regime_id} barriers: PT={regime_barriers[regime_id]['profit_taking']:.3f}, SL={regime_barriers[regime_id]['stop_loss']:.3f}, MH={regime_barriers[regime_id]['max_holding']}")
         return regime_barriers
+    @log_all_calls
 
     def _add_label_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add additional features derived from labels.
@@ -215,6 +222,7 @@ class TripleBarrierLabeler:
             if 'label_max_profit' in data.columns and 'label_max_loss' in data.columns:
                 data['label_profit_loss_ratio'] = np.where(data['label_max_loss'] < -0.0001, -data['label_max_profit'] / data['label_max_loss'], np.inf)
         return data
+    @log_all_calls
 
     def _log_labeling_summary(self, data: pd.DataFrame) -> None:
         """Log summary of labeling results.

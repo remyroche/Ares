@@ -1,11 +1,12 @@
 from datetime import datetime
 import numpy as np
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 '\nBayesian Probability Updates for Continuous Learning\nContinuously updates probability estimates with new market evidence\n'
 from typing import Any, Dict, List, Optional, Tuple
 from collections import deque
 from dataclasses import dataclass
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+from ..utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
 import logging
 import time
@@ -57,11 +58,11 @@ class BayesianProbabilityUpdater:
         for regime in self.regime_names:
             self.bayesian_models[regime] = {}
             self.update_history[regime] = []
-            self.evidence_cache[regime] = deque(maxlen=1000)
+            self.evidence_cache[regime] = deque(maxlen = 1000)
             for target in self.price_targets:
                 self.bayesian_models[regime][target] = {'alpha': self.prior_alpha, 'beta': self.prior_beta, 'evidence_count': 0, 'last_updated': datetime.now()}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='Bayesian updater initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='Bayesian updater initialization')
     async def initialize(self) -> bool:
         """
         Initialize the Bayesian Probability Updater.
@@ -85,8 +86,8 @@ class BayesianProbabilityUpdater:
         except Exception as e:
             self.logger.warning(f'Could not load existing models: {e}')
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='Bayesian probability update')
-    async def update_probability(self, target: str, regime: str, success: bool, confidence: float=1.0, metadata: Dict[str, Any]=None) -> Optional[BayesianUpdate]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='Bayesian probability update')
+    async def update_probability(self, target: str, regime: str, success: bool, confidence: float = 1.0, metadata: Dict[str, Any]=None) -> Optional[BayesianUpdate]:
         """
         Update probability for a specific target-regime combination.
         
@@ -125,7 +126,7 @@ class BayesianProbabilityUpdater:
             model['last_updated'] = datetime.now()
             evidence = {'target': target, 'success': success, 'confidence': confidence, 'timestamp': datetime.now(), 'metadata': metadata or {}}
             self.evidence_cache[regime].append(evidence)
-            update_result = BayesianUpdate(target=target, regime=regime, prior_alpha=current_alpha, prior_beta=current_beta, posterior_alpha=new_alpha, posterior_beta=new_beta, updated_probability=updated_probability, confidence_interval=confidence_interval, confidence=confidence_in_estimate, timestamp=datetime.now(), evidence_count=model['evidence_count'])
+            update_result = BayesianUpdate(target = target, regime = regime, prior_alpha = current_alpha, prior_beta = current_beta, posterior_alpha = new_alpha, posterior_beta = new_beta, updated_probability = updated_probability, confidence_interval = confidence_interval, confidence = confidence_in_estimate, timestamp = datetime.now(), evidence_count = model['evidence_count'])
             self.update_history[regime].append(update_result)
             self.logger.debug(f'Updated probability for {regime}-{target}: {updated_probability:.3f}')
             return update_result
@@ -156,8 +157,8 @@ class BayesianProbabilityUpdater:
             confidence = (confidence + variance_confidence) / 2
         return confidence
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='get updated probabilities')
-    async def get_updated_probabilities(self, regime: str, min_evidence: int=None) -> Optional[Dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='get updated probabilities')
+    async def get_updated_probabilities(self, regime: str, min_evidence: int = None) -> Optional[Dict[str, Any]]:
         """
         Get updated probabilities for a specific regime.
         
@@ -188,7 +189,7 @@ class BayesianProbabilityUpdater:
             self.logger.error(f'Error getting updated probabilities for regime {regime}: {e}')
             return None
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='batch probability update')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='batch probability update')
     async def batch_update_probabilities(self, regime: str, observations: List[Dict[str, Any]]) -> Optional[List[BayesianUpdate]]:
         """
         Update probabilities for multiple observations at once.
@@ -220,8 +221,8 @@ class BayesianProbabilityUpdater:
             self.logger.error(f'Error in batch update for regime {regime}: {e}')
             return None
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='regime comparison')
-    async def compare_regime_probabilities(self, regime1: str, regime2: str, target: str=None) -> Optional[Dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='regime comparison')
+    async def compare_regime_probabilities(self, regime1: str, regime2: str, target: str = None) -> Optional[Dict[str, Any]]:
         """
         Compare probabilities between two regimes.
         

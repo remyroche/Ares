@@ -1,6 +1,9 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 import pandas as pd
 import numpy as np
+from ....core.decorators import handles_errors
 
 'Step 16: Confidence Calibration - Updated to use BaseStep pattern.'
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +14,7 @@ import logging
 
 class ConfidenceCalibrationStep(BaseValidationStep):
     """Step 16: Confidence Calibration for model predictions."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Confidence Calibration step.
@@ -19,12 +23,14 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             config: Configuration dictionary
         """
         super().__init__(config, '16', 'confidence_calibration')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         self.calibration_config = {'method': self.config.get('calibration_method', 'isotonic'), 'cv_folds': self.config.get('calibration_cv_folds', 3), 'ensemble_calibration': self.config.get('ensemble_calibration', True), 'regime_specific_calibration': self.config.get('regime_specific_calibration', True), 'min_samples_for_calibration': self.config.get('min_samples_for_calibration', 100)}
         self.calibrated_models: Dict[str, Any] = {}
         self.calibration_metrics: Dict[str, Dict[str, float]] = {}
+    @log_all_calls
 
     def _validate_step_specific_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific inputs."""
@@ -52,7 +58,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             return pipeline_state
         models = self._get_models_for_validation(pipeline_state)
         from sklearn.model_selection import TimeSeriesSplit
-        tscv = TimeSeriesSplit(n_splits=max(2, int(self.calibration_config['cv_folds'])))
+        tscv = TimeSeriesSplit(n_splits = max(2, int(self.calibration_config['cv_folds'])))
         for model_name, model in models.items():
             if not hasattr(model, 'predict_proba'):
                 self.logger.info(f'Skipping {model_name} - no probability prediction')
@@ -72,7 +78,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         result[f'{self.full_step_name}_summary'] = self._create_validation_summary({'model_results': self.calibration_metrics, 'overall_metrics': self._calculate_overall_calibration_metrics()})
         return result
 
-    async def _calibrate_model(self, model: Any, X: pd.DataFrame, y: pd.Series, model_name: str, tscv: Any=None) -> Tuple[Optional[Any], Dict[str, float]]:
+    async def _calibrate_model(self, model: Any, X: pd.DataFrame, y: pd.Series, model_name: str, tscv: Any = None) -> Tuple[Optional[Any], Dict[str, float]]:
         """Calibrate a single model.
         
         Args:
@@ -89,7 +95,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             y_pred_proba = model.predict_proba(X)[:, 1]
             metrics['pre_calibration_brier'] = brier_score_loss(y, y_pred_proba)
             metrics['pre_calibration_log_loss'] = log_loss(y, y_pred_proba)
-            calibrated = CalibratedClassifierCV(model, method=self.calibration_config['method'], cv=tscv if tscv is not None else self.calibration_config['cv_folds'])
+            calibrated = CalibratedClassifierCV(model, method = self.calibration_config['method'], cv = tscv if tscv is not None else self.calibration_config['cv_folds'])
             calibrated.fit(X, y)
             holdout_frac = 0.2
             n = len(X)
@@ -127,13 +133,14 @@ class ConfidenceCalibrationStep(BaseValidationStep):
                         pred = model.predict_proba(X)[:, 1]
                         predictions.append(pred)
                 if predictions:
-                    ensemble_pred = np.mean(predictions, axis=0)
+                    ensemble_pred = np.mean(predictions, axis = 0)
                     temperature = self._find_optimal_temperature(ensemble_pred, y)
                     ensemble_calibrated['ensemble_temperature_scaled'] = {'models': calibrated_models, 'temperature': temperature, 'method': 'temperature_scaling'}
                     self.logger.info(f'Created temperature-scaled ensemble with T={temperature:.3f}')
             except Exception as e:
                 self.logger.error(f'Failed to create ensemble calibration: {str(e)}')
         return ensemble_calibrated
+    @log_all_calls
 
     def _find_optimal_temperature(self, predictions: np.ndarray, labels: np.ndarray) -> float:
         """Find optimal temperature for probability scaling.
@@ -146,14 +153,14 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             Optimal temperature value
         """
         from scipy.optimize import minimize
-        from .core.decorators.errors import handles_errors
-
+        
         def temperature_loss(t: Any) -> None:
             scaled_probs = predictions / t
             scaled_probs = np.clip(scaled_probs, 1e-07, 1 - 1e-07)
             return log_loss(labels, scaled_probs)
-        result = minimize(temperature_loss, x0=1.0, bounds=[(0.1, 10.0)])
+        result = minimize(temperature_loss, x0 = 1.0, bounds=[(0.1, 10.0)])
         return result.x[0] if result.success else 1.0
+    @log_all_calls
 
     def _calculate_overall_calibration_metrics(self) -> Dict[str, float]:
         """Calculate overall calibration metrics."""
@@ -172,6 +179,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         else:
             metrics['avg_log_loss_improvement'] = 0.0
         return metrics
+    @log_all_calls
 
     def _validate_step_specific_outputs(self, pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific outputs."""
@@ -181,6 +189,7 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         elif len(pipeline_state['calibrated_models']) == 0:
             errors.append('No models were successfully calibrated')
         return errors
+    @log_all_calls
 
     def _add_step_specific_summary(self, summary: Dict[str, Any], validation_results: Dict[str, Any]) -> None:
         """Add step-specific items to summary."""
@@ -205,3 +214,4 @@ class ConfidenceCalibrationStep(BaseValidationStep):
     def get_dependencies(self) -> List[str]:
         """Get list of step dependencies."""
         return ['step15_tactician_specialist_training']
+from typing import Dict, List, Optional, Union, Any, Tuple

@@ -41,14 +41,14 @@ def safe_pct_change(
         if fill_method:
             # Use modern pandas fillna syntax
             if fill_method == "ffill":
-                series = series.ffill(limit=limit)
+                series = series.ffill(limit = limit)
             elif fill_method == "bfill":
-                series = series.bfill(limit=limit)
+                series = series.bfill(limit = limit)
             else:
                 logger.warning(f"Unsupported fill_method: {fill_method}, using ffill")
-                series = series.ffill(limit=limit)
+                series = series.ffill(limit = limit)
         s = _coerce_series_numeric(series)
-        pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
+        pct_change = s.pct_change(periods = periods, freq = freq, **kwargs)
         inf_count = np.isinf(pct_change).sum()
         if int(inf_count) > 0:
             logger.warning(
@@ -59,7 +59,7 @@ def safe_pct_change(
         return pct_change.fillna(0)
     except Exception as e:
         logger.exception("Error in safe_pct_change: %s", e)
-        return pd.Series(0, index=series.index, dtype="float64")
+        return pd.Series(0, index = series.index, dtype="float64")
 
 
 def safe_log_returns(
@@ -77,14 +77,14 @@ def safe_log_returns(
     try:
         if fill_method:
             if fill_method == "ffill":
-                series = series.ffill(limit=limit)
+                series = series.ffill(limit = limit)
             elif fill_method == "bfill":
-                series = series.bfill(limit=limit)
+                series = series.bfill(limit = limit)
             else:
                 logger.warning(f"Unsupported fill_method: {fill_method}, using ffill")
-                series = series.ffill(limit=limit)
+                series = series.ffill(limit = limit)
         s = _coerce_series_numeric(series)
-        pct_change = s.pct_change(periods=periods, freq=freq, **kwargs)
+        pct_change = s.pct_change(periods = periods, freq = freq, **kwargs)
         log_returns = np.log1p(pct_change)
         inf_count = np.isinf(log_returns).sum()
         if int(inf_count) > 0:
@@ -96,7 +96,7 @@ def safe_log_returns(
         return log_returns.fillna(0)
     except Exception as e:
         logger.exception("Error in safe_log_returns: %s", e)
-        return pd.Series(0, index=series.index, dtype="float64")
+        return pd.Series(0, index = series.index, dtype="float64")
 
 
 def validate_dataframe_for_ml(
@@ -241,7 +241,7 @@ def safe_division(
             num_arr = np.asarray(numerator)
             den_arr = np.asarray(denominator)
             safe_mask = np.abs(den_arr) > 1e-12
-            out = np.full_like(num_arr, fill_value, dtype=float)
+            out = np.full_like(num_arr, fill_value, dtype = float)
             with np.errstate(divide="ignore", invalid="ignore"):
                 out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
             return (
@@ -255,14 +255,14 @@ def safe_division(
         num_arr = np.asarray(numerator)
         den_arr = np.asarray(denominator)
         safe_mask = np.abs(den_arr) > 1e-12
-        out = np.full_like(num_arr, fill_value, dtype=float)
+        out = np.full_like(num_arr, fill_value, dtype = float)
         with np.errstate(divide="ignore", invalid="ignore"):
             out[safe_mask] = num_arr[safe_mask] / den_arr[safe_mask]
         return out
     except Exception as e:
         logger.exception("Error in safe_division for %s: %s", context, e)
         if isinstance(numerator, pd.Series):
-            return pd.Series(fill_value, index=numerator.index)
+            return pd.Series(fill_value, index = numerator.index)
         if isinstance(numerator, np.ndarray):
-            return np.full_like(numerator, fill_value, dtype=float)
+            return np.full_like(numerator, fill_value, dtype = float)
         return fill_value

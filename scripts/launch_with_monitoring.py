@@ -40,8 +40,8 @@ def launch_bot_with_monitoring():
         bot_process.terminate()
         monitor_process.terminate()
         try:
-            bot_process.wait(timeout=5)
-            monitor_process.wait(timeout=5)
+            bot_process.wait(timeout = 5)
+            monitor_process.wait(timeout = 5)
         except Exception:
             bot_process.kill()
             monitor_process.kill()

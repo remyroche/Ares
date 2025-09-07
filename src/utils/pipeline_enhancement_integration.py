@@ -6,13 +6,14 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.enhanced_step_wrapper import enhanced_pipeline_manager
 from src.utils.data_streaming_manager import data_streaming_manager
 from src.utils.cross_step_validator import cross_step_validator
 from src.utils.advanced_quality_metrics import advanced_quality_metrics
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+from .logger import system_logger
 
 class PipelineEnhancementIntegration:
     """Integration class for all pipeline enhancements."""
@@ -65,7 +66,7 @@ class PipelineEnhancementIntegration:
 
     def _create_sample_data(self) -> pd.DataFrame:
         """Create sample data for demonstration."""
-        dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
+        dates = pd.date_range('2024-01-01', periods = 1000, freq='1min')
         np.random.seed(42)
         base_price = 100.0
         returns = np.random.normal(0, 0.001, len(dates))
@@ -86,7 +87,7 @@ class PipelineEnhancementIntegration:
             chunk['ma_5'] = chunk['close'].rolling(5).mean()
             return chunk
         try:
-            result = data_streaming_manager.process_large_dataset(data, sample_processing_func, combine_results=True)
+            result = data_streaming_manager.process_large_dataset(data, sample_processing_func, combine_results = True)
             streaming_metrics = data_streaming_manager.get_performance_metrics()
             return {'success': True, 'original_rows': len(data), 'processed_rows': len(result), 'streaming_metrics': streaming_metrics, 'new_columns': ['ma_5']}
         except Exception as e:

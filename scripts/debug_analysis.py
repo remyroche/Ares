@@ -6,8 +6,8 @@ def debug_triple_barrier():
     """Debug the triple barrier logic with a simple example"""
 
     # Create a simple test dataset with known price movements
-    test_data=pd.DataFrame({
-        "timestamp": pd.date_range("2023-07-28 10:00:00", periods=10, freq="1min"),
+    test_data = pd.DataFrame({
+        "timestamp": pd.date_range("2023-07-28 10:00:00", periods = 10, freq="1min"),
         "price": [1850, 1855, 1860, 1865, 1870, 1875, 1880, 1885, 1890, 1895],
     })
 
@@ -20,28 +20,28 @@ def debug_triple_barrier():
     stop_pct = 0.1    # 0.1%
 
 
-    prices=test_data["price"].values
+    prices = test_data["price"].values
     timestamps = test_data["timestamp"].values
 
     occurrences = 0
     total_attempts = 0
 
     for i in range(len(test_data) - 1):
-        start_price=prices[i]
+        start_price = prices[i]
         start_time = timestamps[i]
 
         print(f"\nStarting from price ${start_price:.2f} at {start_time}")
 
         # Calculate target and stop prices
-        up_stop=start_price * (1 + stop_pct / 100)
-        down_stop=start_price * (1 - stop_pct / 100)
+        up_stop = start_price * (1 + stop_pct / 100)
+        down_stop = start_price * (1 - stop_pct / 100)
 
         print(f"  Up stop: ${up_stop:.2f} (${start_price:.2f} + {stop_pct}%)")
         print(f"  Down stop: ${down_stop:.2f} (${start_price:.2f} - {stop_pct}%)")
 
         # Look ahead
         for j in range(i + 1, len(test_data)):
-            current_price=prices[j]
+            current_price = prices[j]
             current_time = timestamps[j]
 
             print(f"    Checking price ${current_price:.2f} at {current_time}")

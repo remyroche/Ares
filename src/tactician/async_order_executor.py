@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ...utils.logger import system_logger
+from .core.decorators import handles_errors
 """
 Async Order Executor with Advanced Analytics and Dynamic Parameter Optimization
 Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for optimization.
@@ -18,9 +20,8 @@ except Exception:
     def setup_performance_reporter(*_a, **_k) -> None:
         return None
 from src.tactician.enhanced_order_manager import EnhancedOrderManager, OrderRequest, OrderSide, OrderType
-from src.utils.logger import system_logger
+from ...utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, invalid
-from src.core.decorators import handles_errors
 import numpy as np
 import logging
 
@@ -54,7 +55,7 @@ class ExecutionRequest:
     min_fill_ratio: float = 0.8
     client_order_id: str | None = None
     strategy_id: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class ExecutionResult:
@@ -72,8 +73,8 @@ class ExecutionResult:
     status: ExecutionStatus
     orders_placed: list[str]
     fills: list[dict[str, Any]]
-    metadata: dict[str, Any] = field(default_factory=dict)
-    performance_metrics: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory = dict)
+    performance_metrics: dict[str, Any] = field(default_factory = dict)
 
 class AsyncOrderExecutor:
     """
@@ -111,7 +112,7 @@ class AsyncOrderExecutor:
         self.total_volume_executed = 0.0
         self.total_slippage = 0.0
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='order executor initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='order executor initialization')
     async def initialize(self) -> bool:
         """
         Initialize the order executor.
@@ -152,7 +153,7 @@ class AsyncOrderExecutor:
             self.logger.exception(failed(f'❌ Configuration validation failed: {e}'))
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='order execution')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='order execution')
     async def execute_order(self, request: ExecutionRequest) -> ExecutionResult | None:
         """
         Execute an order using the specified strategy.
@@ -166,7 +167,7 @@ class AsyncOrderExecutor:
         try:
             execution_id = str(uuid4())
             self.logger.info(f'Starting order execution {execution_id} for {request.symbol}')
-            result = ExecutionResult(execution_id=execution_id, symbol=request.symbol, side=request.side, requested_quantity=request.quantity, executed_quantity=0.0, average_price=0.0, total_cost=0.0, commission=0.0, slippage=0.0, execution_time=0.0, status=ExecutionStatus.PENDING, orders_placed=[], fills=[])
+            result = ExecutionResult(execution_id = execution_id, symbol = request.symbol, side = request.side, requested_quantity = request.quantity, executed_quantity = 0.0, average_price = 0.0, total_cost = 0.0, commission = 0.0, slippage = 0.0, execution_time = 0.0, status = ExecutionStatus.PENDING, orders_placed=[], fills=[])
             self.active_executions[execution_id] = result
             start_time = time.time()
             if request.strategy == ExecutionStrategy.IMMEDIATE:
@@ -219,7 +220,7 @@ class AsyncOrderExecutor:
             bool: True if successful
         """
         try:
-            order_request = OrderRequest(symbol=request.symbol, side=request.side, order_type=OrderType.MARKET, quantity=request.quantity, strategy_id=request.strategy_id, order_link_id=request.client_order_id or str(uuid4()))
+            order_request = OrderRequest(symbol = request.symbol, side = request.side, order_type = OrderType.MARKET, quantity = request.quantity, strategy_id = request.strategy_id, order_link_id = request.client_order_id or str(uuid4()))
             order_state = await self.order_manager.create_order(order_request)
             if not order_state:
                 return False
@@ -257,7 +258,7 @@ class AsyncOrderExecutor:
                     break
                 remaining_quantity = request.quantity - result.executed_quantity
                 slice_qty = min(slice_quantity, remaining_quantity)
-                order_request = OrderRequest(symbol=request.symbol, side=request.side, order_type=OrderType.MARKET, quantity=slice_qty, strategy_id=request.strategy_id, order_link_id=f'{request.client_order_id}_slice_{i}' if request.client_order_id else str(uuid4()))
+                order_request = OrderRequest(symbol = request.symbol, side = request.side, order_type = OrderType.MARKET, quantity = slice_qty, strategy_id = request.strategy_id, order_link_id = f'{request.client_order_id}_slice_{i}' if request.client_order_id else str(uuid4()))
                 order_state = await self.order_manager.create_order(order_request)
                 if order_state:
                     result.orders_placed.append(order_state.order_id)
@@ -312,7 +313,7 @@ class AsyncOrderExecutor:
                     break
                 remaining_quantity = request.quantity - result.executed_quantity
                 slice_qty = min(visible_quantity, remaining_quantity)
-                order_request = OrderRequest(symbol=request.symbol, side=request.side, order_type=OrderType.LIMIT, quantity=slice_qty, price=request.price, iceberg_qty=slice_qty, strategy_id=request.strategy_id, order_link_id=f'{request.client_order_id}_iceberg_{i}' if request.client_order_id else str(uuid4()))
+                order_request = OrderRequest(symbol = request.symbol, side = request.side, order_type = OrderType.LIMIT, quantity = slice_qty, price = request.price, iceberg_qty = slice_qty, strategy_id = request.strategy_id, order_link_id = f'{request.client_order_id}_iceberg_{i}' if request.client_order_id else str(uuid4()))
                 order_state = await self.order_manager.create_order(order_request)
                 if order_state:
                     result.orders_placed.append(order_state.order_id)
@@ -347,7 +348,7 @@ class AsyncOrderExecutor:
                 trial.suggest_int('num_slices', 1, 20)
                 trial.suggest_float('slice_interval', 10, 300)
                 return 0.0
-            study.optimize(objective, n_trials=5)
+            study.optimize(objective, n_trials = 5)
             return await self._execute_twap(request, result)
         except Exception as e:
             self.logger.exception(failed(f'❌ Adaptive execution failed: {e}'))

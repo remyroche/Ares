@@ -2,6 +2,7 @@ from typing import Optional
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ...utils.logger import system_logger
 '\nComprehensive S/R Detection Integration Module\n\nThis module integrates all S/R detection components to provide a unified interface\nfor the step02_5_sr_optimization pipeline step.\n'
 from datetime import datetime
 from .sr_strength_optimizer import SRStrengthOptimizer
@@ -17,7 +18,7 @@ from .sr_parameter_optimizer import SRParameterOptimizer
 from .sr_performance_monitor import SRPerformanceMonitor
 from .sr_weight_optimizer import SRWeightOptimizer
 from .sr_levels_manager import SRLevelsManager
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -210,7 +211,7 @@ class SRComprehensiveIntegration:
             self.logger.error(f'Failed to initialize levels manager: {e}')
             return False
 
-    async def detect_sr_levels(self, market_data: pd.DataFrame, timeframe: str='1m', use_ensemble: bool=True) -> Dict[str, Any]:
+    async def detect_sr_levels(self, market_data: pd.DataFrame, timeframe: str='1m', use_ensemble: bool = True) -> Dict[str, Any]:
         """
         Detect S/R levels using all available components.
         
@@ -319,7 +320,7 @@ class SRComprehensiveIntegration:
                     self.logger.error(f'Weight optimizer failed: {e}')
             if self.components['enhanced_optimizer']:
                 try:
-                    enhanced_result = await self.components['enhanced_optimizer'].optimize(market_data, current_params=optimized_params)
+                    enhanced_result = await self.components['enhanced_optimizer'].optimize(market_data, current_params = optimized_params)
                     optimized_params.update(enhanced_result)
                     optimized_params['metadata']['optimizers_used'].append('enhanced_optimizer')
                 except Exception as e:

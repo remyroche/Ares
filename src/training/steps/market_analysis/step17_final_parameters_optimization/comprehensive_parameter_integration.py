@@ -1,6 +1,8 @@
 
 from datetime import datetime
 import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """
 Comprehensive Parameter Integration for Step17
 
@@ -31,14 +33,16 @@ class ComprehensiveParameterIntegration:
     Comprehensive parameter integration ensuring all step17 optimized parameters
     are actually applied and used throughout the system.
     """
+    @log_important_calls
 
-    def __init__(self, config: Dict[str, Any], training_manager: Any=None) -> None:
+    def __init__(self, config: Dict[str, Any], training_manager: Any = None) -> None:
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
         self.step_parameter_mapping = self._create_step_parameter_mapping()
         self.integration_status = {}
         self.parameter_validation = {}
+    @log_all_calls
 
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
         """Create comprehensive mapping of ML model trading parameters from all steps."
@@ -75,6 +79,7 @@ class ComprehensiveParameterIntegration:
         if self.training_manager and hasattr(self.training_manager, 'get_step_parameters'):
             return await self.training_manager.get_step_parameters(step_name)
         return self._get_default_step_parameters(step_name, step_config)
+    @log_all_calls
 
     def _get_default_step_parameters(self, step_name: str, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """Get default parameters for a step based on configuration."""
@@ -175,6 +180,7 @@ class ComprehensiveParameterIntegration:
             validation['validation_score'] = 0.0
             validation['validation_errors'].append(str(e))
         return validation
+    @log_all_calls
 
     def _log_parameter_application_to_mlflow(self, application_results: Dict[str, Any]) -> None:
         """Log parameter application results to MLflow."""
@@ -190,9 +196,26 @@ class ComprehensiveParameterIntegration:
             if validation:
                 mlflow.log_metric('validation_passed', 1 if validation.get('validation_passed') else 0)
                 mlflow.log_metric('overall_validation_score', validation.get('validation_metrics', {}).get('overall_validation_score', 0))
-            with open('parameter_application_results.json', 'w') as f:
-                json.dump(application_results, f, indent=2, default=str)
-            mlflow.log_artifact('parameter_application_results.json', 'parameter_application')
+            # Save parameter application results using centralized reporting system
+            from src.training.reports import save_training_report
+
+            # Get symbol and timeframe from application results or use defaults
+            symbol = application_results.get('symbol', 'UNKNOWN')
+            timeframe = application_results.get('timeframe', '1m')
+
+            report_path = save_training_report(
+                data=application_results,
+                step_name='step17_final_parameters_optimization',
+                report_type='parameter_application_results',
+                symbol=symbol,
+                timeframe=timeframe,
+                file_format='json'
+            )
+
+            self.logger.info(f'💾 Parameter application results saved to: {report_path}')
+
+            # Still log to MLflow for backward compatibility
+            mlflow.log_artifact(report_path, 'parameter_application')
             self.logger.info('✅ Parameter application results logged to MLflow')
         except Exception as e:
             self.logger.error(f'Failed to log to MLflow: {e}')
@@ -200,6 +223,7 @@ class ComprehensiveParameterIntegration:
     async def get_integration_status(self) -> Dict[str, Any]:
         """Get comprehensive integration status."""
         return {'integration_completed': bool(self.integration_status), 'total_steps_integrated': len(self.integration_status), 'parameter_validation_status': self.parameter_validation, 'integration_timestamp': datetime.now().isoformat(), 'recommendations': self._generate_integration_recommendations()}
+    @log_all_calls
 
     def _generate_integration_recommendations(self) -> List[str]:
         """Generate recommendations based on integration status."""
@@ -239,21 +263,21 @@ class ComprehensiveParameterIntegration:
         """Store integration results for future reference."""
         try:
             results_dir = Path('data/integration/step17')
-            results_dir.mkdir(parents=True, exist_ok=True)
+            results_dir.mkdir(parents = True, exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'step17_integration_results_{timestamp}.json'
             filepath = results_dir / filename
             with open(filepath, 'w') as f:
-                json.dump(integration_report, f, indent=2, default=str)
+                json.dump(integration_report, f, indent = 2, default = str)
             metadata_file = results_dir / 'step17_integration_metadata.json'
             metadata = {'last_integration': timestamp, 'total_steps_integrated': len(integration_report.get('integration_status', {}).get('parameters_applied', {})), 'integration_status': 'completed', 'validation_passed': integration_report.get('parameter_validation', {}).get('validation_passed', False)}
             with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2, default=str)
+                json.dump(metadata, f, indent = 2, default = str)
             self.logger.info(f'✅ Integration results stored to {filepath}')
         except Exception as e:
             self.logger.error(f'❌ Failed to store integration results: {e}')
 
-def create_comprehensive_parameter_integration(config: Dict[str, Any], training_manager: Any=None) -> Any:
+def create_comprehensive_parameter_integration(config: Dict[str, Any], training_manager: Any = None) -> Any:
     """Create comprehensive parameter integration instance."""
     return ComprehensiveParameterIntegration(config, training_manager)
 if __name__ == '__main__':

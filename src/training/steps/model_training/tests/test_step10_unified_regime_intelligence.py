@@ -27,9 +27,9 @@ class TestRegimeIntelligenceAnalyzer:
     @pytest.fixture
     def sample_data(self) -> None:
         """Create sample data for testing."""
-        hmm_states = {'5m': np.random.randint(0, 5, size=100), '15m': np.random.randint(0, 5, size=100), '30m': np.random.randint(0, 5, size=100)}
-        dates = pd.date_range(start='2024-01-01', periods=100, freq='5min')
-        market_features = pd.DataFrame({'returns': np.random.randn(100), 'volume': np.random.rand(100) * 1000000, 'volatility': np.random.rand(100) * 0.02}, index=dates)
+        hmm_states = {'5m': np.random.randint(0, 5, size = 100), '15m': np.random.randint(0, 5, size = 100), '30m': np.random.randint(0, 5, size = 100)}
+        dates = pd.date_range(start='2024-01-01', periods = 100, freq='5min')
+        market_features = pd.DataFrame({'returns': np.random.randn(100), 'volume': np.random.rand(100) * 1000000, 'volatility': np.random.rand(100) * 0.02}, index = dates)
         return (hmm_states, market_features)
 
     def test_analyze_regime_states(self, analyzer: Any, sample_data: Any) -> None:
@@ -73,13 +73,13 @@ class TestRegimeMetricsCalculator:
     @pytest.fixture
     def sample_regime_data(self) -> None:
         """Create sample regime analysis data."""
-        return {'regime_states': {'15m': np.random.randint(0, 5, size=100)}, 'intensity_scores': {'15m': np.random.rand(100)}}
+        return {'regime_states': {'15m': np.random.randint(0, 5, size = 100)}, 'intensity_scores': {'15m': np.random.rand(100)}}
 
     @pytest.fixture
     def sample_price_data(self) -> None:
         """Create sample price data."""
-        dates = pd.date_range(start='2024-01-01', periods=100, freq='5min')
-        return pd.DataFrame({'close': 100 + np.random.randn(100).cumsum(), 'high': 101 + np.random.randn(100).cumsum(), 'low': 99 + np.random.randn(100).cumsum(), 'volume': np.random.rand(100) * 1000000}, index=dates)
+        dates = pd.date_range(start='2024-01-01', periods = 100, freq='5min')
+        return pd.DataFrame({'close': 100 + np.random.randn(100).cumsum(), 'high': 101 + np.random.randn(100).cumsum(), 'low': 99 + np.random.randn(100).cumsum(), 'volume': np.random.rand(100) * 1000000}, index = dates)
 
     def test_calculate_regime_metrics(self, calculator: Any, sample_regime_data: Any, sample_price_data: Any) -> None:
         """Test regime metrics calculation."""
@@ -133,8 +133,8 @@ class TestRegimeTransitionAnalyzer:
         assert 'stability_score' in results
         assert results['transition_matrix'] is not None
         assert results['transition_matrix'].shape == (5, 5)
-        row_sums = results['transition_matrix'].sum(axis=1)
-        np.testing.assert_allclose(row_sums[row_sums > 0], 1.0, rtol=1e-06)
+        row_sums = results['transition_matrix'].sum(axis = 1)
+        np.testing.assert_allclose(row_sums[row_sums > 0], 1.0, rtol = 1e-06)
 
     def test_build_transition_matrix(self, analyzer: Any) -> None:
         """Test transition matrix construction."""
@@ -165,8 +165,8 @@ class TestUnifiedRegimeIntelligenceStep:
     @pytest.fixture
     def valid_pipeline_state(self) -> None:
         """Create valid pipeline state."""
-        dates = pd.date_range(start='2024-01-01', periods=100, freq='5min')
-        return {'hmm_states': {'5m': np.random.randint(0, 5, size=100), '15m': np.random.randint(0, 5, size=100)}, 'market_features': pd.DataFrame({'returns': np.random.randn(100), 'volume': np.random.rand(100) * 1000000}, index=dates), 'price_data': pd.DataFrame({'close': 100 + np.random.randn(100).cumsum()}, index=dates), 'regime_labels': np.random.randint(0, 5, size=100)}
+        dates = pd.date_range(start='2024-01-01', periods = 100, freq='5min')
+        return {'hmm_states': {'5m': np.random.randint(0, 5, size = 100), '15m': np.random.randint(0, 5, size = 100)}, 'market_features': pd.DataFrame({'returns': np.random.randn(100), 'volume': np.random.rand(100) * 1000000}, index = dates), 'price_data': pd.DataFrame({'close': 100 + np.random.randn(100).cumsum()}, index = dates), 'regime_labels': np.random.randint(0, 5, size = 100)}
 
     def test_initialization(self, step: Any) -> None:
         """Test step initialization."""
@@ -218,7 +218,7 @@ class TestUnifiedRegimeIntelligenceStep:
     async def test_execute_logic(self, step: Any, valid_pipeline_state: Any) -> None:
         """Test execution logic."""
         training_input = {'train_model': False}
-        with patch.object(step, '_train_regime_model', new_callable=AsyncMock) as mock_train:
+        with patch.object(step, '_train_regime_model', new_callable = AsyncMock) as mock_train:
             mock_train.return_value = (Mock(), {'loss': [0.5]})
             result = await step.execute_logic(training_input, valid_pipeline_state)
         assert 'regime_analysis' in result

@@ -1,6 +1,8 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from src.utils.decorators import handles_errors
 
 """Step 1: Data Collection.
 
@@ -12,18 +14,19 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import pandas as pd
-from src.utils.decorators.errors import handles_errors
-REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
+REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_collection.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 CONFIG = PipelineStandards.safe_import('src.config', None)
 _logger_module = PipelineStandards.safe_import('src.utils.logger', None)
 system_logger = getattr(_logger_module, 'system_logger', None) if _logger_module else None
 handle_errors = PipelineStandards.safe_import('src.utils.error_handler', None)
-_downloader_module = PipelineStandards.safe_import('src.training.steps.data_downloader', None)
+_downloader_module = PipelineStandards.safe_import('src.training.steps.data_collection.data_downloader', None)
 download_all_data_with_consolidation = getattr(_downloader_module, 'download_all_data_with_consolidation', None) if _downloader_module else None
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 centralized_decorators = PipelineStandards.safe_import('src.utils.centralized_decorators', None)
@@ -33,7 +36,7 @@ def create_fallback_logger() -> Any:
     import collections
     import time
     
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator() -> Any:
@@ -82,12 +85,14 @@ else:
 
 class DataCollectionStep:
     """Step 1: Data Collection using standardized pipeline utilities."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('DataCollectionStep')
         self.standards = pipeline_standards
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -160,12 +165,12 @@ class DataCollectionStep:
             if pipeline_state.get('data_collection_completed', False):
                 artifacts_generated.extend([f'{exchange}_{symbol}_{timeframe}_klines.parquet', f'{exchange}_{symbol}_{timeframe}_trades.parquet', f'{exchange}_{symbol}_{timeframe}_orderbook.parquet'])
             metrics_calculated = {'data_collection_success': 1.0 if pipeline_state.get('data_collection_completed', False) else 0.0, 'quality_check_passed': 1.0 if pipeline_state.get('quality_check_passed', False) else 0.0, 'total_artifacts_generated': len(artifacts_generated)}
-            report_data = create_detailed_step_report(step_name='step01_data_collection', step_data=pipeline_state, training_input=training_input, execution_metadata=execution_metadata, artifacts_generated=artifacts_generated, metrics_calculated=metrics_calculated, errors_encountered=[] if pipeline_state.get('data_collection_completed', False) else ['Data collection failed'])
-            report_name = log_step_report(config=self.config, step_name='step01_data_collection', report_data=report_data, report_type='data_collection_report', additional_metadata={'data_collection_success': pipeline_state.get('data_collection_completed', False), 'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+            report_data = create_detailed_step_report(step_name='step01_data_collection', step_data = pipeline_state, training_input = training_input, execution_metadata = execution_metadata, artifacts_generated = artifacts_generated, metrics_calculated = metrics_calculated, errors_encountered=[] if pipeline_state.get('data_collection_completed', False) else ['Data collection failed'])
+            report_name = log_step_report(config = self.config, step_name='step01_data_collection', report_data = report_data, report_type='data_collection_report', additional_metadata={'data_collection_success': pipeline_state.get('data_collection_completed', False), 'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
             self.logger.info(f'✅ Logged data collection report: {report_name}')
-            quality_report_name = log_step_report(config=self.config, step_name='step01_data_collection', report_data={'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'data_collection_completed': pipeline_state.get('data_collection_completed', False), 'artifacts_generated': artifacts_generated}, report_type='data_quality_summary', additional_metadata={'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+            quality_report_name = log_step_report(config = self.config, step_name='step01_data_collection', report_data={'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'data_collection_completed': pipeline_state.get('data_collection_completed', False), 'artifacts_generated': artifacts_generated}, report_type='data_quality_summary', additional_metadata={'quality_check_passed': pipeline_state.get('quality_check_passed', False), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
             self.logger.info(f'✅ Logged data quality summary: {quality_report_name}')
-            log_step_metrics(config=self.config, step_name='step01_data_collection', metrics=metrics_calculated, additional_metadata={'metrics_type': 'data_collection_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
+            log_step_metrics(config = self.config, step_name='step01_data_collection', metrics = metrics_calculated, additional_metadata={'metrics_type': 'data_collection_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': training_input.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1.0.0')})
             self.logger.info('✅ Step 1 artifacts and reports logged successfully')
         except Exception as e:
             self.logger.exception(f'❌ Failed to log step 1 artifacts and reports: {e}')
@@ -204,6 +209,7 @@ class DataCollectionStep:
         except Exception as e:
             self.logger.exception(f'❌ Error validating {file_name}: {e}')
             return None
+    @log_all_calls
 
     def _determine_schema_name(self, file_name: str) -> str:
         """Determine schema name based on file name."""
@@ -213,6 +219,7 @@ class DataCollectionStep:
             return 'aggtrades'
         else:
             return 'unified'
+    @log_all_calls
 
     def _log_validation_result(self, file_name: str, validation_result: Any) -> None:
         """Log validation result details."""
@@ -222,20 +229,23 @@ class DataCollectionStep:
             self.logger.warning(f'⚠️ {file_name} quality check issues:')
             self._log_issues(validation_result.issues)
         self._log_warnings(validation_result.warnings)
+    @log_all_calls
 
-    def _log_issues(self, issues: List[Any], max_display: int=3) -> None:
+    def _log_issues(self, issues: List[Any], max_display: int = 3) -> None:
         """Log validation issues."""
         for issue in issues[:max_display]:
             self.logger.warning(f'   - {issue.message}')
         if len(issues) > max_display:
             self.logger.warning(f'   ... and {len(issues) - max_display} more issues')
+    @log_all_calls
 
-    def _log_warnings(self, warnings: List[Any], max_display: int=3) -> None:
+    def _log_warnings(self, warnings: List[Any], max_display: int = 3) -> None:
         """Log validation warnings."""
         for warning in warnings[:max_display]:
             self.logger.info(f'   ⚠️ {warning.message}')
         if len(warnings) > max_display:
             self.logger.info(f'   ... and {len(warnings) - max_display} more warnings')
+    @log_all_calls
 
     def _process_quality_results(self, quality_results: List[Any]) -> bool:
         """Process and summarize quality results."""
@@ -267,9 +277,9 @@ class DataCollectionStep:
                 self.logger.error('❌ Exchange parameter is required')
                 return False
             self.logger.info(f'📊 Downloading data for {exchange}_{symbol}_{timeframe}')
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             if download_all_data_with_consolidation:
-                success = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe, data_dir=data_dir)
+                success = await download_all_data_with_consolidation(symbol = symbol, exchange_name = exchange, interval = timeframe, data_dir = data_dir)
                 if success:
                     self.logger.info('✅ Data download completed successfully')
                     validation_success = await self._validate_downloaded_data(symbol, exchange, timeframe, data_dir)
@@ -338,8 +348,8 @@ class DataCollectionStep:
             self.logger.info('📊 Creating mock data for fallback collection...')
             from datetime import datetime, timedelta
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            timestamps = pd.date_range(start=start_date, end=end_date, freq='1min')
+            start_date = end_date - timedelta(days = 30)
+            timestamps = pd.date_range(start = start_date, end = end_date, freq='1min')
             np.random.seed(42)
             base_price = 3000.0
             price_changes = np.random.normal(0, 0.002, len(timestamps))
@@ -564,8 +574,8 @@ class DataCollectionStep:
             logger.info('=' * 80)
 
 @monitor_data_collection()
-@handles_errors(fallback=False)
-async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str=None, force_rerun: bool=False, **kwargs: Any) -> bool:
+@handles_errors(fallback = False)
+async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the data collection step.
 
     Args:
@@ -677,7 +687,7 @@ if __name__ == '__main__':
             print('Usage: python step1_data_collection.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
             print('Example: python step1_data_collection.py ETHUSDT BINANCE 1m data_cache true')
             return
-        success = await run_step(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+        success = await run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
         if success:
             print('✅ Step 1: Data Collection completed successfully')
         else:

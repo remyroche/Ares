@@ -8,7 +8,7 @@ from typing import Any
 
 
 from .transition.state_sequence_builder import StateSequenceBuilder
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -42,16 +42,16 @@ class EventWindowDatasetBuilder:
         self.logger = system_logger.getChild("EventWindowDatasetBuilder")
         tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
         self.ds_cfg = WindowDatasetConfig(
-            pre_window=int(tm_cfg.get("pre_window", 60)),
-            post_window=int(tm_cfg.get("post_window", 20)),
-            max_events_per_label=int(tm_cfg.get("max_events_per_label", 10000)),
-            duplicate_similarity_threshold=float(
+            pre_window = int(tm_cfg.get("pre_window", 60)),
+            post_window = int(tm_cfg.get("post_window", 20)),
+            max_events_per_label = int(tm_cfg.get("max_events_per_label", 10000)),
+            duplicate_similarity_threshold = float(
                 tm_cfg.get("early_pruning", {}).get(
                     "duplicate_similarity_threshold",
                     0.98,
                 ),
             ),
-            downsample_near_duplicates=bool(
+            downsample_near_duplicates = bool(
                 tm_cfg.get("early_pruning", {}).get(
                     "downsample_near_duplicate_sequences",
                     True,
@@ -60,8 +60,8 @@ class EventWindowDatasetBuilder:
         )
         self.state_builder = StateSequenceBuilder(
             config,
-            exchange=exchange,
-            symbol=symbol,
+            exchange = exchange,
+            symbol = symbol,
         )
         self.cache_dir = str(
             (tm_cfg.get("cache", {}) or {}).get(
@@ -124,7 +124,7 @@ class EventWindowDatasetBuilder:
         # Try dataset cache
         try:
             if self.cache_dir:
-                os.makedirs(self.cache_dir, exist_ok=True)
+                os.makedirs(self.cache_dir, exist_ok = True)
                 key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
                 p = os.path.join(self.cache_dir, key)
                 meta_p = os.path.join(self.cache_dir, key + ".meta.json")
@@ -214,10 +214,10 @@ class EventWindowDatasetBuilder:
                         errors="coerce",
                     )
                     .fillna(0.0)
-                    .to_numpy(dtype=float)
+                    .to_numpy(dtype = float)
                 )
             else:
-                X_num = np.zeros((pre, 0), dtype=float)
+                X_num = np.zeros((pre, 0), dtype = float)
             # Macro context at t0 (static across pre-window for simplicity)
             if bool(self.ctx_cfg.get("enable_macro_context", True)):
                 try:
@@ -252,11 +252,11 @@ class EventWindowDatasetBuilder:
                             [float(combined_num["4h_hmm_state"].iloc[i0])],
                         )
                     if macro_cols:
-                        macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
+                        macro_vec = np.concatenate(macro_cols, axis = 0).astype(float)
                         # replicate across pre timesteps
-                        rep = np.repeat(macro_vec.reshape(1, -1), repeats=pre, axis=0)
+                        rep = np.repeat(macro_vec.reshape(1, -1), repeats = pre, axis = 0)
                         X_num = (
-                            np.concatenate([X_num, rep], axis=1) if X_num.size else rep
+                            np.concatenate([X_num, rep], axis = 1) if X_num.size else rep
                         )
                 except Exception:
                     pass
@@ -265,12 +265,12 @@ class EventWindowDatasetBuilder:
             ret_seq = (close[i0 + 1 : i0 + 1 + post] / close[i0] - 1.0).astype(float)
             # Time to PT (approx using close path)
             tt_pt = -1
-            for t, r in enumerate(ret_seq, start=1):
+            for t, r in enumerate(ret_seq, start = 1):
                 if r >= self.pt_mult:
                     tt_pt = t
                     break
             # Multi-hot labels at t0
-            mh = np.zeros(len(all_labels), dtype=np.float32)
+            mh = np.zeros(len(all_labels), dtype = np.float32)
             # include anchor and secondaries
             mh[label_to_idx[ev["event_label"]]] = 1.0
             for s in ev.get("secondary_labels") or []:
@@ -303,7 +303,7 @@ class EventWindowDatasetBuilder:
             kept: list[dict[str, Any]] = []
             vectors: list[np.ndarray] = []
             for s in samples:
-                v = np.array(list(s["rf_features"].values()), dtype=float)
+                v = np.array(list(s["rf_features"].values()), dtype = float)
                 if v.size == 0:
                     kept.append(s)
                     vectors.append(v)

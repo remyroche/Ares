@@ -72,13 +72,13 @@ class SROptimizationRunner:
     """
 
     def __init__(self, config: dict[str, Any]):
-        self.config=config
+        self.config = config
         self.logger = logging.getLogger(__name__)
 
         # S/R optimization configuration
-        self.sr_config=SROptimizationParameters()
+        self.sr_config = SROptimizationParameters()
         if "sr_optimization" in config:
-            sr_config_dict=config["sr_optimization"]
+            sr_config_dict = config["sr_optimization"]
             for key, value in sr_config_dict.items():
                 if hasattr(self.sr_config, key):
                     setattr(self.sr_config, key, value)
@@ -89,17 +89,17 @@ class SROptimizationRunner:
             raise ValueError(msg)
 
         # Initialize optimizer
-        self.optimizer=AdvancedOptunaManager(
+        self.optimizer = AdvancedOptunaManager(
             storage_url="sqlite:///sr_optuna_studies.db",
             study_name_prefix="sr_optimization",
-            config=config,
+            config = config,
         )
 
         # Results storage
-        self.optimization_results: OptimizationResult | None=None
+        self.optimization_results: OptimizationResult | None = None
         self.study: optuna.Study | None = None
 
-    def prepare_sample_data(self, n_samples: int=2000) -> tuple[pd.DataFrame, pd.Series]:
+    def prepare_sample_data(self, n_samples: int = 2000) -> tuple[pd.DataFrame, pd.Series]:
         """
         Prepare sample price data for S/R optimization.
 
@@ -111,10 +111,10 @@ class SROptimizationRunner:
         """
         self.logger.info(f"Preparing sample data with {n_samples} samples...")
 
-        rng=np.random.default_rng(42)
+        rng = np.random.default_rng(42)
 
         # Create realistic price data
-        base_price=100
+        base_price = 100
         price_data = pd.DataFrame(
             {
                 "open": base_price + np.cumsum(rng.standard_normal(n_samples) * 0.1),
@@ -130,11 +130,11 @@ class SROptimizationRunner:
         )
 
         # Calculate target returns (next period returns)
-        target_returns=price_data["close"].pct_change().shift(-1)
+        target_returns = price_data["close"].pct_change().shift(-1)
 
         # Remove NaN values
-        valid_mask=~(target_returns.isna() | price_data.isna().any(axis=1))
-        price_data=price_data[valid_mask]
+        valid_mask=~(target_returns.isna() | price_data.isna().any(axis = 1))
+        price_data = price_data[valid_mask]
         target_returns = target_returns[valid_mask]
 
         self.logger.info(f"✅ Prepared data: {len(price_data)} samples")
@@ -155,8 +155,8 @@ class SROptimizationRunner:
         self,
         price_data: pd.DataFrame,
         target_returns: pd.Series,
-        n_trials: int=100,
-        study_name: str | None=None,
+        n_trials: int = 100,
+        study_name: str | None = None,
     ) -> OptimizationResult:
         """
         Run S/R parameter optimization with comprehensive overfitting prevention.
@@ -173,23 +173,23 @@ class SROptimizationRunner:
         self.logger.info("🚀 Starting S/R parameter optimization...")
 
         # Run optimization
-        result=self.optimizer.optimize(
+        result = self.optimizer.optimize(
             model_type="sr_parameters",
-            X=price_data,
-            y=target_returns,
-            n_trials=n_trials,
+            X = price_data,
+            y = target_returns,
+            n_trials = n_trials,
             n_jobs=-1,
-            subsample_fraction=self.sr_config.subsample_fraction,
+            subsample_fraction = self.sr_config.subsample_fraction,
         )
 
-        self.optimization_results=result
+        self.optimization_results = result
 
         # Load study for analysis
         resolved_study_name = study_name or "sr_optimization_sr_parameters"
         try:
             self.study = optuna.load_study(
-                study_name=resolved_study_name,
-                storage=self.optimizer.storage_url,
+                study_name = resolved_study_name,
+                storage = self.optimizer.storage_url,
             )
         except Exception as e:  # noqa: BLE001
             self.logger.warning("Could not load study for analysis: %s", e)
@@ -210,7 +210,7 @@ class SROptimizationRunner:
 
         self.logger.info("📊 Analyzing optimization results...")
 
-        result=self.optimization_results
+        result = self.optimization_results
 
         # Basic metrics
         analysis: dict[str, Any] = {
@@ -234,7 +234,7 @@ class SROptimizationRunner:
 
     def _assess_overfitting(self, result: OptimizationResult) -> dict[str, Any]:
         """Assess overfitting based on optimization results."""
-        overfit_threshold=0.1
+        overfit_threshold = 0.1
         low_severity_threshold = 0.05
 
         overfitting_assessment = {
@@ -303,7 +303,7 @@ class SROptimizationRunner:
             )
 
         # Parameter-specific recommendations
-        best_params=result.best_params
+        best_params = result.best_params
 
         # Check if weights are balanced
         weight_params = [k for k in best_params if "weight" in k]
@@ -346,20 +346,20 @@ class SROptimizationRunner:
             return {}
 
         try:
-            save_dir_path=Path(save_dir)
-            save_dir_path.mkdir(parents=True, exist_ok=True)
+            save_dir_path = Path(save_dir)
+            save_dir_path.mkdir(parents = True, exist_ok = True)
 
             plots: dict[str, str] = {}
 
             # Optimization history
-            fig1=plot_optimization_history(self.study)
-            plot_path1=f"{save_dir}/optimization_history.html"
+            fig1 = plot_optimization_history(self.study)
+            plot_path1 = f"{save_dir}/optimization_history.html"
             fig1.write_html(plot_path1)
             plots["optimization_history"] = plot_path1
 
             # Parameter importance
-            fig2=plot_param_importances(self.study)
-            plot_path2=f"{save_dir}/parameter_importance.html"
+            fig2 = plot_param_importances(self.study)
+            plot_path2 = f"{save_dir}/parameter_importance.html"
             fig2.write_html(plot_path2)
             plots["parameter_importance"] = plot_path2
 
@@ -449,9 +449,9 @@ class SROptimizationRunner:
         }
 
         # Save to file
-        output_path_obj=Path(output_path)
+        output_path_obj = Path(output_path)
         with output_path_obj.open("w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2)
+            json.dump(export_data, f, indent = 2)
 
         self.logger.info("✅ Parameters exported to %s", output_path)
         return output_path
@@ -463,7 +463,7 @@ class SROptimizationRunner:
         print("=" * 80)
 
         # Optimization Summary
-        summary=analysis["optimization_summary"]
+        summary = analysis["optimization_summary"]
         print("\n📊 OPTIMIZATION SUMMARY:")
         print(f"   Study Name: {summary['study_name']}")
         print(f"   Trials Completed: {summary['trials_completed']}")
@@ -479,7 +479,7 @@ class SROptimizationRunner:
                 print(f"   {metric}: {value:.4f}")
 
         # Overfitting Assessment
-        overfitting=analysis["overfitting_assessment"]
+        overfitting = analysis["overfitting_assessment"]
         print("\n🔍 OVERFITTING ASSESSMENT:")
         print(f"   Is Overfitting: {'Yes' if overfitting['is_overfitting'] else 'No'}")
         print(f"   Overfitting Severity: {overfitting['overfitting_severity'].title()}")
@@ -495,17 +495,17 @@ class SROptimizationRunner:
         # Parameter Importance
         if analysis["parameter_importance"]:
             print("\n⚙️ PARAMETER IMPORTANCE (Top 10):")
-            sorted_importance=sorted(
+            sorted_importance = sorted(
                 analysis["parameter_importance"].items(),
-                key=lambda x: x[1],
-                reverse=True,
+                key = lambda x: x[1],
+                reverse = True,
             )[:10]
             for param, importance in sorted_importance:
                 print(f"   {param}: {importance:.4f}")
 
         # Best Parameters
         print("\n🏆 BEST PARAMETERS:")
-        best_params=analysis["best_parameters"]
+        best_params = analysis["best_parameters"]
 
         # Group parameters by category
         categories: dict[str, list[str]] = {
@@ -577,14 +577,14 @@ class SROptimizationRunner:
 
 async def main() -> int:
     """Main function to run S/R parameter optimization."""
-    parser=argparse.ArgumentParser(description="S/R Parameter Optimization")
+    parser = argparse.ArgumentParser(description="S/R Parameter Optimization")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
-    parser.add_argument("--period", type=int, default=365, help="Data period in days")
+    parser.add_argument("--period", type = int, default = 365, help="Data period in days")
     parser.add_argument(
         "--n-trials",
-        type=int,
-        default=100,
+        type = int,
+        default = 100,
         help="Number of optimization trials",
     )
     parser.add_argument(
@@ -594,7 +594,7 @@ async def main() -> int:
     )
     parser.add_argument("--config", help="Path to configuration file")
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     # Configuration
     config: dict[str, Any] = {
@@ -618,33 +618,33 @@ async def main() -> int:
 
     try:
         # Initialize runner
-        runner=SROptimizationRunner(config)
+        runner = SROptimizationRunner(config)
 
         # Prepare data
-        price_data, target_returns=runner.prepare_sample_data(n_samples=2000)
+        price_data, target_returns = runner.prepare_sample_data(n_samples = 2000)
 
         # Run optimization
         await runner.run_optimization(
-            price_data=price_data,
-            target_returns=target_returns,
-            n_trials=args.n_trials,
+            price_data = price_data,
+            target_returns = target_returns,
+            n_trials = args.n_trials,
         )
 
         # Analyze results
-        analysis=runner.analyze_results()
+        analysis = runner.analyze_results()
 
         # Print comprehensive report
         runner.print_comprehensive_report(analysis)
 
         # Create visualizations
-        plots=runner.create_visualizations(args.output_dir)
+        plots = runner.create_visualizations(args.output_dir)
         if plots:
             print("\n📊 Visualizations saved:")
             for plot_name, plot_path in plots.items():
                 print(f"   {plot_name}: {plot_path}")
 
         # Export parameters
-        param_file=runner.export_parameters(
+        param_file = runner.export_parameters(
             f"{args.output_dir}/optimized_sr_parameters.json",
         )
         print(f"\n💾 Parameters exported to: {param_file}")

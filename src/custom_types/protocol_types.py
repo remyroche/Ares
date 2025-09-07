@@ -15,7 +15,7 @@ from .trading_types import OrderRequest, RiskParameters, TradeDecision
 
 # Generic type variables
 T = TypeVar("T")
-ConfigT = TypeVar("ConfigT", bound=dict[str, Any])
+ConfigT = TypeVar("ConfigT", bound = dict[str, Any])
 DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 

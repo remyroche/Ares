@@ -1,16 +1,19 @@
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Version manager component for model persistence."""
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import time
 
 class VersionManager:
     """Handles model versioning and version tracking."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the version manager.
@@ -26,6 +29,7 @@ class VersionManager:
         self.base_dir = Path(self.config.get('base_dir', 'models'))
         self.version_registry_file = self.base_dir / 'version_registry.json'
         self.version_registry = self._load_version_registry()
+    @log_all_calls
 
     def _load_version_registry(self) -> Dict[str, Any]:
         """Load version registry from file."""
@@ -62,10 +66,10 @@ class VersionManager:
         version_info = {'version': version, 'symbol': symbol, 'exchange': exchange, 'timestamp': timestamp.isoformat(), 'scheme': self.versioning_scheme, 'status': 'active', 'metadata': {'created_at': datetime.now().isoformat(), 'created_by': 'training_pipeline'}}
         await self._add_to_registry(version_info)
         version_dir = self.base_dir / version
-        version_dir.mkdir(parents=True, exist_ok=True)
+        version_dir.mkdir(parents = True, exist_ok = True)
         version_info_file = version_dir / 'version_info.json'
         with open(version_info_file, 'w') as f:
-            json.dump(version_info, f, indent=2)
+            json.dump(version_info, f, indent = 2)
         self.logger.info(f'Created version: {version}')
         return version_info
 
@@ -107,13 +111,14 @@ class VersionManager:
             for old_version in old_versions:
                 await self._archive_version(old_version)
         self._save_version_registry()
+    @log_all_calls
 
     def _save_version_registry(self) -> None:
         """Save version registry to file."""
         try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
+            self.base_dir.mkdir(parents = True, exist_ok = True)
             with open(self.version_registry_file, 'w') as f:
-                json.dump(self.version_registry, f, indent=2)
+                json.dump(self.version_registry, f, indent = 2)
         except Exception as e:
             self.logger.error(f'Failed to save version registry: {str(e)}')
 
@@ -123,7 +128,7 @@ class VersionManager:
         version_dir = self.base_dir / version
         if version_dir.exists():
             archive_dir = self.base_dir / 'archive'
-            archive_dir.mkdir(exist_ok=True)
+            archive_dir.mkdir(exist_ok = True)
             archive_path = archive_dir / version
             if not archive_path.exists():
                 version_dir.rename(archive_path)
@@ -151,10 +156,10 @@ class VersionManager:
             if status and version_info.get('status') != status:
                 continue
             filtered_versions.append(version_info)
-        filtered_versions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        filtered_versions.sort(key = lambda x: x.get('timestamp', ''), reverse = True)
         return filtered_versions
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='version retrieval')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='version retrieval')
     async def get_version(self, version: str) -> Optional[Dict[str, Any]]:
         """Get information for a specific version.
         
@@ -169,7 +174,7 @@ class VersionManager:
                 return version_info
         return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='latest version retrieval')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='latest version retrieval')
     async def get_latest_version(self, symbol: Optional[str]=None, exchange: Optional[str]=None) -> Optional[Dict[str, Any]]:
         """Get the latest version.
         
@@ -185,7 +190,7 @@ class VersionManager:
             return versions[0]
         return None
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='version comparison')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='version comparison')
     async def compare_versions(self, version1: str, version2: str) -> Dict[str, Any]:
         """Compare two versions.
         

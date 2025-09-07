@@ -19,8 +19,10 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
-    from step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
+    from .step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
     VALIDATION_FRAMEWORK_AVAILABLE = True
 except ImportError as e:
     logging.warning(f'Step06 validation framework not available: {e}')
@@ -52,6 +54,7 @@ try:
 except ImportError as e:
     logging.warning(f'FeatureInteractionEngine not available: {e}')
 
+    @log_important_calls
     class FeatureInteractionEngine:
 
         def __init__(self, config: Dict[str, Any]) -> None:
@@ -66,16 +69,18 @@ try:
 except ImportError as e:
     logging.warning(f'OptimizedTripleBarrierLabeling not available: {e}')
 
+    @log_important_calls
     class OptimizedTripleBarrierLabeling:
 
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
 try:
-    from src.training.steps.data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+    from ...data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
 except ImportError as e:
     logging.warning(f'FeatureEngineeringStep not available: {e}')
 
+    @log_important_calls
     class FeatureEngineeringStep:
 
         def __init__(self, config: Dict[str, Any]) -> None:
@@ -86,6 +91,7 @@ class Step06ValidationOrchestrator:
     """
     Orchestrates comprehensive validation and reporting for all step06 components.
     """
+    @log_important_calls
 
     def __init__(self, output_dir: str='step06_validation_reports') -> None:
         """
@@ -96,7 +102,7 @@ class Step06ValidationOrchestrator:
         """
         self.logger = logging.getLogger(__name__)
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents = True, exist_ok = True)
         self.components = {}
         self.component_reports = {}
         self.overall_report = {}
@@ -255,23 +261,25 @@ class Step06ValidationOrchestrator:
             result['validation_tests']['error'] = str(e)
             result['status'] = 'failed'
         return result
+    @log_all_calls
 
     def _generate_test_data(self) -> pd.DataFrame:
         """Generate test data for validation."""
         self.logger.info('📊 Generating test data for validation...')
         np.random.seed(42)
         n_samples = 1000
-        dates = pd.date_range('2024-01-01', periods=n_samples, freq='1min')
+        dates = pd.date_range('2024-01-01', periods = n_samples, freq='1min')
         base_price = 100.0
         returns = np.random.normal(0, 0.001, n_samples)
         prices = [base_price]
         for ret in returns[1:]:
             prices.append(prices[-1] * (1 + ret))
-        data = pd.DataFrame({'open': prices, 'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices], 'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices], 'close': prices, 'volume': np.random.uniform(1000, 10000, n_samples)}, index=dates)
+        data = pd.DataFrame({'open': prices, 'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices], 'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices], 'close': prices, 'volume': np.random.uniform(1000, 10000, n_samples)}, index = dates)
         data['high'] = np.maximum(data['high'], np.maximum(data['open'], data['close']))
         data['low'] = np.minimum(data['low'], np.minimum(data['open'], data['close']))
         self.logger.info(f'✅ Generated test data: {data.shape}')
         return data
+    @log_all_calls
 
     def _generate_overall_summary(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate overall validation summary."""
@@ -294,11 +302,11 @@ class Step06ValidationOrchestrator:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         report_path = self.output_dir / f'step06_comprehensive_validation_report_{timestamp}.json'
         with open(report_path, 'w') as f:
-            json.dump(validation_results, f, indent=2, default=str)
+            json.dump(validation_results, f, indent = 2, default = str)
         summary_path = self.output_dir / f'step06_validation_summary_{timestamp}.json'
         summary = {'timestamp': validation_results['timestamp'], 'overall_summary': validation_results['overall_summary'], 'component_summary': {name: {'status': result.get('status', 'unknown'), 'tests_count': len(result.get('validation_tests', {})), 'reports_count': len(result.get('function_reports', {}))} for name, result in validation_results['component_validation'].items()}}
         with open(summary_path, 'w') as f:
-            json.dump(summary, f, indent=2, default=str)
+            json.dump(summary, f, indent = 2, default = str)
         self.logger.info(f'💾 Validation reports saved:')
         self.logger.info(f'   Main report: {report_path}')
         self.logger.info(f'   Summary report: {summary_path}')
@@ -334,7 +342,7 @@ if __name__ == '__main__':
     import asyncio
 
     async def main() -> None:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level = logging.INFO)
         results = await run_step06_comprehensive_validation()
         print('Step06 Comprehensive Validation Results:')
         print(f"Overall Summary: {results['overall_summary']}")

@@ -14,7 +14,7 @@ from typing import Any, Dict
 
 import joblib
 
-from .model_probability_generator import ModelProbabilityGenerator
+from src.training.model_probability_generator import ModelProbabilityGenerator
 import numpy as np
 import pandas as pd
 import json
@@ -66,7 +66,7 @@ def save_model_with_probabilities(
         # Ensure directory exists
         model_dir = os.path.dirname(model_path)
         if model_dir:  # Only create directory if path is not empty
-            os.makedirs(model_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok = True)
 
         # Save model based on format
         if save_format.lower() == "joblib":
@@ -161,7 +161,7 @@ def save_multi_output_model_with_probabilities(
         # Ensure directory exists
         model_dir = os.path.dirname(model_path)
         if model_dir:  # Only create directory if path is not empty
-            os.makedirs(model_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok = True)
 
         # Save model based on format
         if save_format.lower() == "joblib":

@@ -2,13 +2,14 @@
 
 from pathlib import Path
 from typing import Any
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from datetime import datetime
 import logging
 import json
 import pickle
 from .utils.warning_symbols import error, failed, warning
 from .core.decorators import (
+    handles_errors,
     ValidationLevel,
     comprehensive_validation,
     intelligent_caching,
@@ -21,7 +22,8 @@ from .core.decorators import (
     validates,
 )
 import numpy as np
-from src.utils.decorators.errors import handles_errors
+import pandas as pd
+import time
 
 
 class EnhancedPredictionIntegrator:
@@ -72,11 +74,11 @@ from the enhanced training manager steps 6-14.
         self.confidence_threshold: float = self.integrator_config.get("confidence_threshold", 0.7)
         self.price_prediction_threshold: float = self.integrator_config.get("price_prediction_threshold", 0.6)
 
-    @handles_errors(Exception, fallback=False,
+    @handles_errors(Exception, fallback = False,
         context="enhanced prediction integrator initialization",
     )
-    @comprehensive_validation(validation_level=ValidationLevel.STRICT)
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
+    @comprehensive_validation(validation_level = ValidationLevel.STRICT)
+    @performance_monitor(performance_level = PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
         """
         Initialize the enhanced prediction integrator.
@@ -220,7 +222,7 @@ from the enhanced training manager steps 6-14.
         except Exception as e:
             self.logger.exception(error(f"❌ Error loading optimization results: {e}"))
 
-    @handles_errors(Exception, fallback=False,
+    @handles_errors(Exception, fallback = False,
         context="applying optimized parameters",
     )
     @traced("apply_optimized_parameters")
@@ -255,7 +257,7 @@ from the enhanced training manager steps 6-14.
     )
     @validates(validation_level="WARNING")
     @traced("generate_enhanced_predictions")
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
+    @performance_monitor(performance_level = PerformanceLevel.HIGH)
     async def generate_enhanced_predictions(
         self,
         market_data: pd.DataFrame,

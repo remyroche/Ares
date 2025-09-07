@@ -1,8 +1,9 @@
 import numpy as np
+from .logger import system_logger
 
 '\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
 
-from .utils.logger import system_logger
+from .logger import system_logger
 from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 import logging
 import pandas as pd
@@ -12,13 +13,13 @@ import typing
 class FeatureEngineeringValidator:
     """Validates engineered features for quality and correctness."""
 
-    def __init__(self, logger: logging.Logger=None) -> None:
+    def __init__(self, logger: logging.Logger = None) -> None:
         self.logger = logger or system_logger.getChild('FeatureEngineeringValidator')
         self.feature_bounds = {'returns': (-0.5, 0.5), 'log_returns': (-0.7, 0.7), 'price_ratio': (0.5, 2.0), 'volume_ratio': (0.0, 10.0), 'volume_ma_ratio': (0.1, 5.0), 'rsi': (0.0, 100.0), 'stochastic': (0.0, 100.0), 'macd': (-1.0, 1.0), 'bollinger_position': (-3.0, 3.0), 'z_score': (-5.0, 5.0), 'percentile_rank': (0.0, 1.0), 'correlation': (-1.0, 1.0), 'normalized': (-3.0, 3.0), 'min_max_scaled': (0.0, 1.0)}
         self.feature_calculations = {}
         self._register_standard_calculations()
 
-    def validate_engineered_features(self, original_df: pd.DataFrame, features_df: pd.DataFrame, feature_config: dict[str, Any], validate_calculations: bool=True, check_dependencies: bool=True) -> ValidationResult:
+    def validate_engineered_features(self, original_df: pd.DataFrame, features_df: pd.DataFrame, feature_config: dict[str, Any], validate_calculations: bool = True, check_dependencies: bool = True) -> ValidationResult:
         """
         Comprehensive validation of engineered features.
 
@@ -33,10 +34,10 @@ class FeatureEngineeringValidator:
             ValidationResult with detailed findings
         """
         self.logger.info('🔧 Validating engineered features')
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         if features_df is None or features_df.empty:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='Features DataFrame is None or empty'))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='Features DataFrame is None or empty'))
             return result
         validation_summary = {'total_features': len(features_df.columns), 'original_columns': len(original_df.columns), 'new_features': len(features_df.columns) - len(original_df.columns), 'feature_validations': {}}
         self._validate_feature_completeness(original_df, features_df, feature_config, result, validation_summary)
@@ -44,25 +45,25 @@ class FeatureEngineeringValidator:
         nan_analysis = self._analyze_nan_propagation(original_df, features_df)
         validation_summary['nan_analysis'] = nan_analysis
         if nan_analysis['excessive_nan_features']:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"{len(nan_analysis['excessive_nan_features'])} features have excessive NaN values", details=nan_analysis))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"{len(nan_analysis['excessive_nan_features'])} features have excessive NaN values", details = nan_analysis))
         if validate_calculations:
-            calc_validation = self._validate_feature_calculations(original_df, features_df, sample_size=100)
+            calc_validation = self._validate_feature_calculations(original_df, features_df, sample_size = 100)
             validation_summary['calculation_validation'] = calc_validation
             if calc_validation['failed_validations']:
-                result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"{len(calc_validation['failed_validations'])} features failed calculation validation", details=calc_validation['failed_validations']))
+                result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"{len(calc_validation['failed_validations'])} features failed calculation validation", details = calc_validation['failed_validations']))
                 result.passed = False
         if check_dependencies:
             dep_validation = self._validate_feature_dependencies(features_df)
             validation_summary['dependency_validation'] = dep_validation
             if dep_validation['inconsistent_features']:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Feature dependency inconsistencies detected', details=dep_validation))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Feature dependency inconsistencies detected', details = dep_validation))
         relevance_check = self._validate_feature_relevance(features_df)
         validation_summary['relevance_check'] = relevance_check
         if relevance_check['zero_variance_features']:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"{len(relevance_check['zero_variance_features'])} features have zero variance", details={'features': relevance_check['zero_variance_features'][:10]}))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"{len(relevance_check['zero_variance_features'])} features have zero variance", details={'features': relevance_check['zero_variance_features'][:10]}))
         leakage_check = self._check_feature_leakage(original_df, features_df)
         if leakage_check['potential_leakage']:
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='Potential feature leakage detected', details=leakage_check))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='Potential feature leakage detected', details = leakage_check))
             result.passed = False
         critical_issues = len([i for i in result.issues if i.severity == DataQualityLevel.CRITICAL])
         warning_issues = len(result.warnings)
@@ -74,12 +75,12 @@ class FeatureEngineeringValidator:
         """Validate that all expected features are present."""
         missing_original = set(original_df.columns) - set(features_df.columns)
         if missing_original:
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Original columns missing in features: {missing_original}', details={'missing_columns': list(missing_original)}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Original columns missing in features: {missing_original}', details={'missing_columns': list(missing_original)}))
             result.passed = False
         expected_features = self._get_expected_features(feature_config)
         missing_expected = expected_features - set(features_df.columns)
         if missing_expected:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'{len(missing_expected)} expected features not found', details={'missing_features': list(missing_expected)[:20]}))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'{len(missing_expected)} expected features not found', details={'missing_features': list(missing_expected)[:20]}))
         summary['expected_features'] = len(expected_features)
         summary['missing_features'] = len(missing_expected)
 
@@ -100,12 +101,12 @@ class FeatureEngineeringValidator:
                 if out_of_range_low > 0 or out_of_range_high > 0:
                     out_of_range_features[column] = {'type': feature_type, 'expected_range': (min_bound, max_bound), 'actual_range': (float(col_data.min()), float(col_data.max())), 'out_of_range_count': int(out_of_range_low + out_of_range_high), 'out_of_range_percentage': float((out_of_range_low + out_of_range_high) / len(col_data) * 100)}
             if np.isinf(col_data).any():
-                result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f"Feature '{column}' contains infinite values", column=column, details={'infinite_count': int(np.isinf(col_data).sum())}))
+                result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f"Feature '{column}' contains infinite values", column = column, details={'infinite_count': int(np.isinf(col_data).sum())}))
                 result.passed = False
         if out_of_range_features:
             max_out_of_range_pct = max((f['out_of_range_percentage'] for f in out_of_range_features.values()))
             severity = DataQualityLevel.CRITICAL if max_out_of_range_pct > 10 else DataQualityLevel.WARNING
-            result.issues.append(ValidationIssue(severity=severity, message=f'{len(out_of_range_features)} features have values outside expected ranges', details={'features': out_of_range_features}))
+            result.issues.append(ValidationIssue(severity = severity, message = f'{len(out_of_range_features)} features have values outside expected ranges', details={'features': out_of_range_features}))
             if severity == DataQualityLevel.CRITICAL:
                 result.passed = False
         summary['out_of_range_features'] = len(out_of_range_features)
@@ -126,10 +127,10 @@ class FeatureEngineeringValidator:
                     nan_propagation_map[column] = potential_sources
         return {'total_original_nans': int(original_nan_counts.sum()), 'total_feature_nans': int(feature_nan_counts.sum()), 'excessive_nan_features': excessive_nan_features, 'nan_propagation_map': nan_propagation_map, 'nan_increase_ratio': float(feature_nan_counts.sum() / max(original_nan_counts.sum(), 1))}
 
-    def _validate_feature_calculations(self, original_df: pd.DataFrame, features_df: pd.DataFrame, sample_size: int=100) -> dict[str, Any]:
+    def _validate_feature_calculations(self, original_df: pd.DataFrame, features_df: pd.DataFrame, sample_size: int = 100) -> dict[str, Any]:
         """Validate feature calculations by recomputing a sample."""
         validation_results = {'validated_features': [], 'failed_validations': [], 'skipped_features': []}
-        sample_indices = np.random.choice(len(features_df), size=min(sample_size, len(features_df)), replace=False)
+        sample_indices = np.random.choice(len(features_df), size = min(sample_size, len(features_df)), replace = False)
         for feature_name, calc_func in self.feature_calculations.items():
             if feature_name not in features_df.columns:
                 continue
@@ -137,7 +138,7 @@ class FeatureEngineeringValidator:
                 expected_values = calc_func(original_df.iloc[sample_indices])
                 actual_values = features_df[feature_name].iloc[sample_indices]
                 if pd.api.types.is_numeric_dtype(expected_values):
-                    close_matches = np.allclose(expected_values.values, actual_values.values, rtol=1e-05, atol=1e-08, equal_nan=True)
+                    close_matches = np.allclose(expected_values.values, actual_values.values, rtol = 1e-05, atol = 1e-08, equal_nan = True)
                     if close_matches:
                         validation_results['validated_features'].append(feature_name)
                     else:

@@ -1,4 +1,6 @@
+from src.core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 PnL Loss Functions Module - Backward Compatibility Layer.
 
 This module provides backward compatibility for the refactored loss functions.
@@ -9,7 +11,7 @@ The actual implementations are now in the src/supervisor/loss_functions/ package
 from datetime import datetime
 from typing import Any, Dict
 
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 
 from .loss_functions.loss_calculator import LossCalculator
 from .loss_functions.optimization_metrics import OptimizationMetricsCalculator
@@ -69,7 +71,7 @@ class PnLLossFunctions:
             AttributeError: (False, "Missing required PnL parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="pnl loss functions initialization",
     )
     async def initialize(self) -> bool:
@@ -84,7 +86,7 @@ class PnLLossFunctions:
                 self.performance_metrics_calculator.initialize(),
                 self.optimization_metrics_calculator.initialize(),
                 self.loss_calculator.initialize(),
-                return_exceptions=True
+                return_exceptions = True
             )
             
             # Check if all initializations succeeded
@@ -106,7 +108,7 @@ class PnLLossFunctions:
             KeyError: (False, "Missing required calculation parameters"),
             Exception: (False, "Calculation execution failed"),
         },
-        default_return=False,
+        default_return = False,
         context="pnl calculation execution",
     )
     async def execute_calculation(self, calculation_input: Dict[str, Any]) -> bool:
@@ -219,7 +221,7 @@ class PnLLossFunctions:
         covariances = calculation_input.get("asset_covariances", [])
         return self.risk_metrics_calculator.calculate_risk_budget(weights, covariances)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _update_calculation_history(self) -> None:
         """Update calculation history."""
         try:
@@ -263,7 +265,6 @@ class PnLLossFunctions:
 
 # Import asyncio for the async methods
 import asyncio
-from .core.decorators.errors import handles_errors
 
 # Export the main components
 __all__ = [

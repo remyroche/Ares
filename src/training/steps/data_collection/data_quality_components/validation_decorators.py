@@ -1,4 +1,5 @@
 """Validation Decorators Component
+from src.utils.logger import system_logger
 Simplified decorators for data validation.
 Extracted from raw_data_quality_checker.py
 """
@@ -7,7 +8,7 @@ from datetime import datetime
 from typing import Any, Callable
 import pandas as pd
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 from .data_utils import fix_datetime_index
 import numpy as np
 import logging
@@ -201,7 +202,7 @@ def auto_fix_data_quality_issues(func: Callable) -> Callable:
                 expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
                 tolerance_percentage = 0.15
                 tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
-                irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)]
+                irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
                 irregular_ratio = len(irregular_intervals) / len(time_diffs)
                 
                 time_diffs_seconds = time_diffs.dt.total_seconds()

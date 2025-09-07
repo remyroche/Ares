@@ -5,11 +5,12 @@ from typing import Any
 
 from sklearn.feature_selection import RFE, mutual_info_classif
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
 import time
+from .core.decorators import handles_errors
 
 # src/training/feature_selection_manager.py
 
@@ -160,14 +161,14 @@ class FeatureSelectionManager:
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
         high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
             if np.isinf(features_df[col]).any():
                 inf_features.append(col)
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Fill remaining NaN values with forward fill then backward fill
         features_df = (
@@ -198,7 +199,7 @@ class FeatureSelectionManager:
         low_variance_features = variances[
             variances < self.variance_threshold
         ].index.tolist()
-        features_df = features_df.drop(columns=low_variance_features)
+        features_df = features_df.drop(columns = low_variance_features)
 
         metadata = {
             "removed_low_variance": len(low_variance_features),
@@ -222,7 +223,7 @@ class FeatureSelectionManager:
 
         # Find highly correlated feature pairs
         upper_tri = corr_matrix.where(
-            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool)
         )
         high_corr_pairs = []
 
@@ -244,7 +245,7 @@ class FeatureSelectionManager:
             else:
                 features_to_remove.add(feat2)
 
-        features_df = features_df.drop(columns=list(features_to_remove))
+        features_df = features_df.drop(columns = list(features_to_remove))
 
         metadata = {
             "removed_high_correlation": len(features_to_remove),
@@ -263,9 +264,9 @@ class FeatureSelectionManager:
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: Rank features by mutual information."""
         # Calculate mutual information scores
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(
-            ascending=False
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores, index = features_df.columns).sort_values(
+            ascending = False
         )
 
         # Store ranking for later use
@@ -461,7 +462,7 @@ class FeatureSelectionManager:
         # Prioritize features from important categories
         prioritized_features = []
         for category, _score in sorted(
-            category_scores.items(), key=lambda x: x[1], reverse=True
+            category_scores.items(), key = lambda x: x[1], reverse = True
         ):
             category_features = [
                 col
@@ -499,9 +500,9 @@ class FeatureSelectionManager:
             }
 
         # Use Recursive Feature Elimination with LightGBM
-        estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
+        estimator = lgb.LGBMClassifier(n_estimators = 100, random_state = 42, verbose=-1)
         rfe = RFE(
-            estimator=estimator, n_features_to_select=self.target_features, step=1
+            estimator = estimator, n_features_to_select = self.target_features, step = 1
         )
 
         # Fit RFE
@@ -600,7 +601,7 @@ class FeatureSelectionManager:
                 f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
             )
             with open(metadata_file, "w") as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(metadata, f, indent = 2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
@@ -622,17 +623,17 @@ class FeatureSelectionManager:
 
             # Generate autoencoder features
             autoencoder_features = autoencoder_generator.generate_features(
-                features_df=features_df,
+                features_df = features_df,
                 regime_name="default",
-                labels=target.values,
-                enable_analysis=True,
+                labels = target.values,
+                enable_analysis = True,
             )
 
             # If autoencoder features were generated, add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
                 # Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
-                features_df = pd.concat([features_df, autoencoder_features], axis=1)
+                features_df = pd.concat([features_df, autoencoder_features], axis = 1)
 
                 self.logger.info(
                     f"✅ Added {len(autoencoder_features.columns)} autoencoder features"
@@ -740,10 +741,10 @@ class FeatureSelectionManager:
 
                     # Calculate cross-validation score
                     cv_scores = cross_val_score(
-                        LogisticRegression(random_state=42),
+                        LogisticRegression(random_state = 42),
                         X_single,
                         target,
-                        cv=3,
+                        cv = 3,
                         scoring="accuracy",
                     )
 

@@ -1,9 +1,12 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+import scipy.linalg as la
+import scipy.sparse as sp
 
 # src/training/enhanced_matrix_operations.py
 
-from src.utils.decorators import (
+from src.utils.logger import system_logger
+from src.training.core.decorators import (
     cached,
     circuit_breaker,
     handles_errors,
@@ -41,7 +44,7 @@ from sklearn.linear_model import Lasso, Ridge
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 try:
@@ -116,15 +119,15 @@ class EnhancedMatrixOperations:
         self.feature_importance_cache = {}
         self.selection_metadata = {}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @prevent_data_leakage()
     @log_execution_time()
     @cached()
     @log_call()
-    @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
+    @circuit_breaker(failure_threshold = 3, recovery_timeout = 300.0)
     @validates()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def eigenvalue_based_feature_engineering(
         self,
         features_df: pd.DataFrame,
@@ -179,11 +182,11 @@ class EnhancedMatrixOperations:
 
             # Create DataFrame
             regime_df = pd.DataFrame(
-                regime_features, columns=regime_feature_names, index=features_df.index,
+                regime_features, columns = regime_feature_names, index = features_df.index,
             )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, regime_df], axis=1)
+            enhanced_df = pd.concat([features_df, regime_df], axis = 1)
 
             # Metadata
             metadata = {
@@ -206,11 +209,11 @@ class EnhancedMatrixOperations:
             )
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def cholesky_covariance_estimation(
         self,
         features_df: pd.DataFrame,
@@ -233,7 +236,7 @@ class EnhancedMatrixOperations:
             n_samples, n_features = X.shape[0]
 
             # Center the data
-            X_centered = X - np.mean(X, axis=0)
+            X_centered = X - np.mean(X, axis = 0)
 
             # Calculate covariance matrix
             cov_matrix = X_centered.T @ X_centered / (n_samples - 1)
@@ -244,7 +247,7 @@ class EnhancedMatrixOperations:
 
             # Cholesky decomposition
             try:
-                L = la.cholesky(cov_matrix, lower=True)
+                L = la.cholesky(cov_matrix, lower = True)
                 cholesky_success = True
             except la.LinAlgError:
                 # Fallback: use eigendecomposition
@@ -262,12 +265,12 @@ class EnhancedMatrixOperations:
             # Create DataFrame
             cholesky_df = pd.DataFrame(
                 cholesky_features,
-                columns=cholesky_feature_names,
-                index=features_df.index,
+                columns = cholesky_feature_names,
+                index = features_df.index,
             )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, cholesky_df], axis=1)
+            enhanced_df = pd.concat([features_df, cholesky_df], axis = 1)
 
             # Metadata
             metadata = {
@@ -286,11 +289,11 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Cholesky covariance estimation failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def sparse_matrix_optimizations(
         self,
         features_df: pd.DataFrame,
@@ -318,7 +321,7 @@ class EnhancedMatrixOperations:
                 X_sparse = sp.csr_matrix(X)
 
                 # Apply sparse SVD
-                U, s, Vt = sp.linalg.svds(X_sparse, k=min(50, *X.shape))
+                U, s, Vt = sp.linalg.svds(X_sparse, k = min(50, *X.shape))
 
                 # Create sparse features
                 sparse_features = U * s
@@ -329,11 +332,11 @@ class EnhancedMatrixOperations:
                 # Create DataFrame
                 sparse_df = pd.DataFrame(
                     sparse_features,
-                    columns=sparse_feature_names,
-                    index=features_df.index,
+                    columns = sparse_feature_names,
+                    index = features_df.index,
                 )
 
-                enhanced_df = pd.concat([features_df, sparse_df], axis=1)
+                enhanced_df = pd.concat([features_df, sparse_df], axis = 1)
 
                 metadata = {
                     "sparsity": sparsity,
@@ -358,12 +361,12 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Sparse matrix optimization failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @log_execution_time()
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def advanced_decomposition_techniques(
         self,
         features_df: pd.DataFrame,
@@ -387,18 +390,18 @@ class EnhancedMatrixOperations:
             # 1. Independent Component Analysis (ICA)
             try:
                 ica = FastICA(
-                    n_components=min(20, features_df.shape[1]),
-                    random_state=42,
-                    max_iter=200,
+                    n_components = min(20, features_df.shape[1]),
+                    random_state = 42,
+                    max_iter = 200,
                 )
                 ica_features = ica.fit_transform(features_df)
                 ica_feature_names = [
                     f"ica_component_{i+1}" for i in range(ica_features.shape[1])
                 ]
                 ica_df = pd.DataFrame(
-                    ica_features, columns=ica_feature_names, index=features_df.index,
+                    ica_features, columns = ica_feature_names, index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, ica_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, ica_df], axis = 1)
                 metadata["ica"] = {
                     "n_components": ica_features.shape[1],
                     "convergence": ica.n_iter_,
@@ -410,18 +413,18 @@ class EnhancedMatrixOperations:
             # 2. Factor Analysis
             try:
                 fa = FactorAnalysis(
-                    n_components=min(15, features_df.shape[1]),
-                    random_state=42,
-                    max_iter=200,
+                    n_components = min(15, features_df.shape[1]),
+                    random_state = 42,
+                    max_iter = 200,
                 )
                 fa_features = fa.fit_transform(features_df)
                 fa_feature_names = [
                     f"factor_component_{i+1}" for i in range(fa_features.shape[1])
                 ]
                 fa_df = pd.DataFrame(
-                    fa_features, columns=fa_feature_names, index=features_df.index,
+                    fa_features, columns = fa_feature_names, index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, fa_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, fa_df], axis = 1)
                 metadata["factor_analysis"] = {"n_components": fa_features.shape[1]}
             except Exception as e:
                 self.logger.warning(f"Factor Analysis failed: {e}")
@@ -430,18 +433,18 @@ class EnhancedMatrixOperations:
             # 3. Kernel PCA (for non-linear patterns)
             try:
                 kpca = KernelPCA(
-                    n_components=min(10, features_df.shape[1]),
+                    n_components = min(10, features_df.shape[1]),
                     kernel="rbf",
-                    random_state=42,
+                    random_state = 42,
                 )
                 kpca_features = kpca.fit_transform(features_df)
                 kpca_feature_names = [
                     f"kpca_component_{i+1}" for i in range(kpca_features.shape[1])
                 ]
                 kpca_df = pd.DataFrame(
-                    kpca_features, columns=kpca_feature_names, index=features_df.index,
+                    kpca_features, columns = kpca_feature_names, index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, kpca_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, kpca_df], axis = 1)
                 metadata["kernel_pca"] = {"n_components": kpca_features.shape[1]}
             except Exception as e:
                 self.logger.warning(f"Kernel PCA failed: {e}")
@@ -461,11 +464,11 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Advanced decomposition failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def matrix_completion_techniques(
         self,
         features_df: pd.DataFrame,
@@ -492,17 +495,17 @@ class EnhancedMatrixOperations:
             if missing_percentage > 0.01:  # More than 1% missing
                 # Use Iterative Imputer (MICE)
                 imputer = IterativeImputer(
-                    max_iter=10,
-                    random_state=42,
-                    skip_complete=True,
+                    max_iter = 10,
+                    random_state = 42,
+                    skip_complete = True,
                 )
                 completed_features = imputer.fit_transform(features_df)
 
                 # Create completed DataFrame
                 completed_df = pd.DataFrame(
                     completed_features,
-                    columns=features_df.columns,
-                    index=features_df.index,
+                    columns = features_df.columns,
+                    index = features_df.index,
                 )
 
                 metadata = {
@@ -529,11 +532,11 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Matrix completion failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def advanced_clustering_features(
         self,
         features_df: pd.DataFrame,
@@ -561,9 +564,9 @@ class EnhancedMatrixOperations:
             # 1. Spectral Clustering
             try:
                 spectral = SpectralClustering(
-                    n_clusters=min(8, features_df.shape[1] // 2),
+                    n_clusters = min(8, features_df.shape[1] // 2),
                     affinity="rbf",
-                    random_state=42,
+                    random_state = 42,
                 )
                 spectral_labels = spectral.fit_predict(X_scaled)
 
@@ -572,13 +575,13 @@ class EnhancedMatrixOperations:
                     spectral_labels, prefix="spectral_cluster",
                 )
                 spectral_features.index = features_df.index
-                enhanced_df = pd.concat([enhanced_df, spectral_features], axis=1)
+                enhanced_df = pd.concat([enhanced_df, spectral_features], axis = 1)
 
                 # Distance to cluster centroids
 
                 kmeans = KMeans(
-                    n_clusters=min(8, features_df.shape[1] // 2),
-                    random_state=42,
+                    n_clusters = min(8, features_df.shape[1] // 2),
+                    random_state = 42,
                 )
                 kmeans.fit(X_scaled)
                 distances = euclidean_distances(X_scaled, kmeans.cluster_centers_)
@@ -588,9 +591,9 @@ class EnhancedMatrixOperations:
                     columns=[
                         f"distance_to_cluster_{i+1}" for i in range(distances.shape[1])
                     ],
-                    index=features_df.index,
+                    index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, distance_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, distance_df], axis = 1)
 
                 metadata["spectral_clustering"] = {
                     "n_clusters": len(np.unique(spectral_labels)),
@@ -605,7 +608,7 @@ class EnhancedMatrixOperations:
 
             # 2. DBSCAN for outlier detection
             try:
-                dbscan = DBSCAN(eps=0.5, min_samples=5)
+                dbscan = DBSCAN(eps = 0.5, min_samples = 5)
                 dbscan_labels = dbscan.fit_predict(X_scaled)
 
                 # Create outlier features
@@ -614,9 +617,9 @@ class EnhancedMatrixOperations:
                         "is_outlier": (dbscan_labels == -1).astype(int),
                         "cluster_id": dbscan_labels,
                     },
-                    index=features_df.index,
+                    index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, outlier_features], axis=1)
+                enhanced_df = pd.concat([enhanced_df, outlier_features], axis = 1)
 
                 metadata["dbscan"] = {
                     "n_clusters": len(np.unique(dbscan_labels[dbscan_labels != -1])),
@@ -640,12 +643,12 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Advanced clustering failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @log_execution_time()
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def optimization_algorithms(
         self,
         features_df: pd.DataFrame,
@@ -670,7 +673,7 @@ class EnhancedMatrixOperations:
 
             # 1. Lasso for sparse feature selection
             try:
-                lasso = Lasso(alpha=0.01, max_iter=1000, random_state=42)
+                lasso = Lasso(alpha = 0.01, max_iter = 1000, random_state = 42)
                 lasso.fit(features_df, target)
 
                 # Select features with non-zero coefficients
@@ -678,7 +681,7 @@ class EnhancedMatrixOperations:
                 if len(selected_features) > 0:
                     lasso_df = features_df[selected_features].copy()
                     lasso_df.columns = [f"lasso_{col}" for col in selected_features]
-                    enhanced_df = pd.concat([enhanced_df, lasso_df], axis=1)
+                    enhanced_df = pd.concat([enhanced_df, lasso_df], axis = 1)
 
                 metadata["lasso"] = {
                     "selected_features": len(selected_features),
@@ -690,7 +693,7 @@ class EnhancedMatrixOperations:
 
             # 2. Ridge regression for regularization
             try:
-                ridge = Ridge(alpha=1.0, random_state=42)
+                ridge = Ridge(alpha = 1.0, random_state = 42)
                 ridge.fit(features_df, target)
 
                 # Create ridge features
@@ -698,9 +701,9 @@ class EnhancedMatrixOperations:
                 ridge_df = pd.DataFrame(
                     ridge_features,
                     columns=["ridge_prediction"],
-                    index=features_df.index,
+                    index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, ridge_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, ridge_df], axis = 1)
 
                 metadata["ridge"] = {
                     "r2_score": ridge.score(features_df, target),
@@ -724,11 +727,11 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Optimization algorithms failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def advanced_feature_engineering(
         self,
         features_df: pd.DataFrame,
@@ -752,9 +755,9 @@ class EnhancedMatrixOperations:
             # 1. Polynomial feature interactions
             try:
                 poly = PolynomialFeatures(
-                    degree=2,
-                    interaction_only=True,
-                    include_bias=False,
+                    degree = 2,
+                    interaction_only = True,
+                    include_bias = False,
                 )
                 poly_features = poly.fit_transform(features_df)
                 poly_feature_names = [
@@ -768,17 +771,17 @@ class EnhancedMatrixOperations:
                 # Limit to top interactions to prevent explosion
                 if interaction_features.shape[1] > 50:
                     # Select features with highest variance
-                    variances = np.var(interaction_features, axis=0)
+                    variances = np.var(interaction_features, axis = 0)
                     top_indices = np.argsort(variances)[-50:]
                     interaction_features = interaction_features[:, top_indices]
                     poly_feature_names = [poly_feature_names[i] for i in top_indices]
 
                 poly_df = pd.DataFrame(
                     interaction_features,
-                    columns=poly_feature_names,
-                    index=features_df.index,
+                    columns = poly_feature_names,
+                    index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, poly_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, poly_df], axis = 1)
 
                 metadata["polynomial_features"] = {
                     "n_interactions": len(poly_feature_names),
@@ -815,10 +818,10 @@ class EnhancedMatrixOperations:
                 fft_array = np.column_stack(padded_features)
                 fft_df = pd.DataFrame(
                     fft_array,
-                    columns=fft_feature_names[: fft_array.shape[1]],
-                    index=features_df.index,
+                    columns = fft_feature_names[: fft_array.shape[1]],
+                    index = features_df.index,
                 )
-                enhanced_df = pd.concat([enhanced_df, fft_df], axis=1)
+                enhanced_df = pd.concat([enhanced_df, fft_df], axis = 1)
 
                 metadata["fourier_features"] = {
                     "n_fft_features": fft_array.shape[1],
@@ -842,11 +845,11 @@ class EnhancedMatrixOperations:
             self.logger.exception(f"❌ Advanced feature engineering failed: {e}")
             return features_df, {"error": str(e)}
 
-    @secure_data_processing(audit=True)
+    @secure_data_processing(audit = True)
     @cached()
     @log_call()
     @quality_gate()
-    @handles_errors(ValueError, np.linalg.LinAlgError, fallback=None)
+    @handles_errors(ValueError, np.linalg.LinAlgError, fallback = None)
     def quality_assurance_checks(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """Perform comprehensive quality assurance checks."
 
@@ -948,7 +951,7 @@ class EnhancedMatrixOperations:
                 quality_results["checks"]["correlation_analysis"] = {
                     "high_correlation_pairs": high_corr_count,
                     "max_correlation": corr_matrix.values[
-                        np.triu_indices_from(corr_matrix.values, k=1)
+                        np.triu_indices_from(corr_matrix.values, k = 1)
                     ].max(),
                     "passed": high_corr_count < len(features_df.columns) * 0.1,
                 }
@@ -1081,24 +1084,24 @@ class EnhancedMatrixOperations:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
             
             # Import autoencoder feature generator
-            from .analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
+            from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
             
             # Create autoencoder generator
             autoencoder_generator = AutoencoderFeatureGenerator()
             
             # Generate autoencoder features
             autoencoder_features = autoencoder_generator.generate_features(
-                features_df=features_df,
+                features_df = features_df,
                 regime_name="default",
-                labels=target.values,
-                enable_analysis=True
+                labels = target.values,
+                enable_analysis = True
             )
             
             # If autoencoder features were generated, add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
                 # Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
-                features_df = pd.concat([features_df, autoencoder_features], axis=1)
+                features_df = pd.concat([features_df, autoencoder_features], axis = 1)
                 
                 self.logger.info(f"✅ Added {len(autoencoder_features.columns)} autoencoder features")
                 stage_metadata = {
@@ -1123,14 +1126,14 @@ class EnhancedMatrixOperations:
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
         high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
             if np.isinf(features_df[col]).any():
                 inf_features.append(col)
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Fill remaining NaN values with forward fill then backward fill
         features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -1153,7 +1156,7 @@ class EnhancedMatrixOperations:
 
         # Remove features with variance below threshold
         low_variance_features = variances[variances < self.variance_threshold].index.tolist()
-        features_df = features_df.drop(columns=low_variance_features)
+        features_df = features_df.drop(columns = low_variance_features)
 
         metadata = {
             "removed_low_variance": len(low_variance_features),
@@ -1172,7 +1175,7 @@ class EnhancedMatrixOperations:
         corr_matrix = features_df.corr().abs()
 
         # Find highly correlated feature pairs
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
         high_corr_pairs = []
 
         for col in upper_tri.columns:
@@ -1191,7 +1194,7 @@ class EnhancedMatrixOperations:
             else:
                 features_to_remove.add(feat2)
 
-        features_df = features_df.drop(columns=list(features_to_remove))
+        features_df = features_df.drop(columns = list(features_to_remove))
 
         metadata = {
             "removed_high_correlation": len(features_to_remove),
@@ -1206,8 +1209,8 @@ class EnhancedMatrixOperations:
     def _stage4_mutual_info_ranking(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: Rank features by mutual information."""
         # Calculate mutual information scores
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores, index=features_df.columns).sort_values(ascending=False)
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores, index = features_df.columns).sort_values(ascending = False)
 
         # Store ranking for later use
         self.feature_importance_cache["mutual_info"] = mi_ranking
@@ -1287,7 +1290,7 @@ class EnhancedMatrixOperations:
 
         # Prioritize features from important categories
         prioritized_features = []
-        for category, _score in sorted(category_scores.items(), key=lambda x: x[1], reverse=True):
+        for category, _score in sorted(category_scores.items(), key = lambda x: x[1], reverse = True):
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in feature_categories[category])]
             prioritized_features.extend(category_features)
 
@@ -1312,7 +1315,7 @@ class EnhancedMatrixOperations:
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
             
             # Load regularization configuration from pipeline
-            from .training.regularization import RegularizationManager
+            from src.training.regularization import RegularizationManager
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config
             
@@ -1369,8 +1372,8 @@ class EnhancedMatrixOperations:
         # Use Recursive Feature Elimination with LightGBM if available
         if _LIGHTGBM_AVAILABLE and lgb is not None:
             try:
-                estimator = lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
-                rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+                estimator = lgb.LGBMClassifier(n_estimators = 100, random_state = 42, verbose=-1)
+                rfe = RFE(estimator = estimator, n_features_to_select = self.target_features, step = 1)
 
                 # Fit RFE
                 rfe.fit(features_df, target)
@@ -1509,7 +1512,7 @@ class EnhancedMatrixOperations:
         try:
             metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
             with open(metadata_file, "w") as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(metadata, f, indent = 2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
@@ -1533,10 +1536,10 @@ class EnhancedMatrixOperations:
                 
                 # Calculate cross-validation score
                 cv_scores = cross_val_score(
-                    LogisticRegression(random_state=42),
+                    LogisticRegression(random_state = 42),
                     X_single,
                     target,
-                    cv=3,
+                    cv = 3,
                     scoring='accuracy'
                 )
                 

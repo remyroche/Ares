@@ -1,4 +1,5 @@
 '\nData Quality Monitor for Enhanced Training Pipeline.\n\nThis module provides comprehensive data quality monitoring throughout the training pipeline,\nensuring data compatibility, quality, format compatibility, and proper indexing at every step.\n'
+from src.utils.logger import system_logger
 import asyncio
 import json
 import sys
@@ -10,7 +11,7 @@ from typing import Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .utils.enhanced_mlflow_integration import log_step_metrics
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -127,7 +128,7 @@ class DataQualityMonitor:
             return metrics
         except Exception as e:
             self.logger.exception(f'❌ Error monitoring data quality for {step_name}: {e}')
-            return DataQualityMetrics(completeness=0.0, consistency=0.0, validity=0.0, timeliness=0.0, uniqueness=0.0, accuracy=0.0, overall_score=0.0, quality_level=QualityLevel.CRITICAL, issues=[f'Quality monitoring error: {str(e)}'], warnings=[], recommendations=['Check data structure and format'], timestamp=datetime.now())
+            return DataQualityMetrics(completeness = 0.0, consistency = 0.0, validity = 0.0, timeliness = 0.0, uniqueness = 0.0, accuracy = 0.0, overall_score = 0.0, quality_level = QualityLevel.CRITICAL, issues=[f'Quality monitoring error: {str(e)}'], warnings=[], recommendations=['Check data structure and format'], timestamp = datetime.now())
 
     async def _analyze_dataframe_quality(self, data: pd.DataFrame, step_name: str, context: dict[str, Any]) -> DataQualityMetrics:
         """Analyze quality of DataFrame data."""
@@ -158,7 +159,7 @@ class DataQualityMonitor:
             warnings.append(f'Accuracy concern: {accuracy:.3f}')
         overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
         quality_level = self._determine_quality_level(overall_score)
-        return DataQualityMetrics(completeness=completeness, consistency=consistency, validity=validity, timeliness=timeliness, uniqueness=uniqueness, accuracy=accuracy, overall_score=overall_score, quality_level=quality_level, issues=issues, warnings=warnings, recommendations=recommendations, timestamp=datetime.now())
+        return DataQualityMetrics(completeness = completeness, consistency = consistency, validity = validity, timeliness = timeliness, uniqueness = uniqueness, accuracy = accuracy, overall_score = overall_score, quality_level = quality_level, issues = issues, warnings = warnings, recommendations = recommendations, timestamp = datetime.now())
 
     def _calculate_completeness(self, data: pd.DataFrame) -> float:
         """Calculate data completeness score."""
@@ -192,7 +193,7 @@ class DataQualityMonitor:
         try:
             validity_checks = []
             if all((col in data.columns for col in ['open', 'high', 'low', 'close'])):
-                price_validity = (data[['open', 'high', 'low', 'close']] > 0).all(axis=1).mean()
+                price_validity = (data[['open', 'high', 'low', 'close']] > 0).all(axis = 1).mean()
                 validity_checks.append(price_validity)
             if 'close' in data.columns:
                 price_range_validity = ((data['close'] > 0) & (data['close'] < 1000000.0)).mean()
@@ -280,7 +281,7 @@ class DataQualityMonitor:
         accuracy = 1.0
         overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
         quality_level = self._determine_quality_level(overall_score)
-        return DataQualityMetrics(completeness=completeness, consistency=consistency, validity=validity, timeliness=timeliness, uniqueness=uniqueness, accuracy=accuracy, overall_score=overall_score, quality_level=quality_level, issues=issues, warnings=warnings, recommendations=recommendations, timestamp=datetime.now())
+        return DataQualityMetrics(completeness = completeness, consistency = consistency, validity = validity, timeliness = timeliness, uniqueness = uniqueness, accuracy = accuracy, overall_score = overall_score, quality_level = quality_level, issues = issues, warnings = warnings, recommendations = recommendations, timestamp = datetime.now())
 
     async def _analyze_generic_quality(self, data: Any, step_name: str, context: dict[str, Any]) -> DataQualityMetrics:
         """Analyze quality of generic data."""
@@ -298,14 +299,14 @@ class DataQualityMonitor:
             recommendations.append('Ensure data is properly loaded')
         overall_score = np.mean([completeness, consistency, validity, timeliness, uniqueness, accuracy])
         quality_level = self._determine_quality_level(overall_score)
-        return DataQualityMetrics(completeness=completeness, consistency=consistency, validity=validity, timeliness=timeliness, uniqueness=uniqueness, accuracy=accuracy, overall_score=overall_score, quality_level=quality_level, issues=issues, warnings=warnings, recommendations=recommendations, timestamp=datetime.now())
+        return DataQualityMetrics(completeness = completeness, consistency = consistency, validity = validity, timeliness = timeliness, uniqueness = uniqueness, accuracy = accuracy, overall_score = overall_score, quality_level = quality_level, issues = issues, warnings = warnings, recommendations = recommendations, timestamp = datetime.now())
 
     def _get_required_keys_for_step(self, step_name: str) -> list[str]:
         """Get required keys for a specific step."""
         key_requirements = {'step01': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step1_5': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step02': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step03': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step04': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step05': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step06': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step07': ['symbol', 'exchange', 'timeframe', 'data_dir']}
         return key_requirements.get(step_name, [])
 
-    async def monitor_compatibility(self, data: Any, step_name: str, expected_format: str=None) -> CompatibilityMetrics:
+    async def monitor_compatibility(self, data: Any, step_name: str, expected_format: str = None) -> CompatibilityMetrics:
         """Monitor data compatibility for a specific step."""
         self.logger.info(f'🔍 Monitoring data compatibility for {step_name}')
         try:
@@ -319,7 +320,7 @@ class DataQualityMonitor:
             return metrics
         except Exception as e:
             self.logger.exception(f'❌ Error monitoring compatibility for {step_name}: {e}')
-            return CompatibilityMetrics(format_compatible=False, schema_compatible=False, type_compatible=False, index_compatible=False, temporal_aligned=False, overall_compatible=False, issues=[f'Compatibility monitoring error: {str(e)}'], warnings=[], conversions_applied=[], timestamp=datetime.now())
+            return CompatibilityMetrics(format_compatible = False, schema_compatible = False, type_compatible = False, index_compatible = False, temporal_aligned = False, overall_compatible = False, issues=[f'Compatibility monitoring error: {str(e)}'], warnings=[], conversions_applied=[], timestamp = datetime.now())
 
     def _analyze_dataframe_compatibility(self, data: pd.DataFrame, step_name: str, expected_format: str) -> CompatibilityMetrics:
         """Analyze DataFrame compatibility."""
@@ -344,7 +345,7 @@ class DataQualityMonitor:
             warnings.append('Temporal alignment issues detected')
         format_compatible = True
         overall_compatible = all([schema_compatible, type_compatible, index_compatible, temporal_aligned, format_compatible])
-        return CompatibilityMetrics(format_compatible=format_compatible, schema_compatible=schema_compatible, type_compatible=type_compatible, index_compatible=index_compatible, temporal_aligned=temporal_aligned, overall_compatible=overall_compatible, issues=issues, warnings=warnings, conversions_applied=conversions_applied, timestamp=datetime.now())
+        return CompatibilityMetrics(format_compatible = format_compatible, schema_compatible = schema_compatible, type_compatible = type_compatible, index_compatible = index_compatible, temporal_aligned = temporal_aligned, overall_compatible = overall_compatible, issues = issues, warnings = warnings, conversions_applied = conversions_applied, timestamp = datetime.now())
 
     def _get_required_columns_for_step(self, step_name: str) -> list[str]:
         """Get required columns for a specific step."""
@@ -398,7 +399,7 @@ class DataQualityMonitor:
         temporal_aligned = True
         format_compatible = True
         overall_compatible = all([schema_compatible, type_compatible, index_compatible, temporal_aligned, format_compatible])
-        return CompatibilityMetrics(format_compatible=format_compatible, schema_compatible=schema_compatible, type_compatible=type_compatible, index_compatible=index_compatible, temporal_aligned=temporal_aligned, overall_compatible=overall_compatible, issues=issues, warnings=warnings, conversions_applied=conversions_applied, timestamp=datetime.now())
+        return CompatibilityMetrics(format_compatible = format_compatible, schema_compatible = schema_compatible, type_compatible = type_compatible, index_compatible = index_compatible, temporal_aligned = temporal_aligned, overall_compatible = overall_compatible, issues = issues, warnings = warnings, conversions_applied = conversions_applied, timestamp = datetime.now())
 
     def _analyze_generic_compatibility(self, data: Any, step_name: str, expected_format: str) -> CompatibilityMetrics:
         """Analyze generic data compatibility."""
@@ -413,7 +414,7 @@ class DataQualityMonitor:
         if data is None:
             issues.append('Data is None')
         overall_compatible = all([schema_compatible, type_compatible, index_compatible, temporal_aligned, format_compatible])
-        return CompatibilityMetrics(format_compatible=format_compatible, schema_compatible=schema_compatible, type_compatible=type_compatible, index_compatible=index_compatible, temporal_aligned=temporal_aligned, overall_compatible=overall_compatible, issues=issues, warnings=warnings, conversions_applied=conversions_applied, timestamp=datetime.now())
+        return CompatibilityMetrics(format_compatible = format_compatible, schema_compatible = schema_compatible, type_compatible = type_compatible, index_compatible = index_compatible, temporal_aligned = temporal_aligned, overall_compatible = overall_compatible, issues = issues, warnings = warnings, conversions_applied = conversions_applied, timestamp = datetime.now())
 
     async def monitor_format(self, data: Any, step_name: str, expected_format: str='parquet') -> FormatMetrics:
         """Monitor data format compatibility."""
@@ -427,7 +428,7 @@ class DataQualityMonitor:
             return metrics
         except Exception as e:
             self.logger.exception(f'❌ Error monitoring format for {step_name}: {e}')
-            return FormatMetrics(expected_format=expected_format, actual_format='unknown', format_match=False, encoding_valid=False, compression_valid=False, file_size_reasonable=False, issues=[f'Format monitoring error: {str(e)}'], warnings=[], timestamp=datetime.now())
+            return FormatMetrics(expected_format = expected_format, actual_format='unknown', format_match = False, encoding_valid = False, compression_valid = False, file_size_reasonable = False, issues=[f'Format monitoring error: {str(e)}'], warnings=[], timestamp = datetime.now())
 
     def _analyze_dataframe_format(self, data: pd.DataFrame, expected_format: str) -> FormatMetrics:
         """Analyze DataFrame format."""
@@ -438,10 +439,10 @@ class DataQualityMonitor:
         encoding_valid = True
         compression_valid = True
         file_size_reasonable = True
-        memory_usage = data.memory_usage(deep=True).sum()
+        memory_usage = data.memory_usage(deep = True).sum()
         if memory_usage > 1000000000.0:
             warnings.append(f'Large DataFrame size: {memory_usage / 1000000000.0:.2f}GB')
-        return FormatMetrics(expected_format=expected_format, actual_format=actual_format, format_match=format_match, encoding_valid=encoding_valid, compression_valid=compression_valid, file_size_reasonable=file_size_reasonable, issues=issues, warnings=warnings, timestamp=datetime.now())
+        return FormatMetrics(expected_format = expected_format, actual_format = actual_format, format_match = format_match, encoding_valid = encoding_valid, compression_valid = compression_valid, file_size_reasonable = file_size_reasonable, issues = issues, warnings = warnings, timestamp = datetime.now())
 
     def _analyze_generic_format(self, data: Any, expected_format: str) -> FormatMetrics:
         """Analyze generic data format."""
@@ -455,7 +456,7 @@ class DataQualityMonitor:
         if data is None:
             issues.append('Data is None')
             format_match = False
-        return FormatMetrics(expected_format=expected_format, actual_format=actual_format, format_match=format_match, encoding_valid=encoding_valid, compression_valid=compression_valid, file_size_reasonable=file_size_reasonable, issues=issues, warnings=warnings, timestamp=datetime.now())
+        return FormatMetrics(expected_format = expected_format, actual_format = actual_format, format_match = format_match, encoding_valid = encoding_valid, compression_valid = compression_valid, file_size_reasonable = file_size_reasonable, issues = issues, warnings = warnings, timestamp = datetime.now())
 
     async def monitor_indexing(self, data: Any, step_name: str) -> IndexMetrics:
         """Monitor data indexing quality."""
@@ -469,7 +470,7 @@ class DataQualityMonitor:
             return metrics
         except Exception as e:
             self.logger.exception(f'❌ Error monitoring indexing for {step_name}: {e}')
-            return IndexMetrics(has_temporal_index=False, index_sorted=False, no_duplicates=False, no_gaps=False, frequency_consistent=False, timezone_consistent=False, overall_valid=False, issues=[f'Index monitoring error: {str(e)}'], warnings=[], timestamp=datetime.now())
+            return IndexMetrics(has_temporal_index = False, index_sorted = False, no_duplicates = False, no_gaps = False, frequency_consistent = False, timezone_consistent = False, overall_valid = False, issues=[f'Index monitoring error: {str(e)}'], warnings=[], timestamp = datetime.now())
 
     def _analyze_dataframe_indexing(self, data: pd.DataFrame) -> IndexMetrics:
         """Analyze DataFrame indexing."""
@@ -502,7 +503,7 @@ class DataQualityMonitor:
         if 'timestamp' in data.columns and data['timestamp'].dt.tz is not None:
             timezone_consistent = data['timestamp'].dt.tz == data['timestamp'].dt.tz
         overall_valid = all([has_temporal_index, index_sorted, no_duplicates, no_gaps, frequency_consistent, timezone_consistent])
-        return IndexMetrics(has_temporal_index=has_temporal_index, index_sorted=index_sorted, no_duplicates=no_duplicates, no_gaps=no_gaps, frequency_consistent=frequency_consistent, timezone_consistent=timezone_consistent, overall_valid=overall_valid, issues=issues, warnings=warnings, timestamp=datetime.now())
+        return IndexMetrics(has_temporal_index = has_temporal_index, index_sorted = index_sorted, no_duplicates = no_duplicates, no_gaps = no_gaps, frequency_consistent = frequency_consistent, timezone_consistent = timezone_consistent, overall_valid = overall_valid, issues = issues, warnings = warnings, timestamp = datetime.now())
 
     def _analyze_generic_indexing(self, data: Any) -> IndexMetrics:
         """Analyze generic data indexing."""
@@ -519,7 +520,7 @@ class DataQualityMonitor:
             overall_valid = False
         else:
             overall_valid = True
-        return IndexMetrics(has_temporal_index=has_temporal_index, index_sorted=index_sorted, no_duplicates=no_duplicates, no_gaps=no_gaps, frequency_consistent=frequency_consistent, timezone_consistent=timezone_consistent, overall_valid=overall_valid, issues=issues, warnings=warnings, timestamp=datetime.now())
+        return IndexMetrics(has_temporal_index = has_temporal_index, index_sorted = index_sorted, no_duplicates = no_duplicates, no_gaps = no_gaps, frequency_consistent = frequency_consistent, timezone_consistent = timezone_consistent, overall_valid = overall_valid, issues = issues, warnings = warnings, timestamp = datetime.now())
 
     async def _log_quality_metrics(self, step_name: str, metrics: DataQualityMetrics) -> None:
         """Log quality metrics to MLflow."""
@@ -527,7 +528,7 @@ class DataQualityMonitor:
             metrics_dict = asdict(metrics)
             metrics_dict['quality_level'] = metrics_dict['quality_level'].value
             metrics_dict['timestamp'] = metrics_dict['timestamp'].isoformat()
-            log_step_metrics(config=self.config, step_name=f'{step_name}_quality_monitoring', metrics={'overall_quality_score': metrics.overall_score, 'completeness': metrics.completeness, 'consistency': metrics.consistency, 'validity': metrics.validity, 'timeliness': metrics.timeliness, 'uniqueness': metrics.uniqueness, 'accuracy': metrics.accuracy, 'quality_level': metrics.quality_level.value}, additional_metadata={'step_name': step_name, 'issues_count': len(metrics.issues), 'warnings_count': len(metrics.warnings), 'recommendations_count': len(metrics.recommendations)})
+            log_step_metrics(config = self.config, step_name = f'{step_name}_quality_monitoring', metrics={'overall_quality_score': metrics.overall_score, 'completeness': metrics.completeness, 'consistency': metrics.consistency, 'validity': metrics.validity, 'timeliness': metrics.timeliness, 'uniqueness': metrics.uniqueness, 'accuracy': metrics.accuracy, 'quality_level': metrics.quality_level.value}, additional_metadata={'step_name': step_name, 'issues_count': len(metrics.issues), 'warnings_count': len(metrics.warnings), 'recommendations_count': len(metrics.recommendations)})
         except Exception as e:
             self.logger.exception(f'❌ Failed to log quality metrics: {e}')
 
@@ -555,7 +556,7 @@ async def main() -> None:
     """Main execution function for testing."""
     config = {'SYMBOL': 'ETHUSDT', 'EXCHANGE': 'BINANCE', 'TIMEFRAME': '1m', 'DATA_DIR': 'data_cache', 'data_quality_monitor': {'enable_real_time_monitoring': True, 'alert_threshold': 0.8, 'auto_fix_enabled': False}}
     monitor = DataQualityMonitor(config)
-    sample_data = pd.DataFrame({'timestamp': pd.date_range('2024-01-01', periods=1000, freq='1min'), 'open': np.random.uniform(100, 200, 1000), 'high': np.random.uniform(100, 200, 1000), 'low': np.random.uniform(100, 200, 1000), 'close': np.random.uniform(100, 200, 1000), 'volume': np.random.uniform(1000, 10000, 1000)})
+    sample_data = pd.DataFrame({'timestamp': pd.date_range('2024-01-01', periods = 1000, freq='1min'), 'open': np.random.uniform(100, 200, 1000), 'high': np.random.uniform(100, 200, 1000), 'low': np.random.uniform(100, 200, 1000), 'close': np.random.uniform(100, 200, 1000), 'volume': np.random.uniform(1000, 10000, 1000)})
     quality_metrics = await monitor.monitor_data_quality(sample_data, 'step01')
     compatibility_metrics = await monitor.monitor_compatibility(sample_data, 'step01')
     format_metrics = await monitor.monitor_format(sample_data, 'step01')
@@ -569,6 +570,6 @@ async def main() -> None:
     print(f"Format Match: {('✅' if format_metrics.format_match else '❌')}")
     print(f"Index Valid: {('✅' if index_metrics.overall_valid else '❌')}")
     print('\nQuality Summary:')
-    print(json.dumps(report['quality_summary'], indent=2))
+    print(json.dumps(report['quality_summary'], indent = 2))
 if __name__ == '__main__':
     asyncio.run(main())

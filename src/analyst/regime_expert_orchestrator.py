@@ -1,14 +1,13 @@
-from .core.decorators import handles_errors
 import asyncio
 import logging
 from datetime import datetime
 from typing import Any
 from .analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
 from .analyst.regime_runtime import get_current_regime_info
-from .core.decorators.errors import handles_errors
 import pandas as pd
 import numpy as np
 import time
+from .core.decorators import handles_errors
 
 class RegimeExpertOrchestrator:
     """Manages and integrates regime experts for trading decisions."""
@@ -50,7 +49,7 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f'Error getting current regime info: {e}')
             return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='regime expert prediction')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='regime expert prediction')
     async def get_regime_expert_prediction(self, current_features: pd.DataFrame, regime_info: dict[str, Any]) -> dict[str, Any] | None:
         """Get prediction from the current regime expert."""
         try:
@@ -71,7 +70,7 @@ class RegimeExpertOrchestrator:
         """Handle predictions during market transitions (cluster -1)."""
         try:
             intensity_scores = self._get_current_intensity_scores(regime_info)
-            analysis = self.transition_handler.analyze_transition(intensity_scores=intensity_scores, current_features=features)
+            analysis = self.transition_handler.analyze_transition(intensity_scores = intensity_scores, current_features = features)
             recommendation = self.transition_handler.get_trading_recommendation(analysis)
             if analysis.intensity_threshold_met:
                 combined_prediction = await self._get_combined_regime_predictions(analysis, features)
@@ -121,7 +120,7 @@ class RegimeExpertOrchestrator:
                 return cluster_id
         return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='step9_5 integration')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='step9_5 integration')
     async def integrate_step9_5_prediction(self, regime_info: dict[str, Any], step9_5_prediction: dict[str, Any]) -> dict[str, Any] | None:
         """Integrate Step 9.5 (HMM-LM Generalist) predictions with regime expert."""
         try:
@@ -141,7 +140,7 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f'Error integrating Step 9.5 prediction: {e}')
             return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='step10 integration')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='step10 integration')
     async def integrate_step10_prediction(self, regime_info: dict[str, Any], step10_prediction: dict[str, Any]) -> dict[str, Any] | None:
         """Integrate Step 10 (Event Transition Modeling) predictions for timing optimization."""
         try:
@@ -159,8 +158,8 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f'Error integrating Step 10 prediction: {e}')
             return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='two-tier decision system')
-    async def get_two_tier_decision(self, exchange: str, symbol: str, timeframe: str, step9_5_prediction: dict[str, Any] | None=None, step10_prediction: dict[str, Any] | None=None) -> dict[str, Any] | None:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='two-tier decision system')
+    async def get_two_tier_decision(self, exchange: str, symbol: str, timeframe: str, step9_5_prediction: dict[str, Any] | None = None, step10_prediction: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """Get two-tier decision combining regime expert with Step 9.5 and Step 10."""
         try:
             regime_info = await self.get_current_regime_info(exchange, symbol, timeframe)
@@ -203,7 +202,7 @@ class RegimeExpertOrchestrator:
                 final_decision['confidence'] = min(final_decision['confidence'], step10_integration.get('event_confidence', 0.0))
         return final_decision
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='continuous monitoring')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='continuous monitoring')
     async def start_continuous_monitoring(self, exchange: str, symbol: str, timeframe: str) -> bool:
         """Start continuous monitoring for regime changes and trading opportunities."""
         try:
@@ -219,6 +218,7 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f'Error in continuous monitoring: {e}')
             return False
 
+async def get_regime_expert_decision(config: dict, exchange: str, symbol: str, timeframe: str):
     """Get regime expert decision for the given parameters."""
     orchestrator = RegimeExpertOrchestrator(config)
     await orchestrator.initialize()

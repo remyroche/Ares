@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Trade Conditions Monitor (minimal scaffold)
 
@@ -9,8 +11,7 @@ Scaffolding for monitoring trade conditions and decisions.
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 
 
@@ -35,7 +36,7 @@ class TradeConditionsMonitor:
             ValueError: (False, "Invalid trade monitor configuration"),
             AttributeError: (False, "Missing trade monitor parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="trade_conditions_monitor.initialize",
     )
     async def initialize(self) -> bool:

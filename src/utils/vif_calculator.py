@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 VIF Calculator
 
 This module provides robust VIF (Variance Inflation Factor) calculation functions
@@ -10,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from typing import Optional, List, Dict
 import numpy as np
 
-from .utils.logger import system_logger
+from .logger import system_logger
 import pandas as pd
 import numpy as np
 import logging
@@ -44,7 +45,7 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         y = data[feature]
 
         # Remove rows with NaN values
-        mask = ~(X.isna().any(axis=1) | y.isna())
+        mask = ~(X.isna().any(axis = 1) | y.isna())
         X_clean = X[mask]
         y_clean = y[mask]
 
@@ -109,7 +110,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
 
     if len(features) < 2:
         logger.warning("⚠️ VIF Calculator: Not enough features for VIF calculation")
-        return pd.Series([1.0] * len(features), index=features)
+        return pd.Series([1.0] * len(features), index = features)
 
     try:
         # Use Ledoit-Wolf shrinkage for robust covariance estimation
@@ -128,7 +129,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
 
         # Standardize the data
         scaler = StandardScaler()
-        X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
+        X_scaled = pd.DataFrame(scaler.fit_transform(X), columns = X.columns, index = X.index)
 
         # Calculate correlation matrix using Ledoit-Wolf shrinkage
         try:
@@ -151,7 +152,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
             vif_values = np.diag(corr_inv)
 
             # Create result series
-            vif_series = pd.Series(vif_values, index=features)
+            vif_series = pd.Series(vif_values, index = features)
 
             # Handle any remaining invalid values
             vif_series = vif_series.replace([np.inf, -np.inf], np.nan)
@@ -170,7 +171,7 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     except Exception as e:
         logger.error(f"❌ VIF Calculator: Unexpected error: {e}")
         # Return default values
-        return pd.Series([1.0] * len(features), index=features)
+        return pd.Series([1.0] * len(features), index = features)
 
 
 def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:

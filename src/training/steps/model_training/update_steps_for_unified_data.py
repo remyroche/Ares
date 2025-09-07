@@ -194,8 +194,8 @@ def generate_step_update_template(step_name: str) -> str:
 
 ## 2. Replace existing data loading code with:
 {get_unified_data_loading_code(
-    lookback_days=guidance['lookback_days'],
-    timeframe_var=f'"{guidance["timeframe"]}"',
+    lookback_days = guidance['lookback_days'],
+    timeframe_var = f'"{guidance["timeframe"]}"',
 )}
 
 ## 3. Step-specific considerations:
@@ -246,4 +246,4 @@ def main() -> None:
 if __name__ == "__main__":
     import asyncio
 
-    asyncio.run(await main())
+    asyncio.run(main())

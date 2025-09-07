@@ -147,7 +147,7 @@ def validate_file_paths(data_dir: str) -> tuple[bool, list[str]]:
         subdir_path = os.path.join(data_dir, subdir)
         if not os.path.exists(subdir_path):
             try:
-                os.makedirs(subdir_path, exist_ok=True)
+                os.makedirs(subdir_path, exist_ok = True)
             except Exception as e:
                 errors.append(f'Cannot create required directory {subdir}: {e!s}')
     return (len(errors) == 0, errors)

@@ -1,4 +1,7 @@
 """Validation Strategies Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Contains validation strategy classes for different types of data validation.
 Extracted from raw_data_quality_checker.py
 """
@@ -7,12 +10,13 @@ from typing import Any, Optional
 import pandas as pd
 import numpy as np
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 
 class ValidationStrategy:
     """Base class for validation strategies."""
+    @log_important_calls
     
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.config = config or {}
@@ -89,6 +93,7 @@ class StructureValidationStrategy(ValidationStrategy):
         }
         
         return True
+    @log_all_calls
         
     def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str, Any]) -> pd.DataFrame | None:
         """Attempt to fix missing datetime index by creating one from available data."""
@@ -106,7 +111,7 @@ class StructureValidationStrategy(ValidationStrategy):
                             for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S.%f', 
                                       '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
                                 try:
-                                    timestamps = pd.to_datetime(data[col], format=fmt)
+                                    timestamps = pd.to_datetime(data[col], format = fmt)
                                     if not timestamps.isna().all():
                                         fixed_data = data.copy()
                                         fixed_data.index = timestamps
@@ -145,15 +150,15 @@ class StructureValidationStrategy(ValidationStrategy):
             self.logger.info(f'🔧 Estimated timeframe: {timeframe}')
             
             interval_map = {
-                '1m': pd.Timedelta(minutes=1),
-                '5m': pd.Timedelta(minutes=5),
-                '15m': pd.Timedelta(minutes=15),
-                '30m': pd.Timedelta(minutes=30),
-                '1h': pd.Timedelta(hours=1),
-                '4h': pd.Timedelta(hours=4),
-                '1d': pd.Timedelta(days=1)
+                '1m': pd.Timedelta(minutes = 1),
+                '5m': pd.Timedelta(minutes = 5),
+                '15m': pd.Timedelta(minutes = 15),
+                '30m': pd.Timedelta(minutes = 30),
+                '1h': pd.Timedelta(hours = 1),
+                '4h': pd.Timedelta(hours = 4),
+                '1d': pd.Timedelta(days = 1)
             }
-            interval = interval_map.get(timeframe, pd.Timedelta(minutes=1))
+            interval = interval_map.get(timeframe, pd.Timedelta(minutes = 1))
             
             start_time = pd.Timestamp('2024-01-01 00:00:00')
             timestamps = [start_time + i * interval for i in range(len(data))]
@@ -166,6 +171,7 @@ class StructureValidationStrategy(ValidationStrategy):
         except Exception as e:
             self.logger.exception(f'❌ Failed to create datetime index: {e}')
             return None
+    @log_all_calls
             
     def _estimate_timeframe_from_data(self, data: pd.DataFrame) -> str:
         """Estimate the timeframe from data characteristics."""
@@ -254,7 +260,7 @@ class CompletenessValidationStrategy(ValidationStrategy):
         if self.config.get('check_timestamp_continuity', True):
             time_diffs = data.index.to_series().diff().dropna()
             max_gap_hours = self.config.get('max_gap_hours', 1)
-            large_gaps = time_diffs[time_diffs > timedelta(hours=max_gap_hours)]
+            large_gaps = time_diffs[time_diffs > timedelta(hours = max_gap_hours)]
             
             if len(large_gaps) > 0:
                 results['warnings'].append(f'Found {len(large_gaps)} gaps larger than {max_gap_hours} hours')
@@ -301,7 +307,7 @@ class IntegrityValidationStrategy(ValidationStrategy):
                 return False
                 
         # Check for negative prices
-        negative_prices = (data[['open', 'high', 'low', 'close']] < 0).any(axis=1)
+        negative_prices = (data[['open', 'high', 'low', 'close']] < 0).any(axis = 1)
         negative_price_ratio = negative_prices.sum() / len(data)
         max_negative = self.config.get('max_negative_prices', 0.0)
         
@@ -353,7 +359,7 @@ class MarketSpecificValidationStrategy(ValidationStrategy):
         # Check for market gaps (weekends/holidays)
         if self.config.get('check_for_market_gaps', True):
             time_diffs = data.index.to_series().diff().dropna()
-            weekend_gaps = time_diffs[time_diffs > timedelta(hours=48)]
+            weekend_gaps = time_diffs[time_diffs > timedelta(hours = 48)]
             
             if len(weekend_gaps) > 0:
                 results['warnings'].append(f'Detected {len(weekend_gaps)} potential market gaps (weekends/holidays)')
@@ -415,14 +421,14 @@ class FeatureEngineeringValidationStrategy(ValidationStrategy):
         # Check wavelet data requirements
         if feature_eng_checks.get('check_wavelet_data_requirements', True):
             time_diffs = data.index.to_series().diff().dropna()
-            max_wavelet_gap = timedelta(hours=6)
+            max_wavelet_gap = timedelta(hours = 6)
             large_gaps = time_diffs[time_diffs > max_wavelet_gap]
             
             if len(large_gaps) > 0:
                 results['warnings'].append(f'Large gaps detected that may affect wavelet features: {len(large_gaps)} gaps > {max_wavelet_gap}')
                 
             min_continuous_hours = self.config.get('min_continuous_data_hours', 48)
-            continuous_periods = int(time_diffs[time_diffs <= timedelta(hours=1)].count())
+            continuous_periods = int(time_diffs[time_diffs <= timedelta(hours = 1)].count())
             
             if continuous_periods < min_continuous_hours:
                 results['critical_issues'].append(f'Insufficient continuous data for wavelet analysis: {continuous_periods} hours (minimum: {min_continuous_hours})')
@@ -463,7 +469,7 @@ class FeatureEngineeringValidationStrategy(ValidationStrategy):
                 if interval_variance > variance_threshold:
                     mean_interval = time_diffs_seconds.mean()
                     cv = time_diffs_seconds.std() / mean_interval if mean_interval > 0 else 0
-                    irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds=30)]
+                    irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = 30)]
                     irregular_ratio = len(irregular_intervals) / len(time_diffs)
                     
                     if cv > 0.3:
@@ -480,7 +486,7 @@ class FeatureEngineeringValidationStrategy(ValidationStrategy):
                 expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
                 tolerance_percentage = 0.15
                 tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
-                irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > timedelta(seconds=tolerance_seconds)]
+                irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > timedelta(seconds = tolerance_seconds)]
                 irregular_ratio = len(irregular_intervals) / len(time_diffs)
                 max_irregular = self.config.get('max_timestamp_discontinuity', 0.02)
                 
@@ -489,7 +495,7 @@ class FeatureEngineeringValidationStrategy(ValidationStrategy):
                         irregular_positions = irregular_intervals.index
                         if len(irregular_positions) > 1:
                             irregular_gaps = irregular_positions.to_series().diff().dropna()
-                            clustered_irregular = (irregular_gaps < timedelta(minutes=5)).sum() > len(irregular_gaps) * 0.5
+                            clustered_irregular = (irregular_gaps < timedelta(minutes = 5)).sum() > len(irregular_gaps) * 0.5
                             
                             if clustered_irregular:
                                 results['warnings'].append(f'Clustered irregular timestamp intervals detected: {irregular_ratio:.1%} (threshold: {max_irregular:.1%}) - may indicate data collection issues')

@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 '\nMatrix-Based Diverse Lookback Period Optimizer\n\nThis module uses matrix/vector operations to efficiently find 2-3 lookback periods\nfor each feature that deliver meaningful yet significantly different information.\n'
+from src.utils.logger import system_logger
 import json
 from datetime import datetime
 from pathlib import Path
@@ -8,13 +10,13 @@ import shap
 from optuna.samplers import TPESampler
 from scipy.optimize import minimize
 from sklearn.ensemble import RandomForestRegressor
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 from .utils.feature_calculators import FeatureCalculatorRegistry
 import pandas as pd
 import numpy as np
 import logging
 import time
+import itertools
 
 class MatrixDiverseLookbackOptimizer:
     """
@@ -31,14 +33,173 @@ class MatrixDiverseLookbackOptimizer:
         """Initialize the matrix-based diverse lookback optimizer."""
         self.config = config
         self.logger = system_logger.getChild('MatrixDiverseLookbackOptimizer')
-        self.matrix_config = config.get('matrix_diverse_lookback_optimization', {'target_periods_per_feature': 3, 'min_periods_per_feature': 2, 'max_periods_per_feature': 3, 'diversity_threshold': 0.3, 'meaningful_threshold': 0.1, 'correlation_threshold': 0.7, 'quality_thresholds': {'min_diversity_score': 0.2, 'min_information_score': 0.05, 'max_correlation': 0.8, 'min_periods_for_3': 2}, 'matrix_optimization': {'enabled': True, 'method': 'scipy', 'max_iterations': 1000, 'tolerance': 1e-06}, 'vector_operations': {'enabled': True, 'batch_size': 1000, 'parallel_processing': True}, 'lookback_ranges': {'RSI': {'min': 5, 'max': 50, 'step': 2}, 'MACD_fast': {'min': 5, 'max': 25, 'step': 1}, 'MACD_slow': {'min': 20, 'max': 40, 'step': 2}, 'Bollinger_Bands': {'min': 10, 'max': 50, 'step': 2}, 'SMA_short': {'min': 3, 'max': 20, 'step': 1}, 'SMA_long': {'min': 20, 'max': 100, 'step': 5}, 'EMA_short': {'min': 3, 'max': 20, 'step': 1}, 'EMA_long': {'min': 20, 'max': 100, 'step': 5}, 'ATR': {'min': 5, 'max': 30, 'step': 1}, 'Stochastic_k': {'min': 5, 'max': 30, 'step': 1}, 'Stochastic_d': {'min': 3, 'max': 10, 'step': 1}, 'ADX': {'min': 5, 'max': 30, 'step': 1}, 'CCI': {'min': 5, 'max': 30, 'step': 1}, 'Williams_R': {'min': 5, 'max': 30, 'step': 1}, 'MFI': {'min': 5, 'max': 30, 'step': 1}, 'ROC': {'min': 5, 'max': 30, 'step': 1}, 'MOM': {'min': 5, 'max': 30, 'step': 1}, 'TSI': {'min': 5, 'max': 30, 'step': 1}, 'UO': {'min': 5, 'max': 30, 'step': 1}, 'AO': {'min': 5, 'max': 30, 'step': 1}, 'CMF': {'min': 5, 'max': 30, 'step': 1}, 'VWAP': {'min': 5, 'max': 30, 'step': 1}, 'Pivot_Points': {'min': 5, 'max': 30, 'step': 1}, 'Ichimoku': {'min': 5, 'max': 30, 'step': 1}, 'Parabolic_SAR': {'min': 5, 'max': 30, 'step': 1}, 'Keltner_Channels': {'min': 5, 'max': 30, 'step': 1}, 'Donchian_Channels': {'min': 5, 'max': 30, 'step': 1}, 'Price_Channels': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Profile': {'min': 5, 'max': 30, 'step': 1}, 'OBV': {'min': 5, 'max': 30, 'step': 1}, 'AD': {'min': 5, 'max': 30, 'step': 1}, 'Chaikin_Money_Flow': {'min': 5, 'max': 30, 'step': 1}, 'Money_Flow_Index': {'min': 5, 'max': 30, 'step': 1}, 'Volume_RSI': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Stochastic': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Trend': {'min': 5, 'max': 30, 'step': 1}, 'Accumulation_Distribution': {'min': 5, 'max': 30, 'step': 1}, 'On_Balance_Volume': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Weighted_Average_Price': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Confirmation': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Trend_Indicator': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Histogram': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Signal': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Trigger': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Zero_Line': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Upper_Band': {'min': 5, 'max': 30, 'step': 1}, 'Volume_Price_Oscillator_Lower_Band': {'min': 5, 'max': 30, 'step': 1}, 'VWAP_Momentum': {'min': 3, 'max': 50, 'step': 1}, 'VWAP_Acceleration': {'min': 3, 'max': 50, 'step': 1}, 'VWAP_Volatility': {'min': 5, 'max': 50, 'step': 1}, 'VWAP_Momentum_Volatility': {'min': 5, 'max': 50, 'step': 1}, 'VWAP_Returns': {'min': 5, 'max': 50, 'step': 1}, 'VWAP_Log_Returns': {'min': 5, 'max': 50, 'step': 1}, 'Price_VWAP_Ratio': {'min': 5, 'max': 50, 'step': 1}, 'Price_VWAP_Deviation': {'min': 5, 'max': 50, 'step': 1}, 'Price_VWAP_Spread': {'min': 5, 'max': 50, 'step': 1}}})
+        default_matrix_config = {
+            'target_periods_per_feature': 3,
+            'min_periods_per_feature': 2,
+            'max_periods_per_feature': 3,
+            'diversity_threshold': 0.3,
+            'meaningful_threshold': 0.1,
+            'correlation_threshold': 0.7,
+            'quality_thresholds': {
+                'min_diversity_score': 0.2,
+                'min_information_score': 0.05,
+                'max_correlation': 0.8,
+                'min_periods_for_3': 2
+            },
+            'matrix_optimization': {
+                'enabled': True,
+                'method': 'scipy',
+                'max_iterations': 1000,
+                'tolerance': 1e-06
+            },
+            'vector_operations': {
+                'enabled': True,
+                'batch_size': 1000,
+                'parallel_processing': True
+            },
+            'lookback_ranges': self._get_comprehensive_lookback_ranges()
+        }
+
+        matrix_config_input = config.get('matrix_diverse_lookback_optimization', {})
+        # Merge input config with defaults
+        self.matrix_config = {**default_matrix_config, **matrix_config_input}
+        # Deep merge for nested dictionaries
+        for key, default_value in default_matrix_config.items():
+            if key in matrix_config_input and isinstance(matrix_config_input[key], dict) and isinstance(default_value, dict):
+                self.matrix_config[key] = {**default_value, **matrix_config_input[key]}
         self.output_dir = Path('data/matrix_diverse_lookback_optimization')
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents = True, exist_ok = True)
         self.logger.info('🚀 Matrix-Based Diverse Lookback Optimizer initialized')
         self.logger.info(f'📁 Output directory: {self.output_dir.absolute()}')
 
+    def _get_comprehensive_lookback_ranges(self) -> dict[str, dict[str, int]]:
+        """Get optimized lookback ranges for all step06 features - maximum 3 periods per feature."""
+        return {
+            # Basic features - 3 diverse periods each
+            'ret_1': {'min': 1, 'max': 3, 'step': 1},  # [1, 2, 3]
+            'ret_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'ret_20': {'min': 10, 'max': 20, 'step': 5},  # [10, 15, 20]
+            'vol_20': {'min': 10, 'max': 20, 'step': 5},  # [10, 15, 20]
+            'volume_ratio': {'min': 10, 'max': 20, 'step': 5},  # [10, 15, 20]
+
+            # RSI variations - 3 periods each
+            'rsi_7': {'min': 5, 'max': 9, 'step': 2},  # [5, 7, 9]
+            'rsi_14': {'min': 7, 'max': 14, 'step': 3},  # [7, 10, 13]
+            'rsi_21': {'min': 14, 'max': 22, 'step': 4},  # [14, 18, 22]
+
+            # Moving averages - 3 periods each (short, medium, long)
+            'sma_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'sma_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'sma_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'sma_50': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+            'sma_100': {'min': 50, 'max': 80, 'step': 15},  # [50, 65, 80]
+            'ema_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'ema_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'ema_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'ema_50': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+            'ema_100': {'min': 50, 'max': 80, 'step': 15},  # [50, 65, 80]
+
+            # MACD - 3 periods each
+            'macd_line': {'min': 12, 'max': 20, 'step': 4},  # [12, 16, 20]
+            'macd_signal': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+
+            # Bollinger Bands - 3 periods each
+            'bb_middle_10': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'bb_middle_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'bb_middle_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+            'bb_upper_10': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'bb_upper_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'bb_upper_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+            'bb_lower_10': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'bb_lower_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'bb_lower_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+            'bb_position_10': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'bb_position_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'bb_position_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+
+            # ATR - 3 periods each
+            'atr_7': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'atr_14': {'min': 7, 'max': 15, 'step': 4},  # [7, 11, 15]
+            'atr_21': {'min': 14, 'max': 22, 'step': 4},  # [14, 18, 22]
+
+            # Stochastic - 3 periods each
+            'stoch_k_14': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'stoch_k_21': {'min': 14, 'max': 22, 'step': 4},  # [14, 18, 22]
+            'stoch_d_14_3': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'stoch_d_21_5': {'min': 3, 'max': 9, 'step': 3},  # [3, 6, 9]
+
+            # Williams %R - 3 periods each
+            'williams_r_14': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'williams_r_21': {'min': 14, 'max': 22, 'step': 4},  # [14, 18, 22]
+
+            # Momentum and ROC - 3 periods each
+            'momentum_15': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'momentum_25': {'min': 15, 'max': 25, 'step': 5},  # [15, 20, 25]
+            'momentum_30': {'min': 20, 'max': 30, 'step': 5},  # [20, 25, 30]
+            'roc_15': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'roc_25': {'min': 15, 'max': 25, 'step': 5},  # [15, 20, 25]
+            'roc_30': {'min': 20, 'max': 30, 'step': 5},  # [20, 25, 30]
+            'momentum_ratio_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'momentum_ratio_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'momentum_ratio_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+
+            # VWAP - 3 periods each
+            'vwap': {'min': 5, 'max': 15, 'step': 5},  # [5, 10, 15]
+            'vwap_deviation': {'min': 5, 'max': 15, 'step': 5},  # [5, 10, 15]
+
+            # CCI - 3 periods each
+            'cci_14': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'cci_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+
+            # Volume features - 3 periods each
+            'volume_sma_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'volume_sma_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'volume_sma_15': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'volume_sma_30': {'min': 20, 'max': 30, 'step': 5},  # [20, 25, 30]
+            'volume_ratio_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'volume_ratio_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'volume_ratio_15': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'volume_ratio_30': {'min': 20, 'max': 30, 'step': 5},  # [20, 25, 30]
+            'obv': {'min': 5, 'max': 15, 'step': 5},  # [5, 10, 15]
+
+            # Volatility - 3 periods each
+            'volatility_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'volatility_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'volatility_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'volatility_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+            'high_low_ratio_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'high_low_ratio_10': {'min': 5, 'max': 11, 'step': 3},  # [5, 8, 11]
+            'high_low_ratio_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'high_low_ratio_30': {'min': 15, 'max': 27, 'step': 6},  # [15, 21, 27]
+
+            # Advanced momentum features - 3 periods each
+            'momentum_40': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+            'momentum_60': {'min': 30, 'max': 50, 'step': 10},  # [30, 40, 50]
+            'momentum_100': {'min': 50, 'max': 80, 'step': 15},  # [50, 65, 80]
+            'momentum_acceleration': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+            'momentum_strength': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+            'momentum_divergence': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'momentum_trend_strength': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'momentum_volatility_adjusted': {'min': 20, 'max': 35, 'step': 7},  # [20, 27, 34]
+
+            # Correlation features - 3 periods each
+            'autocorrelation_5': {'min': 3, 'max': 7, 'step': 2},  # [3, 5, 7]
+            'autocorrelation_20': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'cross_timeframe_correlation': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+
+            # Liquidity features - 3 periods each
+            'volume_liquidity': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'price_impact': {'min': 5, 'max': 13, 'step': 4},  # [5, 9, 13]
+            'price_impact_smooth': {'min': 10, 'max': 18, 'step': 4},  # [10, 14, 18]
+            'liquidity_percentile': {'min': 50, 'max': 100, 'step': 25},  # [50, 75, 100]
+
+            # Adaptive features - 3 periods each
+            'adaptive_period': {'min': 5, 'max': 20, 'step': 7},  # [5, 12, 19]
+            'adaptive_ma': {'min': 5, 'max': 20, 'step': 7}  # [5, 12, 19]
+        }
+
     @handles_errors(fallback={})
-    async def find_diverse_lookback_periods_matrix(self, data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None=None, symbol: str='UNKNOWN', exchange: str='UNKNOWN', timeframe: str='1m') -> dict[str, Any]:
+    async def find_diverse_lookback_periods_matrix(self, data: pd.DataFrame, target: pd.Series, regimes: pd.Series | None = None, symbol: str='UNKNOWN', exchange: str='UNKNOWN', timeframe: str='1m') -> dict[str, Any]:
         """
         Find diverse lookback periods using matrix/vector optimization.
 
@@ -101,7 +262,7 @@ class MatrixDiverseLookbackOptimizer:
         selected_periods = [periods[i] for i in selected_indices]
         selected_features = feature_matrix[:, selected_indices]
         diversity_metrics = self._calculate_matrix_diversity_metrics(selected_features, correlation_matrix[selected_indices][:, selected_indices])
-        return {'selected_periods': selected_periods, 'period_scores': [{'period': periods[i], 'information_score': info_scores[i], 'feature_values': feature_matrix[:, i]} for i in selected_indices], 'diversity_metrics': diversity_metrics, 'correlation_matrix': correlation_matrix.tolist(), 'all_period_scores': [{'period': p, 'information_score': s} for p, s in zip(periods, info_scores, strict=False)], 'optimization_method': self.matrix_config['matrix_optimization']['method']}
+        return {'selected_periods': selected_periods, 'period_scores': [{'period': periods[i], 'information_score': info_scores[i], 'feature_values': feature_matrix[:, i]} for i in selected_indices], 'diversity_metrics': diversity_metrics, 'correlation_matrix': correlation_matrix.tolist(), 'all_period_scores': [{'period': p, 'information_score': s} for p, s in zip(periods, info_scores, strict = False)], 'optimization_method': self.matrix_config['matrix_optimization']['method']}
 
     def _calculate_feature_matrix(self, data: pd.DataFrame, feature_name: str, periods: list[int]) -> np.ndarray:
         """Calculate feature matrix for all periods using vectorized operations."""
@@ -112,7 +273,7 @@ class MatrixDiverseLookbackOptimizer:
             feature_values = self._calculate_feature_with_period(data, feature_name, period)
             if feature_values is not None:
                 feature_matrix[:, i] = feature_values.values
-        valid_rows = ~np.all(np.isnan(feature_matrix), axis=1)
+        valid_rows = ~np.all(np.isnan(feature_matrix), axis = 1)
         return feature_matrix[valid_rows]
 
     async def _calculate_vectorized_info_scores(self, feature_matrix: np.ndarray, target: pd.Series) -> np.ndarray:
@@ -128,7 +289,7 @@ class MatrixDiverseLookbackOptimizer:
             X = feature_values[valid_mask].reshape(-1, 1)
             y = target.iloc[valid_mask].values
             try:
-                rf = RandomForestRegressor(n_estimators=100, random_state=42)
+                rf = RandomForestRegressor(n_estimators = 100, random_state = 42)
                 rf.fit(X, y)
                 explainer = shap.TreeExplainer(rf)
                 shap_values = explainer.shap_values(X)
@@ -140,10 +301,10 @@ class MatrixDiverseLookbackOptimizer:
 
     def _calculate_correlation_matrix(self, feature_matrix: np.ndarray) -> np.ndarray:
         """Calculate correlation matrix using vectorized operations."""
-        valid_mask = ~np.any(np.isnan(feature_matrix), axis=1)
+        valid_mask = ~np.any(np.isnan(feature_matrix), axis = 1)
         clean_matrix = feature_matrix[valid_mask]
         correlation_matrix = np.corrcoef(clean_matrix.T)
-        correlation_matrix = np.nan_to_num(correlation_matrix, nan=0.0)
+        correlation_matrix = np.nan_to_num(correlation_matrix, nan = 0.0)
         return np.abs(correlation_matrix)
 
     def _matrix_optimize_period_selection(self, info_scores: np.ndarray, correlation_matrix: np.ndarray, periods: list[int]) -> list[int]:
@@ -151,6 +312,12 @@ class MatrixDiverseLookbackOptimizer:
         target_count = min(self.matrix_config['target_periods_per_feature'], len(periods))
         if target_count == 0:
             return []
+
+        # Special handling for exactly 3 periods - return all of them
+        if len(periods) == 3:
+            self.logger.info("   📊 Exactly 3 periods available - using all periods for optimal diversity")
+            return [0, 1, 2]  # Return all 3 indices
+
         meaningful_mask = info_scores >= self.matrix_config['meaningful_threshold']
         if np.sum(meaningful_mask) < self.matrix_config['min_periods_per_feature']:
             top_indices = np.argsort(info_scores)[-self.matrix_config['min_periods_per_feature']:]
@@ -253,8 +420,8 @@ class MatrixDiverseLookbackOptimizer:
             np.fill_diagonal(selected_correlations, 0)
             diversity_penalty = np.sum(selected_correlations) * 0.5
             return info_component + diversity_penalty
-        study = optuna.create_study(direction='minimize', sampler=TPESampler(seed=42))
-        study.optimize(objective, n_trials=100)
+        study = optuna.create_study(direction='minimize', sampler = TPESampler(seed = 42))
+        study.optimize(objective, n_trials = 100)
         best_params = study.best_params
         return best_params['selected_periods']
 
@@ -303,20 +470,20 @@ class MatrixDiverseLookbackOptimizer:
         main_filename = f'{exchange}_{symbol}_{timeframe}_matrix_diverse_lookback_periods.json'
         main_filepath = self.output_dir / main_filename
         with open(main_filepath, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+            json.dump(results, f, indent = 2, default = str)
         file_paths['main_results'] = str(main_filepath.absolute())
         self.logger.info(f'💾 Saved main results to: {main_filepath.absolute()}')
         summary_filename = f'{exchange}_{symbol}_{timeframe}_diverse_periods_summary.json'
         summary_filepath = self.output_dir / summary_filename
         summary_data = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'optimization_timestamp': results['optimization_timestamp'], 'diverse_periods': {feature: data['selected_periods'] for feature, data in results['diverse_lookback_periods'].items()}, 'diversity_scores': {feature: data['diversity_metrics']['diversity_score'] for feature, data in results['diverse_lookback_periods'].items()}}
         with open(summary_filepath, 'w') as f:
-            json.dump(summary_data, f, indent=2, default=str)
+            json.dump(summary_data, f, indent = 2, default = str)
         file_paths['summary'] = str(summary_filepath.absolute())
         self.logger.info(f'💾 Saved summary to: {summary_filepath.absolute()}')
         matrix_filename = f'{exchange}_{symbol}_{timeframe}_matrix_optimization_details.json'
         matrix_filepath = self.output_dir / matrix_filename
         with open(matrix_filepath, 'w') as f:
-            json.dump(results['matrix_optimization_results'], f, indent=2, default=str)
+            json.dump(results['matrix_optimization_results'], f, indent = 2, default = str)
         file_paths['matrix_details'] = str(matrix_filepath.absolute())
         self.logger.info(f'💾 Saved matrix details to: {matrix_filepath.absolute()}')
         return file_paths
@@ -359,13 +526,13 @@ class MatrixDiverseLookbackOptimizer:
         params_filename = f'{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json'
         params_filepath = self.output_dir / params_filename
         with open(params_filepath, 'w') as f:
-            json.dump(optimized_params, f, indent=2, default=str)
+            json.dump(optimized_params, f, indent = 2, default = str)
         self.logger.info(f'💾 Saved optimized parameters to: {params_filepath.absolute()}')
         step_params_dir = Path('data/optimized_feature_parameters')
-        step_params_dir.mkdir(parents=True, exist_ok=True)
+        step_params_dir.mkdir(parents = True, exist_ok = True)
         step_params_filepath = step_params_dir / params_filename
         with open(step_params_filepath, 'w') as f:
-            json.dump(optimized_params, f, indent=2, default=str)
+            json.dump(optimized_params, f, indent = 2, default = str)
         self.logger.info(f'💾 Saved step parameters to: {step_params_filepath.absolute()}')
         return str(step_params_filepath.absolute())
 

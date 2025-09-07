@@ -1,3 +1,6 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 10: Unified Regime Intelligence - Per-Regime Implementation.
 
 This module provides per-HMM regime intelligence functionality, ensuring that
@@ -16,7 +19,6 @@ from .training.steps.regime_processing_utils import (
 )
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
 import numpy as np
 import logging
 import typing
@@ -27,6 +29,7 @@ logger = get_logger('Step10UnifiedRegimeIntelligencePerRegime')
 
 class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
     """Unified regime intelligence step that processes each regime separately."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
@@ -142,6 +145,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error loading HMM training data for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _get_regime_intelligence_config(self, regime_id: int) -> Dict[str, Any]:
         """Get regime intelligence configuration for a specific regime.
@@ -389,6 +393,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error developing pattern recognition intelligence for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _develop_pattern_rules(
         self,
@@ -565,6 +570,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error developing risk assessment intelligence for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _calculate_regime_risk_multiplier(self, regime_id: int) -> float:
         """Calculate risk multiplier based on regime characteristics.
@@ -581,6 +587,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
             return 0.5
         else:  # Balanced regimes - balanced risk
             return 0.75
+    @log_all_calls
     
     def _calculate_var_95(self, models: Dict[str, Any]) -> float:
         """Calculate Value at Risk (95%) from model predictions.
@@ -604,6 +611,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error calculating VaR 95%: {e}")
             return 0.0
+    @log_all_calls
     
     def _calculate_expected_shortfall(self, models: Dict[str, Any]) -> float:
         """Calculate Expected Shortfall from model predictions.
@@ -629,6 +637,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error calculating Expected Shortfall: {e}")
             return 0.0
+    @log_all_calls
     
     def _calculate_sharpe_ratio(self, models: Dict[str, Any]) -> float:
         """Calculate Sharpe ratio from model predictions.
@@ -712,6 +721,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error developing performance prediction intelligence for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _calculate_model_reliability(self, model_data: Dict[str, Any]) -> float:
         """Calculate model reliability score.
@@ -730,6 +740,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error calculating model reliability: {e}")
             return 0.0
+    @log_all_calls
     
     def _calculate_expected_performance(self, regime_id: int, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate expected performance for regime.
@@ -815,6 +826,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error developing ensemble intelligence for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _create_ensemble_from_individual_models(self, models: Dict[str, Any]) -> Dict[str, Any]:
         """Create ensemble data from individual models.
@@ -842,6 +854,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
         except Exception as e:
             self.logger.error(f"❌ Error creating ensemble from individual models: {e}")
             return {}
+    @log_all_calls
     
     def _calculate_intelligence_performance(self, intelligence_components: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate overall intelligence performance metrics.
@@ -921,7 +934,7 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
             intelligence_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_intelligence_regime_{regime_id}.json'
             
             with open(intelligence_path, 'w') as f:
-                json.dump(intelligence_results, f, indent=2, default=str)
+                json.dump(intelligence_results, f, indent = 2, default = str)
             
             self.logger.info(f"✅ Saved regime intelligence results for regime {regime_id}: {intelligence_path}")
             return True
@@ -970,11 +983,11 @@ async def run_per_regime_step(
     step = PerRegimeUnifiedRegimeIntelligenceStep(config)
     
     success = await step.execute_per_regime_regime_intelligence(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        force_rerun=force_rerun
+        symbol = symbol,
+        exchange = exchange,
+        timeframe = timeframe,
+        data_dir = data_dir,
+        force_rerun = force_rerun
     )
     
     if success:

@@ -31,6 +31,16 @@ try:
 except ImportError:
     PYCG_AVAILABLE = False
     print("Warning: PyCG not available. Install with: pip install pycg")
+    
+    # Create a mock pycg module to prevent import errors
+    class MockPyCG:
+        def __init__(self, *args, **kwargs):
+            pass
+        
+        def analyze(self, *args, **kwargs):
+            return {}
+    
+    pycg = MockPyCG()
 
 try:
     import deadcode
@@ -45,6 +55,13 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
     print("Warning: NetworkX not available. Install with: pip install networkx")
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: Matplotlib not available. Install with: pip install matplotlib")
 
 from core.config import AnalysisConfig, CodeQualityConfig
 from utils.file_utils import find_python_files
@@ -767,6 +784,9 @@ class EnhancedDeadCodeAnalyzer:
 
     def _visualize_call_graph(self, output_path: Path) -> None:
         """Visualize the call graph."""
+        if not MATPLOTLIB_AVAILABLE:
+            self.logger.warning("Matplotlib not available, skipping call graph visualization")
+            return
         try:
             plt.figure(figsize=(12, 8))
             pos = nx.spring_layout(self.call_graph, k=1, iterations=50)
@@ -780,6 +800,9 @@ class EnhancedDeadCodeAnalyzer:
 
     def _visualize_dependency_graph(self, output_path: Path) -> None:
         """Visualize the dependency graph."""
+        if not MATPLOTLIB_AVAILABLE:
+            self.logger.warning("Matplotlib not available, skipping dependency graph visualization")
+            return
         try:
             plt.figure(figsize=(12, 8))
             pos = nx.spring_layout(self.dependency_graph, k=1, iterations=50)
@@ -793,6 +816,9 @@ class EnhancedDeadCodeAnalyzer:
 
     def _visualize_issue_distribution(self, report: EnhancedDeadCodeReport, output_dir: Path) -> None:
         """Generate issue distribution visualizations."""
+        if not MATPLOTLIB_AVAILABLE:
+            self.logger.warning("Matplotlib not available, skipping issue distribution visualization")
+            return
         try:
             # Issues by type
             plt.figure(figsize=(10, 6))
@@ -851,8 +877,8 @@ class EnhancedDeadCodeAnalyzer:
                         "tool_source": issue.tool_source,
                         "code_snippet": issue.code_snippet
                     }
-                    for issue in report.issues_by_file[file_path]
                     for file_path in report.issues_by_file
+                    for issue in report.issues_by_file[file_path]
                 ]
             }
             

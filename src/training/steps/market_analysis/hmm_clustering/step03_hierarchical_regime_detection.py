@@ -1,5 +1,7 @@
 """Hierarchical Multi-Scale Regime Detection.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module implements regime detection at multiple timeframes (5m, 15m, 30m, 1h)
 with hierarchical alignment and cross-timeframe validation.
 """
@@ -13,10 +15,11 @@ warnings.filterwarnings('ignore')
 
 class HierarchicalRegimeDetector:
     """Multi-scale regime detection with hierarchical alignment."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
-        self.timeframes = self.config.get('timeframes', ['5m', '15m', '30m', '1h'])
+        self.timeframes = self.config.get('timeframes', ['1m', '5m', '15m', '30m', '1h'])
         self.base_timeframe = self.config.get('base_timeframe', '1m')
         self.min_regimes = self.config.get('min_regimes', 2)
         self.max_regimes = self.config.get('max_regimes', 6)
@@ -42,6 +45,7 @@ class HierarchicalRegimeDetector:
         print('  ✅ Validating hierarchical consistency...')
         validation_results = self._validate_hierarchical_consistency()
         return {'regime_hierarchy': self.regime_hierarchy, 'aligned_regimes': aligned_regimes, 'regime_confidence': regime_confidence, 'validation_results': validation_results, 'timeframes': self.timeframes, 'hierarchical_quality_score': self._calculate_hierarchical_quality_score()}
+    @log_all_calls
 
     def _detect_regimes_at_timeframe(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
         """Detect regimes at a specific timeframe."""
@@ -53,6 +57,7 @@ class HierarchicalRegimeDetector:
         regimes = self._detect_regimes_hmm(features, optimal_n_regimes)
         quality_metrics = self._calculate_regime_quality_metrics(resampled_data, regimes)
         return {'regimes': regimes, 'n_regimes': optimal_n_regimes, 'confidence': quality_metrics['overall_confidence'], 'timeframe': timeframe, 'quality_metrics': quality_metrics, 'features': features, 'data': resampled_data}
+    @log_all_calls
 
     def _resample_data(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Resample data to target timeframe."""
@@ -60,6 +65,7 @@ class HierarchicalRegimeDetector:
         freq = timeframe_map.get(timeframe, '1H')
         resampled = data.resample(freq).agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
         return resampled
+    @log_all_calls
 
     def _extract_timeframe_features(self, data: pd.DataFrame, timeframe: str) -> np.ndarray:
         """Extract features specific to the timeframe."""
@@ -73,13 +79,15 @@ class HierarchicalRegimeDetector:
             hour_of_day = data.index.hour
             features.extend([hour_of_day.mean(), hour_of_day.std()])
         volatility = returns.rolling(20).std()
-        features.extend([volatility.autocorr(lag=1) if len(volatility) > 1 else 0, volatility.autocorr(lag=5) if len(volatility) > 5 else 0])
+        features.extend([volatility.autocorr(lag = 1) if len(volatility) > 1 else 0, volatility.autocorr(lag = 5) if len(volatility) > 5 else 0])
         return np.array(features)
+    @log_all_calls
 
     def _get_timeframe_minutes(self, timeframe: str) -> int:
         """Get timeframe in minutes."""
         timeframe_map = {'5m': 5, '15m': 15, '30m': 30, '1h': 60}
         return timeframe_map.get(timeframe, 60)
+    @log_all_calls
 
     def _optimize_regime_count(self, features: np.ndarray, timeframe: str) -> int:
         """Optimize number of regimes for a specific timeframe."""
@@ -91,7 +99,7 @@ class HierarchicalRegimeDetector:
         best_n_regimes = 2
         for n_regimes in range(self.min_regimes, min(self.max_regimes + 1, len(features) // 10)):
             try:
-                kmeans = KMeans(n_clusters=n_regimes, random_state=42)
+                kmeans = KMeans(n_clusters = n_regimes, random_state = 42)
                 labels = kmeans.fit_predict(features.reshape(-1, 1))
                 if len(np.unique(labels)) > 1:
                     score = silhouette_score(features.reshape(-1, 1), labels)
@@ -101,13 +109,14 @@ class HierarchicalRegimeDetector:
             except:
                 continue
         return best_n_regimes
+    @log_all_calls
 
     def _detect_regimes_hmm(self, features: np.ndarray, n_regimes: int) -> np.ndarray:
         """Detect regimes using Hidden Markov Model."""
         try:
             from hmmlearn.hmm import GaussianHMM
             X = features.reshape(-1, 1)
-            model = GaussianHMM(n_components=n_regimes, covariance_type='full', random_state=42)
+            model = GaussianHMM(n_components = n_regimes, covariance_type='full', random_state = 42)
             model.fit(X)
             regimes = model.predict(X)
             return regimes
@@ -115,9 +124,10 @@ class HierarchicalRegimeDetector:
             print(f'Error in HMM regime detection: {e}')
             from sklearn.cluster import KMeans
 
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42)
+            kmeans = KMeans(n_clusters = n_regimes, random_state = 42)
             regimes = kmeans.fit_predict(features.reshape(-1, 1))
             return regimes
+    @log_all_calls
 
     def _calculate_regime_quality_metrics(self, data: pd.DataFrame, regimes: np.ndarray) -> Dict[str, Any]:
         """Calculate quality metrics for regimes."""
@@ -128,6 +138,7 @@ class HierarchicalRegimeDetector:
         economic_significance = self._calculate_economic_significance(data, regimes)
         overall_confidence = (regime_separation + regime_stability + economic_significance) / 3
         return {'regime_separation': regime_separation, 'regime_stability': regime_stability, 'economic_significance': economic_significance, 'overall_confidence': overall_confidence}
+    @log_all_calls
 
     def _calculate_regime_separation(self, data: pd.DataFrame, regimes: np.ndarray) -> float:
         """Calculate how well-separated the regimes are."""
@@ -146,6 +157,7 @@ class HierarchicalRegimeDetector:
         regime_means = list(regime_returns.values())
         separation = np.var(regime_means)
         return min(separation * 1000, 1.0)
+    @log_all_calls
 
     def _calculate_regime_stability(self, regimes: np.ndarray) -> float:
         """Calculate regime stability (how often regimes change)."""
@@ -154,6 +166,7 @@ class HierarchicalRegimeDetector:
         regime_changes = np.sum(np.diff(regimes) != 0)
         stability = 1.0 - regime_changes / (len(regimes) - 1)
         return max(0.0, stability)
+    @log_all_calls
 
     def _calculate_economic_significance(self, data: pd.DataFrame, regimes: np.ndarray) -> float:
         """Calculate economic significance of regimes."""
@@ -174,12 +187,13 @@ class HierarchicalRegimeDetector:
             return 0.0
         significance = np.var(regime_sharpe_ratios)
         return min(significance, 1.0)
+    @log_all_calls
 
     def _align_hierarchical_regimes(self, data: pd.DataFrame) -> np.ndarray:
         """Align regimes across timeframes hierarchically."""
         if not self.regime_hierarchy:
             return np.zeros(len(data))
-        finest_timeframe = min(self.timeframes, key=lambda x: self._get_timeframe_minutes(x))
+        finest_timeframe = min(self.timeframes, key = lambda x: self._get_timeframe_minutes(x))
         base_regimes = self.regime_hierarchy[finest_timeframe]['regimes']
         aligned_regimes = base_regimes.copy()
         for timeframe in self.timeframes:
@@ -189,6 +203,7 @@ class HierarchicalRegimeDetector:
             coarse_regimes = regime_data['regimes']
             aligned_regimes = self._align_timeframe_regimes(aligned_regimes, coarse_regimes, finest_timeframe, timeframe)
         return aligned_regimes
+    @log_all_calls
 
     def _align_timeframe_regimes(self, fine_regimes: np.ndarray, coarse_regimes: np.ndarray, fine_tf: str, coarse_tf: str) -> np.ndarray:
         """Align regimes between two timeframes."""
@@ -206,6 +221,7 @@ class HierarchicalRegimeDetector:
                 if coarse_confidence > 0.5:
                     aligned_regimes[start_idx:end_idx] = coarse_regime
         return aligned_regimes
+    @log_all_calls
 
     def _calculate_regime_confidence(self) -> np.ndarray:
         """Calculate confidence scores for aligned regimes."""
@@ -227,6 +243,7 @@ class HierarchicalRegimeDetector:
             for i in range(min(len(confidence), len(regimes))):
                 confidence[i] += weight * tf_confidence
         return confidence
+    @log_all_calls
 
     def _validate_hierarchical_consistency(self) -> Dict[str, Any]:
         """Validate consistency across timeframes."""
@@ -239,6 +256,7 @@ class HierarchicalRegimeDetector:
                 consistency_scores.append(score)
         avg_consistency = np.mean(consistency_scores) if consistency_scores else 1.0
         return {'consistent': avg_consistency > self.regime_stability_threshold, 'consistency_score': avg_consistency, 'individual_scores': consistency_scores}
+    @log_all_calls
 
     def _calculate_timeframe_consistency(self, tf1: str, tf2: str) -> float:
         """Calculate consistency between two timeframes."""
@@ -251,6 +269,7 @@ class HierarchicalRegimeDetector:
             return 0.0
         correlation = np.corrcoef(regimes1[:min_length], regimes2[:min_length])[0, 1]
         return max(0.0, correlation) if not np.isnan(correlation) else 0.0
+    @log_all_calls
 
     def _calculate_hierarchical_quality_score(self) -> float:
         """Calculate overall quality score for hierarchical regime detection."""
@@ -272,3 +291,10 @@ class HierarchicalRegimeDetector:
                 weight = timeframe_weights[tf] / total_weight
                 weighted_score += weight * quality_scores[i]
         return weighted_score
+
+"""
+Hierarchical Multi-Scale Regime Detection.
+
+This module implements regime detection at multiple timeframes (5m, 15m, 30m, 1h)
+with hierarchical alignment and cross-timeframe validation.
+"""

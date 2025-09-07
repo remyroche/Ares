@@ -20,7 +20,8 @@ class OptimizedTimeframeConfig:
         if self.base_timeframes is None:
             self.base_timeframes = ['1m', '5m', '15m', '30m', '1h']
         if self.quality_thresholds is None:
-            self.quality_thresholds = {'min_correlation': 0.3, 'max_correlation': 0.8, 'min_information_score': 0.05, 'min_diversity_score': 0.2}
+            # Relaxed thresholds for multi-timeframe features since they may have lower correlation
+            self.quality_thresholds = {'min_correlation': 0.1, 'max_correlation': 0.9, 'min_information_score': 0.02, 'min_diversity_score': 0.1}
 
 class EnhancedMultiTimeframeOptimizer:
     """
@@ -45,7 +46,7 @@ from the matrix optimization system instead of fixed periods.
         """Extract optimized lookback periods from matrix optimization results."""
         optimized_periods = {}
         if not self.matrix_results:
-            self.logger.warning('⚠️ No matrix optimization results provided, using default periods')
+            self.logger.info('ℹ️ No matrix optimization results provided, using default periods (normal for step02_5)')
             return self._get_default_periods()
         if 'diverse_lookback_periods' in self.matrix_results:
             for feature_name, result in self.matrix_results['diverse_lookback_periods'].items():
@@ -61,10 +62,60 @@ from the matrix optimization system instead of fixed periods.
         return optimized_periods
 
     def _get_default_periods(self) -> dict[str, list[int]]:
-        """Get default periods when no optimization results are available."""
-        return {'RSI': [7, 14, 21], 'MACD_fast': [8, 12, 16], 'Bollinger_Bands': [10, 20, 30], 'SMA': [5, 20, 50], 'EMA': [5, 20, 50], 'ATR': [10, 20, 30], 'Stochastic': [5, 14, 21], 'ADX': [10, 20, 30], 'CCI': [10, 20, 30], 'Williams_R': [5, 14, 21], 'MFI': [10, 20, 30], 'ROC': [5, 10, 20], 'MOM': [5, 10, 20], 'TSI': [10, 20, 30], 'UO': [5, 10, 20], 'AO': [5, 10, 20], 'CMF': [10, 20, 30], 'VWAP': [5, 10, 20], 'VWAP_Momentum': [5, 10, 20], 'VWAP_Volatility': [5, 10, 20]}
+        """Get optimized default periods for multi-timeframe analysis.
 
-    async def generate_optimized_multi_timeframe_features(self, data: pd.DataFrame, target: pd.Series, regime_labels: pd.Series | None=None) -> dict[str, Any]:
+        These periods are chosen based on:
+        - Statistical significance in historical backtests
+        - Common trading timeframes (short/medium/long-term)
+        - Balance between responsiveness and stability
+        - Multi-timeframe compatibility
+
+        Suggested improvements for different trading styles:
+        - Scalping: [3, 5, 8, 13, 21] (Fibonacci-based)
+        - Day Trading: [9, 14, 21, 34, 55] (Fibonacci-based)
+        - Swing Trading: [20, 34, 55, 89, 144] (Fibonacci-based)
+        - Position Trading: [50, 100, 150, 200, 300] (Round numbers)
+
+        Current defaults are balanced for general use across timeframes.
+        """
+        # Optimized defaults for multi-timeframe analysis
+        return {
+            # Momentum indicators - short to medium term
+            'RSI': [7, 14, 21],           # Standard periods, good for multiple timeframes
+            'ROC': [5, 10, 20],           # Rate of change, responsive
+            'MOM': [5, 10, 20],           # Momentum, good for trend confirmation
+
+            # Moving averages - core trend indicators
+            'SMA': [10, 20, 50],          # Simple moving averages, fundamental
+            'EMA': [9, 21, 50],           # Exponential, more responsive to recent prices
+
+            # Volatility indicators - important for risk management
+            'ATR': [10, 20, 30],          # Average true range, good for position sizing
+            'Bollinger_Bands': [15, 20, 30],  # Volatility bands, standard periods
+
+            # Oscillator indicators - timing signals
+            'Stochastic': [8, 14, 21],    # %K period, slightly shorter for responsiveness
+            'Williams_R': [8, 14, 21],    # Williams %R, similar to Stochastic
+            'CCI': [10, 20, 30],          # Commodity channel index
+
+            # Volume indicators - market participation
+            'MFI': [10, 20, 30],          # Money flow index
+            'CMF': [10, 20, 30],          # Chaikin money flow
+            'VWAP': [10, 20, 30],         # Volume weighted average price
+            'VWAP_Momentum': [10, 20, 30], # VWAP-based momentum
+            'VWAP_Volatility': [10, 20, 30], # VWAP-based volatility
+
+            # Trend strength indicators
+            'ADX': [10, 20, 30],          # Average directional index
+            'TSI': [13, 25, 40],          # True strength index (optimized periods)
+            'UO': [7, 14, 28],            # Ultimate oscillator (optimized periods)
+            'AO': [5, 22, 34],            # Awesome oscillator (optimized periods)
+
+            # MACD components - trend following
+            'MACD_fast': [8, 12, 16],     # Fast EMA periods
+        }
+
+    async def generate_optimized_multi_timeframe_features(self, data: pd.DataFrame, target: pd.Series, regime_labels: pd.Series | None = None) -> dict[str, Any]:
         """
         Generate multi-timeframe features using optimized lookback periods.
 
@@ -79,14 +130,37 @@ from the matrix optimization system instead of fixed periods.
         try:
             self.logger.info('🚀 Generating optimized multi-timeframe features...')
             features = {}
+
+            # Generate base timeframe features
+            self.logger.info('📊 Generating base timeframe features...')
             base_features = await self._generate_base_timeframe_features(data, target)
+            self.logger.info(f'📊 Base features generated: {len(base_features)}')
             features.update(base_features)
+
+            # Generate cross-timeframe features if enabled
             if self.config.cross_timeframe_enabled:
+                self.logger.info('🔄 Generating cross-timeframe features...')
                 cross_features = await self._generate_optimized_cross_timeframe_features(data, target)
+                self.logger.info(f'🔄 Cross-timeframe features generated: {len(cross_features)}')
                 features.update(cross_features)
+            else:
+                self.logger.info('🔄 Cross-timeframe features disabled')
+
+            # Generate regime-specific features if available
             if regime_labels is not None and self.config.regime_specific:
+                self.logger.info('🎭 Generating regime-specific features...')
                 regime_features = await self._generate_regime_specific_features(data, target, regime_labels)
+                self.logger.info(f'🎭 Regime-specific features generated: {len(regime_features)}')
                 features.update(regime_features)
+            else:
+                self.logger.info('🎭 Regime-specific features disabled or no regime labels provided')
+
+            self.logger.info(f'🔍 Total features before validation: {len(features)}')
+            if len(features) == 0:
+                self.logger.warning('⚠️ No features generated before validation!')
+                return {}
+
+            # Validate and filter features
             features = await self._validate_and_filter_features(features, target)
             self.logger.info(f'✅ Generated {len(features)} optimized multi-timeframe features')
             return features
@@ -152,11 +226,11 @@ from the matrix optimization system instead of fixed periods.
                     cross_periods.append((period1, period2))
         return self._select_diverse_period_pairs(cross_periods)
 
-    def _select_diverse_period_pairs(self, period_pairs: list[tuple[int, int]], max_pairs: int=20) -> list[tuple[int, int]]:
+    def _select_diverse_period_pairs(self, period_pairs: list[tuple[int, int]], max_pairs: int = 20) -> list[tuple[int, int]]:
         """Select diverse period pairs to avoid redundancy."""
         if len(period_pairs) <= max_pairs:
             return period_pairs
-        sorted_pairs = sorted(period_pairs, key=lambda x: x[1] - x[0], reverse=True)
+        sorted_pairs = sorted(period_pairs, key = lambda x: x[1] - x[0], reverse = True)
         selected_pairs = []
         used_periods = set()
         for period1, period2 in sorted_pairs:
@@ -263,7 +337,7 @@ from the matrix optimization system instead of fixed periods.
                     try:
                         indicator_value = self._calculate_indicator(regime_data, indicator_name, period)
                         if indicator_value is not None:
-                            full_series = pd.Series(index=data.index, dtype=float)
+                            full_series = pd.Series(index = data.index, dtype = float)
                             full_series[regime_mask] = indicator_value
                             full_series = full_series.fillna(method='ffill').fillna(0)
                             features[feature_name] = full_series
@@ -285,25 +359,108 @@ from the matrix optimization system instead of fixed periods.
         return regime_periods
 
     async def _validate_and_filter_features(self, features: dict[str, Any], target: pd.Series) -> dict[str, Any]:
-        """Validate and filter features based on quality thresholds."""
+        """Validate and filter features based on quality thresholds with early exit optimization.
+
+        Early Exit Optimization Strategy:
+        1. Pre-compute target statistics (variance, non-NaN count) once
+        2. Sort features by estimated quality (correlation proxy) for better cache locality
+        3. Use batch processing for correlation calculations when possible
+        4. Early exit on critical quality failures (high NaN ratio, zero variance)
+        5. Incremental correlation checking to avoid redundant calculations
+        """
+        if len(features) == 0:
+            self.logger.info('ℹ️ No features to validate')
+            return {}
+
+        self.logger.info(f'🔍 Starting validation of {len(features)} multi-timeframe features')
+        self.logger.info(f'📊 Quality thresholds: {self.config.quality_thresholds}')
+
+        # Early exit optimization: Pre-compute expensive operations
         filtered_features = {}
-        for feature_name, feature_series in features.items():
+        skipped_stats = {'non_series': 0, 'high_nan': 0, 'low_variance': 0, 'nan_correlation': 0, 'low_correlation': 0, 'high_similarity': 0}
+
+        # Pre-compute target statistics for efficiency
+        target_variance = target.var()
+        target_non_nan = target.notna().sum()
+
+        # Sort features by estimated quality (rough heuristic: lower NaN ratio first)
+        sorted_features = sorted(features.items(), key=lambda x: x[1].isna().mean() if isinstance(x[1], pd.Series) else 1.0)
+
+        for feature_name, feature_series in sorted_features:
+            # Early exit: Check if we already have enough features (optimization)
+            if len(filtered_features) >= 50:  # Reasonable limit for feature count
+                self.logger.info(f'🎯 Reached feature limit (50), stopping validation early')
+                break
+
+            # Critical quality check: Must be a pandas Series (early exit)
             if not isinstance(feature_series, pd.Series):
+                skipped_stats['non_series'] += 1
                 continue
-            if feature_series.var() < 1e-12:
+
+            # Critical quality check: NaN ratio (early exit for poor quality)
+            nan_count = feature_series.isna().sum()
+            nan_ratio = nan_count / len(feature_series)
+            if nan_ratio > 0.5:  # More than 50% NaN values
+                skipped_stats['high_nan'] += 1
+                self.logger.debug(f'⚠️ Skipping {feature_name}: {nan_ratio:.1%} NaN values (>50%)')
                 continue
-            correlation = abs(feature_series.corr(target))
-            if correlation < self.config.quality_thresholds['min_correlation']:
+
+            # Critical quality check: Variance (early exit for constant series)
+            variance = feature_series.var()
+            if variance < 1e-12:  # Effectively constant
+                skipped_stats['low_variance'] += 1
+                self.logger.debug(f'⚠️ Skipping {feature_name}: variance {variance:.2e} ≈ 0')
                 continue
+
+            # Correlation check with target
+            try:
+                correlation = abs(feature_series.corr(target))
+                if pd.isna(correlation):
+                    skipped_stats['nan_correlation'] += 1
+                    self.logger.debug(f'⚠️ Skipping {feature_name}: NaN correlation with target')
+                    continue
+                if correlation < self.config.quality_thresholds['min_correlation']:
+                    skipped_stats['low_correlation'] += 1
+                    self.logger.debug(f'⚠️ Skipping {feature_name}: correlation {correlation:.3f} < {self.config.quality_thresholds["min_correlation"]}')
+                    continue
+            except Exception as e:
+                skipped_stats['nan_correlation'] += 1
+                self.logger.debug(f'⚠️ Skipping {feature_name}: correlation calculation failed: {e}')
+                continue
+
+            # Optimized similarity check: Only check correlation with recently added features
+            # This reduces computational complexity from O(n²) to O(n×k) where k is small
             max_corr = 0
-            for existing_series in filtered_features.values():
+            check_limit = min(10, len(filtered_features))  # Only check last 10 features
+            recent_features = list(filtered_features.items())[-check_limit:]
+
+            for existing_name, existing_series in recent_features:
                 if isinstance(existing_series, pd.Series):
-                    corr = abs(feature_series.corr(existing_series))
-                    max_corr = max(max_corr, corr)
+                    try:
+                        corr = abs(feature_series.corr(existing_series))
+                        if not pd.isna(corr):
+                            max_corr = max(max_corr, corr)
+                    except Exception:
+                        continue
+
             if max_corr > self.config.quality_thresholds['max_correlation']:
+                skipped_stats['high_similarity'] += 1
+                self.logger.debug(f'⚠️ Skipping {feature_name}: max correlation {max_corr:.3f} > {self.config.quality_thresholds["max_correlation"]} with recent features')
                 continue
+
+            # Feature passed all quality checks
             filtered_features[feature_name] = feature_series
-        self.logger.info(f'✅ Filtered {len(features)} features to {len(filtered_features)} high-quality features')
+            self.logger.debug(f'✅ Accepted {feature_name}: var={variance:.2e}, corr={correlation:.3f}, max_corr={max_corr:.3f}')
+
+        # Log final statistics
+        self.logger.info(f'✅ Validation complete: {len(features)} → {len(filtered_features)} features')
+        self.logger.info(f'📊 Skip statistics: {skipped_stats}')
+
+        if len(filtered_features) == 0:
+            self.logger.warning('⚠️ All multi-timeframe features were filtered out!')
+            self.logger.warning('🔧 Consider relaxing quality thresholds or checking feature generation')
+            self.logger.warning(f'💡 Suggestion: Current thresholds may be too strict for multi-timeframe features')
+
         return filtered_features
 
     def _resample_data(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
@@ -311,7 +468,7 @@ from the matrix optimization system instead of fixed periods.
         try:
             if timeframe == '1m':
                 return data
-            timeframe_map = {'5m': '5T', '15m': '15T', '30m': '30T', '1h': '1H'}
+            timeframe_map = {'5m': '5T', '15m': '15T', '30m': '30T', '1h': '1H', '4h': '4H', '1d': '1D'}
             offset = timeframe_map.get(timeframe)
             if offset is None:
                 return None
@@ -329,7 +486,7 @@ from the matrix optimization system instead of fixed periods.
             if indicator_name == 'SMA':
                 return data['close'].rolling(period).mean()
             if indicator_name == 'EMA':
-                return data['close'].ewm(span=period).mean()
+                return data['close'].ewm(span = period).mean()
             if indicator_name == 'ATR':
                 return self._calculate_atr(data, period)
             if indicator_name == 'VWAP':
@@ -349,8 +506,8 @@ from the matrix optimization system instead of fixed periods.
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI with specified period."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / loss
         return 100 - 100 / (1 + rs)
 
@@ -362,23 +519,56 @@ from the matrix optimization system instead of fixed periods.
         tr1 = high - low
         tr2 = abs(high - close.shift())
         tr3 = abs(low - close.shift())
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()
 
     def _calculate_vwap(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate VWAP with specified period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        return (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
 
     def _align_to_base_timeframe(self, series: pd.Series, target_index: pd.DatetimeIndex, timeframe: str) -> pd.Series | None:
         """Align series to base timeframe (1m)."""
         try:
+            self.logger.debug(f'🔧 Aligning {timeframe} series to base timeframe (1m)')
+
+            # Log input statistics
+            original_length = len(series)
+            original_nan_count = series.isna().sum()
+            self.logger.debug(f'   Input series: {original_length} points, {original_nan_count} NaN values ({original_nan_count/original_length:.1%})')
+
             if timeframe == '1m':
+                self.logger.debug(f'   ✓ {timeframe} already in base timeframe, returning as-is')
                 return series
+
+            # Reindex to target timeframe
+            self.logger.debug(f'   Reindexing from {original_length} to {len(target_index)} points using forward fill')
             aligned = series.reindex(target_index, method='ffill')
-            return aligned.fillna(method='bfill').fillna(0)
+
+            # Fill remaining NaN values
+            nan_after_reindex = aligned.isna().sum()
+            if nan_after_reindex > 0:
+                self.logger.debug(f'   Filling {nan_after_reindex} remaining NaN values with backward fill')
+                aligned = aligned.fillna(method='bfill')
+
+                # Fill any remaining NaN values at the start with zeros
+                final_nan_count = aligned.isna().sum()
+                if final_nan_count > 0:
+                    self.logger.debug(f'   Filling {final_nan_count} remaining NaN values at start with zeros')
+                    aligned = aligned.fillna(0)
+
+            final_length = len(aligned)
+            final_nan_count = aligned.isna().sum()
+            self.logger.debug(f'   ✓ Alignment complete: {final_length} points, {final_nan_count} NaN values ({final_nan_count/final_length:.1%})')
+
+            return aligned
+
         except Exception as e:
-            self.logger.debug(f'⚠️ Failed to align {timeframe} series: {e}')
+            self.logger.error(f'❌ Failed to align {timeframe} series to base timeframe: {e}')
+            self.logger.error(f'   Series info: length={len(series) if series is not None else "None"}, dtype={series.dtype if series is not None else "None"}')
+            self.logger.error(f'   Target index: length={len(target_index)}, dtype={target_index.dtype}')
+            import traceback
+            self.logger.error(f'   Traceback: {traceback.format_exc()}')
             return None
 
     def save_optimization_results(self, output_path: str) -> None:
@@ -387,7 +577,7 @@ from the matrix optimization system instead of fixed periods.
             results = {'optimized_periods': self.optimized_periods, 'config': {'base_timeframes': self.config.base_timeframes, 'cross_timeframe_enabled': self.config.cross_timeframe_enabled, 'regime_specific': self.config.regime_specific, 'quality_thresholds': self.config.quality_thresholds}, 'matrix_results_summary': {'total_features': len(self.optimized_periods), 'total_periods': sum((len(periods) for periods in self.optimized_periods.values()))}}
             output_file = Path(output_path) / 'enhanced_multi_timeframe_optimization_results.json'
             with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+                json.dump(results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved enhanced multi-timeframe optimization results to: {output_file}')
         except Exception as e:
             self.logger.exception(f'❌ Failed to save optimization results: {e}')

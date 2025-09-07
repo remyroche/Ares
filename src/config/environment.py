@@ -17,7 +17,7 @@ except Exception:
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
-    def Field(default: Any=None, env: str | None=None) -> None:
+    def Field(default: Any = None, env: str | None = None) -> None:
         return default
 from ..utils.logger import system_logger
 import logging
@@ -32,28 +32,29 @@ class EnvironmentSettings(BaseSettings):
     """Manages all environment-specific settings using Pydantic."""
     log_level: str = Field(default='INFO', env='LOG_LEVEL')
     trading_environment: Literal['LIVE', 'TESTNET', 'PAPER'] = Field(default='PAPER', env='TRADING_ENVIRONMENT')
-    initial_equity: float = Field(default=100.0, env='INITIAL_EQUITY')
+    initial_equity: float = Field(default = 100.0, env='INITIAL_EQUITY')
     trade_symbol: str = Field(default='ETHUSDT', env='TRADE_SYMBOL')
+    default_symbols: list[str] = Field(default=['ETHUSDT', 'BTCUSDT'], env='DEFAULT_SYMBOLS')
     exchange_name: str = Field(default='BINANCE', env='EXCHANGE_NAME')
     timeframe: str = Field(default='15m', env='TIMEFRAME')
-    gateio_api_key: str | None = Field(default=None, env='GATEIO_API_KEY')
-    gateio_api_secret: str | None = Field(default=None, env='GATEIO_API_SECRET')
-    mexc_api_key: str | None = Field(default=None, env='MEXC_API_KEY')
-    mexc_api_secret: str | None = Field(default=None, env='MEXC_API_SECRET')
-    okx_api_key: str | None = Field(default=None, env='OKX_API_KEY')
-    okx_api_secret: str | None = Field(default=None, env='OKX_API_SECRET')
-    okx_password: str | None = Field(default=None, env='OKX_PASSWORD')
-    binance_api_key: str | None = Field(default=None, env='BINANCE_API_KEY')
-    binance_api_secret: str | None = Field(default=None, env='BINANCE_API_SECRET')
-    google_application_credentials: str | None = Field(default=None, env='GOOGLE_APPLICATION_CREDENTIALS')
-    firestore_project_id: str | None = Field(default=None, env='FIRESTORE_PROJECT_ID')
+    gateio_api_key: str | None = Field(default = None, env='GATEIO_API_KEY')
+    gateio_api_secret: str | None = Field(default = None, env='GATEIO_API_SECRET')
+    mexc_api_key: str | None = Field(default = None, env='MEXC_API_KEY')
+    mexc_api_secret: str | None = Field(default = None, env='MEXC_API_SECRET')
+    okx_api_key: str | None = Field(default = None, env='OKX_API_KEY')
+    okx_api_secret: str | None = Field(default = None, env='OKX_API_SECRET')
+    okx_password: str | None = Field(default = None, env='OKX_PASSWORD')
+    binance_api_key: str | None = Field(default = None, env='BINANCE_API_KEY')
+    binance_api_secret: str | None = Field(default = None, env='BINANCE_API_SECRET')
+    google_application_credentials: str | None = Field(default = None, env='GOOGLE_APPLICATION_CREDENTIALS')
+    firestore_project_id: str | None = Field(default = None, env='FIRESTORE_PROJECT_ID')
     influxdb_url: str | None = Field(default='http://localhost:8086', env='INFLUXDB_URL')
     influxdb_token: str | None = Field(default='your_influxdb_token', env='INFLUXDB_TOKEN')
     influxdb_org: str | None = Field(default='your_org', env='INFLUXDB_ORG')
     influxdb_bucket: str | None = Field(default='ares_market_data', env='INFLUXDB_BUCKET')
-    email_sender_address: str | None = Field(default=None, env='EMAIL_SENDER_ADDRESS')
-    email_sender_password: str | None = Field(default=None, env='EMAIL_SENDER_PASSWORD')
-    email_recipient_address: str | None = Field(default=None, env='EMAIL_RECIPIENT_ADDRESS')
+    email_sender_address: str | None = Field(default = None, env='EMAIL_SENDER_ADDRESS')
+    email_sender_password: str | None = Field(default = None, env='EMAIL_SENDER_PASSWORD')
+    email_recipient_address: str | None = Field(default = None, env='EMAIL_RECIPIENT_ADDRESS')
     mlflow_tracking_uri: str | None = Field(default='file:./mlruns', env='MLFLOW_TRACKING_URI')
     mlflow_experiment_name: str | None = Field(default='Ares_Trading_Models', env='MLFLOW_EXPERIMENT_NAME')
 
@@ -140,6 +141,42 @@ class EnvironmentSettings(BaseSettings):
         """
         return {'tracking_uri': self.mlflow_tracking_uri, 'experiment_name': self.mlflow_experiment_name}
 
+    def get_symbol_config(self) -> dict[str, Any]:
+        """Get symbol configuration.
+
+        Returns:
+            dict: Symbol configuration with primary symbol and default symbols list
+        """
+        return {
+            'primary_symbol': self.trade_symbol,
+            'default_symbols': self.default_symbols,
+            'supported_symbols': ['ETHUSDT', 'BTCUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT']
+        }
+
+    def is_valid_symbol(self, symbol: str) -> bool:
+        """Check if a symbol is valid/supported.
+
+        Args:
+            symbol: Trading symbol to validate
+
+        Returns:
+            bool: True if symbol is valid
+        """
+        return symbol in ['ETHUSDT', 'BTCUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT']
+
+    def get_default_symbol(self, fallback: str = 'ETHUSDT') -> str:
+        """Get the default trading symbol with fallback.
+
+        Args:
+            fallback: Fallback symbol if primary symbol is invalid
+
+        Returns:
+            str: Valid trading symbol
+        """
+        if self.is_valid_symbol(self.trade_symbol):
+            return self.trade_symbol
+        return fallback
+
     class Config:
         """Pydantic configuration."""
         env_file = '.env'
@@ -158,4 +195,11 @@ def get_environment_settings() -> EnvironmentSettings:
         return EnvironmentSettings()
     except Exception as e:
         system_logger.error(f'Error loading environment settings: {e}')
-        return EnvironmentSettings(trading_environment='PAPER', trade_symbol='ETHUSDT', exchange_name='BINANCE', timeframe='15m', initial_equity=100.0)
+        return EnvironmentSettings(
+            trading_environment='PAPER',
+            trade_symbol='ETHUSDT',
+            default_symbols=['ETHUSDT', 'BTCUSDT'],
+            exchange_name='BINANCE',
+            timeframe='15m',
+            initial_equity=100.0
+        )

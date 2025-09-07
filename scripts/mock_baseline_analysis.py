@@ -44,14 +44,14 @@ def create_mock_performance_tracker():
     """Create mock performance tracking files."""
 
     # Create output directory
-    output_dir=Path("data/fractional_performance/baseline")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path("data/fractional_performance/baseline")
+    output_dir.mkdir(parents = True, exist_ok = True)
 
     # Mock performance metrics
-    baseline_metrics=create_mock_baseline_metrics()
+    baseline_metrics = create_mock_baseline_metrics()
 
     # Save baseline metrics
-    metrics_file=output_dir / "performance_metrics.json"
+    metrics_file = output_dir / "performance_metrics.json"
     metrics_data = {
         "baseline": baseline_metrics,
         "current": baseline_metrics.copy(),
@@ -60,10 +60,10 @@ def create_mock_performance_tracker():
     }
 
     with open(metrics_file, "w") as f:
-        json.dump(metrics_data, f, indent=2)
+        json.dump(metrics_data, f, indent = 2)
 
     # Create mock baseline report
-    report_file=output_dir / "baseline_report.json"
+    report_file = output_dir / "baseline_report.json"
     report_data = {
         "baseline_analysis": {
             "timestamp": datetime.now().isoformat(),
@@ -84,7 +84,7 @@ def create_mock_performance_tracker():
     }
 
     with open(report_file, "w") as f:
-        json.dump(report_data, f, indent=2)
+        json.dump(report_data, f, indent = 2)
 
     return baseline_metrics
 
@@ -92,7 +92,7 @@ def create_mock_performance_tracker():
 def create_mock_dashboard():
     """Create mock performance dashboard."""
 
-    output_dir=Path("data/fractional_performance/baseline")
+    output_dir = Path("data/fractional_performance/baseline")
 
     # Create simple HTML dashboard
     dashboard_content="""
@@ -162,7 +162,7 @@ def main():
     print("🔍 Creating mock baseline performance metrics...")
 
     # Create mock baseline metrics
-    baseline_metrics=create_mock_baseline_metrics()
+    baseline_metrics = create_mock_baseline_metrics()
 
     # Create performance tracking files
     create_mock_performance_tracker()

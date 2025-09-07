@@ -1,4 +1,5 @@
 import numpy as np
+from ...core.decorators import handles_errors
 
 # src/training/steps/fractional_feature_selector.py
 
@@ -7,7 +8,6 @@ Implements feature selection based on fractional label alignment, multicollinear
 and feature importance ranking.
 """
 
-from .core.decorators import handles_errors
 import json
 import time
 from pathlib import Path
@@ -19,6 +19,9 @@ from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
 import pandas as pd
+import datetime
+import logging
+import typing
 from .utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
@@ -173,7 +176,7 @@ class FractionalFeatureSelector:
         aligned_labels = labels.loc[common_index]
         
         # Remove any remaining NaN values
-        valid_mask = ~(aligned_features.isnull().any(axis=1) | aligned_labels.isnull())
+        valid_mask = ~(aligned_features.isnull().any(axis = 1) | aligned_labels.isnull())
         aligned_features = aligned_features.loc[valid_mask]
         aligned_labels = aligned_labels.loc[valid_mask]
         
@@ -198,7 +201,7 @@ class FractionalFeatureSelector:
                 corr = abs(features[col].corr(labels))
                 correlations.append(corr if not pd.isna(corr) else 0.0)
             
-            correlation_scores = pd.Series(correlations, index=features.columns)
+            correlation_scores = pd.Series(correlations, index = features.columns)
             
             # Normalize to 0-1 range
             if correlation_scores.max() > 0:
@@ -210,7 +213,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error calculating correlation scores: {e}")
-            return pd.Series(0.5, index=features.columns)
+            return pd.Series(0.5, index = features.columns)
     
     def _calculate_importance_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate feature importance scores using multiple methods."
@@ -236,7 +239,7 @@ class FractionalFeatureSelector:
             importance_scores['random_forest'] = self._calculate_random_forest_scores(features, labels)
             
             # Combine importance scores
-            combined_importance = pd.Series(0.0, index=features.columns)
+            combined_importance = pd.Series(0.0, index = features.columns)
             for method, scores in importance_scores.items():
                 if scores.max() > 0:
                     normalized_scores = scores / scores.max()
@@ -251,7 +254,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error calculating importance scores: {e}")
-            return pd.Series(0.5, index=features.columns)
+            return pd.Series(0.5, index = features.columns)
     
     def _calculate_stability_scores(self, features: pd.DataFrame) -> pd.Series:
         """Calculate feature stability scores."
@@ -274,7 +277,7 @@ class FractionalFeatureSelector:
                 
                 # Calculate rolling variance stability
                 window_size = min(50, len(feature_series) // 4)
-                rolling_var = feature_series.rolling(window=window_size, min_periods=10).var()
+                rolling_var = feature_series.rolling(window = window_size, min_periods = 10).var()
                 
                 if rolling_var.mean() > 0:
                     # Lower variance in rolling variance indicates more stability
@@ -285,7 +288,7 @@ class FractionalFeatureSelector:
                 
                 stability_scores.append(stability_score)
             
-            stability_series = pd.Series(stability_scores, index=features.columns)
+            stability_series = pd.Series(stability_scores, index = features.columns)
             
             self.logger.info(f"📊 Stability scores calculated for {len(features.columns)} features")
             
@@ -293,7 +296,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error calculating stability scores: {e}")
-            return pd.Series(0.5, index=features.columns)
+            return pd.Series(0.5, index = features.columns)
     
     def _calculate_diversity_scores(self, features: pd.DataFrame) -> pd.Series:
         """Calculate feature diversity scores."
@@ -319,7 +322,7 @@ class FractionalFeatureSelector:
                 non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
                 
                 # Entropy-like measure
-                value_counts = feature_series.value_counts(normalize=True)
+                value_counts = feature_series.value_counts(normalize = True)
                 entropy = -np.sum(value_counts * np.log2(value_counts + 1e-10))
                 max_entropy = np.log2(len(value_counts) + 1e-10)
                 normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
@@ -328,7 +331,7 @@ class FractionalFeatureSelector:
                 diversity_score = (unique_ratio + non_zero_ratio + normalized_entropy) / 3
                 diversity_scores.append(diversity_score)
             
-            diversity_series = pd.Series(diversity_scores, index=features.columns)
+            diversity_series = pd.Series(diversity_scores, index = features.columns)
             
             self.logger.info(f"📊 Diversity scores calculated for {len(features.columns)} features")
             
@@ -336,7 +339,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error calculating diversity scores: {e}")
-            return pd.Series(0.5, index=features.columns)
+            return pd.Series(0.5, index = features.columns)
     
     def _calculate_label_alignment_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate label alignment scores for fractional labels."
@@ -378,7 +381,7 @@ class FractionalFeatureSelector:
                 
                 alignment_scores.append(alignment_score)
             
-            alignment_series = pd.Series(alignment_scores, index=features.columns)
+            alignment_series = pd.Series(alignment_scores, index = features.columns)
             
             self.logger.info(f"📊 Label alignment scores calculated for {len(features.columns)} features")
             
@@ -386,7 +389,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error calculating label alignment scores: {e}")
-            return pd.Series(0.5, index=features.columns)
+            return pd.Series(0.5, index = features.columns)
     
     def _combine_selection_scores(self, selection_scores: Dict[str, pd.Series]) -> pd.Series:
         """Combine individual selection scores."
@@ -398,7 +401,7 @@ class FractionalFeatureSelector:
             Combined scores Series
         """
         try:
-            combined_scores = pd.Series(0.0, index=list(selection_scores.values())[0].index)
+            combined_scores = pd.Series(0.0, index = list(selection_scores.values())[0].index)
             
             for method, scores in selection_scores.items():
                 if method in self.method_weights:
@@ -415,7 +418,7 @@ class FractionalFeatureSelector:
             
         except Exception as e:
             self.logger.warning(f"Error combining selection scores: {e}")
-            return pd.Series(0.5, index=list(selection_scores.values())[0].index)
+            return pd.Series(0.5, index = list(selection_scores.values())[0].index)
     
     def _reduce_multicollinearity(self, features: pd.DataFrame, scores: pd.Series) -> pd.DataFrame:
         """Reduce multicollinearity in features."
@@ -432,7 +435,7 @@ class FractionalFeatureSelector:
             corr_matrix = features.corr().abs()
             
             # Find highly correlated features
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
             
             # Get pairs of highly correlated features
             high_corr_pairs = []
@@ -452,7 +455,7 @@ class FractionalFeatureSelector:
                     features_to_remove.add(feature1)
             
             # Remove highly correlated features
-            reduced_features = features.drop(columns=list(features_to_remove))
+            reduced_features = features.drop(columns = list(features_to_remove))
             
             self.logger.info(f"📊 Multicollinearity reduction: removed {len(features_to_remove)} features")
             
@@ -477,7 +480,7 @@ class FractionalFeatureSelector:
             aligned_scores = scores[features.columns]
             
             # Sort features by score
-            sorted_features = aligned_scores.sort_values(ascending=False)
+            sorted_features = aligned_scores.sort_values(ascending = False)
             
             # Determine number of features to select
             n_features = min(
@@ -656,7 +659,7 @@ class FractionalFeatureSelector:
         """
         try:
             output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
+            output_path.mkdir(parents = True, exist_ok = True)
             
             # Generate selection summary
             summary = self.get_selection_summary()
@@ -664,12 +667,12 @@ class FractionalFeatureSelector:
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
             with open(report_file, 'w') as f:
-                json.dump(summary, f, indent=2, default=str)
+                json.dump(summary, f, indent = 2, default = str)
             
             # Export detailed history
             history_file = output_path / "selection_history.json"
             with open(history_file, 'w') as f:
-                json.dump(self.selection_history, f, indent=2, default=str)
+                json.dump(self.selection_history, f, indent = 2, default = str)
             
             self.logger.info(f"📊 Feature selection report exported to: {output_path}")
             return str(output_path)
@@ -743,9 +746,9 @@ def get_fractional_feature_selector_config(
         """
         try:
             f_scores, _ = f_regression(features, labels)
-            return pd.Series(f_scores, index=features.columns)
+            return pd.Series(f_scores, index = features.columns)
         except Exception:
-            return pd.Series(0.0, index=features.columns)
+            return pd.Series(0.0, index = features.columns)
 
     def _calculate_mutual_info_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate mutual information scores safely.
@@ -758,10 +761,10 @@ def get_fractional_feature_selector_config(
             Mutual information scores Series
         """
         try:
-            mi_scores = mutual_info_regression(features, labels, random_state=42)
-            return pd.Series(mi_scores, index=features.columns)
+            mi_scores = mutual_info_regression(features, labels, random_state = 42)
+            return pd.Series(mi_scores, index = features.columns)
         except Exception:
-            return pd.Series(0.0, index=features.columns)
+            return pd.Series(0.0, index = features.columns)
 
     def _calculate_random_forest_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate Random Forest importance scores safely.
@@ -774,8 +777,8 @@ def get_fractional_feature_selector_config(
             Random Forest importance scores Series
         """
         try:
-            rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
+            rf = RandomForestRegressor(n_estimators = 50, random_state = 42, n_jobs=-1)
             rf.fit(features, labels)
-            return pd.Series(rf.feature_importances_, index=features.columns)
+            return pd.Series(rf.feature_importances_, index = features.columns)
         except Exception:
-            return pd.Series(0.0, index=features.columns)
+            return pd.Series(0.0, index = features.columns)

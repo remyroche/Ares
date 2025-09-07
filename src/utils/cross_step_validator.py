@@ -7,10 +7,11 @@ import sys
 import traceback
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
 import time
+from .logger import system_logger
 
 @dataclass
 class DataLineage:
@@ -19,12 +20,12 @@ class DataLineage:
     timestamp: datetime
     input_shape: Tuple[int, int]
     output_shape: Tuple[int, int]
-    columns_added: List[str] = field(default_factory=list)
-    columns_removed: List[str] = field(default_factory=list)
-    columns_modified: List[str] = field(default_factory=list)
-    transformations_applied: List[str] = field(default_factory=list)
+    columns_added: List[str] = field(default_factory = list)
+    columns_removed: List[str] = field(default_factory = list)
+    columns_modified: List[str] = field(default_factory = list)
+    transformations_applied: List[str] = field(default_factory = list)
     data_quality_score: float = 100.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class ConsistencyIssue:
@@ -32,7 +33,7 @@ class ConsistencyIssue:
     issue_type: str
     severity: str
     message: str
-    affected_columns: List[str] = field(default_factory=list)
+    affected_columns: List[str] = field(default_factory = list)
     suggested_fix: Optional[str] = None
     step_context: Optional[str] = None
 
@@ -96,7 +97,7 @@ class CrossStepValidator:
 
     def _record_data_lineage(self, step_name: str, input_data: pd.DataFrame, output_data: pd.DataFrame, metadata: Optional[Dict[str, Any]]) -> DataLineage:
         """Record data lineage information."""
-        lineage = DataLineage(step_name=step_name, timestamp=datetime.now(), input_shape=input_data.shape, output_shape=output_data.shape, data_quality_score=self.standards.validate_data_quality(output_data, 'unified').quality_score, metadata=metadata or {})
+        lineage = DataLineage(step_name = step_name, timestamp = datetime.now(), input_shape = input_data.shape, output_shape = output_data.shape, data_quality_score = self.standards.validate_data_quality(output_data, 'unified').quality_score, metadata = metadata or {})
         input_cols = set(input_data.columns)
         output_cols = set(output_data.columns)
         lineage.columns_added = list(output_cols - input_cols)

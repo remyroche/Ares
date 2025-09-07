@@ -1,20 +1,19 @@
+from ..core.decorators import handles_errors
 """
+from ..utils.logger import system_logger
 Simplified Leverage Sizer for high leverage trading.
 Uses ML confidence scores, liquidation risk model, and market health analysis.
 """
 import contextlib
 from datetime import datetime
 from typing import Any
-from .utils.logger import system_logger
-from .utils.linear_confidence_scaling import LinearConfidenceScaler
-from .core.decorators import handles_errors as _handles_errors
+from ..utils.logger import system_logger
+from ..utils.linear_confidence_scaling import LinearConfidenceScaler
 import numpy as np
 import logging
 import time
 
-def handles_errors(*_args, **kwargs) -> None:
-    fallback = kwargs.get('default_return', kwargs.get('fallback', None))
-    return _handles_errors(fallback=fallback)
+# Use the imported handles_errors decorator directly
 
 class LeverageSizer:
     """
@@ -47,7 +46,7 @@ class LeverageSizer:
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid leverage sizer configuration'), AttributeError: (False, 'Missing required leverage parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='leverage sizer initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid leverage sizer configuration'), AttributeError: (False, 'Missing required leverage parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='leverage sizer initialization')
     async def initialize(self) -> bool:
         """Initialize the leverage sizer."""
         self.logger.info('Initializing leverage sizer...')
@@ -100,7 +99,7 @@ class LeverageSizer:
             self.logger.exception(f'Error refreshing step17 configuration: {e}')
 
     @handles_errors(error_handlers={ValueError: (None, 'Invalid input data for leverage sizing'), AttributeError: (None, 'Sizer not properly initialized')}, default_return={}, context='leverage sizing calculation')
-    async def calculate_leverage(self, ml_predictions: dict[str, Any], current_price: float=0.0, account_balance: float=1000.0, analyst_confidence: float=0.5, tactician_confidence: float=0.5, market_health_analysis: dict[str, Any] | None=None, strategist_risk_parameters: dict[str, Any] | None=None) -> dict[str, Any]:
+    async def calculate_leverage(self, ml_predictions: dict[str, Any], current_price: float = 0.0, account_balance: float = 1000.0, analyst_confidence: float = 0.5, tactician_confidence: float = 0.5, market_health_analysis: dict[str, Any] | None = None, strategist_risk_parameters: dict[str, Any] | None = None) -> dict[str, Any]:
         """
         Calculate leverage using ML confidence scores and liquidation risk model.
 
@@ -129,9 +128,9 @@ class LeverageSizer:
             ml_leverage = self._calculate_ml_leverage(price_target_confidences, adversarial_confidences)
             liquidation_leverage = self._calculate_liquidation_safe_leverage(current_price, account_balance, market_health_analysis)
             base_leverage = self._calculate_weighted_leverage(ml_leverage, liquidation_leverage)
-            confidence_multiplier = self.linear_scaler.calculate_leverage_multiplier(confidence=combined_confidence, intensity=intensity, reliability=reliability, risk_score=risk_score)
+            confidence_multiplier = self.linear_scaler.calculate_leverage_multiplier(confidence = combined_confidence, intensity = intensity, reliability = reliability, risk_score = risk_score)
             confidence_adjusted_leverage = base_leverage * confidence_multiplier
-            final_leverage = self._apply_leverage_modifiers(confidence_adjusted_leverage, market_health_analysis=market_health_analysis, strategist_risk_parameters=strategist_risk_parameters, analyst_confidence=analyst_confidence, tactician_confidence=tactician_confidence)
+            final_leverage = self._apply_leverage_modifiers(confidence_adjusted_leverage, market_health_analysis = market_health_analysis, strategist_risk_parameters = strategist_risk_parameters, analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
             leverage_analysis = {'timestamp': datetime.now(), 'current_price': current_price, 'account_balance': account_balance, 'ml_leverage': ml_leverage, 'liquidation_leverage': liquidation_leverage, 'base_leverage': base_leverage, 'confidence_adjusted_leverage': confidence_adjusted_leverage, 'final_leverage': final_leverage, 'combined_confidence': combined_confidence, 'intensity': intensity, 'reliability': reliability, 'risk_score': risk_score, 'confidence_multiplier': confidence_multiplier, 'linear_scaling_enabled': True, 'price_target_confidences': price_target_confidences, 'adversarial_confidences': adversarial_confidences, 'market_health_modifiers': market_health_analysis or {}, 'strategist_risk_parameters': strategist_risk_parameters or {}, 'leverage_reason': self._generate_leverage_reason(final_leverage, ml_leverage, liquidation_leverage, price_target_confidences, adversarial_confidences, combined_confidence)}
             self.leverage_sizing_history.append(leverage_analysis)
             if len(self.leverage_sizing_history) > 100:
@@ -148,13 +147,13 @@ class LeverageSizer:
             target_levels = [0.25, 0.5, 0.75, 1.0]
             confidences = []
             for level in target_levels:
-                closest_level = min(price_target_confidences.keys(), key=lambda x: abs(float(x.replace('%', '')) - level))
+                closest_level = min(price_target_confidences.keys(), key = lambda x: abs(float(x.replace('%', '')) - level))
                 confidence = price_target_confidences.get(closest_level, 0.5)
                 confidences.append(confidence)
             avg_confidence = sum(confidences) / len(confidences)
             adverse_risks = []
             for level in target_levels:
-                closest_level = min(adversarial_confidences.keys(), key=lambda x: abs(float(x.replace('%', '')) - level))
+                closest_level = min(adversarial_confidences.keys(), key = lambda x: abs(float(x.replace('%', '')) - level))
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 adverse_risks.append(risk)
             avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
@@ -225,14 +224,14 @@ class LeverageSizer:
             self.logger.exception(f'Error applying leverage modifiers: {e}')
             return base_leverage
 
-    def _generate_leverage_reason(self, final_leverage: float, ml_leverage: float, liquidation_leverage: float, price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float], combined_confidence: float=0.5) -> str:
+    def _generate_leverage_reason(self, final_leverage: float, ml_leverage: float, liquidation_leverage: float, price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float], combined_confidence: float = 0.5) -> str:
         """Generate reason for leverage sizing decision."""
         try:
             key_levels = [0.25, 0.5, 0.75, 1.0]
             avg_confidence = 0.0
             avg_risk = 0.0
             for level in key_levels:
-                closest_level = min(price_target_confidences.keys(), key=lambda x: abs(float(x.replace('%', '')) - level))
+                closest_level = min(price_target_confidences.keys(), key = lambda x: abs(float(x.replace('%', '')) - level))
                 confidence = price_target_confidences.get(closest_level, 0.5)
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 avg_confidence += confidence
@@ -246,13 +245,13 @@ class LeverageSizer:
             self.logger.exception(f'Error generating leverage reason: {e}')
             return f'Leverage: {final_leverage:.1f}x (Error generating reason)'
 
-    def get_leverage_sizing_history(self, limit: int | None=None) -> list[dict[str, Any]]:
+    def get_leverage_sizing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get leverage sizing history."""
         if limit:
             return self.leverage_sizing_history[-limit:]
         return self.leverage_sizing_history.copy()
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the leverage sizer."""
         try:
@@ -262,7 +261,7 @@ class LeverageSizer:
         except Exception as e:
             self.logger.exception(f'❌ Failed to stop leverage sizer: {e}')
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def cleanup(self) -> None:
         """Cleanup leverage sizer resources."""
         try:
@@ -273,8 +272,8 @@ class LeverageSizer:
         except Exception as e:
             self.logger.exception(f'Error cleaning up leverage sizer: {e}')
 
-@handles_errors(fallback=None)
-async def setup_leverage_sizer(config: dict[str, Any] | None=None) -> LeverageSizer | None:
+@handles_errors(fallback = None)
+async def setup_leverage_sizer(config: dict[str, Any] | None = None) -> LeverageSizer | None:
     """
     Setup and return a configured LeverageSizer instance.
 

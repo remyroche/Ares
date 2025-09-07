@@ -1,5 +1,6 @@
 
 import numpy as np
+from ..utils.logger import system_logger
 '\nSR Trading Intelligence - Comprehensive Access to SR Levels for Trading Decisions\n\nThis module provides:\n1. Real-time access to SR levels with all metadata\n2. Trading decision support based on SR analysis\n3. Integration with live trading systems\n4. Performance tracking and optimization\n'
 import asyncio
 import contextlib
@@ -8,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from .tactician.sr_levels_manager import SRLevelsManager
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 
 from .tactician.sr_levels_manager import create_sr_levels_manager
 import logging
@@ -106,7 +107,7 @@ class SRTradingIntelligence:
         except Exception as e:
             self.logger.exception(f'❌ Error updating SR levels with market data: {e}')
 
-    def get_sr_levels_for_trading(self, current_price: float, include_metadata: bool=True) -> dict[str, Any]:
+    def get_sr_levels_for_trading(self, current_price: float, include_metadata: bool = True) -> dict[str, Any]:
         """
         Get SR levels optimized for trading decisions.
 
@@ -302,9 +303,9 @@ class SRTradingIntelligence:
         try:
             data = {'trades': self.trading_history, 'performance': self.performance_metrics, 'last_save': datetime.now().isoformat()}
             history_file = Path('data/trading_history.json')
-            history_file.parent.mkdir(parents=True, exist_ok=True)
+            history_file.parent.mkdir(parents = True, exist_ok = True)
             with open(history_file, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent = 2)
         except Exception as e:
             self.logger.exception(f'❌ Error saving trading history: {e}')
 

@@ -1,20 +1,17 @@
-from typing import Dict
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd
-from typing import Any
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 
-try:
-    from src.utils.centralized_decorators import validates
-except ImportError:
+from src.core.decorators.logging import log_execution_time, log_call
+from src.core.decorators.cache import cached
+from src.utils.logger import system_logger
 
-    def validates(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def smart_validation_cache(*args, **kwargs):
+    def decorator(func: Callable):
+        return func
+    return decorator
 try:
     from src.utils.logger import system_logger
 except ImportError:
@@ -76,7 +73,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             self.logger.exception(f'❌ Step 6 validation failed: {error_context}')
             return False
 
-    @smart_validation_cache(ttl_seconds=300)
+    @smart_validation_cache(ttl_seconds = 300)
     async def _validate_feature_file(self, feature_file: Path, regime_name: str) -> bool:
         """Validate a feature file for a specific regime with caching."""
         try:
@@ -85,7 +82,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             if not file_exists:
                 return False
             df = pd.read_parquet(feature_file)
-            df_valid, df_metrics = self.validate_dataframe_quality(df=df, min_rows=100, required_columns=['timestamp'], check_data_types=True, check_value_ranges=True, check_duplicates=True, check_temporal_consistency=True)
+            df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {feature_file.name}')
                 return False
@@ -153,7 +150,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                     sample_file = feature_files[0]
                     try:
                         df = pd.read_parquet(sample_file)
-                        df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows=100, check_data_types=True)
+                        df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)
                         validation_result['details'][f'{regime_dir.name}_sample_valid'] = df_valid
                         validation_result['details'][f'{regime_dir.name}_sample_rows'] = len(df)
                         validation_result['details'][f'{regime_dir.name}_sample_columns'] = list(df.columns)
@@ -197,4 +194,4 @@ if __name__ == '__main__':
     test_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache', 'config': {}}
     test_state = {}
     result = asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent = 2))

@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import logging
 
@@ -38,13 +38,13 @@ class TransitionInferenceCombiner:
             seq.get("artifact_dir_models", "checkpoints/transition_models"),
         )
         self.cfg = EnsembleConfig(
-            weights=ens.get(
+            weights = ens.get(
                 "weights",
                 {"1m": 0.3, "5m": 0.3, "15m": 0.25, "30m": 0.15},
             ),
-            macro_thresholds=inf.get("macro_regime_thresholds", {}),
-            timeframe_thresholds=inf.get("path_class_thresholds", {}),
-            reliability_path=os.path.join(artifact_dir, "reliability.json"),
+            macro_thresholds = inf.get("macro_regime_thresholds", {}),
+            timeframe_thresholds = inf.get("path_class_thresholds", {}),
+            reliability_path = os.path.join(artifact_dir, "reliability.json"),
         )
         self.reliability: dict[str, dict[str, float]] = self._load_reliability(
             self.cfg.reliability_path,

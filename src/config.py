@@ -3,11 +3,89 @@ Legacy configuration module for backward compatibility.
 This module now uses the new modular configuration structure.
 """
 from dataclasses import dataclass
-from typing import Any
-
-
-from logger import system_logger
+from typing import Any, Dict
+from .core.decorators import handles_errors
+from .utils.logger import system_logger
+from . import get_environment_config, get_system_config_section, get_trading_config_section, get_training_config_section
+from .trading import get_position_sizing_config, get_leverage_sizing_config, get_position_closing_config, get_position_division_config, get_position_monitoring_config
+from .training import get_enhanced_training_config
+from .config.config_confidence import get_confidence_config
 import logging
+
+def get_complete_config() -> dict[str, Any]:
+    """
+    Get the complete configuration.
+
+    Returns:
+        dict: Complete configuration dictionary
+    """
+    # Import here to avoid circular imports
+    from .core.config_service import get_config_service
+    config_service = get_config_service()
+    return config_service.get_config()
+
+
+def get_environment_config() -> dict[str, Any]:
+    """Get environment configuration."""
+    from . import get_environment_settings
+    try:
+        env_settings = get_environment_settings()
+        return {
+            'environment': env_settings.environment,
+            'trading_environment': env_settings.trading_environment,
+            'symbol': env_settings.trade_symbol,
+            'timeframe': env_settings.timeframe,
+            'initial_equity': env_settings.initial_equity
+        }
+    except Exception:
+        return {
+            'environment': 'development',
+            'trading_environment': 'PAPER',
+            'symbol': 'ETHUSDT',
+            'timeframe': '15m',
+            'initial_equity': 1000.0
+        }
+
+
+def get_system_config_section() -> dict[str, Any]:
+    """Get system configuration section."""
+    return {
+        'enable_logging': True,
+        'log_level': 'INFO',
+        'enable_metrics': True,
+        'max_threads': 4,
+        'memory_limit_gb': 8
+    }
+
+
+def get_trading_config_section() -> dict[str, Any]:
+    """Get trading configuration section."""
+    from .trading import get_trading_config
+    try:
+        return get_trading_config()
+    except Exception:
+        return {
+            'exchange': 'BINANCE',
+            'default_symbol': 'ETHUSDT',
+            'default_timeframe': '15m',
+            'max_position_size': 0.1,
+            'risk_management_enabled': True
+        }
+
+
+def get_training_config_section() -> dict[str, Any]:
+    """Get training configuration section."""
+    from .training import get_training_config
+    try:
+        return get_training_config()
+    except Exception:
+        return {
+            'epochs': 100,
+            'batch_size': 32,
+            'learning_rate': 0.001,
+            'validation_split': 0.2,
+            'early_stopping_patience': 10
+        }
 
 def get_config() -> dict[str, Any]:
     """
@@ -17,6 +95,17 @@ def get_config() -> dict[str, Any]:
         dict: Complete configuration dictionary
     """
     return get_complete_config()
+
+def get_env_settings() -> Any:
+    """
+    Get environment settings.
+
+    Returns:
+        EnvironmentSettings: Environment settings instance
+    """
+    # Import here to avoid circular imports
+    from .config.environment import get_environment_settings as _get_env_settings
+    return _get_env_settings()
 
 def get_environment_settings() -> Any:
     """
@@ -72,9 +161,9 @@ class RiskConfig:
     stop_loss_pct: float = 0.05
     take_profit_pct: float = 0.1
     max_leverage: int = 10
-from decorators import handles_errors
-from warning_symbols import failed, invalid, warning
-from errors import handles_errors
+
+from .utils.warning_symbols import failed_symbol as failed, invalid_symbol as invalid, warning_symbol as warning
+from .core.decorators import handles_errors
 
 class ConfigurationManager:
     """
@@ -97,13 +186,13 @@ class ConfigurationManager:
         self.config_manager_config: dict[str, Any] = self.config.get('config_manager', {})
         self.max_config_history: int = self.config_manager_config.get('max_config_history', 100)
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration manager configuration'), AttributeError: (False, 'Missing required configuration manager parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='configuration manager initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration manager configuration'), AttributeError: (False, 'Missing required configuration manager parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='configuration manager initialization')
     async def initialize(self) -> bool:
         """
         Initialize configuration manager.
 
         Returns:
-            bool: True if initialization successful=False otherwise
+            bool: True if initialization successful = False otherwise
         """
         try:
             self.logger.info('Initializing Configuration Manager...')
@@ -126,7 +215,7 @@ class ConfigurationManager:
             self.logger.exception(f'❌ Configuration Manager initialization failed - Unexpected error: {e}')
             return False
 
-    @handles_errors(default_return=None, context='config manager configuration loading')
+    @handles_errors(default_return = None, context='config manager configuration loading')
     async def _load_config_manager_configuration(self) -> None:
         """Load configuration manager specific configuration."""
         try:
@@ -138,13 +227,13 @@ class ConfigurationManager:
             self.logger.exception(f'❌ Failed to load configuration manager configuration - Unexpected error: {e}')
             raise
 
-    @handles_errors(default_return=False, context='configuration validation')
+    @handles_errors(default_return = False, context='configuration validation')
     def _validate_configuration(self) -> bool:
         """
         Validate configuration manager configuration.
 
         Returns:
-            bool: True if configuration is valid=False otherwise
+            bool: True if configuration is valid = False otherwise
         """
         try:
             if self.max_config_history <= 0:
@@ -158,7 +247,7 @@ class ConfigurationManager:
             self.print(failed(f'Configuration validation failed - Unexpected error: {e}'))
             return False
 
-    @handles_errors(default_return=None, context='config sections initialization')
+    @handles_errors(default_return = None, context='config sections initialization')
     async def _initialize_config_sections(self) -> None:
         """Initialize configuration sections."""
         try:
@@ -168,7 +257,7 @@ class ConfigurationManager:
             self.logger.exception(f'❌ Failed to initialize configuration sections: {e}')
             raise
 
-    @handles_errors(default_return=None, context='config service initialization')
+    @handles_errors(default_return = None, context='config service initialization')
     async def _initialize_config_service(self) -> None:
         """Initialize configuration service."""
         try:
@@ -177,13 +266,13 @@ class ConfigurationManager:
             self.print(failed('❌ Failed to initialize configuration service: {e}'))
             raise
 
-    @handles_errors(error_handlers={Exception: (False, 'Configuration manager run failed')}, default_return=False, context='configuration manager run')
+    @handles_errors(error_handlers={Exception: (False, 'Configuration manager run failed')}, default_return = False, context='configuration manager run')
     async def run(self) -> bool:
         """
         Run the configuration manager.
 
         Returns:
-            bool: True if successful=False otherwise
+            bool: True if successful = False otherwise
         """
         try:
             self.logger.info('🚀 Starting Configuration Manager...')
@@ -196,7 +285,7 @@ class ConfigurationManager:
             self.print(failed('❌ Configuration Manager run failed: {e}'))
             return False
 
-    @handles_errors(default_return=None, context='configuration update')
+    @handles_errors(default_return = None, context='configuration update')
     async def _update_configuration(self) -> None:
         """Update configuration."""
         try:
@@ -208,7 +297,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed('❌ Failed to update configuration: {e}'))
 
-    @handles_errors(default_return=None, context='configuration reload')
+    @handles_errors(default_return = None, context='configuration reload')
     async def _reload_configuration(self) -> None:
         """Reload configuration."""
         try:
@@ -217,7 +306,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed('❌ Failed to reload configuration: {e}'))
 
-    @handles_errors(default_return=None, context='configuration sections validation')
+    @handles_errors(default_return = None, context='configuration sections validation')
     async def _validate_configuration_sections(self) -> None:
         """Validate configuration sections."""
         try:
@@ -230,7 +319,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed('❌ Failed to validate configuration sections: {e}'))
 
-    @handles_errors(default_return=None, context='config service update')
+    @handles_errors(default_return = None, context='config service update')
     async def _update_config_service(self) -> None:
         """Update configuration service."""
         try:
@@ -238,7 +327,7 @@ class ConfigurationManager:
         except Exception:
             self.print(failed('❌ Failed to update configuration service: {e}'))
 
-    @handles_errors(default_return=None, context='configuration manager stop')
+    @handles_errors(default_return = None, context='configuration manager stop')
     async def stop(self) -> None:
         """Stop the configuration manager and cleanup resources."""
         try:
@@ -252,7 +341,7 @@ class ConfigurationManager:
         """Get configuration manager status."""
         return {'is_initialized': self.is_initialized, 'config_sections_count': len(self.config_sections), 'history_count': len(self.config_history)}
 
-    def get_history(self, limit: int | None=None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get configuration history."""
         history = self.config_history.copy()
         if limit:
@@ -269,11 +358,29 @@ class ConfigurationManager:
 
     def get_dual_model_config(self) -> dict[str, Any]:
         """Get dual model configuration."""
-        return get_dual_model_config()
+        # Return default dual model configuration
+        return {
+            "enabled": True,
+            "analyst_model_weight": 0.6,
+            "tactician_model_weight": 0.4,
+            "confidence_threshold": 0.7,
+            "ensemble_method": "weighted_average",
+            "fallback_strategy": "tactician_only"
+        }
 
     def get_ml_confidence_predictor_config(self) -> dict[str, Any]:
         """Get ML confidence predictor configuration."""
-        return get_ml_confidence_predictor_config()
+        # Use the imported confidence config
+        confidence_config = get_confidence_config()
+        return {
+            "base_entry_threshold": confidence_config.base_entry_threshold,
+            "analyst_confidence_threshold": confidence_config.analyst_confidence_threshold,
+            "tactician_confidence_threshold": confidence_config.tactician_confidence_threshold,
+            "ensemble_agreement_threshold": confidence_config.ensemble_agreement_threshold,
+            "model_performance_threshold": confidence_config.model_performance_threshold,
+            "min_sr_confidence": confidence_config.min_sr_confidence,
+            "high_confidence_threshold": confidence_config.high_confidence_threshold
+        }
 
     def get_position_sizing_config(self) -> dict[str, Any]:
         """Get position sizing configuration."""
@@ -303,7 +410,7 @@ class ConfigurationManager:
         """Get complete configuration."""
         return get_complete_config()
 
-async def setup_configuration_manager(config: dict[str, Any] | None=None) -> ConfigurationManager | None:
+async def setup_configuration_manager(config: dict[str, Any] | None = None) -> ConfigurationManager | None:
     """
     Setup and return a configured ConfigurationManager instance.
 

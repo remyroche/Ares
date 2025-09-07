@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import logging
 
 class SamplerType(str, Enum):
@@ -17,17 +17,18 @@ class PrunerType(str, Enum):
 
 class FeatureSelectionConfig(BaseModel):
     """Configuration for feature selection."""
-    enable: bool = Field(default=True, description='Enable feature selection')
+    enable: bool = Field(default = True, description='Enable feature selection')
     methods: list[str] = Field(default=['mutual_info', 'lasso', 'random_forest', 'shap'], description='Feature selection methods to use')
     target_features: dict[str, int] = Field(default={'step06': 80, 'step6_5': 100, 'step09': 90}, description='Target number of features for each step')
-    vif_threshold: float = Field(default=10.0, ge=1.0, le=100.0, description='VIF threshold for multicollinearity')
-    correlation_threshold: float = Field(default=0.95, ge=0.0, le=1.0, description='Correlation threshold')
-    variance_threshold: float = Field(default=0.01, ge=0.0, le=1.0, description='Variance threshold')
-    mutual_info_threshold: float = Field(default=0.001, ge=0.0, description='Mutual information threshold')
-    shap_threshold: float = Field(default=0.001, ge=0.0, description='SHAP importance threshold')
+    vif_threshold: float = Field(default = 10.0, ge = 1.0, le = 100.0, description='VIF threshold for multicollinearity')
+    correlation_threshold: float = Field(default = 0.95, ge = 0.0, le = 1.0, description='Correlation threshold')
+    variance_threshold: float = Field(default = 0.01, ge = 0.0, le = 1.0, description='Variance threshold')
+    mutual_info_threshold: float = Field(default = 0.001, ge = 0.0, description='Mutual information threshold')
+    shap_threshold: float = Field(default = 0.001, ge = 0.0, description='SHAP importance threshold')
 
-    @validator('methods')
-    def validate_methods(self, v: Any) -> bool:
+    @field_validator('methods')
+    @classmethod
+    def validate_methods(cls, v: Any) -> bool:
         valid_methods = ['mutual_info', 'lasso', 'random_forest', 'shap']
         for method in v:
             if method not in valid_methods:
@@ -37,14 +38,15 @@ class FeatureSelectionConfig(BaseModel):
 
 class RegularizationConfig(BaseModel):
     """Configuration for regularization optimization."""
-    enable: bool = Field(default=True, description='Enable regularization optimization')
+    enable: bool = Field(default = True, description='Enable regularization optimization')
     l1_alpha_range: list[float] = Field(default=[0.001, 0.1], description='L1 alpha range')
     l2_alpha_range: list[float] = Field(default=[0.0001, 0.01], description='L2 alpha range')
     dropout_range: list[float] = Field(default=[0.1, 0.5], description='Dropout range')
     model_specific: dict[str, dict[str, Any]] = Field(default={'lightgbm': {'reg_alpha_range': [0.001, 0.1], 'reg_lambda_range': [0.0001, 0.01]}, 'neural_networks': {'weight_decay_range': [1e-06, 0.001], 'dropout_range': [0.1, 0.5]}}, description='Model-specific regularization parameters')
 
-    @validator('l1_alpha_range', 'l2_alpha_range', 'dropout_range')
-    def validate_ranges(self, v: Any) -> bool:
+    @field_validator('l1_alpha_range', 'l2_alpha_range', 'dropout_range')
+    @classmethod
+    def validate_ranges(cls, v: Any) -> bool:
         if len(v) != 2:
             msg = 'Range must have exactly 2 values [min, max]'
             raise ValueError(msg)
@@ -55,16 +57,17 @@ class RegularizationConfig(BaseModel):
 
 class OptunaConfig(BaseModel):
     """Configuration for Optuna hyperparameter optimization."""
-    enable: bool = Field(default=True, description='Enable Optuna optimization')
-    n_trials_per_batch: int = Field(default=50, ge=1, le=1000, description='Trials per batch')
-    n_batches: int = Field(default=3, ge=1, le=10, description='Number of batches')
-    timeout_per_batch: int = Field(default=300, ge=60, le=3600, description='Timeout per batch in seconds')
-    sampler: SamplerType = Field(default=SamplerType.TPE, description='Optuna sampler')
-    pruner: PrunerType = Field(default=PrunerType.MEDIAN, description='Optuna pruner')
-    storage: str | None = Field(default=None, description='Optuna storage URL')
+    enable: bool = Field(default = True, description='Enable Optuna optimization')
+    n_trials_per_batch: int = Field(default = 50, ge = 1, le = 1000, description='Trials per batch')
+    n_batches: int = Field(default = 3, ge = 1, le = 10, description='Number of batches')
+    timeout_per_batch: int = Field(default = 300, ge = 60, le = 3600, description='Timeout per batch in seconds')
+    sampler: SamplerType = Field(default = SamplerType.TPE, description='Optuna sampler')
+    pruner: PrunerType = Field(default = PrunerType.MEDIAN, description='Optuna pruner')
+    storage: str | None = Field(default = None, description='Optuna storage URL')
 
-    @validator('timeout_per_batch')
-    def validate_timeout(self, v: Any) -> bool:
+    @field_validator('timeout_per_batch')
+    @classmethod
+    def validate_timeout(cls, v: Any) -> bool:
         if v < 60:
             msg = 'Timeout must be at least 60 seconds'
             raise ValueError(msg)
@@ -72,31 +75,31 @@ class OptunaConfig(BaseModel):
 
 class VectorizationConfig(BaseModel):
     """Configuration for vectorized operations."""
-    enable: bool = Field(default=True, description='Enable vectorized operations')
-    batch_size: int = Field(default=1024, ge=32, le=10000, description='Batch size for operations')
-    use_gpu: bool = Field(default=True, description='Use GPU if available')
-    memory_efficient: bool = Field(default=True, description='Use memory-efficient operations')
+    enable: bool = Field(default = True, description='Enable vectorized operations')
+    batch_size: int = Field(default = 1024, ge = 32, le = 10000, description='Batch size for operations')
+    use_gpu: bool = Field(default = True, description='Use GPU if available')
+    memory_efficient: bool = Field(default = True, description='Use memory-efficient operations')
 
 class ExperimentTrackingConfig(BaseModel):
     """Configuration for experiment tracking."""
-    enable: bool = Field(default=True, description='Enable experiment tracking')
-    mlflow: bool = Field(default=True, description='Enable MLflow tracking')
-    wandb: bool = Field(default=False, description='Enable Weights & Biases tracking')
-    log_artifacts: bool = Field(default=True, description='Log model artifacts')
-    log_metrics: bool = Field(default=True, description='Log detailed metrics')
+    enable: bool = Field(default = True, description='Enable experiment tracking')
+    mlflow: bool = Field(default = True, description='Enable MLflow tracking')
+    wandb: bool = Field(default = False, description='Enable Weights & Biases tracking')
+    log_artifacts: bool = Field(default = True, description='Log model artifacts')
+    log_metrics: bool = Field(default = True, description='Log detailed metrics')
 
 class EnhancedLMOptimizerConfig(BaseModel):
     """Main configuration for Enhanced LM Optimizer."""
-    feature_selection: FeatureSelectionConfig = Field(default_factory=FeatureSelectionConfig, description='Feature selection configuration')
-    regularization: RegularizationConfig = Field(default_factory=RegularizationConfig, description='Regularization configuration')
-    optuna: OptunaConfig = Field(default_factory=OptunaConfig, description='Optuna configuration')
-    vectorization: VectorizationConfig = Field(default_factory=VectorizationConfig, description='Vectorization configuration')
-    experiment_tracking: ExperimentTrackingConfig = Field(default_factory=ExperimentTrackingConfig, description='Experiment tracking configuration')
-    enable_parallel_processing: bool = Field(default=True, description='Enable parallel processing')
-    max_workers: int = Field(default=4, ge=1, le=16, description='Maximum number of workers')
-    cache_results: bool = Field(default=True, description='Cache optimization results')
-    validate_data_quality: bool = Field(default=True, description='Validate data quality before optimization')
-    check_memory_usage: bool = Field(default=True, description='Check memory usage during optimization')
+    feature_selection: FeatureSelectionConfig = Field(default_factory = FeatureSelectionConfig, description='Feature selection configuration')
+    regularization: RegularizationConfig = Field(default_factory = RegularizationConfig, description='Regularization configuration')
+    optuna: OptunaConfig = Field(default_factory = OptunaConfig, description='Optuna configuration')
+    vectorization: VectorizationConfig = Field(default_factory = VectorizationConfig, description='Vectorization configuration')
+    experiment_tracking: ExperimentTrackingConfig = Field(default_factory = ExperimentTrackingConfig, description='Experiment tracking configuration')
+    enable_parallel_processing: bool = Field(default = True, description='Enable parallel processing')
+    max_workers: int = Field(default = 4, ge = 1, le = 16, description='Maximum number of workers')
+    cache_results: bool = Field(default = True, description='Cache optimization results')
+    validate_data_quality: bool = Field(default = True, description='Validate data quality before optimization')
+    check_memory_usage: bool = Field(default = True, description='Check memory usage during optimization')
 
     class Config:
         """Pydantic configuration."""
@@ -131,12 +134,12 @@ DEFAULT_CONFIG = EnhancedLMOptimizerConfig()
 
 def get_fast_config() -> EnhancedLMOptimizerConfig:
     """Get configuration optimized for speed."""
-    return EnhancedLMOptimizerConfig(optuna=OptunaConfig(n_trials_per_batch=20, n_batches=2, timeout_per_batch=120), feature_selection=FeatureSelectionConfig(methods=['mutual_info', 'random_forest'], target_features={'step06': 50, 'step6_5': 60, 'step09': 50}), experiment_tracking=ExperimentTrackingConfig(enable=False))
+    return EnhancedLMOptimizerConfig(optuna = OptunaConfig(n_trials_per_batch = 20, n_batches = 2, timeout_per_batch = 120), feature_selection = FeatureSelectionConfig(methods=['mutual_info', 'random_forest'], target_features={'step06': 50, 'step6_5': 60, 'step09': 50}), experiment_tracking = ExperimentTrackingConfig(enable = False))
 
 def get_comprehensive_config() -> EnhancedLMOptimizerConfig:
     """Get configuration optimized for comprehensive optimization."""
-    return EnhancedLMOptimizerConfig(optuna=OptunaConfig(n_trials_per_batch=100, n_batches=5, timeout_per_batch=600, sampler=SamplerType.CMAES), feature_selection=FeatureSelectionConfig(methods=['mutual_info', 'lasso', 'random_forest', 'shap'], target_features={'step06': 100, 'step6_5': 120, 'step09': 100}), experiment_tracking=ExperimentTrackingConfig(enable=True, mlflow=True, wandb=True))
+    return EnhancedLMOptimizerConfig(optuna = OptunaConfig(n_trials_per_batch = 100, n_batches = 5, timeout_per_batch = 600, sampler = SamplerType.CMAES), feature_selection = FeatureSelectionConfig(methods=['mutual_info', 'lasso', 'random_forest', 'shap'], target_features={'step06': 100, 'step6_5': 120, 'step09': 100}), experiment_tracking = ExperimentTrackingConfig(enable = True, mlflow = True, wandb = True))
 
 def get_memory_efficient_config() -> EnhancedLMOptimizerConfig:
     """Get configuration optimized for memory efficiency."""
-    return EnhancedLMOptimizerConfig(vectorization=VectorizationConfig(batch_size=512, memory_efficient=True), optuna=OptunaConfig(n_trials_per_batch=30, n_batches=2), max_workers=2, check_memory_usage=True)
+    return EnhancedLMOptimizerConfig(vectorization = VectorizationConfig(batch_size = 512, memory_efficient = True), optuna = OptunaConfig(n_trials_per_batch = 30, n_batches = 2), max_workers = 2, check_memory_usage = True)

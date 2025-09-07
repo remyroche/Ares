@@ -8,6 +8,11 @@ from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Dict, List
 
+from src.utils.comprehensive_function_logger import (
+    log_step_functions, log_important_calls, log_all_calls,
+    log_internal_call, log_step_progress, log_data_operation
+)
+
 import asyncio
 import numpy as np
 import time
@@ -15,7 +20,8 @@ import time
 
 class EnhancedErrorHandler:
     """Enhanced error handling system with detailed function-level error reporting."""
-    
+
+    @log_important_calls
     def __init__(self, logger: Any = None):
         self.logger = logger or logging.getLogger(__name__)
         self.error_history: List[Dict[str, Any]] = []
@@ -58,7 +64,8 @@ class EnhancedErrorHandler:
         except Exception as e:
             self.logger.error(f"❌ Failed to handle error in EnhancedErrorHandler: {e}")
             return {}
-    
+
+    @log_all_calls
     def _determine_error_severity(self, error: Exception) -> str:
         """Determine error severity based on error type and context."""
         critical_errors = (SystemError, MemoryError, OSError, RuntimeError)
@@ -72,7 +79,8 @@ class EnhancedErrorHandler:
             return "ERROR"
         else:
             return "UNKNOWN"
-    
+
+    @log_all_calls
     def _generate_recovery_suggestions(self, error: Exception, function_name: str) -> List[str]:
         """Generate recovery suggestions based on error type and function."""
         suggestions = []
@@ -123,7 +131,8 @@ class EnhancedErrorHandler:
             ])
         
         return suggestions
-    
+
+    @log_all_calls
     def _log_detailed_error(self, error_info: Dict[str, Any]) -> None:
         """Log detailed error information."""
         try:
@@ -213,20 +222,20 @@ class EnhancedErrorHandler:
             # Error type summary
             if report.get('error_type_counts'):
                 self.logger.info(f"\nError Types:")
-                for error_type, count in sorted(report['error_type_counts'].items(), key=lambda x: x[1], reverse=True):
+                for error_type, count in sorted(report['error_type_counts'].items(), key = lambda x: x[1], reverse = True):
                     self.logger.info(f"  - {error_type}: {count} occurrences")
             
             # Severity summary
             if report.get('severity_counts'):
                 self.logger.info(f"\nSeverity Distribution:")
-                for severity, count in sorted(report['severity_counts'].items(), key=lambda x: x[1], reverse=True):
+                for severity, count in sorted(report['severity_counts'].items(), key = lambda x: x[1], reverse = True):
                     self.logger.info(f"  - {severity}: {count} occurrences")
             
             # Function error summary
             if report.get('function_error_summary'):
                 self.logger.info(f"\nFunction Error Summary:")
                 for function_name, summary in sorted(report['function_error_summary'].items(), 
-                                                   key=lambda x: x[1]['total_errors'], reverse=True):
+                                                   key = lambda x: x[1]['total_errors'], reverse = True):
                     self.logger.info(f"  - {function_name}: {summary['total_errors']} errors")
                     for error_type, count in summary['error_types'].items():
                         self.logger.info(f"    * {error_type}: {count}")

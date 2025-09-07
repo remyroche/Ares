@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from . import missing_data_downloader_and_gap_filler
 import pandas as pd
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 
 """Data Gap Detector for Step1.
 
@@ -11,7 +13,6 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .core.decorators import (
     handles_errors, 
     traced, 
     validates,
@@ -20,7 +21,7 @@ from .core.decorators import (
     validate_data_structure,
     with_tracing_span
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -33,11 +34,15 @@ class DataGapDetector:
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok=True)
+        self.data_cache_path.mkdir(exist_ok = True)
 
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
+import logging
+import time
+import typing
+
                 MissingDataDownloaderAndGapFiller,
             )
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
@@ -78,7 +83,7 @@ class DataGapDetector:
         detection_start = datetime.now()
         
         if start_date is None:
-            start_date = datetime.now() - timedelta(days=365*2)
+            start_date = datetime.now() - timedelta(days = 365*2)
             logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
         if end_date is None:
             end_date = datetime.now()
@@ -186,7 +191,7 @@ class DataGapDetector:
         expected_dates = []
         while current_date <= end_date.date():
             expected_dates.append(current_date)
-            current_date += timedelta(days=1)
+            current_date += timedelta(days = 1)
 
         # Find missing and existing dates
         existing_dates = list(files_by_date.keys())
@@ -230,15 +235,15 @@ class DataGapDetector:
                 continue
 
         # Generate list of expected months
-        current_date = start_date.replace(day=1).date()
+        current_date = start_date.replace(day = 1).date()
         expected_months = []
         while current_date <= end_date.date():
             expected_months.append(current_date)
             # Move to next month
             if current_date.month == 12:
-                current_date = current_date.replace(year=current_date.year + 1, month=1)
+                current_date = current_date.replace(year = current_date.year + 1, month = 1)
             else:
-                current_date = current_date.replace(month=current_date.month + 1)
+                current_date = current_date.replace(month = current_date.month + 1)
 
         # Find missing and existing months
         existing_months = list(files_by_month.keys())
@@ -282,15 +287,15 @@ class DataGapDetector:
                 continue
 
         # Generate list of expected months
-        current_date = start_date.replace(day=1).date()
+        current_date = start_date.replace(day = 1).date()
         expected_months = []
         while current_date <= end_date.date():
             expected_months.append(current_date)
             # Move to next month
             if current_date.month == 12:
-                current_date = current_date.replace(year=current_date.year + 1, month=1)
+                current_date = current_date.replace(year = current_date.year + 1, month = 1)
             else:
-                current_date = current_date.replace(month=current_date.month + 1)
+                current_date = current_date.replace(month = current_date.month + 1)
 
         # Find missing and existing months
         existing_months = list(files_by_month.keys())
@@ -338,7 +343,7 @@ class DataGapDetector:
                     continue
 
                 # Sort by timestamp
-                df = df.sort_values("timestamp").reset_index(drop=True)
+                df = df.sort_values("timestamp").reset_index(drop = True)
 
                 # Calculate time differences
                 df["time_diff"] = df["timestamp"].diff().dt.total_seconds()

@@ -5,9 +5,7 @@ import numpy as np
 Common Utilities for Data Operations
 
 This module provides comprehensive utilities for data formatting, analysis,
-from .exceptions import (
 access control, and error handling in the data collection pipeline.
-)
 """
 
 import json
@@ -15,13 +13,18 @@ import logging
 import time
 from pathlib import Path
 from enum import Enum
+from typing import Union, Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass
 import pickle
 
 
 import pandas as pd
-from .common_operations import (
+import typing
+from typing import Optional, Any, Dict, List
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
+    safe_json_load,
 )
 
 
@@ -75,6 +78,155 @@ class DataQualityMetrics:
     timestamp: str
 
 
+class MemoryOptimizedDataHandler:
+    """Memory-optimized data structures for large datasets."""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+
+    def create_structured_array_from_dataframe(self, df: pd.DataFrame,
+                                             dtype_spec: Optional[List[Tuple[str, str]]] = None) -> np.ndarray:
+        """Convert DataFrame to memory-efficient structured array."""
+        try:
+            if dtype_spec is None:
+                # Auto-generate dtype specification
+                dtype_spec = []
+                for col in df.columns:
+                    if col == 'timestamp':
+                        dtype_spec.append((col, 'datetime64[ns]'))
+                    elif df[col].dtype == 'object':
+                        # Estimate string length for memory efficiency
+                        max_len = df[col].astype(str).str.len().max()
+                        dtype_spec.append((col, f'U{max_len}'))
+                    elif df[col].dtype.kind in ['i', 'u']:
+                        # Use smallest integer type that fits
+                        min_val, max_val = df[col].min(), df[col].max()
+                        if min_val >= 0:
+                            if max_val <= 255:
+                                dtype_spec.append((col, 'u1'))
+                            elif max_val <= 65535:
+                                dtype_spec.append((col, 'u2'))
+                            elif max_val <= 4294967295:
+                                dtype_spec.append((col, 'u4'))
+                            else:
+                                dtype_spec.append((col, 'u8'))
+                        else:
+                            if min_val >= -128 and max_val <= 127:
+                                dtype_spec.append((col, 'i1'))
+                            elif min_val >= -32768 and max_val <= 32767:
+                                dtype_spec.append((col, 'i2'))
+                            elif min_val >= -2147483648 and max_val <= 2147483647:
+                                dtype_spec.append((col, 'i4'))
+                            else:
+                                dtype_spec.append((col, 'i8'))
+                    elif df[col].dtype.kind == 'f':
+                        # Use float32 for memory efficiency if precision allows
+                        if df[col].astype('float32').equals(df[col]):
+                            dtype_spec.append((col, 'f4'))
+                        else:
+                            dtype_spec.append((col, 'f8'))
+                    else:
+                        dtype_spec.append((col, df[col].dtype))
+
+            # Create structured array
+            structured_array = np.zeros(len(df), dtype=dtype_spec)
+
+            # Fill the array
+            for col in df.columns:
+                if col in [name for name, _ in dtype_spec]:
+                    if df[col].dtype == 'datetime64[ns]':
+                        structured_array[col] = df[col].values
+                    else:
+                        structured_array[col] = df[col].values
+
+            # Calculate memory savings
+            original_memory = df.memory_usage(deep=True).sum()
+            structured_memory = structured_array.nbytes
+            memory_savings = (original_memory - structured_memory) / original_memory
+
+            self.logger.info(f"Created structured array: {len(df)} rows, {len(df.columns)} cols")
+            self.logger.info(f"Memory usage: {original_memory/1024**2:.1f}MB → {structured_memory/1024**2:.1f}MB ({memory_savings:.1%} savings)")
+
+            return structured_array
+
+        except Exception as e:
+            self.logger.warning(f"Failed to create structured array: {e}")
+            return df.values  # Fallback to regular array
+
+    def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame memory usage."""
+        try:
+            optimized_df = df.copy()
+
+            # Optimize numeric columns
+            for col in optimized_df.select_dtypes(include=['int64', 'float64']).columns:
+                col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
+
+                # Downcast integers
+                if optimized_df[col].dtype == 'int64':
+                    if col_min >= 0:
+                        if col_max <= 255:
+                            optimized_df[col] = optimized_df[col].astype('uint8')
+                        elif col_max <= 65535:
+                            optimized_df[col] = optimized_df[col].astype('uint16')
+                        elif col_max <= 4294967295:
+                            optimized_df[col] = optimized_df[col].astype('uint32')
+                    else:
+                        if col_min >= -128 and col_max <= 127:
+                            optimized_df[col] = optimized_df[col].astype('int8')
+                        elif col_min >= -32768 and col_max <= 32767:
+                            optimized_df[col] = optimized_df[col].astype('int16')
+                        elif col_min >= -2147483648 and col_max <= 2147483647:
+                            optimized_df[col] = optimized_df[col].astype('int32')
+
+                # Downcast floats
+                elif optimized_df[col].dtype == 'float64':
+                    if optimized_df[col].astype('float32').equals(optimized_df[col]):
+                        optimized_df[col] = optimized_df[col].astype('float32')
+
+            # Optimize object columns (strings)
+            for col in optimized_df.select_dtypes(include=['object']).columns:
+                if optimized_df[col].dtype == 'object':
+                    # Calculate optimal string length
+                    str_lengths = optimized_df[col].astype(str).str.len()
+                    max_len = str_lengths.max()
+                    if max_len > 0:
+                        # Use categorical for repeated strings
+                        if len(optimized_df[col].unique()) / len(optimized_df[col]) < 0.5:
+                            optimized_df[col] = optimized_df[col].astype('category')
+
+            # Calculate memory savings
+            original_memory = df.memory_usage(deep=True).sum()
+            optimized_memory = optimized_df.memory_usage(deep=True).sum()
+            memory_savings = (original_memory - optimized_memory) / original_memory
+
+            self.logger.info(f"Optimized DataFrame memory: {original_memory/1024**2:.1f}MB → {optimized_memory/1024**2:.1f}MB ({memory_savings:.1%} savings)")
+
+            return optimized_df
+
+        except Exception as e:
+            self.logger.warning(f"Failed to optimize DataFrame memory: {e}")
+            return df
+
+    def create_memory_mapped_array(self, data: np.ndarray, file_path: str) -> np.ndarray:
+        """Create memory-mapped array for large datasets."""
+        try:
+            # Save to disk
+            np.save(file_path, data)
+
+            # Create memory-mapped version
+            memmap_array = np.load(file_path + '.npy', mmap_mode='r')
+
+            self.logger.info(f"Created memory-mapped array: {memmap_array.shape}, {memmap_array.nbytes/1024**2:.1f}MB")
+
+            return memmap_array
+
+        except Exception as e:
+            self.logger.warning(f"Failed to create memory-mapped array: {e}")
+            return data
+
+
 class DataFormatter:
     """Utility class for data formatting operations."""
     
@@ -102,9 +254,9 @@ class DataFormatter:
             missing_columns = set(required_columns) - set(df.columns)
             if missing_columns:
                 return DataOperationResult(
-                    success=False,
-                    message=f"Missing required columns: {missing_columns}",
-                    execution_time=time.time() - start_time,
+                    success = False,
+                    message = f"Missing required columns: {missing_columns}",
+                    execution_time = time.time() - start_time,
                     errors=[f"Missing columns: {missing_columns}"]
                 )
             
@@ -122,7 +274,7 @@ class DataFormatter:
                     formatted_df[col] = pd.to_numeric(formatted_df[col], errors='coerce')
             
             # Sort by timestamp
-            formatted_df = formatted_df.sort_values('timestamp').reset_index(drop=True)
+            formatted_df = formatted_df.sort_values('timestamp').reset_index(drop = True)
             
             # Add metadata columns
             formatted_df['symbol'] = symbol
@@ -135,9 +287,9 @@ class DataFormatter:
             execution_time = time.time() - start_time
             
             return DataOperationResult(
-                success=True,
+                success = True,
                 message="Klines data formatted successfully",
-                data=formatted_df,
+                data = formatted_df,
                 metadata={
                     "symbol": symbol,
                     "exchange": exchange,
@@ -146,16 +298,16 @@ class DataFormatter:
                     "columns": list(formatted_df.columns),
                     "ohlc_issues": ohlc_issues
                 },
-                execution_time=execution_time,
-                warnings=ohlc_issues
+                execution_time = execution_time,
+                warnings = ohlc_issues
             )
             
         except Exception as e:
             self.logger.exception(f"Error formatting klines data: {e}")
             return DataOperationResult(
-                success=False,
-                message=f"Error formatting klines data: {e}",
-                execution_time=time.time() - start_time,
+                success = False,
+                message = f"Error formatting klines data: {e}",
+                execution_time = time.time() - start_time,
                 errors=[str(e)]
             )
     
@@ -178,9 +330,9 @@ class DataFormatter:
             missing_columns = set(required_columns) - set(df.columns)
             if missing_columns:
                 return DataOperationResult(
-                    success=False,
-                    message=f"Missing required columns: {missing_columns}",
-                    execution_time=time.time() - start_time,
+                    success = False,
+                    message = f"Missing required columns: {missing_columns}",
+                    execution_time = time.time() - start_time,
                     errors=[f"Missing columns: {missing_columns}"]
                 )
             
@@ -198,7 +350,7 @@ class DataFormatter:
                     formatted_df[col] = pd.to_numeric(formatted_df[col], errors='coerce')
             
             # Sort by timestamp
-            formatted_df = formatted_df.sort_values('timestamp').reset_index(drop=True)
+            formatted_df = formatted_df.sort_values('timestamp').reset_index(drop = True)
             
             # Add metadata columns
             formatted_df['symbol'] = symbol
@@ -210,9 +362,9 @@ class DataFormatter:
             execution_time = time.time() - start_time
             
             return DataOperationResult(
-                success=True,
+                success = True,
                 message="Aggtrades data formatted successfully",
-                data=formatted_df,
+                data = formatted_df,
                 metadata={
                     "symbol": symbol,
                     "exchange": exchange,
@@ -220,16 +372,16 @@ class DataFormatter:
                     "columns": list(formatted_df.columns),
                     "validation_issues": validation_issues
                 },
-                execution_time=execution_time,
-                warnings=validation_issues
+                execution_time = execution_time,
+                warnings = validation_issues
             )
             
         except Exception as e:
             self.logger.exception(f"Error formatting aggtrades data: {e}")
             return DataOperationResult(
-                success=False,
-                message=f"Error formatting aggtrades data: {e}",
-                execution_time=time.time() - start_time,
+                success = False,
+                message = f"Error formatting aggtrades data: {e}",
+                execution_time = time.time() - start_time,
                 errors=[str(e)]
             )
     
@@ -248,12 +400,12 @@ class DataFormatter:
         # Check OHLC relationships
         if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
             # High should be >= max(open, close)
-            invalid_high = df['high'] < df[['open', 'close']].max(axis=1)
+            invalid_high = df['high'] < df[['open', 'close']].max(axis = 1)
             if invalid_high.any():
                 issues.append(f"Found {invalid_high.sum()} rows where high < max(open, close)")
             
             # Low should be <= min(open, close)
-            invalid_low = df['low'] > df[['open', 'close']].min(axis=1)
+            invalid_low = df['low'] > df[['open', 'close']].min(axis = 1)
             if invalid_low.any():
                 issues.append(f"Found {invalid_low.sum()} rows where low > min(open, close)")
             
@@ -319,7 +471,7 @@ class DataAnalyzer:
             data_types = df.dtypes.astype(str).to_dict()
             
             # Memory usage
-            memory_usage = df.memory_usage(deep=True).sum()
+            memory_usage = df.memory_usage(deep = True).sum()
             
             # Quality score calculation
             quality_score = self._calculate_quality_score(
@@ -330,16 +482,16 @@ class DataAnalyzer:
             issues = self._identify_data_issues(df, data_type)
             
             return DataQualityMetrics(
-                total_rows=total_rows,
-                total_columns=total_columns,
-                null_counts=null_counts,
-                duplicate_count=duplicate_count,
-                data_types=data_types,
-                memory_usage=memory_usage,
-                file_size=0,  # Will be set by caller if needed
-                quality_score=quality_score,
-                issues=issues,
-                timestamp=format_datetime(get_current_datetime())
+                total_rows = total_rows,
+                total_columns = total_columns,
+                null_counts = null_counts,
+                duplicate_count = duplicate_count,
+                data_types = data_types,
+                memory_usage = memory_usage,
+                file_size = 0,  # Will be set by caller if needed
+                quality_score = quality_score,
+                issues = issues,
+                timestamp = format_datetime(get_current_datetime())
             )
             
         except Exception as e:
@@ -560,20 +712,20 @@ class DataStorageManager:
             # Save based on format
             if format == DataFormat.PARQUET:
                 if isinstance(data, pd.DataFrame):
-                    data.to_parquet(file_path, compression=compression.value if compression != CompressionType.NONE else None)
+                    data.to_parquet(file_path, compression = compression.value if compression != CompressionType.NONE else None)
                 else:
                     raise ValueError("Parquet format only supports pandas DataFrames")
             
             elif format == DataFormat.CSV:
                 if isinstance(data, pd.DataFrame):
-                    data.to_csv(file_path, index=False, compression=compression.value if compression != CompressionType.NONE else None)
+                    data.to_csv(file_path, index = False, compression = compression.value if compression != CompressionType.NONE else None)
                 else:
                     raise ValueError("CSV format only supports pandas DataFrames")
             
             elif format == DataFormat.JSON:
                 if isinstance(data, (dict, list)):
                     with open(file_path, 'w') as f:
-                        json.dump(data, f, indent=2, default=str)
+                        json.dump(data, f, indent = 2, default = str)
                 else:
                     raise ValueError("JSON format only supports dict or list")
             
@@ -591,8 +743,8 @@ class DataStorageManager:
             execution_time = time.time() - start_time
             
             return DataOperationResult(
-                success=True,
-                message=f"Data saved successfully to {file_path}",
+                success = True,
+                message = f"Data saved successfully to {file_path}",
                 metadata={
                     "file_path": str(file_path),
                     "format": format.value,
@@ -600,15 +752,15 @@ class DataStorageManager:
                     "file_size": file_path.stat().st_size,
                     "metadata_saved": metadata is not None
                 },
-                execution_time=execution_time
+                execution_time = execution_time
             )
             
         except Exception as e:
             self.logger.exception(f"Error saving data: {e}")
             return DataOperationResult(
-                success=False,
-                message=f"Error saving data: {e}",
-                execution_time=time.time() - start_time,
+                success = False,
+                message = f"Error saving data: {e}",
+                execution_time = time.time() - start_time,
                 errors=[str(e)]
             )
     
@@ -625,9 +777,9 @@ class DataStorageManager:
             
             if not file_path.exists():
                 return DataOperationResult(
-                    success=False,
-                    message=f"File not found: {file_path}",
-                    execution_time=time.time() - start_time,
+                    success = False,
+                    message = f"File not found: {file_path}",
+                    execution_time = time.time() - start_time,
                     errors=[f"File not found: {file_path}"]
                 )
             
@@ -660,19 +812,19 @@ class DataStorageManager:
             execution_time = time.time() - start_time
             
             return DataOperationResult(
-                success=True,
-                message=f"Data loaded successfully from {file_path}",
-                data=data,
-                metadata=metadata,
-                execution_time=execution_time
+                success = True,
+                message = f"Data loaded successfully from {file_path}",
+                data = data,
+                metadata = metadata,
+                execution_time = execution_time
             )
             
         except Exception as e:
             self.logger.exception(f"Error loading data: {e}")
             return DataOperationResult(
-                success=False,
-                message=f"Error loading data: {e}",
-                execution_time=time.time() - start_time,
+                success = False,
+                message = f"Error loading data: {e}",
+                execution_time = time.time() - start_time,
                 errors=[str(e)]
             )
     
@@ -732,9 +884,9 @@ class ErrorHandler:
             
             # Create error result
             result = DataOperationResult(
-                success=False,
-                message=f"Operation failed: {operation}",
-                execution_time=0.0,
+                success = False,
+                message = f"Operation failed: {operation}",
+                execution_time = 0.0,
                 errors=[f"{type(error).__name__}: {error}"]
             )
             
@@ -747,9 +899,9 @@ class ErrorHandler:
         except Exception as e:
             self.logger.exception(f"Error in error handler: {e}")
             return DataOperationResult(
-                success=False,
+                success = False,
                 message="Error handler failed",
-                execution_time=0.0,
+                execution_time = 0.0,
                 errors=[str(e)]
             )
     

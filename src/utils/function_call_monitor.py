@@ -71,13 +71,13 @@ class FunctionCallReport:
     call_id: str
     timestamp: datetime
     metrics: FunctionCallMetrics
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: Dict[str, Any] = field(default_factory = dict)
     return_value: Any = None
-    validation_results: Dict[str, Any] = field(default_factory=dict)
-    dependencies: List[str] = field(default_factory=list)
-    side_effects: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    recommendations: List[str] = field(default_factory=list)
+    validation_results: Dict[str, Any] = field(default_factory = dict)
+    dependencies: List[str] = field(default_factory = list)
+    side_effects: List[str] = field(default_factory = list)
+    warnings: List[str] = field(default_factory = list)
+    recommendations: List[str] = field(default_factory = list)
 
 class FunctionCallMonitor:
     """Main function call monitoring system."""
@@ -207,11 +207,11 @@ class FunctionCallMonitor:
         return recommendations
 
     @contextmanager
-    def monitor_call(self, func: Callable, args: tuple, kwargs: dict, validation_level: ValidationLevel=ValidationLevel.STANDARD) -> None:
+    def monitor_call(self, func: Callable, args: tuple, kwargs: dict, validation_level: ValidationLevel = ValidationLevel.STANDARD) -> None:
         """Context manager for monitoring a function call."""
         call_id = self._generate_call_id()
         module_name = func.__module__ if hasattr(func, '__module__') else 'unknown'
-        report = FunctionCallReport(function_name=func.__name__, module_name=module_name, call_id=call_id, timestamp=datetime.now(), metrics=FunctionCallMetrics(start_time=time.time(), memory_before=self._get_memory_usage(), call_depth=len(self.call_stack)))
+        report = FunctionCallReport(function_name = func.__name__, module_name = module_name, call_id = call_id, timestamp = datetime.now(), metrics = FunctionCallMetrics(start_time = time.time(), memory_before = self._get_memory_usage(), call_depth = len(self.call_stack)))
         report.validation_results = self._validate_parameters(func, args, kwargs, validation_level)
         with self._lock:
             self.active_calls[call_id] = report
@@ -289,13 +289,13 @@ class FunctionCallMonitor:
         try:
             report_data = {'summary': self.get_call_summary(), 'call_history': [{'function_name': call.function_name, 'module_name': call.module_name, 'call_id': call.call_id, 'timestamp': call.timestamp.isoformat(), 'metrics': {'duration': call.metrics.duration, 'memory_before': call.metrics.memory_before, 'memory_after': call.metrics.memory_after, 'memory_peak': call.metrics.memory_peak, 'cpu_percent': call.metrics.cpu_percent, 'call_depth': call.metrics.call_depth, 'child_calls': call.metrics.child_calls, 'status': call.metrics.status.value, 'error_message': call.metrics.error_message}, 'validation_results': call.validation_results, 'dependencies': call.dependencies, 'side_effects': call.side_effects, 'warnings': call.warnings, 'recommendations': call.recommendations} for call in self.call_history]}
             with open(filepath, 'w') as f:
-                json.dump(report_data, f, indent=2)
+                json.dump(report_data, f, indent = 2)
             self.logger.info(f'📊 Detailed function call report exported to: {filepath}')
         except Exception as e:
             self.logger.error(f'❌ Failed to export detailed report: {e}')
 _global_monitor = FunctionCallMonitor()
 
-def monitor_function_calls(validation_level: ValidationLevel=ValidationLevel.STANDARD) -> None:
+def monitor_function_calls(validation_level: ValidationLevel = ValidationLevel.STANDARD) -> None:
     """Decorator for monitoring function calls with comprehensive reporting."""
 
     def decorator(func: Callable) -> Callable:

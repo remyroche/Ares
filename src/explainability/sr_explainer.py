@@ -53,7 +53,7 @@ class SRExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, sr_model, features, feature_names)
             feature_importance = self._extract_feature_importance(sr_model)
             confidence = self._calculate_detection_confidence(detected_levels, shap_values)
-            explanation = ExplanationResult(model_name='SR_LevelDetection', prediction=detected_levels, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'level_detection', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_detection'})
+            explanation = ExplanationResult(model_name='SR_LevelDetection', prediction = detected_levels, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'level_detection', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_detection'})
             self.save_explanation(explanation)
             self.logger.info('✅ SR level detection explained successfully')
             return explanation
@@ -84,7 +84,7 @@ class SRExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, sr_model, features, feature_names)
             feature_importance = self._extract_feature_importance(sr_model)
             confidence = self._calculate_breakout_confidence(breakout_prediction, shap_values)
-            explanation = ExplanationResult(model_name='SR_BreakoutPrediction', prediction=breakout_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'breakout_prediction', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'breakout_prediction'})
+            explanation = ExplanationResult(model_name='SR_BreakoutPrediction', prediction = breakout_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'breakout_prediction', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'breakout_prediction'})
             self.save_explanation(explanation)
             self.logger.info('✅ SR breakout prediction explained successfully')
             return explanation
@@ -115,7 +115,7 @@ class SRExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, sr_model, features, feature_names)
             feature_importance = self._extract_feature_importance(sr_model)
             confidence = self._calculate_quality_confidence(quality_score, shap_values)
-            explanation = ExplanationResult(model_name='SR_LevelQuality', prediction=quality_score, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'level_quality', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_quality'})
+            explanation = ExplanationResult(model_name='SR_LevelQuality', prediction = quality_score, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'level_quality', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_quality'})
             self.save_explanation(explanation)
             self.logger.info('✅ SR level quality explained successfully')
             return explanation
@@ -146,7 +146,7 @@ class SRExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, sr_model, features, feature_names)
             feature_importance = self._extract_feature_importance(sr_model)
             confidence = self._calculate_strength_confidence(strength_score, shap_values)
-            explanation = ExplanationResult(model_name='SR_LevelStrength', prediction=strength_score, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'level_strength', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_strength'})
+            explanation = ExplanationResult(model_name='SR_LevelStrength', prediction = strength_score, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'level_strength', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'level_strength'})
             self.save_explanation(explanation)
             self.logger.info('✅ SR level strength explained successfully')
             return explanation
@@ -154,7 +154,7 @@ class SRExplainer(BaseExplainer):
             self.logger.error(f'❌ Failed to explain SR level strength: {e}')
             return None
 
-    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a general SR model prediction."""
         try:
             self.logger.info('🔍 Explaining SR prediction...')
@@ -204,7 +204,7 @@ class SRExplainer(BaseExplainer):
         else:
             return 'generic'
 
-    async def _explain_generic_sr_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def _explain_generic_sr_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a generic SR model."""
         try:
             if prediction is None:
@@ -220,7 +220,7 @@ class SRExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, model, features, feature_names)
             feature_importance = self._extract_feature_importance(model)
             confidence = self._calculate_prediction_confidence(prediction, shap_values)
-            explanation = ExplanationResult(model_name='SR_Generic', prediction=prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'generic_prediction'})
+            explanation = ExplanationResult(model_name='SR_Generic', prediction = prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'level_types': self.level_types, 'explanation_type': 'generic_prediction'})
             self.save_explanation(explanation)
             return explanation
         except Exception as e:
@@ -332,14 +332,14 @@ class SRExplainer(BaseExplainer):
             if explanation.shap_values is not None:
                 summary_parts.append('\nTop Contributing Factors:')
                 feature_importance = list(zip(explanation.feature_names, explanation.shap_values))
-                feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                 for i, (feature, importance) in enumerate(feature_importance[:5]):
                     direction = 'increases' if importance > 0 else 'decreases'
                     summary_parts.append(f'  {i + 1}. {feature}: {direction} prediction by {abs(importance):.3f}')
             group_importance = self.get_feature_group_importance(explanation)
             if group_importance:
                 summary_parts.append('\nFeature Group Importance:')
-                for group, importance in sorted(group_importance.items(), key=lambda x: x[1], reverse=True):
+                for group, importance in sorted(group_importance.items(), key = lambda x: x[1], reverse = True):
                     summary_parts.append(f'  {group}: {importance:.3f}')
             return '\n'.join(summary_parts)
         except Exception as e:

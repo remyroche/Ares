@@ -1,9 +1,9 @@
+from ...core.decorators import handles_errors
 """BaseStep wrapper for Step 17 Parameter Optimization.
 
 Bridges existing parameter optimization implementations to the BaseStep interface.
 """
 from typing import Any, Dict, Tuple
-from .core.decorators import handles_errors
 from .training.base_step import BaseStep
 
 class ParameterOptimizationStep(BaseStep):
@@ -25,8 +25,7 @@ class ParameterOptimizationStep(BaseStep):
             impl = FinalParametersOptimizationStepNew(self.config)
         except Exception:
             from src.training.steps.validation.step17_final_parameters_optimization import FinalParametersOptimizationStep
-            from .core.decorators.errors import handles_errors
-            import logging
+                        import logging
 
             impl = FinalParametersOptimizationStep(self.config)
         result = await impl.execute(training_input, dict(pipeline_state))

@@ -20,7 +20,7 @@ class DILauncher:
     proper dependency injection patterns.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or CONFIG
         self.logger = system_logger.getChild('DILauncher')
         self.container = DependencyContainer(self.config)

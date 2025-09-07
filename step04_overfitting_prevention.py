@@ -15,7 +15,7 @@ Features:
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Callable
 import logging
 from datetime import datetime, timedelta
 from sklearn.model_selection import TimeSeriesSplit

@@ -95,7 +95,7 @@ The Launcher Control page allows you to:
    - **Precompute**: Generate wavelet features for faster backtesting
 
 2. **Start Training:**
-   - **Light Training**: Quick testing (30 days, ~15 minutes)
+   - **Light Training**: Quick testing (10 days, ~15 minutes)
    - **Blank Training**: Standard training (180 days, ~60 minutes)
    - **Full Training**: Production training (730 days, ~240 minutes)
 

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 import logging
 import asyncio
 import joblib
@@ -10,6 +10,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
 try:
     from src.core.decorators import handles_errors
 except ImportError:
@@ -24,7 +25,7 @@ try:
 except ImportError:
     CONFIG = {}
 try:
-    from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+    from src.tactician.sr_levels.sr_breakout_predictor_enhanced import SRBreakoutPredictor
 except ImportError:
     SRBreakoutPredictor = None
 import json
@@ -122,7 +123,7 @@ class UnifiedRegimeClassifier:
             base_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
         self.model_dir = os.path.join(base_checkpoint_dir, 'analyst_models')
         self._hierarchical_model_dir = os.path.join(self.model_dir, self.exchange, self.symbol, self.target_timeframe)
-        os.makedirs(self.model_dir, exist_ok=True)
+        os.makedirs(self.model_dir, exist_ok = True)
         self.hmm_model_path = os.path.join(self.model_dir, f'unified_hmm_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib')
         self.ensemble_model_path = os.path.join(self.model_dir, f'unified_ensemble_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib')
         self.location_model_path = os.path.join(self.model_dir, f'unified_location_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.joblib')
@@ -147,7 +148,7 @@ class UnifiedRegimeClassifier:
             return False
 
     @staticmethod
-    def _enable_numpy_rng_unpickle_compat(logger: logging.Logger=None) -> None:
+    def _enable_numpy_rng_unpickle_compat(logger: logging.Logger = None) -> None:
         """Enable compatibility for unpickling NumPy RNG BitGenerators."
 
         Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
@@ -162,7 +163,7 @@ class UnifiedRegimeClassifier:
                 UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
                 return
 
-            def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any=None, *args, **kwargs) -> None:
+            def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any = None, *args, **kwargs) -> None:
                 name_candidate = bit_generator_name
                 try:
                     if hasattr(name_candidate, '__name__'):
@@ -202,7 +203,7 @@ class UnifiedRegimeClassifier:
             if logger is not None:
                 logger.warning(warning(f'NumPy RNG unpickle shim not applied (URC): {_shim_exc}'))
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='UnifiedRegimeClassifier.initialize')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='UnifiedRegimeClassifier.initialize')
     async def initialize(self) -> bool:
         """
         Initialize the UnifiedRegimeClassifier.
@@ -211,7 +212,7 @@ class UnifiedRegimeClassifier:
             bool: True if initialization successful, False otherwise
         """
         self.logger.info(f'Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}')
-        os.makedirs(self.model_dir, exist_ok=True)
+        os.makedirs(self.model_dir, exist_ok = True)
         if self.load_models():
             self.logger.info('✅ Loaded existing models successfully')
             self.trained = True
@@ -221,7 +222,7 @@ class UnifiedRegimeClassifier:
         self.logger.info('✅ UnifiedRegimeClassifier initialized successfully')
         return True
 
-    async def _calculate_features(self, klines_df: pd.DataFrame, min_data_points: int=None) -> pd.DataFrame:
+    async def _calculate_features(self, klines_df: pd.DataFrame, min_data_points: int = None) -> pd.DataFrame:
         """
         Calculate comprehensive features for regime and location classification.
 
@@ -251,7 +252,7 @@ class UnifiedRegimeClassifier:
         features_df['volatility_20'] = features_df['log_returns'].rolling(20).std()
         features_df['volatility_10'] = features_df['log_returns'].rolling(10).std()
         features_df['volatility_5'] = features_df['log_returns'].rolling(5).std()
-        features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span=20, adjust=False).std()
+        features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span = 20, adjust = False).std()
         features_df['volume_ratio'] = features_df['volume'] / features_df['volume'].rolling(20).mean()
         features_df['volume_change'] = features_df['volume'].pct_change()
         features_df = self._calculate_rsi(features_df)
@@ -299,8 +300,8 @@ class UnifiedRegimeClassifier:
         Calculate volatility regime for VOLATILE classification.
         """
         vol_baseline = features_df['ewma_volatility_20'] if 'ewma_volatility_20' in features_df.columns else features_df['volatility_20']
-        vol_20_percentile = vol_baseline.rolling(100).rank(pct=True)
-        vol_10_percentile = features_df['volatility_10'].rolling(100).rank(pct=True)
+        vol_20_percentile = vol_baseline.rolling(100).rank(pct = True)
+        vol_10_percentile = features_df['volatility_10'].rolling(100).rank(pct = True)
         pct = float(getattr(self, 'volatility_percentile_threshold', 0.8))
         high_vol = (vol_20_percentile > pct) | (vol_10_percentile > pct)
         atr_norm_high = features_df['atr_normalized'] > float(getattr(self, 'atr_normalized_threshold', 0.03)) if 'atr_normalized' in features_df.columns else False
@@ -450,29 +451,29 @@ class UnifiedRegimeClassifier:
             self.logger.error(f'Error adding basic S/R features: {e}')
             return features_df
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='UnifiedRegimeClassifier._calculate_rsi')
-    def _calculate_rsi(self, df: pd.DataFrame, period: int=14) -> pd.DataFrame:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_rsi')
+    def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate RSI indicator using price differences."""
         close_diff = df['close'].diff()
-        gain = close_diff.where(close_diff > 0, 0).rolling(window=period).mean()
-        loss = (-close_diff.where(close_diff < 0, 0)).rolling(window=period).mean()
+        gain = close_diff.where(close_diff > 0, 0).rolling(window = period).mean()
+        loss = (-close_diff.where(close_diff < 0, 0)).rolling(window = period).mean()
         rs = gain / loss
         df['rsi'] = 100 - 100 / (1 + rs)
         return df
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='UnifiedRegimeClassifier._calculate_macd')
-    def _calculate_macd(self, df: pd.DataFrame, fast: int=12, slow: int=26, signal: int=9) -> pd.DataFrame:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_macd')
+    def _calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
         """Calculate MACD indicator using price differences."""
         close_diff = df['close'].diff()
-        exp1 = close_diff.ewm(span=fast).mean()
-        exp2 = close_diff.ewm(span=slow).mean()
+        exp1 = close_diff.ewm(span = fast).mean()
+        exp2 = close_diff.ewm(span = slow).mean()
         df['macd'] = exp1 - exp2
-        df['macd_signal'] = df['macd'].ewm(span=signal).mean()
+        df['macd_signal'] = df['macd'].ewm(span = signal).mean()
         df['macd_histogram'] = df['macd'] - df['macd_signal']
         return df
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='UnifiedRegimeClassifier._calculate_adx')
-    def _calculate_adx(self, df: pd.DataFrame, period: int=14) -> pd.DataFrame:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_adx')
+    def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate the Average Directional Index (ADX)."""
         high = df['high']
         low = df['low']
@@ -480,35 +481,35 @@ class UnifiedRegimeClassifier:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.ewm(alpha = 1 / period, adjust = False).mean()
         move_up = high.diff()
         move_down = low.diff()
         plus_dm = ((move_up > move_down) & (move_up > 0)) * move_up
         minus_dm = ((move_down > move_up) & (move_down > 0)) * move_down
-        plus_dm = plus_dm.ewm(alpha=1 / period, adjust=False).mean()
-        minus_dm = minus_dm.ewm(alpha=1 / period, adjust=False).mean()
+        plus_dm = plus_dm.ewm(alpha = 1 / period, adjust = False).mean()
+        minus_dm = minus_dm.ewm(alpha = 1 / period, adjust = False).mean()
         plus_di = 100 * (plus_dm / atr)
         minus_di = 100 * (minus_dm / atr)
         dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
-        df['adx'] = dx.ewm(alpha=1 / period, adjust=False).mean()
+        df['adx'] = dx.ewm(alpha = 1 / period, adjust = False).mean()
         df['adx'] = df['adx'].fillna(25)
         return df
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='UnifiedRegimeClassifier._calculate_bollinger_bands')
-    def _calculate_bollinger_bands(self, df: pd.DataFrame, period: int=20, std_dev: float=2) -> pd.DataFrame:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_bollinger_bands')
+    def _calculate_bollinger_bands(self, df: pd.DataFrame, period: int = 20, std_dev: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands using price differences."""
         close_diff = df['close'].diff()
-        sma = close_diff.rolling(window=period).mean()
-        std = close_diff.rolling(window=period).std()
+        sma = close_diff.rolling(window = period).mean()
+        std = close_diff.rolling(window = period).std()
         df['bb_upper'] = sma + std * std_dev
         df['bb_lower'] = sma - std * std_dev
         df['bb_position'] = (close_diff - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
         df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / sma
         return df
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='UnifiedRegimeClassifier._calculate_atr')
-    def _calculate_atr(self, df: pd.DataFrame, period: int=14) -> pd.DataFrame:
+    @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_atr')
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Average True Range using price differences."""
         high_diff = df['high'].diff()
         low_diff = df['low'].diff()
@@ -517,7 +518,7 @@ class UnifiedRegimeClassifier:
         high_close_diff = np.abs(high_diff - close_diff.shift())
         low_close_diff = np.abs(low_diff - close_diff.shift())
         true_range = np.maximum(high_low_diff, np.maximum(high_close_diff, low_close_diff))
-        df['atr'] = true_range.rolling(window=period).mean()
+        df['atr'] = true_range.rolling(window = period).mean()
         return df
 
     def _interpret_hmm_states(self, features_df: pd.DataFrame, state_sequence: np.ndarray) -> dict:
@@ -680,14 +681,14 @@ class UnifiedRegimeClassifier:
         high_low = df_window['high'] - df_window['low']
         high_close = abs(df_window['high'] - df_window['close'].shift())
         low_close = abs(df_window['low'] - df_window['close'].shift())
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        tr = pd.concat([high_low, high_close, low_close], axis = 1).max(axis = 1)
         avg_atr = tr.mean()
         bin_size = max(avg_atr * 0.25, 1e-06)
         min_price = df_window['low'].min()
         max_price = df_window['high'].max()
         bins = np.arange(min_price, max_price, bin_size)
-        price_bins = pd.cut(df_window['close'], bins=bins, right=False)
-        volume_by_bin = df_window.groupby(price_bins, observed=False)['volume'].sum()
+        price_bins = pd.cut(df_window['close'], bins = bins, right = False)
+        volume_by_bin = df_window.groupby(price_bins, observed = False)['volume'].sum()
         if volume_by_bin.empty:
             return None
         top_hvns = volume_by_bin.nlargest(2)
@@ -914,7 +915,7 @@ class UnifiedRegimeClassifier:
             hmm_features = features_df[['log_returns', 'volatility_20', 'volume_ratio', 'rsi', 'macd', 'macd_signal', 'macd_histogram', 'bb_position', 'bb_width', 'atr', 'adx', 'volatility_regime', 'volatility_acceleration']].fillna(0)
             self.scaler = StandardScaler()
             hmm_features_scaled = self.scaler.fit_transform(hmm_features)
-            self.hmm_model = hmm.GaussianHMM(n_components=self.n_states, n_iter=self.n_iter, random_state=self.random_state, covariance_type='full')
+            self.hmm_model = hmm.GaussianHMM(n_components = self.n_states, n_iter = self.n_iter, random_state = self.random_state, covariance_type='full')
             self.hmm_model.fit(hmm_features_scaled)
             state_sequence = self.hmm_model.predict(hmm_features_scaled)
             state_analysis = self._interpret_hmm_states(features_df, state_sequence)
@@ -946,7 +947,7 @@ class UnifiedRegimeClassifier:
             self.location_label_encoder = LabelEncoder()
             location_encoded = self.location_label_encoder.fit_transform(location_labels)
             location_features = features_df[['close', 'volume', 'volatility_20', 'rsi', 'bb_position', 'atr']].fillna(0)
-            self.location_classifier = LGBMClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42, verbose=-1)
+            self.location_classifier = LGBMClassifier(n_estimators = 100, learning_rate = 0.1, max_depth = 6, random_state = 42, verbose=-1)
             self.location_classifier.fit(location_features, location_encoded)
             self.logger.info('✅ Location classifier trained successfully')
             return True
@@ -971,7 +972,7 @@ class UnifiedRegimeClassifier:
             self.basic_label_encoder = LabelEncoder()
             regime_encoded = self.basic_label_encoder.fit_transform(regime_labels)
             ensemble_features = features_df[['log_returns', 'volatility_20', 'volume_ratio', 'rsi', 'macd', 'macd_signal', 'macd_histogram', 'bb_position', 'bb_width', 'atr', 'adx', 'volatility_regime', 'volatility_acceleration']].fillna(0)
-            self.basic_ensemble = LGBMClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42, verbose=-1)
+            self.basic_ensemble = LGBMClassifier(n_estimators = 100, learning_rate = 0.1, max_depth = 6, random_state = 42, verbose=-1)
             self.basic_ensemble.fit(ensemble_features, regime_encoded)
             self.logger.info('✅ Basic regime ensemble trained successfully')
             return True
@@ -1097,7 +1098,7 @@ class UnifiedRegimeClassifier:
                 joblib.dump(self.basic_label_encoder, self.ensemble_model_path.replace('.joblib', '_encoder.joblib'))
             if self.location_label_encoder:
                 joblib.dump(self.location_label_encoder, self.location_model_path.replace('.joblib', '_encoder.joblib'))
-        except Exception:
+        except Exception as e:
             self.logger.error(f'❌ Error saving models: {e}')
 
     def load_models(self) -> bool:
@@ -1139,7 +1140,7 @@ class UnifiedRegimeClassifier:
                 self.location_label_encoder = joblib.load(loc_enc_path)
             self.trained = loaded_any
             return loaded_any
-        except Exception:
+        except Exception as e:
             self.logger.error(f'❌ Error loading models: {e}')
             return False
 

@@ -15,7 +15,7 @@ import pandas as pd
 import logging
 
 # Add the project root to the path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 def fix_consolidated_klines():
@@ -34,7 +34,7 @@ def fix_consolidated_klines():
     all_data=[]
     for file in sorted(raw_files):
         try:
-            df=pd.read_csv(file)
+            df = pd.read_csv(file)
             print(f"📊 Loaded {len(df)} records from {os.path.basename(file)}")
             all_data.append(df)
         except Exception as e:
@@ -46,20 +46,20 @@ def fix_consolidated_klines():
         return False
 
     # Combine all data
-    combined_df=pd.concat(all_data, ignore_index=True)
+    combined_df = pd.concat(all_data, ignore_index = True)
     print(f"📊 Combined {len(combined_df)} total records")
 
     # Remove duplicates based on timestamp
-    combined_df.drop_duplicates(subset=["timestamp"], keep="last", inplace=True)
+    combined_df.drop_duplicates(subset=["timestamp"], keep="last", inplace = True)
     print(f"📊 After deduplication: {len(combined_df)} records")
 
     # Sort by timestamp
     combined_df["timestamp"] = pd.to_datetime(combined_df["timestamp"])
-    combined_df.sort_values("timestamp", inplace=True)
+    combined_df.sort_values("timestamp", inplace = True)
 
     # Save the fixed consolidated file
     output_file="data_cache/klines_BINANCE_ETHUSDT_1m_consolidated_fixed.csv"
-    combined_df.to_csv(output_file, index=False)
+    combined_df.to_csv(output_file, index = False)
     print(f"✅ Fixed consolidated file saved: {output_file}")
     print(f"📊 Final data: {len(combined_df)} records")
     print(

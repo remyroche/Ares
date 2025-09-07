@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 '\nStandardized Model Manager\n\nThis module provides centralized model management functionality including:\n- Model saving/loading with standardized paths\n- Model versioning and metadata tracking\n- Model validation and testing\n- Model lifecycle management\n'
+from .logger import system_logger
+from .logger import system_logger
 import json
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +46,7 @@ class ModelMetadata:
 class StandardizedModelManager:
     """Centralized model management system."""
 
-    def __init__(self, base_path: str | None=None) -> None:
+    def __init__(self, base_path: str | None = None) -> None:
         """Initialize the model manager.
 
         Args:
@@ -55,7 +58,7 @@ class StandardizedModelManager:
             self.base_path = Path('data_cache/models')
         else:
             self.base_path = Path(base_path)
-        self.base_path.mkdir(parents=True, exist_ok=True)
+        self.base_path.mkdir(parents = True, exist_ok = True)
         self.metadata_file = self.base_path / 'model_registry.json'
         self._load_registry()
 
@@ -75,12 +78,12 @@ class StandardizedModelManager:
         """Save the model registry to disk."""
         try:
             with open(self.metadata_file, 'w') as f:
-                json.dump(self.registry, f, indent=2)
+                json.dump(self.registry, f, indent = 2)
         except Exception as e:
             self.logger.exception(f'Could not save model registry: {e}')
 
-    @handles_errors(fallback=False)
-    def save_model(self, model: Any, metadata: ModelMetadata | dict[str, Any], step_name: str, model_id: str | None=None) -> bool:
+    @handles_errors(fallback = False)
+    def save_model(self, model: Any, metadata: ModelMetadata | dict[str, Any], step_name: str, model_id: str | None = None) -> bool:
         """Save a model with metadata.
 
         Args:
@@ -100,7 +103,7 @@ class StandardizedModelManager:
             metadata.model_id = model_id
             metadata.step_name = step_name
             step_dir = self.base_path / step_name
-            step_dir.mkdir(parents=True, exist_ok=True)
+            step_dir.mkdir(parents = True, exist_ok = True)
             if hasattr(model, 'save') and callable(getattr(model, 'save', None)):
                 file_path = step_dir / f'{model_id}.pth'
                 torch.save(model.state_dict(), file_path)
@@ -117,7 +120,7 @@ class StandardizedModelManager:
             metadata.file_size = file_path.stat().st_size if file_path.exists() else 0
             metadata_path = step_dir / f'{model_id}_metadata.json'
             with open(metadata_path, 'w') as f:
-                json.dump(metadata.to_dict(), f, indent=2)
+                json.dump(metadata.to_dict(), f, indent = 2)
             self.registry[model_id] = metadata.to_dict()
             self._save_registry()
             self.logger.info(f'Model saved successfully: {model_id}')
@@ -126,8 +129,8 @@ class StandardizedModelManager:
             self.logger.exception(f'Error saving model: {e}')
             return False
 
-    @handles_errors(fallback=None)
-    def load_model(self, model_id: str, step_name: str | None=None) -> tuple[Any, ModelMetadata] | None:
+    @handles_errors(fallback = None)
+    def load_model(self, model_id: str, step_name: str | None = None) -> tuple[Any, ModelMetadata] | None:
         """Load a model and its metadata.
 
         Args:
@@ -153,7 +156,7 @@ class StandardizedModelManager:
                 self.logger.warning('PyTorch models require model class for loading')
                 return (None, metadata)
             if file_path.suffix == '.txt':
-                model = lgb.Booster(model_file=str(file_path))
+                model = lgb.Booster(model_file = str(file_path))
             elif file_path.suffix == '.json':
                 
                 model = xgb.Booster()
@@ -166,8 +169,8 @@ class StandardizedModelManager:
             self.logger.exception(f'Error loading model: {e}')
             return None
 
-    @handles_errors(fallback=False)
-    def validate_model(self, model: Any, test_data: pd.DataFrame | np.ndarray, expected_output_shape: tuple | None=None) -> bool:
+    @handles_errors(fallback = False)
+    def validate_model(self, model: Any, test_data: pd.DataFrame | np.ndarray, expected_output_shape: tuple | None = None) -> bool:
         """Validate a model with test data.
 
         Args:
@@ -212,7 +215,7 @@ class StandardizedModelManager:
             return ModelMetadata.from_dict(self.registry[model_id])
         return None
 
-    def list_models(self, step_name: str | None=None) -> list[dict[str, Any]]:
+    def list_models(self, step_name: str | None = None) -> list[dict[str, Any]]:
         """List all models or models for a specific step.
 
         Args:

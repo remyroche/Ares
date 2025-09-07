@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import pandas as pd
 import numpy as np
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 
 """Step 3: Bayesian Parameter Optimization for HMM Regime Discovery using Optuna.
 
@@ -19,7 +21,6 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .core.decorators import (
     comprehensive_data_validation,
     ensure_data_integrity,
     handle_errors,
@@ -34,7 +35,7 @@ from .core.decorators import (
     with_tracing_span,
     validate_pipeline_step,
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 logger = system_logger.getChild("Step3BayesianParameterOptimization")
 
@@ -90,12 +91,12 @@ class BayesianParameterOptimizationStep:
         
         # Initialize Optuna study
         self.study_name = f"hmm_regime_optimization_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.sampler = TPESampler(seed=42)
-        self.pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+        self.sampler = TPESampler(seed = 42)
+        self.pruner = MedianPruner(n_startup_trials = 5, n_warmup_steps = 10)
         
         self.logger.info("✅ Bayesian parameter optimization components initialized successfully")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the Bayesian parameter optimization step."""
@@ -125,7 +126,7 @@ class BayesianParameterOptimizationStep:
     @monitor_step_execution
     @secure_step_execution
     @validates()
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def execute(self) -> bool:
         """Execute the Bayesian parameter optimization step."""
         try:
@@ -141,9 +142,9 @@ class BayesianParameterOptimizationStep:
             # Step 2: Create Optuna study
             study = optuna.create_study(
                 direction="maximize",
-                sampler=self.sampler,
-                pruner=self.pruner,
-                study_name=self.study_name
+                sampler = self.sampler,
+                pruner = self.pruner,
+                study_name = self.study_name
             )
             
             # Step 3: Define optimization objective
@@ -154,9 +155,9 @@ class BayesianParameterOptimizationStep:
             self.logger.info(f"🔍 Starting optimization with {self.n_trials} trials...")
             study.optimize(
                 objective,
-                n_trials=self.n_trials,
-                timeout=self.timeout_minutes * 60,
-                show_progress_bar=True
+                n_trials = self.n_trials,
+                timeout = self.timeout_minutes * 60,
+                show_progress_bar = True
             )
             
             # Step 5: Extract best parameters
@@ -224,8 +225,8 @@ class BayesianParameterOptimizationStep:
             'n_components': trial.suggest_int("n_components", 2, 8),
             'covariance_type': trial.suggest_categorical("covariance_type", ["full", "tied", "diag", "spherical"]),
             'n_iter': trial.suggest_int("n_iter", 50, 200),
-            'tol': trial.suggest_float("tol", 1e-6, 1e-2, log=True),
-            'reg_covar': trial.suggest_float("reg_covar", 1e-7, 1e-2, log=True),
+            'tol': trial.suggest_float("tol", 1e-6, 1e-2, log = True),
+            'reg_covar': trial.suggest_float("reg_covar", 1e-7, 1e-2, log = True),
             'n_clusters': trial.suggest_int("n_clusters", 10, 30),
             'clustering_method': trial.suggest_categorical("clustering_method", ["kmeans", "gaussian_mixture", "spectral"]),
             'feature_selection_method': trial.suggest_categorical("feature_selection_method", ["variance", "correlation", "mutual_info"]),
@@ -267,18 +268,18 @@ class BayesianParameterOptimizationStep:
     def _create_and_train_hmm(self, trial_params: Dict[str, Any], features_scaled: np.ndarray) -> Any:
         """Create and train HMM model."""
         hmm_model = hmm.GaussianHMM(
-            n_components=trial_params['n_components'],
-            covariance_type=trial_params['covariance_type'],
-            n_iter=trial_params['n_iter'],
-            tol=trial_params['tol'],
-            reg_covar=trial_params['reg_covar'],
-            random_state=42
+            n_components = trial_params['n_components'],
+            covariance_type = trial_params['covariance_type'],
+            n_iter = trial_params['n_iter'],
+            tol = trial_params['tol'],
+            reg_covar = trial_params['reg_covar'],
+            random_state = 42
         )
         
         # Use subset for faster training
         max_samples = min(50000, features_scaled.shape[0])
         if features_scaled.shape[0] > max_samples:
-            indices = np.random.choice(features_scaled.shape[0], max_samples, replace=False)
+            indices = np.random.choice(features_scaled.shape[0], max_samples, replace = False)
             features_subset = features_scaled[indices]
         else:
             features_subset = features_scaled
@@ -307,11 +308,11 @@ class BayesianParameterOptimizationStep:
         n_clusters = trial_params['n_clusters']
         
         if clustering_method == "kmeans":
-            return KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            return KMeans(n_clusters = n_clusters, random_state = 42, n_init = 10)
         elif clustering_method == "gaussian_mixture":
-            return GaussianMixture(n_components=n_clusters, random_state=42)
+            return GaussianMixture(n_components = n_clusters, random_state = 42)
         else:  # spectral
-            return SpectralClustering(n_clusters=n_clusters, random_state=42)
+            return SpectralClustering(n_clusters = n_clusters, random_state = 42)
 
     def _process_features_for_trial(self, features: pd.DataFrame, method: str, max_features: int) -> pd.DataFrame:
         """Process features for a specific trial."""
@@ -323,9 +324,9 @@ class BayesianParameterOptimizationStep:
             elif method == "correlation":
                 # Remove highly correlated features
                 corr_matrix = features.corr().abs()
-                upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+                upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
                 to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
-                features_reduced = features.drop(columns=to_drop)
+                features_reduced = features.drop(columns = to_drop)
                 selected_features = features_reduced.columns[:max_features]
             else:  # mutual_info
                 # Select features with highest mutual information with target (simplified)
@@ -342,8 +343,8 @@ class BayesianParameterOptimizationStep:
         try:
             composite_df = features.copy()
             composite_df['hmm_state'] = hmm_states
-            composite_df['hmm_state_prob_max'] = np.max(hmm_probs, axis=1)
-            composite_df['hmm_state_entropy'] = -np.sum(hmm_probs * np.log(hmm_probs + 1e-10), axis=1)
+            composite_df['hmm_state_prob_max'] = np.max(hmm_probs, axis = 1)
+            composite_df['hmm_state_entropy'] = -np.sum(hmm_probs * np.log(hmm_probs + 1e-10), axis = 1)
             
             # Add HMM state probabilities
             for i in range(hmm_probs.shape[1]):
@@ -390,7 +391,7 @@ class BayesianParameterOptimizationStep:
             regime_stability = 1.0 / (1.0 + regime_changes / len(hmm_states))
             
             # Regime balance (inverse of regime size variance)
-            unique_states, counts = np.unique(hmm_states, return_counts=True)
+            unique_states, counts = np.unique(hmm_states, return_counts = True)
             regime_balance = 1.0 / (1.0 + np.std(counts) / np.mean(counts))
             
             # Combined score with weights
@@ -482,7 +483,7 @@ class BayesianParameterOptimizationStep:
             self.logger.error(f"Failed to load and validate data: {e}")
             return {"success": False, "error": str(e)}
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     @monitor_feature_engineering()
     @validates()
     async def _prepare_features_for_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -495,7 +496,7 @@ class BayesianParameterOptimizationStep:
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
             
             # Sort by timestamp
-            df = df.sort_values("timestamp").reset_index(drop=True)
+            df = df.sort_values("timestamp").reset_index(drop = True)
             
             # Create comprehensive feature set
             features = pd.DataFrame()
@@ -509,15 +510,15 @@ class BayesianParameterOptimizationStep:
             # Volume features
             features['volume_momentum_5'] = df['volume'].pct_change(5)
             features['volume_momentum_10'] = df['volume'].pct_change(10)
-            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window=5).mean()
-            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window=10).mean()
-            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window=20).mean()
+            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window = 5).mean()
+            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window = 10).mean()
+            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window = 20).mean()
             
             # Volatility features
-            features['volatility_5'] = df['close'].pct_change().rolling(window=5).std()
-            features['volatility_10'] = df['close'].pct_change().rolling(window=10).std()
-            features['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
-            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span=20).std()
+            features['volatility_5'] = df['close'].pct_change().rolling(window = 5).std()
+            features['volatility_10'] = df['close'].pct_change().rolling(window = 10).std()
+            features['volatility_20'] = df['close'].pct_change().rolling(window = 20).std()
+            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span = 20).std()
             
             # Technical indicators
             features['rsi'] = self._calculate_rsi(df['close'])
@@ -527,13 +528,13 @@ class BayesianParameterOptimizationStep:
             
             # Bollinger Bands
             bb_features = self._calculate_bollinger_bands(df['close'])
-            features = pd.concat([features, bb_features], axis=1)
+            features = pd.concat([features, bb_features], axis = 1)
             
             # Moving averages
-            features['sma_20'] = df['close'].rolling(window=20).mean()
-            features['sma_50'] = df['close'].rolling(window=50).mean()
-            features['ema_12'] = df['close'].ewm(span=12).mean()
-            features['ema_26'] = df['close'].ewm(span=26).mean()
+            features['sma_20'] = df['close'].rolling(window = 20).mean()
+            features['sma_50'] = df['close'].rolling(window = 50).mean()
+            features['ema_12'] = df['close'].ewm(span = 12).mean()
+            features['ema_26'] = df['close'].ewm(span = 26).mean()
             
             # Price position relative to MAs
             features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
@@ -545,7 +546,7 @@ class BayesianParameterOptimizationStep:
             features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_10']
             
             # Clean features
-            hmm_features = features.drop('timestamp', axis=1)
+            hmm_features = features.drop('timestamp', axis = 1)
             hmm_features = hmm_features.fillna(0)
             
             self.logger.info(f"✅ Features prepared: {len(hmm_features.columns)} features, {len(hmm_features)} samples")
@@ -560,16 +561,16 @@ class BayesianParameterOptimizationStep:
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
         return rsi
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
         """Calculate MACD."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -581,8 +582,8 @@ class BayesianParameterOptimizationStep:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=window).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = window).mean()
         return atr
 
     def _calculate_adx(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
@@ -594,28 +595,28 @@ class BayesianParameterOptimizationStep:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         
         dm_plus = high - high.shift(1)
         dm_minus = low.shift(1) - low
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
         dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
         
-        tr_smooth = tr.rolling(window=window).mean()
-        dm_plus_smooth = dm_plus.rolling(window=window).mean()
-        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        tr_smooth = tr.rolling(window = window).mean()
+        dm_plus_smooth = dm_plus.rolling(window = window).mean()
+        dm_minus_smooth = dm_minus.rolling(window = window).mean()
         
         di_plus = 100 * (dm_plus_smooth / tr_smooth)
         di_minus = 100 * (dm_minus_smooth / tr_smooth)
         dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=window).mean()
+        adx = dx.rolling(window = window).mean()
         
         return adx
 
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        sma = prices.rolling(window = window).mean()
+        std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
         bb_lower = sma - std * num_std
         bb_width = (bb_upper - bb_lower) / sma
@@ -631,7 +632,7 @@ class BayesianParameterOptimizationStep:
         
         return bb_features
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _validate_best_parameters(self, data: pd.DataFrame, features: pd.DataFrame) -> dict[str, Any]:
         """Validate the best parameters found by optimization."""
         try:
@@ -643,12 +644,12 @@ class BayesianParameterOptimizationStep:
             
             # Train HMM with best parameters
             hmm_model = hmm.GaussianHMM(
-                n_components=self.best_params['n_components'],
-                covariance_type=self.best_params['covariance_type'],
-                n_iter=self.best_params['n_iter'],
-                tol=self.best_params['tol'],
-                reg_covar=self.best_params['reg_covar'],
-                random_state=42
+                n_components = self.best_params['n_components'],
+                covariance_type = self.best_params['covariance_type'],
+                n_iter = self.best_params['n_iter'],
+                tol = self.best_params['tol'],
+                reg_covar = self.best_params['reg_covar'],
+                random_state = 42
             )
             
             hmm_model.fit(features_scaled)
@@ -661,11 +662,11 @@ class BayesianParameterOptimizationStep:
             
             # Train clustering model
             if self.best_params['clustering_method'] == "kmeans":
-                clusterer = KMeans(n_clusters=self.best_params['n_clusters'], random_state=42, n_init=10)
+                clusterer = KMeans(n_clusters = self.best_params['n_clusters'], random_state = 42, n_init = 10)
             elif self.best_params['clustering_method'] == "gaussian_mixture":
-                clusterer = GaussianMixture(n_components=self.best_params['n_clusters'], random_state=42)
+                clusterer = GaussianMixture(n_components = self.best_params['n_clusters'], random_state = 42)
             else:
-                clusterer = SpectralClustering(n_clusters=self.best_params['n_clusters'], random_state=42)
+                clusterer = SpectralClustering(n_clusters = self.best_params['n_clusters'], random_state = 42)
             
             cluster_labels = clusterer.fit_predict(composite_scaled)
             
@@ -687,7 +688,7 @@ class BayesianParameterOptimizationStep:
             self.logger.error(f"Failed to validate best parameters: {e}")
             return {"error": str(e)}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _save_optimization_results(self) -> None:
         """Save optimization results to file."""
         try:
@@ -695,21 +696,21 @@ class BayesianParameterOptimizationStep:
             
             # Create output directory
             output_dir = Path("data/optimization_results")
-            output_dir.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents = True, exist_ok = True)
             
             # Save results
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             results_file = output_dir / f"bayesian_optimization_results_{timestamp}.json"
             
             with open(results_file, 'w') as f:
-                json.dump(self.optimization_results, f, indent=2, default=str)
+                json.dump(self.optimization_results, f, indent = 2, default = str)
             
             self.logger.info(f"✅ Optimization results saved to: {results_file}")
             
         except Exception as e:
             self.logger.error(f"Failed to save optimization results: {e}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _generate_optimization_reports(self, study) -> None:
         """Generate optimization reports."""
         try:
@@ -717,7 +718,7 @@ class BayesianParameterOptimizationStep:
             
             # Create reports directory
             reports_dir = Path("data/optimization_reports")
-            reports_dir.mkdir(parents=True, exist_ok=True)
+            reports_dir.mkdir(parents = True, exist_ok = True)
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
@@ -726,7 +727,7 @@ class BayesianParameterOptimizationStep:
                 importance = optuna.importance.get_param_importances(study)
                 importance_file = reports_dir / f"parameter_importance_{timestamp}.json"
                 with open(importance_file, 'w') as f:
-                    json.dump(importance, f, indent=2)
+                    json.dump(importance, f, indent = 2)
                 self.logger.info(f"✅ Parameter importance saved to: {importance_file}")
             except Exception as e:
                 self.logger.warning(f"Could not generate parameter importance: {e}")
@@ -743,7 +744,7 @@ class BayesianParameterOptimizationStep:
             
             history_file = reports_dir / f"optimization_history_{timestamp}.json"
             with open(history_file, 'w') as f:
-                json.dump(history, f, indent=2)
+                json.dump(history, f, indent = 2)
             
             self.logger.info(f"✅ Optimization history saved to: {history_file}")
             
@@ -754,7 +755,7 @@ class BayesianParameterOptimizationStep:
 @monitor_step_execution
 @secure_step_execution
 @validates()
-@handles_errors(fallback=False)
+@handles_errors(fallback = False)
 async def run_bayesian_optimization(
     symbol: str,
     exchange: str,
@@ -872,8 +873,8 @@ if __name__ == "__main__":
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m",
-        n_trials=50,
-        timeout_minutes=15
+        n_trials = 50,
+        timeout_minutes = 15
     ))
     
     if success:

@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 Simplified Unified Regime Classifier - Fractal Location-Based Version
 
 This version focuses exclusively on:
@@ -7,14 +9,12 @@ This version focuses exclusively on:
 
 Fractal analysis is used to quantify these two aspects across multiple timeframes.
 """
-from .core.decorators import handles_errors
 from datetime import datetime
 from sklearn.preprocessing import StandardScaler
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 from .core.decorators.validation import validates as validate_data_quality, traced as with_tracing_span
-from .core.decorators.errors import handles_errors
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
@@ -50,7 +50,7 @@ class UnifiedRegimeClassifierFractal:
         self.trained = False
         self.last_training_time = None
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid data for location classification'), AttributeError: (False, 'Missing required attributes')}, default_return=False, context='classifier initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid data for location classification'), AttributeError: (False, 'Missing required attributes')}, default_return = False, context='classifier initialization')
     async def initialize(self) -> bool:
         """Initialize the fractal location classifier."""
         try:
@@ -96,7 +96,7 @@ class UnifiedRegimeClassifierFractal:
             self.logger.error(f'Error in location classification: {e}')
             return self._get_default_classification()
 
-    def _calculate_atr(self, df: pd.DataFrame, period: int=14) -> float:
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
         """Calculate Average True Range for distance normalization."""
         high = df['high'].values
         low = df['low'].values
@@ -105,7 +105,7 @@ class UnifiedRegimeClassifierFractal:
         tr2 = np.abs(high - np.roll(close, 1))
         tr3 = np.abs(low - np.roll(close, 1))
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        atr = pd.Series(tr).ewm(span=period, adjust=False).mean().iloc[-1]
+        atr = pd.Series(tr).ewm(span = period, adjust = False).mean().iloc[-1]
         return atr
 
     async def _analyze_fractal_sr_levels(self, features_df: pd.DataFrame) -> Dict[str, Dict]:
@@ -137,7 +137,7 @@ class UnifiedRegimeClassifierFractal:
             for level in sr_context.get('resistance_levels', []):
                 if isinstance(level, dict):
                     resistance_levels.append({'price': level.get('price', 0), 'strength': level.get('enhanced_strength', 0.5), 'touches': level.get('touches', 0), 'timeframe': timeframe})
-            return {'support': sorted(support_levels, key=lambda x: x['price'], reverse=True), 'resistance': sorted(resistance_levels, key=lambda x: x['price'])}
+            return {'support': sorted(support_levels, key = lambda x: x['price'], reverse = True), 'resistance': sorted(resistance_levels, key = lambda x: x['price'])}
         except Exception as e:
             self.logger.warning(f'Enhanced S/R analysis failed for {timeframe}: {e}')
             return self._get_basic_sr_levels(data, timeframe)
@@ -153,7 +153,7 @@ class UnifiedRegimeClassifierFractal:
                 resistance_levels.append({'price': data['high'].iloc[i], 'strength': 0.5, 'touches': 1, 'timeframe': timeframe})
             if data['low'].iloc[i] == pivot_low.iloc[i]:
                 support_levels.append({'price': data['low'].iloc[i], 'strength': 0.5, 'touches': 1, 'timeframe': timeframe})
-        return {'support': sorted(support_levels, key=lambda x: x['price'], reverse=True), 'resistance': sorted(resistance_levels, key=lambda x: x['price'])}
+        return {'support': sorted(support_levels, key = lambda x: x['price'], reverse = True), 'resistance': sorted(resistance_levels, key = lambda x: x['price'])}
 
     def _aggregate_sr_levels(self, fractal_sr_data: Dict[str, Dict], current_price: float) -> Dict[str, List[Dict]]:
         """Aggregate S/R levels across timeframes with strength weighting."""
@@ -169,15 +169,15 @@ class UnifiedRegimeClassifierFractal:
                     all_resistance.append({'price': level['price'], 'raw_strength': level['strength'], 'weighted_strength': level['strength'] * weight, 'touches': level['touches'], 'timeframes': [tf_name]})
         support_clustered = self._cluster_levels(all_support, current_price)
         resistance_clustered = self._cluster_levels(all_resistance, current_price)
-        support_clustered.sort(key=lambda x: current_price - x['price'])
-        resistance_clustered.sort(key=lambda x: x['price'] - current_price)
+        support_clustered.sort(key = lambda x: current_price - x['price'])
+        resistance_clustered.sort(key = lambda x: x['price'] - current_price)
         return {'support': support_clustered, 'resistance': resistance_clustered}
 
-    def _cluster_levels(self, levels: List[Dict], current_price: float, cluster_threshold: float=0.002) -> List[Dict]:
+    def _cluster_levels(self, levels: List[Dict], current_price: float, cluster_threshold: float = 0.002) -> List[Dict]:
         """Cluster nearby levels and combine their properties."""
         if not levels:
             return []
-        sorted_levels = sorted(levels, key=lambda x: x['price'])
+        sorted_levels = sorted(levels, key = lambda x: x['price'])
         clusters = []
         current_cluster = [sorted_levels[0]]
         for level in sorted_levels[1:]:

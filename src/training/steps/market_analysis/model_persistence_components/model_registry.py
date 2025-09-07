@@ -1,15 +1,18 @@
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Model registry component for model persistence."""
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import logging
 import time
 
 class ModelRegistry:
     """Handles model registration and cataloging."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model registry.
@@ -23,6 +26,7 @@ class ModelRegistry:
         self.base_dir = Path(self.config.get('base_dir', 'models'))
         self.registry_file = self.base_dir / 'model_registry.json'
         self.registry = self._load_registry()
+    @log_all_calls
 
     def _load_registry(self) -> Dict[str, Any]:
         """Load registry from storage."""
@@ -86,14 +90,15 @@ class ModelRegistry:
         except Exception as e:
             self.logger.error(f'Failed to register model {model_name}: {str(e)}')
             return None
+    @log_all_calls
 
     def _save_registry(self) -> None:
         """Save registry to storage."""
         if self.backend == 'local':
             try:
-                self.base_dir.mkdir(parents=True, exist_ok=True)
+                self.base_dir.mkdir(parents = True, exist_ok = True)
                 with open(self.registry_file, 'w') as f:
-                    json.dump(self.registry, f, indent=2)
+                    json.dump(self.registry, f, indent = 2)
             except Exception as e:
                 self.logger.error(f'Failed to save registry: {str(e)}')
 
@@ -123,10 +128,10 @@ class ModelRegistry:
                 if not any((tag in model_tags for tag in tags)):
                     continue
             matching_models.append(model_info)
-        matching_models.sort(key=lambda x: x.get('registered_at', ''), reverse=True)
+        matching_models.sort(key = lambda x: x.get('registered_at', ''), reverse = True)
         return matching_models
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='model retrieval')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='model retrieval')
     async def get_model(self, model_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific model from the registry.
         
@@ -138,8 +143,8 @@ class ModelRegistry:
         """
         return self.registry['models'].get(model_id)
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='model tagging')
-    async def tag_model(self, model_id: str, tags: List[str], replace: bool=False) -> bool:
+    @handles_errors(exceptions=(Exception,), default_return = False, context='model tagging')
+    async def tag_model(self, model_id: str, tags: List[str], replace: bool = False) -> bool:
         """Tag a model in the registry.
         
         Args:
@@ -167,7 +172,7 @@ class ModelRegistry:
         self.logger.info(f'Tagged model {model_id} with: {tags}')
         return True
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='model deployment')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='model deployment')
     async def mark_for_deployment(self, model_id: str, environment: str, notes: Optional[str]=None) -> bool:
         """Mark a model for deployment.
         
@@ -209,6 +214,6 @@ class ModelRegistry:
         for deployment in self.registry['deployments'].values():
             if deployment.get('status') == 'pending':
                 stats['deployment_queue'] += 1
-        recent_models = sorted(self.registry['models'].values(), key=lambda x: x.get('registered_at', ''), reverse=True)[:5]
+        recent_models = sorted(self.registry['models'].values(), key = lambda x: x.get('registered_at', ''), reverse = True)[:5]
         stats['recent_registrations'] = [{'model_id': m['model_id'], 'category': m.get('category'), 'registered_at': m.get('registered_at')} for m in recent_models]
         return stats

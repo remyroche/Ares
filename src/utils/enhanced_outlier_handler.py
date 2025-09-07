@@ -1,12 +1,12 @@
 import numpy as np
+from .logger import system_logger
+from .logger import system_logger
+from src.core.decorators import handles_errors
 
 '\nEnhanced Outlier Handler\n\nThis module provides sophisticated outlier detection and handling including:\n- Outlier detection with detailed logging\n- Error raising instead of silent removal\n- Data schema validation for file operations\n- Root cause analysis and reporting\n- Data integrity preservation\n'
 from datetime import datetime
 from enum import Enum
 from typing import Any
-
-
-from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 import logging
@@ -121,7 +121,7 @@ class OutlierInfo:
 class EnhancedOutlierHandler:
     """Enhanced outlier detection and handling with multiple methods and severity classification."""
 
-    def __init__(self, raise_errors: bool=True, log_details: bool=True) -> None:
+    def __init__(self, raise_errors: bool = True, log_details: bool = True) -> None:
         """Initialize enhanced outlier handler.
 
         Args:
@@ -137,7 +137,7 @@ class EnhancedOutlierHandler:
         self.logger.info(f'🔍 Enhanced Outlier Handler initialized with {len(self.detection_methods)} detection methods')
 
     @handles_errors(fallback=[])
-    def detect_outliers(self, data: pd.DataFrame, method: str='zscore', threshold: float=3.0, columns: list[str]=None, raise_errors: bool=None) -> list[OutlierInfo]:
+    def detect_outliers(self, data: pd.DataFrame, method: str='zscore', threshold: float = 3.0, columns: list[str]=None, raise_errors: bool = None) -> list[OutlierInfo]:
         """Detect outliers in data using specified method.
 
         Args:
@@ -195,7 +195,7 @@ class EnhancedOutlierHandler:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                outlier_info = OutlierInfo(column=column, indices=outlier_indices.tolist(), values=outlier_values, method='zscore', severity=severity, threshold=threshold)
+                outlier_info = OutlierInfo(column = column, indices = outlier_indices.tolist(), values = outlier_values, method='zscore', severity = severity, threshold = threshold)
                 outlier_info.context = {'z_scores': z_scores[outlier_indices].tolist(), 'max_z_score': max_z_score, 'mean': data[column].mean(), 'std': data[column].std()}
                 outliers.append(outlier_info)
         except Exception as e:
@@ -230,7 +230,7 @@ class EnhancedOutlierHandler:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                outlier_info = OutlierInfo(column=column, indices=outlier_indices.tolist(), values=outlier_values, method='iqr', severity=severity, threshold=threshold)
+                outlier_info = OutlierInfo(column = column, indices = outlier_indices.tolist(), values = outlier_values, method='iqr', severity = severity, threshold = threshold)
                 outlier_info.context = {'Q1': Q1, 'Q3': Q3, 'IQR': IQR, 'lower_bound': lower_bound, 'upper_bound': upper_bound, 'max_distance': max_distance}
                 outliers.append(outlier_info)
         except Exception as e:
@@ -243,7 +243,7 @@ class EnhancedOutlierHandler:
         try:
             from sklearn.ensemble import IsolationForest
             X = data[column].values.reshape(-1, 1)
-            iso_forest = IsolationForest(contamination=0.1, random_state=42)
+            iso_forest = IsolationForest(contamination = 0.1, random_state = 42)
             predictions = iso_forest.fit_predict(X)
             outlier_indices = np.where(predictions == -1)[0]
             if len(outlier_indices) > 0:
@@ -259,7 +259,7 @@ class EnhancedOutlierHandler:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                outlier_info = OutlierInfo(column=column, indices=outlier_indices.tolist(), values=outlier_values, method='isolation_forest', severity=severity, threshold=threshold)
+                outlier_info = OutlierInfo(column = column, indices = outlier_indices.tolist(), values = outlier_values, method='isolation_forest', severity = severity, threshold = threshold)
                 outlier_info.context = {'anomaly_scores': outlier_scores.tolist(), 'min_score': min_score, 'contamination': 0.1}
                 outliers.append(outlier_info)
         except ImportError:
@@ -275,7 +275,7 @@ class EnhancedOutlierHandler:
             from sklearn.neighbors import LocalOutlierFactor
 
             X = data[column].values.reshape(-1, 1)
-            lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)
+            lof = LocalOutlierFactor(contamination = 0.1, n_neighbors = 20)
             predictions = lof.fit_predict(X)
             outlier_indices = np.where(predictions == -1)[0]
             if len(outlier_indices) > 0:
@@ -291,7 +291,7 @@ class EnhancedOutlierHandler:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                outlier_info = OutlierInfo(column=column, indices=outlier_indices.tolist(), values=outlier_values, method='local_outlier_factor', severity=severity, threshold=threshold)
+                outlier_info = OutlierInfo(column = column, indices = outlier_indices.tolist(), values = outlier_values, method='local_outlier_factor', severity = severity, threshold = threshold)
                 outlier_info.context = {'lof_scores': outlier_scores.tolist(), 'min_score': min_score, 'contamination': 0.1}
                 outliers.append(outlier_info)
         except ImportError:
@@ -322,7 +322,7 @@ class EnhancedOutlierHandler:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                outlier_info = OutlierInfo(column=column, indices=outlier_indices.tolist(), values=outlier_values, method='mahalanobis', severity=severity, threshold=threshold)
+                outlier_info = OutlierInfo(column = column, indices = outlier_indices.tolist(), values = outlier_values, method='mahalanobis', severity = severity, threshold = threshold)
                 outlier_info.context = {'modified_z_scores': modified_z_scores[outlier_indices].tolist(), 'max_score': max_score, 'median': median, 'mad': mad}
                 outliers.append(outlier_info)
         except ImportError:

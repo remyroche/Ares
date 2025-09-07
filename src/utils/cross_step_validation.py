@@ -1,10 +1,11 @@
 
+from .logger import system_logger
 '\nCross-Step Data Consistency Validation Module\n\nThis module provides validation for data consistency between pipeline steps,\nensuring data integrity is maintained throughout transformations.\n'
 from datetime import datetime
 from typing import Any
 
 
-from .utils.logger import system_logger
+from .logger import system_logger
 from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 import numpy as np
 import pandas as pd
@@ -15,7 +16,7 @@ import time
 class CrossStepValidator:
     """Validates data consistency between pipeline steps."""
 
-    def __init__(self, logger: logging.Logger=None) -> None:
+    def __init__(self, logger: logging.Logger = None) -> None:
         self.logger = logger or system_logger.getChild('CrossStepValidator')
         self.validation_history = {}
         self.step_metadata = {}
@@ -35,18 +36,18 @@ class CrossStepValidator:
             ValidationResult with detailed findings
         """
         self.logger.info(f'🔍 Validating transition: {previous_step_name} → {current_step_name}')
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         tolerance = tolerance or {'row_count_change': 0.01, 'timestamp_drift': 1000, 'column_preservation': 1.0, 'value_drift': 0.001}
         if previous_step_output is None or current_step_input is None:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message='One or both dataframes are None', details={'previous_step': previous_step_name, 'current_step': current_step_name}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message='One or both dataframes are None', details={'previous_step': previous_step_name, 'current_step': current_step_name}))
             return result
         row_count_prev = len(previous_step_output)
         row_count_curr = len(current_step_input)
         row_count_change = abs(row_count_curr - row_count_prev) / row_count_prev if row_count_prev > 0 else float('inf')
         if row_count_change > tolerance['row_count_change']:
             severity = DataQualityLevel.CRITICAL if row_count_change > 0.1 else DataQualityLevel.WARNING
-            result.issues.append(ValidationIssue(severity=severity, message=f'Significant row count change detected: {row_count_prev} → {row_count_curr}', details={'previous_rows': row_count_prev, 'current_rows': row_count_curr, 'change_percentage': row_count_change * 100}))
+            result.issues.append(ValidationIssue(severity = severity, message = f'Significant row count change detected: {row_count_prev} → {row_count_curr}', details={'previous_rows': row_count_prev, 'current_rows': row_count_curr, 'change_percentage': row_count_change * 100}))
             if severity == DataQualityLevel.CRITICAL:
                 result.passed = False
         prev_columns = set(previous_step_output.columns)
@@ -56,10 +57,10 @@ class CrossStepValidator:
         critical_lost = critical_columns.intersection(prev_columns) - curr_columns
         if critical_lost:
             result.passed = False
-            result.issues.append(ValidationIssue(severity=DataQualityLevel.CRITICAL, message=f'Critical columns lost in transition: {critical_lost}', details={'lost_columns': list(critical_lost), 'previous_columns': list(prev_columns), 'current_columns': list(curr_columns)}))
+            result.issues.append(ValidationIssue(severity = DataQualityLevel.CRITICAL, message = f'Critical columns lost in transition: {critical_lost}', details={'lost_columns': list(critical_lost), 'previous_columns': list(prev_columns), 'current_columns': list(curr_columns)}))
         new_columns = curr_columns - prev_columns
         if len(new_columns) > 20:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Large number of new columns added: {len(new_columns)}', details={'new_columns': list(new_columns)[:10] + ['...']}))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Large number of new columns added: {len(new_columns)}', details={'new_columns': list(new_columns)[:10] + ['...']}))
         if 'timestamp' in critical_preserved:
             try:
                 prev_timestamps = previous_step_output['timestamp'].sort_values()
@@ -67,12 +68,12 @@ class CrossStepValidator:
                 prev_min, prev_max = (prev_timestamps.min(), prev_timestamps.max())
                 curr_min, curr_max = (curr_timestamps.min(), curr_timestamps.max())
                 if abs(prev_min - curr_min) > tolerance['timestamp_drift']:
-                    result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Timestamp range start has drifted', details={'previous_min': prev_min, 'current_min': curr_min, 'drift_ms': abs(prev_min - curr_min)}))
+                    result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Timestamp range start has drifted', details={'previous_min': prev_min, 'current_min': curr_min, 'drift_ms': abs(prev_min - curr_min)}))
                 if abs(prev_max - curr_max) > tolerance['timestamp_drift']:
-                    result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Timestamp range end has drifted', details={'previous_max': prev_max, 'current_max': curr_max, 'drift_ms': abs(prev_max - curr_max)}))
+                    result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Timestamp range end has drifted', details={'previous_max': prev_max, 'current_max': curr_max, 'drift_ms': abs(prev_max - curr_max)}))
                 self._check_timestamp_gaps(prev_timestamps, curr_timestamps, result)
             except Exception as e:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Failed to validate timestamp continuity: {str(e)}'))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Failed to validate timestamp continuity: {str(e)}'))
         for column in critical_preserved:
             if column == 'timestamp':
                 continue
@@ -84,12 +85,12 @@ class CrossStepValidator:
                     value_diff = np.abs(prev_sample.values - curr_sample.values)
                     max_diff = np.nanmax(value_diff)
                     if max_diff > tolerance['value_drift'] * np.nanmax(prev_sample.values):
-                        result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f"Unexpected value changes in column '{column}'", details={'max_difference': float(max_diff), 'sample_size': sample_size}))
+                        result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f"Unexpected value changes in column '{column}'", details={'max_difference': float(max_diff), 'sample_size': sample_size}))
             except Exception as e:
                 self.logger.debug(f'Could not compare values for column {column}: {e}')
         fingerprint_match = self._validate_statistical_fingerprint(previous_step_output, current_step_input, critical_preserved)
         if not fingerprint_match['matches']:
-            result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Statistical fingerprint mismatch detected', details=fingerprint_match['details']))
+            result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Statistical fingerprint mismatch detected', details = fingerprint_match['details']))
         critical_issues = len([i for i in result.issues if i.severity == DataQualityLevel.CRITICAL])
         warning_issues = len([i for i in result.issues if i.severity == DataQualityLevel.WARNING])
         result.quality_score = max(0, 1 - (critical_issues * 0.3 + warning_issues * 0.1))
@@ -103,11 +104,11 @@ class CrossStepValidator:
             prev_freq = pd.Series(prev_timestamps).diff().median()
             curr_freq = pd.Series(curr_timestamps).diff().median()
             if abs(prev_freq - curr_freq) > 1000:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message='Timestamp frequency has changed', details={'previous_freq_ms': float(prev_freq), 'current_freq_ms': float(curr_freq)}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message='Timestamp frequency has changed', details={'previous_freq_ms': float(prev_freq), 'current_freq_ms': float(curr_freq)}))
             curr_gaps = pd.Series(curr_timestamps).diff()
             large_gaps = curr_gaps[curr_gaps > prev_freq * 10]
             if len(large_gaps) > 0:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Found {len(large_gaps)} large timestamp gaps', details={'gap_count': len(large_gaps), 'max_gap_ms': float(large_gaps.max()), 'gap_locations': large_gaps.index.tolist()[:5]}))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Found {len(large_gaps)} large timestamp gaps', details={'gap_count': len(large_gaps), 'max_gap_ms': float(large_gaps.max()), 'gap_locations': large_gaps.index.tolist()[:5]}))
         except Exception as e:
             self.logger.debug(f'Gap analysis failed: {e}')
 
@@ -151,12 +152,12 @@ class CrossStepValidator:
         Returns:
             Comprehensive validation result for the pipeline
         """
-        result = ValidationResult(passed=True)
+        result = ValidationResult(passed = True)
         for i in range(len(expected_flow) - 1):
             prev_step = expected_flow[i]
             curr_step = expected_flow[i + 1]
             if prev_step not in step_outputs or curr_step not in step_outputs:
-                result.warnings.append(ValidationIssue(severity=DataQualityLevel.WARNING, message=f'Missing data for steps: {prev_step} or {curr_step}'))
+                result.warnings.append(ValidationIssue(severity = DataQualityLevel.WARNING, message = f'Missing data for steps: {prev_step} or {curr_step}'))
                 continue
             transition_result = self.validate_step_transition(step_outputs[prev_step], step_outputs[curr_step], prev_step, curr_step)
             result.issues.extend(transition_result.issues)

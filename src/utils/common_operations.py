@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import numpy as np
 import pandas as pd
+import numpy as np
+import pandas as pd
 
 """
 Common Operations Utility Module with Comprehensive Error Handling
@@ -85,15 +87,27 @@ def safe_read_parquet(path: Union[str, Path]) -> None:
         print(f'Error reading parquet file {path}: {e}')
         return pd.DataFrame()
 
-def ensure_directory(path: Union[str, Path]) -> bool:
-    """Ensure directory exists."""
-    try:
-        if path:
-            Path(path).mkdir(parents=True, exist_ok=True)
-            return True
-    except Exception as e:
-        print(f'Error creating directory {path}: {e}')
-    return False
+# Removed duplicate ensure_directory function - using the more comprehensive version below
+
+# ============================================================================
+# FALLBACK UTILITIES - Consolidated from multiple duplicate implementations
+# ============================================================================
+
+def create_fallback_logger():
+    """Create a fallback logger when the main logging system is unavailable."""
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    """Create a fallback decorator when the main decorator system is unavailable."""
+    def decorator(func):
+        return func
+    return decorator
+
+# ============================================================================
+# END FALLBACK UTILITIES
+# ============================================================================
 
 def validate_dataframe_schema(df: pd.DataFrame, schema: Any) -> bool:
     """Validate dataframe schema."""

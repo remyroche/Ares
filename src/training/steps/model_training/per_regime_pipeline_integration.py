@@ -1,5 +1,7 @@
 """Per-Regime Pipeline Integration Module.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides the integration logic to ensure that steps 4-21 in the training
 pipeline perform tasks on a per-HMM regime basis using consistent methods.
 """
@@ -8,16 +10,33 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List, Callable
 import importlib
 import inspect
-from .training.steps.regime_handler import regime_handler
+# Safe import for regime handler
+try:
+    from ....utils.pipeline_standards import pipeline_standards
+    regime_handler = pipeline_standards.safe_import('src.training.steps.regime_handler', None)
+except ImportError:
+    regime_handler = None
 import logging
 import pandas as pd
 
-logger = get_logger('PerRegimePipelineIntegration')
+# Import logger and decorators
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger('PerRegimePipelineIntegration')
+except ImportError:
+    logger = logging.getLogger('PerRegimePipelineIntegration')
+
+try:
+    from src.utils.comprehensive_function_logger import log_important_calls
+except ImportError:
+    def log_important_calls(func):
+        return func
 PER_REGIME_STEP_MAPPING = {'step05_labeling': 'step05_labeling_per_regime', 'step06_feature_engineering': 'step06_feature_engineering_per_regime', 'step07_enhanced_matrix_operations': 'step07_enhanced_matrix_operations_per_regime', 'step08_advanced_feature_selection': 'step08_advanced_feature_selection_per_regime', 'step09_hmm_based_training': 'step09_hmm_based_training_per_regime', 'step10_unified_regime_intelligence': 'step10_unified_regime_intelligence_per_regime', 'step11_analyst_creation': 'step11_analyst_creation_per_regime', 'step12_analyst_enhancement': 'step12_analyst_enhancement_per_regime', 'step13_analyst_ensemble_creation': 'step13_analyst_ensemble_creation_per_regime', 'step14_tactician_labeling': 'step14_tactician_labeling_per_regime', 'step15_tactician_specialist_training': 'step15_tactician_specialist_training_per_regime', 'step16_confidence_calibration': 'step16_confidence_calibration_per_regime', 'step17_final_parameters_optimization': 'step17_final_parameters_optimization_per_regime', 'step18_walk_forward_validation': 'step18_walk_forward_validation_per_regime', 'step19_monte_carlo_validation': 'step19_monte_carlo_validation_per_regime', 'step20_ab_testing': 'step20_ab_testing_per_regime', 'step21_saving': 'step21_saving_per_regime'}
 PER_REGIME_IMPLEMENTATION_STATUS = {'step05_labeling': 'implemented', 'step06_feature_engineering': 'implemented', 'step07_enhanced_matrix_operations': 'implemented', 'step08_advanced_feature_selection': 'implemented', 'step09_hmm_based_training': 'implemented', 'step10_unified_regime_intelligence': 'implemented', 'step11_analyst_creation': 'implemented', 'step12_analyst_enhancement': 'implemented', 'step13_analyst_ensemble_creation': 'implemented', 'step14_tactician_labeling': 'implemented', 'step15_tactician_specialist_training': 'implemented', 'step16_confidence_calibration': 'implemented', 'step17_final_parameters_optimization': 'implemented', 'step18_walk_forward_validation': 'implemented', 'step19_monte_carlo_validation': 'implemented', 'step20_ab_testing': 'implemented', 'step21_saving': 'implemented'}
 
 class PerRegimePipelineIntegrator:
     """Integrator for per-regime pipeline processing."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         """Initialize the pipeline integrator.
@@ -158,13 +177,18 @@ def create_per_regime_wrapper(original_step_func: Callable) -> Callable:
     Returns:
         Wrapped function with per-regime processing
     """
-    from .training.steps.regime_processing_decorator import per_regime_processing
+    # Safe import for regime processing decorator
+    try:
+        from ....utils.pipeline_standards import pipeline_standards
+        per_regime_processing = pipeline_standards.safe_import('src.training.steps.regime_processing_decorator', None)
+    except ImportError:
+        per_regime_processing = None
     sig = inspect.signature(original_step_func)
 
-    @per_regime_processing(result_type='processed_data', parallel=True)
+    @per_regime_processing(result_type='processed_data', parallel = True)
     async def regime_processor(data: pd.DataFrame, regime_id: int, **kwargs) -> Any:
         """Process data for a single regime."""
-        return await original_step_func(data=data, regime_id=regime_id, **kwargs)
+        return await original_step_func(data = data, regime_id = regime_id, **kwargs)
 
     async def wrapped_function(**kwargs) -> Any:
         """Wrapped function that handles per-regime processing."""
@@ -173,7 +197,7 @@ def create_per_regime_wrapper(original_step_func: Callable) -> Callable:
         timeframe = kwargs.get('timeframe')
         data_dir = kwargs.get('data_dir')
         if per_regime_integrator.should_use_per_regime(original_step_func.__name__):
-            return await regime_processor(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, **kwargs)
+            return await regime_processor(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs)
         else:
             return await original_step_func(**kwargs)
     wrapped_function.__name__ = original_step_func.__name__
@@ -206,7 +230,11 @@ if __name__ == '__main__':
         config_template = per_regime_integrator.generate_per_regime_config_template()
         print('📋 Per-Regime Configuration Template:')
         import json
-        print(json.dumps(config_template, indent=2))
+        print(json.dumps(config_template, indent = 2))
         verified = await per_regime_integrator.verify_regime_data_availability(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
         print(f'\n✅ Regime data verified: {verified}')
     asyncio.run(test())
+
+"""Per-Regime Pipeline Integration Module.
+
+This module provides the integration logic to ensure that steps 4-21 in the training"""

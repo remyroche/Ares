@@ -1,5 +1,7 @@
 """Feature Filtering Module for Step 7 Enhanced Matrix Operations.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides regime-aware feature filtering with comprehensive
 feature selection algorithms including MI, SHAP, and regime-specific analysis.
 """
@@ -48,6 +50,7 @@ except ImportError:
 
 class FeatureFiltering:
     """Regime-aware feature filtering with comprehensive selection algorithms."""
+    @log_important_calls
     
     def __init__(self, logger, config: Dict[str, Any]):
         self.logger = logger
@@ -109,7 +112,7 @@ class FeatureFiltering:
                     
                     # Fast MI calculation per regime
                     if SKLEARN_AVAILABLE:
-                        mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                        mi_scores = mutual_info_classif(X_regime, y_regime, random_state = 42)
                     else:
                         self.logger.warning("⚠️ sklearn not available, using variance-based importance")
                         mi_scores = X_regime.var().values
@@ -118,12 +121,12 @@ class FeatureFiltering:
                 # Aggregate importance across regimes (keep features important in ANY regime)
                 aggregated_importance = np.max(
                     np.vstack(list(regime_importances.values())), 
-                    axis=0
+                    axis = 0
                 )
             else:
                 # Calculate MI for all data
                 if SKLEARN_AVAILABLE:
-                    aggregated_importance = mutual_info_classif(features_df, y, random_state=42)
+                    aggregated_importance = mutual_info_classif(features_df, y, random_state = 42)
                 else:
                     self.logger.warning("⚠️ sklearn not available, using variance-based importance")
                     aggregated_importance = features_df.var().values
@@ -136,7 +139,7 @@ class FeatureFiltering:
                     # Subsample for efficiency
                     sample_size = min(5000, len(features_df))
                     if len(features_df) > sample_size:
-                        sample_idx = np.random.choice(len(features_df), sample_size, replace=False)
+                        sample_idx = np.random.choice(len(features_df), sample_size, replace = False)
                         X_sample = features_df.iloc[sample_idx]
                         y_sample = y.iloc[sample_idx]
                     else:
@@ -144,11 +147,11 @@ class FeatureFiltering:
                     
                     # Train lightweight model
                     lgb_model = lgb.LGBMClassifier(
-                        n_estimators=100, 
-                        max_depth=5,
+                        n_estimators = 100, 
+                        max_depth = 5,
                         n_jobs=-1,
                         verbose=-1,
-                        random_state=42
+                        random_state = 42
                     )
                     lgb_model.fit(X_sample, y_sample)
                     
@@ -348,3 +351,10 @@ class FeatureFiltering:
 
 
 __all__ = ['FeatureFiltering']
+
+"""
+Feature Filtering Module for Step 7 Enhanced Matrix Operations.
+
+This module provides regime-aware feature filtering with comprehensive
+feature selection algorithms including MI, SHAP, and regime-specific analysis.
+"""

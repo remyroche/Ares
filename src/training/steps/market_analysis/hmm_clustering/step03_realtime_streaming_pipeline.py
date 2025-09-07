@@ -4,6 +4,8 @@ import pandas as pd
 from typing import Optional
 from datetime import datetime
 import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Real-time Streaming Pipeline for Regime Discovery.\n\nThis module implements a real-time streaming pipeline for processing live market data\nwith an agnostic approach that can work with different exchanges (Binance, Gate.io, etc.).\n'
 import asyncio
 from dataclasses import dataclass
@@ -35,6 +37,7 @@ class DataStream(Protocol):
 
 class ExchangeDataStream(ABC):
     """Abstract base class for exchange-specific data streams."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -68,6 +71,7 @@ class ExchangeDataStream(ABC):
 
 class BinanceDataStream(ExchangeDataStream):
     """Binance-specific data stream implementation."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
@@ -103,6 +107,7 @@ class BinanceDataStream(ExchangeDataStream):
 
 class GateIODataStream(ExchangeDataStream):
     """Gate.io-specific data stream implementation."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
@@ -164,6 +169,7 @@ class StreamingConfig:
 
 class RealTimeRegimeProcessor:
     """Real-time regime processor for streaming data."""
+    @log_important_calls
 
     def __init__(self, config: StreamingConfig) -> None:
         self.config = config
@@ -175,6 +181,7 @@ class RealTimeRegimeProcessor:
         self.sample_count = 0
         self.last_regime_update = 0
         self._initialize_regime_components()
+    @log_all_calls
 
     def _initialize_regime_components(self) -> None:
         """Initialize regime discovery components."""
@@ -201,6 +208,7 @@ class RealTimeRegimeProcessor:
         if self.config.enable_forecasting and self.forecaster and self.is_model_trained:
             forecast = await self._generate_forecast()
         return {'regime': current_regime, 'confidence': self._calculate_regime_confidence(), 'forecast': forecast, 'sample_count': self.sample_count, 'status': 'active', 'buffer_size': len(self.data_buffer)}
+    @log_all_calls
 
     def _should_update_regime_model(self) -> bool:
         """Check if regime model should be updated."""
@@ -209,7 +217,7 @@ class RealTimeRegimeProcessor:
     async def _update_regime_model(self) -> None:
         """Update the regime model with recent data."""
         try:
-            recent_data = pd.concat(self.data_buffer, ignore_index=True)
+            recent_data = pd.concat(self.data_buffer, ignore_index = True)
             data_iterator = self.streaming_processor.create_data_iterator(recent_data)
             for chunk_result in self.streaming_processor.process_data_stream(data_iterator):
                 pass
@@ -224,6 +232,7 @@ class RealTimeRegimeProcessor:
             print(f'🔄 Updated regime model at sample {self.sample_count}')
         except Exception as e:
             print(f'⚠️ Error updating regime model: {e}')
+    @log_all_calls
 
     def _predict_current_regime(self) -> Optional[int]:
         """Predict current regime using trained model."""
@@ -239,6 +248,7 @@ class RealTimeRegimeProcessor:
         except Exception as e:
             print(f'⚠️ Error predicting regime: {e}')
             return None
+    @log_all_calls
 
     def _extract_realtime_features(self, data_point: pd.DataFrame) -> np.ndarray:
         """Extract features from a single data point."""
@@ -271,6 +281,7 @@ class RealTimeRegimeProcessor:
             else:
                 features.append(0.0)
         return np.array(features)
+    @log_all_calls
 
     def _calculate_regime_confidence(self) -> float:
         """Calculate confidence in current regime prediction."""
@@ -297,6 +308,7 @@ class RealTimeRegimeProcessor:
 
 class RealTimeStreamingPipeline:
     """Main real-time streaming pipeline."""
+    @log_important_calls
 
     def __init__(self, config: StreamingConfig) -> None:
         self.config = config
@@ -361,6 +373,7 @@ class RealTimeStreamingPipeline:
 
 class StreamingRegimeDiscovery:
     """Main interface for real-time streaming regime discovery."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -368,7 +381,7 @@ class StreamingRegimeDiscovery:
 
     async def start_realtime_discovery(self, exchange: str, symbol: str, timeframe: str) -> None:
         """Start real-time regime discovery."""
-        streaming_config = StreamingConfig(exchange=exchange, symbol=symbol, timeframe=timeframe, buffer_size=self.config.get('buffer_size', 1000), processing_interval=self.config.get('processing_interval', 1.0), regime_update_interval=self.config.get('regime_update_interval', 100), min_samples_for_regime=self.config.get('min_samples_for_regime', 500), enable_persistence=self.config.get('enable_persistence', True), enable_forecasting=self.config.get('enable_forecasting', True))
+        streaming_config = StreamingConfig(exchange = exchange, symbol = symbol, timeframe = timeframe, buffer_size = self.config.get('buffer_size', 1000), processing_interval = self.config.get('processing_interval', 1.0), regime_update_interval = self.config.get('regime_update_interval', 100), min_samples_for_regime = self.config.get('min_samples_for_regime', 500), enable_persistence = self.config.get('enable_persistence', True), enable_forecasting = self.config.get('enable_forecasting', True))
         self.pipeline = RealTimeStreamingPipeline(streaming_config)
         self.pipeline.add_callback(self._on_regime_update)
         await self.pipeline.initialize()

@@ -15,15 +15,12 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
-from .data_quality_decorators import (
-    validate_data_quality,
-    validate_klines_data_quality,
-    ValidationLevel,
-    monitor_step_execution,
-    ensure_data_integrity,
-    secure_data_processing,
-    prevent_data_leakage,
-    quality_gate
+from src.core.decorators import (
+    handles_errors,
+    log_call,
+    monitor_function_calls,
+    validate_dataframe,
+    traced
 )
 import pandas as pd
 import typing
@@ -35,7 +32,7 @@ from src.utils.common_operations import (
     ensure_directory
 )
 
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar('F', bound = Callable[..., Any])
 
 
 class DataOperationType(Enum):
@@ -162,7 +159,7 @@ def data_operation_protection(
                 if timeout_seconds:
                     result = await asyncio.wait_for(
                         func(*args, **kwargs),
-                        timeout=timeout_seconds
+                        timeout = timeout_seconds
                     )
                 else:
                     result = await func(*args, **kwargs)
@@ -176,11 +173,11 @@ def data_operation_protection(
                 # Log successful operation
                 if audit:
                     operation_logger.log_operation(
-                        context=context,
-                        operation=operation_name,
+                        context = context,
+                        operation = operation_name,
                         details={"result_type": type(result).__name__},
-                        success=True,
-                        execution_time=execution_time
+                        success = True,
+                        execution_time = execution_time
                     )
                 
                 return result
@@ -191,11 +188,11 @@ def data_operation_protection(
                 # Log failed operation
                 if audit:
                     operation_logger.log_operation(
-                        context=context,
-                        operation=operation_name,
+                        context = context,
+                        operation = operation_name,
                         details={"error": str(e), "error_type": type(e).__name__},
-                        success=False,
-                        execution_time=execution_time
+                        success = False,
+                        execution_time = execution_time
                     )
                 
                 # Retry logic
@@ -231,11 +228,11 @@ def data_operation_protection(
                 # Log successful operation
                 if audit:
                     operation_logger.log_operation(
-                        context=context,
-                        operation=operation_name,
+                        context = context,
+                        operation = operation_name,
                         details={"result_type": type(result).__name__},
-                        success=True,
-                        execution_time=execution_time
+                        success = True,
+                        execution_time = execution_time
                     )
                 
                 return result
@@ -246,11 +243,11 @@ def data_operation_protection(
                 # Log failed operation
                 if audit:
                     operation_logger.log_operation(
-                        context=context,
-                        operation=operation_name,
+                        context = context,
+                        operation = operation_name,
                         details={"error": str(e), "error_type": type(e).__name__},
-                        success=False,
-                        execution_time=execution_time
+                        success = False,
+                        execution_time = execution_time
                     )
                 
                 # Retry logic
@@ -400,27 +397,22 @@ def step_execution_protection(
         protected_func = func
         
         # Add step monitoring
-        protected_func = monitor_step_execution(
-            step_name=step_name,
-            log_memory=True,
-            log_inputs=True,
-            log_outputs=True
+        protected_func = monitor_function_calls(
+            step_name = step_name,
+            enable_performance_monitoring = True
         )(protected_func)
         
         # Add data integrity protection
-        protected_func = ensure_data_integrity()(protected_func)
+        protected_func = validate_dataframe(protected_func)
         
         # Add quality gate
-        protected_func = quality_gate(
-            min_score=quality_threshold,
-            fail_on_breach=True
-        )(protected_func)
+        protected_func = log_call(step_name = step_name)(protected_func)
         
         # Add pipeline step validation
         protected_func = validate_pipeline_step(
-            prerequisites=prerequisites,
-            outputs=outputs,
-            stage=step_name
+            prerequisites = prerequisites,
+            outputs = outputs,
+            stage = step_name
         )(protected_func)
         
         return protected_func
@@ -444,13 +436,13 @@ def _extract_context_from_args(
     step_name = kwargs.get('step_name', 'unknown_step')
     
     return DataOperationContext(
-        operation_type=operation_type,
-        security_level=security_level,
-        step_name=step_name,
-        symbol=symbol,
-        exchange=exchange,
-        data_dir=data_dir,
-        timestamp=format_datetime(get_current_datetime())
+        operation_type = operation_type,
+        security_level = security_level,
+        step_name = step_name,
+        symbol = symbol,
+        exchange = exchange,
+        data_dir = data_dir,
+        timestamp = format_datetime(get_current_datetime())
     )
 
 

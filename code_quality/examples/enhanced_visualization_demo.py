@@ -19,7 +19,7 @@ import numpy as np
 def create_demo_codebase():
     """Create a demo codebase with various dead code patterns."""
     demo_dir = Path("demo_codebase")
-    demo_dir.mkdir(exist_ok=True)
+    demo_dir.mkdir(exist_ok = True)
     
     # Main module with dead code
     main_file = demo_dir / "main.py"
@@ -39,7 +39,7 @@ def old_calculate(x, y):
     return x + y
 
 # Function with unused parameters
-def process_data(data, unused_param, debug=False):
+def process_data(data, unused_param, debug = False):
     """Process data with unused parameter."""
     return data.upper()
 

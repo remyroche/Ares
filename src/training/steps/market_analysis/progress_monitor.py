@@ -8,6 +8,8 @@ import time
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
     from .enhanced_logging_metrics import enhanced_logger
 except ImportError:
@@ -28,6 +30,7 @@ class ProgressUpdate:
     timestamp: datetime
     status: str
     details: Dict[str, Any] = None
+    @log_all_calls
 
     def __post_init__(self) -> None:
         if self.details is None:
@@ -38,7 +41,7 @@ class ProgressMonitor:
     Real-time progress monitor for market analysis pipeline with visual indicators.
     """
 
-    def __init__(self, update_interval: float=2.0) -> None:
+    def __init__(self, update_interval: float = 2.0) -> None:
         """Initialize the progress monitor."""
         self.update_interval = update_interval
         self.steps: Dict[str, ProgressUpdate] = {}
@@ -56,7 +59,7 @@ class ProgressMonitor:
             return
         self.monitoring = True
         self.start_time = datetime.now()
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread = threading.Thread(target = self._monitor_loop, daemon = True)
         self.monitor_thread.start()
         enhanced_logger.logger.info('📊 Progress monitoring started')
 
@@ -64,23 +67,24 @@ class ProgressMonitor:
         """Stop the progress monitoring thread."""
         self.monitoring = False
         if self.monitor_thread:
-            self.monitor_thread.join(timeout=1.0)
+            self.monitor_thread.join(timeout = 1.0)
         enhanced_logger.logger.info('📊 Progress monitoring stopped')
 
-    def update_step_progress(self, step_name: str, progress: float, message: str='', status: str='running', details: Dict[str, Any]=None, step_number: int=None, total_steps: int=None) -> None:
+    def update_step_progress(self, step_name: str, progress: float, message: str='', status: str='running', details: Dict[str, Any]=None, step_number: int = None, total_steps: int = None) -> None:
         """Update progress for a specific step."""
         step_details = details or {}
         if step_number is not None and total_steps is not None:
             step_details['step_number'] = step_number
             step_details['total_steps'] = total_steps
-        self.steps[step_name] = ProgressUpdate(step_name=step_name, progress=max(0.0, min(1.0, progress)), message=message, timestamp=datetime.now(), status=status, details=step_details)
+        self.steps[step_name] = ProgressUpdate(step_name = step_name, progress = max(0.0, min(1.0, progress)), message = message, timestamp = datetime.now(), status = status, details = step_details)
 
-    def complete_step(self, step_name: str, success: bool=True, message: str='') -> None:
+    def complete_step(self, step_name: str, success: bool = True, message: str='') -> None:
         """Mark a step as completed."""
         status = 'completed' if success else 'failed'
         if not message:
             message = 'Completed successfully' if success else 'Failed'
         self.update_step_progress(step_name, 1.0, message, status)
+    @log_all_calls
 
     def _monitor_loop(self) -> None:
         """Main monitoring loop that runs in a separate thread."""
@@ -91,6 +95,7 @@ class ProgressMonitor:
             except Exception as e:
                 enhanced_logger.logger.warning(f'⚠️ Progress monitor error: {e}')
                 time.sleep(self.update_interval)
+    @log_all_calls
 
     def _display_progress(self) -> None:
         """Display current progress with visual indicators."""
@@ -105,6 +110,7 @@ class ProgressMonitor:
         self._display_summary()
         print('=' * 80)
         print('Press Ctrl+C to stop monitoring (pipeline will continue)')
+    @log_all_calls
 
     def _display_step_progress(self, step: ProgressUpdate) -> None:
         """Display progress for a single step."""
@@ -125,6 +131,7 @@ class ProgressMonitor:
                 if key not in ['step_number', 'total_steps']:
                     print(f'   📊 {key}: {value}')
         print()
+    @log_all_calls
 
     def _create_progress_bar(self, progress: float) -> str:
         """Create a visual progress bar."""
@@ -132,6 +139,7 @@ class ProgressMonitor:
         empty_length = self.progress_bar_length - filled_length
         bar = self.progress_chars['filled'] * filled_length + self.progress_chars['empty'] * empty_length
         return f'[{bar}]'
+    @log_all_calls
 
     def _display_summary(self) -> None:
         """Display pipeline summary."""
@@ -157,23 +165,26 @@ def update_progress(step_name: str, progress: float, message: str='', status: st
     """Update progress for a step using the global monitor."""
     progress_monitor.update_step_progress(step_name, progress, message, status, details)
 
-def complete_step(step_name: str, success: bool=True, message: str='') -> None:
+def complete_step(step_name: str, success: bool = True, message: str='') -> None:
     """Complete a step using the global monitor."""
     progress_monitor.complete_step(step_name, success, message)
 
 class ProgressContext:
     """Context manager for automatic progress monitoring of a step."""
+    @log_important_calls
 
-    def __init__(self, step_name: str, total_work: int=100) -> None:
+    def __init__(self, step_name: str, total_work: int = 100) -> None:
         self.step_name = step_name
         self.total_work = total_work
         self.current_work = 0
         self.start_time = None
+    @log_all_calls
 
     def __enter__(self) -> None:
         self.start_time = time.time()
         update_progress(self.step_name, 0.0, 'Starting...', 'running')
         return self
+    @log_all_calls
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if exc_type is None:
@@ -195,7 +206,7 @@ class ProgressContext:
         self.current_work = int(progress * self.total_work)
         update_progress(self.step_name, progress, message, 'running')
 
-def monitor_progress(step_name: str, total_work: int=100) -> None:
+def monitor_progress(step_name: str, total_work: int = 100) -> None:
     """Decorator to automatically monitor progress of a function."""
 
     def decorator(func: Callable) -> None:

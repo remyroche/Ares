@@ -37,8 +37,8 @@ class Step02EnhancedMonitoringTester:
         """Setup test environment with temporary directories and mock data."""
         self.temp_dir = Path(tempfile.mkdtemp(prefix='step02_test_'))
         unified_data_dir = self.temp_dir / 'unified' / 'BINANCE' / 'ETHUSDT' / '1m'
-        unified_data_dir.mkdir(parents=True, exist_ok=True)
-        mock_data = pd.DataFrame({'timestamp': pd.date_range('2024-01-01', periods=1000, freq='1min'), 'open': np.random.uniform(100, 200, 1000), 'high': np.random.uniform(100, 200, 1000), 'low': np.random.uniform(100, 200, 1000), 'close': np.random.uniform(100, 200, 1000), 'volume': np.random.uniform(1000, 10000, 1000)})
+        unified_data_dir.mkdir(parents = True, exist_ok = True)
+        mock_data = pd.DataFrame({'timestamp': pd.date_range('2024-01-01', periods = 1000, freq='1min'), 'open': np.random.uniform(100, 200, 1000), 'high': np.random.uniform(100, 200, 1000), 'low': np.random.uniform(100, 200, 1000), 'close': np.random.uniform(100, 200, 1000), 'volume': np.random.uniform(1000, 10000, 1000)})
         mock_data.to_parquet(unified_data_dir / 'test_data.parquet', index=False)
         print(f'✅ Test environment setup complete: {self.temp_dir}')
 
@@ -57,7 +57,7 @@ class Step02EnhancedMonitoringTester:
             function_monitor.call_counter = 0
             config = {'SYMBOL': 'ETHUSDT', 'EXCHANGE': 'BINANCE', 'TIMEFRAME': '1m', 'DATA_DIR': str(self.temp_dir), 'step02_quality_thresholds': {'min_rows': 100, 'max_null_ratio': 0.1, 'min_quality_score': 0.5}}
             step = DataReadingStep(config)
-            result = await step.execute(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir=str(self.temp_dir))
+            result = await step.execute(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir = str(self.temp_dir))
             function_report = function_monitor.get_function_interaction_report()
             test_passed = result.get('success', False) and function_report.total_calls > 0 and (function_report.successful_calls > 0) and ('function_interaction_report' in result)
             print(f'   - Total function calls: {function_report.total_calls}')
@@ -78,20 +78,20 @@ class Step02EnhancedMonitoringTester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_parent_function(x: int) -> Dict[str, Any]:
                 """Parent function that calls child functions."""
                 result1 = await test_child_function_1(x)
                 result2 = await test_child_function_2(x)
                 return {'parent_result': x * 2, 'child1': result1, 'child2': result2}
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_child_function_1(x: int) -> int:
                 """Child function 1."""
                 await asyncio.sleep(0.01)
                 return x + 1
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_child_function_2(x: int) -> int:
                 """Child function 2."""
                 await asyncio.sleep(0.01)
@@ -116,7 +116,7 @@ class Step02EnhancedMonitoringTester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=2)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 2)
             async def test_failing_function(x: int) -> int:
                 """Function that will fail on first attempt but succeed on retry."""
                 if x < 0:
@@ -147,7 +147,7 @@ class Step02EnhancedMonitoringTester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_performance_function(duration: float) -> Dict[str, Any]:
                 """Function with controllable performance characteristics."""
                 await asyncio.sleep(duration)

@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 Feature Output Validator for Feature Engineering
 Detects corrupted, invalid, or problematic feature engineering outputs.
 """
@@ -9,7 +10,7 @@ from enum import Enum
 from typing import Any
 
 
-from .utils.logger import system_logger
+from .logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -40,7 +41,7 @@ class FeatureOutputValidator:
     Detects corrupted, invalid, or problematic feature results.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.logger = system_logger.getChild('FeatureOutputValidator')
         self.config = config or self._get_default_config()
         self.issues: list[OutputValidationIssue] = []
@@ -49,7 +50,7 @@ class FeatureOutputValidator:
         """Get default output validation configuration."""
         return {'critical_thresholds': {'max_nan_percentage': 0.3, 'max_infinite_percentage': 0.05, 'max_zero_variance_percentage': 0.7, 'max_constant_percentage': 0.9, 'max_extreme_values_percentage': 0.1, 'min_feature_count': 1, 'max_feature_count': 10000}, 'warning_thresholds': {'max_nan_percentage': 0.15, 'max_infinite_percentage': 0.01, 'max_zero_variance_percentage': 0.5, 'max_constant_percentage': 0.8, 'max_extreme_values_percentage': 0.05, 'max_correlation_threshold': 0.99, 'max_duplicate_features_percentage': 0.1}, 'feature_type_thresholds': {'wavelet_features': {'max_nan_percentage': 0.4, 'max_infinite_percentage': 0.1, 'description': 'Wavelet features naturally have edge effects'}, 'microstructure_features': {'max_nan_percentage': 0.2, 'max_infinite_percentage': 0.05, 'description': 'Microstructure features should be mostly complete'}, 'technical_indicators': {'max_nan_percentage': 0.1, 'max_infinite_percentage': 0.01, 'description': 'Technical indicators should be reliable'}, 'price_features': {'max_nan_percentage': 0.01, 'max_infinite_percentage': 0.001, 'description': 'Price-based features should be nearly complete'}}, 'validation_checks': {'check_nan_values': True, 'check_infinite_values': True, 'check_zero_variance': True, 'check_constant_values': True, 'check_extreme_values': True, 'check_data_types': True, 'check_feature_correlations': True, 'check_duplicate_features': True, 'check_feature_names': True, 'check_output_structure': True}}
 
-    def validate_feature_output(self, features: dict[str, Any] | pd.DataFrame, method_name: str, input_data_shape: tuple[int, int] | None=None) -> dict[str, Any]:
+    def validate_feature_output(self, features: dict[str, Any] | pd.DataFrame, method_name: str, input_data_shape: tuple[int, int] | None = None) -> dict[str, Any]:
         """
         Comprehensive validation of feature engineering output.
 
@@ -224,7 +225,7 @@ class FeatureOutputValidator:
                             for col in series.columns:
                                 feature_series.append(series[col].rename(f'{name}_{col}'))
                     if feature_series:
-                        return pd.concat(feature_series, axis=1)
+                        return pd.concat(feature_series, axis = 1)
                 if all((isinstance(v, int | float | np.generic) for v in features.values())):
                     return pd.DataFrame([features])
                 if any((isinstance(v, np.ndarray) for v in features.values())):
@@ -234,30 +235,30 @@ class FeatureOutputValidator:
                             continue
                         if isinstance(value, np.ndarray):
                             if value.ndim == 1:
-                                feature_series.append(pd.Series(value, name=name))
+                                feature_series.append(pd.Series(value, name = name))
                             elif value.ndim == 2:
                                 if value.shape[1] == 1:
-                                    feature_series.append(pd.Series(value.flatten(), name=name))
+                                    feature_series.append(pd.Series(value.flatten(), name = name))
                                 else:
-                                    feature_series.append(pd.Series(value[:, 0], name=name))
+                                    feature_series.append(pd.Series(value[:, 0], name = name))
                         elif isinstance(value, pd.Series):
                             feature_series.append(value.rename(name))
                         elif isinstance(value, pd.DataFrame):
                             for col in value.columns:
                                 feature_series.append(value[col].rename(f'{name}_{col}'))
                         elif isinstance(value, int | float | np.generic):
-                            feature_series.append(pd.Series([value], name=name))
+                            feature_series.append(pd.Series([value], name = name))
                     if feature_series:
                         max_length = max((len(series) for series in feature_series))
                         aligned_series: list[pd.Series] = []
                         for series in feature_series:
                             if len(series) < max_length:
-                                padded_series = pd.Series([np.nan] * max_length, name=series.name)
+                                padded_series = pd.Series([np.nan] * max_length, name = series.name)
                                 padded_series.iloc[:len(series)] = series.values
                                 aligned_series.append(padded_series)
                             else:
                                 aligned_series.append(series)
-                        return pd.concat(aligned_series, axis=1)
+                        return pd.concat(aligned_series, axis = 1)
                 if any((isinstance(v, pd.DataFrame) for v in features.values())):
                     for key, value in features.items():
                         if value is not None and isinstance(value, pd.DataFrame):
@@ -273,7 +274,7 @@ class FeatureOutputValidator:
                             for col in value.columns:
                                 feature_series.append(value[col].rename(f'{name}_{col}'))
                     if feature_series:
-                        return pd.concat(feature_series, axis=1)
+                        return pd.concat(feature_series, axis = 1)
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Could not convert features to DataFrame. Type: {type(features)}')
                 return None
             except Exception as e:
@@ -598,7 +599,7 @@ class FeatureOutputValidator:
             recommendations.append('Add volatility features for regime detection')
         return recommendations
 
-def validate_feature_output(features: dict[str, Any] | pd.DataFrame, method_name: str, input_data_shape: tuple[int, int] | None=None, config: dict[str, Any] | None=None) -> dict[str, Any]:
+def validate_feature_output(features: dict[str, Any] | pd.DataFrame, method_name: str, input_data_shape: tuple[int, int] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Convenience function to validate feature engineering output.
 

@@ -1,11 +1,12 @@
 """
+from .logger import system_logger
 Linear Confidence Scaling Utilities
 
 This module provides linear confidence scaling functions to replace
 threshold-based approaches with smooth, continuous scaling.
 """
 from typing import Dict, Any, Tuple
-from .utils.logger import system_logger
+from .logger import system_logger
 import numpy as np
 import logging
 
@@ -39,7 +40,7 @@ class LinearConfidenceScaler:
         self.high_intensity_boost = intensity_config.get('high_intensity_boost', 1.3)
         self.low_intensity_reduction = intensity_config.get('low_intensity_reduction', 0.7)
 
-    def calculate_linear_confidence_multiplier(self, confidence: float, intensity: float=1.0, reliability: float=1.0) -> float:
+    def calculate_linear_confidence_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0) -> float:
         """
         Calculate linear confidence multiplier based on confidence, intensity, and reliability.
         
@@ -84,7 +85,7 @@ class LinearConfidenceScaler:
             reliability_multiplier = 1.0
         return float(reliability_multiplier)
 
-    def calculate_position_size_multiplier(self, confidence: float, intensity: float=1.0, reliability: float=1.0, risk_score: float=0.0) -> float:
+    def calculate_position_size_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
         Calculate position size multiplier using linear confidence scaling.
         
@@ -104,7 +105,7 @@ class LinearConfidenceScaler:
         final_multiplier = confidence_multiplier * risk_adjustment * intensity_adjustment
         return float(np.clip(final_multiplier, 0.1, 3.0))
 
-    def calculate_leverage_multiplier(self, confidence: float, intensity: float=1.0, reliability: float=1.0, risk_score: float=0.0) -> float:
+    def calculate_leverage_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
         Calculate leverage multiplier using linear confidence scaling.
         
@@ -123,7 +124,7 @@ class LinearConfidenceScaler:
         leverage_multiplier = confidence_multiplier * risk_adjustment
         return float(np.clip(leverage_multiplier, 0.3, 2.0))
 
-    def should_enter_trade(self, confidence: float, profit_confidence: float, risk_score: float, intensity: float=1.0) -> Tuple[bool, Dict[str, Any]]:
+    def should_enter_trade(self, confidence: float, profit_confidence: float, risk_score: float, intensity: float = 1.0) -> Tuple[bool, Dict[str, Any]]:
         """
         Determine if trade should be entered based on linear thresholds.
         

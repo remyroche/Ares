@@ -8,18 +8,18 @@ import typing
 class LocationClassifierOptimized:
     """Optimized version of location classifier with caching and vectorization."""
 
-    def __init__(self, cache_size: int=128) -> None:
+    def __init__(self, cache_size: int = 128) -> None:
         self.cache_size = cache_size
         self._sr_cache = {}
         self._calculation_cache = {}
 
-    @lru_cache(maxsize=128)
-    def _cached_atr(self, prices_hash: int, period: int=14) -> float:
+    @lru_cache(maxsize = 128)
+    def _cached_atr(self, prices_hash: int, period: int = 14) -> float:
         """Cached ATR calculation."""
         return self._calculate_atr_vectorized(prices_hash, period)
 
     @staticmethod
-    @numba.jit(nopython=True)
+    @numba.jit(nopython = True)
     def _calculate_distances_vectorized(current_price: float, support_prices: np.ndarray, resistance_prices: np.ndarray) -> tuple:
         """Vectorized distance calculation using Numba."""
         support_distances = (current_price - support_prices) / current_price
@@ -32,7 +32,7 @@ class LocationClassifierOptimized:
         weighted_resistance_dist = np.sum(resistance_distances * weights_r[:len(resistance_distances)])
         return (support_distances, resistance_distances, weighted_support_dist, weighted_resistance_dist)
 
-    def process_batch_predictions(self, price_series: pd.Series, sr_levels_dict: Dict[int, Dict[str, List[float]]], window_size: int=100) -> pd.DataFrame:
+    def process_batch_predictions(self, price_series: pd.Series, sr_levels_dict: Dict[int, Dict[str, List[float]]], window_size: int = 100) -> pd.DataFrame:
         """
         Process multiple price points efficiently in batch.
         Useful for backtesting and real-time streaming.
@@ -51,15 +51,15 @@ class LocationClassifierOptimized:
             results.append({'timestamp': price_series.index[i], 'price': current_price, 'support_distance': distances[0][0] if len(distances[0]) > 0 else 1.0, 'resistance_distance': distances[1][0] if len(distances[1]) > 0 else 1.0, 'weighted_support_distance': distances[2], 'weighted_resistance_distance': distances[3]})
         return pd.DataFrame(results)
 
-    def _calculate_rolling_atr(self, prices: pd.Series, period: int=14) -> pd.Series:
+    def _calculate_rolling_atr(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Efficient rolling ATR calculation."""
         high = prices.rolling(2).max()
         low = prices.rolling(2).min()
         hl = high - low
         hc = (high - prices.shift(1)).abs()
         lc = (low - prices.shift(1)).abs()
-        tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
-        atr = tr.ewm(span=period, adjust=False).mean()
+        tr = pd.concat([hl, hc, lc], axis = 1).max(axis = 1)
+        atr = tr.ewm(span = period, adjust = False).mean()
         return atr
 
     def incremental_update(self, classifier_state: Dict[str, Any], new_candle: Dict[str, float]) -> Dict[str, Any]:
@@ -102,13 +102,13 @@ class LocationClassifierOptimized:
         """
         from concurrent.futures import ProcessPoolExecutor
 
-        with ProcessPoolExecutor(max_workers=len(timeframes)) as executor:
+        with ProcessPoolExecutor(max_workers = len(timeframes)) as executor:
             futures = {executor.submit(self._analyze_single_timeframe, market_data[tf], tf): tf for tf in timeframes}
             results = {}
             for future in futures:
                 tf = futures[future]
                 try:
-                    results[tf] = future.result(timeout=5)
+                    results[tf] = future.result(timeout = 5)
                 except Exception as e:
                     print(f'Error analyzing {tf}: {e}')
                     results[tf] = None
@@ -127,7 +127,7 @@ class LocationClassifierOptimized:
         Useful for high-frequency trading with memory constraints.
         """
         feature_names = ['support_distance', 'resistance_distance', 'support_strength', 'resistance_strength', 'combined_location_score', 'location_quality']
-        features = np.zeros(len(feature_names), dtype=np.float32)
+        features = np.zeros(len(feature_names), dtype = np.float32)
         for i, name in enumerate(feature_names):
             features[i] = basic_metrics.get(name, 0.0)
         return features

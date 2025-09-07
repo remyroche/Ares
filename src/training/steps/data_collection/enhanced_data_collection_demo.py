@@ -1,4 +1,8 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """
 Enhanced Data Collection Demo
 
@@ -17,19 +21,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.common_operations import handles_errors, traced, log_execution_time
 from .utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
 from src.utils.enhanced_data_validation import DataType, get_validator, validate_data_batch, ValidationSeverity
 from .exchange_field_mappings import get_exchange_mapper, list_supported_exchanges
 from .enhanced_api_agnostic_data_collector import EnhancedAPIAgnosticDataCollector, collect_data_for_period, collect_incremental_data, detect_and_fill_gaps
-from .core.decorators.errors import handles_errors
 import logging
 
 logger = system_logger.getChild('EnhancedDataCollectionDemo')
 
 class EnhancedDataCollectionDemo:
     """Comprehensive demo of the enhanced data collection framework."""
+    @log_important_calls
 
     def __init__(self) -> None:
         self.logger = logger.getChild('Demo')
@@ -46,8 +50,8 @@ class EnhancedDataCollectionDemo:
         self.logger.info('   ✅ Incremental downloading')
         self.logger.info('=' * 80)
 
-    @handles_errors(fallback=False, context='demo_field_mappings')
-    @traced(span_name='demo_field_mappings', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='demo_field_mappings')
+    @traced(span_name='demo_field_mappings', log_args = False, log_result_len_only = True)
     async def demo_field_mappings(self) -> None:
         """Demonstrate field mappings for different exchanges."""
         self.logger.info('🎯 DEMO 1: Exchange Field Mappings')
@@ -69,8 +73,8 @@ class EnhancedDataCollectionDemo:
         self.logger.info('✅ Field mapping demo completed')
         self.logger.info('-' * 50)
 
-    @handles_errors(fallback=False, context='demo_data_validation')
-    @traced(span_name='demo_data_validation', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='demo_data_validation')
+    @traced(span_name='demo_data_validation', log_args = False, log_result_len_only = True)
     async def demo_data_validation(self) -> None:
         """Demonstrate enhanced data validation with decorators."""
         self.logger.info('🎯 DEMO 2: Enhanced Data Validation with Decorators')
@@ -97,8 +101,8 @@ class EnhancedDataCollectionDemo:
         self.logger.info('✅ Data validation demo completed')
         self.logger.info('-' * 50)
 
-    @handles_errors(fallback=False, context='demo_data_qualification')
-    @traced(span_name='demo_data_qualification', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='demo_data_qualification')
+    @traced(span_name='demo_data_qualification', log_args = False, log_result_len_only = True)
     async def demo_data_qualification(self) -> None:
         """Demonstrate data qualification with duplicate removal."""
         self.logger.info('🎯 DEMO 3: Data Qualification with Duplicate Removal')
@@ -117,15 +121,15 @@ class EnhancedDataCollectionDemo:
         self.logger.info('✅ Data qualification demo completed')
         self.logger.info('-' * 50)
 
-    @handles_errors(fallback=False, context='demo_api_agnostic_collection')
-    @traced(span_name='demo_api_agnostic_collection', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='demo_api_agnostic_collection')
+    @traced(span_name='demo_api_agnostic_collection', log_args = False, log_result_len_only = True)
     async def demo_api_agnostic_collection(self) -> None:
         """Demonstrate API-agnostic data collection."""
         self.logger.info('🎯 DEMO 4: API-Agnostic Data Collection')
         self.logger.info('-' * 50)
         self.logger.info('📊 Testing incremental data collection...')
         try:
-            result = await collect_incremental_data(exchange='BINANCE', symbol='ETHUSDT', timeframe='1m', data_types=['klines'], max_batches=2)
+            result = await collect_incremental_data(exchange='BINANCE', symbol='ETHUSDT', timeframe='1m', data_types=['klines'], max_batches = 2)
             self.logger.info(f'✅ Incremental collection result:')
             self.logger.info(f"   📊 Success: {result['success']}")
             self.logger.info(f"   📈 Total Rows: {result['total_rows_collected']}")
@@ -134,9 +138,9 @@ class EnhancedDataCollectionDemo:
             self.logger.warning(f'⚠️ Incremental collection failed (expected in demo): {e}')
         self.logger.info('📊 Testing period-based collection...')
         try:
-            start_time = datetime.now() - timedelta(hours=1)
+            start_time = datetime.now() - timedelta(hours = 1)
             end_time = datetime.now()
-            result = await collect_data_for_period(exchange='BINANCE', symbol='ETHUSDT', timeframe='1m', start_time=start_time, end_time=end_time, data_types=['klines'])
+            result = await collect_data_for_period(exchange='BINANCE', symbol='ETHUSDT', timeframe='1m', start_time = start_time, end_time = end_time, data_types=['klines'])
             self.logger.info(f'✅ Period collection result:')
             self.logger.info(f"   📊 Success: {result['success']}")
             self.logger.info(f"   📈 Total Rows: {result['total_rows_collected']}")
@@ -155,8 +159,8 @@ class EnhancedDataCollectionDemo:
         self.logger.info('✅ API-agnostic collection demo completed')
         self.logger.info('-' * 50)
 
-    @handles_errors(fallback=False, context='demo_comprehensive_features')
-    @traced(span_name='demo_comprehensive_features', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='demo_comprehensive_features')
+    @traced(span_name='demo_comprehensive_features', log_args = False, log_result_len_only = True)
     async def demo_comprehensive_features(self) -> None:
         """Demonstrate comprehensive features integration."""
         self.logger.info('🎯 DEMO 5: Comprehensive Features Integration')
@@ -165,9 +169,9 @@ class EnhancedDataCollectionDemo:
         self.logger.info('📊 Testing comprehensive data collection workflow...')
         self.logger.info('🔄 Step 1: Collecting initial data...')
         try:
-            start_time = datetime.now() - timedelta(minutes=10)
+            start_time = datetime.now() - timedelta(minutes = 10)
             end_time = datetime.now()
-            result = await collector.collect_data_for_period(start_time=start_time, end_time=end_time, data_types=['klines'])
+            result = await collector.collect_data_for_period(start_time = start_time, end_time = end_time, data_types=['klines'])
             self.logger.info(f"✅ Initial collection: {result['total_rows_collected']} rows")
         except Exception as e:
             self.logger.warning(f'⚠️ Initial collection failed (expected in demo): {e}')
@@ -187,8 +191,8 @@ class EnhancedDataCollectionDemo:
         self.logger.info('✅ Comprehensive features demo completed')
         self.logger.info('-' * 50)
 
-    @handles_errors(fallback=False, context='run_complete_demo')
-    @traced(span_name='run_complete_demo', log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context='run_complete_demo')
+    @traced(span_name='run_complete_demo', log_args = False, log_result_len_only = True)
     @with_enhanced_mlflow_logging
     async def run_complete_demo(self) -> Any:
         """Run the complete enhanced data collection demo."""
@@ -218,8 +222,8 @@ class EnhancedDataCollectionDemo:
             self.logger.exception(f'❌ Demo failed with exception: {e}')
             return False
 
-@handles_errors(fallback=False, context='main')
-@traced(span_name='main', log_args=False, log_result_len_only=True)
+@handles_errors(fallback = False, context='main')
+@traced(span_name='main', log_args = False, log_result_len_only = True)
 @log_execution_time
 async def main() -> int:
     """Main function to run the enhanced data collection demo."""

@@ -5,12 +5,12 @@ import pandas as pd
 from typing import Optional
 from datetime import datetime
 import numpy as np
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 '\nCopula Dependency Models for Price Movement Dependencies\nModels dependencies between different price movements across regimes\n'
 from dataclasses import dataclass
 from scipy.stats import multivariate_normal, norm
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 import logging
 import time
 
@@ -58,7 +58,7 @@ class CopulaDependencyModels:
             self.price_movement_data[regime] = pd.DataFrame()
             self.dependency_analysis[regime] = {}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='copula models initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='copula models initialization')
     async def initialize(self) -> bool:
         """
         Initialize the Copula Dependency Models system.
@@ -82,7 +82,7 @@ class CopulaDependencyModels:
         except Exception as e:
             self.logger.warning(f'Could not load existing models: {e}')
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='price movement data collection')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='price movement data collection')
     async def collect_price_movement_data(self, regime: str, price_movements: Dict[str, List[float]], timestamps: List[datetime]=None) -> Optional[bool]:
         """
         Collect price movement data for copula modeling.
@@ -112,15 +112,15 @@ class CopulaDependencyModels:
             if self.price_movement_data[regime].empty:
                 self.price_movement_data[regime] = df
             else:
-                self.price_movement_data[regime] = pd.concat([self.price_movement_data[regime], df], ignore_index=True)
+                self.price_movement_data[regime] = pd.concat([self.price_movement_data[regime], df], ignore_index = True)
             self.logger.info(f'Collected {len(df)} price movement observations for regime {regime}')
             return True
         except Exception as e:
             self.logger.error(f'Error collecting price movement data for regime {regime}: {e}')
             return None
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='copula model fitting')
-    async def fit_copula_model(self, regime: str, copula_type: str=None, targets: List[str]=None) -> Optional[CopulaModel]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='copula model fitting')
+    async def fit_copula_model(self, regime: str, copula_type: str = None, targets: List[str]=None) -> Optional[CopulaModel]:
         """
         Fit copula model for a specific regime.
         
@@ -185,7 +185,7 @@ class CopulaDependencyModels:
                 marginal_params.append({'mu': mu, 'sigma': sigma})
                 uniform_data[:, i] = norm.cdf(target_data, mu, sigma)
             correlation_matrix = np.corrcoef(uniform_data.T)
-            copula_model = CopulaModel(regime=regime, copula_type='gaussian', correlation_matrix=correlation_matrix, marginal_parameters=marginal_params, model_parameters={'correlation_matrix': correlation_matrix, 'uniform_data': uniform_data}, fit_timestamp=datetime.now(), sample_size=len(data))
+            copula_model = CopulaModel(regime = regime, copula_type='gaussian', correlation_matrix = correlation_matrix, marginal_parameters = marginal_params, model_parameters={'correlation_matrix': correlation_matrix, 'uniform_data': uniform_data}, fit_timestamp = datetime.now(), sample_size = len(data))
             return copula_model
         except Exception as e:
             self.logger.error(f'Error fitting Gaussian copula: {e}')
@@ -223,7 +223,7 @@ class CopulaDependencyModels:
         try:
             correlation_matrix = copula_model.correlation_matrix
             n_targets = len(correlation_matrix)
-            dependency_metrics = {'correlation_matrix': correlation_matrix.tolist(), 'avg_correlation': np.mean(correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)]), 'max_correlation': np.max(correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)]), 'min_correlation': np.min(correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)]), 'strong_dependencies': [], 'weak_dependencies': []}
+            dependency_metrics = {'correlation_matrix': correlation_matrix.tolist(), 'avg_correlation': np.mean(correlation_matrix[np.triu_indices_from(correlation_matrix, k = 1)]), 'max_correlation': np.max(correlation_matrix[np.triu_indices_from(correlation_matrix, k = 1)]), 'min_correlation': np.min(correlation_matrix[np.triu_indices_from(correlation_matrix, k = 1)]), 'strong_dependencies': [], 'weak_dependencies': []}
             for i in range(n_targets):
                 for j in range(i + 1, n_targets):
                     correlation = correlation_matrix[i, j]
@@ -253,8 +253,8 @@ class CopulaDependencyModels:
             self.logger.error(f'Error calculating tail dependencies: {e}')
             return {}
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='generate correlated scenarios')
-    async def generate_correlated_scenarios(self, regime: str, n_scenarios: int=1000, targets: List[str]=None) -> Optional[np.ndarray]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='generate correlated scenarios')
+    async def generate_correlated_scenarios(self, regime: str, n_scenarios: int = 1000, targets: List[str]=None) -> Optional[np.ndarray]:
         """
         Generate correlated price movement scenarios using copula model.
         
@@ -285,7 +285,7 @@ class CopulaDependencyModels:
         try:
             correlation_matrix = copula_model.correlation_matrix
             marginal_params = copula_model.marginal_parameters
-            uniform_scenarios = multivariate_normal.rvs(mean=np.zeros(len(correlation_matrix)), cov=correlation_matrix, size=n_scenarios)
+            uniform_scenarios = multivariate_normal.rvs(mean = np.zeros(len(correlation_matrix)), cov = correlation_matrix, size = n_scenarios)
             uniform_scenarios = norm.cdf(uniform_scenarios)
             price_scenarios = np.zeros_like(uniform_scenarios)
             for i, params in enumerate(marginal_params):
@@ -297,7 +297,7 @@ class CopulaDependencyModels:
             self.logger.error(f'Error generating Gaussian scenarios: {e}')
             return None
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='calculate joint probability')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='calculate joint probability')
     async def calculate_joint_probability(self, regime: str, target_movements: Dict[str, float]) -> Optional[float]:
         """
         Calculate joint probability of multiple price movements.
@@ -348,5 +348,5 @@ class CopulaDependencyModels:
         """Get summary of copula models"""
         summary = {'system_status': 'active', 'regime_count': len(self.regime_names), 'target_count': len(self.price_targets), 'fitted_models': len(self.copula_models), 'available_copula_types': self.copula_types, 'default_copula_type': self.default_copula_type, 'min_sample_size': self.min_sample_size, 'model_summaries': {}}
         for regime, model in self.copula_models.items():
-            summary['model_summaries'][regime] = {'copula_type': model.copula_type, 'sample_size': model.sample_size, 'fit_timestamp': model.fit_timestamp, 'correlation_matrix_size': len(model.correlation_matrix), 'avg_correlation': np.mean(model.correlation_matrix[np.triu_indices_from(model.correlation_matrix, k=1)])}
+            summary['model_summaries'][regime] = {'copula_type': model.copula_type, 'sample_size': model.sample_size, 'fit_timestamp': model.fit_timestamp, 'correlation_matrix_size': len(model.correlation_matrix), 'avg_correlation': np.mean(model.correlation_matrix[np.triu_indices_from(model.correlation_matrix, k = 1)])}
         return summary

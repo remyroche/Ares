@@ -2,6 +2,8 @@
 from datetime import datetime
 import pandas as pd
 import numpy as np
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """
 Optimized Step17 Implementation
 
@@ -54,8 +56,9 @@ class OptimizationResult:
 
 class IntelligentParameterPruner:
     """Automatically identify and remove low-impact parameters with advanced pruning strategies."""
+    @log_important_calls
 
-    def __init__(self, sensitivity_threshold: float=0.005, max_parameters: int=50) -> None:
+    def __init__(self, sensitivity_threshold: float = 0.005, max_parameters: int = 50) -> None:
         self.sensitivity_threshold = sensitivity_threshold
         self.max_parameters = max_parameters
         self.parameter_importance = {}
@@ -86,6 +89,7 @@ class IntelligentParameterPruner:
         sensitivity_scores = self._boost_interaction_scores(sensitivity_scores, interaction_scores)
         self.parameter_importance = sensitivity_scores
         return sensitivity_scores
+    @log_all_calls
 
     def _identify_borderline_parameters(self, sensitivity_scores: Dict[str, float]) -> List[str]:
         """Identify parameters near the sensitivity threshold for detailed analysis."""
@@ -160,6 +164,7 @@ class IntelligentParameterPruner:
         except Exception as e:
             self.logger.debug(f'Parameter interaction test failed: {e}')
             return 0.0
+    @log_all_calls
 
     def _boost_interaction_scores(self, sensitivity_scores: Dict[str, float], interaction_scores: Dict[str, Dict[str, float]]) -> Dict[str, float]:
         """Boost sensitivity scores for parameters with strong interactions."""
@@ -171,12 +176,14 @@ class IntelligentParameterPruner:
                 boosted_scores[param] += interaction_boost
                 self.logger.debug(f'Boosted {param} by {interaction_boost:.6f} due to interactions')
         return boosted_scores
+    @log_all_calls
 
     def _get_param_config_from_mapping(self, parameter_mapping: Dict[str, Dict[str, Any]], step_name: str, param_name: str) -> Any:
         """Get parameter configuration from the mapping."""
         if step_name in parameter_mapping and param_name in parameter_mapping[step_name]:
             return parameter_mapping[step_name][param_name]
         return None
+    @log_all_calls
 
     def _get_test_values(self, param_config: Any) -> List[Any]:
         """Get test values for a parameter configuration."""
@@ -236,7 +243,7 @@ class IntelligentParameterPruner:
 
     def get_high_impact_parameters(self, sensitivity_scores: Dict[str, float]) -> List[str]:
         """Return only parameters above sensitivity threshold."""
-        sorted_params = sorted(sensitivity_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_params = sorted(sensitivity_scores.items(), key = lambda x: x[1], reverse = True)
         high_impact = [param for param, sensitivity in sorted_params if sensitivity > self.sensitivity_threshold]
         if len(high_impact) > self.max_parameters:
             high_impact = high_impact[:self.max_parameters]
@@ -274,7 +281,7 @@ class IntelligentParameterPruner:
         """Get summary of parameter importance analysis."""
         if not self.parameter_importance:
             return {'error': 'No parameter importance data available'}
-        sorted_params = sorted(self.parameter_importance.items(), key=lambda x: x[1], reverse=True)
+        sorted_params = sorted(self.parameter_importance.items(), key = lambda x: x[1], reverse = True)
         interaction_summary = {}
         for param, interactions in self.parameter_interactions.items():
             if interactions:
@@ -283,8 +290,9 @@ class IntelligentParameterPruner:
 
 class AdaptiveTrialAllocator:
     """Dynamically allocate trials based on performance."""
+    @log_important_calls
 
-    def __init__(self, total_trials: int=1000, min_trials_per_phase: int=50) -> None:
+    def __init__(self, total_trials: int = 1000, min_trials_per_phase: int = 50) -> None:
         self.total_trials = total_trials
         self.min_trials_per_phase = min_trials_per_phase
         self.phase_trials = {}
@@ -316,7 +324,7 @@ class AdaptiveTrialAllocator:
             allocations[phase] = allocated
             remaining_trials -= allocated
         if remaining_trials > 0:
-            sorted_phases = sorted(phase_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_phases = sorted(phase_scores.items(), key = lambda x: x[1], reverse = True)
             for i, (phase, _) in enumerate(sorted_phases):
                 if remaining_trials <= 0:
                     break
@@ -347,10 +355,12 @@ class AdaptiveTrialAllocator:
 
 class SmartParameterGrouper:
     """Group related parameters for efficient optimization."""
+    @log_important_calls
 
     def __init__(self) -> None:
         self.parameter_groups = self._create_parameter_groups()
         self.logger = logging.getLogger(__name__)
+    @log_all_calls
 
     def _create_parameter_groups(self) -> Dict[str, List[str]]:
         """Create logical parameter groups."""
@@ -377,13 +387,14 @@ class SmartParameterGrouper:
 
 class HierarchicalOptimizer:
     """Run step17 optimization in hierarchical phases with advanced optimization strategies."""
+    @log_important_calls
 
-    def __init__(self, config: Dict[str, Any], training_manager: Any=None) -> None:
+    def __init__(self, config: Dict[str, Any], training_manager: Any = None) -> None:
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
-        self.parameter_pruner = IntelligentParameterPruner(sensitivity_threshold=config.get('sensitivity_threshold', 0.005), max_parameters=config.get('max_parameters', 50))
-        self.trial_allocator = AdaptiveTrialAllocator(total_trials=config.get('total_trials', 1000), min_trials_per_phase=config.get('min_trials_per_phase', 50))
+        self.parameter_pruner = IntelligentParameterPruner(sensitivity_threshold = config.get('sensitivity_threshold', 0.005), max_parameters = config.get('max_parameters', 50))
+        self.trial_allocator = AdaptiveTrialAllocator(total_trials = config.get('total_trials', 1000), min_trials_per_phase = config.get('min_trials_per_phase', 50))
         self.parameter_grouper = SmartParameterGrouper()
         self.optimization_results = {}
         self.phase_performance = {}
@@ -453,6 +464,7 @@ class HierarchicalOptimizer:
             performance_level = self._get_performance_level(result.best_value)
             self.logger.info(f'  {phase_name}: {result.best_value:.4f} ({performance_level}) - {result.n_trials} trials')
         return {'results': results, 'total_time': total_time, 'parameter_importance': self.parameter_pruner.get_parameter_importance_summary(), 'trial_allocation': self.trial_allocator.get_allocation_summary(), 'parameter_groups': self.parameter_grouper.get_parameter_group_summary(), 'optimization_strategies': {'multi_objective': self.multi_objective_enabled, 'ensemble_optimization': self.ensemble_optimization_enabled, 'adaptive_learning_rate': self.adaptive_learning_rate, 'parameter_interactions': interaction_summary.get('interaction_count', 0)}}
+    @log_all_calls
 
     def _identify_ensemble_parameters(self, parameters: List[str]) -> List[str]:
         """Identify parameters related to ensemble methods."""
@@ -462,6 +474,7 @@ class HierarchicalOptimizer:
             if any((keyword in param.lower() for keyword in ensemble_keywords)):
                 ensemble_params.append(param)
         return ensemble_params
+    @log_all_calls
 
     def _optimize_ensemble_parameter_order(self, parameters: List[str], ensemble_params: List[str]) -> List[str]:
         """Optimize the order of ensemble parameters for better optimization outcomes."""
@@ -469,6 +482,7 @@ class HierarchicalOptimizer:
         optimized_order = non_ensemble + ensemble_params
         self.logger.info(f'🎯 Optimized parameter order: {len(non_ensemble)} base + {len(ensemble_params)} ensemble')
         return optimized_order
+    @log_all_calls
 
     def _should_stop_early(self, best_value: float, phase_idx: int, total_phases: int) -> bool:
         """Determine if optimization should stop early based on performance."""
@@ -477,6 +491,7 @@ class HierarchicalOptimizer:
         else:
             threshold = self.performance_thresholds.get('excellent', 0.9)
         return best_value > threshold
+    @log_all_calls
 
     def _get_performance_level(self, value: float) -> str:
         """Get performance level description."""
@@ -498,10 +513,10 @@ class HierarchicalOptimizer:
         else:
             study = await self._create_single_objective_study(group_name, parameters, n_trials)
         objective = self._create_advanced_group_objective(parameters, data, phase_idx)
-        callbacks = [optuna.callbacks.EarlyStoppingCallback(patience=self.config.get('early_stopping_patience', 15))]
+        callbacks = [optuna.callbacks.EarlyStoppingCallback(patience = self.config.get('early_stopping_patience', 15))]
         if self.adaptive_learning_rate:
             callbacks.append(self._create_adaptive_learning_callback(phase_idx))
-        study.optimize(objective, n_trials=n_trials, timeout=self.config.get('timeout_per_phase', 1800), callbacks=callbacks)
+        study.optimize(objective, n_trials = n_trials, timeout = self.config.get('timeout_per_phase', 1800), callbacks = callbacks)
         if hasattr(study, 'best_trials'):
             best_trial = study.best_trials[0]
             best_value = np.mean(best_trial.values)
@@ -510,25 +525,29 @@ class HierarchicalOptimizer:
             best_value = best_trial.value
         best_params = best_trial.params
         performance_metrics = self._calculate_comprehensive_metrics(best_value, phase_idx, parameters)
-        return OptimizationResult(phase=group_name, best_params=best_params, best_value=best_value, n_trials=len(study.trials), optimization_time=0.0, performance_metrics=performance_metrics, parameter_count=len(parameters))
+        return OptimizationResult(phase = group_name, best_params = best_params, best_value = best_value, n_trials = len(study.trials), optimization_time = 0.0, performance_metrics = performance_metrics, parameter_count = len(parameters))
 
     async def _create_multi_objective_study(self, group_name: str, parameters: List[str], n_trials: int) -> None:
         """Create multi-objective optimization study."""
-        return optuna.create_study(study_name=f'step17_multi_{group_name}', directions=['maximize'] * 3, sampler=optuna.samplers.NSGAIISampler(population_size=min(50, n_trials // 4), crossover_prob=0.8, mutation_prob=0.1), pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=3))
+        return optuna.create_study(study_name = f'step17_multi_{group_name}', directions=['maximize'] * 3, sampler = optuna.samplers.NSGAIISampler(population_size = min(50, n_trials // 4), crossover_prob = 0.8, mutation_prob = 0.1), pruner = optuna.pruners.MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 3))
 
     async def _create_single_objective_study(self, group_name: str, parameters: List[str], n_trials: int) -> None:
         """Create single-objective optimization study."""
-        return optuna.create_study(study_name=f'step17_{group_name}', direction='maximize', sampler=optuna.samplers.TPESampler(n_startup_trials=min(10, n_trials // 5), n_ei_candidates=24, multivariate=True), pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=3))
+        return optuna.create_study(study_name = f'step17_{group_name}', direction='maximize', sampler = optuna.samplers.TPESampler(n_startup_trials = min(10, n_trials // 5), n_ei_candidates = 24, multivariate = True), pruner = optuna.pruners.MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 3))
+    @log_all_calls
 
     def _create_adaptive_learning_callback(self, phase_idx: int) -> None:
         """Create adaptive learning rate callback for dynamic optimization."""
 
         class AdaptiveLearningCallback:
 
+            @log_important_calls
             def __init__(self, phase_idx: Any, optimizer: Any) -> None:
                 self.phase_idx = phase_idx
                 self.optimizer = optimizer
                 self.trial_count = 0
+
+            @log_all_calls
 
             def __call__(self, study: Any, trial: Any) -> None:
                 self.trial_count += 1
@@ -555,7 +574,7 @@ class HierarchicalOptimizer:
                         if param_name in ['n_estimators', 'max_depth', 'calibration_cv_folds']:
                             params[param_path] = trial.suggest_int(param_path, min_val, max_val)
                         else:
-                            params[param_path] = trial.suggest_float(param_path, min_val, max_val, log=True)
+                            params[param_path] = trial.suggest_float(param_path, min_val, max_val, log = True)
                     elif isinstance(param_config, list):
                         params[param_path] = trial.suggest_categorical(param_path, param_config)
                     else:
@@ -644,7 +663,7 @@ class HierarchicalOptimizer:
         """Get comprehensive optimization summary."""
         return {'total_phases': len(self.optimization_results), 'phase_results': {phase: {'best_value': result.best_value, 'n_trials': result.n_trials, 'optimization_time': result.optimization_time, 'parameter_count': result.parameter_count} for phase, result in self.optimization_results.items()}, 'parameter_importance': self.parameter_pruner.get_parameter_importance_summary(), 'trial_allocation': self.trial_allocator.get_allocation_summary(), 'parameter_groups': self.parameter_grouper.get_parameter_group_summary()}
 
-def create_hierarchical_optimizer(config: Dict[str, Any], training_manager: Any=None) -> Any:
+def create_hierarchical_optimizer(config: Dict[str, Any], training_manager: Any = None) -> Any:
     """Create hierarchical optimizer instance."""
     return HierarchicalOptimizer(config, training_manager)
 if __name__ == '__main__':

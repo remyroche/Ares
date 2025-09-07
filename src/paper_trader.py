@@ -1,5 +1,9 @@
-import src.utils.warning_symbols
 import numpy as np
+from .utils.compat import handle_specific_errors
+from .core.error_classes import execution_error, initialization_error, validation_error
+from .utils.logger import system_logger
+from .core.decorators import handles_errors
+from .utils.warning_symbols import invalid
 
 # src/paper_trader.py
 """
@@ -10,24 +14,39 @@ from datetime import datetime
 
 # Removed trading_decorators imports - using core decorators instead
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List
+from dataclasses import dataclass
 
 from copy import copy
 
-from src.config.constants import (
+# Simple trade tracker stub
+@dataclass
+class TradeTracker:
+    """Simple trade tracker for paper trading."""
+    trades: List[Dict[str, Any]] = None
+
+    def __post_init__(self):
+        if self.trades is None:
+            self.trades = []
+
+def get_trade_tracker() -> TradeTracker:
+    """Get a trade tracker instance."""
+    return TradeTracker()
+
+from .config.constants import (
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,
     DEFAULT_MAX_POSITION_SIZE,
     DEFAULT_SLIPPAGE_RATE,
 )
-from src.utils.decorators import (
+from .utils.decorators import (
     handles_errors,
     log_call,
     log_execution_time,
     traced,
 )
-from domain import handle_specific_errors
-from logger import system_logger
+from .utils.compat import handle_specific_errors
+from .utils.logger import system_logger
 import logging
 import os
 import pandas as pd

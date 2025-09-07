@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.error_classes import execution_error, initialization_error
+from .core.decorators import handles_errors
 """Model Training Integrator for Ares Trading System."
 Enables full functionality with trained models.
 """
@@ -15,7 +17,6 @@ from sklearn.model_selection import cross_val_score
 from .utils.comprehensive_logger import get_component_logger
 from .utils.data_optimizer import get_data_optimizer
 from src.utils.warning_symbols import error, failed, initialization_error
-from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
 import logging
@@ -40,15 +41,15 @@ class ModelTrainingIntegrator:
     def _ensure_directories(self) -> None:
         """Ensure required directories exist."""
         try:
-            os.makedirs(self.models_path, exist_ok=True)
-            os.makedirs(self.training_data_path, exist_ok=True)
+            os.makedirs(self.models_path, exist_ok = True)
+            os.makedirs(self.training_data_path, exist_ok = True)
             self.logger.info('Directories ensured')
         except Exception as e:
             error_msg = f'Error ensuring directories for model training: {e}'
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='model training integrator initialization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='model training integrator initialization')
     async def initialize(self) -> bool:
         """Initialize Model Training Integrator."""
         try:
@@ -86,7 +87,7 @@ class ModelTrainingIntegrator:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def generate_training_data(self, size: int=10000) -> tuple[pd.DataFrame, pd.Series]:
+    async def generate_training_data(self, size: int = 10000) -> tuple[pd.DataFrame, pd.Series]:
         """Generate synthetic training data for model training."""
         try:
             self.logger.info(f'Generating training data with {size} samples...')
@@ -139,7 +140,7 @@ class ModelTrainingIntegrator:
                     precision = precision_score(y_test, y_pred, average='weighted')
                     recall = recall_score(y_test, y_pred, average='weighted')
                     f1 = f1_score(y_test, y_pred, average='weighted')
-                    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
+                    cv_scores = cross_val_score(model, X_train, y_train, cv = 5, scoring='accuracy')
                     cv_mean = cv_scores.mean()
                     cv_std = cv_scores.std()
                     training_time = (datetime.now() - start_time).total_seconds()
@@ -240,7 +241,7 @@ class ModelTrainingIntegrator:
         try:
             self.logger.info('Training ensemble models...')
             ensemble_models = {}
-            timeframes = ['1m', '5m', '15m', '1h']
+            timeframes = ['1m', '5m', '15m', '30m', '1h']
             for timeframe in timeframes:
                 self.logger.info(f'Training ensemble model for {timeframe}...')
                 X, y = await self.generate_training_data(10000)
@@ -267,7 +268,7 @@ class ModelTrainingIntegrator:
         try:
             for timeframe, models in ensemble_models.items():
                 timeframe_path = os.path.join(self.models_path, f'ensemble_{timeframe}')
-                os.makedirs(timeframe_path, exist_ok=True)
+                os.makedirs(timeframe_path, exist_ok = True)
                 for model_name, model in models.items():
                     model_path = os.path.join(timeframe_path, f'{model_name}.pkl')
                     with open(model_path, 'wb') as f:
@@ -330,7 +331,7 @@ class ModelTrainingIntegrator:
             self.print(error('Error getting training stats: {e}'))
             return {'error': str(e)}
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='model training integrator cleanup')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='model training integrator cleanup')
     async def stop(self) -> None:
         """Stop Model Training Integrator."""
         try:
@@ -338,7 +339,7 @@ class ModelTrainingIntegrator:
             stats = self.get_training_stats()
             stats_path = os.path.join(self.models_path, 'training_stats.json')
             with open(stats_path, 'w') as f:
-                json.dump(stats, f, indent=2, default=str)
+                json.dump(stats, f, indent = 2, default = str)
             self.logger.info('✅ Model Training Integrator stopped successfully')
         except Exception as e:
             error_msg = f'Error stopping Model Training Integrator: {e}'

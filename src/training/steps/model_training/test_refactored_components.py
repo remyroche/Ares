@@ -1,6 +1,10 @@
 """Test script for refactored data preparation and quality components."""
-from data_preparation_components import DataFormatConverter, DataValidator, DataCleaner
-from data_quality_components import QualityMetricsCalculator, DataIntegrityChecker, AnomalyDetector
+from src.training.steps.data_collection.data_preparation_components.data_format_converter import DataFormatConverter
+from src.training.steps.data_collection.data_preparation_components.data_integrity_checker import DataValidator
+from src.training.steps.data_collection.data_preparation_components.data_cleaner import DataCleaner
+from src.training.steps.data_collection.data_quality_components.quality_metrics_calculator import QualityMetricsCalculator
+from src.training.steps.data_collection.data_quality_components.data_integrity_checker import DataIntegrityChecker
+from src.training.steps.data_collection.data_quality_components.anomaly_detector import AnomalyDetector
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
@@ -9,20 +13,20 @@ import datetime as datetime
 def create_sample_data() -> Any:
     """Create sample OHLCV data for testing."""
     start_date = datetime(2024, 1, 1)
-    timestamps = pd.date_range(start=start_date, periods=1000, freq='1min')
+    timestamps = pd.date_range(start = start_date, periods = 1000, freq='1min')
     np.random.seed(42)
     base_price = 100
     prices = base_price + np.cumsum(np.random.randn(1000) * 0.5)
     data = pd.DataFrame({'timestamp': timestamps.astype(np.int64) // 10 ** 6, 'open': prices + np.random.randn(1000) * 0.1, 'high': prices + np.abs(np.random.randn(1000) * 0.2), 'low': prices - np.abs(np.random.randn(1000) * 0.2), 'close': prices + np.random.randn(1000) * 0.1, 'volume': np.random.exponential(1000, 1000)})
-    data['high'] = data[['open', 'high', 'low', 'close']].max(axis=1)
-    data['low'] = data[['open', 'high', 'low', 'close']].min(axis=1)
+    data['high'] = data[['open', 'high', 'low', 'close']].max(axis = 1)
+    data['low'] = data[['open', 'high', 'low', 'close']].min(axis = 1)
     data.loc[50:55, 'volume'] = np.nan
-    data = pd.concat([data, data.iloc[100:105]], ignore_index=True)
+    data = pd.concat([data, data.iloc[100:105]], ignore_index = True)
     data.loc[500, 'close'] = data.loc[500, 'close'] * 10
     data.index = pd.to_datetime(data['timestamp'], unit='ms')
     return data
 
-def test_data_preparation_components() -> None:
+async def test_data_preparation_components() -> None:
     """Test the data preparation components."""
     print('=' * 80)
     print('Testing Data Preparation Components')
@@ -42,7 +46,7 @@ def test_data_preparation_components() -> None:
     print(f'   - After removing duplicates: {len(cleaned_data)} rows')
     cleaned_data = cleaner.fill_missing_values(cleaned_data)
     print(f'   - After filling missing values: {cleaned_data.isna().sum().sum()} missing')
-    outlier_data, outliers = cleaner.detect_outliers(cleaned_data, method='zscore', threshold=3.0)
+    outlier_data, outliers = cleaner.detect_outliers(cleaned_data, method='zscore', threshold = 3.0)
     print(f'   - Detected outliers in columns: {list(outliers.keys())}')
     print('\n3. Testing DataFormatConverter:')
     converter = DataFormatConverter()
@@ -53,7 +57,7 @@ def test_data_preparation_components() -> None:
             print(f'     - {col}: {formatted_data[col].dtype}')
     return cleaned_data
 
-def test_data_quality_components() -> None:
+async def test_data_quality_components() -> None:
     """Test the data quality components."""
     print('\n' + '=' * 80)
     print('Testing Data Quality Components')
@@ -86,7 +90,7 @@ def test_data_quality_components() -> None:
     for rec in report['recommendations']:
         print(f'     - {rec}')
 
-def test_integration() -> None:
+async def test_integration() -> None:
     """Test integration of components."""
     print('\n' + '=' * 80)
     print('Testing Component Integration')

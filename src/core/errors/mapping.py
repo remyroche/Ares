@@ -1,4 +1,5 @@
 '\nException mapping to transport-specific responses.\n\nMaps internal exceptions to appropriate HTTP/gRPC/CLI responses.\n'
+from src.core.errors.base import ValidationError
 import logging
 import traceback
 from typing import Callable, Any
@@ -13,7 +14,7 @@ class ErrorMapper:
     """Maps exceptions to AppError instances and transport responses."""
 
     def __init__(self) -> None:
-        self._exception_map: dict[type[Exception], Callable[[Exception], AppError]] = {ValueError: lambda e: ValidationError(str(e)), KeyError: lambda e: NotFoundError(f'Key not found: {e}'), TypeError: lambda e: ValidationError(f'Type error: {e}'), AttributeError: lambda e: ValidationError(f'Attribute error: {e}'), ConnectionError: lambda e: ServiceUnavailableError('Connection failed', service_name='external'), TimeoutError: lambda e: AppTimeoutError(str(e)), OSError: lambda e: AppError(f'System error: {e}', code=ErrorCode.INTERNAL_ERROR, status_code=500)}
+        self._exception_map: dict[type[Exception], Callable[[Exception], AppError]] = {ValueError: lambda e: ValidationError(str(e)), KeyError: lambda e: NotFoundError(f'Key not found: {e}'), TypeError: lambda e: ValidationError(f'Type error: {e}'), AttributeError: lambda e: ValidationError(f'Attribute error: {e}'), ConnectionError: lambda e: ServiceUnavailableError('Connection failed', service_name='external'), TimeoutError: lambda e: AppTimeoutError(str(e)), OSError: lambda e: AppError(f'System error: {e}', code = ErrorCode.INTERNAL_ERROR, status_code = 500)}
         try:
             self._exception_map.update({pd.errors.EmptyDataError: lambda e: ValidationError('Empty data provided'), pd.errors.ParserError: lambda e: ValidationError(f'Data parsing error: {e}')})
         except ImportError:
@@ -36,9 +37,9 @@ class ErrorMapper:
                 try:
                     return mapper(exc)
                 except Exception as mapping_error:
-                    logger.error(f'Error mapping exception {exc}: {mapping_error}', exc_info=True)
+                    logger.error(f'Error mapping exception {exc}: {mapping_error}', exc_info = True)
                     break
-        return AppError(message=f'Internal error: {type(exc).__name__}', code=ErrorCode.INTERNAL_ERROR, status_code=500, cause=exc)
+        return AppError(message = f'Internal error: {type(exc).__name__}', code = ErrorCode.INTERNAL_ERROR, status_code = 500, cause = exc)
 
     def to_http_response(self, error: AppError) -> dict[str, Any]:
         """Convert AppError to HTTP response format."""
@@ -72,6 +73,7 @@ def register_exception_mapping(exception_type: type[Exception], mapper: Callable
 
     Args:
         exception_type: The exception type to map
+            pass
         mapper: Either a function that maps the exception to AppError,
                 or an AppError class to instantiate with str(exception)
     """
@@ -79,3 +81,14 @@ def register_exception_mapping(exception_type: type[Exception], mapper: Callable
         error_mapper.register_mapping(exception_type, lambda e: mapper(str(e)))
     else:
         error_mapper.register_mapping(exception_type, mapper)
+
+# Global error mapper instance
+error_mapper = ErrorMapper()
+
+def map_exception(exc: Exception) -> AppError:
+    """Map an exception to an AppError instance."""
+    return error_mapper.map_exception(exc)
+
+def register_exception_mapping(exception_type: type[Exception], mapper: Callable[[Exception], AppError]) -> None:
+    """Register a custom exception mapping."""
+    error_mapper.register_mapping(exception_type, mapper)

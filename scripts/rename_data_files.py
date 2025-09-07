@@ -23,7 +23,7 @@ def _build_new_name(exchange_name: str, old_path: Path, kind: str) -> tuple[bool
 
     Returns (ok, new_name)
     """
-    parts=old_path.name.split("_")
+    parts = old_path.name.split("_")
     if kind== "klines":
         # klines_ETHUSDT_1m_2025-07.csv -> klines_BINANCE_ETHUSDT_1m_2025-07.csv
         if len(parts) >= 4:
@@ -44,7 +44,7 @@ def _build_new_name(exchange_name: str, old_path: Path, kind: str) -> tuple[bool
 
 def rename_data_files() -> bool:
     """Rename existing data files to include exchange name prefix."""
-    data_cache_dir=Path("data_cache")
+    data_cache_dir = Path("data_cache")
 
     if not data_cache_dir.exists():
         print(missing("data_cache directory not found!"))
@@ -60,11 +60,11 @@ def rename_data_files() -> bool:
         ("futures_ETHUSDT_*.csv", f"futures_{exchange_name}_ETHUSDT_*.csv"),
     ]
 
-    total_renamed=0
+    total_renamed = 0
 
     for old_pattern, _new_pattern in patterns:
         # Find files matching the old pattern
-        old_files=_find_files(data_cache_dir, old_pattern)
+        old_files = _find_files(data_cache_dir, old_pattern)
 
         if not old_files:
             print(f"ℹ️  No files found matching pattern: {old_pattern}")
@@ -75,19 +75,19 @@ def rename_data_files() -> bool:
         for old_path in old_files:
             # Determine kind from pattern
             if old_pattern.startswith("klines"):
-                ok, new_name=_build_new_name(exchange_name, old_path, "klines")
+                ok, new_name = _build_new_name(exchange_name, old_path, "klines")
             elif old_pattern.startswith("aggtrades"):
-                ok, new_name=_build_new_name(exchange_name, old_path, "aggtrades")
+                ok, new_name = _build_new_name(exchange_name, old_path, "aggtrades")
             elif old_pattern.startswith("futures"):
-                ok, new_name=_build_new_name(exchange_name, old_path, "futures")
+                ok, new_name = _build_new_name(exchange_name, old_path, "futures")
             else:
-                ok, new_name=False, warning(f" Skipping {old_path.name} - unknown pattern")
+                ok, new_name = False, warning(f" Skipping {old_path.name} - unknown pattern")
 
             if not ok:
                 print(new_name)
                 continue
 
-            new_path=old_path.parent / new_name
+            new_path = old_path.parent / new_name
 
             # Check if new file already exists
             if new_path.exists():
@@ -108,7 +108,7 @@ def rename_data_files() -> bool:
 
 if __name__== "__main__":
     print("🔄 Renaming existing data files to include exchange name...")
-    success=rename_data_files()
+    success = rename_data_files()
 
     if success:
         print("✅ File renaming completed successfully!")

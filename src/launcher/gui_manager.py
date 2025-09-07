@@ -45,7 +45,7 @@ class ProcessManager:
             self.logger.info("🔄 Terminating GUI process...")
             self.gui_process.terminate()
             try:
-                self.gui_process.wait(timeout=5)
+                self.gui_process.wait(timeout = 5)
             except subprocess.TimeoutExpired:
                 self.gui_process.kill()
         
@@ -54,7 +54,7 @@ class ProcessManager:
             self.logger.info("🔄 Terminating portfolio process...")
             self.portfolio_process.terminate()
             try:
-                self.portfolio_process.wait(timeout=5)
+                self.portfolio_process.wait(timeout = 5)
             except subprocess.TimeoutExpired:
                 self.portfolio_process.kill()
         
@@ -64,7 +64,7 @@ class ProcessManager:
                 self.logger.info(f"🔄 Terminating process {process.pid}...")
                 process.terminate()
                 try:
-                    process.wait(timeout=3)
+                    process.wait(timeout = 3)
                 except subprocess.TimeoutExpired:
                     process.kill()
         
@@ -106,10 +106,10 @@ class GUIManager:
         
         self.process_manager.gui_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+            text = True,
+            env = env,
         )
         self.process_manager.add_process(self.process_manager.gui_process)
         self.logger.info(f"✅ GUI process started with PID {self.process_manager.gui_process.pid}")
@@ -123,8 +123,8 @@ class GUIManager:
                 try:
                     fp = int(env.get("FRONTEND_PORT", "3000"))
                     ap = int(env.get("API_PORT", "8000"))
-                    requests.get(f"http://localhost:{fp}", timeout=2)
-                    requests.get(f"http://localhost:{ap}/docs", timeout=2)
+                    requests.get(f"http://localhost:{fp}", timeout = 2)
+                    requests.get(f"http://localhost:{ap}/docs", timeout = 2)
                     self.logger.info("✅ GUI (frontend+API) appears healthy")
                 except Exception as _hc_exc:
                     self.logger.warning(f"GUI health check skipped/failed: {_hc_exc}")
@@ -141,9 +141,9 @@ class GUIManager:
         
         self.process_manager.portfolio_process = subprocess.Popen(
             [sys.executable, "src/supervisor/global_portfolio_manager.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE,
+            text = True,
         )
         self.process_manager.add_process(self.process_manager.portfolio_process)
         self.logger.info(f"✅ Portfolio manager started with PID {self.process_manager.portfolio_process.pid}")
@@ -176,14 +176,14 @@ class TradingProcessManager:
             # Run the same pipeline but with different trading mode
             process = subprocess.Popen(
                 [sys.executable, "src/ares_pipeline.py", symbol, exchange],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
-                text=True,
-                bufsize=1,  # Line buffered
-                universal_newlines=True,
-                env=dict(
+                stdout = subprocess.PIPE,
+                stderr = subprocess.STDOUT,  # Redirect stderr to stdout
+                text = True,
+                bufsize = 1,  # Line buffered
+                universal_newlines = True,
+                env = dict(
                     os.environ,
-                    TRADING_MODE=trading_mode,
+                    TRADING_MODE = trading_mode,
                 ),  # Pass environment variable
             )
             self.process_manager.add_process(process)
@@ -224,9 +224,9 @@ class TradingProcessManager:
             try:
                 process = subprocess.Popen(
                     [sys.executable, "src/ares_pipeline.py", token, "BINANCE"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
+                    stdout = subprocess.PIPE,
+                    stderr = subprocess.PIPE,
+                    text = True,
                 )
                 self.process_manager.add_process(process)
                 self.logger.info(f"✅ Trading bot for {token} started with PID {process.pid}")

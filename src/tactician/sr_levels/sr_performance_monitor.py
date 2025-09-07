@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ...utils.logger import system_logger
+from ..core.decorators import handles_errors
 """S/R Performance Monitor Module.
 
 This module monitors S/R prediction performance in real-time and provides
@@ -10,9 +12,8 @@ from dataclasses import dataclass, asdict
 from collections import deque, defaultdict
 import json
 import os
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+, traced
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -67,30 +68,30 @@ class SRPerformanceMonitor:
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('SRPerformanceMonitor')
-        self.predictions: Deque[SRPrediction] = deque(maxlen=10000)
-        self.outcomes: Deque[SROutcome] = deque(maxlen=10000)
-        self.matched_results: Deque[Tuple[SRPrediction, SROutcome]] = deque(maxlen=5000)
+        self.predictions: Deque[SRPrediction] = deque(maxlen = 10000)
+        self.outcomes: Deque[SROutcome] = deque(maxlen = 10000)
+        self.matched_results: Deque[Tuple[SRPrediction, SROutcome]] = deque(maxlen = 5000)
         self.rolling_window = config.get('performance_rolling_window', 500)
         self.alert_threshold = config.get('performance_alert_threshold', 0.45)
         self.performance_by_category = defaultdict(lambda: {'correct': 0, 'total': 0, 'pnl': 0.0})
         self.alert_callback = None
         self.last_alert_time = None
-        self.alert_cooldown = timedelta(hours=1)
+        self.alert_cooldown = timedelta(hours = 1)
         self.auto_save_interval = config.get('performance_save_interval', 3600)
         self.last_save_time = datetime.now()
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='track SR prediction')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='track SR prediction')
     async def track_prediction(self, level_price: float, level_type: str, level_strength: float, predicted_outcome: str, outcome_probabilities: Dict[str, float], context: Dict[str, Any], method_used: str='unknown') -> None:
         """Track a new S/R prediction."""
-        prediction = SRPrediction(timestamp=datetime.now(), level_price=level_price, level_type=level_type, level_strength=level_strength, predicted_outcome=predicted_outcome, outcome_probabilities=outcome_probabilities, context=context, method_used=method_used)
+        prediction = SRPrediction(timestamp = datetime.now(), level_price = level_price, level_type = level_type, level_strength = level_strength, predicted_outcome = predicted_outcome, outcome_probabilities = outcome_probabilities, context = context, method_used = method_used)
         self.predictions.append(prediction)
         if (datetime.now() - self.last_save_time).total_seconds() > self.auto_save_interval:
             await self.save_performance_data()
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='track SR outcome')
-    async def track_outcome(self, level_price: float, actual_outcome: str, price_movement: float, time_to_outcome: int, volume_at_interaction: float, profit_loss: float=0.0) -> None:
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='track SR outcome')
+    async def track_outcome(self, level_price: float, actual_outcome: str, price_movement: float, time_to_outcome: int, volume_at_interaction: float, profit_loss: float = 0.0) -> None:
         """Track actual S/R interaction outcome."""
-        outcome = SROutcome(timestamp=datetime.now(), level_price=level_price, actual_outcome=actual_outcome, price_movement=price_movement, time_to_outcome=time_to_outcome, volume_at_interaction=volume_at_interaction, profit_loss=profit_loss)
+        outcome = SROutcome(timestamp = datetime.now(), level_price = level_price, actual_outcome = actual_outcome, price_movement = price_movement, time_to_outcome = time_to_outcome, volume_at_interaction = volume_at_interaction, profit_loss = profit_loss)
         self.outcomes.append(outcome)
         matched_prediction = self._match_prediction_to_outcome(outcome)
         if matched_prediction:
@@ -199,11 +200,11 @@ class SRPerformanceMonitor:
                 elif key.startswith('method_'):
                     method = key.replace('method_', '')
                     accuracy_by_method[method] = accuracy
-        return PerformanceMetrics(overall_accuracy=overall_accuracy, breakout_accuracy=outcome_accuracy['breakout'], rebounce_accuracy=outcome_accuracy['rebounce'], consolidation_accuracy=outcome_accuracy['consolidation'], avg_level_strength=np.mean([p.level_strength for p, _ in matches]), strong_level_accuracy=strong_accuracy, weak_level_accuracy=weak_accuracy, total_pnl=total_pnl, sharpe_ratio=sharpe_ratio, profit_factor=profit_factor, win_rate=win_rate, avg_time_to_outcome=avg_time, early_prediction_rate=early_rate, accuracy_by_volatility=accuracy_by_volatility, accuracy_by_session={}, accuracy_by_method=accuracy_by_method)
+        return PerformanceMetrics(overall_accuracy = overall_accuracy, breakout_accuracy = outcome_accuracy['breakout'], rebounce_accuracy = outcome_accuracy['rebounce'], consolidation_accuracy = outcome_accuracy['consolidation'], avg_level_strength = np.mean([p.level_strength for p, _ in matches]), strong_level_accuracy = strong_accuracy, weak_level_accuracy = weak_accuracy, total_pnl = total_pnl, sharpe_ratio = sharpe_ratio, profit_factor = profit_factor, win_rate = win_rate, avg_time_to_outcome = avg_time, early_prediction_rate = early_rate, accuracy_by_volatility = accuracy_by_volatility, accuracy_by_session={}, accuracy_by_method = accuracy_by_method)
 
     def _get_empty_metrics(self) -> PerformanceMetrics:
         """Get empty metrics when no data available."""
-        return PerformanceMetrics(overall_accuracy=0.0, breakout_accuracy=0.0, rebounce_accuracy=0.0, consolidation_accuracy=0.0, avg_level_strength=0.0, strong_level_accuracy=0.0, weak_level_accuracy=0.0, total_pnl=0.0, sharpe_ratio=0.0, profit_factor=0.0, win_rate=0.0, avg_time_to_outcome=0.0, early_prediction_rate=0.0, accuracy_by_volatility={}, accuracy_by_session={}, accuracy_by_method={})
+        return PerformanceMetrics(overall_accuracy = 0.0, breakout_accuracy = 0.0, rebounce_accuracy = 0.0, consolidation_accuracy = 0.0, avg_level_strength = 0.0, strong_level_accuracy = 0.0, weak_level_accuracy = 0.0, total_pnl = 0.0, sharpe_ratio = 0.0, profit_factor = 0.0, win_rate = 0.0, avg_time_to_outcome = 0.0, early_prediction_rate = 0.0, accuracy_by_volatility={}, accuracy_by_session={}, accuracy_by_method={})
 
     def generate_performance_report(self) -> Dict[str, Any]:
         """Generate detailed performance report."""
@@ -288,7 +289,7 @@ class SRPerformanceMonitor:
             data_file = os.path.join(self.config.get('model_save_path', 'models'), 'sr_performance_data.json')
             save_data = {'timestamp': datetime.now().isoformat(), 'predictions': [{'timestamp': p.timestamp.isoformat(), 'level_price': p.level_price, 'level_type': p.level_type, 'level_strength': p.level_strength, 'predicted_outcome': p.predicted_outcome, 'outcome_probabilities': p.outcome_probabilities, 'method_used': p.method_used} for p in list(self.predictions)[-1000:]], 'performance_by_category': dict(self.performance_by_category), 'current_metrics': asdict(self.calculate_performance_metrics())}
             with open(data_file, 'w') as f:
-                json.dump(save_data, f, indent=2)
+                json.dump(save_data, f, indent = 2)
             self.last_save_time = datetime.now()
             self.logger.info(f'Saved performance data to {data_file}')
         except Exception as e:

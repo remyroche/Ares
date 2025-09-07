@@ -42,8 +42,8 @@ def init_sentry() -> None:
 
             if LoggingIntegration:
                 sentry_logging = LoggingIntegration(
-                    level=logging.INFO,
-                    event_level=logging.ERROR,
+                    level = logging.INFO,
+                    event_level = logging.ERROR,
                 )
                 integrations.append(sentry_logging)
 
@@ -54,14 +54,14 @@ def init_sentry() -> None:
                 integrations.append(FastApiIntegration())
 
             sentry_sdk.init(
-                dsn=dsn,
-                environment=os.getenv("SENTRY_ENV", "production"),
-                traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
-                profiles_sample_rate=float(
+                dsn = dsn,
+                environment = os.getenv("SENTRY_ENV", "production"),
+                traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+                profiles_sample_rate = float(
                     os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")
                 ),
-                integrations=integrations,
-                send_default_pii=False,
+                integrations = integrations,
+                send_default_pii = False,
             )
             logger.info("Sentry initialized")
     except Exception as exc:  # pragma: no cover
@@ -84,7 +84,7 @@ def init_otlp_logging() -> None:
         resource = Resource.create(
             {"service.name": os.getenv("OTEL_SERVICE_NAME", "ares-bot")},
         )
-        provider = LoggerProvider(resource=resource)
+        provider = LoggerProvider(resource = resource)
         exporter = OTLPLogExporter()
         provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
         otel_logs.set_logger_provider(provider)

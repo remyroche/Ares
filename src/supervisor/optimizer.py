@@ -7,10 +7,10 @@ from datetime import datetime
 from typing import Any
 
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 import logging
 import time
+from src.core.decorators import handles_errors
 
 
 class Optimizer:
@@ -39,7 +39,7 @@ class Optimizer:
             AttributeError: (False, "Missing required optimizer parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="optimizer initialization",
     )
     async def initialize(self) -> bool:
@@ -55,7 +55,7 @@ class Optimizer:
             self.logger.exception(f"❌ Optimizer initialization failed: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_optimizer_configuration(self) -> None:
         try:
             self.optimizer_config.setdefault("optimization_interval", 300)
@@ -66,7 +66,7 @@ class Optimizer:
         except Exception as e:
             self.logger.exception(f"Error loading optimizer configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         try:
             if self.optimization_interval <= 0:
@@ -85,7 +85,7 @@ class Optimizer:
         error_handlers={
             Exception: (False, "Optimizer run failed"),
         },
-        default_return=False,
+        default_return = False,
         context="optimizer run",
     )
     async def run(self) -> bool:
@@ -101,7 +101,7 @@ class Optimizer:
             self.is_running = False
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_optimization(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -115,7 +115,7 @@ class Optimizer:
         except Exception as e:
             self.logger.exception(f"Error in optimization step: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _optimize_parameters(self) -> None:
         try:
             # Simulate parameter optimization
@@ -130,7 +130,7 @@ class Optimizer:
         except Exception as e:
             self.logger.exception(f"Error optimizing parameters: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _update_optimization_results(self) -> None:
         try:
             # Update optimization results
@@ -141,7 +141,7 @@ class Optimizer:
         except Exception as e:
             self.logger.exception(f"Error updating optimization results: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Optimizer...")
         try:
@@ -166,13 +166,13 @@ class Optimizer:
     def get_parameters(self) -> dict[str, Any]:
         return self.parameters.copy()
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def implement_global_system_optimization(
         self,
-        historical_pnl_data: pd.DataFrame,  # pylint: disable=unused-argument
-        strategy_breakdown_data: dict,  # pylint: disable=unused-argument
-        checkpoint_file_path: str,  # pylint: disable=unused-argument
-        hpo_ranges: dict,  # pylint: disable=unused-argument
+        historical_pnl_data: pd.DataFrame,  # pylint: disable = unused-argument
+        strategy_breakdown_data: dict,  # pylint: disable = unused-argument
+        checkpoint_file_path: str,  # pylint: disable = unused-argument
+        hpo_ranges: dict,  # pylint: disable = unused-argument
         klines_df: pd.DataFrame,
         agg_trades_df: pd.DataFrame,
         futures_df: pd.DataFrame,

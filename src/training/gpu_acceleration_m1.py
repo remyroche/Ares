@@ -1,6 +1,7 @@
 
-from src.core.decorators import log_call, validates
 from src.core.domain import secure_data_processing
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 
 # src/training/gpu_acceleration_m1.py
 
@@ -55,7 +56,7 @@ class GPUAccelerationM1:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def gpu_matrix_multiplication(
         self,
         A: np.ndarray,
@@ -80,8 +81,8 @@ class GPUAccelerationM1:
                 return self._cpu_matrix_multiplication(A, B)
 
             # Convert to PyTorch tensors
-            A_tensor = torch.tensor(A, dtype=torch.float32, device=self.device)
-            B_tensor = torch.tensor(B, dtype=torch.float32, device=self.device)
+            A_tensor = torch.tensor(A, dtype = torch.float32, device = self.device)
+            B_tensor = torch.tensor(B, dtype = torch.float32, device = self.device)
 
             # Perform matrix multiplication
             with torch.no_grad():
@@ -119,11 +120,11 @@ class GPUAccelerationM1:
                 return self._cpu_matrix_multiplication(A, B)
             raise
 
-    @secure_data_processing(encryption_level="high", data_validation=True)
-    @cached(chunk_size=3000, streaming_processing=True)
-    @log_call(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="high", data_validation = True)
+    @cached(chunk_size = 3000, streaming_processing = True)
+    @log_call(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def gpu_svd_decomposition(
         self,
         matrix: np.ndarray,
@@ -149,12 +150,12 @@ class GPUAccelerationM1:
 
             # Convert to PyTorch tensor
             matrix_tensor = torch.tensor(
-                matrix, dtype=torch.float32, device=self.device
+                matrix, dtype = torch.float32, device = self.device
             )
 
             # Perform SVD decomposition
             with torch.no_grad():
-                U, S, Vt = torch.linalg.svd(matrix_tensor, full_matrices=False)
+                U, S, Vt = torch.linalg.svd(matrix_tensor, full_matrices = False)
 
                 # Truncate if k is specified
                 if k is not None and k < len(S):
@@ -197,7 +198,7 @@ class GPUAccelerationM1:
                 return self._cpu_svd_decomposition(matrix, k)
             raise
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _should_use_gpu(self, *matrices: np.ndarray) -> bool:
         """Check if GPU should be used for the given matrices.
 
@@ -269,7 +270,7 @@ class GPUAccelerationM1:
 
         """
         start_time = time.time()
-        U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
+        U, S, Vt = np.linalg.svd(matrix, full_matrices = False)
 
         # Truncate if k is specified
         if k is not None and k < len(S):

@@ -1,19 +1,23 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Dict
-from src.utils.error_handler import handles_errors
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 
 'Metadata tracker component for model persistence.'
 import hashlib
 import json
 from datetime import datetime
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 
 class MetadataTracker:
     """Handles comprehensive metadata tracking for models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the metadata tracker.
@@ -54,6 +58,7 @@ class MetadataTracker:
         metadata['pipeline_execution'] = await self._track_pipeline_execution(pipeline_state)
         metadata['checksum'] = self._calculate_checksum(metadata)
         return metadata
+    @log_all_calls
 
     def _sanitize_training_input(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize training input for storage."""
@@ -94,7 +99,7 @@ class MetadataTracker:
         stats = {'dataset_info': {}, 'feature_statistics': {}, 'label_distribution': {}, 'regime_statistics': {}}
         if 'tactician_labeled_data' in pipeline_state:
             data = pipeline_state['tactician_labeled_data']
-            stats['dataset_info'] = {'total_samples': len(data), 'features': len(data.columns), 'memory_usage': str(data.memory_usage(deep=True).sum() / 1024 / 1024) + ' MB'}
+            stats['dataset_info'] = {'total_samples': len(data), 'features': len(data.columns), 'memory_usage': str(data.memory_usage(deep = True).sum() / 1024 / 1024) + ' MB'}
             if 'label' in data.columns:
                 label_counts = data['label'].value_counts()
                 stats['label_distribution'] = {str(label): count for label, count in label_counts.items()}
@@ -138,6 +143,7 @@ class MetadataTracker:
         environment = {'python_version': sys.version, 'platform': platform.platform(), 'machine': platform.machine(), 'processor': platform.processor()}
         environment['packages'] = self._get_package_versions()
         return environment
+    @log_all_calls
 
     def _get_package_versions(self) -> Dict[str, str]:
         """Get versions of key packages."""
@@ -153,6 +159,7 @@ class MetadataTracker:
             return packages
         except ImportError:
             return {}
+    @log_all_calls
 
     def _get_package_version(self, pkg_resources: List[Any], package: str) -> Optional[str]:
         """Get version of a specific package."""
@@ -177,10 +184,11 @@ class MetadataTracker:
         if execution['execution_times']:
             execution['total_duration'] = sum(execution['execution_times'].values())
         return execution
+    @log_all_calls
 
     def _calculate_checksum(self, metadata: Dict[str, Any]) -> str:
         """Calculate checksum for metadata."""
-        metadata_str = json.dumps(metadata, sort_keys=True, default=str)
+        metadata_str = json.dumps(metadata, sort_keys = True, default = str)
         return hashlib.sha256(metadata_str.encode()).hexdigest()
 
     @handles_errors(exceptions=(Exception,), default_return={}, context='metadata validation')
@@ -210,3 +218,4 @@ class MetadataTracker:
             if section in metadata and (not metadata[section]):
                 validation['warnings'].append(f'Empty section: {section}')
         return validation
+from typing import Dict

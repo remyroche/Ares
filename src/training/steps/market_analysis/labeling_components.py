@@ -8,11 +8,13 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 
 class RegimeAwareLabeling:
     """Regime-aware triple barrier labeling component."""
-    
+
+    @log_important_calls
     def __init__(self, config: Dict[str, Any], logger: Any = None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
@@ -21,7 +23,8 @@ class RegimeAwareLabeling:
         self.time_barrier_minutes = None
         self.max_lookahead = None
         self._initialize_components()
-    
+
+    @log_all_calls
     def _initialize_components(self) -> None:
         """Initialize regime-aware labeling components."""
         try:
@@ -54,6 +57,7 @@ class RegimeAwareLabeling:
             
         except Exception as e:
             self.logger.error(f'❌ Failed to initialize regime-aware labeling components: {e}')
+    @log_step_functions
     
     def validate_inputs(self, data: pd.DataFrame) -> bool:
         """Validate inputs for regime-aware labeling."""
@@ -78,10 +82,10 @@ class RegimeAwareLabeling:
         try:
             from .training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
             return RegimeAwareTripleBarrierLabeling(
-                default_profit_take_multiplier=0.002,
-                default_stop_loss_multiplier=0.001,
-                default_time_barrier_minutes=self.time_barrier_minutes,
-                default_max_lookahead=self.max_lookahead
+                default_profit_take_multiplier = 0.002,
+                default_stop_loss_multiplier = 0.001,
+                default_time_barrier_minutes = self.time_barrier_minutes,
+                default_max_lookahead = self.max_lookahead
             )
         except ImportError as e:
             self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
@@ -104,9 +108,9 @@ class RegimeAwareLabeling:
             # Generate labels
             labels = regime_labeler.generate_labels(
                 data,
-                regime_column=self.regime_col,
-                time_barrier_minutes=self.time_barrier_minutes,
-                max_lookahead=self.max_lookahead
+                regime_column = self.regime_col,
+                time_barrier_minutes = self.time_barrier_minutes,
+                max_lookahead = self.max_lookahead
             )
             
             if labels is not None:
@@ -123,12 +127,14 @@ class RegimeAwareLabeling:
 
 class MetaLabeling:
     """Meta-labeling system component."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any], logger: Any = None):
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.meta_labeling_system = None
         self._initialize_components()
+    @log_all_calls
     
     def _initialize_components(self) -> None:
         """Initialize meta-labeling components."""
@@ -185,6 +191,7 @@ class MetaLabeling:
 
 class CompositeLabeling:
     """Composite labeling strategy component."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any], logger: Any = None):
         self.config = config
@@ -196,7 +203,7 @@ class CompositeLabeling:
             # Start with triple barrier labels as base
             if 'triple_barrier_label' not in data.columns:
                 self.logger.error('❌ Triple barrier labels not found for composite labeling')
-                return pd.Series(dtype=float)
+                return pd.Series(dtype = float)
             
             composite_label = data['triple_barrier_label'].copy()
             
@@ -210,12 +217,12 @@ class CompositeLabeling:
             
         except Exception as e:
             self.logger.warning(f'⚠️ Error creating composite label: {e}')
-            return data.get('triple_barrier_label', pd.Series(dtype=float))
+            return data.get('triple_barrier_label', pd.Series(dtype = float))
     
     def calculate_label_confidence(self, data: pd.DataFrame) -> pd.Series:
         """Calculate confidence scores for labels."""
         try:
-            confidence = np.ones(len(data), dtype=np.float32)
+            confidence = np.ones(len(data), dtype = np.float32)
             
             # Boost confidence when multiple labeling strategies agree
             if 'analyst_label' in data.columns and 'label' in data.columns:
@@ -225,11 +232,11 @@ class CompositeLabeling:
             
             # Cap confidence at 1.0
             confidence = np.minimum(confidence, 1.0)
-            return pd.Series(confidence, index=data.index)
+            return pd.Series(confidence, index = data.index)
             
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating label confidence: {e}')
-            return pd.Series(1.0, index=data.index)
+            return pd.Series(1.0, index = data.index)
     
     def determine_label_source(self, data: pd.DataFrame) -> pd.Series:
         """Determine the source of each label."""
@@ -250,15 +257,16 @@ class CompositeLabeling:
                 else:
                     sources.append('composite')
             
-            return pd.Series(sources, index=data.index)
+            return pd.Series(sources, index = data.index)
             
         except Exception as e:
             self.logger.warning(f'⚠️ Error determining label source: {e}')
-            return pd.Series('unknown', index=data.index)
+            return pd.Series('unknown', index = data.index)
 
 
 class ComprehensiveLabeling:
     """Comprehensive labeling orchestrator that combines all labeling strategies."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any], logger: Any = None):
         self.config = config

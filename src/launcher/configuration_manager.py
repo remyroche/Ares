@@ -34,13 +34,13 @@ class EnvironmentManager:
         
         if training_mode == "light":
             os.environ["LIGHT_TRAINING_MODE"] = "1"
-            self.logger.info("💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1")
+            self.logger.info("💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE = 1")
         elif training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
-            self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
+            self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE = 1")
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
-            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
+            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE = 1")
         else:
             self.logger.warning(f"Unknown training mode: {training_mode}")
     
@@ -53,7 +53,7 @@ class EnvironmentManager:
         """Set force mode environment variable."""
         if force:
             os.environ["FORCE"] = "1"
-            self.logger.info("🔄 FORCE MODE: Set FORCE=1")
+            self.logger.info("🔄 FORCE MODE: Set FORCE = 1")
         else:
             os.environ.pop("FORCE", None)
     
@@ -62,7 +62,7 @@ class EnvironmentManager:
         os.environ[f"{pipeline_type.upper().replace('-', '_')}_MODE"] = "enhanced"
         os.environ["SYMBOL"] = symbol
         os.environ["EXCHANGE"] = exchange
-        self.logger.info(f"🔧 Pipeline mode set: {pipeline_type.upper()}_MODE=enhanced")
+        self.logger.info(f"🔧 Pipeline mode set: {pipeline_type.upper()}_MODE = enhanced")
     
     def clear_pipeline_mode(self, pipeline_type: str) -> None:
         """Clear pipeline mode environment variables."""

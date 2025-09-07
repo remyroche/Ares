@@ -280,6 +280,57 @@ class FunctionValidator:
                             "Consider using 'as' to alias conflicting imports",
                         )
 
+        # Check for naming pattern issues (generic)
+        self._check_naming_patterns()
+
+    def _check_naming_patterns(self) -> None:
+        """Check for generic naming pattern issues in imports."""
+        # Group imports by module
+        imports_by_module = defaultdict(list)
+        for imp in self.imports:
+            imports_by_module[imp.module].append(imp)
+
+        for module, module_imports in imports_by_module.items():
+            # Get all imported names from this module
+            imported_names = [imp.name for imp in module_imports]
+            
+            # Check for snake_case vs PascalCase patterns
+            for imp in module_imports:
+                name = imp.name
+                
+                # Pattern 1: snake_case that might be a class (PascalCase)
+                if not name[0].isupper() and "_" in name:
+                    pascal_case = "".join(word.capitalize() for word in name.split("_"))
+                    if pascal_case in imported_names:
+                        self._add_issue(
+                            imp.file_path, imp.line_number, "naming_pattern_issue", "warning",
+                            f"Importing both '{name}' (snake_case) and '{pascal_case}' (PascalCase) from '{module}'",
+                            f"Consider using only one naming convention: either '{name}' or '{pascal_case}'",
+                        )
+
+                # Pattern 2: Check for common suffixes that might indicate wrong import
+                common_suffixes = ["_standards", "_manager", "_handler", "_validator", "_processor", "_analyzer", "_factory", "_builder"]
+                for suffix in common_suffixes:
+                    if name.endswith(suffix) and not name[0].isupper():
+                        # Look for PascalCase version
+                        pascal_case = "".join(word.capitalize() for word in name.split("_"))
+                        if pascal_case in imported_names:
+                            self._add_issue(
+                                imp.file_path, imp.line_number, "naming_pattern_issue", "error",
+                                f"Importing '{name}' (snake_case instance) and '{pascal_case}' (PascalCase class) from '{module}'",
+                                f"Consider importing only '{pascal_case}' (the class) instead of '{name}' (the instance)",
+                            )
+
+                # Pattern 3: Check for plural vs singular
+                if name.endswith("s") and len(name) > 3:
+                    singular = name[:-1]
+                    if singular in imported_names:
+                        self._add_issue(
+                            imp.file_path, imp.line_number, "naming_pattern_issue", "warning",
+                            f"Importing both '{name}' (plural) and '{singular}' (singular) from '{module}'",
+                            f"Consider using only one form: either '{name}' or '{singular}'",
+                        )
+
     def _add_issue(self, file_path: str, line_number: int, issue_type: str,
                    severity: str, message: str, suggestion: str | None = None) -> None:
         """Add a function validation issue to the list."""
@@ -532,5 +583,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()

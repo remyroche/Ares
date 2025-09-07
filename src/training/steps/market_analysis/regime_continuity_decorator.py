@@ -15,7 +15,7 @@ import time
 
 logger = get_logger('RegimeContinuityDecorator')
 
-def ensure_regime_continuity(step_name: str, per_regime_required: bool=True, regime_aware: bool=True) -> bool:
+def ensure_regime_continuity(step_name: str, per_regime_required: bool = True, regime_aware: bool = True) -> bool:
     """Decorator to ensure regime continuity in pipeline steps.
     
     Args:
@@ -98,7 +98,7 @@ async def _execute_per_regime_step(func: Callable, step_name: str, symbol: str, 
                     logger.error(f'❌ Failed regime {regime_id} for {step_name}')
             except Exception as e:
                 logger.exception(f'❌ Error processing regime {regime_id} for {step_name}: {e}')
-                await regime_continuity_manager.update_step_status(step_name, regime_id, RegimeStatus.FAILED, error_message=str(e))
+                await regime_continuity_manager.update_step_status(step_name, regime_id, RegimeStatus.FAILED, error_message = str(e))
         continuity_valid = await regime_continuity_manager.validate_regime_continuity(step_name, symbol, exchange, timeframe, data_dir)
         if not continuity_valid:
             logger.warning(f'⚠️ Regime continuity validation failed for {step_name}')
@@ -164,8 +164,8 @@ async def _aggregate_regime_results(step_name: str, regime_results: Dict[int, An
                     df_copy['source_regime_id'] = regime_id
                     dfs.append(df_copy)
             if dfs:
-                aggregated_df = pd.concat(dfs, ignore_index=True)
-                aggregated_df = aggregated_df.sort_values('timestamp').reset_index(drop=True)
+                aggregated_df = pd.concat(dfs, ignore_index = True)
+                aggregated_df = aggregated_df.sort_values('timestamp').reset_index(drop = True)
                 aggregated_df.to_parquet(aggregated_path, index=False)
                 logger.info(f'✅ Aggregated {len(dfs)} regime DataFrames: {aggregated_path}')
         elif all((isinstance(result, dict) for result in regime_results.values())):
@@ -173,14 +173,14 @@ async def _aggregate_regime_results(step_name: str, regime_results: Dict[int, An
             import json
             aggregated_json_path = training_dir / f'{exchange}_{symbol}_{timeframe}_{step_name}_aggregated.json'
             with open(aggregated_json_path, 'w') as f:
-                json.dump(aggregated_dict, f, indent=2, default=str)
+                json.dump(aggregated_dict, f, indent = 2, default = str)
             logger.info(f'✅ Aggregated {len(regime_results)} regime dictionaries: {aggregated_json_path}')
         else:
             logger.warning(f'⚠️ Unknown result types for {step_name}, skipping aggregation')
     except Exception as e:
         logger.exception(f'❌ Error aggregating results for {step_name}: {e}')
 
-def get_regime_aware_step_function(step_name: str, per_regime_required: bool=True, regime_aware: bool=True) -> Callable:
+def get_regime_aware_step_function(step_name: str, per_regime_required: bool = True, regime_aware: bool = True) -> Callable:
     """Get a regime-aware version of a step function.
     
     Args:
@@ -193,17 +193,17 @@ def get_regime_aware_step_function(step_name: str, per_regime_required: bool=Tru
     """
 
     def decorator(func: Callable) -> Callable:
-        return ensure_regime_continuity(step_name=step_name, per_regime_required=per_regime_required, regime_aware=regime_aware)(func)
+        return ensure_regime_continuity(step_name = step_name, per_regime_required = per_regime_required, regime_aware = regime_aware)(func)
     return decorator
 
 def per_regime_step(step_name: str) -> None:
     """Decorator for steps that must process each regime separately."""
-    return ensure_regime_continuity(step_name=step_name, per_regime_required=True, regime_aware=True)
+    return ensure_regime_continuity(step_name = step_name, per_regime_required = True, regime_aware = True)
 
 def regime_aware_step(step_name: str) -> None:
     """Decorator for steps that should be aware of regime context but don't need per-regime processing."""
-    return ensure_regime_continuity(step_name=step_name, per_regime_required=False, regime_aware=True)
+    return ensure_regime_continuity(step_name = step_name, per_regime_required = False, regime_aware = True)
 
 def standard_step(step_name: str) -> None:
     """Decorator for steps that don't need regime awareness."""
-    return ensure_regime_continuity(step_name=step_name, per_regime_required=False, regime_aware=False)
+    return ensure_regime_continuity(step_name = step_name, per_regime_required = False, regime_aware = False)

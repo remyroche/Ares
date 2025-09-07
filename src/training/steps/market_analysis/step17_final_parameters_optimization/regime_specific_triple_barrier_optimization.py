@@ -37,6 +37,8 @@ from optuna.visualization import plot_optimization_history, plot_param_importanc
 from .utils.logger import setup_logging
 from pathlib import Path
 from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 setup_logging()
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -93,9 +95,9 @@ class RegimeSpecificOptimizationConfig:
     n_trials_per_regime: int = 100
     timeout_minutes_per_regime: int = 60
     cv_folds: int = 5
-    objectives: List[str] = field(default_factory=lambda: ['sharpe_ratio', 'win_rate', 'profit_factor', 'regime_accuracy'])
-    objective_weights: Dict[str, float] = field(default_factory=lambda: {'sharpe_ratio': 0.3, 'win_rate': 0.25, 'profit_factor': 0.25, 'regime_accuracy': 0.2})
-    regime_constraints: Dict[str, Dict[str, List[float]]] = field(default_factory=lambda: {'BULL_TREND': {'tp_multiplier_range': [2.5, 5.0], 'sl_multiplier_range': [1.2, 2.5], 'position_size_range': [0.1, 0.25]}, 'BEAR_TREND': {'tp_multiplier_range': [2.0, 4.5], 'sl_multiplier_range': [1.0, 2.2], 'position_size_range': [0.08, 0.2]}, 'SIDEWAYS_RANGE': {'tp_multiplier_range': [1.5, 3.0], 'sl_multiplier_range': [0.8, 1.8], 'position_size_range': [0.06, 0.15]}, 'HIGH_IMPACT_CANDLE': {'tp_multiplier_range': [1.8, 3.5], 'sl_multiplier_range': [0.9, 2.0], 'position_size_range': [0.05, 0.12]}, 'SR_ZONE_ACTION': {'tp_multiplier_range': [2.0, 4.0], 'sl_multiplier_range': [1.0, 2.2], 'position_size_range': [0.08, 0.18]}})
+    objectives: List[str] = field(default_factory = lambda: ['sharpe_ratio', 'win_rate', 'profit_factor', 'regime_accuracy'])
+    objective_weights: Dict[str, float] = field(default_factory = lambda: {'sharpe_ratio': 0.3, 'win_rate': 0.25, 'profit_factor': 0.25, 'regime_accuracy': 0.2})
+    regime_constraints: Dict[str, Dict[str, List[float]]] = field(default_factory = lambda: {'BULL_TREND': {'tp_multiplier_range': [2.5, 5.0], 'sl_multiplier_range': [1.2, 2.5], 'position_size_range': [0.1, 0.25]}, 'BEAR_TREND': {'tp_multiplier_range': [2.0, 4.5], 'sl_multiplier_range': [1.0, 2.2], 'position_size_range': [0.08, 0.2]}, 'SIDEWAYS_RANGE': {'tp_multiplier_range': [1.5, 3.0], 'sl_multiplier_range': [0.8, 1.8], 'position_size_range': [0.06, 0.15]}, 'HIGH_IMPACT_CANDLE': {'tp_multiplier_range': [1.8, 3.5], 'sl_multiplier_range': [0.9, 2.0], 'position_size_range': [0.05, 0.12]}, 'SR_ZONE_ACTION': {'tp_multiplier_range': [2.0, 4.0], 'sl_multiplier_range': [1.0, 2.2], 'position_size_range': [0.08, 0.18]}})
     early_stopping_patience: int = 20
     early_stopping_delta: float = 0.001
     enable_pruning: bool = True
@@ -112,6 +114,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     parameter optimization, ensuring that each HMM regime has optimal triple barrier
     thresholds and TPSL parameters for maximum performance.
     """
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any], storage_url: str='sqlite:///regime_triple_barrier_optuna_studies.db', study_name_prefix: str='regime_triple_barrier_optimization') -> None:
         """
@@ -131,6 +134,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         self.regime_results: Dict[str, RegimeOptimizationResult] = {}
         self.global_results: Dict[str, Any] = {}
         self.studies: Dict[str, optuna.Study] = {}
+    @log_all_calls
 
     def _load_optimization_config(self) -> None:
         """Load optimization configuration from config."""
@@ -155,6 +159,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.exception(f'❌ Error initializing optimizer: {e}')
             return False
+    @log_all_calls
 
     def _validate_configuration(self) -> bool:
         """Validate the optimization configuration."""
@@ -177,12 +182,13 @@ class RegimeSpecificTripleBarrierOptimizer:
     async def _initialize_storage(self) -> None:
         """Initialize Optuna storage."""
         try:
-            study = optuna.create_study(study_name='test_study', storage=self.storage_url, load_if_exists=True)
+            study = optuna.create_study(study_name='test_study', storage = self.storage_url, load_if_exists = True)
             self.logger.info(f'✅ Storage initialized: {self.storage_url}')
         except Exception as e:
             self.logger.warning(f'⚠️ Storage initialization failed: {e}')
             self.logger.info('📝 Using in-memory storage')
             self.storage_url = None
+    @log_all_calls
 
     def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
         """Extract regime names from data using shared regime accessor."""
@@ -204,6 +210,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 regime_name = str(regime)
             regime_names.append(regime_name)
         return regime_names
+    @log_all_calls
 
     def _create_regime_objective_function(self, regime_name: str, regime_data: pd.DataFrame, regime_constraints: Dict[str, List[float]]) -> callable:
         """Create objective function for a specific regime."""
@@ -225,15 +232,16 @@ class RegimeSpecificTripleBarrierOptimizer:
                 self.logger.warning(f'⚠️ Trial failed for regime {regime_name}: {e}')
                 return -np.inf
         return objective
+    @log_all_calls
 
     def _suggest_triple_barrier_params(self, trial: optuna.Trial, regime_constraints: Dict[str, List[float]]) -> RegimeTripleBarrierParams:
         """Suggest triple barrier parameters for a regime with log scaling and overall multiplier."""
         # Base parameters with log scaling (0-1 range)
-        base_profit_take = trial.suggest_float('base_profit_take_multiplier', 0.01, 0.05, log=True)
-        base_stop_loss = trial.suggest_float('base_stop_loss_multiplier', 0.005, 0.03, log=True)
+        base_profit_take = trial.suggest_float('base_profit_take_multiplier', 0.01, 0.05, log = True)
+        base_stop_loss = trial.suggest_float('base_stop_loss_multiplier', 0.005, 0.03, log = True)
         
         # Overall multiplier to scale the entire range (log scaled for multiplicative effect)
-        overall_multiplier = trial.suggest_float('overall_barrier_multiplier', 0.5, 5.0, log=True)
+        overall_multiplier = trial.suggest_float('overall_barrier_multiplier', 0.5, 5.0, log = True)
         
         # Apply overall multiplier to get final values
         profit_take_multiplier = base_profit_take * overall_multiplier
@@ -250,7 +258,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         tp_multiplier = trial.suggest_float('tp_multiplier', tp_range[0], tp_range[1])
         sl_multiplier = trial.suggest_float('sl_multiplier', sl_range[0], sl_range[1])
         position_size = trial.suggest_float('position_size', position_range[0], position_range[1])
-        return RegimeTripleBarrierParams(profit_take_multiplier=profit_take_multiplier, stop_loss_multiplier=stop_loss_multiplier, time_barrier_minutes=time_barrier_minutes, max_lookahead=max_lookahead, regime_volatility_multiplier=regime_volatility_multiplier, regime_trend_multiplier=regime_trend_multiplier, regime_volume_multiplier=regime_volume_multiplier, tp_multiplier_range=(tp_multiplier, tp_multiplier * 1.5), sl_multiplier_range=(sl_multiplier * 0.8, sl_multiplier), position_size_range=(position_size * 0.8, position_size * 1.2))
+        return RegimeTripleBarrierParams(profit_take_multiplier = profit_take_multiplier, stop_loss_multiplier = stop_loss_multiplier, time_barrier_minutes = time_barrier_minutes, max_lookahead = max_lookahead, regime_volatility_multiplier = regime_volatility_multiplier, regime_trend_multiplier = regime_trend_multiplier, regime_volume_multiplier = regime_volume_multiplier, tp_multiplier_range=(tp_multiplier, tp_multiplier * 1.5), sl_multiplier_range=(sl_multiplier * 0.8, sl_multiplier), position_size_range=(position_size * 0.8, position_size * 1.2))
+    @log_all_calls
 
     def _suggest_tpsl_params(self, trial: optuna.Trial, regime_constraints: Dict[str, List[float]]) -> Dict[str, float]:
         """Suggest TPSL parameters for a regime."""
@@ -258,11 +267,12 @@ class RegimeSpecificTripleBarrierOptimizer:
         sl_range = regime_constraints.get('sl_multiplier_range', [0.8, 2.0])
         position_range = regime_constraints.get('position_size_range', [0.05, 0.25])
         return {'tp_multiplier': trial.suggest_float('tpsl_tp_multiplier', tp_range[0], tp_range[1]), 'sl_multiplier': trial.suggest_float('tpsl_sl_multiplier', sl_range[0], sl_range[1]), 'position_size': trial.suggest_float('tpsl_position_size', position_range[0], position_range[1]), 'tp_atr_multiplier': trial.suggest_float('tp_atr_multiplier', 1.0, 4.0), 'sl_atr_multiplier': trial.suggest_float('sl_atr_multiplier', 0.5, 2.0), 'trailing_stop': trial.suggest_float('trailing_stop', 0.0, 0.02), 'break_even_threshold': trial.suggest_float('break_even_threshold', 0.005, 0.02)}
+    @log_all_calls
 
     def _apply_regime_specific_labeling(self, regime_data: pd.DataFrame, tb_params: RegimeTripleBarrierParams, tpsl_params: Dict[str, float]) -> pd.DataFrame:
         """Apply regime-specific triple barrier labeling."""
         try:
-            labeler = OptimizedTripleBarrierLabeling(profit_take_multiplier=tb_params.profit_take_multiplier, stop_loss_multiplier=tb_params.stop_loss_multiplier, time_barrier_minutes=tb_params.time_barrier_minutes, max_lookahead=tb_params.max_lookahead, binary_classification=True)
+            labeler = OptimizedTripleBarrierLabeling(profit_take_multiplier = tb_params.profit_take_multiplier, stop_loss_multiplier = tb_params.stop_loss_multiplier, time_barrier_minutes = tb_params.time_barrier_minutes, max_lookahead = tb_params.max_lookahead, binary_classification = True)
             labeled_data = labeler.apply_triple_barrier_labeling_vectorized(regime_data)
             labeled_data = self._add_tpsl_information(labeled_data, tpsl_params)
             return labeled_data
@@ -272,20 +282,22 @@ class RegimeSpecificTripleBarrierOptimizer:
             regime_data['label'] = 0
             regime_data['potential_profit_pct'] = 0.0
             return regime_data
+    @log_all_calls
 
     def _add_tpsl_information(self, data: pd.DataFrame, tpsl_params: Dict[str, float]) -> pd.DataFrame:
         """Add TPSL information to the data."""
         data = data.copy()
         if 'atr' not in data.columns:
-            data['atr'] = self._calculate_atr(data, period=14)
+            data['atr'] = self._calculate_atr(data, period = 14)
         data['tp_level'] = data['close'] * (1 + tpsl_params['tp_multiplier'] * data['atr'])
         data['sl_level'] = data['close'] * (1 - tpsl_params['sl_multiplier'] * data['atr'])
         data['position_size'] = tpsl_params['position_size']
         data['trailing_stop'] = tpsl_params['trailing_stop']
         data['break_even_threshold'] = tpsl_params['break_even_threshold']
         return data
+    @log_all_calls
 
-    def _calculate_atr(self, data: pd.DataFrame, period: int=14) -> pd.Series:
+    def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
         """Calculate Average True Range."""
         try:
             high = data['high']
@@ -294,11 +306,12 @@ class RegimeSpecificTripleBarrierOptimizer:
             tr1 = high - low
             tr2 = abs(high - close.shift())
             tr3 = abs(low - close.shift())
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = tr.rolling(window=period).mean()
+            tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+            atr = tr.rolling(window = period).mean()
             return atr.fillna(method='bfill')
         except Exception:
-            return data['close'].pct_change().rolling(window=period).std().fillna(0.01)
+            return data['close'].pct_change().rolling(window = period).std().fillna(0.01)
+    @log_all_calls
 
     def _evaluate_regime_performance(self, labeled_data: pd.DataFrame, regime_name: str) -> Dict[str, float]:
         """Evaluate performance metrics for a regime."""
@@ -322,10 +335,12 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.error(f'❌ Error evaluating regime performance: {e}')
             return self._get_default_metrics()
+    @log_all_calls
 
     def _get_default_metrics(self) -> Dict[str, float]:
         """Get default metrics for failed evaluations."""
         return {'total_return': 0.0, 'win_rate': 0.5, 'profit_factor': 1.0, 'sharpe_ratio': 0.0, 'max_drawdown': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0, 'regime_accuracy': 0.5, 'regime_precision': 0.5, 'regime_recall': 0.5, 'regime_f1': 0.5}
+    @log_all_calls
 
     def _calculate_composite_score(self, metrics: Dict[str, float]) -> float:
         """Calculate composite optimization score."""
@@ -336,6 +351,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 normalized_value = self._normalize_metric(objective, metrics[objective])
                 score += weight * normalized_value
         return score
+    @log_all_calls
 
     def _normalize_metric(self, metric_name: str, value: float) -> float:
         """Normalize metric to 0-1 range."""
@@ -345,18 +361,21 @@ class RegimeSpecificTripleBarrierOptimizer:
             normalized = (value - min_val) / (max_val - min_val)
             return np.clip(normalized, 0.0, 1.0)
         return np.clip(value, 0.0, 1.0)
+    @log_all_calls
 
     def _calculate_profit_factor(self, returns: pd.Series) -> float:
         """Calculate profit factor."""
         gains = returns[returns > 0].sum()
         losses = abs(returns[returns < 0].sum())
         return gains / losses if losses > 0 else 1.0
+    @log_all_calls
 
     def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
         """Calculate Sharpe ratio."""
         if len(returns) < 2:
             return 0.0
         return returns.mean() / returns.std() if returns.std() > 0 else 0.0
+    @log_all_calls
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
@@ -364,6 +383,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         running_max = cumulative.expanding().max()
         drawdown = (cumulative - running_max) / running_max
         return drawdown.min()
+    @log_all_calls
 
     def _calculate_sortino_ratio(self, returns: pd.Series) -> float:
         """Calculate Sortino ratio."""
@@ -372,30 +392,35 @@ class RegimeSpecificTripleBarrierOptimizer:
         negative_returns = returns[returns < 0]
         downside_std = negative_returns.std() if len(negative_returns) > 0 else 0.0
         return returns.mean() / downside_std if downside_std > 0 else 0.0
+    @log_all_calls
 
     def _calculate_calmar_ratio(self, total_return: float, max_drawdown: float) -> float:
         """Calculate Calmar ratio."""
         return total_return / abs(max_drawdown) if max_drawdown < 0 else 0.0
+    @log_all_calls
 
     def _calculate_regime_accuracy(self, data: pd.DataFrame, regime_name: str) -> float:
         """Calculate regime-specific accuracy."""
         if 'regime' not in data.columns:
             return 0.5
         return (data['regime'] == regime_name).mean()
+    @log_all_calls
 
     def _calculate_regime_precision(self, data: pd.DataFrame, regime_name: str) -> float:
         """Calculate regime-specific precision."""
         if 'regime' not in data.columns:
             return 0.5
         regime_predictions = data['regime'] == regime_name
-        return precision_score(regime_predictions, data['label'] > 0, zero_division=0)
+        return precision_score(regime_predictions, data['label'] > 0, zero_division = 0)
+    @log_all_calls
 
     def _calculate_regime_recall(self, data: pd.DataFrame, regime_name: str) -> float:
         """Calculate regime-specific recall."""
         if 'regime' not in data.columns:
             return 0.5
         regime_predictions = data['regime'] == regime_name
-        return recall_score(regime_predictions, data['label'] > 0, zero_division=0)
+        return recall_score(regime_predictions, data['label'] > 0, zero_division = 0)
+    @log_all_calls
 
     def _calculate_regime_f1(self, precision: float, recall: float) -> float:
         """Calculate regime-specific F1 score."""
@@ -443,16 +468,16 @@ class RegimeSpecificTripleBarrierOptimizer:
                 return
             regime_constraints = self.optimization_config.regime_constraints.get(regime_name, self.optimization_config.regime_constraints.get('SIDEWAYS_RANGE', {}))
             study_name = f'{self.study_name_prefix}_{regime_name}'
-            study = optuna.create_study(study_name=study_name, storage=self.storage_url, sampler=TPESampler(seed=42), pruner=HyperbandPruner() if self.optimization_config.enable_pruning else None, load_if_exists=True, direction='maximize')
+            study = optuna.create_study(study_name = study_name, storage = self.storage_url, sampler = TPESampler(seed = 42), pruner = HyperbandPruner() if self.optimization_config.enable_pruning else None, load_if_exists = True, direction='maximize')
             objective = self._create_regime_objective_function(regime_name, regime_data, regime_constraints)
             start_time = time.time()
-            study.optimize(objective, n_trials=self.optimization_config.n_trials_per_regime, timeout=self.optimization_config.timeout_minutes_per_regime * 60, show_progress_bar=True)
+            study.optimize(objective, n_trials = self.optimization_config.n_trials_per_regime, timeout = self.optimization_config.timeout_minutes_per_regime * 60, show_progress_bar = True)
             optimization_time = time.time() - start_time
             self.studies[regime_name] = study
             best_trial = study.best_trial
             best_params = best_trial.params
             best_metrics = best_trial.user_attrs.get('metrics', {})
-            result = RegimeOptimizationResult(regime_name=regime_name, regime_id=len(self.regime_results), triple_barrier_params=RegimeTripleBarrierParams(**{k: v for k, v in best_params.items() if k in RegimeTripleBarrierParams.__annotations__}), tpsl_params={k: v for k, v in best_params.items() if k.startswith('tpsl_')}, sharpe_ratio=best_metrics.get('sharpe_ratio', 0.0), max_drawdown=best_metrics.get('max_drawdown', 0.0), win_rate=best_metrics.get('win_rate', 0.5), profit_factor=best_metrics.get('profit_factor', 1.0), total_return=best_metrics.get('total_return', 0.0), calmar_ratio=best_metrics.get('calmar_ratio', 0.0), sortino_ratio=best_metrics.get('sortino_ratio', 0.0), regime_accuracy=best_metrics.get('regime_accuracy', 0.5), regime_precision=best_metrics.get('regime_precision', 0.5), regime_recall=best_metrics.get('regime_recall', 0.5), regime_f1=best_metrics.get('regime_f1', 0.5), optimization_score=best_trial.value, n_trials=len(study.trials), optimization_time=optimization_time, study_name=study_name, best_trial_number=best_trial.number, p_value=0.05, confidence_interval=(0.0, 1.0))
+            result = RegimeOptimizationResult(regime_name = regime_name, regime_id = len(self.regime_results), triple_barrier_params = RegimeTripleBarrierParams(**{k: v for k, v in best_params.items() if k in RegimeTripleBarrierParams.__annotations__}), tpsl_params={k: v for k, v in best_params.items() if k.startswith('tpsl_')}, sharpe_ratio = best_metrics.get('sharpe_ratio', 0.0), max_drawdown = best_metrics.get('max_drawdown', 0.0), win_rate = best_metrics.get('win_rate', 0.5), profit_factor = best_metrics.get('profit_factor', 1.0), total_return = best_metrics.get('total_return', 0.0), calmar_ratio = best_metrics.get('calmar_ratio', 0.0), sortino_ratio = best_metrics.get('sortino_ratio', 0.0), regime_accuracy = best_metrics.get('regime_accuracy', 0.5), regime_precision = best_metrics.get('regime_precision', 0.5), regime_recall = best_metrics.get('regime_recall', 0.5), regime_f1 = best_metrics.get('regime_f1', 0.5), optimization_score = best_trial.value, n_trials = len(study.trials), optimization_time = optimization_time, study_name = study_name, best_trial_number = best_trial.number, p_value = 0.05, confidence_interval=(0.0, 1.0))
             self.regime_results[regime_name] = result
             self.logger.info(f"✅ Optimized {regime_name}: Score={best_trial.value:.4f}, Sharpe={best_metrics.get('sharpe_ratio', 0.0):.4f}, Win Rate={best_metrics.get('win_rate', 0.5):.4f}")
         except Exception as e:
@@ -473,9 +498,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Create optimization visualizations."""
         try:
             output_dir = Path('optimization_results')
-            output_dir.mkdir(exist_ok=True)
+            output_dir.mkdir(exist_ok = True)
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-            fig.suptitle('Regime-Specific Triple Barrier Optimization Results', fontsize=16)
+            fig.suptitle('Regime-Specific Triple Barrier Optimization Results', fontsize = 16)
             regime_names = list(self.regime_results.keys())
             sharpe_ratios = [r.sharpe_ratio for r in self.regime_results.values()]
             win_rates = [r.win_rate for r in self.regime_results.values()]
@@ -484,29 +509,29 @@ class RegimeSpecificTripleBarrierOptimizer:
             axes[0, 0].bar(regime_names, sharpe_ratios, color='skyblue')
             axes[0, 0].set_title('Sharpe Ratios by Regime')
             axes[0, 0].set_ylabel('Sharpe Ratio')
-            axes[0, 0].tick_params(axis='x', rotation=45)
+            axes[0, 0].tick_params(axis='x', rotation = 45)
             axes[0, 1].bar(regime_names, win_rates, color='lightgreen')
             axes[0, 1].set_title('Win Rates by Regime')
             axes[0, 1].set_ylabel('Win Rate')
-            axes[0, 1].tick_params(axis='x', rotation=45)
+            axes[0, 1].tick_params(axis='x', rotation = 45)
             axes[1, 0].bar(regime_names, profit_factors, color='orange')
             axes[1, 0].set_title('Profit Factors by Regime')
             axes[1, 0].set_ylabel('Profit Factor')
-            axes[1, 0].tick_params(axis='x', rotation=45)
+            axes[1, 0].tick_params(axis='x', rotation = 45)
             axes[1, 1].bar(regime_names, optimization_scores, color='purple')
             axes[1, 1].set_title('Optimization Scores by Regime')
             axes[1, 1].set_ylabel('Optimization Score')
-            axes[1, 1].tick_params(axis='x', rotation=45)
+            axes[1, 1].tick_params(axis='x', rotation = 45)
             plt.tight_layout()
-            plt.savefig(output_dir / 'regime_optimization_results.png', dpi=300, bbox_inches='tight')
+            plt.savefig(output_dir / 'regime_optimization_results.png', dpi = 300, bbox_inches='tight')
             plt.close()
             for regime_name, study in self.studies.items():
                 try:
                     fig = plot_param_importances(study)
-                    fig.update_layout(title=f'Parameter Importance - {regime_name}')
+                    fig.update_layout(title = f'Parameter Importance - {regime_name}')
                     fig.write_html(output_dir / f'param_importance_{regime_name}.html')
                     fig = plot_optimization_history(study)
-                    fig.update_layout(title=f'Optimization History - {regime_name}')
+                    fig.update_layout(title = f'Optimization History - {regime_name}')
                     fig.write_html(output_dir / f'optimization_history_{regime_name}.html')
                 except Exception as e:
                     self.logger.warning(f'⚠️ Could not create plots for {regime_name}: {e}')

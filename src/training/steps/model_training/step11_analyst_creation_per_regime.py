@@ -1,3 +1,6 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 11: Analyst Creation - Per-Regime Implementation.
 
 This module provides per-HMM regime analyst creation functionality, ensuring that
@@ -16,7 +19,6 @@ from .training.steps.regime_processing_utils import (
 )
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
 import logging
 import typing
 
@@ -26,6 +28,7 @@ logger = get_logger('Step11AnalystCreationPerRegime')
 
 class PerRegimeAnalystCreationStep(Step11AnalystCreation):
     """Analyst creation step that processes each regime separately."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
@@ -141,6 +144,7 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
         except Exception as e:
             self.logger.error(f"❌ Error loading regime intelligence data for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _get_regime_analyst_config(self, regime_id: int) -> Dict[str, Any]:
         """Get analyst creation configuration for a specific regime.
@@ -706,6 +710,7 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
         except Exception as e:
             self.logger.error(f"❌ Error creating ensemble analyst for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _calculate_analyst_diversity(self, individual_analysts: Dict[str, Any]) -> float:
         """Calculate diversity score of individual analysts.
@@ -732,6 +737,7 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
         except Exception as e:
             self.logger.error(f"❌ Error calculating analyst diversity: {e}")
             return 0.0
+    @log_all_calls
     
     def _calculate_analyst_performance(self, created_analysts: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate overall analyst performance metrics.
@@ -795,7 +801,7 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
             analyst_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_analyst_creation_regime_{regime_id}.json'
             
             with open(analyst_path, 'w') as f:
-                json.dump(analyst_results, f, indent=2, default=str)
+                json.dump(analyst_results, f, indent = 2, default = str)
             
             self.logger.info(f"✅ Saved analyst creation results for regime {regime_id}: {analyst_path}")
             return True
@@ -844,11 +850,11 @@ async def run_per_regime_step(
     step = PerRegimeAnalystCreationStep(config)
     
     success = await step.execute_per_regime_analyst_creation(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        force_rerun=force_rerun
+        symbol = symbol,
+        exchange = exchange,
+        timeframe = timeframe,
+        data_dir = data_dir,
+        force_rerun = force_rerun
     )
     
     if success:

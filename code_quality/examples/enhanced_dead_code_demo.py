@@ -24,7 +24,7 @@ import logging
 def create_sample_code():
     """Create sample code files to demonstrate dead code detection."""
     sample_dir = Path("sample_dead_code")
-    sample_dir.mkdir(exist_ok=True)
+    sample_dir.mkdir(exist_ok = True)
     
     # Sample file with various dead code patterns
     sample_file = sample_dir / "sample_dead_code.py"

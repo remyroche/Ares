@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import optuna
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 from .validation.walk_forward_validator import WalkForwardValidator
 
 from .training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
@@ -86,13 +86,13 @@ class RegimeParameterOptimizer:
     async def _optimize_regime_parameters(self, regime: str, data: pd.DataFrame) -> Optional[RegimeParameters]:
         """Optimize parameters for a specific regime."""
         try:
-            study = optuna.create_study(direction='maximize', study_name=f'regime_{regime}_optimization', pruner=optuna.pruners.MedianPruner(n_startup_trials=10))
+            study = optuna.create_study(direction='maximize', study_name = f'regime_{regime}_optimization', pruner = optuna.pruners.MedianPruner(n_startup_trials = 10))
 
             def objective(trial: Any) -> None:
                 params = self._sample_parameters(trial, regime)
                 score = self._evaluate_parameters(params, data, regime)
                 return score
-            study.optimize(objective, n_trials=self.n_trials, n_jobs=self.n_jobs, timeout=self.timeout)
+            study.optimize(objective, n_trials = self.n_trials, n_jobs = self.n_jobs, timeout = self.timeout)
             best_trial = study.best_trial
             best_params = self._trial_to_parameters(best_trial, regime)
             self.logger.info(f'Best score for {regime}: {best_trial.value:.4f}')
@@ -115,7 +115,7 @@ class RegimeParameterOptimizer:
     def _evaluate_parameters(self, params: Dict[str, Any], data: pd.DataFrame, regime: str) -> float:
         """Evaluate parameter set using walk-forward validation."""
         try:
-            regime_params = RegimeParameters(regime=regime, **params)
+            regime_params = RegimeParameters(regime = regime, **params)
             strategy_results = self._run_strategy_with_params(data, regime_params)
             if strategy_results is not None and len(strategy_results) > 0:
                 returns = strategy_results['returns']
@@ -151,7 +151,7 @@ class RegimeParameterOptimizer:
 
     def _generate_features(self, data: pd.DataFrame, params: RegimeParameters) -> pd.DataFrame:
         """Generate features with regime-specific parameters."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         features[f'momentum_{params.momentum_window}'] = data['close'].pct_change(params.momentum_window)
         returns = data['close'].pct_change()
         features[f'volatility_{params.volatility_window}'] = returns.rolling(params.volatility_window).std()
@@ -167,7 +167,7 @@ class RegimeParameterOptimizer:
 
     def _trial_to_parameters(self, trial: optuna.Trial, regime: str) -> RegimeParameters:
         """Convert Optuna trial to RegimeParameters."""
-        return RegimeParameters(regime=regime, profit_target=trial.params['profit_target'], stop_loss=trial.params['stop_loss'], time_barrier=trial.params['time_barrier'], momentum_window=trial.params['momentum_window'], volatility_window=trial.params['volatility_window'], volume_window=trial.params['volume_window'], feature_selection_threshold=trial.params['feature_selection_threshold'], learning_rate=trial.params['learning_rate'], regularization=trial.params['regularization'], max_depth=trial.params['max_depth'], n_estimators=trial.params['n_estimators'], max_position_size=trial.params['max_position_size'], confidence_threshold=trial.params['confidence_threshold'])
+        return RegimeParameters(regime = regime, profit_target = trial.params['profit_target'], stop_loss = trial.params['stop_loss'], time_barrier = trial.params['time_barrier'], momentum_window = trial.params['momentum_window'], volatility_window = trial.params['volatility_window'], volume_window = trial.params['volume_window'], feature_selection_threshold = trial.params['feature_selection_threshold'], learning_rate = trial.params['learning_rate'], regularization = trial.params['regularization'], max_depth = trial.params['max_depth'], n_estimators = trial.params['n_estimators'], max_position_size = trial.params['max_position_size'], confidence_threshold = trial.params['confidence_threshold'])
 
     def _save_regime_results(self, regime: str, params: RegimeParameters) -> None:
         """Save optimization results for a regime."""
@@ -200,7 +200,7 @@ class RegimeParameterOptimizer:
                 self.params = params
 
             def predict(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> None:
-                return np.random.choice([-1, 0, 1], size=len(data))
+                return np.random.choice([-1, 0, 1], size = len(data))
 
             def get_params(self) -> Any:
                 return self.params.to_dict()
@@ -210,7 +210,7 @@ class RegimeParameterOptimizer:
         """Get best parameters for a regime."""
         return self.best_parameters.get(regime)
 
-    async def continuous_optimization(self, update_frequency_days: int=30) -> None:
+    async def continuous_optimization(self, update_frequency_days: int = 30) -> None:
         """Continuously optimize parameters with periodic updates."""
         self.logger.info(f'Starting continuous optimization (update every {update_frequency_days} days)')
         while True:
@@ -241,5 +241,5 @@ if __name__ == '__main__':
         print('Optimization completed!')
         for regime, params in results.items():
             print(f'\n{regime.upper()} regime parameters:')
-            print(json.dumps(params.to_dict(), indent=2))
+            print(json.dumps(params.to_dict(), indent = 2))
     asyncio.run(main())

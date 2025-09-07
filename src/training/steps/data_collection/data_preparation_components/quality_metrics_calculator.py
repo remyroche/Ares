@@ -2,21 +2,26 @@ from typing import Any
 from datetime import datetime
 import pandas as pd
 import numpy as np
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Quality Metrics Calculator - Calculates comprehensive data quality metrics.'
 from scipy import stats
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 import logging
 import time
 
 class QualityMetricsCalculator:
     """Calculates comprehensive quality metrics for market data."""
+    @log_important_calls
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize QualityMetricsCalculator with configuration."""
         self.config = config or self._get_default_config()
         self.logger = system_logger.getChild('QualityMetricsCalculator')
         self.standards = pipeline_standards
+    @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for quality metrics."""
@@ -67,7 +72,7 @@ class QualityMetricsCalculator:
                 completeness['completeness_by_column'][col] = round(col_completeness, 2)
                 if missing_pct > 0:
                     completeness['issues'].append(f"Column '{col}' has {missing_pct:.2f}% missing values")
-            rows_with_missing = data.isna().any(axis=1).sum()
+            rows_with_missing = data.isna().any(axis = 1).sum()
             completeness['missing_rows'] = int(rows_with_missing)
             total_missing = sum((item['count'] for item in completeness['missing_values'].values()))
             total_possible = len(data) * len(data.columns)
@@ -284,6 +289,7 @@ class QualityMetricsCalculator:
             self.logger.error(f'Failed to calculate validity: {e}')
             validity['error'] = str(e)
         return validity
+    @log_all_calls
 
     def _calculate_statistical_summary(self, data: pd.DataFrame) -> dict[str, Any]:
         """Calculate statistical summary of the data."""
@@ -298,6 +304,7 @@ class QualityMetricsCalculator:
         except Exception as e:
             self.logger.error(f'Failed to calculate statistical summary: {e}')
         return summary
+    @log_all_calls
 
     def _generate_recommendations(self, dimensions: dict[str, Any]) -> list[str]:
         """Generate recommendations based on quality metrics."""
@@ -341,7 +348,7 @@ class QualityMetricsCalculator:
                 return metrics
             elif output_format == 'json':
                 import json
-                return json.dumps(metrics, indent=2, default=str)
+                return json.dumps(metrics, indent = 2, default = str)
             elif output_format == 'html':
                 html = self._generate_html_report(metrics)
                 return html
@@ -351,6 +358,7 @@ class QualityMetricsCalculator:
         except Exception as e:
             self.logger.error(f'Failed to generate quality report: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _generate_html_report(self, metrics: dict[str, Any]) -> str:
         """Generate HTML quality report."""
@@ -372,6 +380,7 @@ class QualityMetricsCalculator:
             html += '</ul>'
         html += '</body></html>'
         return html
+    @log_all_calls
 
     def _get_score_class(self, score: float) -> str:
         """Get CSS class based on score."""

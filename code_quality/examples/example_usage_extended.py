@@ -159,7 +159,7 @@ def example_html_reporting(complexity_results, dead_code_results):
         html_content = generate_html_report(report_data, "Code Quality Analysis Report")
 
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete = False, encoding="utf-8") as f:
             f.write(html_content)
             temp_file = f.name
 

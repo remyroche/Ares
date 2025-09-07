@@ -9,15 +9,16 @@ from datetime import datetime, timedelta
 import gc
 import psutil
 import os
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
 import time
+from .logger import system_logger
 
 class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
 
-    def __init__(self, chunk_size: int=10000, memory_threshold: float=0.8, overlap_size: int=100, enable_compression: bool=True) -> None:
+    def __init__(self, chunk_size: int = 10000, memory_threshold: float = 0.8, overlap_size: int = 100, enable_compression: bool = True) -> None:
         """
         Initialize data streaming manager.
         
@@ -64,13 +65,13 @@ class DataStreamingManager:
         if len(data) > self.chunk_size * 2:
             self.logger.info(f'📊 Large dataset ({len(data)} rows), chunking recommended')
             return True
-        memory_footprint = data.memory_usage(deep=True).sum() / 1024 ** 3
+        memory_footprint = data.memory_usage(deep = True).sum() / 1024 ** 3
         if memory_footprint > 1.0:
             self.logger.info(f'📊 Large memory footprint ({memory_footprint:.2f} GB), chunking recommended')
             return True
         return False
 
-    def create_data_chunks(self, data: pd.DataFrame, preserve_order: bool=True, time_based_chunking: bool=True) -> Generator[pd.DataFrame, None, None]:
+    def create_data_chunks(self, data: pd.DataFrame, preserve_order: bool = True, time_based_chunking: bool = True) -> Generator[pd.DataFrame, None, None]:
         """
         Create data chunks with optional overlap and time-based chunking.
         
@@ -98,7 +99,7 @@ class DataStreamingManager:
         if not pd.api.types.is_datetime64_any_dtype(data['timestamp']):
             data['timestamp'] = pd.to_datetime(data['timestamp'])
         if preserve_order and (not data['timestamp'].is_monotonic_increasing):
-            data = data.sort_values('timestamp').reset_index(drop=True)
+            data = data.sort_values('timestamp').reset_index(drop = True)
         total_time_span = data['timestamp'].max() - data['timestamp'].min()
         time_per_chunk = total_time_span / (len(data) / self.chunk_size)
         current_time = data['timestamp'].min()
@@ -109,11 +110,11 @@ class DataStreamingManager:
             chunk_data = data[chunk_mask].copy()
             if len(chunk_data) > 0:
                 if chunk_index > 0 and self.overlap_size > 0:
-                    overlap_start = current_time - timedelta(seconds=self.overlap_size * 60)
+                    overlap_start = current_time - timedelta(seconds = self.overlap_size * 60)
                     overlap_mask = (data['timestamp'] >= overlap_start) & (data['timestamp'] < current_time)
                     overlap_data = data[overlap_mask].copy()
                     if len(overlap_data) > 0:
-                        chunk_data = pd.concat([overlap_data, chunk_data], ignore_index=True)
+                        chunk_data = pd.concat([overlap_data, chunk_data], ignore_index = True)
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
                 self.logger.info(f"📦 Created time-based chunk {chunk_index + 1}: {len(chunk_data)} rows, time range: {chunk_data['timestamp'].min()} to {chunk_data['timestamp'].max()}")
                 yield chunk_data
@@ -132,14 +133,14 @@ class DataStreamingManager:
                 overlap_start = max(0, start_idx - self.overlap_size)
                 overlap_data = data.iloc[overlap_start:start_idx].copy()
                 if len(overlap_data) > 0:
-                    chunk_data = pd.concat([overlap_data, chunk_data], ignore_index=True)
+                    chunk_data = pd.concat([overlap_data, chunk_data], ignore_index = True)
                     if 'timestamp' in chunk_data.columns:
                         chunk_data = chunk_data.drop_duplicates(subset=['timestamp'], keep='last')
             self.logger.info(f'📦 Created size-based chunk {chunk_index + 1}: {len(chunk_data)} rows (rows {start_idx}-{end_idx - 1})')
             yield chunk_data
             chunk_index += 1
 
-    def process_large_dataset(self, data: pd.DataFrame, processing_func: Callable[[pd.DataFrame], pd.DataFrame], combine_results: bool=True, progress_callback: Optional[Callable[[int, int], None]]=None) -> Union[pd.DataFrame, List[pd.DataFrame]]:
+    def process_large_dataset(self, data: pd.DataFrame, processing_func: Callable[[pd.DataFrame], pd.DataFrame], combine_results: bool = True, progress_callback: Optional[Callable[[int, int], None]]=None) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Process large dataset in chunks with memory management.
         
@@ -180,7 +181,7 @@ class DataStreamingManager:
                 if self.overlap_size > 0 and 'timestamp' in processed_chunks[0].columns:
                     combined_data = self._combine_chunks_without_overlap(processed_chunks)
                 else:
-                    combined_data = pd.concat(processed_chunks, ignore_index=True)
+                    combined_data = pd.concat(processed_chunks, ignore_index = True)
                 combined_data = self.standards.validate_data_quality(combined_data, 'unified')
                 self.logger.info(f'✅ Dataset processing completed: {len(combined_data)} rows')
                 return combined_data
@@ -202,7 +203,7 @@ class DataStreamingManager:
         if len(chunks) == 1:
             return chunks[0]
         if 'timestamp' in chunks[0].columns:
-            chunks = sorted(chunks, key=lambda x: x['timestamp'].min())
+            chunks = sorted(chunks, key = lambda x: x['timestamp'].min())
         combined_data = chunks[0].copy()
         for i, chunk in enumerate(chunks[1:], 1):
             if 'timestamp' in chunk.columns:
@@ -210,9 +211,9 @@ class DataStreamingManager:
                 non_overlap_mask = chunk['timestamp'] > last_timestamp
                 non_overlap_data = chunk[non_overlap_mask]
                 if len(non_overlap_data) > 0:
-                    combined_data = pd.concat([combined_data, non_overlap_data], ignore_index=True)
+                    combined_data = pd.concat([combined_data, non_overlap_data], ignore_index = True)
             else:
-                combined_data = pd.concat([combined_data, chunk], ignore_index=True)
+                combined_data = pd.concat([combined_data, chunk], ignore_index = True)
         return combined_data
 
     def stream_data_from_file(self, file_path: Union[str, Path], chunk_size: Optional[int]=None, file_format: str='parquet') -> Generator[pd.DataFrame, None, None]:
@@ -237,7 +238,7 @@ class DataStreamingManager:
                 parquet_file = pd.read_parquet(file_path, engine='pyarrow')
                 yield from self.create_data_chunks(parquet_file)
             elif file_format.lower() == 'csv':
-                chunk_iter = pd.read_csv(file_path, chunksize=chunk_size)
+                chunk_iter = pd.read_csv(file_path, chunksize = chunk_size)
                 for chunk in chunk_iter:
                     yield chunk
             elif file_format.lower() == 'json':

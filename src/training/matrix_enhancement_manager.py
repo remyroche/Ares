@@ -1,4 +1,6 @@
 
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 # src/training/matrix_enhancement_manager.py
 
 """Matrix Enhancement Manager for advanced ML training processes.
@@ -15,8 +17,7 @@ from sklearn.decomposition import NMF
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import StandardScaler
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -71,7 +72,7 @@ class MatrixEnhancementManager:
         self.logger = system_logger.getChild("MatrixEnhancementManager")
         self.enhancement_results = {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def enhance_features_with_svd(
         self,
         features_df: pd.DataFrame,
@@ -94,7 +95,7 @@ class MatrixEnhancementManager:
             X_scaled = scaler.fit_transform(features_df)
 
             # Perform SVD
-            U, s, Vt = la.svd(X_scaled, full_matrices=False)
+            U, s, Vt = la.svd(X_scaled, full_matrices = False)
 
             # Calculate explained variance
             explained_variance = (s**2) / (s**2).sum()
@@ -113,12 +114,12 @@ class MatrixEnhancementManager:
             # Create DataFrame
             svd_df = pd.DataFrame(
                 svd_features,
-                columns=svd_feature_names,
-                index=features_df.index,
+                columns = svd_feature_names,
+                index = features_df.index,
             )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, svd_df], axis=1)
+            enhanced_df = pd.concat([features_df, svd_df], axis = 1)
 
             # Metadata
             metadata = {
@@ -138,7 +139,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ SVD enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def enhance_features_with_nmf(
         self,
         features_df: pd.DataFrame,
@@ -158,14 +159,14 @@ class MatrixEnhancementManager:
 
             # Ensure non-negative data (shift if necessary)
             X = features_df.values
-            X_min = np.min(X, axis=0)
+            X_min = np.min(X, axis = 0)
             X_shifted = X - X_min if np.any(X_min < 0) else X
 
             # Apply NMF
             nmf = NMF(
-                n_components=self.config.nmf_n_components,
-                random_state=42,
-                max_iter=200,
+                n_components = self.config.nmf_n_components,
+                random_state = 42,
+                max_iter = 200,
             )
             nmf_features = nmf.fit_transform(X_shifted)
 
@@ -177,12 +178,12 @@ class MatrixEnhancementManager:
             # Create DataFrame
             nmf_df = pd.DataFrame(
                 nmf_features,
-                columns=nmf_feature_names,
-                index=features_df.index,
+                columns = nmf_feature_names,
+                index = features_df.index,
             )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, nmf_df], axis=1)
+            enhanced_df = pd.concat([features_df, nmf_df], axis = 1)
 
             # Metadata
             metadata = {
@@ -201,7 +202,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ NMF enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def apply_spectral_clustering_features(
         self,
         features_df: pd.DataFrame,
@@ -224,15 +225,15 @@ class MatrixEnhancementManager:
             X_scaled = scaler.fit_transform(features_df)
 
             # Calculate similarity matrix (cosine similarity)
-            X_norm = X_scaled / (np.linalg.norm(X_scaled, axis=1, keepdims=True) + 1e-8)
+            X_norm = X_scaled / (np.linalg.norm(X_scaled, axis = 1, keepdims = True) + 1e-8)
             similarity_matrix = X_norm @ X_norm.T
 
             # Apply spectral clustering
 
             spectral = SpectralClustering(
-                n_clusters=self.config.spectral_n_clusters,
+                n_clusters = self.config.spectral_n_clusters,
                 affinity="precomputed",
-                random_state=42,
+                random_state = 42,
             )
             cluster_labels = spectral.fit_predict(similarity_matrix)
 
@@ -246,7 +247,7 @@ class MatrixEnhancementManager:
             for i in range(self.config.spectral_n_clusters):
                 mask, cluster_labels = i
                 if np.any(mask):
-                    centroid = np.mean(X_scaled[mask], axis=0)
+                    centroid = np.mean(X_scaled[mask], axis = 0)
                     centroids.append(centroid)
                 else:
                     centroids.append(np.zeros(X_scaled.shape[1]))
@@ -261,14 +262,14 @@ class MatrixEnhancementManager:
             ]
             distance_df = pd.DataFrame(
                 distances,
-                columns=distance_feature_names,
-                index=features_df.index,
+                columns = distance_feature_names,
+                index = features_df.index,
             )
 
             # Combine all features
             enhanced_df = pd.concat(
                 [features_df, cluster_features, distance_df],
-                axis=1,
+                axis = 1,
             )
 
             # Metadata
@@ -290,7 +291,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Spectral clustering enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def apply_tensor_decomposition(
         self,
         features_df: pd.DataFrame,
@@ -329,7 +330,7 @@ class MatrixEnhancementManager:
                 unfolded = tensor.reshape(n_windows * n_features, -1)
 
                 # Apply SVD to unfolded tensor
-                U = s, Vt = la.svd(unfolded, full_matrices=False)
+                U = s, Vt = la.svd(unfolded, full_matrices = False)
 
                 # Select top components
                 n_components = min(20, len(s))
@@ -348,12 +349,12 @@ class MatrixEnhancementManager:
                             np.zeros((n_samples - n_windows, n_components)),
                         ],
                     ),
-                    columns=tensor_feature_names,
-                    index=features_df.index,
+                    columns = tensor_feature_names,
+                    index = features_df.index,
                 )
 
                 # Combine with original features
-                enhanced_df = pd.concat([features_df, tensor_df], axis=1)
+                enhanced_df = pd.concat([features_df, tensor_df], axis = 1)
 
                 metadata = {
                     "tensor_n_components": n_components,
@@ -373,7 +374,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Tensor decomposition enhancement failed: {e}")
             return features_df, {"error": str(e)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def analyze_matrix_condition(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze matrix condition number and numerical stability.
 
@@ -396,7 +397,7 @@ class MatrixEnhancementManager:
             rank = np.linalg.matrix_rank(X)
 
             # Calculate singular values
-            singular_values = la.svd(X, compute_uv=False)
+            singular_values = la.svd(X, compute_uv = False)
 
             # Calculate condition number ratio
             condition_ratio = singular_values[0] / singular_values[-1]
@@ -428,7 +429,7 @@ class MatrixEnhancementManager:
             self.logger.exception(f"❌ Matrix condition analysis failed: {e}")
             return {"error": str(e)}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def apply_sparse_matrix_optimizations(
         self,
         features_df: pd.DataFrame,
@@ -455,7 +456,7 @@ class MatrixEnhancementManager:
                 X_sparse = sp.csr_matrix(X)
 
                 # Apply sparse SVD
-                U = s, Vt = sp.linalg.svds(X_sparse, k=min(50, *X.shape))
+                U = s, Vt = sp.linalg.svds(X_sparse, k = min(50, *X.shape))
 
                 # Create sparse features
                 sparse_features = U * s
@@ -465,11 +466,11 @@ class MatrixEnhancementManager:
 
                 sparse_df = pd.DataFrame(
                     sparse_features,
-                    columns=sparse_feature_names,
-                    index=features_df.index,
+                    columns = sparse_feature_names,
+                    index = features_df.index,
                 )
 
-                enhanced_df = pd.concat([features_df, sparse_df], axis=1)
+                enhanced_df = pd.concat([features_df, sparse_df], axis = 1)
 
                 metadata = {
                     "sparsity": sparsity,

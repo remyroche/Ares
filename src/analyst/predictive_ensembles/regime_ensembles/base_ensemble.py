@@ -8,6 +8,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from src.core.decorators import handles_errors
 try:
     from imblearn.over_sampling import SMOTE
     SMOTE_AVAILABLE = True
@@ -22,15 +23,13 @@ except ImportError:
         def fit_resample(self, X: Any, y: Any) -> tuple[Any, Any]:
             return (X, y)
 from lightgbm import LGBMClassifier
-from .core.decorators import handles_errors
-from .utils.purged_kfold import PurgedKFoldTime
-from .core.decorators.errors import handles_errors
+from src.utils.purged_kfold import PurgedKFoldTime
 import numpy as np
 import pandas as pd
 import datetime
 import json
 
-warnings.filterwarnings('ignore', category=UserWarning, module='arch')
+warnings.filterwarnings('ignore', category = UserWarning, module='arch')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class BaseEnsemble:
@@ -40,7 +39,7 @@ class BaseEnsemble:
     Enhanced with L1-L2 regularization support and comprehensive feature normalization.
     """
 
-    @handles_errors(default_return=None, context='ensemble initialization')
+    @handles_errors(default_return = None, context='ensemble initialization')
     def __init__(self, config: dict, ensemble_name: str) -> None:
         self.config = config.get('analyst', {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
@@ -63,8 +62,8 @@ class BaseEnsemble:
         self.flat_features = ['RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9', 'MACDh_12_26_9', 'BBU_20_2.0', 'BBM_20_2.0', 'BBL_20_2.0', 'BBW_20_2.0', 'BBP_20_2.0', 'STOCHk_14_3_3', 'STOCHd_14_3_3', 'ATR_14', 'ADX_14', 'OBV', 'VWAP', 'SMA_9', 'SMA_21', 'SMA_50', 'EMA_12', 'EMA_26', 'CCI_14', 'MFI_14', 'ROC_10', 'Williams_R_14', 'Parabolic_SAR', 'SuperTrend_10_2.0', 'DCU_20', 'DCL_20', 'DCM_20', 'ATRr_14', 'Volatility_Regime_Numeric', 'Hour_Sin', 'Hour_Cos', 'DayOfWeek_Sin', 'DayOfWeek_Cos', 'VROC', 'OBV_Divergence', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'Funding_Momentum', 'Funding_Divergence', 'Funding_Extreme', 'Price_Momentum', 'Price_Acceleration', 'Volume_Momentum', 'Volume_Acceleration', 'Volatility_Momentum', 'RSI_MACD_Divergence', 'Volume_Price_Divergence', 'Price_SMA_9_Ratio', 'Price_SMA_21_Ratio', 'Price_SMA_50_Ratio', 'Volatility_Regime', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_health', 'realized_volatility', 'parkinson_volatility', 'garman_klass_volatility', 'volatility_regime', 'volatility_percentile', 'autocorrelation_5', 'autocorrelation_20', 'cross_timeframe_correlation', 'momentum_5', 'momentum_20', 'momentum_50', 'momentum_acceleration', 'momentum_strength', 'momentum_divergence', 'adaptive_sma', 'adaptive_ema', 'adaptive_period', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'spread_liquidity_pct_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'price_impact_pct_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'kyle_lambda_pct_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'amihud_illiquidity_pct_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'funding_rate_z_score', 'funding_rate_change', 'funding_rate_acceleration', 'realized_volatility_log', 'realized_volatility_z_score', 'realized_volatility_change', 'realized_volatility_pct_change', 'parkinson_volatility_log', 'parkinson_volatility_z_score', 'parkinson_volatility_change', 'parkinson_volatility_pct_change', 'garman_klass_volatility_log', 'garman_klass_volatility_z_score', 'garman_klass_volatility_change', 'garman_klass_volatility_pct_change', 'momentum_5_z_score', 'momentum_5_acceleration', 'momentum_10_z_score', 'momentum_10_acceleration', 'momentum_20_z_score', 'momentum_20_acceleration', 'momentum_50_z_score', 'momentum_50_acceleration', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
         self.order_flow_features = ['volume', 'volume_delta', 'cvd_slope', 'OBV', 'CMF', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_stress', 'liquidity_health', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_stress_log', 'liquidity_stress_z_score', 'liquidity_stress_change', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
 
-    @handles_errors(default_return=None, context='ensemble training')
-    def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None=None) -> None:
+    @handles_errors(default_return = None, context='ensemble training')
+    def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
         self.logger.info(f'Starting full training pipeline for {self.ensemble_name}...')
         if historical_features.empty:
             self.logger.warning(f'No historical features for {self.ensemble_name}. Skipping training.')
@@ -85,14 +84,14 @@ class BaseEnsemble:
         try:
             y_encoded = self.label_encoder.fit_transform(aligned_data['target'])
         except ValueError as e:
-            self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info=True)
+            self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info = True)
             return
         self._train_base_models(aligned_data, y_encoded)
-        meta_features_train = self._get_meta_features(aligned_data, is_live=False)
+        meta_features_train = self._get_meta_features(aligned_data, is_live = False)
         if not isinstance(meta_features_train, pd.DataFrame) or meta_features_train.empty:
             self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
             return
-        y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[meta_features_train.index].values
+        y_meta_train = pd.Series(y_encoded, index = aligned_data.index).loc[meta_features_train.index].values
         X_meta_train = meta_features_train
         if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
             self.logger.warning(f'Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.')
@@ -101,9 +100,9 @@ class BaseEnsemble:
         self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
         n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
-        self.pca = PCA(n_components=n_components)
+        self.pca = PCA(n_components = n_components)
         X_meta_pca = self.pca.fit_transform(X_meta_scaled)
-        X_meta_pca_df = pd.DataFrame(X_meta_pca, index=X_meta_train.index)
+        X_meta_pca_df = pd.DataFrame(X_meta_pca, index = X_meta_train.index)
         self.logger.info('Tuning hyperparameters for meta-learner...')
         self.best_meta_params = self._tune_hyperparameters(LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train)
         self._train_meta_learner(X_meta_pca_df, y_meta_train, self.best_meta_params)
@@ -111,7 +110,7 @@ class BaseEnsemble:
         self.logger.info(f'Training pipeline for {self.ensemble_name} complete.')
         self._validate_ensemble_state()
 
-    @handles_errors(default_return=False, context='ensemble state validation')
+    @handles_errors(default_return = False, context='ensemble state validation')
     def _validate_ensemble_state(self) -> bool:
         """Validate that the ensemble is properly trained and ready for prediction."""
         try:
@@ -147,26 +146,26 @@ class BaseEnsemble:
         for col in all_expected_features:
             if col not in current_features.columns:
                 current_features[col] = 0.0
-        meta_features = self._get_meta_features(current_features, is_live=True, **kwargs)
+        meta_features = self._get_meta_features(current_features, is_live = True, **kwargs)
         meta_input_df = pd.DataFrame([meta_features])
         missing_cols: list[str] = []
         if hasattr(self.meta_feature_scaler, 'feature_names_in_'):
             missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_input_df.columns))
             if missing_cols:
                 self.logger.warning(f'Missing meta features at inference: {missing_cols}')
-                meta_input_df = meta_input_df.reindex(columns=self.meta_feature_scaler.feature_names_in_).fillna(0)
+                meta_input_df = meta_input_df.reindex(columns = self.meta_feature_scaler.feature_names_in_).fillna(0)
         else:
             self.logger.warning('Scaler not fitted with feature names. Attempting with current columns.')
         meta_input_scaled = self.meta_feature_scaler.transform(meta_input_df)
         meta_input_pca = self.pca.transform(meta_input_scaled) if self.pca else meta_input_scaled
         return self._get_meta_prediction(meta_input_pca)
 
-    @handles_errors(default_return=None, context='SMOTE training')
+    @handles_errors(default_return = None, context='SMOTE training')
     def _train_with_smote(self, model: Any, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> Any:
         """Applies SMOTE to balance the dataset before training."""
         if self.use_smote and len(np.unique(y)) > 1:
             try:
-                smote = SMOTE(random_state=42)
+                smote = SMOTE(random_state = 42)
                 X_res, y_res = smote.fit_resample(X, y)
                 self.logger.info(f'Applied SMOTE: Original size {np.shape(X)[0]}, Resampled size {np.shape(X_res)[0]}')
                 model.fit(X_res, y_res)
@@ -177,7 +176,7 @@ class BaseEnsemble:
         return model
 
     @handles_errors
-    def _tune_hyperparameters(self, model_class: Callable[..., Any], search_space_func: Callable[[Any], dict[str, Any]], X: pd.DataFrame, y: np.ndarray, n_trials: int=25) -> dict[str, Any]:
+    def _tune_hyperparameters(self, model_class: Callable[..., Any], search_space_func: Callable[[Any], dict[str, Any]], X: pd.DataFrame, y: np.ndarray, n_trials: int = 25) -> dict[str, Any]:
         """Reusable Optuna hyperparameter tuning function."""
         if not self.tune_base_models:
             self.logger.info('Base model tuning is disabled. Using default parameters.')
@@ -185,12 +184,12 @@ class BaseEnsemble:
 
         def objective(trial: optuna.trial.Trial) -> float:
             params = search_space_func(trial)
-            model = model_class(**params, random_state=42, verbose=-1)
+            model = model_class(**params, random_state = 42, verbose=-1)
             if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
-                cv = PurgedKFoldTime(n_splits=3)
+                cv = PurgedKFoldTime(n_splits = 3)
                 splits = cv.split(X)
             else:
-                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                cv = StratifiedKFold(n_splits = 3, shuffle = True, random_state = 42)
                 splits = cv.split(X, y)
             scores: list[float] = []
             for train_idx, val_idx in splits:
@@ -200,42 +199,42 @@ class BaseEnsemble:
                 scores.append(model.score(X_val, y_val))
             return float(np.mean(scores))
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials, n_jobs=-1)
+        study.optimize(objective, n_trials = n_trials, n_jobs=-1)
         self.logger.info(f'Optuna best params for {model_class.__name__}: {study.best_params}')
         return study.best_params
 
     @handles_errors
     def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
         """Enhanced LightGBM search space with regularization from config."""
-        base_space: dict[str, Any] = {'n_estimators': trial.suggest_int('n_estimators', 50, 500), 'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.2, log=True), 'num_leaves': trial.suggest_int('num_leaves', 20, 300), 'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.95), 'subsample': trial.suggest_float('subsample', 0.6, 0.95)}
+        base_space: dict[str, Any] = {'n_estimators': trial.suggest_int('n_estimators', 50, 500), 'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.2, log = True), 'num_leaves': trial.suggest_int('num_leaves', 20, 300), 'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.95), 'subsample': trial.suggest_float('subsample', 0.6, 0.95)}
         if self.regularization_config and 'lightgbm' in self.regularization_config:
             reg_config = self.regularization_config['lightgbm']
             base_space.update({'reg_alpha': reg_config.get('reg_alpha', 0.01), 'reg_lambda': reg_config.get('reg_lambda', 0.001)})
             self.logger.info(f"Using configured regularization: L1={base_space['reg_alpha']}, L2={base_space['reg_lambda']}")
         else:
-            base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 10.0, log=True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 10.0, log=True)})
+            base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 10.0, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 10.0, log = True)})
             self.logger.info('Using optuna-optimized regularization parameters')
         return base_space
 
-    @handles_errors(fallback=LogisticRegression())
+    @handles_errors(fallback = LogisticRegression())
     def _get_regularized_logistic_regression(self) -> LogisticRegression:
         """Create a LogisticRegression model with L1-L2 regularization."""
         if self.regularization_config and 'sklearn' in self.regularization_config:
             sklearn_config = self.regularization_config['sklearn']
-            model = LogisticRegression(penalty='elasticnet', C=sklearn_config.get('C', 1.0), l1_ratio=sklearn_config.get('l1_ratio', 0.5), solver='saga', random_state=42, max_iter=1000)
+            model = LogisticRegression(penalty='elasticnet', C = sklearn_config.get('C', 1.0), l1_ratio = sklearn_config.get('l1_ratio', 0.5), solver='saga', random_state = 42, max_iter = 1000)
             self.logger.info(f"Created regularized LogisticRegression with C={sklearn_config.get('C')}, l1_ratio={sklearn_config.get('l1_ratio')}")
         else:
-            model = LogisticRegression(random_state=42, max_iter=1000, solver='liblinear')
+            model = LogisticRegression(random_state = 42, max_iter = 1000, solver='liblinear')
             self.logger.info('Created standard LogisticRegression (no regularization config available)')
         return model
 
     @handles_errors
     def _get_svm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
-        return {'C': trial.suggest_float('C', 0.001, 100.0, log=True), 'gamma': trial.suggest_float('gamma', 0.0001, 0.1, log=True), 'kernel': trial.suggest_categorical('kernel', ['rbf', 'poly']), 'probability': True}
+        return {'C': trial.suggest_float('C', 0.001, 100.0, log = True), 'gamma': trial.suggest_float('gamma', 0.0001, 0.1, log = True), 'kernel': trial.suggest_categorical('kernel', ['rbf', 'poly']), 'probability': True}
 
-    @handles_errors(default_return=None, context='meta learner training')
+    @handles_errors(default_return = None, context='meta learner training')
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
-        self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
+        self.meta_learner = LGBMClassifier(**params, random_state = 42, verbose=-1)
         self.meta_learner.fit(X, y)
 
     @handles_errors(default_return={'prediction': 'HOLD', 'confidence': 0.0}, context='meta prediction')
@@ -246,7 +245,7 @@ class BaseEnsemble:
         idx = int(np.argmax(proba))
         return {'prediction': self.label_encoder.inverse_transform([idx])[0], 'confidence': float(proba[idx])}
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     def get_prediction_on_historical_data(self, historical_features: pd.DataFrame) -> pd.DataFrame:
         """Get predictions for historical data with comprehensive error handling."""
         try:
@@ -261,7 +260,7 @@ class BaseEnsemble:
             for col in all_expected_features:
                 if col not in historical_features.columns:
                     historical_features[col] = 0.0
-            meta_features = self._get_meta_features(historical_features, is_live=False)
+            meta_features = self._get_meta_features(historical_features, is_live = False)
             if not isinstance(meta_features, pd.DataFrame) or meta_features.empty:
                 self.logger.warning(f'{self.ensemble_name}: Empty meta features generated')
                 return pd.DataFrame()
@@ -270,7 +269,7 @@ class BaseEnsemble:
                 missing_cols = list(set(self.meta_feature_scaler.feature_names_in_) - set(meta_features.columns))
                 if missing_cols:
                     self.logger.warning(f'Missing meta features for historical prediction: {missing_cols}')
-                    meta_features = meta_features.reindex(columns=self.meta_feature_scaler.feature_names_in_).fillna(0)
+                    meta_features = meta_features.reindex(columns = self.meta_feature_scaler.feature_names_in_).fillna(0)
             meta_input_scaled = self.meta_feature_scaler.transform(meta_features)
             meta_input_pca = self.pca.transform(meta_input_scaled) if self.pca else meta_input_scaled
             predictions: list[dict[str, Any]] = []
@@ -281,7 +280,7 @@ class BaseEnsemble:
                 except Exception as e:
                     self.logger.warning(f'{self.ensemble_name}: Error predicting row {i}: {e}')
                     predictions.append({'prediction': 'HOLD', 'confidence': 0.0})
-            result_df = pd.DataFrame(predictions, index=historical_features.index)
+            result_df = pd.DataFrame(predictions, index = historical_features.index)
             self.logger.info(f'{self.ensemble_name}: Generated predictions for {len(result_df)} historical samples')
             return result_df
         except Exception as e:
@@ -332,7 +331,7 @@ class BaseEnsemble:
             self.logger.exception(f'{self.ensemble_name}: Error during health check: {e}')
             return {'status': 'error', 'ensemble_name': self.ensemble_name, 'issues': [f'Health check error: {e}'], 'timestamp': pd.Timestamp.now().isoformat()}
 
-    @handles_errors(default_return=None, context='model saving')
+    @handles_errors(default_return = None, context='model saving')
     def save_model(self, path: str) -> None:
         """Saves the entire ensemble instance to a file."""
         try:
@@ -340,9 +339,9 @@ class BaseEnsemble:
             joblib.dump(model_data, path)
             self.logger.info(f'Ensemble {self.ensemble_name} model saved to {path}')
         except Exception as e:
-            self.logger.error(f'Error saving {self.ensemble_name} model to {path}: {e}', exc_info=True)
+            self.logger.error(f'Error saving {self.ensemble_name} model to {path}: {e}', exc_info = True)
 
-    @handles_errors(default_return=False, context='model loading')
+    @handles_errors(default_return = False, context='model loading')
     def load_model(self, path: str) -> bool:
         """Loads the entire ensemble instance from a file."""
         if not os.path.exists(path):
@@ -362,7 +361,7 @@ class BaseEnsemble:
             self.logger.info(f'Ensemble {self.ensemble_name} model loaded from {path}')
             return True
         except Exception as e:
-            self.logger.error(f'Error loading {self.ensemble_name} model from {path}: {e}', exc_info=True)
+            self.logger.error(f'Error loading {self.ensemble_name} model from {path}: {e}', exc_info = True)
             self.trained = False
             return False
 
@@ -381,7 +380,7 @@ class BaseEnsemble:
         raise NotImplementedError(f'{self.__class__.__name__} must implement _train_base_models method')
 
     @handles_errors(default_return={'support': [], 'resistance': []}, context='pivot levels extraction')
-    def _extract_pivot_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None=None) -> dict[str, list[float]]:
+    def _extract_pivot_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
         """
         Extract pivot levels from features DataFrame.
 
@@ -418,7 +417,7 @@ class BaseEnsemble:
             return {'supports': [], 'resistances': []}
 
     @handles_errors(default_return={'support': [], 'resistance': []}, context='HVN levels extraction')
-    def _extract_hvn_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None=None) -> dict[str, list[float]]:
+    def _extract_hvn_levels(self, sr_analyzer: Any, features_df: pd.DataFrame | None = None) -> dict[str, list[float]]:
         """
         Extract HVN levels from features DataFrame.
 
@@ -449,7 +448,7 @@ class BaseEnsemble:
             self.logger.error(f'Error extracting HVN levels: {e}')
             return {'supports': [], 'resistances': []}
 
-    def _calculate_sr_distances(self, sr_features: pd.DataFrame, row_idx: int, current_price: float, pivot_levels: dict, hvn_levels: dict, current_location: str | None=None) -> None:
+    def _calculate_sr_distances(self, sr_features: pd.DataFrame, row_idx: int, current_price: float, pivot_levels: dict, hvn_levels: dict, current_location: str | None = None) -> None:
         """
         Calculate S/R distances and strength metrics for a specific row.
 
@@ -466,7 +465,7 @@ class BaseEnsemble:
             pivot_resistances = pivot_levels.get('resistances', [])
             pivot_strengths = pivot_levels.get('strengths', {})
             if pivot_supports:
-                nearest_pivot_support = min(pivot_supports, key=lambda x: abs(x - current_price))
+                nearest_pivot_support = min(pivot_supports, key = lambda x: abs(x - current_price))
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('distance_to_pivot_support')] = (current_price - nearest_pivot_support) / current_price
             strength_data: dict[str, Any] | None = None
             if pivot_strengths and pivot_supports:
@@ -477,7 +476,7 @@ class BaseEnsemble:
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('nearest_pivot_volume')] = strength_data.get('volume', 0.0)
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('nearest_pivot_age')] = strength_data.get('age', 0.0)
             if pivot_resistances:
-                nearest_pivot_resistance = min(pivot_resistances, key=lambda x: abs(x - current_price))
+                nearest_pivot_resistance = min(pivot_resistances, key = lambda x: abs(x - current_price))
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('distance_to_pivot_resistance')] = (nearest_pivot_resistance - current_price) / current_price
             strength_data = None
             if pivot_strengths and pivot_resistances:
@@ -491,7 +490,7 @@ class BaseEnsemble:
             hvn_resistances = hvn_levels.get('resistances', [])
             hvn_strengths = hvn_levels.get('strengths', {})
             if hvn_supports:
-                nearest_hvn_support = min(hvn_supports, key=lambda x: abs(x - current_price))
+                nearest_hvn_support = min(hvn_supports, key = lambda x: abs(x - current_price))
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('distance_to_hvn_support')] = (current_price - nearest_hvn_support) / current_price
             strength_data = None
             if hvn_strengths and hvn_supports:
@@ -502,7 +501,7 @@ class BaseEnsemble:
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('nearest_hvn_volume')] = strength_data.get('volume', 0.0)
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('nearest_hvn_age')] = strength_data.get('age', 0.0)
             if hvn_resistances:
-                nearest_hvn_resistance = min(hvn_resistances, key=lambda x: abs(x - current_price))
+                nearest_hvn_resistance = min(hvn_resistances, key = lambda x: abs(x - current_price))
                 sr_features.iloc[row_idx, sr_features.columns.get_loc('distance_to_hvn_resistance')] = (nearest_hvn_resistance - current_price) / current_price
             strength_data = None
             if hvn_strengths and hvn_resistances:
@@ -522,12 +521,12 @@ class BaseEnsemble:
             self.logger.warning(f'Error calculating S/R distances for row {row_idx}: {e}')
 
     @handles_errors(default_return={'strength': 0.0, 'touches': 0, 'volume': 0.0, 'age': 0.0}, context='level strength data extraction')
-    def _get_nearest_level_strength_data(self, nearest_level: float, levels: list[float], strengths: dict | None=None) -> dict:
+    def _get_nearest_level_strength_data(self, nearest_level: float, levels: list[float], strengths: dict | None = None) -> dict:
         """Get strength data for the nearest level."""
         try:
             if not levels or not strengths:
                 return {}
-            closest_value = min(levels, key=lambda x: abs(x - nearest_level))
+            closest_value = min(levels, key = lambda x: abs(x - nearest_level))
             for level_key, strength_data in strengths.items():
                 if isinstance(strength_data, dict):
                     try:
@@ -540,7 +539,7 @@ class BaseEnsemble:
             self.logger.warning(f'Error getting nearest level strength data: {e}')
             return {}
 
-    def _calculate_simplified_sr_features(self, sr_features: pd.DataFrame, df: pd.DataFrame | None=None) -> None:
+    def _calculate_simplified_sr_features(self, sr_features: pd.DataFrame, df: pd.DataFrame | None = None) -> None:
         """
         Calculate simplified S/R features as fallback.
 
@@ -564,7 +563,7 @@ class BaseEnsemble:
             self.logger.error(f'Error calculating simplified SR features: {e}')
 
     @handles_errors
-    def _get_meta_features(self, df: pd.DataFrame, is_live: bool=False, **kwargs: Any) -> pd.DataFrame | dict:
+    def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
         """
         Abstract method to extract meta-features for the ensemble.
         Must be implemented by child classes based on their specific needs.
@@ -582,7 +581,7 @@ class BaseEnsemble:
         """
         raise NotImplementedError(f'{self.__class__.__name__} must implement _get_meta_features method')
 
-    @handles_errors(default_return=None, context='feature normalization')
+    @handles_errors(default_return = None, context='feature normalization')
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Normalize non-price series using relative/normalized changes and rolling z-scores.
@@ -608,7 +607,7 @@ class BaseEnsemble:
                 log_volume = np.log1p(df['volume'])
                 normalized_df['volume_z_score'] = self._calculate_rolling_z_score(log_volume, self.normalization_windows['medium'])
             if 'volume_ma_ratio' not in df.columns and 'volume' in df.columns:
-                volume_ma_20 = df['volume'].rolling(window=20, min_periods=1).mean()
+                volume_ma_20 = df['volume'].rolling(window = 20, min_periods = 1).mean()
                 normalized_df['volume_ma_ratio'] = df['volume'] / (volume_ma_20 + 1e-08)
             spread_features = ['spread_liquidity', 'price_impact', 'kyle_lambda', 'amihud_illiquidity']
             for feature in spread_features:
@@ -662,11 +661,11 @@ class BaseEnsemble:
             self.logger.info(f'Applied comprehensive feature normalization to {len(normalized_df.columns)} features')
             return normalized_df
         except Exception as e:
-            self.logger.error(f'Error in feature normalization: {e}', exc_info=True)
+            self.logger.error(f'Error in feature normalization: {e}', exc_info = True)
             return df
 
-    @handles_errors(fallback=pd.Series(dtype=float))
-    def _calculate_rolling_z_score(self, series: pd.Series, window: int=60) -> pd.Series:
+    @handles_errors(fallback = pd.Series(dtype = float))
+    def _calculate_rolling_z_score(self, series: pd.Series, window: int = 60) -> pd.Series:
         """
         Calculate rolling z-score with proper handling of infinite values.
 
@@ -678,16 +677,16 @@ class BaseEnsemble:
             Series with rolling z-scores
         """
         try:
-            rolling_mean = series.rolling(window, min_periods=1).mean()
-            rolling_std = series.rolling(window, min_periods=1).std()
+            rolling_mean = series.rolling(window, min_periods = 1).mean()
+            rolling_std = series.rolling(window, min_periods = 1).std()
             z_score = (series - rolling_mean) / (rolling_std + 1e-08)
             return z_score.replace([np.inf, -np.inf], 0)
         except Exception as e:
             self.logger.warning(f'Error calculating rolling z-score: {e}')
-            return pd.Series(0, index=series.index)
+            return pd.Series(0, index = series.index)
 
-    @handles_errors(default_return=None, context='feature winsorization')
-    def _winsorize_features(self, df: pd.DataFrame, percentile: float=0.01) -> None:
+    @handles_errors(default_return = None, context='feature winsorization')
+    def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
         """
         Winsorize outliers in the DataFrame to improve numerical stability.
 

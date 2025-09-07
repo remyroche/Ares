@@ -1,16 +1,16 @@
 """
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
+from ..core.decorators import handles_errors
+from ..utils.logger import system_logger
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-
-from .core.decorators import cached, handles_errors, log_execution_time
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
 import logging
 import time
+
+from ..core.decorators import log_execution_time, cached
 
 
 @dataclass
@@ -27,10 +27,10 @@ class PipelineConfig:
     max_retries: int = 3
     timeout_seconds: int = 3600
 
-    data_config: dict[str, Any] = field(default_factory=dict)
-    model_config: dict[str, Any] = field(default_factory=dict)
-    risk_config: dict[str, Any] = field(default_factory=dict)
-    notification_config: dict[str, Any] = field(default_factory=dict)
+    data_config: dict[str, Any] = field(default_factory = dict)
+    model_config: dict[str, Any] = field(default_factory = dict)
+    risk_config: dict[str, Any] = field(default_factory = dict)
+    notification_config: dict[str, Any] = field(default_factory = dict)
 
     parallel_execution: bool = False
     max_workers: int = 4
@@ -83,7 +83,7 @@ class BasePipeline:
         ValueError,
         AttributeError,
         KeyError,
-        fallback=False
+        fallback = False
     )
     async def initialize(self) -> bool:
         self.logger.info("Initializing BasePipeline ...")
@@ -93,7 +93,7 @@ class BasePipeline:
 
     @log_execution_time()
     @cached()
-    @handles_errors(Exception, fallback=False)
+    @handles_errors(Exception, fallback = False)
     async def shutdown(self) -> bool:
         self.logger.info("Shutting down BasePipeline ...")
         self.is_running = False

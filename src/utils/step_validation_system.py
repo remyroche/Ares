@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 import json
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.error_prevention_system import error_prevention
 import logging
 import time
+from .logger import system_logger
 
 class StepValidationSystem:
     """Validates data quality and structure between pipeline steps."""
@@ -194,6 +195,6 @@ class StepValidationSystem:
         """Save validation history to file."""
         report_data = {'summary': self.get_validation_summary(), 'validation_history': self.validation_history, 'validation_rules': self.validation_rules, 'generated_at': datetime.now().isoformat()}
         with open(output_path, 'w') as f:
-            json.dump(report_data, f, indent=2, default=str)
+            json.dump(report_data, f, indent = 2, default = str)
         self.logger.info(f'💾 Saved validation report to {output_path}')
 step_validator = StepValidationSystem()

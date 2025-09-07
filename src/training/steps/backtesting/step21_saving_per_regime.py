@@ -1,3 +1,6 @@
+from src.core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 21: Saving - Per-Regime Implementation.
 
 This module provides per-HMM regime saving functionality, ensuring that
@@ -11,8 +14,6 @@ from .training.steps.step21_saving import Step21Saving
 from src.training.steps.per_regime_integrator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
-from .core.decorators.errors import handles_errors
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -24,6 +25,7 @@ logger = get_logger('Step21SavingPerRegime')
 
 class PerRegimeSavingStep(Step21Saving):
     """Saving step that processes each regime separately."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
@@ -33,7 +35,7 @@ class PerRegimeSavingStep(Step21Saving):
 
     @traced(span_name='execute_per_regime_saving')
     @per_regime_step('step21_saving')
-    async def execute_per_regime_saving(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool=True) -> bool:
+    async def execute_per_regime_saving(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool = True) -> bool:
         """Execute saving on a per-regime basis.
         
         Each regime may require different saving strategies, so results
@@ -110,6 +112,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error loading all regime results for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _get_regime_saving_config(self, regime_id: int) -> Dict[str, Any]:
         """Get saving configuration for a specific regime.
@@ -255,6 +258,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error saving metadata for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _extract_regime_characteristics(self, regime_id: int) -> Dict[str, Any]:
         """Extract regime characteristics.
@@ -271,6 +275,7 @@ class PerRegimeSavingStep(Step21Saving):
             return {'market_type': 'volatile', 'volatility_level': 'high', 'trend_strength': 'low', 'mean_reversion': 'high'}
         else:
             return {'market_type': 'balanced', 'volatility_level': 'medium', 'trend_strength': 'medium', 'mean_reversion': 'medium'}
+    @log_all_calls
 
     def _extract_processing_timeline(self, all_regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract processing timeline from results.
@@ -291,6 +296,7 @@ class PerRegimeSavingStep(Step21Saving):
                 else:
                     timeline[step_name] = 'unknown'
         return timeline
+    @log_all_calls
 
     def _extract_data_statistics(self, all_regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract data statistics from results.
@@ -307,6 +313,7 @@ class PerRegimeSavingStep(Step21Saving):
                 data_size = len(str(step_results))
                 statistics['data_sizes'][step_name] = data_size
         return statistics
+    @log_all_calls
 
     def _extract_component_versions(self) -> Dict[str, str]:
         """Extract component versions.
@@ -344,6 +351,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error saving performance metrics for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _calculate_overall_performance(self, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate overall performance from step metrics.
@@ -464,6 +472,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error creating regime summary for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _create_performance_summary(self, all_regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create performance summary from all results.
@@ -498,11 +507,12 @@ class PerRegimeSavingStep(Step21Saving):
             if step_scores:
                 performance_summary['overall_performance'] = float(np.mean(list(step_scores.values())))
                 performance_summary['best_performing_step'] = max(step_scores.keys(), key=lambda k: step_scores[k])
-                performance_summary['worst_performing_step'] = min(step_scores.keys(), key=lambda k: step_scores[k])
+                performance_summary['worst_performing_step'] = min(step_scores.keys(), key = lambda k: step_scores[k])
             return performance_summary
         except Exception as e:
             self.logger.error(f'❌ Error creating performance summary: {e}')
             return {'overall_performance': 0.0}
+    @log_all_calls
 
     def _create_component_summary(self, all_regime_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create component summary from all results.
@@ -531,6 +541,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error creating component summary: {e}')
             return {'total_components': 0}
+    @log_all_calls
 
     def _generate_regime_recommendations(self, regime_id: int, all_regime_results: Dict[str, Any]) -> List[str]:
         """Generate recommendations for regime.
@@ -560,6 +571,7 @@ class PerRegimeSavingStep(Step21Saving):
         except Exception as e:
             self.logger.error(f'❌ Error generating regime recommendations: {e}')
             return ['Error generating recommendations']
+    @log_all_calls
 
     def _calculate_saving_metadata(self, saved_components: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate saving metadata.
@@ -593,7 +605,7 @@ class PerRegimeSavingStep(Step21Saving):
         try:
             saving_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_saving_regime_{regime_id}.json'
             with open(saving_path, 'w') as f:
-                json.dump(saving_results, f, indent=2, default=str)
+                json.dump(saving_results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved saving results for regime {regime_id}: {saving_path}')
             return True
         except Exception as e:
@@ -603,7 +615,7 @@ class PerRegimeSavingStep(Step21Saving):
 @traced(span_name='run_per_regime_saving_step')
 @validates()
 @handles_errors
-async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
+async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the enhanced per-regime saving step.
     
     Args:
@@ -624,7 +636,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
         data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
     config['per_regime_saving'] = True
     step = PerRegimeSavingStep(config)
-    success = await step.execute_per_regime_saving(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+    success = await step.execute_per_regime_saving(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
     if success:
         logger.info('✅ Step 21: Per-Regime Saving completed successfully')
     else:

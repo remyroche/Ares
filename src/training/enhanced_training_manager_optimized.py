@@ -1,4 +1,3 @@
-from .core.decorators import handles_errors
 import gc
 import os
 import pickle
@@ -9,6 +8,8 @@ from typing import Any, Callable
 import psutil
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 
 try:
     import pyarrow as pa
@@ -19,7 +20,7 @@ except ImportError:
     pq = None
     ds = None
 import contextlib
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import collections
 import datetime
 import json
@@ -57,11 +58,11 @@ class CachedBacktester:
             return indicators
         indicators['sma_20'] = self.market_data['close'].rolling(20).mean().fillna(method='ffill').values
         indicators['sma_50'] = self.market_data['close'].rolling(50).mean().fillna(method='ffill').values
-        indicators['ema_12'] = self.market_data['close'].ewm(span=12).mean().fillna(method='ffill').values
-        indicators['ema_26'] = self.market_data['close'].ewm(span=26).mean().fillna(method='ffill').values
+        indicators['ema_12'] = self.market_data['close'].ewm(span = 12).mean().fillna(method='ffill').values
+        indicators['ema_26'] = self.market_data['close'].ewm(span = 26).mean().fillna(method='ffill').values
         delta = self.market_data['close'].diff()
-        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = 14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
         rs = gain / loss.replace(0, np.nan)
         indicators['rsi'] = (100 - 100 / (1 + rs)).fillna(50).values
         if {'high', 'low'}.issubset(self.market_data.columns):
@@ -69,7 +70,7 @@ class CachedBacktester:
             high_close = np.abs(self.market_data['high'] - self.market_data['close'].shift())
             low_close = np.abs(self.market_data['low'] - self.market_data['close'].shift())
             tr = np.maximum(high_low.values, np.maximum(high_close.values, low_close.values))
-            indicators['atr'] = pd.Series(tr, index=self.market_data.index).rolling(window=14).mean().fillna(method='ffill').values
+            indicators['atr'] = pd.Series(tr, index = self.market_data.index).rolling(window = 14).mean().fillna(method='ffill').values
         else:
             self.logger.warning("Missing 'high'/'low' columns; skipping ATR calculation")
         indicators['volatility'] = self.market_data['close'].pct_change().rolling(20).std().fillna(method='ffill').values
@@ -142,9 +143,9 @@ class ProgressiveEvaluator:
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
 
-    def __init__(self, n_workers: int | None=None) -> None:
+    def __init__(self, n_workers: int | None = None) -> None:
         self.n_workers = n_workers or min(mp.cpu_count(), 8)
-        self.executor: ProcessPoolExecutor | None = ProcessPoolExecutor(max_workers=self.n_workers)
+        self.executor: ProcessPoolExecutor | None = ProcessPoolExecutor(max_workers = self.n_workers)
         self.logger = system_logger.getChild('ParallelBacktester')
 
     def __enter__(self) -> None:
@@ -153,7 +154,7 @@ class ParallelBacktester:
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
         try:
             if hasattr(self, 'executor') and self.executor:
-                self.executor.shutdown(wait=True)
+                self.executor.shutdown(wait = True)
         finally:
             self.executor = None
         return False
@@ -184,7 +185,7 @@ class ParallelBacktester:
         """Clean up executor."""
         if hasattr(self, 'executor') and self.executor:
             try:
-                self.executor.shutdown(wait=True)
+                self.executor.shutdown(wait = True)
             except Exception:
                 pass
 
@@ -220,7 +221,7 @@ class IncrementalTrainer:
 class StreamingDataProcessor:
     """Streaming processor for large datasets."""
 
-    def __init__(self, chunk_size: int=10000) -> None:
+    def __init__(self, chunk_size: int = 10000) -> None:
         self.chunk_size = chunk_size
         self.logger = system_logger.getChild('StreamingDataProcessor')
 
@@ -249,7 +250,7 @@ class StreamingDataProcessor:
                 return
             parquet_file = pq.ParquetFile(file_path)
             count = 0
-            for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
+            for batch in parquet_file.iter_batches(batch_size = self.chunk_size):
                 count += 1
                 yield batch.to_pandas()
             self.logger.info(f'Streamed {count} chunks from Parquet file')
@@ -260,7 +261,7 @@ class StreamingDataProcessor:
     def _iter_csv_chunks(self, file_path: str) -> None:
         """Iterate CSV file in chunks."""
         count = 0
-        for chunk in pd.read_csv(file_path, chunksize=self.chunk_size):
+        for chunk in pd.read_csv(file_path, chunksize = self.chunk_size):
             count += 1
             yield chunk
         self.logger.info(f'Streamed {count} chunks from CSV file')
@@ -271,7 +272,7 @@ class StreamingDataProcessor:
         """
         try:
             target = Path(target_path)
-            target.parent.mkdir(parents=True, exist_ok=True)
+            target.parent.mkdir(parents = True, exist_ok = True)
             if pq is None:
                 window: list[pd.DataFrame] = []
                 window_rows = 0
@@ -279,23 +280,22 @@ class StreamingDataProcessor:
                     window.append(df)
                     window_rows += len(df)
                     if window_rows >= self.chunk_size * 10:
-                        pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                        pd.concat(window, ignore_index = True).to_parquet(target, compression = compression)
                         window.clear()
                         window_rows = 0
                 if window:
-                    pd.concat(window, ignore_index=True).to_parquet(target, compression=compression)
+                    pd.concat(window, ignore_index = True).to_parquet(target, compression = compression)
                 return
             import pyarrow as pa
             import pyarrow.parquet as pq_mod
         except Exception as e:
             pass
-        from .core.decorators.errors import handles_errors
-
+        
         writer = None
         for df in chunks_iter:
             table = pa.Table.from_pandas(df)
             if writer is None:
-                writer = pq_mod.ParquetWriter(str(target), table.schema, compression=compression)
+                writer = pq_mod.ParquetWriter(str(target), table.schema, compression = compression)
             writer.write_table(table)
         if writer is not None:
             writer.close()
@@ -303,7 +303,7 @@ class StreamingDataProcessor:
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
 
-    def __init__(self, initial_samples: int=100) -> None:
+    def __init__(self, initial_samples: int = 100) -> None:
         self.initial_samples = initial_samples
         self.promising_regions: list[dict[str, Any]] = []
         self.trial_history: list[dict[str, Any]] = []
@@ -330,7 +330,7 @@ class AdaptiveSampler:
 
     def _adaptive_sampling(self, parameter_bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
         """Sample from promising regions identified in history."""
-        sorted_trials = sorted(self.trial_history, key=lambda x: x['score'], reverse=True)
+        sorted_trials = sorted(self.trial_history, key = lambda x: x['score'], reverse = True)
         top_quartile = sorted_trials[:len(sorted_trials) // 4]
         if not top_quartile:
             return self._random_sampling(parameter_bounds)
@@ -393,28 +393,28 @@ class MemoryEfficientDataManager:
                 return df
             if pd.api.types.is_integer_dtype(ts) or pd.api.types.is_float_dtype(ts):
                 unit = 'ms' if ts.dropna().astype(float).median() > 1000000000000.0 else 's'
-                df[column] = pd.to_datetime(df[column], unit=unit, errors='coerce', utc=True)
+                df[column] = pd.to_datetime(df[column], unit = unit, errors='coerce', utc = True)
             else:
-                df[column] = pd.to_datetime(df[column], errors='coerce', utc=True)
+                df[column] = pd.to_datetime(df[column], errors='coerce', utc = True)
             return df.dropna(subset=[column])
         except Exception as e:
             self.logger.warning(f'Timestamp normalization failed: {e}')
             return df
 
-    def save_to_parquet(self, df: pd.DataFrame, file_path: str, compression: str='snappy', index: bool=False) -> None:
+    def save_to_parquet(self, df: pd.DataFrame, file_path: str, compression: str='snappy', index: bool = False) -> None:
         """Save DataFrame to Parquet format for efficient storage."""
         try:
             df_to_save = self.optimize_dataframe(df.copy())
             if 'timestamp' in df_to_save.columns:
                 df_to_save = self._normalize_timestamp_column(df_to_save, 'timestamp')
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-            df_to_save.to_parquet(file_path, compression=compression, index=index)
+            Path(file_path).parent.mkdir(parents = True, exist_ok = True)
+            df_to_save.to_parquet(file_path, compression = compression, index = index)
             self.logger.info(f'Saved DataFrame to Parquet: {file_path}')
         except Exception as e:
             self.logger.exception(f'Failed to save Parquet {file_path}: {e}')
             raise
 
-    def load_from_parquet(self, file_path: str, columns: list[str] | None=None, nrows: int | None=None) -> pd.DataFrame:
+    def load_from_parquet(self, file_path: str, columns: list[str] | None = None, nrows: int | None = None) -> pd.DataFrame:
         """Load DataFrame from Parquet with robust fallbacks and timestamp normalization."""
         try:
             file_path_str = str(file_path)
@@ -424,14 +424,14 @@ class MemoryEfficientDataManager:
             except Exception:
                 self.logger.info(f'Loading Parquet: {file_path_str}')
             try:
-                df = pd.read_parquet(file_path_str, columns=columns)
+                df = pd.read_parquet(file_path_str, columns = columns)
             except Exception as e1:
                 self.logger.warning(f'Default read_parquet failed: {e1}')
                 try:
-                    df = pd.read_parquet(file_path_str, columns=columns, engine='pyarrow')
+                    df = pd.read_parquet(file_path_str, columns = columns, engine='pyarrow')
                 except Exception as e2:
                     self.logger.warning(f'PyArrow read failed: {e2}')
-                    df = pd.read_parquet(file_path_str, columns=columns, engine='fastparquet')
+                    df = pd.read_parquet(file_path_str, columns = columns, engine='fastparquet')
             if nrows is not None and len(df) > nrows:
                 df = df.head(nrows)
             if 'timestamp' in df.columns:
@@ -449,7 +449,7 @@ class MemoryEfficientDataManager:
 class MemoryManager:
     """Manage memory usage during optimization."""
 
-    def __init__(self, memory_threshold: float=0.8) -> None:
+    def __init__(self, memory_threshold: float = 0.8) -> None:
         self.memory_threshold = memory_threshold
         self.logger = system_logger.getChild('MemoryManager')
         self.cleanup_counter = 0
@@ -534,15 +534,15 @@ class EnhancedTrainingManagerOptimized:
         self.stream_direct_to_final = streaming_config.get('direct_to_final', False)
         self.logger.info('Loaded optimization configuration')
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration'), AttributeError: (False, 'Missing required parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration'), AttributeError: (False, 'Missing required parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='initialization')
     async def initialize(self) -> bool:
         """Initialize the enhanced training manager with optimizations."""
         try:
             self.logger.info('🚀 Initializing Enhanced Training Manager with Optimizations...')
             if self.enable_parallelization:
-                self.parallel_backtester = ParallelBacktester(n_workers=self.max_workers)
+                self.parallel_backtester = ParallelBacktester(n_workers = self.max_workers)
                 self.logger.info(f'✅ Parallel backtester initialized with {self.max_workers} workers')
-            self.streaming_processor = StreamingDataProcessor(chunk_size=self.chunk_size)
+            self.streaming_processor = StreamingDataProcessor(chunk_size = self.chunk_size)
             self.adaptive_sampler = AdaptiveSampler()
             base_model_config = self.config.get('model', {})
             self.incremental_trainer = IncrementalTrainer(base_model_config)
@@ -601,7 +601,7 @@ class EnhancedTrainingManagerOptimized:
                     optimized_data = self.data_manager.optimize_dataframe(data)
                     self.data_manager.save_to_parquet(optimized_data, parquet_path)
                     with contextlib.suppress(Exception):
-                        Path(tmp_parquet_path).unlink(missing_ok=True)
+                        Path(tmp_parquet_path).unlink(missing_ok = True)
                     data = optimized_data
             else:
                 msg = f'No data found for {symbol} on {exchange}'
@@ -640,7 +640,7 @@ class EnhancedTrainingManagerOptimized:
 
     async def _optimized_data_collection(self, market_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> dict[str, Any]:
         """Optimized data collection with caching and streaming."""
-        return {'status': 'success', 'rows': len(market_data), 'memory_usage_mb': float(market_data.memory_usage(deep=True).sum() / 1024 ** 2), 'data_types': {k: str(v) for k, v in dict(market_data.dtypes).items()}}
+        return {'status': 'success', 'rows': len(market_data), 'memory_usage_mb': float(market_data.memory_usage(deep = True).sum() / 1024 ** 2), 'data_types': {k: str(v) for k, v in dict(market_data.dtypes).items()}}
 
     async def _optimized_regime_classification(self, market_data: pd.DataFrame) -> dict[str, Any]:
         """Optimized regime classification with caching."""
@@ -700,7 +700,7 @@ class EnhancedTrainingManagerOptimized:
         """Parallel ensemble creation."""
         ensemble_params = [{'model_type': 'xgb', 'weight': 0.4}, {'model_type': 'lgb', 'weight': 0.3}, {'model_type': 'cat', 'weight': 0.3}]
         dummy_data = pd.DataFrame({'close': np.random.randn(1000), 'volume': np.random.randn(1000)})
-        with ParallelBacktester(n_workers=self.max_workers) as pb:
+        with ParallelBacktester(n_workers = self.max_workers) as pb:
             ensemble_scores = pb.evaluate_batch(ensemble_params, dummy_data)
         return {'status': 'success', 'ensemble_models': len(ensemble_params), 'ensemble_scores': ensemble_scores}
 
@@ -729,7 +729,7 @@ class EnhancedTrainingManagerOptimized:
 class ParquetDatasetManager:
     """Efficient parquet dataset management for large-scale data operations."""
 
-    def __init__(self, logger: logging.Logger=None) -> None:
+    def __init__(self, logger: logging.Logger = None) -> None:
         self.logger = logger or system_logger.getChild('ParquetDatasetManager')
         if pa is None or pq is None:
             self.logger.error('❌ pyarrow is required for ParquetDatasetManager operations')
@@ -739,19 +739,19 @@ class ParquetDatasetManager:
     def write_flat_parquet(self, df: pd.DataFrame, file_path: str, compression: str='snappy') -> None:
         """Write DataFrame to parquet format with optimized settings."""
         try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            os.makedirs(os.path.dirname(file_path), exist_ok = True)
             table = pa.Table.from_pandas(df)
-            pq.write_table(table, file_path, compression=compression)
+            pq.write_table(table, file_path, compression = compression)
             self.logger.info(f'✅ Parquet file written: {file_path}')
         except Exception as e:
             self.logger.exception(f'❌ Failed to write parquet file {file_path}: {e}')
             raise
 
-    def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str] | None=None, schema_name: str | None=None, compression: str='snappy', metadata: dict[str, Any] | None=None, min_rows_per_group: int=128000, max_rows_per_file: int=5000000) -> None:
+    def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str] | None = None, schema_name: str | None = None, compression: str='snappy', metadata: dict[str, Any] | None = None, min_rows_per_group: int = 128000, max_rows_per_file: int = 5000000) -> None:
         """Write a hive-partitioned dataset using pyarrow.dataset.write_dataset."""
         try:
-            os.makedirs(base_dir, exist_ok=True)
-            table = pa.Table.from_pandas(df, preserve_index=False)
+            os.makedirs(base_dir, exist_ok = True)
+            table = pa.Table.from_pandas(df, preserve_index = False)
             if metadata:
                 try:
                     schema_with_meta = table.schema.with_metadata({str(k): str(v) if v is not None else '' for k, v in metadata.items()})
@@ -776,12 +776,12 @@ class ParquetDatasetManager:
             self.logger.exception(f'❌ Failed to write partitioned dataset to {base_dir}: {e}')
             raise
 
-    def materialize_projection(self, base_dir: str, filters: list[tuple[str, str, Any]] | None, columns: list[str] | None, output_dir: str, partition_cols: list[str] | None=None, schema_name: str | None=None, compression: str='snappy', batch_size: int=131072, metadata: dict[str, Any] | None=None) -> None:
+    def materialize_projection(self, base_dir: str, filters: list[tuple[str, str, Any]] | None, columns: list[str] | None, output_dir: str, partition_cols: list[str] | None = None, schema_name: str | None = None, compression: str='snappy', batch_size: int = 131072, metadata: dict[str, Any] | None = None) -> None:
         """Scan an existing dataset, project columns with filters, and write to a new partitioned dataset."""
         try:
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok = True)
             dataset = ds.dataset(base_dir, format='parquet')
-            scanner = dataset.scanner(columns=columns, filter=self._build_filter(filters), batch_size=batch_size)
+            scanner = dataset.scanner(columns = columns, filter = self._build_filter(filters), batch_size = batch_size)
             table = scanner.to_table()
             if metadata:
                 try:
@@ -789,7 +789,7 @@ class ParquetDatasetManager:
                     table = table.cast(schema_with_meta)
                 except Exception:
                     pass
-            ds.write_dataset(table, base_dir=output_dir, format='parquet', basename_template='part-{i}.parquet', existing_data_behavior='overwrite_or_ignore', partitioning=ds.partitioning(partition_cols, flavor='hive') if partition_cols else None, max_rows_per_file=5000000, min_rows_per_group=128000, max_rows_per_group=1048576)
+            ds.write_dataset(table, base_dir = output_dir, format='parquet', basename_template='part-{i}.parquet', existing_data_behavior='overwrite_or_ignore', partitioning = ds.partitioning(partition_cols, flavor='hive') if partition_cols else None, max_rows_per_file = 5000000, min_rows_per_group = 128000, max_rows_per_group = 1048576)
             self.logger.info(f'✅ Materialized projection to {output_dir} (columns={columns}, filters={filters})')
         except Exception as e:
             self.logger.exception(f'❌ Failed to materialize projection to {output_dir}: {e}')
@@ -808,11 +808,11 @@ class ParquetDatasetManager:
         except Exception:
             return None
 
-    def read_parquet(self, file_path: str, columns: list[str] | None=None) -> pd.DataFrame:
+    def read_parquet(self, file_path: str, columns: list[str] | None = None) -> pd.DataFrame:
         """Read parquet file with optional column selection."""
         try:
             if columns:
-                table = pq.read_table(file_path, columns=columns)
+                table = pq.read_table(file_path, columns = columns)
             else:
                 table = pq.read_table(file_path)
             return table.to_pandas()

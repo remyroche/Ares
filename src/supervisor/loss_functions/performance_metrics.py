@@ -1,3 +1,4 @@
+from ..core.decorators import handles_errors
 """
 Performance Metrics Calculator Module.
 
@@ -8,7 +9,6 @@ This module handles various performance metric calculations for trading strategi
 from typing import Any, Dict, List
 
 
-from src.core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
 from src.core.decorators.errors import handles_errors

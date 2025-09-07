@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Tracking System (minimal scaffold)
 
@@ -9,8 +11,7 @@ Provides scaffolding for comprehensive tracking.
 from enum import Enum
 from typing import Any
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 
 
@@ -34,7 +35,7 @@ class TrackingSystem:
             ValueError: (False, "Invalid tracking configuration"),
             AttributeError: (False, "Missing tracking parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="tracking_system.initialize",
     )
     async def initialize(self) -> bool:

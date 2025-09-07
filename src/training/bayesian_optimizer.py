@@ -3,13 +3,13 @@ from typing import Number
 
 import optuna
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import collections
 import datetime
 import logging
 import pandas as pd
+from .core.decorators import handles_errors
 
 # src/training/bayesian_optimizer.py
 
@@ -49,16 +49,16 @@ class AdvancedHyperparameterOptimizer:
         self.model_optimization_results = None
         self.trading_strategy_results = None
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def create_study(self, direction: str = "maximize") -> optuna.Study:
         """Create an Optuna study with advanced configuration."""
         # Choose sampler based on configuration
         if self.sampling_strategy == "tpe":
             sampler = optuna.samplers.TPESampler(
-                n_startup_trials=10,
-                n_ei_candidates=24,
-                multivariate=True,
-                group=True,
+                n_startup_trials = 10,
+                n_ei_candidates = 24,
+                multivariate = True,
+                group = True,
             )
         elif self.sampling_strategy == "random":
             sampler = optuna.samplers.RandomSampler()
@@ -66,21 +66,21 @@ class AdvancedHyperparameterOptimizer:
             sampler = optuna.samplers.CmaEsSampler()
         elif self.sampling_strategy == "nsga2":
             sampler = optuna.samplers.NSGAIISampler(
-                population_size=50,
-                crossover_prob=0.9,
-                mutation_prob=0.1,
+                population_size = 50,
+                crossover_prob = 0.9,
+                mutation_prob = 0.1,
             )
         else:
             sampler = optuna.samplers.TPESampler()
 
         # Create study with pruning
         return optuna.create_study(
-            direction=direction,
-            sampler=sampler,
-            pruner=optuna.pruners.MedianPruner(
-                n_startup_trials=5,
-                n_warmup_steps=10,
-                interval_steps=1,
+            direction = direction,
+            sampler = sampler,
+            pruner = optuna.pruners.MedianPruner(
+                n_startup_trials = 5,
+                n_warmup_steps = 10,
+                interval_steps = 1,
             ),
         )
 
@@ -127,14 +127,14 @@ class AdvancedHyperparameterOptimizer:
             "learning_rate",
             1e-4,
             1e-1,
-            log=True,
+            log = True,
         )
         params["max_depth"] = trial.suggest_int("max_depth", 3, 15)
         params["n_estimators"] = trial.suggest_int("n_estimators", 50, 1000)
 
         # Regularization parameters
-        params["reg_alpha"] = trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True)
-        params["reg_lambda"] = trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True)
+        params["reg_alpha"] = trial.suggest_float("reg_alpha", 1e-8, 10.0, log = True)
+        params["reg_lambda"] = trial.suggest_float("reg_lambda", 1e-8, 10.0, log = True)
 
         # Ensemble parameters
         params["ensemble_size"] = trial.suggest_int("ensemble_size", 3, 10)
@@ -263,7 +263,7 @@ class AdvancedHyperparameterOptimizer:
             msg = "Risk-reward ratio too low"
             raise optuna.TrialPruned(msg)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for feature engineering optimization."""
         # Suggest feature engineering parameters
@@ -273,7 +273,7 @@ class AdvancedHyperparameterOptimizer:
         score = self._evaluate_feature_engineering(params)
 
         # Report intermediate results for pruning
-        trial.report(score, step=0)
+        trial.report(score, step = 0)
 
         # Store trial history
         self.trial_history.append(
@@ -288,7 +288,7 @@ class AdvancedHyperparameterOptimizer:
 
         return score
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for model optimization."""
         # Suggest model parameters
@@ -302,7 +302,7 @@ class AdvancedHyperparameterOptimizer:
         score = self._evaluate_model_optimization(params)
 
         # Report intermediate results for pruning
-        trial.report(score, step=0)
+        trial.report(score, step = 0)
 
         # Store trial history
         self.trial_history.append(
@@ -317,7 +317,7 @@ class AdvancedHyperparameterOptimizer:
 
         return score
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for trading strategy optimization."""
         # Suggest trading parameters
@@ -333,7 +333,7 @@ class AdvancedHyperparameterOptimizer:
         score = self._evaluate_trading_strategy(params)
 
         # Report intermediate results for pruning
-        trial.report(score, step=0)
+        trial.report(score, step = 0)
 
         # Store trial history
         self.trial_history.append(
@@ -405,7 +405,7 @@ class AdvancedHyperparameterOptimizer:
 
         return max(0, min(1, final_score))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def run_decomposed_optimization(
         self,
         objective_func: Callable | None = None,
@@ -418,8 +418,8 @@ class AdvancedHyperparameterOptimizer:
         feature_study = self.create_study()
         feature_study.optimize(
             self.feature_engineering_objective,
-            n_trials=self.max_trials // 3,
-            show_progress_bar=True,
+            n_trials = self.max_trials // 3,
+            show_progress_bar = True,
             callbacks=[self._optimization_callback],
         )
         self.feature_engineering_results = self._analyze_optimization_results(
@@ -431,8 +431,8 @@ class AdvancedHyperparameterOptimizer:
         model_study = self.create_study()
         model_study.optimize(
             self.model_optimization_objective,
-            n_trials=self.max_trials // 3,
-            show_progress_bar=True,
+            n_trials = self.max_trials // 3,
+            show_progress_bar = True,
             callbacks=[self._optimization_callback],
         )
         self.model_optimization_results = self._analyze_optimization_results(
@@ -444,8 +444,8 @@ class AdvancedHyperparameterOptimizer:
         trading_study = self.create_study()
         trading_study.optimize(
             self.trading_strategy_objective,
-            n_trials=self.max_trials // 3,
-            show_progress_bar=True,
+            n_trials = self.max_trials // 3,
+            show_progress_bar = True,
             callbacks=[self._optimization_callback],
         )
         self.trading_strategy_results = self._analyze_optimization_results(
@@ -525,7 +525,7 @@ class AdvancedHyperparameterOptimizer:
             scores.append(self.trading_strategy_results["best_score"])
             weights.append(0.3)
 
-        overall_score = np.average(scores, weights=weights) if scores else 0.0
+        overall_score = np.average(scores, weights = weights) if scores else 0.0
 
         return {
             "combined_params": combined_params,
@@ -579,8 +579,8 @@ class AdvancedHyperparameterOptimizer:
         # Analyze parameter distribution for best trials
         best_trials = sorted(
             self.trial_history,
-            key=lambda x: x["score"],
-            reverse=True,
+            key = lambda x: x["score"],
+            reverse = True,
         )[:10]
 
         param_values = [

@@ -7,6 +7,8 @@ import pandas as pd
 from pathlib import Path
 import asyncio
 from datetime import datetime
+from typing import Any, Dict
+import os
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import pipeline_standards
@@ -15,6 +17,10 @@ import logging
 import time
 
 logger = system_logger.getChild("RegimeStepsImplementation")
+
+def ensure_directory(path: Path) -> None:
+    """Ensure directory exists."""
+    path.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -113,7 +119,7 @@ class RegimeAwareLabelingStep:
         params = self.regime_params[regime]
         
         # Import triple barrier labeling
-        from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+        from src.training.steps.step06_labeling_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
         
         labeler = OptimizedTripleBarrierLabeling()
         
@@ -468,21 +474,19 @@ class RegimeAwareMatrixOperations:
         """Apply PCA with regime-specific variance threshold."""
         
         from sklearn.decomposition import PCA
-from typing import Any
-from typing import Dict
+        
+        # Fit PCA
+        pca = PCA(n_components=config['pca_variance_threshold'])
+        transformed = pca.fit_transform(features)
 
-# Fit PCA
-pca = PCA(n_components=config['pca_variance_threshold'])
-transformed = pca.fit_transform(features)
+        # Create DataFrame with PCA components
+        pca_features = pd.DataFrame(
+            transformed,
+            index=features.index,
+            columns=[f'pca_{i}' for i in range(transformed.shape[1])]
+        )
 
-# Create DataFrame with PCA components
-pca_features = pd.DataFrame(
-    transformed,
-    index=features.index,
-    columns=[f'pca_{i}' for i in range(transformed.shape[1])]
-)
-
-return pca_features
+        return pca_features
 
 
 # ============================================================================

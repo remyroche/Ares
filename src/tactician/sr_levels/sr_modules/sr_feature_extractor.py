@@ -1,11 +1,10 @@
+from ...core.decorators import handles_errors
 """Support/Resistance Feature Extractor Module."""
 
 from typing import Any, Dict, List
 
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging

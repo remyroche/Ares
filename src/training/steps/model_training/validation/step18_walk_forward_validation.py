@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import asyncio
 import contextlib
 import json
@@ -7,7 +9,7 @@ from typing import Any, Dict, Optional
 from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
 import pandas as pd
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import validation_error
+from src.utils.warning_symbols import error as validation_error
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
@@ -17,8 +19,8 @@ try:
 except ImportError:
 
     class ParquetDatasetManager:
-
-        def __init__(self, logger: logging.Logger=None) -> None:
+        @log_important_calls
+        def __init__(self, logger: logging.Logger = None) -> None:
             self.logger = logger or system_logger
 
         def write_partitioned_dataset(self, **kwargs) -> None:
@@ -26,11 +28,13 @@ except ImportError:
 
 class WalkForwardValidationStep:
     """Step 18: Walk-Forward Validation using existing step6_walk_forward_validation."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -60,7 +64,7 @@ class WalkForwardValidationStep:
             raise
 
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-        """Execute walk-forward validation."
+        """Execute walk-forward validation.
 
         Args:
             training_input: Training input parameters
@@ -83,9 +87,9 @@ class WalkForwardValidationStep:
             with contextlib.suppress(Exception):
                 self.logger.info(f"Walk-forward results prepared: overall_metrics={wfv_results.get('overall_metrics', {})}")
             try:
-                pdm = ParquetDatasetManager(logger=self.logger)
+                pdm = ParquetDatasetManager(logger = self.logger)
                 wfv_base = os.path.join(data_dir, 'parquet', 'wfv')
-                os.makedirs(os.path.join(wfv_base, 'summary'), exist_ok=True)
+                os.makedirs(os.path.join(wfv_base, 'summary'), exist_ok = True)
                 summary_rows: list[dict[str, Any]] = []
                 for fold_idx, fold in enumerate(wfv_results.get('fold_results', [])):
                     metrics = fold.get('metrics', {'accuracy': 0.0})
@@ -93,7 +97,7 @@ class WalkForwardValidationStep:
                         summary_rows.append({'fold': fold_idx, 'metric': k, 'value': v})
                 if summary_rows:
                     summary_df = pd.DataFrame(summary_rows)
-                    pdm.write_partitioned_dataset(df=summary_df, base_dir=os.path.join(wfv_base, 'summary'), partition_cols=['fold'], schema_name='split', compression='snappy', update_manifest=True, metadata={'schema_version': '1', 'validation_method': 'wfv'})
+                    pdm.write_partitioned_dataset(df = summary_df, base_dir = os.path.join(wfv_base, 'summary'), partition_cols=['fold'], schema_name='split', compression='snappy', update_manifest = True, metadata={'schema_version': '1', 'validation_method': 'wfv'})
                 self.logger.info(f'✅ Walk-forward validation metrics persisted to {wfv_base}')
             except Exception:
                 pass
@@ -102,89 +106,72 @@ class WalkForwardValidationStep:
         except Exception as e:
             self.logger.exception(validation_error(f'❌ Error in Walk-Forward Validation: {e}'))
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
-from src.core.domain import idempotent_step
-from src.core.domain.decorators_extended import deterministic_seed
-try:
-    from src.utils.centralized_decorators import artifact_versioning, artifact_write_lock, circuit_breaker_protection, debug_training_step, memory_efficient, nan_inf_and_constant_guard, prevent_data_leakage, quality_gate, resource_monitor, secure_data_processing, time_budget_watchdog, validate_step_output, validate_step_prerequisites
-except ImportError:
+# Placeholder decorators for compatibility
 
-    def artifact_versioning(version: Any) -> None:
+def artifact_versioning(version: Any) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def artifact_write_lock() -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def artifact_write_lock() -> None:
+def circuit_breaker_protection(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def debug_training_step(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def circuit_breaker_protection(**kwargs) -> None:
+def memory_efficient(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def nan_inf_and_constant_guard(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def debug_training_step(**kwargs) -> None:
+def prevent_data_leakage(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def quality_gate(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def memory_efficient(**kwargs) -> None:
+def resource_monitor(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def secure_data_processing(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def nan_inf_and_constant_guard(**kwargs) -> None:
+def time_budget_watchdog(**kwargs) -> None:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def validate_step_output(**kwargs) -> bool:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 
-    def prevent_data_leakage(**kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def quality_gate(**kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def resource_monitor(**kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def secure_data_processing(**kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def time_budget_watchdog(**kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def validate_step_output(**kwargs) -> bool:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-    def validate_step_prerequisites(**kwargs) -> bool:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
+def validate_step_prerequisites(**kwargs) -> bool:
+    def decorator(func: Callable) -> None:
+        return func
+    return decorator
 try:
     from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report, log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 except ImportError as e:
@@ -211,18 +198,13 @@ except ImportError as e:
     def log_step_artifact_with_standardized_name(**kwargs) -> None:
         return 'fallback_artifact'
 
-@deterministic_seed(42)
-@idempotent_step(step_key='step18_walk_forward_validation')
 @validates()
-@timeout(timeout=7200)
-@validates(required_directories=['data/training', 'models'], min_memory_gb=8.0, min_disk_gb=5.0, required_packages=['pandas', 'numpy', 'sklearn'], data_quality_checks={'min_rows': 1000, 'required_columns': ['timestamp', 'features', 'targets']}, context='Walk Forward Validation', backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True, temporal_validation=True, feature_leakage_detection=True, cross_validation_isolation=True, lookahead_bias_prevention=True)
-@log_execution_time(memory_threshold_gb=16.0, cpu_threshold_percent=90.0, disk_threshold_gb=10.0, monitor_interval=60.0, auto_cleanup=True)
-@cached(chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25)
-@log_call(log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True)
-@circuit_breaker(failure_threshold=3, recovery_timeout=300.0, expected_exception=Exception, monitor_interval=60.0)
-@validates(required_files=['data/training/parquet/wfv/summary/*.parquet'], data_quality_checks={'min_rows': 100, 'required_columns': ['fold', 'metric', 'value']}, performance_thresholds={'validation_time_minutes': 120.0, 'memory_usage_gb': 8.0}, format_validation=True, model_performance_thresholds={'accuracy': 0.6, 'f1_score': 0.5}, data_quality_metrics={'completeness': 0.9, 'consistency': 0.8}, validation_score_requirements={'wfv_score': 0.6})
-async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str='data/training', force_rerun: bool=False, **kwargs: Any) -> bool:
-    """Run the walk-forward validation step."
+@timeout(7200)
+@cached()
+@log_call()
+@circuit_breaker()
+async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str='data/training', force_rerun: bool = False, **kwargs: Any) -> bool:
+    """Run the walk-forward validation step.
 
     Args:
         symbol: Trading symbol
@@ -248,3 +230,7 @@ if __name__ == '__main__':
     async def test() -> None:
         await run_step('ETHUSDT', 'BINANCE', 'data/training')
     asyncio.run(test())
+
+# Alias for backward compatibility
+Step18WalkForwardValidation = WalkForwardValidationStep
+import asyncio

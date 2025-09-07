@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 """Comprehensive SR Training Pipeline.
+from src.utils.logger import system_logger
 
 This module provides a complete training pipeline that integrates:
 1. Step7 enhanced matrix operations (comprehensive SR features)
@@ -14,8 +16,7 @@ from typing import Any
 import json
 from src.utils.decorators import cached, handles_errors, log_execution_time
 from src.training.multi_output_model_trainer import MultiOutputModelConfig, MultiOutputModelTrainer
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import pandas as pd
 import logging
 import time
@@ -35,7 +36,7 @@ class ComprehensiveSRTrainingPipeline:
         self.training_output_path = config.get('training_output_path', 'data/training')
         self.logger.info('🔧 Comprehensive SR Training Pipeline initialized')
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @log_execution_time
     @cached
     async def execute_comprehensive_training(self, training_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> dict[str, Any]:
@@ -133,7 +134,7 @@ class ComprehensiveSRTrainingPipeline:
             if profit_column not in comprehensive_data.columns:
                 self.logger.warning(f"⚠️ Profit column '{profit_column}' not found, using default")
                 comprehensive_data[profit_column] = 0.0
-            features, direction_target, profit_target = await self.model_trainer.prepare_multi_output_data(comprehensive_data, direction_column=direction_column, profit_column=profit_column, use_enhanced_feature_selection=True)
+            features, direction_target, profit_target = await self.model_trainer.prepare_multi_output_data(comprehensive_data, direction_column = direction_column, profit_column = profit_column, use_enhanced_feature_selection = True)
             training_results = {}
             model_types = ['LightGBM', 'RandomForest', 'XGBoost']
             for model_type in model_types:
@@ -164,9 +165,9 @@ class ComprehensiveSRTrainingPipeline:
                 if 'feature_importance' in result:
                     validation_results['model_performance'][model_type] = {'direction_accuracy': result.get('direction_metrics', {}).get('accuracy', 0.0), 'profit_r2': result.get('profit_metrics', {}).get('r2_score', 0.0), 'feature_count': len(result.get('feature_importance', {}))}
             output_file = Path(self.training_output_path) / 'comprehensive_sr_training_results.json'
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.parent.mkdir(parents = True, exist_ok = True)
             with open(output_file, 'w') as f:
-                json.dump({'timestamp': datetime.now().isoformat(), 'validation_results': validation_results, 'training_results': training_results, 'pipeline_state': {'step7_features_loaded': self.step7_features_loaded, 'step2_5_sr_levels_loaded': self.step2_5_sr_levels_loaded, 'training_data_prepared': self.training_data_prepared}}, f, indent=2)
+                json.dump({'timestamp': datetime.now().isoformat(), 'validation_results': validation_results, 'training_results': training_results, 'pipeline_state': {'step7_features_loaded': self.step7_features_loaded, 'step2_5_sr_levels_loaded': self.step2_5_sr_levels_loaded, 'training_data_prepared': self.training_data_prepared}}, f, indent = 2)
             self.logger.info(f'✅ Results saved to: {output_file}')
             return validation_results
         except Exception as e:
@@ -181,7 +182,7 @@ class ComprehensiveSRTrainingPipeline:
             self.logger.exception(f'❌ Error getting feature summary: {e}')
             return {'error': str(e)}
 
-async def run_comprehensive_sr_training(training_data: pd.DataFrame, symbol: str, exchange: str='BINANCE', timeframe: str='1m', config: dict[str, Any] | None=None) -> dict[str, Any]:
+async def run_comprehensive_sr_training(training_data: pd.DataFrame, symbol: str, exchange: str='BINANCE', timeframe: str='1m', config: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Run comprehensive SR training pipeline.
 

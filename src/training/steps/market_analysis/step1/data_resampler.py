@@ -1,4 +1,6 @@
+from ....core.decorators import handles_errors
 """Data Preparation for Step1_5.
+from src.utils.logger import system_logger
 
 Prepares data for step1_5_data_converter.py processing. This module focuses on:
 1. Loading and validating klines data
@@ -13,7 +15,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .core.decorators import (
     handles_errors, 
     validates, 
     traced,
@@ -26,7 +27,7 @@ from .core.decorators import (
     validate_data_structure,
     with_tracing_span
 )
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import pandas as pd
 import logging
 import numpy as np
@@ -56,7 +57,7 @@ class DataPreparation:
     ]
 
     # Supported timeframes for resampling
-    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    SUPPORTED_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h"]
 
     # Timeframe mappings for resampling
     TIMEFRAME_MAPPINGS = {
@@ -65,8 +66,6 @@ class DataPreparation:
         "15m": "15T",
         "30m": "30T",
         "1h": "1H",
-        "4h": "4H",
-        "1d": "1D",
     }
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
@@ -436,7 +435,7 @@ class DataPreparation:
         resampling_start = datetime.now()
         
         if timeframes is None:
-            timeframes = ["5m", "15m", "30m"]
+            timeframes = ["1m", "5m", "15m", "30m", "1h"]
 
         logger.info(f"🔄 RESAMPLING {exchange}_{symbol} TO MULTIPLE TIMEFRAMES")
         logger.info(f"📅 Date range: {start_date} to {end_date}")

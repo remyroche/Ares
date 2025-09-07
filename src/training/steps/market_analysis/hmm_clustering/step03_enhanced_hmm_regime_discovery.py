@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
 """Enhanced Step 3: HMM Regime Discovery with Integrated Improvements.
 
 This module integrates all the improvements:
@@ -28,6 +30,7 @@ from .step03_imports import get_import_manager, safe_import, check_feature_avail
 from .step03_config import Step03Config, get_config
 from .step03_technical_indicators import TechnicalIndicators, get_technical_indicators
 from .step03_memory_manager import MemoryManager, get_memory_manager, memory_aware_processing
+import logging
 
 # Import pipeline utilities (optional)
 PIPELINE_UTILITIES_AVAILABLE = check_feature_availability('pipeline_utilities')
@@ -76,7 +79,8 @@ from .step03_ensemble_clustering import EnsembleClusteringRegimeDetector
 from .step03_enhanced_ml_transition_detector import EnhancedMLRegimeTransitionDetector
 
 try:
-    from .core.decorators.errors import handles_errors
+    # Import successful
+    pass
 except ImportError:
     handles_errors = None
 
@@ -128,7 +132,7 @@ class EnhancedHMMRegimeDiscoveryStep:
     @handle_step03_errors
     @enhanced_validates()
     @enhanced_traced(span_name='initialize_enhanced_hmm_regime_discovery')
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM regime discovery step."""
         self.start_time = time.time()
@@ -345,7 +349,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error loading and preparing data: {e}')
             return {'success': False, 'error': str(e)}
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     @validates()
     async def _prepare_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare basic features for regime discovery."""
@@ -357,7 +361,7 @@ class EnhancedHMMRegimeDiscoveryStep:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
             
             # Sort by timestamp
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = df.sort_values('timestamp').reset_index(drop = True)
             
             # Create basic feature set
             features = pd.DataFrame()
@@ -371,15 +375,15 @@ class EnhancedHMMRegimeDiscoveryStep:
             # Volume features
             features['volume_momentum_5'] = df['volume'].pct_change(5)
             features['volume_momentum_10'] = df['volume'].pct_change(10)
-            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window=5).mean()
-            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window=10).mean()
-            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window=20).mean()
+            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window = 5).mean()
+            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window = 10).mean()
+            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window = 20).mean()
             
             # Volatility features
-            features['volatility_5'] = df['close'].pct_change().rolling(window=5).std()
-            features['volatility_10'] = df['close'].pct_change().rolling(window=10).std()
-            features['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
-            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span=20).std()
+            features['volatility_5'] = df['close'].pct_change().rolling(window = 5).std()
+            features['volatility_10'] = df['close'].pct_change().rolling(window = 10).std()
+            features['volatility_20'] = df['close'].pct_change().rolling(window = 20).std()
+            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span = 20).std()
             
             # Technical indicators using centralized system
             features['rsi'] = self.technical_indicators.calculate_rsi(df['close'])
@@ -390,13 +394,13 @@ class EnhancedHMMRegimeDiscoveryStep:
             
             # Bollinger Bands
             bb_features = self.technical_indicators.calculate_bollinger_bands(df['close'])
-            features = pd.concat([features, pd.DataFrame(bb_features)], axis=1)
+            features = pd.concat([features, pd.DataFrame(bb_features)], axis = 1)
             
             # Moving averages
-            features['sma_20'] = df['close'].rolling(window=20).mean()
-            features['sma_50'] = df['close'].rolling(window=50).mean()
-            features['ema_12'] = df['close'].ewm(span=12).mean()
-            features['ema_26'] = df['close'].ewm(span=26).mean()
+            features['sma_20'] = df['close'].rolling(window = 20).mean()
+            features['sma_50'] = df['close'].rolling(window = 50).mean()
+            features['ema_12'] = df['close'].ewm(span = 12).mean()
+            features['ema_26'] = df['close'].ewm(span = 26).mean()
             
             # Price position relative to MAs
             features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
@@ -408,7 +412,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_10']
             
             # Clean features
-            hmm_features = features.drop('timestamp', axis=1)
+            hmm_features = features.drop('timestamp', axis = 1)
             hmm_features = hmm_features.fillna(0)
             
             self.logger.info(f'✅ Basic features prepared: {len(hmm_features.columns)} features, {len(hmm_features)} samples')
@@ -419,7 +423,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error preparing basic features: {e}')
             return pd.DataFrame()
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _run_bayesian_optimization(self, data: pd.DataFrame, features: pd.DataFrame) -> bool:
         """Run Bayesian parameter optimization."""
         try:
@@ -452,7 +456,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error in Bayesian optimization: {e}')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _create_enhanced_features(self, data: pd.DataFrame, basic_features: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Create enhanced regime discovery features."""
         try:
@@ -462,7 +466,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             regime_features = self.feature_engineer.create_regime_discovery_features(data)
             
             # Combine with basic features
-            enhanced_features = pd.concat([basic_features, regime_features], axis=1)
+            enhanced_features = pd.concat([basic_features, regime_features], axis = 1)
             
             # Clean and validate
             enhanced_features = enhanced_features.fillna(0)
@@ -611,7 +615,7 @@ class EnhancedHMMRegimeDiscoveryStep:
 
     def _calculate_regime_distribution(self, regimes: np.ndarray) -> dict[str, int]:
         """Calculate regime distribution."""
-        unique_regimes, counts = np.unique(regimes, return_counts=True)
+        unique_regimes, counts = np.unique(regimes, return_counts = True)
         return {f'regime_{regime}': int(count) for regime, count in zip(unique_regimes, counts)}
 
     def _calculate_regime_transitions(self, regimes: np.ndarray) -> dict[str, Any]:
@@ -674,7 +678,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             self.logger.info(f"🔄 Total transitions: {transitions.get('total_transitions', 0)}")
             self.logger.info(f"📈 Transition rate: {transitions.get('transition_rate', 0):.4f}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def _log_enhanced_artifacts_to_mlflow(self, final_results: dict[str, Any], training_input: dict[str, Any]) -> None:
         """Log enhanced artifacts to MLflow."""
         try:
@@ -686,7 +690,7 @@ class EnhancedHMMRegimeDiscoveryStep:
             regime_states = final_results.get('regime_states', [])
             if regime_states:
                 regime_df = pd.DataFrame({
-                    'timestamp': pd.date_range(start='2024-01-01', periods=len(regime_states), freq='1min'),
+                    'timestamp': pd.date_range(start='2024-01-01', periods = len(regime_states), freq='1min'),
                     'regime_state': regime_states
                 })
                 
@@ -717,16 +721,16 @@ class EnhancedHMMRegimeDiscoveryStep:
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
         return rsi
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
         """Calculate MACD."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
@@ -738,8 +742,8 @@ class EnhancedHMMRegimeDiscoveryStep:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=window).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = window).mean()
         return atr
 
     def _calculate_adx(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
@@ -751,28 +755,28 @@ class EnhancedHMMRegimeDiscoveryStep:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         
         dm_plus = high - high.shift(1)
         dm_minus = low.shift(1) - low
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
         dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
         
-        tr_smooth = tr.rolling(window=window).mean()
-        dm_plus_smooth = dm_plus.rolling(window=window).mean()
-        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        tr_smooth = tr.rolling(window = window).mean()
+        dm_plus_smooth = dm_plus.rolling(window = window).mean()
+        dm_minus_smooth = dm_minus.rolling(window = window).mean()
         
         di_plus = 100 * (dm_plus_smooth / tr_smooth)
         di_minus = 100 * (dm_minus_smooth / tr_smooth)
         dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=window).mean()
+        adx = dx.rolling(window = window).mean()
         
         return adx
 
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        sma = prices.rolling(window = window).mean()
+        std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
         bb_lower = sma - std * num_std
         bb_width = (bb_upper - bb_lower) / sma
@@ -794,7 +798,7 @@ class EnhancedHMMRegimeDiscoveryStep:
 @enhanced_validates()
 @enhanced_traced(span_name='run_enhanced_step')
 @validates()
-@handles_errors(fallback=False)
+@handles_errors(fallback = False)
 async def run_enhanced_step(symbol: str, exchange: str, timeframe: str = "1m", 
                           data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the enhanced HMM regime discovery step.
@@ -939,8 +943,8 @@ if __name__ == "__main__":
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m",
-        n_trials=50,
-        timeout_minutes=15
+        n_trials = 50,
+        timeout_minutes = 15
     ))
     
     if success:

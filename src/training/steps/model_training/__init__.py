@@ -1,6 +1,8 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 """Model Training Package for Trading Pipeline.
 
@@ -21,17 +23,16 @@ from pathlib import Path
 
 async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any, data_dir: Any, **config) -> Any:
     """Run the complete model training pipeline with comprehensive validation and error handling."""
-    from src.core.decorators import handles_errors, validates, log_call, traced
     try:
         from src.utils.common_operations import get_current_datetime, format_datetime
     except Exception:
         pass
-    from .utils.logger import system_logger
+    from src.utils.logger import system_logger
     from .utils.validator_orchestrator import ValidatorOrchestrator
     from .utils.step_dependency_validator import StepDependencyValidator
     logger = system_logger.getChild('ModelTrainingPipeline')
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _monitor_memory_usage() -> dict:
@@ -68,8 +69,8 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             print(f'   ⚠️ Memory monitoring failed: {e}')
             return {}
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
+    @validates(strict = True)
     @log_call
     @traced
     async def _validate_pipeline_inputs(symbol: str, exchange: str, timeframe: str, data_dir: str, **config) -> bool:
@@ -131,7 +132,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         print('   ✅ Pipeline inputs validation passed')
         return True
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _validate_step_dependencies(symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
@@ -164,7 +165,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.error(f'❌ Error in step dependency validation: {e}')
             return False
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _validate_data_quality(symbol: str, exchange: str, data_dir: str) -> bool:
@@ -280,7 +281,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             print(f'   ❌ {error_msg}')
             return False
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _execute_training_step(step_name: str, step_class: Any, symbol: str, exchange: str, timeframe: str, data_dir: str, **config) -> bool:
@@ -334,7 +335,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             print(f'   📋 Exception type: {type(e).__name__}')
             return False
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _is_model_training_step(step_name: str) -> bool:
@@ -350,7 +351,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                 return True
         return False
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _determine_model_type(step_name: str) -> str:
@@ -375,7 +376,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         else:
             return 'unknown'
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _extract_models_and_data(step_instance: Any, step_name: str, model_type: str, data_dir: str, symbol: str, exchange: str) -> tuple:
@@ -446,7 +447,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting models and data for {model_type}: {e}')
             return (None, None, None, None, None, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_tactician_models(step_instance: Any) -> tuple:
@@ -471,7 +472,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting tactician models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_analyst_models(step_instance: Any) -> tuple:
@@ -496,7 +497,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting analyst models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_ensemble_models(step_instance: Any) -> tuple:
@@ -521,7 +522,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting ensemble models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_intelligence_models(step_instance: Any) -> tuple:
@@ -543,7 +544,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting intelligence models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_regime_models(step_instance: Any) -> tuple:
@@ -565,7 +566,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting regime models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_cluster_models(step_instance: Any) -> tuple:
@@ -587,7 +588,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting cluster models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     def _extract_sr_models(step_instance: Any) -> tuple:
@@ -609,7 +610,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error extracting SR models: {e}')
             return ({}, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _load_model_specific_data(model_type: str, data_dir: str, symbol: str, exchange: str, feature_names: List[str]) -> tuple:
@@ -638,8 +639,8 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                         numeric_cols.remove('timestamp')
                     features_df = features_df[numeric_cols + ['timestamp']]
                 split_idx = int(len(features_df) * 0.8)
-                X_train = features_df.iloc[:split_idx].drop('timestamp', axis=1, errors='ignore')
-                X_test = features_df.iloc[split_idx:].drop('timestamp', axis=1, errors='ignore')
+                X_train = features_df.iloc[:split_idx].drop('timestamp', axis = 1, errors='ignore')
+                X_test = features_df.iloc[split_idx:].drop('timestamp', axis = 1, errors='ignore')
                 labels_file = f'{data_dir}/labels_{exchange}_{symbol}_consolidated.parquet'
                 if safe_file_exists(labels_file):
                     labels_df = safe_read_parquet(labels_file)
@@ -653,7 +654,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             logger.warning(f'⚠️ Error loading model-specific data for {model_type}: {e}')
             return (None, None, None, None)
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
+    @handles_errors(Exception, fallback = False, log_level='ERROR')
     @log_call
     @traced
     async def _run_model_interpretability_analysis(step_instance: Any, symbol: str, exchange: str, timeframe: str, data_dir: str, step_name: str) -> bool:
@@ -699,13 +700,13 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             if isinstance(trained_models, dict) and len(trained_models) > 1:
                 print(f'   🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...')
                 logger.info(f'🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...')
-                results = await model_explainer.explain_multiple_models(models=trained_models, X_train=X_train, X_test=X_test, y_train=y_train, y_test=y_test, feature_names=feature_names, symbol=symbol, exchange=exchange, output_dir=output_dir)
+                results = await model_explainer.explain_multiple_models(models = trained_models, X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test, feature_names = feature_names, symbol = symbol, exchange = exchange, output_dir = output_dir)
             else:
                 model = list(trained_models.values())[0] if isinstance(trained_models, dict) else trained_models
                 model_name = list(trained_models.keys())[0] if isinstance(trained_models, dict) else f'{step_name}_{model_type}'
                 print(f'   🔍 Running single-model interpretability analysis for {model_type} model: {model_name}')
                 logger.info(f'🔍 Running single-model interpretability analysis for {model_type} model: {model_name}')
-                results = await model_explainer.explain_model(model=model, X_train=X_train, X_test=X_test, y_train=y_train, y_test=y_test, feature_names=feature_names, model_name=model_name, symbol=symbol, exchange=exchange, output_dir=output_dir)
+                results = await model_explainer.explain_model(model = model, X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test, feature_names = feature_names, model_name = model_name, symbol = symbol, exchange = exchange, output_dir = output_dir)
             if results and 'error' not in results:
                 top_features = results.get('feature_importance', {}).get('top_features', [])
                 if top_features:
@@ -811,7 +812,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             final_memory = await _monitor_memory_usage()
             execution_summary = {'pipeline_info': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'execution_time': format_datetime(get_current_datetime()), 'success': True}, 'configuration': config, 'steps_completed': [step[0] for step in training_steps if step[2]], 'performance_metrics': {'total_steps': len(training_steps), 'completed_steps': len([step for step in training_steps if step[2]]), 'success_rate': 1.0, 'enabled_steps': total_steps, 'skipped_steps': len(skipped_steps) if 'skipped_steps' in locals() else 0, 'total_execution_time_seconds': total_execution_time, 'total_execution_time_minutes': total_execution_time / 60, 'average_step_time_seconds': avg_step_time, 'execution_efficiency': 'high' if total_execution_time < 3600 else 'medium' if total_execution_time < 7200 else 'low', 'steps_per_minute': total_steps / (total_execution_time / 60) if total_execution_time > 0 else 0}, 'data_info': {'data_file_size': format_bytes(Path(f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet').stat().st_size) if safe_file_exists(f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet') else 'unknown'}, 'quality_metrics': {'data_validation_passed': True, 'step_dependencies_validated': True, 'overall_quality_score': 100, 'quality_issues_found': 0, 'quality_warnings_found': 0}, 'memory_metrics': {'initial_memory': initial_memory, 'post_data_memory': post_data_memory if 'post_data_memory' in locals() else {}, 'final_memory': final_memory}}
             summary_file = f'{data_dir}/model_training_execution_summary_{symbol}_{timeframe}.json'
-            safe_json_dump(execution_summary, summary_file, indent=2)
+            safe_json_dump(execution_summary, summary_file, indent = 2)
             logger.info(f'💾 Execution summary saved to: {summary_file}')
             print(f'💾 Execution summary saved to: {summary_file}')
             safe_log_metric('pipeline_success', 1.0)

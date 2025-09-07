@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 """
+from .logger import system_logger
+from .logger import system_logger
 Enhanced Missing Value Handler
 
 This module provides sophisticated missing value handling including:
@@ -9,7 +12,6 @@ This module provides sophisticated missing value handling including:
 - Data integrity preservation
 """
 from enum import Enum
-from .error_handler import handles_errors
 from .logger import system_logger
 import numpy as np
 import pandas as pd
@@ -44,7 +46,7 @@ class GapInfo:
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
 
-    def __init__(self, max_forward_fill_gap: int=5, download_threshold: int=5) -> None:
+    def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5) -> None:
         """Initialize enhanced missing value handler."
 
         Args:
@@ -58,8 +60,8 @@ class EnhancedMissingValueHandler:
         self.gap_thresholds = {GapType.SMALL: max_forward_fill_gap, GapType.MEDIUM: 60, GapType.LARGE: 300, GapType.CRITICAL: float('inf')}
         self.fill_strategies = {GapType.SMALL: 'forward_fill', GapType.MEDIUM: 'download', GapType.LARGE: 'download', GapType.CRITICAL: 'manual_intervention'}
 
-    @handles_errors(Exception, fallback=None, context='missing value handling')
-    def handle_missing_values_intelligently(self, data: pd.DataFrame, timestamp_column: str='timestamp', symbol: str=None, exchange: str=None, timeframe: str='1m') -> pd.DataFrame:
+    @handles_errors(Exception, fallback = None, context='missing value handling')
+    def handle_missing_values_intelligently(self, data: pd.DataFrame, timestamp_column: str='timestamp', symbol: str = None, exchange: str = None, timeframe: str='1m') -> pd.DataFrame:
         """Handle missing values intelligently based on gap size."
 
         Args:
@@ -75,7 +77,7 @@ class EnhancedMissingValueHandler:
         if timestamp_column not in data.columns:
             self.logger.error(f"Timestamp column '{timestamp_column}' not found")
             return data
-        data = data.sort_values(timestamp_column).reset_index(drop=True)
+        data = data.sort_values(timestamp_column).reset_index(drop = True)
         gaps = self._analyze_gaps(data, timestamp_column)
         if not gaps:
             self.logger.info('No gaps detected in data')
@@ -120,7 +122,7 @@ class EnhancedMissingValueHandler:
             if next_time > expected_next_time:
                 gap_size = next_time - expected_next_time
                 gap_type = self._classify_gap(gap_size)
-                gap = GapInfo(start_time=expected_next_time, end_time=next_time, gap_size=gap_size, gap_type=gap_type)
+                gap = GapInfo(start_time = expected_next_time, end_time = next_time, gap_size = gap_size, gap_type = gap_type)
                 gaps.append(gap)
         return gaps
 
@@ -180,8 +182,8 @@ class EnhancedMissingValueHandler:
             new_rows.append(new_row)
         if new_rows:
             new_df = pd.DataFrame(new_rows)
-            filled_data = pd.concat([filled_data, new_df], ignore_index=True)
-            filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
+            filled_data = pd.concat([filled_data, new_df], ignore_index = True)
+            filled_data = filled_data.sort_values(timestamp_column).reset_index(drop = True)
         gap.filled = True
         gap.fill_method = 'forward_fill'
         return filled_data
@@ -238,7 +240,7 @@ class EnhancedMissingValueHandler:
                 from .training.steps.data_downloader import DataDownloader
                 
                 downloader = DataDownloader()
-                downloaded_data = downloader.download_klines(symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt)
+                downloaded_data = downloader.download_klines(symbol = symbol, interval = timeframe, start_time = start_dt, end_time = end_dt)
                 if downloaded_data is not None and len(downloaded_data) > 0:
                     downloaded_data['timestamp'] = pd.to_datetime(downloaded_data['timestamp']).astype(np.int64) // 10 ** 9
                     return downloaded_data
@@ -263,8 +265,8 @@ class EnhancedMissingValueHandler:
         Returns:
             Data with downloaded data inserted
         """
-        combined_data = pd.concat([data, downloaded_data], ignore_index=True)
-        combined_data = combined_data.sort_values(timestamp_column).reset_index(drop=True)
+        combined_data = pd.concat([data, downloaded_data], ignore_index = True)
+        combined_data = combined_data.sort_values(timestamp_column).reset_index(drop = True)
         combined_data = combined_data.drop_duplicates(subset=[timestamp_column])
         return combined_data
 
@@ -301,8 +303,8 @@ class EnhancedMissingValueHandler:
                     after_val = data.iloc[after_gap_idx][col]
                     interpolated_val = before_val + weight * (after_val - before_val)
                     new_row[col] = interpolated_val
-            filled_data = pd.concat([filled_data, pd.DataFrame([new_row])], ignore_index=True)
-        filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
+            filled_data = pd.concat([filled_data, pd.DataFrame([new_row])], ignore_index = True)
+        filled_data = filled_data.sort_values(timestamp_column).reset_index(drop = True)
         gap.filled = True
         gap.fill_method = 'interpolation_fallback'
         return filled_data
@@ -341,7 +343,7 @@ class EnhancedMissingValueHandler:
             report['gap_details'].append({'start_time': gap.start_time, 'end_time': gap.end_time, 'gap_size': gap.gap_size, 'gap_type': gap.gap_type.value, 'filled': gap.filled, 'fill_method': gap.fill_method})
         return report
 
-    def validate_data_continuity(self, data: pd.DataFrame, timestamp_column: str='timestamp', expected_interval: int=60) -> Dict[str, Any]:
+    def validate_data_continuity(self, data: pd.DataFrame, timestamp_column: str='timestamp', expected_interval: int = 60) -> Dict[str, Any]:
         """Validate data continuity and identify issues."
 
         Args:
@@ -354,7 +356,7 @@ class EnhancedMissingValueHandler:
         """
         if timestamp_column not in data.columns:
             return {'valid': False, 'error': f"Timestamp column '{timestamp_column}' not found"}
-        data = data.sort_values(timestamp_column).reset_index(drop=True)
+        data = data.sort_values(timestamp_column).reset_index(drop = True)
         timestamps = data[timestamp_column].values
         issues = []
         total_intervals = len(timestamps) - 1

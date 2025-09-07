@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from pandas import pd
 from numpy import np
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import logging
 
 if TYPE_CHECKING:
@@ -40,10 +40,10 @@ class PathTargetEngineer:
         tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
         pcfg = tm_cfg.get("path_class", {})
         self.cfg = PathClassConfig(
-            enable_beginning_of_trend=bool(pcfg.get("enable_beginning_of_trend", True)),
-            adx_sideways_threshold=float(pcfg.get("adx_sideways_threshold", 18)),
-            return_threshold=float(pcfg.get("return_threshold", 0.001)),
-            onset_window_bars=int(pcfg.get("onset_window_bars", 8)),
+            enable_beginning_of_trend = bool(pcfg.get("enable_beginning_of_trend", True)),
+            adx_sideways_threshold = float(pcfg.get("adx_sideways_threshold", 18)),
+            return_threshold = float(pcfg.get("return_threshold", 0.001)),
+            onset_window_bars = int(pcfg.get("onset_window_bars", 8)),
         )
 
     def compute_path_class(

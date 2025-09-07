@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Advanced Tracing System with Correlation IDs
 
@@ -13,9 +15,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from .core.decorators import log_execution_time
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -56,9 +56,9 @@ class TraceSpan:
     duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
     error_message: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory = dict)
     parent_span_id: str | None = None
-    child_span_ids: list[str] = field(default_factory=list)
+    child_span_ids: list[str] = field(default_factory = list)
 
 
 @dataclass
@@ -73,8 +73,8 @@ class TraceRequest:
     total_duration_ms: float | None = None
     status: str = "running"  # "running", "completed", "failed"
     error_info: dict[str, Any] | None = None
-    performance_metrics: dict[str, float] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    performance_metrics: dict[str, float] = field(default_factory = dict)
+    metadata: dict[str, Any] = field(default_factory = dict)
 
 
 @dataclass
@@ -121,13 +121,13 @@ class AdvancedTracer:
         # Storage
         self._traces: dict[str, TraceRequest] = {}
 
-    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @log_execution_time(level = PerformanceLevel.DETAILED)
     @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tracer configuration"),
             AttributeError: (False, "Missing required tracer parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="advanced_tracer.initialize",
     )
     async def initialize(self) -> bool:
@@ -144,7 +144,7 @@ class AdvancedTracer:
         """Create a new correlation ID."""
         return str(uuid.uuid4())
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def start_span(
         self,
         correlation_id: str,
@@ -154,16 +154,16 @@ class AdvancedTracer:
         metadata: dict[str, Any] | None = None,
     ) -> TraceSpan | None:
         return TraceSpan(
-            span_id=str(uuid.uuid4()),
-            correlation_id=correlation_id,
-            component_type=component_type,
-            operation_name=operation_name,
-            start_time=datetime.now(),
-            metadata=dict(metadata or {}),
-            parent_span_id=parent_span_id,
+            span_id = str(uuid.uuid4()),
+            correlation_id = correlation_id,
+            component_type = component_type,
+            operation_name = operation_name,
+            start_time = datetime.now(),
+            metadata = dict(metadata or {}),
+            parent_span_id = parent_span_id,
         )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def finish_span(
         self,
         span: TraceSpan,
@@ -179,7 +179,7 @@ class AdvancedTracer:
         span.error_message = error_message
         return span
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def record_trace(self, trace: TraceRequest) -> None:
         """Record a completed trace request."""
         self._traces[trace.correlation_id] = trace

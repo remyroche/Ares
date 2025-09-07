@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import logging
 import time
 
@@ -53,19 +53,19 @@ class WalkForwardValidator:
         end_date = data.index.max()
         windows = []
         window_id = 0
-        train_end = start_date + timedelta(days=self.train_period_days)
-        while train_end + timedelta(days=self.test_period_days) <= end_date:
+        train_end = start_date + timedelta(days = self.train_period_days)
+        while train_end + timedelta(days = self.test_period_days) <= end_date:
             train_start = start_date
             test_start = train_end
-            test_end = test_start + timedelta(days=self.test_period_days)
+            test_end = test_start + timedelta(days = self.test_period_days)
             if self.adaptive_windows:
                 window_params = self._adjust_window_for_volatility(data, train_start, train_end)
                 if window_params:
                     train_start = window_params['train_start']
                     test_end = window_params['test_end']
-            window = WalkForwardWindow(train_start=train_start, train_end=train_end, test_start=test_start, test_end=test_end, window_id=window_id)
+            window = WalkForwardWindow(train_start = train_start, train_end = train_end, test_start = test_start, test_end = test_end, window_id = window_id)
             windows.append(window)
-            train_end += timedelta(days=self.step_days)
+            train_end += timedelta(days = self.step_days)
             window_id += 1
         self.logger.info(f'Generated {len(windows)} walk-forward windows')
         return windows
@@ -80,7 +80,7 @@ class WalkForwardValidator:
             new_test_days = int(self.test_period_days * 0.5)
         else:
             return None
-        return {'train_start': train_end - timedelta(days=new_train_days), 'test_end': train_end + timedelta(days=new_test_days)}
+        return {'train_start': train_end - timedelta(days = new_train_days), 'test_end': train_end + timedelta(days = new_test_days)}
 
     async def validate_model(self, model_trainer: Callable, data: pd.DataFrame, regime_labels: Optional[np.ndarray]=None) -> Dict[str, Any]:
         """Run walk-forward validation on a model."""
@@ -97,14 +97,14 @@ class WalkForwardValidator:
     async def _validate_standard(self, model_trainer: Callable, data: pd.DataFrame, windows: List[WalkForwardWindow]) -> List[Dict[str, Any]]:
         """Standard walk-forward validation."""
         results = []
-        with ProcessPoolExecutor(max_workers=4) as executor:
+        with ProcessPoolExecutor(max_workers = 4) as executor:
             futures = []
             for window in windows:
                 future = executor.submit(self._validate_single_window, model_trainer, data, window)
                 futures.append((window, future))
             for window, future in futures:
                 try:
-                    result = future.result(timeout=3600)
+                    result = future.result(timeout = 3600)
                     results.append(result)
                 except Exception as e:
                     self.logger.error(f'Window {window.window_id} failed: {e}')
@@ -158,7 +158,7 @@ class WalkForwardValidator:
         if len(test_regime_data) < 10:
             return {'regime': regime, 'error': f'Insufficient {regime} test samples: {len(test_regime_data)}', 'success': False}
         try:
-            model = model_trainer(train_regime_data, regime=regime)
+            model = model_trainer(train_regime_data, regime = regime)
             train_predictions = model.predict(train_regime_data)
             test_predictions = model.predict(test_regime_data)
             train_metrics = self._calculate_metrics(train_regime_data, train_predictions, f'train_{regime}')
@@ -256,11 +256,11 @@ async def example_model_trainer(data: pd.DataFrame, regime: Optional[str]=None) 
 
     class DummyModel:
 
-        def __init__(self, regime: Any=None) -> None:
+        def __init__(self, regime: Any = None) -> None:
             self.regime = regime
 
         def predict(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> None:
-            return np.random.choice([-1, 0, 1], size=len(data))
+            return np.random.choice([-1, 0, 1], size = len(data))
 
         def get_params(self) -> Any:
             return {'regime': self.regime}

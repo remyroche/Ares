@@ -22,7 +22,7 @@ class DIIntegration:
     throughout the Ares trading system.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or CONFIG
         self.logger = system_logger.getChild('DIIntegration')
         self.container = DependencyContainer(self.config)
@@ -57,8 +57,8 @@ class DIIntegration:
         """Register all services in the DI container."""
         self.logger.info('Registering all services')
         self.registry.register_all_services(self.config)
-        self.container.register(IAnalyst, DIAnalyst, lifetime=ServiceLifetime.SINGLETON, config=self.config.get('analyst', {}))
-        self.container.register(DITrainingManager, DITrainingManager, lifetime=ServiceLifetime.SINGLETON, config=self.config.get('training', {}))
+        self.container.register(IAnalyst, DIAnalyst, lifetime = ServiceLifetime.SINGLETON, config = self.config.get('analyst', {}))
+        self.container.register(DITrainingManager, DITrainingManager, lifetime = ServiceLifetime.SINGLETON, config = self.config.get('training', {}))
         self.logger.info('All services registered successfully')
 
     async def _create_infrastructure(self) -> dict[str, Any]:
@@ -116,7 +116,7 @@ class DIIntegration:
         self.is_initialized = False
         self.logger.info('DI integration shutdown completed')
 
-async def demonstrate_di_integration(config: dict[str, Any] | None=None) -> dict[str, Any]:
+async def demonstrate_di_integration(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Quick demonstration of DI integration."""
     integration = DIIntegration(config)
     return await integration.demonstrate_full_di_integration()

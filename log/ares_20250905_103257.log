@@ -1,3 +1,0 @@
-2025-09-05 10:32:57,132 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
-2025-09-05 10:32:57,535 INFO AresTradingSystem.System.Validator.Step1 🔍 Validating Step 1 data collection for BINANCE ETHUSDT 1m - -
-2025-09-05 10:32:57,535 ERROR AresTradingSystem.System.Validator.Step1 ❌ No market data found in state or consolidated files - Issues: pipeline state data validation failed, no consolidated files found, consolidated data quality validation failed - -

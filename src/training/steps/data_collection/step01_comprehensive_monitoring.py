@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
 
 """
 Step01 Comprehensive Monitoring Integration
@@ -31,7 +32,7 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
     class MockDataFrame:
-
+        @log_important_calls
         def __init__(self, data: Union[pd.DataFrame, Dict[str, Any]]=None) -> None:
             self.data = data or []
             self.columns = []
@@ -39,10 +40,10 @@ except ImportError:
         def to_dict(self, orient: Any='records') -> None:
             return self.data
 
-        def head(self, n: int=5) -> None:
+        def head(self, n: int = 5) -> None:
             return MockDataFrame(self.data[:n])
 
-        def tail(self, n: int=5) -> None:
+        def tail(self, n: int = 5) -> None:
             return MockDataFrame(self.data[-n:])
 
         def isnull(self) -> None:
@@ -51,14 +52,17 @@ except ImportError:
         def sum(self) -> int:
             return 0
 
+        @log_all_calls
         def __len__(self) -> None:
             return len(self.data)
 
+        @log_all_calls
         def __iter__(self) -> None:
             return iter(self.data)
 
     class MockSeries:
 
+        @log_important_calls
         def __init__(self, data: Union[pd.DataFrame, Dict[str, Any]]=None) -> None:
             self.data = data or []
 
@@ -73,6 +77,8 @@ from src.utils.function_validation_framework import validate_function_entry, val
 from src.utils.enhanced_error_handler import handle_errors_with_tracking, get_error_handler, log_error_summary
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 logger = system_logger.getChild('Step01ComprehensiveMonitoring')
 function_monitor = get_function_call_monitor()
 function_validator = get_function_validator()
@@ -80,6 +86,7 @@ error_handler = get_error_handler()
 
 class Step01ComprehensiveMonitoring:
     """Step01 with comprehensive monitoring integration."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize with comprehensive monitoring."""
@@ -90,7 +97,8 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_comprehensive
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @log_all_calls
+    @handle_errors_with_tracking(fallback = True)
     def _validate_environment(self) -> None:
         """Validate environment with comprehensive monitoring."""
         self.logger.info('🔍 Validating environment with comprehensive monitoring...')
@@ -106,7 +114,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def initialize(self) -> None:
         """Initialize with comprehensive monitoring."""
         self.logger.info('🚀 Initializing Step01 with Comprehensive Monitoring...')
@@ -121,7 +129,7 @@ class Step01ComprehensiveMonitoring:
     @monitor_comprehensive
     @validate_function_entry('data_collection')
     @validate_function_output('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute with comprehensive monitoring and validation."""
         self.logger.info('🚀 Starting comprehensive data collection with full monitoring...')
@@ -166,7 +174,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _run_comprehensive_data_collection(self, training_input: Dict[str, Any], data_dir: str) -> bool:
         """Run data collection with comprehensive monitoring."""
         try:
@@ -174,7 +182,7 @@ class Step01ComprehensiveMonitoring:
             exchange = training_input.get('exchange')
             timeframe = training_input.get('timeframe', '1m')
             self.logger.info(f'📊 Starting comprehensive data collection for {exchange}_{symbol}_{timeframe}')
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             download_success = await self._comprehensive_data_download(symbol, exchange, timeframe, data_dir)
             if download_success:
                 self.logger.info('✅ Data download completed successfully')
@@ -194,14 +202,14 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_basic
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _comprehensive_data_download(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Download data with comprehensive monitoring."""
         try:
             try:
-                from src.training.steps.data_downloader import download_all_data_with_consolidation
+                from src.training.steps.data_collection.data_downloader import download_all_data_with_consolidation
                 self.logger.info(f'🔄 Downloading data from {exchange} API with comprehensive monitoring...')
-                success = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe, data_dir=data_dir)
+                success = await download_all_data_with_consolidation(symbol = symbol, exchange_name = exchange, interval = timeframe, data_dir = data_dir)
                 if success:
                     self.logger.info('✅ Data download completed successfully')
                     return True
@@ -217,7 +225,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_validation')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _comprehensive_data_validation(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate downloaded data with comprehensive monitoring."""
         try:
@@ -244,7 +252,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_basic
     @validate_function_entry('file_operations')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _comprehensive_single_file_validation(self, file_name: str, file_path: str) -> Optional[Any]:
         """Validate a single file with comprehensive monitoring."""
         try:
@@ -259,6 +267,7 @@ class Step01ComprehensiveMonitoring:
             self.logger.exception(f'❌ Error validating {file_name}: {e}')
             return None
 
+    @log_all_calls
     @monitor_basic
     def _determine_schema_name(self, file_name: str) -> str:
         """Determine schema name based on file name."""
@@ -269,6 +278,7 @@ class Step01ComprehensiveMonitoring:
         else:
             return 'unified'
 
+    @log_all_calls
     @monitor_basic
     def _log_comprehensive_validation_result(self, file_name: str, validation_result: Any) -> None:
         """Log validation result with comprehensive monitoring."""
@@ -279,22 +289,25 @@ class Step01ComprehensiveMonitoring:
             self._log_comprehensive_issues(validation_result.issues)
         self._log_comprehensive_warnings(validation_result.warnings)
 
+    @log_all_calls
     @monitor_basic
-    def _log_comprehensive_issues(self, issues: List[Any], max_display: int=3) -> None:
+    def _log_comprehensive_issues(self, issues: List[Any], max_display: int = 3) -> None:
         """Log validation issues with comprehensive monitoring."""
         for issue in issues[:max_display]:
             self.logger.warning(f'   - {issue.message}')
         if len(issues) > max_display:
             self.logger.warning(f'   ... and {len(issues) - max_display} more issues')
 
+    @log_all_calls
     @monitor_basic
-    def _log_comprehensive_warnings(self, warnings: List[Any], max_display: int=3) -> None:
+    def _log_comprehensive_warnings(self, warnings: List[Any], max_display: int = 3) -> None:
         """Log validation warnings with comprehensive monitoring."""
         for warning in warnings[:max_display]:
             self.logger.info(f'   ⚠️ {warning.message}')
         if len(warnings) > max_display:
             self.logger.info(f'   ... and {len(warnings) - max_display} more warnings')
 
+    @log_all_calls
     @monitor_standard
     def _process_comprehensive_validation_results(self, validation_results: List[Any]) -> bool:
         """Process and summarize validation results with comprehensive monitoring."""
@@ -315,7 +328,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _comprehensive_fallback_data_collection(self, training_input: Dict[str, Any], data_dir: str) -> bool:
         """Fallback data collection with comprehensive monitoring."""
         self.logger.info('🔄 Running comprehensive fallback data collection...')
@@ -340,14 +353,14 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _generate_comprehensive_mock_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Generate mock data with comprehensive monitoring."""
         try:
             from datetime import datetime, timedelta
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            timestamps = pd.date_range(start=start_date, end=end_date, freq='1min')
+            start_date = end_date - timedelta(days = 30)
+            timestamps = pd.date_range(start = start_date, end = end_date, freq='1min')
             np.random.seed(42)
             base_price = 3000.0
             price_changes = np.random.normal(0, 0.002, len(timestamps))
@@ -398,7 +411,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_validation')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _run_comprehensive_quality_check(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Run quality check with comprehensive monitoring."""
         try:
@@ -410,7 +423,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('file_operations')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _log_comprehensive_detailed_data_extract(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
         """Log detailed data extract with comprehensive monitoring."""
         self.logger.info('=' * 80)
@@ -480,7 +493,7 @@ class Step01ComprehensiveMonitoring:
 
     @monitor_standard
     @validate_function_entry('data_collection')
-    @handle_errors_with_tracking(fallback=True)
+    @handle_errors_with_tracking(fallback = True)
     async def _log_comprehensive_step1_artifacts_and_report(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> None:
         """Log step 1 artifacts and create comprehensive report."""
         try:
@@ -503,10 +516,12 @@ class Step01ComprehensiveMonitoring:
             self.logger.info(f"📊 Error recovery rate: {metrics_calculated['error_recovery_rate']:.1f}%")
         except Exception as e:
             self.logger.exception(f'❌ Failed to log comprehensive step 1 artifacts and reports: {e}')
+    @log_all_calls
 
     def _get_comprehensive_monitoring_summary(self) -> Dict[str, Any]:
         """Get comprehensive monitoring summary."""
         return {'function_calls': function_monitor.get_call_summary(), 'validation': {'total_checks': len(function_validator.validation_rules), 'success_rate': 100.0}, 'errors': error_handler.get_error_summary()}
+    @log_all_calls
 
     def _log_comprehensive_summary(self) -> None:
         """Log comprehensive monitoring summary."""
@@ -520,8 +535,8 @@ class Step01ComprehensiveMonitoring:
 @monitor_comprehensive
 @validate_function_entry('data_collection')
 @validate_function_output('data_collection')
-@handle_errors_with_tracking(fallback=True)
-async def run_comprehensive_step01(symbol: str, exchange: str, timeframe: str='1m', data_dir: Optional[str]=None, force_rerun: bool=False, **kwargs: Any) -> bool:
+@handle_errors_with_tracking(fallback = True)
+async def run_comprehensive_step01(symbol: str, exchange: str, timeframe: str='1m', data_dir: Optional[str]=None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the comprehensive data collection step with full monitoring.
 
     Args:
@@ -583,7 +598,7 @@ if __name__ == '__main__':
             print('Usage: python step01_comprehensive_monitoring.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
             print('Example: python step01_comprehensive_monitoring.py ETHUSDT BINANCE 1m data_cache true')
             return
-        success = await run_comprehensive_step01(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+        success = await run_comprehensive_step01(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
         if success:
             print('✅ Comprehensive Step 1: Data Collection completed successfully')
         else:

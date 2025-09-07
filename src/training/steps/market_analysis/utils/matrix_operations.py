@@ -9,6 +9,20 @@ import pandas as pd
 import logging
 import time
 
+# Import decorators with fallback
+try:
+    from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+except ImportError:
+    # Fallback decorators
+    def log_important_calls(func):
+        return func
+    def log_all_calls(func):
+        return func
+    log_step_functions = log_important_calls
+    log_internal_call = log_important_calls
+    log_step_progress = log_important_calls
+    log_data_operation = log_important_calls
+
 # Optional dependencies with fallback handling
 try:
     NUMPY_AVAILABLE = True
@@ -22,9 +36,19 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+try:
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+    SCIPY_SPARSE_AVAILABLE = True
+except ImportError:
+    SCIPY_SPARSE_AVAILABLE = False
+    sp = None
+    spla = None
+
 
 class MatrixOperations:
     """Matrix operations for enhanced analysis."""
+    @log_important_calls
     
     def __init__(self, logger):
         self.logger = logger
@@ -61,7 +85,7 @@ class MatrixOperations:
         
         self.logger.info('🔧 Performing SVD analysis...')
         try:
-            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
+            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
             results['singular_value_decomposition'] = {
                 'singular_values': s.tolist(),
                 'rank': int(np.sum(s > config['min_eigenvalue_threshold'])),
@@ -84,7 +108,88 @@ class MatrixOperations:
             results['matrix_rank_analysis'] = {'error': str(e)}
         
         return results
-    
+
+    async def execute_sparse_matrix_operations(self, numeric_df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute sparse matrix operations for memory efficiency."""
+        if not SCIPY_SPARSE_AVAILABLE or not NUMPY_AVAILABLE or not PANDAS_AVAILABLE:
+            return {'error': 'SciPy sparse or NumPy/Pandas not available'}
+
+        results = {}
+        try:
+            # Convert to sparse matrix if sparsity threshold is met
+            sparsity_threshold = config.get('sparsity_threshold', 0.7)
+            matrix_data = numeric_df.values
+
+            # Calculate sparsity
+            total_elements = matrix_data.size
+            zero_elements = np.sum(matrix_data == 0)
+            sparsity = zero_elements / total_elements
+
+            if sparsity >= sparsity_threshold:
+                self.logger.info(f'🔧 Converting to sparse matrix (sparsity: {sparsity:.2f})')
+
+                # Create sparse matrix
+                sparse_matrix = sp.csr_matrix(matrix_data)
+
+                # Sparse correlation matrix
+                if config.get('compute_sparse_correlation', True):
+                    self.logger.info('📊 Computing sparse correlation matrix...')
+                    # For sparse matrices, we need to densify for correlation
+                    dense_sample = matrix_data[:min(1000, len(matrix_data))]  # Sample for correlation
+                    correlation_matrix = np.corrcoef(dense_sample.T)
+                    results['sparse_correlation_analysis'] = {
+                        'correlation_matrix_shape': correlation_matrix.shape,
+                        'sparsity_level': sparsity,
+                        'sample_size_used': len(dense_sample)
+                    }
+
+                # Sparse matrix factorization
+                if config.get('compute_sparse_svd', False):
+                    self.logger.info('🔧 Computing sparse SVD...')
+                    try:
+                        # Convert to dense for SVD (limited by memory)
+                        if matrix_data.shape[0] <= 1000:
+                            U, s, Vt = np.linalg.svd(matrix_data, full_matrices=False)
+                            results['sparse_svd'] = {
+                                'singular_values': s.tolist()[:10],  # Top 10
+                                'rank': np.sum(s > 1e-10),
+                                'condition_number': s[0] / s[-1] if len(s) > 1 else float('inf')
+                            }
+                    except Exception as e:
+                        self.logger.warning(f'Sparse SVD failed: {e}')
+
+                # Sparse matrix statistics
+                results['sparse_matrix_stats'] = {
+                    'original_shape': matrix_data.shape,
+                    'sparse_shape': sparse_matrix.shape,
+                    'sparsity_ratio': sparsity,
+                    'nnz': sparse_matrix.nnz,
+                    'density': sparse_matrix.nnz / sparse_matrix.size
+                }
+
+                # Memory comparison
+                dense_memory = matrix_data.nbytes
+                sparse_memory = sparse_matrix.data.nbytes + sparse_matrix.indices.nbytes + sparse_matrix.indptr.nbytes
+                memory_savings = (dense_memory - sparse_memory) / dense_memory
+
+                results['memory_analysis'] = {
+                    'dense_memory_mb': dense_memory / (1024**2),
+                    'sparse_memory_mb': sparse_memory / (1024**2),
+                    'memory_savings_ratio': memory_savings,
+                    'compression_ratio': dense_memory / sparse_memory
+                }
+
+                self.logger.info(f'💾 Memory savings: {memory_savings:.1f}')
+            else:
+                self.logger.info(f'📊 Matrix not sparse enough (sparsity: {sparsity:.2f}), using dense operations')
+                results['sparse_analysis'] = {'sparsity_too_low': sparsity}
+
+        except Exception as e:
+            self.logger.error(f'Sparse matrix operations failed: {e}')
+            results['error'] = str(e)
+
+        return results
+
     async def execute_sr_matrix_operations(self, df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute SR-specific matrix operations."""
         if not NUMPY_AVAILABLE or not PANDAS_AVAILABLE:
@@ -222,6 +327,7 @@ class MatrixOperations:
         except Exception as e:
             self.logger.error(f'Error in SR optimization analysis: {e}')
             return {'error': str(e)}
+    @log_all_calls
     
     def _find_high_correlations(self, correlation_matrix: pd.DataFrame, threshold: float) -> List[Dict[str, Any]]:
         """Find high correlation pairs."""
@@ -236,6 +342,7 @@ class MatrixOperations:
                         'correlation': float(corr_value)
                     })
         return high_correlations
+    @log_all_calls
     
     def _analyze_sr_feature_clusters(self, sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze SR feature clusters."""
@@ -265,6 +372,7 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_sr_feature_stability(self, sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze SR feature stability over time."""
@@ -297,19 +405,20 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_sr_feature_importance(self, sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze SR feature importance based on variance and correlation."""
         try:
             variances = sr_df.var()
-            variance_importance = variances.sort_values(ascending=False)
+            variance_importance = variances.sort_values(ascending = False)
             
             correlation_matrix = sr_df.corr()
             avg_correlations = correlation_matrix.abs().mean()
-            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending=False)
+            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending = False)
             
             combined_importance = (variance_importance + correlation_importance) / 2
-            combined_importance = combined_importance.sort_values(ascending=False)
+            combined_importance = combined_importance.sort_values(ascending = False)
             
             return {
                 'variance_importance': variance_importance.to_dict(),
@@ -319,6 +428,7 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_enhanced_sr_feature_clusters(self, enhanced_sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze enhanced SR feature clusters."""
@@ -350,6 +460,7 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_enhanced_sr_feature_stability(self, enhanced_sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze enhanced SR feature stability."""
@@ -403,19 +514,20 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_enhanced_sr_feature_importance(self, enhanced_sr_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze enhanced SR feature importance."""
         try:
             variances = enhanced_sr_df.var()
-            variance_importance = variances.sort_values(ascending=False)
+            variance_importance = variances.sort_values(ascending = False)
             
             correlation_matrix = enhanced_sr_df.corr()
             avg_correlations = correlation_matrix.abs().mean()
-            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending=False)
+            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending = False)
             
             combined_importance = (variance_importance + correlation_importance) / 2
-            combined_importance = combined_importance.sort_values(ascending=False)
+            combined_importance = combined_importance.sort_values(ascending = False)
             
             feature_importance_by_type = {
                 'enhanced_strength': [], 'clustering': [], 'fibonacci': [], 
@@ -439,7 +551,7 @@ class MatrixOperations:
                     feature_importance_by_type['momentum'].append((feature, importance))
             
             for feature_type in feature_importance_by_type:
-                feature_importance_by_type[feature_type].sort(key=lambda x: x[1], reverse=True)
+                feature_importance_by_type[feature_type].sort(key = lambda x: x[1], reverse = True)
             
             return {
                 'variance_importance': variance_importance.to_dict(),
@@ -450,6 +562,7 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze SR optimization parameters."""
@@ -490,6 +603,7 @@ class MatrixOperations:
             }
         except Exception as e:
             return {'error': str(e)}
+    @log_all_calls
     
     def _calculate_group_correlations(self, df: pd.DataFrame, feature_groups: Dict[str, List]) -> Dict[str, float]:
         """Calculate correlations between feature groups."""
@@ -500,7 +614,7 @@ class MatrixOperations:
                     if group1_name < group2_name and group1_features and group2_features:
                         group1_data = df[group1_features]
                         group2_data = df[group2_features]
-                        cross_corr = group1_data.corrwith(group2_data, axis=0)
+                        cross_corr = group1_data.corrwith(group2_data, axis = 0)
                         avg_correlation = cross_corr.abs().mean()
                         group_correlations[f'{group1_name}_vs_{group2_name}'] = float(avg_correlation)
             return group_correlations

@@ -1,3 +1,6 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 7: Enhanced Matrix Operations - Per-Regime Implementation.
 
 This module provides per-HMM regime matrix operations functionality, ensuring that
@@ -17,7 +20,6 @@ from .training.steps.regime_processing_utils import (
 )
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-from .core.decorators import traced, validates, handles_errors
 import numpy as np
 import pandas as pd
 import logging
@@ -29,6 +31,7 @@ logger = get_logger('Step7EnhancedMatrixOperationsPerRegime')
 
 class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
     """Enhanced matrix operations step that processes each regime separately."""
+    @log_important_calls
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
@@ -154,6 +157,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error loading feature data for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _get_regime_matrix_config(self, regime_id: int) -> Dict[str, Any]:
         """Get matrix operations configuration for a specific regime.
@@ -264,7 +268,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             feature_matrix = feature_data[feature_columns].values
             
             # Remove any rows with NaN values
-            valid_mask = ~np.isnan(feature_matrix).any(axis=1)
+            valid_mask = ~np.isnan(feature_matrix).any(axis = 1)
             feature_matrix = feature_matrix[valid_mask]
             
             if len(feature_matrix) < 10:
@@ -317,6 +321,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error applying matrix operations for regime {regime_id}: {e}")
             return None
+    @log_all_calls
     
     def _find_high_correlations(
         self,
@@ -348,8 +353,9 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
                     })
         
         # Sort by absolute correlation
-        high_correlations.sort(key=lambda x: x['abs_correlation'], reverse=True)
+        high_correlations.sort(key = lambda x: x['abs_correlation'], reverse = True)
         return high_correlations
+    @log_all_calls
     
     def _apply_pca_analysis(
         self,
@@ -395,6 +401,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error in PCA analysis: {e}")
             return {'error': str(e)}
+    @log_all_calls
     
     def _apply_clustering_analysis(
         self,
@@ -442,6 +449,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error in clustering analysis: {e}")
             return {'error': str(e)}
+    @log_all_calls
     
     def _apply_additional_operation(
         self,
@@ -476,31 +484,34 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error in additional operation {operation_name}: {e}")
             return None
+    @log_all_calls
     
     def _apply_trend_analysis(self, feature_matrix: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Apply trend-specific matrix analysis."""
         # Calculate trend strength matrix
-        trend_strength = np.abs(np.diff(feature_matrix, axis=0)).mean(axis=0)
+        trend_strength = np.abs(np.diff(feature_matrix, axis = 0)).mean(axis = 0)
         
         return {
             'trend_strength': trend_strength.tolist(),
             'trend_features': [name for name, strength in zip(feature_names, trend_strength) if strength > np.median(trend_strength)]
         }
+    @log_all_calls
     
     def _apply_volatility_analysis(self, feature_matrix: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Apply volatility-specific matrix analysis."""
         # Calculate volatility matrix
-        volatility = np.std(feature_matrix, axis=0)
+        volatility = np.std(feature_matrix, axis = 0)
         
         return {
             'volatility': volatility.tolist(),
             'high_volatility_features': [name for name, vol in zip(feature_names, volatility) if vol > np.median(volatility)]
         }
+    @log_all_calls
     
     def _apply_balanced_analysis(self, feature_matrix: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Apply balanced matrix analysis."""
         # Calculate feature importance based on variance
-        feature_importance = np.var(feature_matrix, axis=0)
+        feature_importance = np.var(feature_matrix, axis = 0)
         
         return {
             'feature_importance': feature_importance.tolist(),
@@ -534,7 +545,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             regime_results_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_matrix_operations_regime_{regime_id}.json'
             
             with open(regime_results_path, 'w') as f:
-                json.dump(matrix_results, f, indent=2, default=str)
+                json.dump(matrix_results, f, indent = 2, default = str)
             
             self.logger.info(f"✅ Saved matrix results for regime {regime_id}: {regime_results_path}")
             return True
@@ -542,6 +553,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         except Exception as e:
             self.logger.error(f"❌ Error saving matrix results for regime {regime_id}: {e}")
             return False
+    @log_all_calls
 
     def _apply_kmeans_clustering(self, scaled_matrix: np.ndarray, feature_matrix: np.ndarray) -> Dict[str, Any]:
         """Apply K-means clustering.
@@ -555,7 +567,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         """
         from sklearn.cluster import KMeans
         
-        kmeans = KMeans(n_clusters=min(5, len(feature_matrix) // 10), random_state=42)
+        kmeans = KMeans(n_clusters = min(5, len(feature_matrix) // 10), random_state = 42)
         clusters = kmeans.fit_predict(scaled_matrix)
         
         return {
@@ -563,6 +575,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             'n_clusters': len(np.unique(clusters)),
             'inertia': float(kmeans.inertia_)
         }
+    @log_all_calls
 
     def _apply_dbscan_clustering(self, scaled_matrix: np.ndarray) -> Dict[str, Any]:
         """Apply DBSCAN clustering.
@@ -575,7 +588,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         """
         from sklearn.cluster import DBSCAN
         
-        dbscan = DBSCAN(eps=0.5, min_samples=5)
+        dbscan = DBSCAN(eps = 0.5, min_samples = 5)
         clusters = dbscan.fit_predict(scaled_matrix)
         
         return {
@@ -583,6 +596,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             'n_clusters': len(np.unique(clusters)),
             'n_noise': int(np.sum(clusters == -1))
         }
+    @log_all_calls
 
     def _apply_gaussian_mixture_clustering(self, scaled_matrix: np.ndarray, feature_matrix: np.ndarray) -> Dict[str, Any]:
         """Apply Gaussian Mixture clustering.
@@ -596,7 +610,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
         """
         from sklearn.mixture import GaussianMixture
         
-        gmm = GaussianMixture(n_components=min(3, len(feature_matrix) // 20), random_state=42)
+        gmm = GaussianMixture(n_components = min(3, len(feature_matrix) // 20), random_state = 42)
         clusters = gmm.fit_predict(scaled_matrix)
         
         return {
@@ -645,11 +659,11 @@ async def run_per_regime_step(
     step = PerRegimeEnhancedMatrixOperationsStep(config)
     
     success = await step.execute_per_regime_matrix_operations(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir,
-        force_rerun=force_rerun
+        symbol = symbol,
+        exchange = exchange,
+        timeframe = timeframe,
+        data_dir = data_dir,
+        force_rerun = force_rerun
     )
     
     if success:

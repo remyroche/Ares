@@ -53,11 +53,11 @@ def install_dependencies() -> bool:
     """Install required dependencies."""
     print('\n📦 Installing dependencies...')
     try:
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas>=1.3.0', 'psutil>=5.8.0'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pandas >= 1.3.0', 'psutil >= 5.8.0'])
         print('✅ Core dependencies installed successfully')
         install_optional = input('\n❓ Install optional dependencies for enhanced functionality? (y/n): ').lower().strip()
         if install_optional in ['y', 'yes']:
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyarrow>=5.0.0', 'fastparquet>=0.7.0'])
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyarrow >= 5.0.0', 'fastparquet >= 0.7.0'])
             print('✅ Optional dependencies installed successfully')
         return True
     except subprocess.CalledProcessError as e:

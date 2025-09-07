@@ -1,4 +1,7 @@
 """Error Handler Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Centralized error handling system for data quality checks.
 Extracted from raw_data_quality_checker.py
 """
@@ -6,7 +9,7 @@ from datetime import datetime
 from typing import Any, Optional
 import traceback
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import time
@@ -46,12 +49,14 @@ class ErrorHandler:
     - Error recovery strategies
     - Error reporting and metrics
     """
+    @log_important_calls
     
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.logger = system_logger.getChild("ErrorHandler")
         self.config = config or self._get_default_config()
         self.error_counts = {}
         self.error_history = []
+    @log_all_calls
         
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for error handling."""
@@ -170,6 +175,7 @@ class ErrorHandler:
             "timestamp": datetime.now().isoformat(),
             "default_config_applied": True
         }
+    @log_all_calls
         
     def _log_error(
         self, 
@@ -251,6 +257,7 @@ class ErrorHandler:
             "recent_errors": self.error_history[-10:] if self.error_history else [],
             "most_common_error": max(self.error_counts.items(), key=lambda x: x[1])[0] if self.error_counts else None
         }
+    @log_all_calls
         
     def _categorize_error(self, error_type: str) -> str:
         """Categorize an error type.

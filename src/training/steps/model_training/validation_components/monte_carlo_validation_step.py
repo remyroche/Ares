@@ -3,15 +3,18 @@ import numpy as np
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 19: Monte Carlo Validation - Updated to use BaseStep pattern."""
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.model_selection import train_test_split
 from .base_validation_step import BaseValidationStep
-from .core.decorators.errors import handles_errors
 import logging
 
 class MonteCarloValidationStep(BaseValidationStep):
     """Step 19: Monte Carlo Validation with random sampling."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Monte Carlo Validation step.
@@ -20,12 +23,14 @@ class MonteCarloValidationStep(BaseValidationStep):
             config: Configuration dictionary
         """
         super().__init__(config, '19', 'monte_carlo_validation')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         self.mc_config = {'n_iterations': self.config.get('monte_carlo_iterations', 100), 'test_size': self.config.get('monte_carlo_test_size', 0.2), 'bootstrap': self.config.get('monte_carlo_bootstrap', True), 'stratify': self.config.get('monte_carlo_stratify', True), 'confidence_level': self.config.get('confidence_level', 0.95), 'parallel_iterations': self.config.get('parallel_iterations', True)}
         self.simulation_results: List[Dict[str, Any]] = []
         self.model_distributions: Dict[str, Dict[str, List[float]]] = {}
+    @log_all_calls
 
     def _validate_step_specific_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific inputs."""
@@ -82,7 +87,7 @@ class MonteCarloValidationStep(BaseValidationStep):
         """
         simulation_result = {'iteration': iteration, 'model_results': {}, 'sample_info': {}}
         if self.mc_config['bootstrap']:
-            indices = np.random.choice(len(X), size=len(X), replace=True)
+            indices = np.random.choice(len(X), size = len(X), replace = True)
             X_sample = X.iloc[indices]
             y_sample = y.iloc[indices]
             oob_indices = list(set(range(len(X))) - set(indices))
@@ -90,11 +95,11 @@ class MonteCarloValidationStep(BaseValidationStep):
                 X_test = X.iloc[oob_indices]
                 y_test = y.iloc[oob_indices]
             else:
-                X_train, X_test, y_train, y_test = train_test_split(X_sample, y_sample, test_size=self.mc_config['test_size'], stratify=y_sample if self.mc_config['stratify'] else None, random_state=iteration)
+                X_train, X_test, y_train, y_test = train_test_split(X_sample, y_sample, test_size = self.mc_config['test_size'], stratify = y_sample if self.mc_config['stratify'] else None, random_state = iteration)
                 X_sample = X_train
                 y_sample = y_train
         else:
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=self.mc_config['test_size'], stratify=y if self.mc_config['stratify'] else None, random_state=iteration)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = self.mc_config['test_size'], stratify = y if self.mc_config['stratify'] else None, random_state = iteration)
             X_sample = X_train
             y_sample = y_train
         simulation_result['sample_info'] = {'train_size': len(X_sample), 'test_size': len(X_test)}
@@ -102,12 +107,13 @@ class MonteCarloValidationStep(BaseValidationStep):
             try:
                 model.fit(X_sample, y_sample)
                 y_pred = model.predict(X_test)
-                metrics = {'accuracy': accuracy_score(y_test, y_pred), 'precision': precision_score(y_test, y_pred, average='weighted', zero_division=0), 'recall': recall_score(y_test, y_pred, average='weighted', zero_division=0), 'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division=0)}
+                metrics = {'accuracy': accuracy_score(y_test, y_pred), 'precision': precision_score(y_test, y_pred, average='weighted', zero_division = 0), 'recall': recall_score(y_test, y_pred, average='weighted', zero_division = 0), 'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division = 0)}
                 simulation_result['model_results'][model_name] = metrics
             except Exception as e:
                 self.logger.warning(f'Failed to validate {model_name} in iteration {iteration}: {str(e)}')
                 simulation_result['model_results'][model_name] = {'error': str(e)}
         return simulation_result
+    @log_all_calls
 
     def _update_distributions(self, iteration_results: Dict[str, Any]) -> None:
         """Update metric distributions with iteration results."""
@@ -119,6 +125,7 @@ class MonteCarloValidationStep(BaseValidationStep):
             for metric_name in ['accuracy', 'precision', 'recall', 'f1_score']:
                 if metric_name in metrics:
                     self.model_distributions[model_name][metric_name].append(metrics[metric_name])
+    @log_all_calls
 
     def _calculate_mc_statistics(self) -> Dict[str, Dict[str, float]]:
         """Calculate statistics from Monte Carlo simulations."""
@@ -135,6 +142,7 @@ class MonteCarloValidationStep(BaseValidationStep):
                     model_stats[f'{metric_name}_cv'] = np.std(values) / np.mean(values) if np.mean(values) > 0 else 0
             statistics[model_name] = model_stats
         return statistics
+    @log_all_calls
 
     def _calculate_confidence_intervals(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
         """Calculate confidence intervals for each model and metric."""
@@ -151,6 +159,7 @@ class MonteCarloValidationStep(BaseValidationStep):
                     model_ci[f'{metric_name}_ci'] = (ci_lower, ci_upper)
             confidence_intervals[model_name] = model_ci
         return confidence_intervals
+    @log_all_calls
 
     def _calculate_overall_mc_metrics(self, mc_statistics: Dict[str, Dict[str, float]]) -> Dict[str, float]:
         """Calculate overall Monte Carlo metrics."""
@@ -169,6 +178,7 @@ class MonteCarloValidationStep(BaseValidationStep):
             else:
                 metrics[key] = 0.0
         return metrics
+    @log_all_calls
 
     def _validate_step_specific_outputs(self, pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific outputs."""
@@ -181,6 +191,7 @@ class MonteCarloValidationStep(BaseValidationStep):
             if 'confidence_intervals' not in results:
                 errors.append('No confidence intervals calculated')
         return errors
+    @log_all_calls
 
     def _add_step_specific_summary(self, summary: Dict[str, Any], validation_results: Dict[str, Any]) -> None:
         """Add step-specific items to summary."""

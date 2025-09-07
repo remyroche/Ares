@@ -1,5 +1,4 @@
 """
-from .step06_feature_engineering import FeatureEngineeringStep
 Feature Engineering Step06 Components
 
 This package contains feature engineering components for step06 including:
@@ -8,6 +7,8 @@ This package contains feature engineering components for step06 including:
 - Feature interaction creation
 - Feature selection and validation
 """
+
+from .step06_feature_engineering import FeatureEngineeringStep
 
 try:
     FEATURE_ENGINEERING_STEP_AVAILABLE = True

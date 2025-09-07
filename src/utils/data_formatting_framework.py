@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 """
+from .logger import system_logger
+from .logger import system_logger
 Data Formatting and Standardization Framework
 
 This module provides standardized data formatting including:
@@ -10,14 +13,34 @@ This module provides standardized data formatting including:
 - Format transformation utilities
 """
 from enum import Enum
-from .core.decorators import handles_errors, validates, log_call, traced
 from .logger import system_logger
 import pandas as pd
 
-from .utils.data_utils import (
-    safe_copy, validate_dataframe_schema, validate_data_quality,
-    safe_file_exists, safe_json_dump, safe_json_load
-)
+import datetime
+import logging
+import numpy as np
+import time
+import typing
+# Import available data utilities
+try:
+    from .data_utils import (
+        safe_dataframe_operation, validate_dataframe,
+        safe_numpy_operation, validate_numpy_array, get_data_info
+    )
+except ImportError:
+    # Try alternative import path
+    try:
+        from data_utils import (
+            safe_dataframe_operation, validate_dataframe,
+            safe_numpy_operation, validate_numpy_array, get_data_info
+        )
+    except ImportError:
+        # Fallback if import fails
+        safe_dataframe_operation = lambda df, op, **kwargs: None
+        validate_dataframe = lambda df: isinstance(df, pd.DataFrame)
+        safe_numpy_operation = lambda arr, op, **kwargs: None
+        validate_numpy_array = lambda arr: isinstance(arr, np.ndarray)
+        get_data_info = lambda data: {'type': type(data).__name__}
 
 class DataFormat(Enum):
     """Standard data formats."""
@@ -46,11 +69,11 @@ class DataFormattingFramework:
         self.formatting_policies = {'column_naming_convention': ColumnNamingConvention.SNAKE_CASE, 'timestamp_format': 'unix_seconds', 'numeric_precision': 8, 'auto_rename_columns': True, 'strict_formatting': True, 'preserve_original': True}
         self.standard_formats = {DataFormat.KLINES: {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}, 'column_order': ['timestamp', 'open', 'high', 'low', 'close', 'volume']}, DataFormat.FEATURES: {'required_columns': ['timestamp'], 'optional_columns': [], 'data_types': {'timestamp': 'int64'}, 'column_order': ['timestamp']}, DataFormat.LABELS: {'required_columns': ['timestamp', 'label'], 'optional_columns': ['label_probability', 'label_confidence'], 'data_types': {'timestamp': 'int64', 'label': 'int64', 'label_probability': 'float64', 'label_confidence': 'float64'}, 'column_order': ['timestamp', 'label']}, DataFormat.PREDICTIONS: {'required_columns': ['timestamp', 'prediction'], 'optional_columns': ['prediction_probability', 'prediction_confidence'], 'data_types': {'timestamp': 'int64', 'prediction': 'float64', 'prediction_probability': 'float64', 'prediction_confidence': 'float64'}, 'column_order': ['timestamp', 'prediction']}}
 
-    @handles_errors(Exception, fallback=pd.DataFrame(), log_level="ERROR")
-    @validates(strict=True)
+    @handles_errors(Exception, fallback = pd.DataFrame(), log_level="ERROR")
+    @validates(strict = True)
     @log_call
     @traced
-    def standardize_format(self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool=None) -> pd.DataFrame:
+    def standardize_format(self, data: pd.DataFrame, target_format: DataFormat, preserve_original: bool = None) -> pd.DataFrame:
         """Standardize data to a specific format with comprehensive validation.
 
         Args:
@@ -72,7 +95,7 @@ class DataFormattingFramework:
                 raise ValueError(f"Invalid target format: {target_format}")
             
             # Validate data quality before formatting
-            quality_report = validate_data_quality(data, max_nan_ratio=0.5, check_duplicates=True)
+            quality_report = validate_data_quality(data, max_nan_ratio = 0.5, check_duplicates = True)
             if not quality_report['is_valid']:
                 self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
             
@@ -82,7 +105,7 @@ class DataFormattingFramework:
             
             # Create working copy
             if preserve_original:
-                standardized_data = safe_copy(data, deep=True)
+                standardized_data = safe_copy(data, deep = True)
             else:
                 standardized_data = data
             
@@ -132,12 +155,11 @@ class DataFormattingFramework:
             else:
                 new_name = col
             new_columns[col] = new_name
-        data = data.rename(columns=new_columns)
+        data = data.rename(columns = new_columns)
         return data
 
     def _to_snake_case(self, text: str) -> str:
         """Convert text to snake_case."""
-        import re
         text = re.sub('([a-z0-9])([A-Z])', '\\1_\\2', text)
         text = re.sub('[^a-zA-Z0-9]', '_', text)
         text = text.lower()
@@ -147,7 +169,6 @@ class DataFormattingFramework:
 
     def _to_camel_case(self, text: str) -> str:
         """Convert text to camelCase."""
-        import re
         text = self._to_snake_case(text)
         words = text.split('_')
         if len(words) > 1:
@@ -177,7 +198,7 @@ class DataFormattingFramework:
         missing_columns = set(required_columns) - set(data.columns)
         for column in missing_columns:
             if column == 'timestamp':
-                data[column] = pd.date_range(start=datetime.now(), periods=len(data), freq='1min').astype(np.int64) // 10 ** 9
+                data[column] = pd.date_range(start = datetime.now(), periods = len(data), freq='1min').astype(np.int64) // 10 ** 9
             else:
                 data[column] = 0.0
                 self.logger.warning(f"Created missing required column '{column}' with default value")
@@ -226,7 +247,7 @@ class DataFormattingFramework:
                         warnings.append(f"Column '{column}' has type {actual_type}, expected {expected_type}")
             
             # Check for required data quality
-            quality_report = validate_data_quality(data, max_nan_ratio=0.1, check_duplicates=True)
+            quality_report = validate_data_quality(data, max_nan_ratio = 0.1, check_duplicates = True)
             if not quality_report['is_valid']:
                 for issue in quality_report['issues']:
                     if issue['type'] == 'high_nan_ratio':
@@ -299,7 +320,7 @@ class DataFormattingFramework:
             self.logger.error(f'Failed to normalize timestamps: {e}')
         return normalized_data
 
-    def round_numeric_columns(self, data: pd.DataFrame, precision: int=None) -> pd.DataFrame:
+    def round_numeric_columns(self, data: pd.DataFrame, precision: int = None) -> pd.DataFrame:
         """Round numeric columns to specified precision."
 
         Args:
@@ -318,7 +339,7 @@ class DataFormattingFramework:
         self.logger.info(f'Rounded {len(numeric_columns)} numeric columns to {precision} decimal places')
         return rounded_data
 
-    def handle_missing_values(self, data: pd.DataFrame, strategy: str='intelligent', limit: int=None, symbol: str=None, exchange: str=None, timeframe: str='1m') -> pd.DataFrame:
+    def handle_missing_values(self, data: pd.DataFrame, strategy: str='intelligent', limit: int = None, symbol: str = None, exchange: str = None, timeframe: str='1m') -> pd.DataFrame:
         """Handle missing values according to specified strategy."
 
         Args:
@@ -337,11 +358,11 @@ class DataFormattingFramework:
             return enhanced_missing_value_handler.handle_missing_values_intelligently(data, 'timestamp', symbol, exchange, timeframe)
         handled_data = data.copy()
         if strategy == 'forward_fill':
-            handled_data = handled_data.fillna(method='ffill', limit=limit)
+            handled_data = handled_data.fillna(method='ffill', limit = limit)
         elif strategy == 'backward_fill':
-            handled_data = handled_data.fillna(method='bfill', limit=limit)
+            handled_data = handled_data.fillna(method='bfill', limit = limit)
         elif strategy == 'interpolate':
-            handled_data = handled_data.interpolate(method='linear', limit=limit)
+            handled_data = handled_data.interpolate(method='linear', limit = limit)
         elif strategy == 'drop':
             handled_data = handled_data.dropna()
         elif strategy == 'zero':
@@ -350,7 +371,7 @@ class DataFormattingFramework:
             for column in handled_data.columns:
                 if handled_data[column].dtype in ['float64', 'int64']:
                     median_value = handled_data[column].median()
-                    handled_data[column].fillna(median_value, inplace=True)
+                    handled_data[column].fillna(median_value, inplace = True)
         else:
             self.logger.warning(f'Unknown missing value strategy: {strategy}')
             return data

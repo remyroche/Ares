@@ -32,7 +32,7 @@ async def main() -> None:
     print('=' * 80)
     start_time = time.time()
     try:
-        result = await run_standalone_enhanced_data_collection_pipeline(symbol=symbol, exchange=exchange, data_dir=data_dir, config=config)
+        result = await run_standalone_enhanced_data_collection_pipeline(symbol = symbol, exchange = exchange, data_dir = data_dir, config = config)
         success = result.get('success', False)
         total_time = time.time() - start_time
         if success:
@@ -54,7 +54,7 @@ async def main() -> None:
             print('=' * 80)
             config_file = Path(data_dir) / f'data_collection_config_{symbol}_{timeframe}.json'
             with open(config_file, 'w') as f:
-                json.dump({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'config': config, 'execution_time': total_time, 'success': True, 'pipeline_result': result}, f, indent=2, default=str)
+                json.dump({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'config': config, 'execution_time': total_time, 'success': True, 'pipeline_result': result}, f, indent = 2, default = str)
             print(f'💾 Configuration saved to: {config_file}')
         else:
             print('\n❌ ENHANCED DATA COLLECTION FAILED!')

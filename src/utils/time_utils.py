@@ -36,7 +36,7 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
             if dt.tzinfo is None:
                 # Fallback implementation for dt.tzinfo
                 # Fallback implementation for dt.tzinfo
-                dt = dt.replace(tzinfo=UTC)
+                dt = dt.replace(tzinfo = UTC)
             return int(dt.timestamp() * 1000)
         except Exception:
             continue
@@ -46,7 +46,7 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
         if dt.tzinfo is None:
             # Fallback implementation for dt.tzinfo
             # Fallback implementation for dt.tzinfo
-            dt = dt.replace(tzinfo=UTC)
+            dt = dt.replace(tzinfo = UTC)
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
@@ -110,7 +110,7 @@ def format_timestamp_ms(timestamp_ms: int) -> str:
     Returns:
         ISO formatted datetime string
     """
-    dt = datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
+    dt = datetime.fromtimestamp(timestamp_ms / 1000, tz = UTC)
     return dt.isoformat()
 
 

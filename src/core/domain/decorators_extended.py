@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.core.errors.base import ValidationError
+from ..core.decorators import handles_errors
 """
 Extended domain-specific decorators for specialized use cases.
 
@@ -15,9 +17,9 @@ from ..decorators import cached, compose, handles_errors, traced, validates
 from ..errors import ValidationError
 import time
 
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar('F', bound = Callable[..., Any])
 
-def validate_ohlcv_data_quality(check_volume: bool=True, min_volume: float=0, price_columns: List[str]=['open', 'high', 'low', 'close']) -> Callable[[F], F]:
+def validate_ohlcv_data_quality(check_volume: bool = True, min_volume: float = 0, price_columns: List[str]=['open', 'high', 'low', 'close']) -> Callable[[F], F]:
     """Validate OHLCV data quality with specific checks."""
 
     def validate_klines_data_quality(**kwargs) -> bool:
@@ -27,7 +29,7 @@ def validate_ohlcv_data_quality(check_volume: bool=True, min_volume: float=0, pr
         return decorator
 
     def decorator(func: F) -> F:
-        base_validator = validate_klines_data_quality(required_columns=price_columns + (['volume'] if check_volume else []))
+        base_validator = validate_klines_data_quality(required_columns = price_columns + (['volume'] if check_volume else []))
 
         @wraps(func)
         def wrapper(*args, **kwargs) -> None:
@@ -39,7 +41,7 @@ def validate_ohlcv_data_quality(check_volume: bool=True, min_volume: float=0, pr
         return wrapper
     return decorator
 
-def validate_wavelet_data_quality(wavelet_columns_pattern: str='wavelet_', check_decomposition_levels: bool=True, max_decomposition_level: int=10) -> Callable[[F], F]:
+def validate_wavelet_data_quality(wavelet_columns_pattern: str='wavelet_', check_decomposition_levels: bool = True, max_decomposition_level: int = 10) -> Callable[[F], F]:
     """Validate wavelet-transformed data quality."""
 
     def decorator(func: F) -> F:
@@ -68,7 +70,7 @@ def validate_wavelet_data_quality(wavelet_columns_pattern: str='wavelet_', check
         return wrapper
     return decorator
 
-def validate_hmm_data_requirements(min_sequences: int=10, min_sequence_length: int=100, required_features: Optional[List[str]]=None, check_stationarity: bool=True) -> Callable[[F], F]:
+def validate_hmm_data_requirements(min_sequences: int = 10, min_sequence_length: int = 100, required_features: Optional[List[str]]=None, check_stationarity: bool = True) -> Callable[[F], F]:
     """Validate data meets HMM training requirements."""
 
     def decorator(func: F) -> F:
@@ -87,7 +89,7 @@ def validate_hmm_data_requirements(min_sequences: int=10, min_sequence_length: i
         return wrapper
     return decorator
 
-def validate_hmm_regime_discovery(min_regimes: int=2, max_regimes: int=10, min_regime_duration: int=10) -> Callable[[F], F]:
+def validate_hmm_regime_discovery(min_regimes: int = 2, max_regimes: int = 10, min_regime_duration: int = 10) -> Callable[[F], F]:
     """Validate HMM regime discovery results."""
 
     def decorator(func: F) -> F:
@@ -136,14 +138,14 @@ def validate_step_comprehensive(step_number: int, required_inputs: Optional[List
             return result
         return wrapper
     return decorator
-validate_step2_operation = lambda: validate_step_comprehensive(step_number=2, required_outputs=['data', 'metadata'])
-validate_step3_comprehensive = lambda: validate_step_comprehensive(step_number=3, required_outputs=['regimes', 'model', 'metrics'])
-validate_step3_5_comprehensive = lambda: validate_step_comprehensive(step_number=3.5, required_outputs=['refined_regimes', 'clustering_metrics'])
-validate_step4_comprehensive = lambda: validate_step_comprehensive(step_number=4, required_outputs=['labels', 'barriers', 'metadata'])
-validate_step5_comprehensive = lambda: validate_step_comprehensive(step_number=5, required_outputs=['enhanced_labels', 'label_metrics'])
-validate_step6_comprehensive = lambda: validate_step_comprehensive(step_number=6, required_outputs=['features', 'feature_metadata', 'feature_importance'])
+validate_step2_operation = lambda: validate_step_comprehensive(step_number = 2, required_outputs=['data', 'metadata'])
+validate_step3_comprehensive = lambda: validate_step_comprehensive(step_number = 3, required_outputs=['regimes', 'model', 'metrics'])
+validate_step3_5_comprehensive = lambda: validate_step_comprehensive(step_number = 3.5, required_outputs=['refined_regimes', 'clustering_metrics'])
+validate_step4_comprehensive = lambda: validate_step_comprehensive(step_number = 4, required_outputs=['labels', 'barriers', 'metadata'])
+validate_step5_comprehensive = lambda: validate_step_comprehensive(step_number = 5, required_outputs=['enhanced_labels', 'label_metrics'])
+validate_step6_comprehensive = lambda: validate_step_comprehensive(step_number = 6, required_outputs=['features', 'feature_metadata', 'feature_importance'])
 
-def optimize_memory_usage(chunking: bool=True, chunk_size: int=10000, dtype_optimization: bool=True) -> Callable[[F], F]:
+def optimize_memory_usage(chunking: bool = True, chunk_size: int = 10000, dtype_optimization: bool = True) -> Callable[[F], F]:
     """Optimize memory usage for data processing operations."""
 
     def decorator(func: F) -> F:
@@ -179,14 +181,14 @@ def _optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = df[col].astype(np.float32)
     return df
 
-def monitor_feature_engineering(track_importance: bool=True, track_correlations: bool=True, importance_threshold: float=0.01) -> Callable[[F], F]:
+def monitor_feature_engineering(track_importance: bool = True, track_correlations: bool = True, importance_threshold: float = 0.01) -> Callable[[F], F]:
     """Monitor feature engineering process and results."""
 
     def decorator(func: F) -> F:
-        return compose(traced(span_name='feature_engineering'), cached(ttl=3600), validates())(func)
+        return compose(traced(span_name='feature_engineering'), cached(ttl = 3600), validates())(func)
     return decorator
 
-def validate_feature_engineering_pipeline(max_features: int=1000, min_feature_importance: float=0.001, check_multicollinearity: bool=True, vif_threshold: float=10.0) -> Callable[[F], F]:
+def validate_feature_engineering_pipeline(max_features: int = 1000, min_feature_importance: float = 0.001, check_multicollinearity: bool = True, vif_threshold: float = 10.0) -> Callable[[F], F]:
     """Validate entire feature engineering pipeline."""
 
     def decorator(func: F) -> F:
@@ -207,7 +209,7 @@ def validate_feature_engineering_pipeline(max_features: int=1000, min_feature_im
         return wrapper
     return decorator
 
-def secure_step_execution(allowed_users: Optional[List[str]]=None, require_approval: bool=False, audit_trail: bool=True) -> Callable[[F], F]:
+def secure_step_execution(allowed_users: Optional[List[str]]=None, require_approval: bool = False, audit_trail: bool = True) -> Callable[[F], F]:
     """Secure step execution with access control and auditing."""
 
     def decorator(func: F) -> F:
@@ -220,14 +222,14 @@ def secure_step_execution(allowed_users: Optional[List[str]]=None, require_appro
         return wrapper
     return decorator
 
-def monitor_pipeline_performance(alert_threshold_seconds: float=300, track_memory: bool=True, track_gpu: bool=False) -> Callable[[F], F]:
+def monitor_pipeline_performance(alert_threshold_seconds: float = 300, track_memory: bool = True, track_gpu: bool = False) -> Callable[[F], F]:
     """Monitor overall pipeline performance."""
 
     def decorator(func: F) -> F:
-        return compose(traced(name='pipeline.performance'), handles_errors(log_errors=True))(func)
+        return compose(traced(name='pipeline.performance'), handles_errors(log_errors = True))(func)
     return decorator
 
-def artifact_versioning(version_key: str='version', track_changes: bool=True, require_version_bump: bool=False) -> Callable[[F], F]:
+def artifact_versioning(version_key: str='version', track_changes: bool = True, require_version_bump: bool = False) -> Callable[[F], F]:
     """Handle artifact versioning for models and data."""
 
     def decorator(func: F) -> F:
@@ -241,7 +243,7 @@ def artifact_versioning(version_key: str='version', track_changes: bool=True, re
         return wrapper
     return decorator
 
-def deterministic_seed(seed: int=42) -> Callable[[F], F]:
+def deterministic_seed(seed: int = 42) -> Callable[[F], F]:
     """Ensure deterministic execution with fixed random seed."""
 
     def decorator(func: F) -> F:
@@ -257,7 +259,7 @@ def deterministic_seed(seed: int=42) -> Callable[[F], F]:
         return wrapper
     return decorator
 
-def smart_validation_cache(cache_key_params: Optional[List[str]]=None, ttl_seconds: int=3600, max_size: int=100) -> Callable[[F], F]:
+def smart_validation_cache(cache_key_params: Optional[List[str]]=None, ttl_seconds: int = 3600, max_size: int = 100) -> Callable[[F], F]:
     """Smart caching for validation results."""
-    return cached(ttl=ttl_seconds)
+    return cached(ttl = ttl_seconds)
 __all__ = ['validate_ohlcv_data_quality', 'validate_wavelet_data_quality', 'validate_hmm_data_requirements', 'validate_hmm_regime_discovery', 'validate_step_comprehensive', 'validate_step2_operation', 'validate_step3_comprehensive', 'validate_step3_5_comprehensive', 'validate_step4_comprehensive', 'validate_step5_comprehensive', 'validate_step6_comprehensive', 'optimize_memory_usage', 'monitor_feature_engineering', 'validate_feature_engineering_pipeline', 'secure_step_execution', 'monitor_pipeline_performance', 'artifact_versioning', 'deterministic_seed', 'smart_validation_cache']

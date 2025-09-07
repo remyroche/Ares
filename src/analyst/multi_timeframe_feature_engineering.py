@@ -1,5 +1,7 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+from ...utils.logger import system_logger
+from .core.decorators import handles_errors
 
 # src/analyst/multi_timeframe_feature_engineering.py
 
@@ -24,8 +26,7 @@ from typing import Any
 
 
 from .config import CONFIG
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import time
 
 # Add the project root to the Python path
@@ -70,7 +71,7 @@ class MultiTimeframeFeatureEngineering:
 
         # Feature cache for performance
         self.feature_cache: dict[str, pd.DataFrame] = {}
-        self.cache_duration = timedelta(minutes=5)
+        self.cache_duration = timedelta(minutes = 5)
         self.last_cache_cleanup = datetime.now()
 
         self.logger.info("🚀 Initialized MultiTimeframeFeatureEngineering")
@@ -294,7 +295,7 @@ class MultiTimeframeFeatureEngineering:
             },
         }
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     async def generate_multi_timeframe_features(
         self,
         data_dict: dict[str, pd.DataFrame],
@@ -390,10 +391,10 @@ class MultiTimeframeFeatureEngineering:
         try:
             # Use base feature engineering engine
             return self.base_feature_engine.generate_all_features(
-                klines_df=data,
-                agg_trades_df=agg_trades or pd.DataFrame(),
-                futures_df=futures or pd.DataFrame(),
-                sr_levels=sr_levels or [],
+                klines_df = data,
+                agg_trades_df = agg_trades or pd.DataFrame(),
+                futures_df = futures or pd.DataFrame(),
+                sr_levels = sr_levels or [],
             )
 
         except Exception as e:
@@ -490,8 +491,8 @@ class MultiTimeframeFeatureEngineering:
             rsi_params = indicator_params.get("rsi", {})
             rsi_length = rsi_params.get("length", 14)
             df[f"rsi_{timeframe}"] = temp_df.ta.rsi(
-                close=temp_df["close"],
-                length=rsi_length,
+                close = temp_df["close"],
+                length = rsi_length,
             )
 
             # MACD using price differences
@@ -500,10 +501,10 @@ class MultiTimeframeFeatureEngineering:
             slow = macd_params.get("slow", 26)
             signal = macd_params.get("signal", 9)
             macd_result = temp_df.ta.macd(
-                close=temp_df["close"],
-                fast=fast,
-                slow=slow,
-                signal=signal,
+                close = temp_df["close"],
+                fast = fast,
+                slow = slow,
+                signal = signal,
             )
             if macd_result is not None:
                 df[f"macd_{timeframe}"] = macd_result.iloc[:, 0]
@@ -513,7 +514,7 @@ class MultiTimeframeFeatureEngineering:
             # Bollinger Bands using price differences
             bb_params = indicator_params.get("bbands", {})
             bb_length = bb_params.get("length", 20)
-            bb_result = temp_df.ta.bbands(close=temp_df["close"], length=bb_length)
+            bb_result = temp_df.ta.bbands(close = temp_df["close"], length = bb_length)
             if bb_result is not None:
                 df[f"bb_upper_{timeframe}"] = bb_result.iloc[:, 0]
                 df[f"bb_middle_{timeframe}"] = bb_result.iloc[:, 1]
@@ -525,20 +526,20 @@ class MultiTimeframeFeatureEngineering:
             atr_params = indicator_params.get("atr", {})
             atr_length = atr_params.get("length", 14)
             df[f"atr_{timeframe}"] = temp_df.ta.atr(
-                high=temp_df["high"],
-                low=temp_df["low"],
-                close=temp_df["close"],
-                length=atr_length,
+                high = temp_df["high"],
+                low = temp_df["low"],
+                close = temp_df["close"],
+                length = atr_length,
             )
 
             # ADX using price differences
             adx_params = indicator_params.get("adx", {})
             adx_length = adx_params.get("length", 14)
             adx_result = temp_df.ta.adx(
-                high=temp_df["high"],
-                low=temp_df["low"],
-                close=temp_df["close"],
-                length=adx_length,
+                high = temp_df["high"],
+                low = temp_df["low"],
+                close = temp_df["close"],
+                length = adx_length,
             )
             if adx_result is not None:
                 df[f"adx_{timeframe}"] = adx_result.iloc[:, 0]
@@ -549,10 +550,10 @@ class MultiTimeframeFeatureEngineering:
             stoch_params = indicator_params.get("stoch", {})
             stoch_length = stoch_params.get("length", 14)
             stoch_result = temp_df.ta.stoch(
-                high=temp_df["high"],
-                low=temp_df["low"],
-                close=temp_df["close"],
-                length=stoch_length,
+                high = temp_df["high"],
+                low = temp_df["low"],
+                close = temp_df["close"],
+                length = stoch_length,
             )
             if stoch_result is not None:
                 df[f"stoch_k_{timeframe}"] = stoch_result.iloc[:, 0]
@@ -600,14 +601,14 @@ class MultiTimeframeFeatureEngineering:
             df[f"volume_momentum_{timeframe}"] = df["volume"].pct_change(5)
 
             # OBV (On Balance Volume)
-            df[f"obv_{timeframe}"] = df.ta.obv(close=df["close"], volume=df["volume"])
+            df[f"obv_{timeframe}"] = df.ta.obv(close = df["close"], volume = df["volume"])
 
             # VWAP
             df[f"vwap_{timeframe}"] = df.ta.vwap(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
-                volume=df["volume"],
+                high = df["high"],
+                low = df["low"],
+                close = df["close"],
+                volume = df["volume"],
             )
 
             return df
@@ -688,20 +689,20 @@ class MultiTimeframeFeatureEngineering:
             ].diff()
 
             # Rate of change
-            df[f"roc_{timeframe}"] = df.ta.roc(close=df["close"], length=10)
+            df[f"roc_{timeframe}"] = df.ta.roc(close = df["close"], length = 10)
 
             # Williams %R
             df[f"williams_r_{timeframe}"] = df.ta.willr(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+                high = df["high"],
+                low = df["low"],
+                close = df["close"],
             )
 
             # CCI (Commodity Channel Index)
             df[f"cci_{timeframe}"] = df.ta.cci(
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+                high = df["high"],
+                low = df["low"],
+                close = df["close"],
             )
 
             return df
@@ -736,8 +737,8 @@ class MultiTimeframeFeatureEngineering:
 
             for length in sma_lengths:
                 df[f"sma_{length}_{timeframe}"] = df.ta.sma(
-                    close=df["close"],
-                    length=length,
+                    close = df["close"],
+                    length = length,
                 )
                 df[f"price_vs_sma_{length}_{timeframe}"] = (
                     df["close"] / df[f"sma_{length}_{timeframe}"] - 1
@@ -749,8 +750,8 @@ class MultiTimeframeFeatureEngineering:
 
             for length in ema_lengths:
                 df[f"ema_{length}_{timeframe}"] = df.ta.ema(
-                    close=df["close"],
-                    length=length,
+                    close = df["close"],
+                    length = length,
                 )
                 df[f"price_vs_ema_{length}_{timeframe}"] = (
                     df["close"] / df[f"ema_{length}_{timeframe}"] - 1
@@ -844,7 +845,7 @@ class MultiTimeframeFeatureEngineering:
         try:
 
             current_time = datetime.now()
-            if (current_time - self.last_cache_cleanup) > timedelta(minutes=10):
+            if (current_time - self.last_cache_cleanup) > timedelta(minutes = 10):
                 keys_to_remove = []
 
                 for key in self.feature_cache:

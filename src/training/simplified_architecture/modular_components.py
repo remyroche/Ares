@@ -46,7 +46,7 @@ class IExchangeDataSource(IDataSource):
 class BaseExchangeDataSource(IExchangeDataSource):
     """Base implementation for exchange data sources with common functionality."""
 
-    def __init__(self, api_key: str=None, api_secret: str=None, testnet: bool=False) -> None:
+    def __init__(self, api_key: str = None, api_secret: str = None, testnet: bool = False) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet
@@ -151,11 +151,11 @@ class ExchangeDataSourceFactory:
         
         config = cls.EXCHANGE_CONFIGS[exchange_lower]
         return ExchangeDataSource(
-            exchange_name=exchange_lower,
-            symbols=config['symbols'],
-            timeframes=config['timeframes'],
-            price_range=config['price_range'],
-            volume_range=config['volume_range'],
+            exchange_name = exchange_lower,
+            symbols = config['symbols'],
+            timeframes = config['timeframes'],
+            price_range = config['price_range'],
+            volume_range = config['volume_range'],
             **kwargs
         )
 
@@ -258,7 +258,7 @@ class DataValidator(IDataValidator):
         else:
             errors.append('Data index is not DatetimeIndex')
         
-        return ValidationResult(is_valid=len(errors) == 0, errors=errors, warnings=warnings, metrics=metrics)
+        return ValidationResult(is_valid = len(errors) == 0, errors = errors, warnings = warnings, metrics = metrics)
 
 class IFeatureCalculator(ABC):
     """Interface for feature calculators."""
@@ -280,7 +280,7 @@ class FeatureCalculator(IFeatureCalculator):
 
     def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate comprehensive features."""
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         
         # Price-based features
         if 'close' in data.columns:
@@ -314,7 +314,7 @@ class FeatureCalculator(IFeatureCalculator):
             elif name == 'SMA' and 'close' in data.columns:
                 features[f'sma_{period}'] = data['close'].rolling(period).mean()
             elif name == 'EMA' and 'close' in data.columns:
-                features[f'ema_{period}'] = data['close'].ewm(span=period).mean()
+                features[f'ema_{period}'] = data['close'].ewm(span = period).mean()
         
         return features
 
@@ -455,7 +455,7 @@ class ModelWrapper(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents = True, exist_ok = True)
         
         if self.model_type == 'neural_network':
             import torch
@@ -516,9 +516,9 @@ class LightGBMTrainer(BaseModelTrainer):
         if validation_data is not None:
             X_val, y_val = validation_data
             eval_set.append((X_val, y_val))
-        self.model.fit(X, y, eval_set=eval_set, callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
+        self.model.fit(X, y, eval_set = eval_set, callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)])
         if hasattr(self.model, 'feature_importances_'):
-            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
+            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending = False)
         return ModelWrapper(self.model, 'lightgbm')
 
     def _train_xgboost(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
@@ -529,9 +529,9 @@ class LightGBMTrainer(BaseModelTrainer):
         if validation_data is not None:
             X_val, y_val = validation_data
             eval_set.append((X_val, y_val))
-        self.model.fit(X, y, eval_set=eval_set, early_stopping_rounds=10, verbose=False)
+        self.model.fit(X, y, eval_set = eval_set, early_stopping_rounds = 10, verbose = False)
         if hasattr(self.model, 'feature_importances_'):
-            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
+            self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending = False)
         return ModelWrapper(self.model, 'xgboost')
 
     def __init__(self, rf_model: Any) -> None:
@@ -547,7 +547,7 @@ class LightGBMTrainer(BaseModelTrainer):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents = True, exist_ok = True)
         joblib.dump(self.model, path)
 
     def load(self, path: Path) -> None:
@@ -570,13 +570,13 @@ class RandomForestTrainer(BaseModelTrainer):
         """Train Random Forest model."""
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
-        self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending=False)
+        self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending = False)
         return ModelWrapper(self.model, 'random_forest')
 
 class NeuralNetworkModel(IModel):
     """Wrapper for Neural Network model with standard interface."""
 
-    def __init__(self, nn_model: Any, scaler: Any=None) -> None:
+    def __init__(self, nn_model: Any, scaler: Any = None) -> None:
         self.model = nn_model
         self.scaler = scaler
 
@@ -602,7 +602,7 @@ class NeuralNetworkModel(IModel):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents = True, exist_ok = True)
         torch.save(self.model.state_dict(), path.with_suffix('.pth'))
         if self.scaler:
             joblib.dump(self.scaler, path.with_suffix('.scaler'))
@@ -646,7 +646,7 @@ class NeuralNetworkTrainer(BaseModelTrainer):
         
         model = nn.Sequential(*layers)
         criterion = nn.BCEWithLogitsLoss()
-        optimizer = optim.Adam(model.parameters(), lr=self.hyperparameters['learning_rate'])
+        optimizer = optim.Adam(model.parameters(), lr = self.hyperparameters['learning_rate'])
         
         X_tensor = torch.FloatTensor(X_scaled)
         y_tensor = torch.FloatTensor(y.values).unsqueeze(1)
@@ -688,7 +688,7 @@ class SimplifiedPipeline:
     It doesn't implement any business logic, just coordinates components.
     """
 
-    def __init__(self, data_source: IDataSource, validators: List[IDataValidator], feature_calculators: List[IFeatureCalculator], model_trainer: IModelTrainer, logger: logging.Logger=None) -> None:
+    def __init__(self, data_source: IDataSource, validators: List[IDataValidator], feature_calculators: List[IFeatureCalculator], model_trainer: IModelTrainer, logger: logging.Logger = None) -> None:
         self.data_source = data_source
         self.validators = validators
         self.feature_calculators = feature_calculators
@@ -707,10 +707,10 @@ class SimplifiedPipeline:
             if not validation_result.is_valid:
                 raise ValueError(f'Validation failed: {validation_result.errors}')
         self.logger.info('Calculating features')
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         for calculator in self.feature_calculators:
             calculated_features = calculator.calculate(data)
-            features = pd.concat([features, calculated_features], axis=1)
+            features = pd.concat([features, calculated_features], axis = 1)
         results['features'] = features
         self.logger.info('Training model')
         labels = (data['close'].pct_change() > 0).astype(int)
@@ -727,14 +727,14 @@ async def example_usage() -> None:
     validator = DataValidator(
         required_columns=['open', 'high', 'low', 'close', 'volume'],
         column_types={'volume': np.number},
-        max_null_percentage=0.05,
+        max_null_percentage = 0.05,
         expected_frequency='H',
-        max_gaps=5
+        max_gaps = 5
     )
     
     # Create comprehensive feature calculator
     feature_calculator = FeatureCalculator(
-        window=20,
+        window = 20,
         indicators=[
             {'name': 'RSI', 'params': {'period': 14}},
             {'name': 'SMA', 'params': {'period': 20}},
@@ -743,17 +743,17 @@ async def example_usage() -> None:
     )
     
     # Create model trainer
-    model_trainer = ModelTrainerFactory.create('lightgbm', num_leaves=31, learning_rate=0.05, n_estimators=100)
+    model_trainer = ModelTrainerFactory.create('lightgbm', num_leaves = 31, learning_rate = 0.05, n_estimators = 100)
     
     # Create and run pipeline
     pipeline = SimplifiedPipeline(
-        data_source=data_source,
+        data_source = data_source,
         validators=[validator],
         feature_calculators=[feature_calculator],
-        model_trainer=model_trainer
+        model_trainer = model_trainer
     )
     
-    results = await pipeline.run(symbol='BTCUSDT', start=datetime(2023, 1, 1), end=datetime(2023, 12, 31))
+    results = await pipeline.run(symbol='BTCUSDT', start = datetime(2023, 1, 1), end = datetime(2023, 12, 31))
     print('Pipeline completed successfully!')
     print(f"Features calculated: {results['features'].columns.tolist()}")
 

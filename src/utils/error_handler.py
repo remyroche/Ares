@@ -1,7 +1,7 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Error handling utilities for the Ares project."""
 
-def handles_errors(fallback: Any=True, *args, **kwargs) -> None:
+def handles_errors(fallback: Any = True, *args, **kwargs) -> None:
     """Decorator for handling errors in functions."""
 
     def decorator(func: Callable) -> None:

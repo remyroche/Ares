@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, Callable, Tuple
 from functools import wraps
 import asyncio
 from datetime import datetime
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 
 class SRError(Exception):
@@ -46,7 +46,7 @@ class SRErrorHandler:
         self.consecutive_errors = 0
         self.last_error_time: Optional[datetime] = None
 
-    def handle_error(self, error: Exception, context: str='S/R operation', default_return: Any=None, reraise: bool=False) -> Any:
+    def handle_error(self, error: Exception, context: str='S/R operation', default_return: Any = None, reraise: bool = False) -> Any:
         """Handle S/R related errors with context-aware logging."""
         try:
             self._update_error_tracking(error, context)
@@ -111,7 +111,7 @@ class SRErrorHandler:
         """Get error statistics."""
         return {'error_counts': self.error_counts.copy(), 'consecutive_errors': self.consecutive_errors, 'last_error_time': self.last_error_time, 'total_errors': sum(self.error_counts.values())}
 
-def sr_error_handler(exceptions: Tuple[type, ...]=(Exception,), default_return: Any=None, context: str='S/R operation', reraise: bool=False, max_retries: int=0, retry_delay: float=1.0) -> None:
+def sr_error_handler(exceptions: Tuple[type, ...]=(Exception,), default_return: Any = None, context: str='S/R operation', reraise: bool = False, max_retries: int = 0, retry_delay: float = 1.0) -> None:
     """Decorator for S/R error handling with retry logic."""
 
     def decorator(func: Callable) -> Callable:
@@ -194,7 +194,7 @@ def validate_sr_parameters(params: Dict[str, Any], required_params: Optional[lis
         if param_name.endswith('_period') and (not (param_value > 0 and isinstance(param_value, int))):
             raise SRConfigurationError(f'Period parameter {param_name} must be a positive integer, got {param_value}')
 
-def validate_sr_levels(levels: list, min_levels: int=1) -> None:
+def validate_sr_levels(levels: list, min_levels: int = 1) -> None:
     """Validate S/R levels with detailed error messages."""
     if not isinstance(levels, list):
         raise SRValidationError('S/R levels must be a list')
@@ -222,7 +222,7 @@ def get_global_sr_error_handler() -> SRErrorHandler:
         _global_error_handler = SRErrorHandler()
     return _global_error_handler
 
-def handle_sr_error(error: Exception, context: str='S/R operation', default_return: Any=None, reraise: bool=False) -> Any:
+def handle_sr_error(error: Exception, context: str='S/R operation', default_return: Any = None, reraise: bool = False) -> Any:
     """Handle S/R error using global error handler."""
     handler = get_global_sr_error_handler()
     return handler.handle_error(error, context, default_return, reraise)

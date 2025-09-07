@@ -8,6 +8,8 @@ import logging
 import warnings
 from datetime import datetime
 from typing import Any
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 warnings.filterwarnings('ignore')
 try:
     import mlflow
@@ -41,8 +43,9 @@ class RegimeSpecificTripleBarrierOptimizer:
     This optimizer is used by the triple barrier labeler to optimize
     parameters before ML training begins.
     """
+    @log_important_calls
 
-    def __init__(self, config: dict[str, Any], training_manager: Any=None) -> None:
+    def __init__(self, config: dict[str, Any], training_manager: Any = None) -> None:
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -56,6 +59,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             self.logger.info('✅ Triple barrier labeler integration initialized')
         else:
             self.logger.warning('⚠️ Triple barrier labeler not available for integration')
+    @log_all_calls
 
     def _create_triple_barrier_labeler(self) -> None:
         """Create triple barrier labeler for integration."""
@@ -69,10 +73,12 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.warning(f'Failed to create triple barrier labeler: {e}')
             return None
+    @log_all_calls
 
     def _get_default_barrier_settings(self) -> dict[str, Any]:
         """Get default barrier settings for initialization."""
         return {'upper_barrier_multiplier': 1.0, 'lower_barrier_multiplier': 1.0, 'barrier_timeout': 30, 'barrier_adjustment': 1.0, 'dynamic_barriers': True, 'confidence_threshold': 0.7, 'position_size_multiplier': 1.0, 'risk_per_trade': 0.05}
+    @log_all_calls
 
     def _create_regime_specific_configs(self) -> dict[str, dict[str, Any]]:
         """Create regime-specific parameter configurations for triple barrier method."""
@@ -115,7 +121,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             position_settings = best_params.get('position_management', {})
             risk_settings = best_params.get('risk_management', {})
             if hasattr(self.triple_barrier_labeler, 'set_regime_parameters'):
-                await self.triple_barrier_labeler.set_regime_parameters(regime_name=regime_name, barrier_settings=barrier_settings, labeling_settings=labeling_settings, position_settings=position_settings, risk_settings=risk_settings)
+                await self.triple_barrier_labeler.set_regime_parameters(regime_name = regime_name, barrier_settings = barrier_settings, labeling_settings = labeling_settings, position_settings = position_settings, risk_settings = risk_settings)
                 self.logger.info(f'✅ Updated triple barrier labeler for {regime_name} regime')
         except Exception as e:
             self.logger.warning(f'Failed to update triple barrier labeler for {regime_name}: {e}')
@@ -126,7 +132,7 @@ class RegimeSpecificTripleBarrierOptimizer:
             msg = 'Optuna is required for regime-specific optimization'
             raise ImportError(msg)
         study_name = f'regime_specific_triple_barrier_{regime_name}'
-        return optuna.create_study(study_name=study_name, direction='maximize', sampler=optuna.samplers.TPESampler(n_startup_trials=10, n_ei_candidates=24, multivariate=True, group=True), pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10, interval_steps=3))
+        return optuna.create_study(study_name = study_name, direction='maximize', sampler = optuna.samplers.TPESampler(n_startup_trials = 10, n_ei_candidates = 24, multivariate = True, group = True), pruner = optuna.pruners.MedianPruner(n_startup_trials = 5, n_warmup_steps = 10, interval_steps = 3))
 
     async def _optimize_single_regime(self, regime_name: str, regime_data: pd.DataFrame, study: optuna.Study, optimization_config: dict[str, Any]) -> dict[str, Any]:
         """Optimize parameters for a single regime."""
@@ -134,12 +140,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         objective = self._create_regime_objective(regime_name, regime_data, regime_config)
         n_trials = optimization_config.get('n_trials', 100)
         timeout = optimization_config.get('timeout', 3600)
-        study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience=optimization_config.get('early_stopping_patience', 20))])
+        study.optimize(objective, n_trials = n_trials, timeout = timeout, callbacks=[optuna.callbacks.EarlyStoppingCallback(patience = optimization_config.get('early_stopping_patience', 20))])
         best_trial = study.best_trial
         best_params = best_trial.params
         best_value = best_trial.value
         best_model = await self._create_regime_model(regime_name, best_params)
         return {'regime_name': regime_name, 'best_params': best_params, 'best_value': best_value, 'best_trial': best_trial.number, 'total_trials': len(study.trials), 'optimization_history': [trial.value for trial in study.trials if trial.value is not None], 'best_model': best_model, 'regime_config': regime_config}
+    @log_all_calls
 
     def _create_regime_objective(self, regime_name: str, regime_data: pd.DataFrame, regime_config: dict[str, Any]) -> None:
         """Create objective function for regime-specific optimization."""
@@ -152,6 +159,7 @@ class RegimeSpecificTripleBarrierOptimizer:
                 self.logger.warning(f'Trial failed for {regime_name}: {e}')
                 return float('-inf')
         return objective
+    @log_all_calls
 
     def _sample_regime_parameters(self, trial: optuna.Trial, regime_config: dict[str, Any]) -> dict[str, Any]:
         """Sample parameters from regime-specific configuration."""
@@ -164,12 +172,13 @@ class RegimeSpecificTripleBarrierOptimizer:
                         if param_name in ['barrier_timeout', 'n_estimators', 'max_depth']:
                             params[category][param_name] = trial.suggest_int(f'{category}_{param_name}', param_config[0], param_config[1])
                         else:
-                            params[category][param_name] = trial.suggest_float(f'{category}_{param_name}', param_config[0], param_config[1], log=True)
+                            params[category][param_name] = trial.suggest_float(f'{category}_{param_name}', param_config[0], param_config[1], log = True)
                 elif isinstance(param_config, list):
                     params[category][param_name] = trial.suggest_categorical(f'{category}_{param_name}', param_config)
                 else:
                     params[category][param_name] = param_config
         return params
+    @log_all_calls
 
     def _evaluate_regime_parameters(self, regime_name: str, regime_data: pd.DataFrame, params: dict[str, Any]) -> float:
         """Evaluate regime-specific parameters on regime data."""
@@ -182,6 +191,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.exception(f'Failed to evaluate parameters for {regime_name}: {e}')
             return float('-inf')
+    @log_all_calls
 
     def _calculate_regime_performance_score(self, regime_name: str, barrier_params: dict[str, Any], labeling_params: dict[str, Any], position_params: dict[str, Any], risk_params: dict[str, Any]) -> float:
         """Calculate performance score for regime-specific parameters."""
@@ -249,6 +259,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     async def _create_regime_model(self, regime_name: str, optimized_params: dict[str, Any]) -> dict[str, Any]:
         """Create a regime-specific model with optimized parameters."""
         return {'regime_name': regime_name, 'optimized_parameters': optimized_params, 'model_type': 'regime_specific_triple_barrier', 'creation_timestamp': datetime.now().isoformat(), 'parameter_summary': self._create_parameter_summary(optimized_params)}
+    @log_all_calls
 
     def _create_parameter_summary(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a summary of optimized parameters."""
@@ -272,9 +283,26 @@ class RegimeSpecificTripleBarrierOptimizer:
                         for category, category_params in best_params.items():
                             for param_name, param_value in category_params.items():
                                 mlflow.log_param(f'{regime_name}_{category}_{param_name}', param_value)
-                with open('regime_optimization_results.json', 'w') as f:
-                    json.dump(optimization_results, f, indent=2, default=str)
-                mlflow.log_artifact('regime_optimization_results.json', 'regime_optimization')
+                # Save regime optimization results using centralized reporting system
+                from src.training.reports import save_training_report
+
+                # Get symbol and timeframe from config or use defaults
+                symbol = getattr(self, 'symbol', 'UNKNOWN')
+                timeframe = getattr(self, 'timeframe', '1m')
+
+                report_path = save_training_report(
+                    data=optimization_results,
+                    step_name='step06_labeling_components',
+                    report_type='regime_optimization_results',
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    file_format='json'
+                )
+
+                self.logger.info(f'💾 Regime optimization results saved to: {report_path}')
+
+                # Still log to MLflow for backward compatibility
+                mlflow.log_artifact(report_path, 'regime_optimization')
                 self.logger.info('✅ Regime optimization results logged to MLflow')
         except Exception as e:
             self.logger.exception(f'Failed to log to MLflow: {e}')
@@ -282,6 +310,7 @@ class RegimeSpecificTripleBarrierOptimizer:
     async def get_regime_optimization_status(self) -> dict[str, Any]:
         """Get current status of regime-specific optimization."""
         return {'optimization_completed': bool(self.optimization_results), 'total_regimes_optimized': len(self.optimization_results), 'regime_models_created': len(self.regime_models), 'optimization_timestamp': datetime.now().isoformat(), 'regime_summary': self._create_regime_summary(), 'triple_barrier_integration': bool(self.triple_barrier_labeler)}
+    @log_all_calls
 
     def _create_regime_summary(self) -> dict[str, Any]:
         """Create a summary of all regime optimizations."""
@@ -332,7 +361,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Get the integrated triple barrier labeler."""
         return self.triple_barrier_labeler
 
-def create_regime_specific_triple_barrier_optimizer(config: dict[str, Any], training_manager: Any=None) -> Any:
+def create_regime_specific_triple_barrier_optimizer(config: dict[str, Any], training_manager: Any = None) -> Any:
     """Create regime-specific triple barrier optimizer instance."""
     return RegimeSpecificTripleBarrierOptimizer(config, training_manager)
 if __name__ == '__main__':

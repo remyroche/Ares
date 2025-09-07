@@ -7,7 +7,7 @@ from typing import Any
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -36,13 +36,13 @@ class TransitionRandomForest:
         tm = (config or {}).get("TRANSITION_MODELING", {})
         rfc = tm.get("baseline_random_forest", {})
         self.cfg = RFConfig(
-            enabled=bool(rfc.get("enabled", True)),
-            n_estimators=int(rfc.get("n_estimators", 300)),
-            max_depth=int(rfc.get("max_depth", 12)),
-            min_samples_leaf=int(rfc.get("min_samples_leaf", 5)),
-            random_state=int(rfc.get("random_state", 42)),
-            max_train_samples=int(rfc.get("max_train_samples", 200000)),
-            enable_shap=bool(tm.get("enable_shap", True)),
+            enabled = bool(rfc.get("enabled", True)),
+            n_estimators = int(rfc.get("n_estimators", 300)),
+            max_depth = int(rfc.get("max_depth", 12)),
+            min_samples_leaf = int(rfc.get("min_samples_leaf", 5)),
+            random_state = int(rfc.get("random_state", 42)),
+            max_train_samples = int(rfc.get("max_train_samples", 200000)),
+            enable_shap = bool(tm.get("enable_shap", True)),
         )
         self.model: RandomForestClassifier | None = None
         self.label_names: list[str] = []
@@ -58,7 +58,7 @@ class TransitionRandomForest:
         for s in samples:
             rf = dict(s.get("rf_features", {}))
             # attach multi-hot context as features
-            mh = np.array(s.get("multi_hot_labels"), dtype=float)
+            mh = np.array(s.get("multi_hot_labels"), dtype = float)
             for i, lab in enumerate(label_index):
                 rf[f"ctx_label_{lab}"] = float(mh[i] if i < len(mh) else 0.0)
             # add event anchor
@@ -91,10 +91,10 @@ class TransitionRandomForest:
         y_train = y.iloc[:split_idx]
         y_val = y.iloc[split_idx:]
         mdl = RandomForestClassifier(
-            n_estimators=self.cfg.n_estimators,
-            max_depth=self.cfg.max_depth,
-            min_samples_leaf=self.cfg.min_samples_leaf,
-            random_state=self.cfg.random_state,
+            n_estimators = self.cfg.n_estimators,
+            max_depth = self.cfg.max_depth,
+            min_samples_leaf = self.cfg.min_samples_leaf,
+            random_state = self.cfg.random_state,
             n_jobs=-1,
         )
         mdl.fit(X_train, y_train)
@@ -102,7 +102,7 @@ class TransitionRandomForest:
         self.feature_names_ = list(X.columns)
         # Eval
         y_pred = mdl.predict(X_val)
-        rep = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
+        rep = classification_report(y_val, y_pred, output_dict = True, zero_division = 0)
         # Validation probabilities for reliability calibration
         try:
             proba = mdl.predict_proba(X_val)
@@ -128,11 +128,11 @@ class TransitionRandomForest:
                 if isinstance(shap_vals, list):
                     # multiclass returns list per class
                     abs_mean = np.mean(
-                        [np.abs(v).mean(axis=0) for v in shap_vals],
-                        axis=0,
+                        [np.abs(v).mean(axis = 0) for v in shap_vals],
+                        axis = 0,
                     )
                 else:
-                    abs_mean = np.abs(shap_vals).mean(axis=0)
+                    abs_mean = np.abs(shap_vals).mean(axis = 0)
                 top_idx = np.argsort(-abs_mean)[:50]
                 top_features = {
                     self.feature_names_[i]: float(abs_mean[i]) for i in top_idx

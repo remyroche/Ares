@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
@@ -52,15 +54,15 @@ class FunctionCallContext:
     start_time: datetime
     end_time: Optional[datetime] = None
     status: FunctionStatus = FunctionStatus.PENDING
-    input_args: Dict[str, Any] = field(default_factory=dict)
-    input_kwargs: Dict[str, Any] = field(default_factory=dict)
+    input_args: Dict[str, Any] = field(default_factory = dict)
+    input_kwargs: Dict[str, Any] = field(default_factory = dict)
     output_result: Any = None
     error_message: Optional[str] = None
     execution_time: Optional[float] = None
     memory_usage: Optional[float] = None
-    called_functions: List[str] = field(default_factory=list)
-    validation_results: Dict[str, Any] = field(default_factory=dict)
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
+    called_functions: List[str] = field(default_factory = list)
+    validation_results: Dict[str, Any] = field(default_factory = dict)
+    performance_metrics: Dict[str, float] = field(default_factory = dict)
 
 @dataclass
 class FunctionCallReport:
@@ -69,15 +71,15 @@ class FunctionCallReport:
     validation_summary: Dict[str, Any]
     performance_summary: Dict[str, Any]
     error_analysis: Optional[Dict[str, Any]] = None
-    recommendations: List[str] = field(default_factory=list)
-    timestamp: datetime = field(default_factory=datetime.now)
+    recommendations: List[str] = field(default_factory = list)
+    timestamp: datetime = field(default_factory = datetime.now)
 
 class FunctionCallTracker:
     """Tracks function calls and their relationships."""
 
     def __init__(self) -> None:
         self.active_calls: Dict[str, FunctionCallContext] = {}
-        self.call_history: deque = deque(maxlen=10000)
+        self.call_history: deque = deque(maxlen = 10000)
         self.function_relationships: Dict[str, List[str]] = defaultdict(list)
         self.performance_stats: Dict[str, List[float]] = defaultdict(list)
         self.error_stats: Dict[str, int] = defaultdict(int)
@@ -86,12 +88,12 @@ class FunctionCallTracker:
     def start_call(self, function_name: str, module_name: str, call_id: str, args: tuple, kwargs: dict) -> FunctionCallContext:
         """Start tracking a function call."""
         with self._lock:
-            context = FunctionCallContext(function_name=function_name, module_name=module_name, call_id=call_id, start_time=datetime.now(), input_args=self._serialize_args(args), input_kwargs=kwargs.copy())
+            context = FunctionCallContext(function_name = function_name, module_name = module_name, call_id = call_id, start_time = datetime.now(), input_args = self._serialize_args(args), input_kwargs = kwargs.copy())
             context.status = FunctionStatus.IN_PROGRESS
             self.active_calls[call_id] = context
             return context
 
-    def end_call(self, call_id: str, result: Any=None, error: Exception=None) -> FunctionCallContext:
+    def end_call(self, call_id: str, result: Any = None, error: Exception = None) -> FunctionCallContext:
         """End tracking a function call."""
         with self._lock:
             if call_id not in self.active_calls:
@@ -118,6 +120,7 @@ class FunctionCallTracker:
                 self.active_calls[caller_id].called_functions.append(callee_name)
                 self.function_relationships[caller_id].append(callee_name)
 
+    @log_all_calls
     def _serialize_args(self, args: tuple) -> Dict[str, Any]:
         """Serialize function arguments for logging."""
         serialized = {}
@@ -163,12 +166,13 @@ class FunctionCallTracker:
 class Step06Validator:
     """Comprehensive validator for step06 components."""
 
-    def __init__(self, validation_level: ValidationLevel=ValidationLevel.COMPREHENSIVE) -> None:
+    def __init__(self, validation_level: ValidationLevel = ValidationLevel.COMPREHENSIVE) -> None:
         self.validation_level = validation_level
         self.logger = logging.getLogger(__name__)
         self.tracker = FunctionCallTracker()
         self.validation_rules = self._initialize_validation_rules()
-
+        
+    @log_all_calls
     def _initialize_validation_rules(self) -> Dict[str, List[Callable]]:
         """Initialize validation rules for different function types."""
         return {'data_processing': [self._validate_dataframe_input, self._validate_dataframe_output, self._validate_data_quality], 'feature_engineering': [self._validate_feature_input, self._validate_feature_output, self._validate_feature_quality], 'labeling': [self._validate_labeling_input, self._validate_labeling_output, self._validate_label_distribution], 'optimization': [self._validate_optimization_input, self._validate_optimization_output, self._validate_optimization_convergence]}
@@ -190,6 +194,7 @@ class Step06Validator:
                 validation_results['errors'].append(f'Validation rule failed: {str(e)}')
         return validation_results
 
+    @log_all_calls
     def _validate_dataframe_input(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate DataFrame input parameters."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -205,6 +210,7 @@ class Step06Validator:
                     result['warnings'].append(f'DataFrame {arg_name} has no columns')
         return result
 
+    @log_all_calls
     def _validate_dataframe_output(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate DataFrame output."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -220,11 +226,13 @@ class Step06Validator:
                 result['metrics']['output_length'] = len(context.output_result)
         return result
 
+    @log_all_calls
     def _validate_data_quality(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate data quality metrics."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
         return result
 
+    @log_all_calls
     def _validate_feature_input(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate feature engineering input."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -234,6 +242,7 @@ class Step06Validator:
                 pass
         return result
 
+    @log_all_calls
     def _validate_feature_output(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate feature engineering output."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -244,6 +253,7 @@ class Step06Validator:
                 result['warnings'].append('No features were generated')
         return result
 
+    @log_all_calls
     def _validate_feature_quality(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate feature quality."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -259,6 +269,7 @@ class Step06Validator:
                 result['passed'] = False
         return result
 
+    @log_all_calls
     def _validate_labeling_input(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate labeling input."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -268,6 +279,7 @@ class Step06Validator:
                 pass
         return result
 
+    @log_all_calls
     def _validate_labeling_output(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate labeling output."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -286,21 +298,25 @@ class Step06Validator:
                         result['warnings'].append('Moderate label imbalance detected')
         return result
 
+    @log_all_calls
     def _validate_label_distribution(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate label distribution."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
         return result
 
+    @log_all_calls
     def _validate_optimization_input(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate optimization input."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
         return result
 
+    @log_all_calls
     def _validate_optimization_output(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate optimization output."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
         return result
 
+    @log_all_calls
     def _validate_optimization_convergence(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Validate optimization convergence."""
         result = {'passed': True, 'errors': [], 'warnings': [], 'metrics': {}}
@@ -321,7 +337,8 @@ class Step06Reporter:
         if context.status == FunctionStatus.FAILED:
             error_analysis = self._analyze_error(context)
         recommendations = self._generate_recommendations(context, validation_results)
-        return FunctionCallReport(call_context=context, validation_summary=validation_results, performance_summary=performance_summary, error_analysis=error_analysis, recommendations=recommendations)
+        return FunctionCallReport(call_context = context, validation_summary = validation_results, performance_summary = performance_summary, error_analysis = error_analysis, recommendations = recommendations)
+    @log_all_calls
 
     def _generate_performance_summary(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Generate performance summary for a function call."""
@@ -330,10 +347,12 @@ class Step06Reporter:
             summary['memory_usage'] = context.memory_usage
         summary.update(context.performance_metrics)
         return summary
+    @log_all_calls
 
     def _analyze_error(self, context: FunctionCallContext) -> Dict[str, Any]:
         """Analyze function execution errors."""
         return {'error_type': type(context.error_message).__name__ if context.error_message else 'Unknown', 'error_message': context.error_message, 'execution_time_before_error': context.execution_time, 'input_validation_passed': True, 'suggested_fixes': self._suggest_error_fixes(context)}
+    @log_all_calls
 
     def _suggest_error_fixes(self, context: FunctionCallContext) -> List[str]:
         """Suggest fixes for function errors."""
@@ -346,6 +365,7 @@ class Step06Reporter:
             suggestions.append('Increase timeout or optimize algorithm performance')
         return suggestions
 
+    @log_all_calls
     def _generate_recommendations(self, context: FunctionCallContext, validation_results: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on function execution."""
         recommendations = []
@@ -364,6 +384,7 @@ class Step06Reporter:
         stats = self.validator.tracker.get_call_statistics()
         return {'summary': {'total_function_calls': stats['total_calls'], 'active_calls': stats['active_calls'], 'functions_with_errors': len(stats['error_stats']), 'most_called_function': max(stats['function_stats'].items(), key=lambda x: x[1]['total_calls'])[0] if stats['function_stats'] else None}, 'function_statistics': stats['function_stats'], 'error_statistics': stats['error_stats'], 'performance_statistics': stats['performance_stats'], 'recommendations': self._generate_global_recommendations(stats)}
 
+    @log_all_calls
     def _generate_global_recommendations(self, stats: Dict[str, Any]) -> List[str]:
         """Generate global recommendations based on overall statistics."""
         recommendations = []
@@ -378,7 +399,7 @@ _global_tracker = FunctionCallTracker()
 _global_validator = Step06Validator()
 _global_reporter = Step06Reporter(_global_validator)
 
-def step06_function_validator(function_type: str='general', validation_level: ValidationLevel=ValidationLevel.COMPREHENSIVE, timeout: Optional[float]=None, log_calls: bool=True) -> None:
+def step06_function_validator(function_type: str='general', validation_level: ValidationLevel = ValidationLevel.COMPREHENSIVE, timeout: Optional[float]=None, log_calls: bool = True) -> None:
     """
     Comprehensive function validator decorator for step06 components.
     
@@ -393,40 +414,70 @@ def step06_function_validator(function_type: str='general', validation_level: Va
     """
 
     def decorator(func: Callable) -> Callable:
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs) -> Any:
+                call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
+                context = _global_tracker.start_call(function_name = func.__name__, module_name = func.__module__, call_id = call_id, args = args, kwargs = kwargs)
+                if log_calls:
+                    _global_validator.logger.info(f'🔍 Starting async function call: {func.__name__} (ID: {call_id})')
+                try:
+                    if timeout:
+                        import signal
 
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> None:
-            call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
-            context = _global_tracker.start_call(function_name=func.__name__, module_name=func.__module__, call_id=call_id, args=args, kwargs=kwargs)
-            if log_calls:
-                _global_validator.logger.info(f'🔍 Starting function call: {func.__name__} (ID: {call_id})')
-            try:
-                if timeout:
-                    import signal
+                        def timeout_handler(signum: Any, frame: Any) -> None:
+                            raise TimeoutError(f'Function {func.__name__} timed out after {timeout}s')
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(int(timeout))
+                    result = await func(*args, **kwargs)
+                    if timeout:
+                        signal.alarm(0)
+                    context = _global_tracker.end_call(call_id, result = result)
+                    if log_calls and context:
+                        _global_validator.logger.info(f'✅ Async function call completed: {func.__name__} (ID: {call_id}) in {context.execution_time:.3f}s')
+                        report = _global_reporter.generate_function_report(context)
+                        _global_validator.logger.info(f'📊 Function report: {json.dumps(report.validation_summary, indent = 2)}')
+                    return result
+                except Exception as e:
+                    context = _global_tracker.end_call(call_id, error = e)
+                    if log_calls and context:
+                        _global_validator.logger.error(f'❌ Async function call failed: {func.__name__} (ID: {call_id}) after {context.execution_time:.3f}s - {str(e)}')
+                        report = _global_reporter.generate_function_report(context)
+                        _global_validator.logger.error(f'📊 Error report: {json.dumps(report.error_analysis, indent = 2)}')
+                    raise
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs) -> Any:
+                call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
+                context = _global_tracker.start_call(function_name = func.__name__, module_name = func.__module__, call_id = call_id, args = args, kwargs = kwargs)
+                if log_calls:
+                    _global_validator.logger.info(f'🔍 Starting function call: {func.__name__} (ID: {call_id})')
+                try:
+                    if timeout:
+                        import signal
 
-                    def timeout_handler(signum: Any, frame: Any) -> None:
-                        raise TimeoutError(f'Function {func.__name__} timed out after {timeout}s')
-                    signal.signal(signal.SIGALRM, timeout_handler)
-                    signal.alarm(int(timeout))
-                result = func(*args, **kwargs)
-                if timeout:
-                    signal.alarm(0)
-                context = _global_tracker.end_call(call_id, result=result)
-                if log_calls:
-                    _global_validator.logger.info(f'✅ Function call completed: {func.__name__} (ID: {call_id}) in {context.execution_time:.3f}s')
-                report = _global_reporter.generate_function_report(context)
-                if log_calls:
-                    _global_validator.logger.info(f'📊 Function report: {json.dumps(report.validation_summary, indent=2)}')
-                return result
-            except Exception as e:
-                context = _global_tracker.end_call(call_id, error=e)
-                if log_calls:
-                    _global_validator.logger.error(f'❌ Function call failed: {func.__name__} (ID: {call_id}) after {context.execution_time:.3f}s - {str(e)}')
-                report = _global_reporter.generate_function_report(context)
-                if log_calls:
-                    _global_validator.logger.error(f'📊 Error report: {json.dumps(report.error_analysis, indent=2)}')
-                raise
-        return wrapper
+                        def timeout_handler(signum: Any, frame: Any) -> None:
+                            raise TimeoutError(f'Function {func.__name__} timed out after {timeout}s')
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(int(timeout))
+                    result = func(*args, **kwargs)
+                    if timeout:
+                        signal.alarm(0)
+                    context = _global_tracker.end_call(call_id, result = result)
+                    if log_calls and context:
+                        _global_validator.logger.info(f'✅ Function call completed: {func.__name__} (ID: {call_id}) in {context.execution_time:.3f}s')
+                        report = _global_reporter.generate_function_report(context)
+                        _global_validator.logger.info(f'📊 Function report: {json.dumps(report.validation_summary, indent = 2)}')
+                    return result
+                except Exception as e:
+                    context = _global_tracker.end_call(call_id, error = e)
+                    if log_calls and context:
+                        _global_validator.logger.error(f'❌ Function call failed: {func.__name__} (ID: {call_id}) after {context.execution_time:.3f}s - {str(e)}')
+                        report = _global_reporter.generate_function_report(context)
+                        _global_validator.logger.error(f'📊 Error report: {json.dumps(report.error_analysis, indent = 2)}')
+                    raise
+            return sync_wrapper
     return decorator
 
 def step06_function_tracker(func: Callable) -> Callable:
@@ -440,18 +491,32 @@ def step06_function_tracker(func: Callable) -> Callable:
         Decorated function with call tracking
     """
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> None:
-        call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
-        context = _global_tracker.start_call(function_name=func.__name__, module_name=func.__module__, call_id=call_id, args=args, kwargs=kwargs)
-        try:
-            result = func(*args, **kwargs)
-            _global_tracker.end_call(call_id, result=result)
-            return result
-        except Exception as e:
-            _global_tracker.end_call(call_id, error=e)
-            raise
-    return wrapper
+    if inspect.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs) -> Any:
+            call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
+            context = _global_tracker.start_call(function_name = func.__name__, module_name = func.__module__, call_id = call_id, args = args, kwargs = kwargs)
+            try:
+                result = await func(*args, **kwargs)
+                _global_tracker.end_call(call_id, result = result)
+                return result
+            except Exception as e:
+                _global_tracker.end_call(call_id, error = e)
+                raise
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs) -> Any:
+            call_id = f'{func.__module__}.{func.__name__}_{int(time.time() * 1000000)}'
+            context = _global_tracker.start_call(function_name = func.__name__, module_name = func.__module__, call_id = call_id, args = args, kwargs = kwargs)
+            try:
+                result = func(*args, **kwargs)
+                _global_tracker.end_call(call_id, result = result)
+                return result
+            except Exception as e:
+                _global_tracker.end_call(call_id, error = e)
+                raise
+        return sync_wrapper
 
 @contextmanager
 def step06_validation_context(function_name: str, function_type: str='general') -> None:
@@ -466,7 +531,7 @@ def step06_validation_context(function_name: str, function_type: str='general') 
         Validation context
     """
     call_id = f'{function_name}_{int(time.time() * 1000000)}'
-    context = _global_tracker.start_call(function_name=function_name, module_name='context_manager', call_id=call_id, args=(), kwargs={})
+    context = _global_tracker.start_call(function_name = function_name, module_name='context_manager', call_id = call_id, args=(), kwargs={})
     try:
         yield context
     finally:
@@ -483,3 +548,4 @@ def reset_step06_validation_tracking() -> None:
     _global_validator = Step06Validator()
     _global_reporter = Step06Reporter(_global_validator)
 __all__ = ['step06_function_validator', 'step06_function_tracker', 'step06_validation_context', 'get_step06_validation_summary', 'reset_step06_validation_tracking', 'ValidationLevel', 'FunctionStatus', 'FunctionCallContext', 'FunctionCallReport', 'Step06Validator', 'Step06Reporter']
+from typing import Dict, List, Optional, Union, Any, Tuple

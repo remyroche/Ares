@@ -38,10 +38,10 @@ def register_service(
     container = get_container()
     container.register(
         service_type,
-        implementation=implementation,
+        implementation = implementation,
         singleton=(lifetime == ServiceLifetime.SINGLETON),
-        config=config,
-        lifetime=lifetime,
+        config = config,
+        lifetime = lifetime,
     )
 
 

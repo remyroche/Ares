@@ -1,6 +1,7 @@
 
 import pandas as pd
 import numpy as np
+from ...utils.logger import system_logger
 
 """
 S/R Data Integration Module
@@ -27,7 +28,7 @@ try:
     from .config.training_modes import TRAINING_MODES
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.unified_data_loader import UnifiedDataLoader
-    from .utils.logger import system_logger
+    from ...utils.logger import system_logger
     UNIFIED_LOADER_AVAILABLE = True
     DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
@@ -61,7 +62,7 @@ class SRDataIntegration:
         self.data_config = self.config.get('data_integration', {})
         self.symbol = self.data_config.get('symbol', 'BTCUSDT')
         self.exchange = self.data_config.get('exchange', 'binance')
-        self.timeframes = self.data_config.get('timeframes', ['1m', '5m', '15m', '30m'])
+        self.timeframes = self.data_config.get('timeframes', ['1m', '5m', '15m', '30m', '1h', '4h', '1d'])
         self.lookback_days = self.data_config.get('lookback_days', DEFAULT_LOOKBACK_DAYS)
         self.training_mode = self.data_config.get('training_mode', 'blank')
         if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
@@ -163,7 +164,7 @@ class SRDataIntegration:
             True if data is available, False otherwise
         """
         try:
-            sample_data = await self._load_timeframe_data(timeframe, max_periods=100)
+            sample_data = await self._load_timeframe_data(timeframe, max_periods = 100)
             return sample_data is not None and len(sample_data) > 0
         except Exception as e:
             if self.logger:
@@ -183,7 +184,7 @@ class SRDataIntegration:
             if self.logger:
                 self.logger.info(f'📥 Downloading data for {timeframe}...')
             if DATA_DOWNLOADER_AVAILABLE and download_all_data_with_consolidation:
-                success = await download_all_data_with_consolidation(symbol=self.symbol, exchange_name=self.exchange, interval=timeframe)
+                success = await download_all_data_with_consolidation(symbol = self.symbol, exchange_name = self.exchange, interval = timeframe)
                 if success and self.logger:
                     self.logger.info(f'✅ Data download successful for {timeframe}')
                 return success
@@ -196,7 +197,7 @@ class SRDataIntegration:
                 self.logger.error(f'❌ Data download failed for {timeframe}: {e}')
             return False
 
-    async def get_market_data(self, timeframe: str, lookback_days: Optional[int]=None, force_reload: bool=False) -> Optional[pd.DataFrame]:
+    async def get_market_data(self, timeframe: str, lookback_days: Optional[int]=None, force_reload: bool = False) -> Optional[pd.DataFrame]:
         """Get market data for S/R validation.
         
         Args:
@@ -244,7 +245,7 @@ class SRDataIntegration:
         """
         try:
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=lookback_days)
+            start_date = end_date - timedelta(days = lookback_days)
             data = await self._load_from_unified_loader(timeframe, start_date, end_date)
             if data is not None and len(data) > 0:
                 return data
@@ -268,7 +269,7 @@ class SRDataIntegration:
         """
         try:
             if self.data_loader and hasattr(self.data_loader, 'load_timeframe_data'):
-                data = await self.data_loader.load_timeframe_data(symbol=self.symbol, exchange=self.exchange, timeframe=timeframe, start_date=start_date, end_date=end_date)
+                data = await self.data_loader.load_timeframe_data(symbol = self.symbol, exchange = self.exchange, timeframe = timeframe, start_date = start_date, end_date = end_date)
                 return data
             else:
                 if self.logger:
@@ -311,7 +312,7 @@ class SRDataIntegration:
                 if self.logger:
                     self.logger.warning(f'Missing required columns in {latest_file}')
                 return None
-            return data.sort_values('timestamp').reset_index(drop=True)
+            return data.sort_values('timestamp').reset_index(drop = True)
         except Exception as e:
             if self.logger:
                 self.logger.debug(f'File system loading failed for {timeframe}: {e}')
@@ -433,8 +434,8 @@ class SRDataIntegration:
         Returns:
             Expected time difference
         """
-        time_diff_map = {'1m': pd.Timedelta(minutes=1), '5m': pd.Timedelta(minutes=5), '15m': pd.Timedelta(minutes=15), '30m': pd.Timedelta(minutes=30), '1h': pd.Timedelta(hours=1), '4h': pd.Timedelta(hours=4), '1d': pd.Timedelta(days=1)}
-        return time_diff_map.get(timeframe, pd.Timedelta(minutes=1))
+        time_diff_map = {'1m': pd.Timedelta(minutes = 1), '5m': pd.Timedelta(minutes = 5), '15m': pd.Timedelta(minutes = 15), '30m': pd.Timedelta(minutes = 30), '1h': pd.Timedelta(hours = 1), '4h': pd.Timedelta(hours = 4), '1d': pd.Timedelta(days = 1)}
+        return time_diff_map.get(timeframe, pd.Timedelta(minutes = 1))
 
     async def cleanup_cache(self) -> None:
         """Clean up the data cache to free memory."""
@@ -472,7 +473,7 @@ async def create_sr_data_integration(symbol: str='BTCUSDT', exchange: str='binan
     """
     try:
         if timeframes is None:
-            timeframes = ['1m', '5m', '15m', '30m']
+            timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
         if lookback_days is None:
             try:
                 mode_config = TRAINING_MODES.get(training_mode)

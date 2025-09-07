@@ -1,4 +1,5 @@
 """
+from .logger import system_logger
 Data loading utilities for partitioned datasets.
 
 This module provides utilities for loading data from partitioned Parquet datasets
@@ -12,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 
-from .core.decorators import validates, with_tracing_span
-from .utils.logger import system_logger
+from src.core.decorators import validates, with_tracing_span
+from .logger import system_logger
 import numpy as np
 import pandas as pd
 
@@ -25,14 +26,14 @@ except ImportError:
 class PartitionedDataLoader:
     """Enhanced utility class for loading data from partitioned Parquet datasets."""
 
-    def __init__(self, logger: logging.Logger | None=None, cache_size: int=128) -> None:
+    def __init__(self, logger: logging.Logger | None = None, cache_size: int = 128) -> None:
         self.logger = logger or system_logger
         self.cache_size = cache_size
         self._partition_cache = {}
         self._metadata_cache = {}
 
-    @with_tracing_span('PartitionedDataLoader.load_partitioned_data', log_args=False)
-    def load_partitioned_data(self, base_dir: str, exchange: str, symbol: str, data_type: str='aggtrades', timeframe: str='1m', filters: list | None=None, columns: list[str] | None=None, max_rows: int | None=None, use_streaming: bool=True, enable_partition_pruning: bool=True, use_cache: bool=True, cache_key: str | None=None, **kwargs: Any) -> pd.DataFrame:
+    @with_tracing_span('PartitionedDataLoader.load_partitioned_data', log_args = False)
+    def load_partitioned_data(self, base_dir: str, exchange: str, symbol: str, data_type: str='aggtrades', timeframe: str='1m', filters: list | None = None, columns: list[str] | None = None, max_rows: int | None = None, use_streaming: bool = True, enable_partition_pruning: bool = True, use_cache: bool = True, cache_key: str | None = None, **kwargs: Any) -> pd.DataFrame:
         """
         Load data from partitioned Parquet dataset with enhanced performance optimizations.
 
@@ -80,9 +81,9 @@ class PartitionedDataLoader:
         self.logger.info(f'📁 Loading partitioned data from: {dataset_path}')
         self.logger.info(f'🔍 Applying filters: {filters}')
         if use_streaming and PYARROW_AVAILABLE:
-            result = self._load_with_pyarrow_streaming(dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs)
+            result = self._load_with_pyarrow_streaming(dataset_path = dataset_path, filters = filters, columns = columns, max_rows = max_rows, **kwargs)
         else:
-            result = self._load_with_pandas(dataset_path=dataset_path, filters=filters, columns=columns, max_rows=max_rows, **kwargs)
+            result = self._load_with_pandas(dataset_path = dataset_path, filters = filters, columns = columns, max_rows = max_rows, **kwargs)
         if use_cache and cache_key:
             self._partition_cache[cache_key] = result
         if len(self._partition_cache) > self.cache_size:
@@ -95,7 +96,7 @@ class PartitionedDataLoader:
         """Load data using PyArrow with streaming for large datasets."""
         dataset = ds.dataset(dataset_path, format='parquet')
         filter_expr = self._build_filter_expression(filters)
-        scanner = dataset.scanner(filter=filter_expr, columns=columns, batch_size=10000)
+        scanner = dataset.scanner(filter = filter_expr, columns = columns, batch_size = 10000)
         chunks = []
         total_rows = 0
         for batch in scanner.to_batches():
@@ -105,9 +106,9 @@ class PartitionedDataLoader:
             chunks.append(chunk_df)
             total_rows += len(chunk_df)
         if len(chunks) >= 10:
-            chunks = [pd.concat(chunks, ignore_index=True)]
+            chunks = [pd.concat(chunks, ignore_index = True)]
         if chunks:
-            result = pd.concat(chunks, ignore_index=True)
+            result = pd.concat(chunks, ignore_index = True)
             if max_rows and len(result) > max_rows:
                 result = result.head(max_rows)
         else:
@@ -120,7 +121,7 @@ class PartitionedDataLoader:
         """Load data using PyArrow without streaming."""
         dataset = ds.dataset(dataset_path, format='parquet')
         filter_expr = self._build_filter_expression(filters)
-        table = dataset.to_table(filter=filter_expr, columns=columns)
+        table = dataset.to_table(filter = filter_expr, columns = columns)
         result = table.to_pandas()
         if max_rows and len(result) > max_rows:
             result = result.head(max_rows)
@@ -141,14 +142,14 @@ class PartitionedDataLoader:
             if max_rows and total_rows >= max_rows:
                 break
             try:
-                chunk = pd.read_parquet(file_path, columns=columns)
+                chunk = pd.read_parquet(file_path, columns = columns)
                 chunks.append(chunk)
                 total_rows += len(chunk)
             except Exception as e:
                 self.logger.warning(f'Failed to load {file_path}: {e}')
                 continue
         if chunks:
-            result = pd.concat(chunks, ignore_index=True)
+            result = pd.concat(chunks, ignore_index = True)
             if max_rows and len(result) > max_rows:
                 result = result.head(max_rows)
         else:
@@ -235,7 +236,7 @@ class PartitionedDataLoader:
                 optimized_filters.append(filter_tuple)
         return optimized_filters
 
-    @lru_cache(maxsize=64)
+    @lru_cache(maxsize = 64)
     def _get_partition_info(self, dataset_path: str) -> dict[str, Any]:
         """Get partition information for a dataset (cached)."""
         if PYARROW_AVAILABLE:
@@ -304,7 +305,7 @@ class PartitionedDataLoader:
                 recommendations['recommendations'].append({'type': 'small_files', 'avg_size_mb': stats['avg_file_size'] / 1000000, 'suggestion': 'Consider coarser partitioning to increase file sizes'})
         return recommendations
 
-def load_partitioned_data(exchange: str, symbol: str, data_type: str='aggtrades', timeframe: str='1m', base_dir: str='data_cache/parquet', max_rows: int | None=None, use_streaming: bool=True, logger: logging.Logger | None=None) -> pd.DataFrame:
+def load_partitioned_data(exchange: str, symbol: str, data_type: str='aggtrades', timeframe: str='1m', base_dir: str='data_cache/parquet', max_rows: int | None = None, use_streaming: bool = True, logger: logging.Logger | None = None) -> pd.DataFrame:
     """
     Convenience function to load partitioned data.
 
@@ -322,4 +323,4 @@ def load_partitioned_data(exchange: str, symbol: str, data_type: str='aggtrades'
         DataFrame with the loaded data
     """
     loader = PartitionedDataLoader(logger)
-    return loader.load_partitioned_data(base_dir=base_dir, exchange=exchange, symbol=symbol, data_type=data_type, timeframe=timeframe, max_rows=max_rows, use_streaming=use_streaming)
+    return loader.load_partitioned_data(base_dir = base_dir, exchange = exchange, symbol = symbol, data_type = data_type, timeframe = timeframe, max_rows = max_rows, use_streaming = use_streaming)

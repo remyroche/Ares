@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ...utils.logger import system_logger
 """
 Monitoring Dashboard GUI
 
@@ -7,7 +8,7 @@ trade decisions, daily summaries, and HMM regime information.
 """
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import datetime
@@ -41,7 +42,7 @@ class MonitoringDashboard:
         self.regime_tree: Optional[ttk.Treeview] = None
         self.status_var = tk.StringVar()
         self.last_update_var = tk.StringVar()
-        self.auto_refresh_var = tk.BooleanVar(value=True)
+        self.auto_refresh_var = tk.BooleanVar(value = True)
         self.logger.info('Monitoring Dashboard initialized')
 
     def create_gui(self) -> Any:
@@ -53,7 +54,7 @@ class MonitoringDashboard:
             self.root.configure(bg='#f0f0f0')
             self._create_menu_bar()
             self.notebook = ttk.Notebook(self.root)
-            self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            self.notebook.pack(fill = tk.BOTH, expand = True, padx = 10, pady = 10)
             self._create_trade_decisions_tab()
             self._create_daily_summary_tab()
             self._create_regime_analysis_tab()
@@ -70,130 +71,130 @@ class MonitoringDashboard:
     def _create_menu_bar(self) -> None:
         """Create the menu bar."""
         menubar = tk.Menu(self.root)
-        self.root.config(menu=menubar)
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label='File', menu=file_menu)
-        file_menu.add_command(label='Load CSV Data', command=self._load_csv_data)
-        file_menu.add_command(label='Export Current View', command=self._export_current_view)
+        self.root.config(menu = menubar)
+        file_menu = tk.Menu(menubar, tearoff = 0)
+        menubar.add_cascade(label='File', menu = file_menu)
+        file_menu.add_command(label='Load CSV Data', command = self._load_csv_data)
+        file_menu.add_command(label='Export Current View', command = self._export_current_view)
         file_menu.add_separator()
-        file_menu.add_command(label='Exit', command=self.root.quit)
-        view_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label='View', menu=view_menu)
-        view_menu.add_checkbutton(label='Auto Refresh', variable=self.auto_refresh_var, command=self._toggle_auto_refresh)
-        view_menu.add_command(label='Refresh Now', command=self._refresh_data)
-        help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label='Help', menu=help_menu)
-        help_menu.add_command(label='About', command=self._show_about)
+        file_menu.add_command(label='Exit', command = self.root.quit)
+        view_menu = tk.Menu(menubar, tearoff = 0)
+        menubar.add_cascade(label='View', menu = view_menu)
+        view_menu.add_checkbutton(label='Auto Refresh', variable = self.auto_refresh_var, command = self._toggle_auto_refresh)
+        view_menu.add_command(label='Refresh Now', command = self._refresh_data)
+        help_menu = tk.Menu(menubar, tearoff = 0)
+        menubar.add_cascade(label='Help', menu = help_menu)
+        help_menu.add_command(label='About', command = self._show_about)
 
     def _create_trade_decisions_tab(self) -> None:
         """Create the trade decisions tab."""
         self.trade_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.trade_frame, text='Trade Decisions')
         toolbar = ttk.Frame(self.trade_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Trade Data', command=self._load_trade_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Filter', command=self._show_trade_filter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Export', command=self._export_trade_data).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Trade Data', command = self._load_trade_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Filter', command = self._show_trade_filter).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Export', command = self._export_trade_data).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(self.trade_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.trade_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.trade_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.trade_tree.xview)
-        self.trade_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.trade_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.trade_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.trade_tree.xview)
+        self.trade_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.trade_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.trade_tree['columns'] = ('timestamp', 'token', 'action', 'price', 'confidence', 'regime')
         self.trade_tree['show'] = 'headings'
         for col in self.trade_tree['columns']:
-            self.trade_tree.heading(col, text=col.title())
-            self.trade_tree.column(col, width=100)
+            self.trade_tree.heading(col, text = col.title())
+            self.trade_tree.column(col, width = 100)
 
     def _create_daily_summary_tab(self) -> None:
         """Create the daily summary tab."""
         self.summary_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.summary_frame, text='Daily Summary')
         toolbar = ttk.Frame(self.summary_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Summary Data', command=self._load_summary_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Date Range', command=self._show_date_range).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Export', command=self._export_summary_data).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Summary Data', command = self._load_summary_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Date Range', command = self._show_date_range).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Export', command = self._export_summary_data).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(self.summary_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.summary_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.summary_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.summary_tree.xview)
-        self.summary_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.summary_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.summary_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.summary_tree.xview)
+        self.summary_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.summary_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.summary_tree['columns'] = ('date', 'total_trades', 'long_trades', 'short_trades', 'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
         self.summary_tree['show'] = 'headings'
         for col in self.summary_tree['columns']:
-            self.summary_tree.heading(col, text=col.replace('_', ' ').title())
-            self.summary_tree.column(col, width=120)
+            self.summary_tree.heading(col, text = col.replace('_', ' ').title())
+            self.summary_tree.column(col, width = 120)
 
     def _create_regime_analysis_tab(self) -> None:
         """Create the regime analysis tab."""
         self.regime_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.regime_frame, text='Regime Analysis')
         toolbar = ttk.Frame(self.regime_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Regime Data', command=self._load_regime_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Regime Filter', command=self._show_regime_filter).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Regime Data', command = self._load_regime_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Regime Filter', command = self._show_regime_filter).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(self.regime_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.regime_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.regime_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.regime_tree.xview)
-        self.regime_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.regime_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.regime_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.regime_tree.xview)
+        self.regime_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.regime_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.regime_tree['columns'] = ('regime_id', 'regime_name', 'probability', 'stability', 'duration', 'trade_count', 'avg_pnl', 'win_rate')
         self.regime_tree['show'] = 'headings'
         for col in self.regime_tree['columns']:
-            self.regime_tree.heading(col, text=col.replace('_', ' ').title())
-            self.regime_tree.column(col, width=120)
+            self.regime_tree.heading(col, text = col.replace('_', ' ').title())
+            self.regime_tree.column(col, width = 120)
 
     def _create_statistics_tab(self) -> None:
         """Create the statistics tab."""
         stats_frame = ttk.Frame(self.notebook)
         self.notebook.add(stats_frame, text='Statistics')
-        stats_text = tk.Text(stats_frame, wrap=tk.WORD, font=('Courier', 10))
-        stats_scrollbar = ttk.Scrollbar(stats_frame, orient=tk.VERTICAL, command=stats_text.yview)
-        stats_text.configure(yscrollcommand=stats_scrollbar.set)
-        stats_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        stats_text = tk.Text(stats_frame, wrap = tk.WORD, font=('Courier', 10))
+        stats_scrollbar = ttk.Scrollbar(stats_frame, orient = tk.VERTICAL, command = stats_text.yview)
+        stats_text.configure(yscrollcommand = stats_scrollbar.set)
+        stats_text.pack(side = tk.LEFT, fill = tk.BOTH, expand = True, padx = 5, pady = 5)
+        stats_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
         self.stats_text = stats_text
 
     def _create_status_bar(self) -> None:
         """Create the status bar."""
         status_frame = ttk.Frame(self.root)
-        status_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        ttk.Label(status_frame, textvariable=self.status_var).pack(side=tk.LEFT, padx=5)
-        ttk.Label(status_frame, textvariable=self.last_update_var).pack(side=tk.RIGHT, padx=5)
+        status_frame.pack(fill = tk.X, side = tk.BOTTOM)
+        ttk.Label(status_frame, textvariable = self.status_var).pack(side = tk.LEFT, padx = 5)
+        ttk.Label(status_frame, textvariable = self.last_update_var).pack(side = tk.RIGHT, padx = 5)
         self.status_var.set('Ready')
         self.last_update_var.set('Last update: Never')
 
     def _create_control_panel(self) -> None:
         """Create the control panel."""
         control_frame = ttk.LabelFrame(self.root, text='Controls')
-        control_frame.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Checkbutton(control_frame, text='Auto Refresh', variable=self.auto_refresh_var, command=self._toggle_auto_refresh).pack(side=tk.LEFT, padx=5)
-        ttk.Label(control_frame, text='Refresh Interval (ms):').pack(side=tk.LEFT, padx=5)
-        self.refresh_interval_var = tk.StringVar(value=str(self.refresh_interval))
-        refresh_entry = ttk.Entry(control_frame, textvariable=self.refresh_interval_var, width=10)
-        refresh_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text='Apply', command=self._apply_refresh_interval).pack(side=tk.LEFT, padx=5)
-        ttk.Label(control_frame, text='Trading Mode:').pack(side=tk.LEFT, padx=5)
+        control_frame.pack(fill = tk.X, padx = 10, pady = 5)
+        ttk.Checkbutton(control_frame, text='Auto Refresh', variable = self.auto_refresh_var, command = self._toggle_auto_refresh).pack(side = tk.LEFT, padx = 5)
+        ttk.Label(control_frame, text='Refresh Interval (ms):').pack(side = tk.LEFT, padx = 5)
+        self.refresh_interval_var = tk.StringVar(value = str(self.refresh_interval))
+        refresh_entry = ttk.Entry(control_frame, textvariable = self.refresh_interval_var, width = 10)
+        refresh_entry.pack(side = tk.LEFT, padx = 5)
+        ttk.Button(control_frame, text='Apply', command = self._apply_refresh_interval).pack(side = tk.LEFT, padx = 5)
+        ttk.Label(control_frame, text='Trading Mode:').pack(side = tk.LEFT, padx = 5)
         self.trading_mode_var = tk.StringVar(value='all')
-        mode_combo = ttk.Combobox(control_frame, textvariable=self.trading_mode_var, values=['all', 'backtest', 'paper', 'live'], state='readonly', width=10)
-        mode_combo.pack(side=tk.LEFT, padx=5)
+        mode_combo = ttk.Combobox(control_frame, textvariable = self.trading_mode_var, values=['all', 'backtest', 'paper', 'live'], state='readonly', width = 10)
+        mode_combo.pack(side = tk.LEFT, padx = 5)
         mode_combo.bind('<<ComboboxSelected>>', self._on_mode_changed)
-        ttk.Label(control_frame, text='Data Path:').pack(side=tk.LEFT, padx=5)
+        ttk.Label(control_frame, text='Data Path:').pack(side = tk.LEFT, padx = 5)
         self.data_path_var = tk.StringVar(value='No data loaded')
-        ttk.Label(control_frame, textvariable=self.data_path_var, foreground='blue').pack(side=tk.LEFT, padx=5)
+        ttk.Label(control_frame, textvariable = self.data_path_var, foreground='blue').pack(side = tk.LEFT, padx = 5)
 
     def _load_csv_data(self) -> None:
         """Load CSV data from file dialog."""
@@ -263,7 +264,7 @@ class MonitoringDashboard:
             for mode, df in self.trade_data.items():
                 all_data.append(df)
             if all_data:
-                df = pd.concat(all_data, ignore_index=True)
+                df = pd.concat(all_data, ignore_index = True)
             else:
                 return
         elif self.current_mode in self.trade_data:
@@ -274,11 +275,11 @@ class MonitoringDashboard:
         self.trade_tree['columns'] = columns
         self.trade_tree['show'] = 'headings'
         for col in columns:
-            self.trade_tree.heading(col, text=col.replace('_', ' ').title())
-            self.trade_tree.column(col, width=120, minwidth=80)
+            self.trade_tree.heading(col, text = col.replace('_', ' ').title())
+            self.trade_tree.column(col, width = 120, minwidth = 80)
         for index, row in df.iterrows():
             values = [str(row[col]) if pd.notna(row[col]) else '' for col in columns]
-            self.trade_tree.insert('', tk.END, values=values)
+            self.trade_tree.insert('', tk.END, values = values)
 
     def _populate_summary_tree(self) -> None:
         """Populate the daily summary tree."""
@@ -291,7 +292,7 @@ class MonitoringDashboard:
             for mode, df in self.daily_summary_data.items():
                 all_data.append(df)
             if all_data:
-                df = pd.concat(all_data, ignore_index=True)
+                df = pd.concat(all_data, ignore_index = True)
             else:
                 return
         elif self.current_mode in self.daily_summary_data:
@@ -302,11 +303,11 @@ class MonitoringDashboard:
         self.summary_tree['columns'] = columns
         self.summary_tree['show'] = 'headings'
         for col in columns:
-            self.summary_tree.heading(col, text=col.replace('_', ' ').title())
-            self.summary_tree.column(col, width=120, minwidth=80)
+            self.summary_tree.heading(col, text = col.replace('_', ' ').title())
+            self.summary_tree.column(col, width = 120, minwidth = 80)
         for index, row in df.iterrows():
             values = [str(row[col]) if pd.notna(row[col]) else '' for col in columns]
-            self.summary_tree.insert('', tk.END, values=values)
+            self.summary_tree.insert('', tk.END, values = values)
 
     def _populate_regime_tree(self) -> None:
         """Populate the regime analysis tree."""
@@ -319,7 +320,7 @@ class MonitoringDashboard:
             for mode, df in self.trade_data.items():
                 all_data.append(df)
             if all_data:
-                df = pd.concat(all_data, ignore_index=True)
+                df = pd.concat(all_data, ignore_index = True)
             else:
                 return
         elif self.current_mode in self.trade_data:
@@ -329,7 +330,7 @@ class MonitoringDashboard:
         regime_stats = self._analyze_regime_data(df)
         for regime_id, stats in regime_stats.items():
             values = [regime_id, stats.get('name', 'Unknown'), f"{stats.get('probability', 0):.3f}", f"{stats.get('stability', 0):.3f}", stats.get('duration', 0), stats.get('trade_count', 0), f"{stats.get('avg_pnl', 0):.2f}", f"{stats.get('win_rate', 0):.3f}"]
-            self.regime_tree.insert('', tk.END, values=values)
+            self.regime_tree.insert('', tk.END, values = values)
 
     def _analyze_regime_data(self, df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """Analyze regime data from trade decisions."""
@@ -421,7 +422,7 @@ class MonitoringDashboard:
         except ValueError:
             messagebox.showerror('Error', 'Invalid refresh interval')
 
-    def _on_mode_changed(self, event: Any=None) -> None:
+    def _on_mode_changed(self, event: Any = None) -> None:
         """Handle trading mode selection change."""
         try:
             new_mode = self.trading_mode_var.get()
@@ -494,7 +495,7 @@ class MonitoringDashboard:
         if self.trade_data is not None:
             file_path = filedialog.asksaveasfilename(title='Export Trade Data', defaultextension='.csv', filetypes=[('CSV files', '*.csv')])
             if file_path:
-                self.trade_data.to_csv(file_path, index=False)
+                self.trade_data.to_csv(file_path, index = False)
                 messagebox.showinfo('Success', f'Trade data exported to {file_path}')
 
     def _export_summary_data(self) -> None:
@@ -502,7 +503,7 @@ class MonitoringDashboard:
         if self.daily_summary_data is not None:
             file_path = filedialog.asksaveasfilename(title='Export Summary Data', defaultextension='.csv', filetypes=[('CSV files', '*.csv')])
             if file_path:
-                self.daily_summary_data.to_csv(file_path, index=False)
+                self.daily_summary_data.to_csv(file_path, index = False)
                 messagebox.showinfo('Success', f'Summary data exported to {file_path}')
 
     def _export_current_view(self) -> None:

@@ -1,4 +1,6 @@
+from ....core.decorators import handles_errors
 """Validator for Step 4: Triple Barrier Method.
+from src.utils.logger import system_logger
 
 This module validates the triple barrier method step outputs.
 """
@@ -20,21 +22,19 @@ from src.utils.common_operations import (
     safe_int
 )
 from src.utils.decorators import (
-    handles_errors,
     traced,
-    validates,
-    log_execution_time
+    validates
 )
+from src.core.decorators import log_execution_time
 from src.utils.logger import system_logger
 
 # Project setup
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import decorators from both locations for compatibility
-from src.core.decorators import traced, validates
-from src.utils.decorators.errors import handles_errors
+# Import decorators from core location
 import logging
+import time
 
 # Initialize logger using common utilities
 logger = get_logger('Step4TripleBarrierMethodValidator')

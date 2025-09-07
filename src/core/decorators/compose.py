@@ -30,8 +30,8 @@ def mark_wrapped(func: Callable[..., Any]) -> None:
 
 def uniform_wrapper(
     decorator_name: str,
-    sync_handler: Callable[[Callable[P, R], P.args, P.kwargs], R],
-    async_handler: Callable[[Callable[P, R], P.args, P.kwargs], R] | None = None,
+    sync_handler: Callable[[Callable[P, R], Any, Any], R],
+    async_handler: Callable[[Callable[P, R], Any, Any], R] | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Create a uniform wrapper that handles both sync and async functions.

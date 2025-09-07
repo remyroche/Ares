@@ -6,30 +6,30 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from exchange.factory import RootExchangeFactory
-from analyst import Analyst
-from config import get_dual_model_config
-from environment import get_exchange_name
-from config_service import ConfigurationService
-from decorators import handles_errors
-from dependency_injection import DependencyContainer, ServiceLocator
-from sqlite_manager import SQLiteManager
-from base_interfaces import IAnalyst, IEventBus, IStateManager, IStrategist, ISupervisor, ITactician
-from event_bus import EventBus
-from dual_model_system import DualModelSystem, setup_dual_model_system
-from performance_dashboard import PerformanceDashboard, setup_performance_dashboard
-from performance_monitor import PerformanceMonitor, setup_performance_monitor
-from strategist import Strategist
-from supervisor import Supervisor
-from tactician import Tactician
-from logger import setup_logging, system_logger
-from observability import init_observability
-from state_manager import StateManager
-from warning_symbols import critical, error, failed, warning
-from errors import handles_errors
+from .exchange.binance import BinanceExchange as RootExchangeFactory
+from .analyst.analyst import Analyst
+from .config import get_dual_model_config
+from .config.environment import get_environment_settings
+from .core.config_service import ConfigurationService
+from .core.dependency_injection import DependencyContainer
+from .database.sqlite_manager import SQLiteManager
+from .interfaces.base_interfaces import IAnalyst, IEventBus, IStateManager, IStrategist, ISupervisor, ITactician
+from .interfaces.event_bus import EventBus
+from .training.dual_model_system import DualModelSystem, setup_dual_model_system
+from .monitoring.performance_dashboard import PerformanceDashboard, setup_performance_dashboard
+from .monitoring.performance_monitor import PerformanceMonitor, setup_performance_monitor
+from .strategist import Strategist
+from .supervisor import Supervisor
+from .tactician import Tactician
+from .utils.logger import system_logger, setup_logging
+from .utils.observability import init_observability
+from .utils.state_manager import StateManager
+from .utils.warning_symbols import critical, error, failed, warning
+from .core.errors import handles_errors
 import pandas as pd
 import logging
 import time
+from .core.decorators import handles_errors
 
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
@@ -42,7 +42,7 @@ class AresPipeline:
     Enhanced main pipeline with dependency injection and comprehensive error handling.
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         """
         Initialize Ares pipeline with enhanced type safety and DI.
 
@@ -52,7 +52,7 @@ class AresPipeline:
         self.logger = system_logger.getChild('AresPipeline')
         self.config = config or {}
         self.container: DependencyContainer = DependencyContainer(config or {})
-        self.service_locator: ServiceLocator = ServiceLocator(self.container)
+        self.service_locator: DependencyContainer = self.container
         self.analyst: IAnalyst | None = None
         self.strategist: IStrategist | None = None
         self.tactician: ITactician | None = None
@@ -67,7 +67,7 @@ class AresPipeline:
         self.cycle_count: int = 0
         self.last_cycle_time: datetime | None = None
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid pipeline configuration'), AttributeError: (False, 'Missing required pipeline components'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='pipeline initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid pipeline configuration'), AttributeError: (False, 'Missing required pipeline components'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='pipeline initialization')
     async def initialize(self) -> bool:
         """
         Initialize pipeline with enhanced error handling and DI.
@@ -90,7 +90,7 @@ class AresPipeline:
             self.logger.exception('❌ Ares Pipeline initialization failed')
             return False
 
-    @handles_errors(default_return=None, context='configuration service initialization')
+    @handles_errors(default_return = None, context='configuration service initialization')
     async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
         try:
@@ -109,7 +109,7 @@ class AresPipeline:
             self.logger.exception('Error initializing configuration service')
             raise
 
-    @handles_errors(default_return=None, context='core service registration')
+    @handles_errors(default_return = None, context='core service registration')
     async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
         try:
@@ -127,7 +127,8 @@ class AresPipeline:
             print('   🏢 Registering ExchangeClient...')
             self.logger.info('   🏢 Registering ExchangeClient...')
             try:
-                exchange_instance = RootExchangeFactory.get_exchange(get_exchange_name().lower())
+                env_settings = get_environment_settings()
+                exchange_instance = RootExchangeFactory.get_exchange(env_settings.exchange_name.lower())
                 self.container.register_instance('ExchangeClient', exchange_instance)
                 print('   ✅ ExchangeClient registered successfully')
                 self.logger.info('   ✅ ExchangeClient registered successfully')
@@ -195,7 +196,7 @@ class AresPipeline:
             self.logger.exception('Error registering core services')
             raise
 
-    @handles_errors(default_return=None, context='pipeline component resolution')
+    @handles_errors(default_return = None, context='pipeline component resolution')
     async def _resolve_pipeline_components(self) -> None:
         """Resolve pipeline components through DI container with comprehensive logging."""
         try:
@@ -262,7 +263,7 @@ class AresPipeline:
             self.logger.exception('Error resolving pipeline components')
             raise
 
-    @handles_errors(default_return=None, context='component initialization')
+    @handles_errors(default_return = None, context='component initialization')
     async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
@@ -282,7 +283,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception('Error initializing components')
 
-    @handles_errors(default_return=None, context='signal handler setup')
+    @handles_errors(default_return = None, context='signal handler setup')
     def _setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
         try:
@@ -297,7 +298,7 @@ class AresPipeline:
         self.logger.info(f'Received signal {signum}, initiating graceful shutdown...')
         asyncio.create_task(self.stop())
 
-    @handles_errors(error_handlers={ConnectionError: (None, 'Failed to connect to exchange'), TimeoutError: (None, 'Pipeline operation timed out'), ValueError: (None, 'Invalid pipeline state')}, default_return=None, context='pipeline execution')
+    @handles_errors(error_handlers={ConnectionError: (None, 'Failed to connect to exchange'), TimeoutError: (None, 'Pipeline operation timed out'), ValueError: (None, 'Invalid pipeline state')}, default_return = None, context='pipeline execution')
     async def run(self) -> dict[str, Any] | None:
         """
         Run the Ares pipeline with comprehensive logging and timeout protection.
@@ -375,7 +376,7 @@ class AresPipeline:
             print('🧹 Pipeline cleanup completed')
             self.logger.info('🧹 Pipeline cleanup completed')
 
-    @handles_errors(default_return=None, context='pipeline cycle execution')
+    @handles_errors(default_return = None, context='pipeline cycle execution')
     async def _execute_cycle(self) -> None:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
@@ -405,7 +406,7 @@ class AresPipeline:
                 self.logger.info('   🎯 Developing trading strategy...')
                 strategy_market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
                 strategy_current_price = 100.5
-                strategy_result = await self.strategist.generate_strategy(market_data=strategy_market_data, current_price=strategy_current_price)
+                strategy_result = await self.strategist.generate_strategy(market_data = strategy_market_data, current_price = strategy_current_price)
                 if strategy_result:
                     print('   ✅ Strategy development completed successfully')
                     self.logger.info('   ✅ Strategy development completed successfully')
@@ -437,11 +438,11 @@ class AresPipeline:
                 self.logger.info('   🧠 Making trading decisions with dual model system...')
                 market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
                 current_price = 100.5
-                decision_result = await self.dual_model_system.make_trading_decision(market_data=market_data, current_price=current_price)
+                decision_result = await self.dual_model_system.make_trading_decision(market_data = market_data, current_price = current_price)
                 if decision_result:
                     print('   ✅ Dual model system decision completed successfully')
                     self.logger.info('   ✅ Dual model system decision completed successfully')
-                    integrated_decision = await self._integrate_dual_model_with_tactician(dual_model_decision=decision_result, market_data=market_data, current_price=current_price)
+                    integrated_decision = await self._integrate_dual_model_with_tactician(dual_model_decision = decision_result, market_data = market_data, current_price = current_price)
                     action = decision_result.get('action', 'UNKNOWN')
                     analyst_confidence = decision_result.get('analyst_confidence', 0.0)
                     tactician_confidence = decision_result.get('tactician_confidence', 0.0)
@@ -455,7 +456,7 @@ class AresPipeline:
                     if self.dual_model_system.should_trigger_training():
                         print('   🔄 Model training conditions met - triggering training...')
                         self.logger.info('   🔄 Model training conditions met - triggering training...')
-                        training_result = await self.dual_model_system.trigger_model_training(market_data=market_data, force_training=False)
+                        training_result = await self.dual_model_system.trigger_model_training(market_data = market_data, force_training = False)
                         if training_result.get('success', False):
                             print('   ✅ Model training completed successfully')
                             self.logger.info('   ✅ Model training completed successfully')
@@ -513,12 +514,12 @@ class AresPipeline:
             ml_predictions = {'price_target_confidences': {'0.25%': analyst_confidence, '0.5%': analyst_confidence * 0.9, '0.75%': analyst_confidence * 0.8, '1.0%': analyst_confidence * 0.7}, 'adversarial_confidences': {'0.25%': 1.0 - tactician_confidence, '0.5%': (1.0 - tactician_confidence) * 0.9, '0.75%': (1.0 - tactician_confidence) * 0.8, '1.0%': (1.0 - tactician_confidence) * 0.7}, 'directional_analysis': {'primary_direction': dual_model_decision.get('direction', 'HOLD'), 'primary_confidence': final_confidence, 'magnitude_levels': [0.25, 0.5, 0.75, 1.0]}}
             position_sizer = getattr(self.tactician, 'position_sizer', None)
             if position_sizer:
-                position_size_result = await position_sizer.calculate_position_size(ml_predictions=ml_predictions, current_price=current_price, account_balance=1000.0, analyst_confidence=analyst_confidence, tactician_confidence=tactician_confidence)
+                position_size_result = await position_sizer.calculate_position_size(ml_predictions = ml_predictions, current_price = current_price, account_balance = 1000.0, analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
             else:
                 position_size_result = {'final_position_size': 0.0, 'error': 'Position sizer not available'}
             leverage_sizer = getattr(self.tactician, 'leverage_sizer', None)
             if leverage_sizer:
-                leverage_result = await leverage_sizer.calculate_leverage(ml_predictions=ml_predictions, current_price=current_price, target_direction=dual_model_decision.get('action', 'HOLD'), analyst_confidence=analyst_confidence, tactician_confidence=tactician_confidence)
+                leverage_result = await leverage_sizer.calculate_leverage(ml_predictions = ml_predictions, current_price = current_price, target_direction = dual_model_decision.get('action', 'HOLD'), analyst_confidence = analyst_confidence, tactician_confidence = tactician_confidence)
             else:
                 leverage_result = {'final_leverage': 1.0, 'error': 'Leverage sizer not available'}
             integrated_decision = {**dual_model_decision, 'position_sizing': position_size_result, 'leverage_sizing': leverage_result, 'integrated': True, 'timestamp': datetime.now().isoformat()}
@@ -556,7 +557,7 @@ class AresPipeline:
                 status['performance_dashboard_status'] = {'error': str(e)}
         return status
 
-    @handles_errors(default_return=None, context='pipeline cleanup')
+    @handles_errors(default_return = None, context='pipeline cleanup')
     async def stop(self) -> None:
         """Stop the pipeline gracefully."""
         self.logger.info('🛑 Stopping Ares Pipeline...')

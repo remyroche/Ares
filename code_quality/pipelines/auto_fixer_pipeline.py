@@ -22,74 +22,137 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import main fixers (ONLY auto-fixing related)
-from fixers.auto_fixer import AutoFixer
-from fixers.conservative_auto_fixer import ConservativeAutoFixer
-from fixers.sequential_fixer_fixed import SequentialFixer
+from ..fixers.auto_fixer import AutoFixer
+from ..fixers.conservative_auto_fixer import ConservativeAutoFixer
+from ..fixers.sequential_fixer_fixed import SequentialFixer
 
 # Import script-based fixers (ONLY auto-fixing related)
-# from scripts.advanced_syntax_fixer import AdvancedSyntaxFixer  # Not available
-from scripts.enhanced_type_hints import TypeHintEnhancer, EnhancedTypeHintAdder
-from scripts.robust_async_fixer import RobustAsyncFixer
-from scripts.fix_missing_imports import ImportFixer
-from scripts.detect_circular_imports import ImportAnalyzer
-from scripts.fix_async_await import AsyncAwaitFixer, AsyncPatternFixer
+# from ..scripts.advanced_syntax_fixer import AdvancedSyntaxFixer  # Not available
+from ..plugins.base_plugin import PluginCategory
+from ..scripts.enhanced_type_hints import TypeHintEnhancer, EnhancedTypeHintAdder
+from ..scripts.robust_async_fixer import RobustAsyncFixer
+from ..scripts.fix_missing_imports import ImportFixer
+from ..scripts.detect_circular_imports import ImportAnalyzer
+from ..scripts.fix_async_await import AsyncAwaitFixer, AsyncPatternFixer
 
 # Import comprehensive fixers (ONLY auto-fixing related)
 # Note: Some comprehensive fixers may not be available
 
 # Import undefined names fixers (ONLY auto-fixing related)
-from fixers.undefined_names_fixers.fix_undefined_names import UndefinedNamesFixer
+from ..fixers.undefined_names_fixers.fix_undefined_names import UndefinedNamesFixer
 # Note: Other undefined names fixers were removed as redundant during cleanup
 
+# Import enhanced standalone checkers
+import subprocess
+
 # Import plugin fixers (ONLY auto-fixing related)
-from plugins.black_fixer import BlackFixer
-from plugins.ruff_fixer import RuffFixer
-from plugins.autopep8_fixer import Autopep8Fixer
-from plugins.isort_fixer import IsortFixer
-from plugins.autoflake_fixer import AutoflakeFixer
-from plugins.docformatter_fixer import DocformatterFixer
-from plugins.flynt_fixer import FlyntFixer
-from plugins.future_annotations_fixer import FutureAnnotationsFixer
-from plugins.import_hygiene_fixer import ImportHygieneFixer
-from plugins.pyupgrade_fixer import PyupgradeFixer
-from plugins.unify_fixer import UnifyFixer
-from plugins.yapf_fixer import YapfFixer
-from plugins.yesqa_fixer import YesqaFixer
+from ..plugins.plugin_registry import PluginRegistry
+from ..plugins.plugin_manager import PluginManager
+from ..plugins.black_fixer import BlackFixer
+from ..plugins.ruff_fixer import RuffFixer
+from ..plugins.autopep8_fixer import Autopep8Fixer
+from ..plugins.isort_fixer import IsortFixer
+from ..plugins.autoflake_fixer import AutoflakeFixer
+from ..plugins.docformatter_fixer import DocformatterFixer
+from ..plugins.flynt_fixer import FlyntFixer
+from ..plugins.future_annotations_fixer import FutureAnnotationsFixer
+from ..plugins.import_hygiene_fixer import ImportHygieneFixer
+from ..plugins.pyupgrade_fixer import PyupgradeFixer
+from ..plugins.unify_fixer import UnifyFixer
+from ..plugins.yapf_fixer import YapfFixer
+from ..plugins.yesqa_fixer import YesqaFixer
 
 # Import core components
-from core.config import get_default_config
-from plugins.plugin_registry import PluginRegistry
-from plugins.plugin_manager import PluginManager
+from ..core.config import load_config
+
+# Import standardized base pipeline
+from .base_pipeline import BasePipeline
 
 
-class AutoFixerPipeline:
-    """Specialized pipeline for automated code fixing."""
-    
-    def __init__(self, project_root: str = None, enable_plugins: bool = True, conservative: bool = False, balanced: bool = False):
-        self.project_root = Path(project_root) if project_root else Path.cwd()
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.results = {}
-        self.enable_plugins = enable_plugins
+class AutoFixerPipeline(BasePipeline):
+    """Specialized pipeline for automated code fixing with standardized initialization."""
+
+    def __init__(self, project_root: str = None, enable_plugins: bool = True,
+                 conservative: bool = False, balanced: bool = False):
+        # Use standardized initialization from base class
+        super().__init__(project_root=project_root, enable_plugins=enable_plugins,
+                        pipeline_name="auto_fixer")
+
+        # Setup pipeline-specific paths
+        self.setup_pipeline_paths()
+
+        # Store mode flags
         self.conservative = conservative
         self.balanced = balanced
-        
-        # Initialize fixers
-        self.config = get_default_config()
-        if conservative:
-            self.auto_fixer = ConservativeAutoFixer(self.config)
-        elif balanced:
-            # Use regular AutoFixer but with balanced settings
-            self.auto_fixer = AutoFixer(self.config)
+
+        # Initialize fixers with mode-specific configuration
+        config_path = self.project_root / "code_quality" / "config.yaml"
+        if config_path.exists():
+            # Load the config and create a simple object with required attributes
+            import yaml
+            with open(config_path, 'r') as f:
+                full_config = yaml.safe_load(f)
+            code_quality_config = full_config.get('code_quality', {})
+
+            # Create a simple config object for AutoFixer
+            class SimpleConfig:
+                def __init__(self, config_dict):
+                    self.auto_fix = type('AutoFixConfig', (), {
+                        'enabled': config_dict.get('auto_fix', {}).get('enabled', True),
+                        'tools': config_dict.get('auto_fix', {}).get('tools', ['black', 'isort']),
+                        'max_line_length': config_dict.get('auto_fix', {}).get('max_line_length', 88),
+                        'aggressive': config_dict.get('auto_fix', {}).get('aggressive', False)
+                    })()
+                    self.analysis = type('AnalysisConfig', (), {
+                        'exclude_patterns': config_dict.get('analysis', {}).get('exclude_patterns', ['__pycache__', '*.pyc'])
+                    })()
+
+            self.config = SimpleConfig(code_quality_config)
+        else:
+            # Fallback to minimal config if code_quality config doesn't exist
+            from minimal_config import get_default_config
+            self.config = get_default_config()
+        self._setup_fixer_configuration()
+
+        # Initialize main fixers
+        self._initialize_main_fixers()
+
+        # Initialize script-based fixers
+        self._initialize_script_fixers()
+
+        # Initialize plugin system with standardized registration
+        if self.enable_plugins:
+            self._register_fixer_plugins()
+
+    def _setup_fixer_configuration(self) -> None:
+        """Setup fixer configuration based on mode."""
+        if self.balanced:
             # Override config for balanced mode
             self.config.max_fixes_per_file = 10  # Limit fixes per file
             self.config.skip_complex_files = True  # Skip very complex files
             self.config.enable_syntax_fixes = True  # Enable syntax fixes
             self.config.enable_import_fixes = True  # Enable import fixes
-        else:
-            self.auto_fixer = AutoFixer(self.config)
-        
-        self.sequential_fixer = SequentialFixer(self.config)
-        
+
+    def _initialize_main_fixers(self) -> None:
+        """Initialize main fixer components."""
+        try:
+            if self.conservative:
+                self.auto_fixer = ConservativeAutoFixer(self.config)
+            else:
+                self.auto_fixer = AutoFixer(self.config)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not initialize AutoFixer: {e}")
+            print("   Falling back to SequentialFixer only")
+            self.auto_fixer = None
+
+        try:
+            self.sequential_fixer = SequentialFixer(self.config)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not initialize SequentialFixer: {e}")
+            self.sequential_fixer = None
+
+    def _initialize_script_fixers(self) -> None:
+        """Initialize script-based fixers."""
         # Initialize script-based fixers
         # self.syntax_fixer = AdvancedSyntaxFixer(str(self.project_root))  # Not available
         self.type_hint_enhancer = TypeHintEnhancer()
@@ -138,23 +201,78 @@ class AutoFixerPipeline:
             from plugins.yapf_fixer import YapfFixer
             from plugins.yesqa_fixer import YesqaFixer
             
-            self.plugin_registry.register_plugin(BlackFixer)
-            self.plugin_registry.register_plugin(IsortFixer)
-            self.plugin_registry.register_plugin(Autopep8Fixer)
-            self.plugin_registry.register_plugin(AutoflakeFixer)
-            self.plugin_registry.register_plugin(DocformatterFixer)
-            self.plugin_registry.register_plugin(FlyntFixer)
-            self.plugin_registry.register_plugin(FutureAnnotationsFixer)
-            self.plugin_registry.register_plugin(ImportHygieneFixer)
-            self.plugin_registry.register_plugin(PyupgradeFixer)
-            self.plugin_registry.register_plugin(UnifyFixer)
-            self.plugin_registry.register_plugin(YapfFixer)
-            self.plugin_registry.register_plugin(YesqaFixer)
-            
-            print(f"✅ Registered {len(self.plugin_registry.list_plugins())} auto-fixer plugins")
+            # Use standardized batch registration
+            plugin_classes = [
+                BlackFixer, IsortFixer, Autopep8Fixer, AutoflakeFixer,
+                DocformatterFixer, FlyntFixer, FutureAnnotationsFixer,
+                ImportHygieneFixer, PyupgradeFixer, UnifyFixer,
+                YapfFixer, YesqaFixer
+            ]
+            self.register_plugins_batch(plugin_classes)
+
         except ImportError as e:
-            print(f"⚠️  Warning: Could not register some plugins: {e}")
+            self.logger.warning(f"Could not import some auto-fixer plugins: {e}")
     
+    def run_enhanced_undefined_names_analysis(self) -> Dict[str, Any]:
+        """Run the enhanced standalone undefined names checker to identify issues before fixing."""
+        print("\n" + "="*60)
+        print("Running Enhanced Undefined Names Analysis (Pre-Fix)")
+        print("="*60)
+
+        start_time = time.time()
+        
+        try:
+            # Run the standalone checker
+            standalone_checker_path = Path(__file__).parent.parent.parent / "data_quality" / "standalone_undefined_names_checker.py"
+            output_file = self.project_root / "temp_undefined_names_analysis.json"
+            
+            cmd = [
+                sys.executable,
+                str(standalone_checker_path),
+                "--project-root", str(self.project_root),
+                "--output", str(output_file),
+                "--json"
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.project_root.parent)
+            
+            if result.returncode == 0:
+                # Load the results
+                with open(output_file, "r") as f:
+                    analysis_results = json.load(f)
+                
+                analysis_results["execution_time"] = time.time() - start_time
+                analysis_results["analysis_type"] = "pre_fix_undefined_names_analysis"
+                
+                print(f"✅ Enhanced undefined names analysis completed")
+                print(f"   Found {analysis_results['summary']['total_issues']} total issues")
+                print(f"   - Undefined names: {analysis_results['summary']['undefined_names']}")
+                print(f"   - Missing imports: {analysis_results['summary']['missing_imports']}")
+                print(f"   - Import path issues: {analysis_results['summary']['import_path_issues']}")
+                
+                # Clean up temp file
+                if output_file.exists():
+                    output_file.unlink()
+                
+                return analysis_results
+            else:
+                error_result = {
+                    "error": f"Analysis failed: {result.stderr}",
+                    "execution_time": time.time() - start_time,
+                    "analysis_type": "pre_fix_undefined_names_analysis"
+                }
+                print(f"❌ Enhanced undefined names analysis failed: {result.stderr}")
+                return error_result
+                
+        except Exception as e:
+            error_result = {
+                "error": f"Exception during analysis: {str(e)}",
+                "execution_time": time.time() - start_time,
+                "analysis_type": "pre_fix_undefined_names_analysis"
+            }
+            print(f"❌ Exception during enhanced undefined names analysis: {e}")
+            return error_result
+
     def run_import_fixes(self) -> Dict[str, Any]:
         """Run comprehensive import fixes with enhanced auto-detection."""
         print("\n" + "="*60)
@@ -613,10 +731,14 @@ class AutoFixerPipeline:
         print("\n" + "="*60)
         print("Running Sequential Fixes")
         print("="*60)
-        
+
+        if self.sequential_fixer is None:
+            print("SequentialFixer is not available")
+            return {"status": "skipped", "reason": "SequentialFixer not available"}
+
         try:
             results = self.sequential_fixer.fix_all_issues(str(self.project_root))
-            
+
             # Generate sequential fixes report
             sequential_fixes_report = {
                 "timestamp": self.timestamp,
@@ -627,12 +749,12 @@ class AutoFixerPipeline:
                 "fixes_by_category": results.get("fixes_by_category", {}),
                 "results": results
             }
-            
+
             # Save report
             report_path = self.reports_dir / f"sequential_fixes_{self.timestamp}.json"
             with open(report_path, "w") as f:
                 json.dump(sequential_fixes_report, f, indent=2)
-            
+
             return {
                 "status": "completed",
                 "report_path": str(report_path),
@@ -656,6 +778,9 @@ class AutoFixerPipeline:
         
         total_start = time.time()
         
+        # Run enhanced undefined names analysis first to identify issues
+        self.results["enhanced_undefined_names_analysis"] = self.run_enhanced_undefined_names_analysis()
+        
         # Run all auto-fixes (enhanced auto-detection is included in import_fixes)
         self.results["import_fixes"] = self.run_import_fixes()
         self.results["syntax_fixes"] = self.run_syntax_fixes()
@@ -663,7 +788,10 @@ class AutoFixerPipeline:
         self.results["async_fixes"] = self.run_async_fixes()
         self.results["dead_code_fixes"] = self.run_dead_code_fixes()
         self.results["plugin_fixes"] = self.run_plugin_fixes()
-        self.results["sequential_fixes"] = self.run_sequential_fixes()
+        if self.sequential_fixer is not None:
+            self.results["sequential_fixes"] = self.run_sequential_fixes()
+        else:
+            self.results["sequential_fixes"] = {"status": "skipped", "reason": "SequentialFixer not available"}
         
         # Generate summary
         total_time = time.time() - total_start

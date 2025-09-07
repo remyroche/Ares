@@ -1,0 +1,8 @@
+metric,value,category
+total_simulations,10000.0,simulation
+statistical_significance,0.96,statistics
+profit_probability,0.68,probability
+var_95,0.048,risk
+scenario_coverage,0.89,scenario
+model_stability,0.86,robustness
+simulation_quality,0.88,quality

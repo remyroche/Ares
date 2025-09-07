@@ -36,7 +36,7 @@ def example_sequential_fix():
         results = fixer.run_pipeline(
             target="example_file.py",
             output_dir="reports/",
-            create_backups=True,
+            create_backups = True,
         )
         print(f"Pipeline completed with status: {results['summary']['overall_status']}")
     except FileNotFoundError:
@@ -48,7 +48,7 @@ def example_sequential_fix():
         results = fixer.run_pipeline(
             target="example_directory/",
             output_dir="reports/",
-            create_backups=True,
+            create_backups = True,
         )
         print(f"Pipeline completed with status: {results['summary']['overall_status']}")
     except FileNotFoundError:
@@ -60,7 +60,7 @@ def example_sequential_fix():
         results = fixer.run_pipeline(
             target=["file1.py", "file2.py", "file3.py"],
             output_dir="reports/",
-            create_backups=True,
+            create_backups = True,
         )
         print(f"Pipeline completed with status: {results['summary']['overall_status']}")
     except FileNotFoundError:

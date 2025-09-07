@@ -49,7 +49,7 @@ class TacticianExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, scenario_predictor, features, feature_names)
             feature_importance = self._extract_feature_importance(scenario_predictor)
             confidence = self._calculate_prediction_confidence(prediction, shap_values)
-            explanation = ExplanationResult(model_name='Tactician_Scenario', prediction=prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'scenario_predictor', 'feature_groups': self.feature_groups, 'explanation_type': 'scenario_prediction'})
+            explanation = ExplanationResult(model_name='Tactician_Scenario', prediction = prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'scenario_predictor', 'feature_groups': self.feature_groups, 'explanation_type': 'scenario_prediction'})
             self.save_explanation(explanation)
             self.logger.info('✅ Scenario prediction explained successfully')
             return explanation
@@ -76,7 +76,7 @@ class TacticianExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, position_sizer, features, feature_names)
             feature_importance = self._extract_feature_importance(position_sizer)
             confidence = self._calculate_prediction_confidence(position_size, shap_values)
-            explanation = ExplanationResult(model_name='Tactician_PositionSizing', prediction=position_size, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'position_sizer', 'feature_groups': self.feature_groups, 'explanation_type': 'position_sizing'})
+            explanation = ExplanationResult(model_name='Tactician_PositionSizing', prediction = position_size, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'position_sizer', 'feature_groups': self.feature_groups, 'explanation_type': 'position_sizing'})
             self.save_explanation(explanation)
             self.logger.info('✅ Position sizing explained successfully')
             return explanation
@@ -103,7 +103,7 @@ class TacticianExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, leverage_sizer, features, feature_names)
             feature_importance = self._extract_feature_importance(leverage_sizer)
             confidence = self._calculate_prediction_confidence(leverage, shap_values)
-            explanation = ExplanationResult(model_name='Tactician_Leverage', prediction=leverage, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'leverage_sizer', 'feature_groups': self.feature_groups, 'explanation_type': 'leverage_decision'})
+            explanation = ExplanationResult(model_name='Tactician_Leverage', prediction = leverage, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'leverage_sizer', 'feature_groups': self.feature_groups, 'explanation_type': 'leverage_decision'})
             self.save_explanation(explanation)
             self.logger.info('✅ Leverage decision explained successfully')
             return explanation
@@ -111,7 +111,7 @@ class TacticianExplainer(BaseExplainer):
             self.logger.error(f'❌ Failed to explain leverage decision: {e}')
             return None
 
-    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a general Tactician model prediction."""
         try:
             self.logger.info('🔍 Explaining Tactician prediction...')
@@ -157,7 +157,7 @@ class TacticianExplainer(BaseExplainer):
         else:
             return 'generic'
 
-    async def _explain_generic_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def _explain_generic_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a generic Tactician model."""
         try:
             if prediction is None:
@@ -173,7 +173,7 @@ class TacticianExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, model, features, feature_names)
             feature_importance = self._extract_feature_importance(model)
             confidence = self._calculate_prediction_confidence(prediction, shap_values)
-            explanation = ExplanationResult(model_name='Tactician_Generic', prediction=prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'explanation_type': 'generic_prediction'})
+            explanation = ExplanationResult(model_name='Tactician_Generic', prediction = prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'explanation_type': 'generic_prediction'})
             self.save_explanation(explanation)
             return explanation
         except Exception as e:
@@ -228,7 +228,7 @@ class TacticianExplainer(BaseExplainer):
             summary_parts.append(f'Confidence: {explanation.confidence:.2f}')
             if explanation.shap_values is not None:
                 feature_importance = list(zip(explanation.feature_names, explanation.shap_values))
-                feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                 summary_parts.append('\nTop Contributing Factors:')
                 for i, (feature, importance) in enumerate(feature_importance[:5]):
                     direction = 'increases' if importance > 0 else 'decreases'
@@ -236,7 +236,7 @@ class TacticianExplainer(BaseExplainer):
             group_importance = self.get_feature_group_importance(explanation)
             if group_importance:
                 summary_parts.append('\nFeature Group Importance:')
-                for group, importance in sorted(group_importance.items(), key=lambda x: x[1], reverse=True):
+                for group, importance in sorted(group_importance.items(), key = lambda x: x[1], reverse = True):
                     summary_parts.append(f'  {group}: {importance:.3f}')
             return '\n'.join(summary_parts)
         except Exception as e:

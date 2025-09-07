@@ -2,12 +2,15 @@
 """
 Import-Free Code Analysis Pipeline
 
-Specialized pipeline for code analysis that doesn't rely on imports, including:
+Specialized pipeline for code analysis using only built-in Python modules, including:
 - AST-based analysis
 - Syntax validation
 - Code structure analysis
 - Basic metrics calculation
 - Pattern detection
+
+This pipeline avoids external dependencies to ensure maximum compatibility
+and portability across different Python environments.
 """
 
 import ast
@@ -37,7 +40,9 @@ from scripts.detect_circular_imports import ImportAnalyzer
 
 # Import core components
 from core.config import get_default_config
-import numpy as np
+
+# Import standardized base pipeline
+from .base_pipeline import BasePipeline
 
 
 class ImportFreeAnalyzer:
@@ -49,7 +54,16 @@ class ImportFreeAnalyzer:
     
     def find_python_files(self) -> List[Path]:
         """Find all Python files in the project, respecting .gitignore patterns."""
-        from ..utils.gitignore_parser import filter_ignored_files
+        try:
+            from ..utils.gitignore_parser import filter_ignored_files
+        except ImportError:
+            # Fallback for when running as standalone script
+            import sys
+            from pathlib import Path
+            utils_path = Path(__file__).parent.parent / "utils"
+            if str(utils_path) not in sys.path:
+                sys.path.insert(0, str(utils_path))
+            from gitignore_parser import filter_ignored_files
         python_files = []
         for py_file in self.project_root.rglob("*.py"):
             # Skip common directories to avoid
@@ -383,22 +397,21 @@ class PatternAnalyzer(ImportFreeAnalyzer):
         }
 
 
-class ImportFreeAnalysisPipeline:
-    """Specialized pipeline for import-free code analysis."""
-    
+class ImportFreeAnalysisPipeline(BasePipeline):
+    """Specialized pipeline for import-free code analysis with standardized initialization."""
+
     def __init__(self, project_root: str = None):
-        self.project_root = Path(project_root) if project_root else Path.cwd()
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.results = {}
-        
+        # Use standardized initialization from base class (no plugins for import-free)
+        super().__init__(project_root=project_root, enable_plugins=False,
+                        pipeline_name="import_free_analysis")
+
+        # Setup pipeline-specific paths
+        self.setup_pipeline_paths()
+
         # Initialize analyzers
         self.syntax_analyzer = SyntaxAnalyzer(str(self.project_root))
         self.structure_analyzer = StructureAnalyzer(str(self.project_root))
         self.pattern_analyzer = PatternAnalyzer(str(self.project_root))
-        
-        # Setup reports directory
-        self.reports_dir = self.project_root / "code_quality" / "reports" / "import_free_analysis"
-        self.reports_dir.mkdir(parents=True, exist_ok=True)
     
     def run_syntax_analysis(self) -> Dict[str, Any]:
         """Run import-free syntax analysis."""

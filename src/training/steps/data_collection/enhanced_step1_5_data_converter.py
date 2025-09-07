@@ -1,4 +1,7 @@
 """
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Enhanced Step1_5 Data Converter
 
 This module provides an improved implementation of Step1_5 data converter
@@ -18,7 +21,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 try:
     from .utils.enhanced_config_management import Step1_5Config
-    from .utils.logger import system_logger
+    from src.utils.logger import system_logger
     import shutil
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')
@@ -26,12 +29,13 @@ except ImportError as e:
 
 class OptimizedUnifiedDataProcessor:
     """Optimized unified data processing with streaming and parallelization."""
+    @log_important_calls
 
     def __init__(self, config: Step1_5Config) -> None:
         self.config = config
         self.logger = system_logger.getChild('UnifiedDataProcessor')
-        self.quality_validator = UnifiedDataQualityValidator(QualityThresholds(max_nan_ratio=config.max_nan_ratio, max_infinite_count=config.max_infinite_count, min_unique_values=config.min_unique_values, price_tolerance=config.price_tolerance, volume_tolerance=config.volume_tolerance))
-        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb=config.max_memory_mb))
+        self.quality_validator = UnifiedDataQualityValidator(QualityThresholds(max_nan_ratio = config.max_nan_ratio, max_infinite_count = config.max_infinite_count, min_unique_values = config.min_unique_values, price_tolerance = config.price_tolerance, volume_tolerance = config.volume_tolerance))
+        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = config.max_memory_mb))
 
     async def process_unified_data_streaming(self, data_sources: Dict[str, str]) -> pd.DataFrame:
         """Process unified data using streaming approach."""
@@ -49,7 +53,7 @@ class OptimizedUnifiedDataProcessor:
                 self.logger.error(f'Error processing {source_name}: {e}')
                 continue
         if processed_chunks:
-            unified_data = pd.concat(processed_chunks, ignore_index=True)
+            unified_data = pd.concat(processed_chunks, ignore_index = True)
             self.logger.info(f'Combined {len(processed_chunks)} chunks into unified data: {unified_data.shape}')
             return unified_data
         else:
@@ -61,7 +65,7 @@ class OptimizedUnifiedDataProcessor:
         chunks = []
         chunk_count = 0
         try:
-            for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
+            for chunk in pd.read_parquet(file_path, chunksize = self.config.chunk_size):
                 chunk_count += 1
                 self.logger.debug(f'Processing {source_name} chunk {chunk_count}')
                 quality_result = await self.quality_validator.validate_unified_data_quality(chunk, f'{source_name}_chunk_{chunk_count}')
@@ -101,11 +105,12 @@ class OptimizedUnifiedDataProcessor:
         unified_chunk['symbol'] = self.config.symbol
         unified_chunk['timeframe'] = self.config.timeframe
         if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns:
-            timestamps = pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc=True)
+            timestamps = pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc = True)
             unified_chunk['year'] = timestamps.dt.year.astype('int16')
             unified_chunk['month'] = timestamps.dt.month.astype('int8')
             unified_chunk['day'] = timestamps.dt.day.astype('int8')
         return unified_chunk
+    @log_all_calls
 
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
@@ -118,23 +123,25 @@ class EnhancedStep1_5DataConverter:
     This class provides an improved implementation of Step1_5 data converter
     with enhanced error handling, memory optimization, and data quality validation.
     """
+    @log_important_calls
 
     def __init__(self, config: Optional[Step1_5Config]=None) -> None:
         self.config = config or Step1_5Config()
         self.logger = system_logger.getChild('EnhancedStep1_5')
         self.processor = OptimizedUnifiedDataProcessor(self.config)
-        self.quality_validator = UnifiedDataQualityValidator(QualityThresholds(max_nan_ratio=self.config.max_nan_ratio, max_infinite_count=self.config.max_infinite_count, min_unique_values=self.config.min_unique_values, price_tolerance=self.config.price_tolerance, volume_tolerance=self.config.volume_tolerance))
-        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb=self.config.max_memory_mb))
+        self.quality_validator = UnifiedDataQualityValidator(QualityThresholds(max_nan_ratio = self.config.max_nan_ratio, max_infinite_count = self.config.max_infinite_count, min_unique_values = self.config.min_unique_values, price_tolerance = self.config.price_tolerance, volume_tolerance = self.config.volume_tolerance))
+        self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = self.config.max_memory_mb))
         config_issues = self.config.validate()
         if config_issues:
             raise ValueError(f'Configuration validation failed: {config_issues}')
         self._initialize_directories()
+    @log_all_calls
 
     def _initialize_directories(self) -> None:
         """Initialize required directories."""
         directories = [self.config.data_dir, self.config.unified_dir, self.config.backup_dir, self.config.temp_dir]
         for directory in directories:
-            os.makedirs(directory, exist_ok=True)
+            os.makedirs(directory, exist_ok = True)
             self.logger.debug(f'Initialized directory: {directory}')
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -242,7 +249,7 @@ class EnhancedStep1_5DataConverter:
             if not save_success:
                 self.logger.error('Failed to save unified data')
                 return False
-            self.logger.info(f'📊 Final unified data metrics: {json.dumps(quality_result.metrics, indent=2)}')
+            self.logger.info(f'📊 Final unified data metrics: {json.dumps(quality_result.metrics, indent = 2)}')
             return True
         except Exception as e:
             self.logger.exception(f'Error during full conversion: {e}')
@@ -266,23 +273,23 @@ class EnhancedStep1_5DataConverter:
         """Save unified data to partitioned parquet format."""
         try:
             output_dir = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok = True)
             unified_data = self.processor._optimize_dtypes(unified_data)
             partition_cols = ['year', 'month', 'day'] if all((col in unified_data.columns for col in ['year', 'month', 'day'])) else []
             self.logger.info(f'💾 Saving unified data to {output_dir}')
             self.logger.info(f'   Shape: {unified_data.shape}')
             self.logger.info(f'   Partition columns: {partition_cols}')
             try:
-                table = pa.Table.from_pandas(unified_data, preserve_index=False)
+                table = pa.Table.from_pandas(unified_data, preserve_index = False)
                 if partition_cols:
-                    pq.write_to_dataset(table, output_dir, partition_cols=partition_cols, compression=self.config.compression, use_dictionary=self.config.use_dictionary, row_group_size=self.config.min_rows_per_group, max_file_size=self.config.max_rows_per_file * 1024)
+                    pq.write_to_dataset(table, output_dir, partition_cols = partition_cols, compression = self.config.compression, use_dictionary = self.config.use_dictionary, row_group_size = self.config.min_rows_per_group, max_file_size = self.config.max_rows_per_file * 1024)
                 else:
-                    pq.write_table(table, os.path.join(output_dir, 'data.parquet'), compression=self.config.compression, use_dictionary=self.config.use_dictionary, row_group_size=self.config.min_rows_per_group)
+                    pq.write_table(table, os.path.join(output_dir, 'data.parquet'), compression = self.config.compression, use_dictionary = self.config.use_dictionary, row_group_size = self.config.min_rows_per_group)
                 self.logger.info('✅ Unified data saved successfully')
                 return True
             except ImportError:
                 self.logger.warning('pyarrow not available, using pandas fallback')
-                unified_data.to_parquet(os.path.join(output_dir, 'data.parquet'), compression=self.config.compression, index=False)
+                unified_data.to_parquet(os.path.join(output_dir, 'data.parquet'), compression = self.config.compression, index = False)
                 self.logger.info('✅ Unified data saved successfully (pandas fallback)')
                 return True
         except Exception as e:
@@ -314,10 +321,10 @@ async def run_enhanced_step1_5(training_input: Dict[str, Any], pipeline_state: D
 if __name__ == '__main__':
     import asyncio
 
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level = logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     async def main() -> None:
-        config = Step1_5Config(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', max_memory_mb=512, chunk_size=5000, force_rerun=False, enable_incremental=True)
+        config = Step1_5Config(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', max_memory_mb = 512, chunk_size = 5000, force_rerun = False, enable_incremental = True)
         step1_5 = EnhancedStep1_5DataConverter(config)
         training_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache'}
         pipeline_state = {'data_conversion_completed': False, 'quality_check_passed': False}

@@ -1,4 +1,6 @@
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import asyncio
 import sys
 import time
@@ -20,6 +22,7 @@ import logging
 
 class ABTestingStep:
     """Step 20: Extended A/B Testing."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -47,6 +50,7 @@ class ABTestingStep:
         ab_results: dict[str, Any] = {
             "symbol": symbol,
             "exchange": exchange,
+            "timeframe": timeframe,
             "test_date": datetime.now().isoformat(),
             "variants": [
                 {"name": "A", "win_rate": 0.51, "p_value": 0.08},
@@ -55,12 +59,22 @@ class ABTestingStep:
             "winner": "B",
         }
 
-        results_file = f"{data_dir}/{exchange}_{symbol}_ab_test_results.json"
-        safe_json_dump(ab_results, results_file, indent=2)
+        # Save results using centralized reporting system
+        from src.training.reports import save_training_report
+
+        results_path = save_training_report(
+            data=ab_results,
+            step_name='step20_ab_testing',
+            report_type='ab_test_results',
+            symbol=symbol,
+            timeframe=timeframe,
+            file_format='json'
+        )
 
         execution_time = time.time() - self.start_time if self.start_time else 0
+        self.logger.info(f'💾 A/B test results saved to {results_path}')
         self.logger.info(f'✅ Step 20: A/B Testing completed successfully in {execution_time:.2f} seconds')
-        return {"success": True, "status": "SUCCESS", "results_file": results_file}
+        return {"success": True, "status": "SUCCESS", "results_file": results_path}
 
 
 async def run_step(
@@ -84,3 +98,6 @@ if __name__ == "__main__":
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())
+
+
+import asyncio

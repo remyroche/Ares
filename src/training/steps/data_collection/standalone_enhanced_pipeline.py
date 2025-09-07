@@ -12,11 +12,14 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
 from datetime import datetime
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
+logging.basicConfig(level = logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class StandaloneDataCollectionPipeline:
     """Standalone enhanced data collection pipeline."""
+    @log_important_calls
 
     def __init__(self, config: Optional[Dict[str, Any]]=None) -> None:
         self.config = config or {}
@@ -118,13 +121,14 @@ class StandaloneDataCollectionPipeline:
 
     async def _collect_raw_data(self) -> pd.DataFrame:
         """Collect raw data from exchange (simulated)."""
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1min')
+        dates = pd.date_range(start='2024-01-01', periods = 1000, freq='1min')
         data = {'timestamp': dates, 'open': np.random.uniform(100, 200, 1000), 'high': np.random.uniform(150, 250, 1000), 'low': np.random.uniform(50, 150, 1000), 'close': np.random.uniform(100, 200, 1000), 'volume': np.random.uniform(1000, 10000, 1000)}
         df = pd.DataFrame(data)
         df['high'] = np.maximum(df['high'], np.maximum(df['open'], df['close']))
         df['low'] = np.minimum(df['low'], np.minimum(df['open'], df['close']))
         self.logger.info(f'Collected {len(df)} rows of raw data for {self.symbol} on {self.exchange}')
         return df
+    @log_all_calls
 
     def _check_data_quality(self, df: pd.DataFrame) -> List[str]:
         """Check data quality and return issues."""
@@ -158,7 +162,7 @@ class StandaloneDataCollectionPipeline:
         formatted_data['pipeline_id'] = self.pipeline_id
         formatted_data['created_at'] = datetime.now()
         data_path = Path(self.data_dir)
-        data_path.mkdir(parents=True, exist_ok=True)
+        data_path.mkdir(parents = True, exist_ok = True)
         output_file = data_path / f'formatted_{self.exchange}_{self.symbol}_klines.parquet'
         formatted_data.to_parquet(output_file, index=False)
         self.logger.info(f'Data formatted and stored successfully: {output_file}')
@@ -184,7 +188,7 @@ class StandaloneDataCollectionPipeline:
 
 async def run_standalone_enhanced_data_collection_pipeline(symbol: str, exchange: str, data_dir: str='data_cache', config: Optional[Dict[str, Any]]=None) -> Dict[str, Any]:
     """Run the standalone enhanced data collection pipeline."""
-    Path(data_dir).mkdir(parents=True, exist_ok=True)
+    Path(data_dir).mkdir(parents = True, exist_ok = True)
     pipeline = StandaloneDataCollectionPipeline(config)
     result = await pipeline.run_pipeline(symbol, exchange, data_dir)
     return result

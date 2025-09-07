@@ -1,13 +1,13 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ..utils.logger import system_logger
+from .core.decorators import handles_errors
 """
 ML-Optimized Barriers with Multi-Objective Optimization
 Integrates with existing HMM regime logic and barrier optimization
 """
 from dataclasses import dataclass
 from scipy.optimize import minimize
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 import pandas as pd
 from typing import Any
 from typing import Dict
@@ -54,7 +54,7 @@ class MLOptimizedBarriers:
         self.hmm_regime_predictor = None
         self.trade_executor = None
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='ML barrier optimization initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='ML barrier optimization initialization')
     async def initialize(self) -> bool:
         """
         Initialize the ML-Optimized Barriers system.
@@ -82,8 +82,8 @@ class MLOptimizedBarriers:
         except Exception as e:
             self.logger.warning(f'Could not load existing barriers: {e}')
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='regime barrier optimization')
-    async def optimize_regime_barriers(self, regime: str, historical_data: pd.DataFrame, min_trades: int=100) -> Optional[BarrierOptimizationResult]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='regime barrier optimization')
+    async def optimize_regime_barriers(self, regime: str, historical_data: pd.DataFrame, min_trades: int = 100) -> Optional[BarrierOptimizationResult]:
         """
         Optimize barriers for a specific HMM regime using multi-objective optimization.
         
@@ -107,7 +107,7 @@ class MLOptimizedBarriers:
             optimization_result = await self._run_multi_objective_optimization(optimization_data, regime)
             if optimization_result['optimization_success']:
                 self.optimized_barriers[regime] = optimization_result['optimal_barriers']
-                result = BarrierOptimizationResult(regime=regime, optimal_barriers=optimization_result['optimal_barriers'], optimization_metrics=optimization_result['metrics'], optimization_success=True, timestamp=datetime.now(), objective_value=optimization_result['objective_value'], iterations=optimization_result['iterations'])
+                result = BarrierOptimizationResult(regime = regime, optimal_barriers = optimization_result['optimal_barriers'], optimization_metrics = optimization_result['metrics'], optimization_success = True, timestamp = datetime.now(), objective_value = optimization_result['objective_value'], iterations = optimization_result['iterations'])
                 self.optimization_history[regime].append(result)
                 self.logger.info(f'✅ Successfully optimized barriers for regime {regime}')
                 return result
@@ -155,7 +155,7 @@ class MLOptimizedBarriers:
             return weighted_objective
         initial_guess = [(self.optimization_bounds['profit_take_multiplier'][0] + self.optimization_bounds['profit_take_multiplier'][1]) / 2, (self.optimization_bounds['stop_loss_multiplier'][0] + self.optimization_bounds['stop_loss_multiplier'][1]) / 2, (self.optimization_bounds['confidence_threshold'][0] + self.optimization_bounds['confidence_threshold'][1]) / 2]
         constraints = [{'type': 'ineq', 'fun': lambda x: x[0] - x[1]}, {'type': 'ineq', 'fun': lambda x: x[0] - 2 * self.trading_fee}, {'type': 'ineq', 'fun': lambda x: x[1] - 1.5 * self.trading_fee}, {'type': 'ineq', 'fun': lambda x: x[2] - 0.3}, {'type': 'ineq', 'fun': lambda x: 0.9 - x[2]}]
-        result = minimize(objective_function, initial_guess, method='SLSQP', bounds=list(self.optimization_bounds.values()), constraints=constraints, options={'maxiter': 1000, 'ftol': 1e-06})
+        result = minimize(objective_function, initial_guess, method='SLSQP', bounds = list(self.optimization_bounds.values()), constraints = constraints, options={'maxiter': 1000, 'ftol': 1e-06})
         if result.success:
             optimal_barriers = {'profit_take_multiplier': result.x[0], 'stop_loss_multiplier': result.x[1], 'confidence_threshold': result.x[2], 'optimization_status': 'optimized', 'optimization_timestamp': datetime.now()}
             final_metrics = self._calculate_trading_metrics(optimization_data, optimal_barriers)
@@ -225,7 +225,7 @@ class MLOptimizedBarriers:
         """Normalize Sharpe ratio to [0, 1] range"""
         return np.clip((sharpe + 2) / 6, 0, 1)
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='get optimized barriers')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='get optimized barriers')
     def get_optimized_barriers(self, regime: str) -> Optional[Dict[str, float]]:
         """
         Get optimized barriers for a specific regime.
@@ -245,7 +245,7 @@ class MLOptimizedBarriers:
             self.logger.error(f'Error getting optimized barriers for regime {regime}: {e}')
             return None
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='update optimization weights')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='update optimization weights')
     def update_optimization_weights(self, new_weights: Dict[str, float]) -> bool:
         """
         Update objective function weights.
@@ -281,7 +281,7 @@ class MLOptimizedBarriers:
                 summary['regime_details'][regime] = {'optimized': False, 'barriers': None, 'optimization_count': 0, 'last_optimized': None, 'optimization_status': 'not_optimized'}
         return summary
 
-    async def optimize_all_regimes(self, regime_data: Dict[str, pd.DataFrame], min_trades: int=100) -> Dict[str, BarrierOptimizationResult]:
+    async def optimize_all_regimes(self, regime_data: Dict[str, pd.DataFrame], min_trades: int = 100) -> Dict[str, BarrierOptimizationResult]:
         """
         Optimize barriers for all regimes.
         

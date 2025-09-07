@@ -5,9 +5,9 @@ from typing import Any
 import pandas as pd
 
 
-from .decorators.errors import handles_errors
 from .logger import system_logger
 import logging
+from src.core.decorators import handles_errors
 
 # src/utils/parquet_utils.py
 
@@ -73,8 +73,8 @@ class ParquetUtils:
 
         return result
 
-    @handles_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
-    @handles_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
+    @handles_errors(default_return = None, context="ParquetUtils.safe_read_parquet")
+    @handles_errors(default_return = None, context="ParquetUtils.safe_read_parquet")
     def safe_read_parquet(
         self,
         file_path: str,
@@ -98,14 +98,14 @@ class ParquetUtils:
 
         # Attempt strategies in order: default engine, pyarrow, fastparquet
         engines: list[str | None] = [None, "pyarrow", "fastparquet"]
-        for idx, engine in enumerate(engines, start=1):
+        for idx, engine in enumerate(engines, start = 1):
             try:
                 strategy_msg = f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"
                 self.logger.info(strategy_msg)
                 read_kwargs = dict(kwargs)
                 if engine is not None:
                     read_kwargs["engine"] = engine
-                df = pd.read_parquet(file_path, columns=columns, **read_kwargs)
+                df = pd.read_parquet(file_path, columns = columns, **read_kwargs)
                 if nrows is not None and len(df) > nrows:
                     df = df.head(nrows)
                 self.logger.info(
@@ -119,7 +119,7 @@ class ParquetUtils:
         self.logger.error(f"❌ All strategies failed for file: {file_path}")
         return None
 
-    @handles_errors(default_return=False, context="ParquetUtils.repair_parquet_file")
+    @handles_errors(default_return = False, context="ParquetUtils.repair_parquet_file")
     def repair_parquet_file(
         self, file_path: str, backup_path: str | None = None
     ) -> bool:

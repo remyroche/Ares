@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 """
+from src.utils.logger import system_logger
 Multi-Output Probability Trainer
 
 This module implements multi-output training for probability outputs, replacing
@@ -10,8 +12,7 @@ from scipy.optimize import minimize
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils.class_weight import compute_class_weight
-from .core.decorators import handles_errors, log_execution_time, validates
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 
@@ -34,7 +35,7 @@ except ImportError:
 class ProbabilityTargetGenerator:
     """Generate probability targets for multi-output training."""
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild('ProbabilityTargetGenerator')
         self.profit_target = self.config.get('profit_target', 0.02)
@@ -70,7 +71,7 @@ class ProbabilityTargetGenerator:
 class MultiOutputModel:
     """Multi-output model for probability predictions."""
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild('MultiOutputModel')
         self.models = {}
@@ -81,7 +82,7 @@ class MultiOutputModel:
 
     def _create_model(self, output_type: str) -> None:
         """Create model for specific output type."""
-        return RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+        return RandomForestClassifier(n_estimators = 100, max_depth = 10, random_state = 42, n_jobs=-1)
 
     def fit(self, X_train: np.ndarray, y_train_multi: dict[str, np.ndarray], X_val: np.ndarray, y_val_multi: dict[str, np.ndarray]) -> dict[str, Any]:
         """
@@ -108,7 +109,7 @@ class MultiOutputModel:
             sample_weights = None
             if output_type in ['triple_barrier', 'barrier_avoidance']:
                 try:
-                    class_weights = compute_class_weight('balanced', classes=np.unique(y_train_target), y=y_train_target)
+                    class_weights = compute_class_weight('balanced', classes = np.unique(y_train_target), y = y_train_target)
                     sample_weights = class_weights[y_train_target.astype(int)]
                 except Exception as e:
                     self.logger.warning(f'Could not compute class weights for {output_type}: {e}')
@@ -119,11 +120,11 @@ class MultiOutputModel:
                         trained_models[output_type] = model
                     else:
                         if sample_weights is not None:
-                            model.fit(X_train, y_train_target, sample_weight=sample_weights)
+                            model.fit(X_train, y_train_target, sample_weight = sample_weights)
                         else:
                             model.fit(X_train, y_train_target)
                         try:
-                            calibrator = CalibratedClassifierCV(model, cv=5, method='isotonic')
+                            calibrator = CalibratedClassifierCV(model, cv = 5, method='isotonic')
                             calibrator.fit(X_val, y_val_target)
                             self.calibrators[output_type] = calibrator
                             trained_models[output_type] = calibrator
@@ -143,7 +144,7 @@ class MultiOutputModel:
         self.logger.info(f'Successfully trained {len(trained_models)} out of 4 models')
         return trained_models
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def _optimize_ensemble_weights(self, models: dict[str, Any], X_val: np.ndarray, y_val_multi: dict[str, np.ndarray]) -> dict[str, float]:
         """
         Optimize ensemble weights for better probability accuracy.
@@ -176,12 +177,12 @@ class MultiOutputModel:
         initial_weights = [0.25, 0.25, 0.25, 0.25]
         try:
             result = minimize(objective, initial_weights, method='L-BFGS-B', bounds=[(0.1, 0.4) for _ in range(4)])
-            optimized_weights = dict(zip(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], result.x, strict=False))
+            optimized_weights = dict(zip(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], result.x, strict = False))
             self.logger.info(f'Optimized ensemble weights: {optimized_weights}')
             return optimized_weights
         except Exception as e:
             self.logger.warning(f'Ensemble weight optimization failed: {e}')
-            return dict(zip(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], initial_weights, strict=False))
+            return dict(zip(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance'], initial_weights, strict = False))
 
     @handles_errors(fallback={})
     def predict_probabilities(self, X_test: np.ndarray, market_data: pd.DataFrame) -> dict[str, float]:
@@ -230,10 +231,9 @@ class MultiOutputProbabilityTrainer:
 
     This class coordinates the entire multi-output training process,
     from target generation to model training and prediction.
-from src.utils.decorators.errors import handles_errors
     """
 
-    def __init__(self, config: dict[str, Any] | None=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild('MultiOutputProbabilityTrainer')
         self.target_generator = ProbabilityTargetGenerator(config)
@@ -260,7 +260,7 @@ from src.utils.decorators.errors import handles_errors
             self.logger.warning(f'No specific model configuration for timeframe {self.timeframe}, using defaults')
 
     @handles_errors(fallback={})
-    @validates(strict=True)
+    @validates(strict = True)
     def prepare_multi_output_targets(self, X: np.ndarray, y: np.ndarray, market_data: pd.DataFrame) -> dict[str, np.ndarray]:
         """
         Generate 4 probability targets for training.

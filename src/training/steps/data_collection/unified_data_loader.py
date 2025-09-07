@@ -1,4 +1,8 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Unified Data Loader for Step1_5 Data.
+from src.utils.logger import system_logger
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
@@ -10,7 +14,6 @@ from pathlib import Path
 from typing import Any, Optional, Callable, Dict, List
 
 
-from .core.decorators.errors import handles_errors
 import pandas as pd
 import src.core.domain
 import numpy as np
@@ -28,7 +31,7 @@ from src.utils.file_operations import (
 
 # Import logger with fallback
 try:
-    from .utils.logger import system_logger
+    from src.utils.logger import system_logger
 except ImportError:
     system_logger = logging.getLogger(__name__)
 
@@ -76,6 +79,7 @@ except ImportError:
     def sanitize_string(*args, **kwargs) -> str:
         return str(*args) if args else ""
 
+    @log_important_calls
     class ParquetDatasetManager:
         def __init__(self, *args, **kwargs):
             pass
@@ -83,6 +87,7 @@ except ImportError:
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
+    @log_important_calls
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize the unified data loader.
@@ -119,7 +124,7 @@ class UnifiedDataLoader:
         self.max_rows = 10000000
 
     @secure_file_path(allowed_dirs=['data_cache', 'data'])
-    @validate_file_size(max_size_mb=100)
+    @validate_file_size(max_size_mb = 100)
     @traced(span_name='UnifiedDataLoader.load_unified_data')
     async def load_unified_data(
         self, 
@@ -169,7 +174,7 @@ class UnifiedDataLoader:
             latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
             
             # Validate file size
-            if not validate_file_size(latest_file, max_size_mb=100):
+            if not validate_file_size(latest_file, max_size_mb = 100):
                 self.logger.error(f"File too large: {latest_file}")
                 return None
 
@@ -200,7 +205,7 @@ class UnifiedDataLoader:
         """Load data from a single file."""
         try:
             if columns:
-                data = safe_read_parquet(file_path, columns=columns)
+                data = safe_read_parquet(file_path, columns = columns)
             else:
                 data = safe_read_parquet(file_path)
             
@@ -217,6 +222,7 @@ class UnifiedDataLoader:
         except Exception as e:
             self.logger.exception(f"Error loading file {file_path}: {e}")
             return None
+    @log_all_calls
 
     def _apply_date_filters(self, data: pd.DataFrame, start_date: Optional[str], end_date: Optional[str]) -> pd.DataFrame:
         """Apply date filters to the data."""

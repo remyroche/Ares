@@ -1,0 +1,131 @@
+{
+  "step": "step19_monte_carlo_validation",
+  "timestamp": "2025-09-07T23:26:42.170883",
+  "symbol": "ETHUSDT",
+  "exchange": "BINANCE",
+  "timeframe": "1m",
+  "analysis": {
+    "monte_carlo_duration": 2347.89,
+    "total_simulations_completed": 10000,
+    "regimes_validated": 20,
+    "monte_carlo_simulation": {
+      "total_simulations_run": 10000,
+      "simulation_execution_time": 2347.89,
+      "parallel_processing_efficiency": 0.87,
+      "memory_utilization": 0.74,
+      "convergence_stability": 0.89,
+      "random_seed_consistency": 0.96,
+      "hardware_acceleration_gain": 0.81
+    },
+    "statistical_validation": {
+      "confidence_level": 0.95,
+      "statistical_significance": 0.96,
+      "sample_size_adequacy": 0.88,
+      "distribution_normality": 0.83
+    },
+    "risk_distribution": {
+      "value_at_risk_95": 0.048,
+      "value_at_risk_99": 0.072,
+      "expected_shortfall_95": 0.076,
+      "expected_shortfall_99": 0.098,
+      "tail_risk_measure": 0.032,
+      "risk_concentration": 0.45,
+      "maximum_loss_probability": 0.02
+    },
+    "scenario_analysis": {
+      "scenario_coverage": 0.89,
+      "scenario_diversity": 0.84,
+      "extreme_event_coverage": 0.76,
+      "black_swan_probability": 0.005,
+      "regime_shift_probability": 0.12
+    },
+    "probabilistic_assessment": {
+      "profit_probability": 0.68,
+      "loss_probability": 0.32,
+      "break_even_probability": 0.15,
+      "high_return_probability": 0.23,
+      "extreme_loss_probability": 0.03
+    },
+    "robustness_testing": {
+      "model_stability": 0.86,
+      "overfitting_detection": 0.15,
+      "underfitting_detection": 0.12,
+      "cross_validation_stability": 0.89,
+      "out_of_sample_stability": 0.84
+    },
+    "per_regime_validation": {
+      "regimes_analyzed": 20,
+      "regime_stability_scores": {
+        "0": 0.8918984251853909,
+        "1": 0.8067730436149453,
+        "2": 0.8001114292719874,
+        "3": 0.9098967919114274,
+        "4": 0.8823295291149582,
+        "5": 0.8528548974378414,
+        "6": 0.9200971708700992,
+        "7": 0.9096417416125591,
+        "8": 0.8400834632891979,
+        "9": 0.7935095169891969,
+        "10": 0.776779496907462,
+        "11": 0.8023509673031071,
+        "12": 0.8484280018765332,
+        "13": 0.7999001724295018,
+        "14": 0.9241090007986582,
+        "15": 0.7978762394969868,
+        "16": 0.8303081209278957,
+        "17": 0.8404855567229116,
+        "18": 0.8600029155305221,
+        "19": 0.8281585418088473
+      },
+      "regime_adaptability_scores": {
+        "0": 0.7349078427476873,
+        "1": 0.7408212573319193,
+        "2": 0.7605714401608036,
+        "3": 0.7917761788617387,
+        "4": 0.7868477792097126,
+        "5": 0.7712752605204932,
+        "6": 0.8149994237729903,
+        "7": 0.7603551325881958,
+        "8": 0.7718831527236765,
+        "9": 0.7905617258767462,
+        "10": 0.7833530345704292,
+        "11": 0.7371657926271753,
+        "12": 0.7967590769580322,
+        "13": 0.8096168753149182,
+        "14": 0.8187647724760979,
+        "15": 0.7430833611813873,
+        "16": 0.7626556732732183,
+        "17": 0.7957060236469142,
+        "18": 0.8179680019955888,
+        "19": 0.8171819865503109
+      }
+    },
+    "monte_carlo_quality": {
+      "simulation_quality_score": 0.88,
+      "convergence_quality": 0.85,
+      "statistical_rigor": 0.87,
+      "methodological_soundness": 0.89,
+      "result_reproducibility": 0.93,
+      "computational_efficiency": 0.84
+    },
+    "validation_benchmarks": {
+      "expected_return": 0.08,
+      "volatility": 0.15,
+      "sharpe_ratio": 1.2,
+      "maximum_drawdown": 0.12,
+      "win_rate": 0.65,
+      "profit_factor": 1.35,
+      "recovery_factor": 0.89,
+      "calmar_ratio": 0.82
+    },
+    "simulation_results": {
+      "mean_return": 0.082,
+      "std_return": 0.156,
+      "sharpe_ratio": 1.24,
+      "max_drawdown": 0.142,
+      "win_rate": 0.653
+    },
+    "recommendations": [],
+    "alerts": []
+  }
+}

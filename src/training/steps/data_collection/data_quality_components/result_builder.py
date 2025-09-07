@@ -1,4 +1,7 @@
 """Result Builder Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Builder pattern for creating consistent validation results.
 Extracted from raw_data_quality_checker.py
 """
@@ -6,7 +9,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 import pandas as pd
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import time
@@ -22,6 +25,7 @@ class ValidationResultBuilder:
     - Calculating quality scores
     - Generating final results
     """
+    @log_important_calls
     
     def __init__(self, symbol: str, exchange: str, data_shape: tuple[int, int]):
         self.logger = system_logger.getChild("ValidationResultBuilder")

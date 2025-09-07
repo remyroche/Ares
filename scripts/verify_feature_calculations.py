@@ -26,7 +26,7 @@ class FeatureCalculationVerifier:
     """Verifies feature calculations and identifies specific issues."""
 
     def __init__(self):
-        self.logger=system_logger.getChild("FeatureCalculationVerifier")
+        self.logger = system_logger.getChild("FeatureCalculationVerifier")
 
     def verify_momentum_features(self, data: pd.DataFrame) -> dict[str, Any]:
         """Verify momentum feature calculations."""
@@ -65,7 +65,7 @@ class FeatureCalculationVerifier:
         if not results["available_features"]:
             return results
 
-        momentum_data=data[results["available_features"]]
+        momentum_data = data[results["available_features"]]
 
         # Verify calculations
         issues = self._verify_momentum_calculations(momentum_data)
@@ -119,7 +119,7 @@ class FeatureCalculationVerifier:
         if not results["available_features"]:
             return results
 
-        volatility_data=data[results["available_features"]]
+        volatility_data = data[results["available_features"]]
 
         # Verify calculations
         issues = self._verify_volatility_calculations(volatility_data)
@@ -168,7 +168,7 @@ class FeatureCalculationVerifier:
         if not results["available_features"]:
             return results
 
-        liquidity_data=data[results["available_features"]]
+        liquidity_data = data[results["available_features"]]
 
         # Verify calculations
         issues = self._verify_liquidity_calculations(liquidity_data)
@@ -220,7 +220,7 @@ class FeatureCalculationVerifier:
         if not results["available_features"]:
             return results
 
-        technical_data=data[results["available_features"]]
+        technical_data = data[results["available_features"]]
 
         # Verify calculations
         issues = self._verify_technical_calculations(technical_data)
@@ -245,7 +245,7 @@ class FeatureCalculationVerifier:
                 issues.append(f"NaN values in {col}: {count}")
 
         # Check for infinite values
-        inf_counts=np.isinf(data.select_dtypes(include=[np.number])).sum()
+        inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
                 issues.append(f"Infinite values in {col}: {count}")
@@ -268,7 +268,7 @@ class FeatureCalculationVerifier:
                 issues.append(f"NaN values in {col}: {count}")
 
         # Check for infinite values
-        inf_counts=np.isinf(data.select_dtypes(include=[np.number])).sum()
+        inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
                 issues.append(f"Infinite values in {col}: {count}")
@@ -293,7 +293,7 @@ class FeatureCalculationVerifier:
                 issues.append(f"NaN values in {col}: {count}")
 
         # Check for infinite values
-        inf_counts=np.isinf(data.select_dtypes(include=[np.number])).sum()
+        inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
                 issues.append(f"Infinite values in {col}: {count}")
@@ -311,7 +311,7 @@ class FeatureCalculationVerifier:
                 issues.append(f"NaN values in {col}: {count}")
 
         # Check for infinite values
-        inf_counts=np.isinf(data.select_dtypes(include=[np.number])).sum()
+        inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
         for col, count in inf_counts.items():
             if count > 0:
                 issues.append(f"Infinite values in {col}: {count}")
@@ -331,13 +331,13 @@ class FeatureCalculationVerifier:
             return {}
 
         # Calculate correlation matrix
-        corr_matrix=data.corr()
+        corr_matrix = data.corr()
 
         # Find highly correlated pairs
         high_corr_pairs=[]
         for i in range(len(corr_matrix.columns)):
             for j in range(i + 1, len(corr_matrix.columns)):
-                corr_value=corr_matrix.iloc[i, j]
+                corr_value = corr_matrix.iloc[i, j]
                 if abs(corr_value) > 0.8:
                     high_corr_pairs.append({
                         "feature1": corr_matrix.columns[i],
@@ -381,8 +381,8 @@ class FeatureCalculationVerifier:
         }
 
         # Generate summary
-        total_features=len(data.columns)
-        total_issues=0
+        total_features = len(data.columns)
+        total_issues = 0
         feature_categories = {}
 
         for category, category_results in results.items():
@@ -390,8 +390,8 @@ class FeatureCalculationVerifier:
                 continue
 
             available = len(category_results["available_features"])
-            missing=len(category_results["missing_features"])
-            issues=len(category_results["calculation_issues"])
+            missing = len(category_results["missing_features"])
+            issues = len(category_results["calculation_issues"])
 
             feature_categories[category] = {
                 "available": available,
@@ -415,30 +415,30 @@ def main():
     """Main function for feature verification."""
     import argparse
 
-    parser=argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Feature Calculation Verification Tool",
     )
     parser.add_argument(
         "--data_path",
-        type=str,
-        required=True,
+        type = str,
+        required = True,
         help="Path to the data file (CSV, Parquet, or PKL)",
     )
     parser.add_argument(
         "--output_dir",
-        type=str,
+        type = str,
         default="feature_verification_reports",
         help="Output directory for reports",
     )
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     # Create output directory
-    output_dir=Path(args.output_dir)
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(exist_ok = True)
 
     # Load data
-    data_path=Path(args.data_path)
+    data_path = Path(args.data_path)
     if data_path.suffix== ".csv":
         data = pd.read_csv(data_path)
     elif data_path.suffix== ".parquet":
@@ -450,23 +450,23 @@ def main():
         return
 
     # Initialize verifier
-    verifier=FeatureCalculationVerifier()
+    verifier = FeatureCalculationVerifier()
 
     # Perform comprehensive verification
-    results=verifier.comprehensive_verification(data)
+    results = verifier.comprehensive_verification(data)
 
     # Save results
-    timestamp=pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-    output_file=output_dir / f"feature_verification_report_{timestamp}.json"
+    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"feature_verification_report_{timestamp}.json"
 
     import json
     with open(output_file, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent = 2, default = str)
 
     print(f"✅ Feature verification report saved to: {output_file}")
 
     # Print summary
-    summary=results["summary"]
+    summary = results["summary"]
     print("\n📊 Feature Verification Summary:")
     print(f"Total features: {summary['total_features']}")
     print(f"Total issues: {summary['total_issues']}")

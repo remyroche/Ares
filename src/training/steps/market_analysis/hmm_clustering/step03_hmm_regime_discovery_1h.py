@@ -2,6 +2,10 @@
 from typing import Optional
 import pandas as pd
 import numpy as np
+from src.utils.logger import system_logger
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Enhanced Step 3: HMM Regime Discovery using 1h timeframe only.
 
 This module performs Hidden Markov Model (HMM) regime discovery exclusively on 1h data
@@ -14,9 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .core.decorators import handles_errors, traced
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 import json
 import logging
@@ -26,6 +29,7 @@ logger = system_logger.getChild('HMMRegimeDiscovery1H')
 
 class HMMRegimeDiscovery1H:
     """HMM Regime Discovery using only 1h timeframe data."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -36,7 +40,7 @@ class HMMRegimeDiscovery1H:
         self.hmm_params = {'n_components': 4, 'covariance_type': 'full', 'n_iter': 100, 'random_state': 42}
         self.regime_names = {0: 'bear', 1: 'sideways_bear', 2: 'sideways_bull', 3: 'bull'}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     @traced(span_name='hmm_regime_discovery_1h')
     async def execute(self, symbol: str, exchange: str, trading_timeframe: str, data_dir: str) -> Dict[str, Any]:
         """Execute HMM regime discovery using 1h data."""
@@ -74,7 +78,7 @@ class HMMRegimeDiscovery1H:
         available_files = list(Path(data_dir).glob(f'{exchange}_{symbol}_*_unified.parquet'))
         if not available_files:
             raise FileNotFoundError(f'No unified data found for {symbol}')
-        smallest_tf_file = min(available_files, key=lambda x: self._timeframe_to_minutes(x.stem.split('_')[2]))
+        smallest_tf_file = min(available_files, key = lambda x: self._timeframe_to_minutes(x.stem.split('_')[2]))
         self.logger.info(f'Resampling from {smallest_tf_file}')
         data = pd.read_parquet(smallest_tf_file)
         data = self.standards.standardize_timestamp(data, 'timestamp')
@@ -82,6 +86,7 @@ class HMMRegimeDiscovery1H:
         data_1h.to_parquet(path_1h)
         self.logger.info(f'Saved resampled 1h data to {path_1h}')
         return data_1h
+    @log_all_calls
 
     def _timeframe_to_minutes(self, timeframe: str) -> int:
         """Convert timeframe string to minutes."""
@@ -90,6 +95,7 @@ class HMMRegimeDiscovery1H:
             if timeframe.endswith(suffix):
                 return int(timeframe[:-1]) * multiplier
         return 60
+    @log_all_calls
 
     def _resample_to_1h(self, data: pd.DataFrame) -> pd.DataFrame:
         """Resample OHLCV data to 1h."""
@@ -134,7 +140,7 @@ class HMMRegimeDiscovery1H:
         for regime in range(self.hmm_params['n_components']):
             mask = regime_labels == regime
             regime_returns[regime] = returns[mask].mean()
-        sorted_regimes = sorted(regime_returns.items(), key=lambda x: x[1])
+        sorted_regimes = sorted(regime_returns.items(), key = lambda x: x[1])
         regime_mapping = {old: new for new, (old, _) in enumerate(sorted_regimes)}
         regime_labels_mapped = np.array([regime_mapping[label] for label in regime_labels])
         return (model, regime_labels_mapped)
@@ -152,6 +158,7 @@ class HMMRegimeDiscovery1H:
                 stats[regime_name] = regime_stats
         
         return stats
+    @log_all_calls
 
     def _prepare_data_with_regimes(self, data: pd.DataFrame, regime_labels: np.ndarray) -> pd.DataFrame:
         """Prepare data with regime labels and returns."""
@@ -178,12 +185,14 @@ class HMMRegimeDiscovery1H:
             'avg_volume': regime_data['volume'].mean(),
             'duration_stats': self._calculate_duration_stats(data_with_regimes, regime_num)
         }
+    @log_all_calls
 
     def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
         """Calculate Sharpe ratio for returns."""
         if returns.std() == 0:
             return 0.0
         return returns.mean() / returns.std() * np.sqrt(252 * 24)
+    @log_all_calls
 
     def _calculate_duration_stats(self, data: pd.DataFrame, regime: int) -> Dict[str, float]:
         """Calculate duration statistics for a regime."""
@@ -213,6 +222,7 @@ class HMMRegimeDiscovery1H:
         mode_regime = regime_df['regime'].mode().iloc[0]
         merged['regime'] = merged['regime'].fillna(mode_regime)
         return merged['regime'].values
+    @log_all_calls
 
     def _calculate_transition_matrix(self, regime_labels: np.ndarray) -> np.ndarray:
         """Calculate regime transition probability matrix."""
@@ -222,7 +232,7 @@ class HMMRegimeDiscovery1H:
             from_regime = regime_labels[i]
             to_regime = regime_labels[i + 1]
             transition_counts[from_regime, to_regime] += 1
-        transition_matrix = transition_counts / transition_counts.sum(axis=1, keepdims=True)
+        transition_matrix = transition_counts / transition_counts.sum(axis = 1, keepdims = True)
         return transition_matrix
 
     async def _save_results(self, results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:

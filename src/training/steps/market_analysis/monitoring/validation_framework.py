@@ -13,11 +13,13 @@ import asyncio
 import numpy as np
 import pandas as pd
 import time
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 
 class ComprehensiveValidationFramework:
     """Comprehensive validation framework for all function operations."""
-    
+
+    @log_important_calls
     def __init__(self, logger: Any = None):
         self.logger = logger or logging.getLogger(__name__)
         self.validation_rules: Dict[str, List[Callable]] = {}
@@ -26,6 +28,7 @@ class ComprehensiveValidationFramework:
         
         # Initialize default validation rules
         self._initialize_default_validation_rules()
+    @log_all_calls
     
     def _initialize_default_validation_rules(self) -> None:
         """Initialize default validation rules for common operations."""
@@ -72,6 +75,7 @@ class ComprehensiveValidationFramework:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize default validation rules: {e}")
+    @log_all_calls
     
     def _validate_dataframe_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate DataFrame input."""
@@ -114,6 +118,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_string_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate string input."""
@@ -153,6 +158,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_numeric_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate numeric input."""
@@ -186,6 +192,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_path_input(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate path input."""
@@ -222,6 +229,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_dataframe_output(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate DataFrame output."""
@@ -261,6 +269,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_boolean_output(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate boolean output."""
@@ -282,6 +291,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_numeric_output(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate numeric output."""
@@ -310,6 +320,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_series_output(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate Series output."""
@@ -339,6 +350,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_data_completeness(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate data completeness."""
@@ -359,6 +371,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_data_types(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate data types."""
@@ -378,6 +391,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_data_ranges(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate data ranges."""
@@ -398,6 +412,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_data_consistency(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate data consistency."""
@@ -422,6 +437,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_execution_time(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate execution time."""
@@ -439,6 +455,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_memory_usage(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate memory usage."""
@@ -456,6 +473,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_cpu_usage(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate CPU usage."""
@@ -473,6 +491,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_labeling_logic(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate labeling logic."""
@@ -507,6 +526,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_regime_logic(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate regime logic."""
@@ -541,6 +561,7 @@ class ComprehensiveValidationFramework:
             result['errors'].append(f"Validation error: {str(e)}")
         
         return result
+    @log_all_calls
     
     def _validate_triple_barrier_logic(self, data: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Validate triple barrier logic."""
@@ -698,8 +719,8 @@ class ComprehensiveValidationFramework:
                 'function_validations': function_validations,
                 'error_patterns': error_patterns,
                 'warning_patterns': warning_patterns,
-                'most_common_errors': sorted(error_patterns.items(), key=lambda x: x[1], reverse=True)[:5],
-                'most_common_warnings': sorted(warning_patterns.items(), key=lambda x: x[1], reverse=True)[:5]
+                'most_common_errors': sorted(error_patterns.items(), key = lambda x: x[1], reverse = True)[:5],
+                'most_common_warnings': sorted(warning_patterns.items(), key = lambda x: x[1], reverse = True)[:5]
             }
             
         except Exception as e:

@@ -1,17 +1,161 @@
-from typing import List
-from typing import Dict
-from typing import Any
+from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
-from typing import Optional
 from datetime import datetime
 import numpy as np
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 'Enhanced S/R Breakout Predictor.\n\nThis module provides advanced breakout prediction capabilities with ML integration,\nreal-time monitoring, and comprehensive validation.\n'
 from dataclasses import dataclass
 from enum import Enum
-from .utils.logger import system_logger
-from .core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError
 import logging
 import time
+import psutil
+from dataclasses import dataclass
+from typing import Optional
+
+# Simple error classes for SR operations
+class SROptimizationError(Exception):
+    """SR optimization specific error."""
+    pass
+
+class SRDataError(Exception):
+    """SR data specific error."""
+    pass
+
+@dataclass
+class ProgressMetrics:
+    """Enhanced progress tracking with performance metrics."""
+    total_items: int
+    processed_items: int = 0
+    start_time: float = None
+    last_update_time: float = None
+    last_logged_progress: float = -1.0
+    memory_usage_mb: float = 0.0
+    processing_rate: float = 0.0
+    estimated_time_remaining: float = 0.0
+
+    def __post_init__(self):
+        if self.start_time is None:
+            self.start_time = time.time()
+        if self.last_update_time is None:
+            self.last_update_time = self.start_time
+
+    def update(self, processed: int):
+        """Update progress metrics."""
+        self.processed_items = processed
+        current_time = time.time()
+        elapsed = current_time - self.start_time
+
+        # Calculate processing rate (items per second)
+        if elapsed > 0:
+            self.processing_rate = self.processed_items / elapsed
+
+        # Calculate estimated time remaining
+        if self.processing_rate > 0:
+            remaining_items = self.total_items - self.processed_items
+            self.estimated_time_remaining = remaining_items / self.processing_rate
+
+        # Track memory usage
+        try:
+            process = psutil.Process()
+            self.memory_usage_mb = process.memory_info().rss / 1024 / 1024
+        except:
+            self.memory_usage_mb = 0.0
+
+        self.last_update_time = current_time
+
+    def get_progress_percentage(self) -> float:
+        """Get current progress as percentage."""
+        return (self.processed_items / self.total_items) * 100 if self.total_items > 0 else 0
+
+    def should_log_progress(self, min_interval_percent: float = 5.0) -> bool:
+        """Determine if progress should be logged based on adaptive intervals."""
+        current_progress = self.get_progress_percentage()
+
+        # Always log at 0%, 25%, 50%, 75%, 100%
+        key_milestones = [0, 25, 50, 75, 100]
+        if any(abs(current_progress - milestone) < 0.1 for milestone in key_milestones):
+            return True
+
+        # Log at adaptive intervals based on processing speed
+        if current_progress - self.last_logged_progress >= min_interval_percent:
+            return True
+
+        return False
+
+    def format_eta(self) -> str:
+        """Format estimated time remaining."""
+        if self.estimated_time_remaining <= 0:
+            return "complete"
+
+        if self.estimated_time_remaining < 60:
+            return f"{self.estimated_time_remaining:.1f}s"
+        elif self.estimated_time_remaining < 3600:
+            return f"{self.estimated_time_remaining/60:.1f}m"
+        else:
+            return f"{self.estimated_time_remaining/3600:.1f}h"
+
+    def format_progress_message(self, operation_name: str = "Processing") -> str:
+        """Generate comprehensive progress message."""
+        progress_pct = self.get_progress_percentage()
+        elapsed = time.time() - self.start_time
+
+        message_parts = [
+            f"📊 {operation_name}: {progress_pct:.1f}%",
+            f"({self.processed_items:,}/{self.total_items:,})",
+            f"⏱️ {elapsed:.1f}s elapsed"
+        ]
+
+        if self.processing_rate > 0:
+            message_parts.append(f"⚡ {self.processing_rate:.0f} items/s")
+
+        if self.estimated_time_remaining > 0:
+            message_parts.append(f"⏳ ETA: {self.format_eta()}")
+
+        if self.memory_usage_mb > 0:
+            message_parts.append(f"💾 {self.memory_usage_mb:.1f}MB")
+
+        return " | ".join(message_parts)
+
+class EnhancedProgressLogger:
+    """Enhanced progress logging utility with adaptive intervals and metrics."""
+
+    def __init__(self, logger, total_items: int, operation_name: str = "Processing"):
+        self.logger = logger
+        self.metrics = ProgressMetrics(total_items=total_items)
+        self.operation_name = operation_name
+        self.start_message_logged = False
+
+    def start(self):
+        """Log the start of the operation."""
+        if not self.start_message_logged:
+            self.logger.info(f"🔍 Starting {self.operation_name} of {self.metrics.total_items:,} items...")
+            self.start_message_logged = True
+
+    def update(self, processed_items: int):
+        """Update progress and log if needed."""
+        self.metrics.update(processed_items)
+
+        if self.metrics.should_log_progress():
+            message = self.metrics.format_progress_message(self.operation_name)
+            self.logger.info(message)
+            self.metrics.last_logged_progress = self.metrics.get_progress_percentage()
+
+    def complete(self):
+        """Log completion of the operation."""
+        self.metrics.update(self.metrics.total_items)
+        elapsed = time.time() - self.metrics.start_time
+
+        completion_message = (
+            f"✅ {self.operation_name} completed! "
+            f"Processed {self.metrics.total_items:,} items in {elapsed:.2f}s "
+            f"(avg: {self.metrics.processing_rate:.0f} items/s)"
+        )
+
+        if self.metrics.memory_usage_mb > 0:
+            completion_message += f" | Peak memory: {self.metrics.memory_usage_mb:.1f}MB"
+
+        self.logger.info(completion_message)
 
 class BreakoutType(Enum):
     """Types of breakouts."""
@@ -84,13 +228,20 @@ class EnhancedSRBreakoutPredictor:
         self.min_breakout_duration = self.breakout_config.get('breakout_validation', {}).get('min_breakout_duration', 5)
         self.prediction_history: List[BreakoutSignal] = []
         self.validation_results: List[BreakoutValidation] = []
-        self.performance_metrics = BreakoutPerformance(total_predictions=0, correct_predictions=0, false_breakouts=0, accuracy=0.0, precision=0.0, recall=0.0, f1_score=0.0, profit_factor=0.0, average_hold_time=0.0, max_drawdown=0.0)
+        self.performance_metrics = BreakoutPerformance(total_predictions = 0, correct_predictions = 0, false_breakouts = 0, accuracy = 0.0, precision = 0.0, recall = 0.0, f1_score = 0.0, profit_factor = 0.0, average_hold_time = 0.0, max_drawdown = 0.0)
         self.active_signals: Dict[str, BreakoutSignal] = {}
         self.monitoring_enabled = True
         self.ml_model = None
         self.feature_importance = {}
+        # Add missing attributes for SRLevelsManager compatibility
+        self.sr_detection_method = 'fractal'  # Default detection method
 
-    @sr_error_handler(exceptions=(SROptimizationError, SRDataError), default_return=[], context='breakout prediction', max_retries=2)
+    async def initialize(self) -> None:
+        """Async initialization method for compatibility with calling code."""
+        # All initialization is already done in __init__, so this is just a compatibility method
+        self.logger.info('🔧 SR Breakout Predictor async initialization completed')
+
+    @handles_errors(exceptions=(SROptimizationError, SRDataError), default_return=[])
     async def predict_breakouts(self, market_data: pd.DataFrame, sr_levels: List[Dict[str, Any]], current_price: Optional[float]=None) -> List[BreakoutSignal]:
         """Predict potential breakouts from S/R levels."""
         try:
@@ -104,7 +255,7 @@ class EnhancedSRBreakoutPredictor:
                 if signal and signal.probability > 0.3:
                     breakout_signals.append(signal)
                     self.active_signals[signal.level_id] = signal
-            breakout_signals.sort(key=lambda x: (x.probability, x.confidence.value), reverse=True)
+            breakout_signals.sort(key = lambda x: (x.probability, x.confidence.value), reverse = True)
             self.performance_metrics.total_predictions += len(breakout_signals)
             self.prediction_history.extend(breakout_signals)
             self.logger.info(f'✅ Generated {len(breakout_signals)} breakout signals')
@@ -133,7 +284,7 @@ class EnhancedSRBreakoutPredictor:
             volume_confirmation = features.get('volume_spike', 0) > self.volume_spike_threshold
             momentum_confirmation = features.get('momentum', 0) > self.momentum_threshold
             validation_score = self._calculate_validation_score(features)
-            return BreakoutSignal(level_id=level_id, breakout_type=breakout_type, confidence=confidence, probability=probability, expected_direction=direction, target_price=target_price, stop_loss=stop_loss, time_to_breakout=time_to_breakout, volume_confirmation=volume_confirmation, momentum_confirmation=momentum_confirmation, features=features, timestamp=datetime.now(), validation_score=validation_score)
+            return BreakoutSignal(level_id = level_id, breakout_type = breakout_type, confidence = confidence, probability = probability, expected_direction = direction, target_price = target_price, stop_loss = stop_loss, time_to_breakout = time_to_breakout, volume_confirmation = volume_confirmation, momentum_confirmation = momentum_confirmation, features = features, timestamp = datetime.now(), validation_score = validation_score)
         except Exception as e:
             self.logger.error(f'Level analysis failed: {e}')
             return None
@@ -347,12 +498,12 @@ class EnhancedSRBreakoutPredictor:
                 recommended_action = 'wait_for_confirmation'
             else:
                 recommended_action = 'avoid'
-            validation = BreakoutValidation(is_valid=is_valid, false_breakout_probability=false_breakout_prob, confirmation_required=confirmation_required, validation_metrics=validation_metrics, recommended_action=recommended_action)
+            validation = BreakoutValidation(is_valid = is_valid, false_breakout_probability = false_breakout_prob, confirmation_required = confirmation_required, validation_metrics = validation_metrics, recommended_action = recommended_action)
             self.validation_results.append(validation)
             return validation
         except Exception as e:
             self.logger.error(f'Breakout validation failed: {e}')
-            return BreakoutValidation(is_valid=False, false_breakout_probability=1.0, confirmation_required=True, validation_metrics={}, recommended_action='avoid')
+            return BreakoutValidation(is_valid = False, false_breakout_probability = 1.0, confirmation_required = True, validation_metrics={}, recommended_action='avoid')
 
     def _calculate_false_breakout_probability(self, signal: BreakoutSignal, market_data: pd.DataFrame) -> float:
         """Calculate probability of false breakout."""
@@ -419,7 +570,7 @@ class EnhancedSRBreakoutPredictor:
             if len(market_data) < 20:
                 return 1.0
             current_volume = market_data['volume'].iloc[-1]
-            avg_volume = market_data['volume'].rolling(window=20).mean().iloc[-1]
+            avg_volume = market_data['volume'].rolling(window = 20).mean().iloc[-1]
             return current_volume / avg_volume if avg_volume > 0 else 1.0
         except Exception:
             return 1.0
@@ -461,14 +612,14 @@ class EnhancedSRBreakoutPredictor:
         except Exception:
             return 0
 
-    def _calculate_rsi(self, prices: pd.Series, period: int=14) -> float:
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate RSI."""
         try:
             if len(prices) < period + 1:
                 return 50.0
             delta = prices.diff()
-            gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
             rs = gain / loss
             rsi = 100 - 100 / (1 + rs)
             return rsi.iloc[-1] if not rsi.empty else 50.0
@@ -480,10 +631,10 @@ class EnhancedSRBreakoutPredictor:
         try:
             if len(prices) < 26:
                 return 0.0
-            ema_12 = prices.ewm(span=12).mean()
-            ema_26 = prices.ewm(span=26).mean()
+            ema_12 = prices.ewm(span = 12).mean()
+            ema_26 = prices.ewm(span = 26).mean()
             macd = ema_12 - ema_26
-            signal = macd.ewm(span=9).mean()
+            signal = macd.ewm(span = 9).mean()
             return macd.iloc[-1] - signal.iloc[-1] if not macd.empty else 0.0
         except Exception:
             return 0.0
@@ -494,8 +645,8 @@ class EnhancedSRBreakoutPredictor:
             if len(market_data) < 20:
                 return 0.5
             prices = market_data['close']
-            sma = prices.rolling(window=20).mean()
-            std = prices.rolling(window=20).std()
+            sma = prices.rolling(window = 20).mean()
+            std = prices.rolling(window = 20).std()
             upper = sma + std * 2
             lower = sma - std * 2
             current_price = prices.iloc[-1]
@@ -537,44 +688,44 @@ class EnhancedSRBreakoutPredictor:
         except Exception:
             return 0.5
 
-    def _calculate_stochastic_k(self, market_data: pd.DataFrame, period: int=14) -> float:
+    def _calculate_stochastic_k(self, market_data: pd.DataFrame, period: int = 14) -> float:
         """Calculate Stochastic %K."""
         try:
             if len(market_data) < period:
                 return 50.0
-            low_min = market_data['low'].rolling(window=period).min()
-            high_max = market_data['high'].rolling(window=period).max()
+            low_min = market_data['low'].rolling(window = period).min()
+            high_max = market_data['high'].rolling(window = period).max()
             k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
             return k_percent.iloc[-1] if not k_percent.empty else 50.0
         except Exception:
             return 50.0
 
-    def _calculate_williams_r(self, market_data: pd.DataFrame, period: int=14) -> float:
+    def _calculate_williams_r(self, market_data: pd.DataFrame, period: int = 14) -> float:
         """Calculate Williams %R."""
         try:
             if len(market_data) < period:
                 return -50.0
-            high_max = market_data['high'].rolling(window=period).max()
-            low_min = market_data['low'].rolling(window=period).min()
+            high_max = market_data['high'].rolling(window = period).max()
+            low_min = market_data['low'].rolling(window = period).min()
             williams_r = -100 * ((high_max - market_data['close']) / (high_max - low_min))
             return williams_r.iloc[-1] if not williams_r.empty else -50.0
         except Exception:
             return -50.0
 
-    def _calculate_cci(self, market_data: pd.DataFrame, period: int=20) -> float:
+    def _calculate_cci(self, market_data: pd.DataFrame, period: int = 20) -> float:
         """Calculate Commodity Channel Index."""
         try:
             if len(market_data) < period:
                 return 0.0
             typical_price = (market_data['high'] + market_data['low'] + market_data['close']) / 3
-            sma_tp = typical_price.rolling(window=period).mean()
-            mad = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
+            sma_tp = typical_price.rolling(window = period).mean()
+            mad = typical_price.rolling(window = period).apply(lambda x: np.mean(np.abs(x - x.mean())))
             cci = (typical_price - sma_tp) / (0.015 * mad)
             return cci.iloc[-1] if not cci.empty else 0.0
         except Exception:
             return 0.0
 
-    def _calculate_adx(self, market_data: pd.DataFrame, period: int=14) -> float:
+    def _calculate_adx(self, market_data: pd.DataFrame, period: int = 14) -> float:
         """Calculate Average Directional Index."""
         try:
             if len(market_data) < period + 1:
@@ -583,18 +734,18 @@ class EnhancedSRBreakoutPredictor:
             low_diff = market_data['low'].diff()
             plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
             minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
-            plus_dm = pd.Series(plus_dm, index=market_data.index)
-            minus_dm = pd.Series(minus_dm, index=market_data.index)
+            plus_dm = pd.Series(plus_dm, index = market_data.index)
+            minus_dm = pd.Series(minus_dm, index = market_data.index)
             atr = self._calculate_atr(market_data, period)
-            plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
-            minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+            plus_di = 100 * (plus_dm.rolling(window = period).mean() / atr)
+            minus_di = 100 * (minus_dm.rolling(window = period).mean() / atr)
             dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
-            adx = dx.rolling(window=period).mean()
+            adx = dx.rolling(window = period).mean()
             return adx.iloc[-1] if not adx.empty else 25.0
         except Exception:
             return 25.0
 
-    def _calculate_atr(self, market_data: pd.DataFrame, period: int=14) -> float:
+    def _calculate_atr(self, market_data: pd.DataFrame, period: int = 14) -> float:
         """Calculate Average True Range."""
         try:
             if len(market_data) < period:
@@ -603,7 +754,7 @@ class EnhancedSRBreakoutPredictor:
             high_close = np.abs(market_data['high'] - market_data['close'].shift())
             low_close = np.abs(market_data['low'] - market_data['close'].shift())
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            atr = true_range.rolling(window=period).mean()
+            atr = true_range.rolling(window = period).mean()
             return atr.iloc[-1] if not atr.empty else 0.0
         except Exception:
             return 0.0
@@ -651,8 +802,8 @@ class EnhancedSRBreakoutPredictor:
         try:
             if len(market_data) < 20:
                 return 0.5
-            sma_20 = market_data['close'].rolling(window=20).mean()
-            sma_50 = market_data['close'].rolling(window=50).mean()
+            sma_20 = market_data['close'].rolling(window = 20).mean()
+            sma_50 = market_data['close'].rolling(window = 50).mean()
             if len(sma_20) < 1 or len(sma_50) < 1:
                 return 0.5
             trend_ratio = abs(sma_20.iloc[-1] - sma_50.iloc[-1]) / sma_50.iloc[-1]
@@ -661,13 +812,13 @@ class EnhancedSRBreakoutPredictor:
             return 0.5
 
     def _determine_market_regime(self, market_data: pd.DataFrame) -> float:
-        """Determine market regime (0=trending, 0.5=ranging, 1=transitional)."""
+        """Determine market regime (0 = trending, 0.5 = ranging, 1 = transitional)."""
         try:
             if len(market_data) < 50:
                 return 0.5
             rsi = self._calculate_rsi(market_data['close'])
-            sma_20 = market_data['close'].rolling(window=20).mean()
-            sma_50 = market_data['close'].rolling(window=50).mean()
+            sma_20 = market_data['close'].rolling(window = 20).mean()
+            sma_50 = market_data['close'].rolling(window = 50).mean()
             if len(sma_20) < 1 or len(sma_50) < 1:
                 return 0.5
             sma_ratio = sma_20.iloc[-1] / sma_50.iloc[-1]
@@ -682,7 +833,7 @@ class EnhancedSRBreakoutPredictor:
             return 0.5
 
     def _determine_volatility_regime(self, market_data: pd.DataFrame) -> float:
-        """Determine volatility regime (0=low, 0.5=normal, 1=high)."""
+        """Determine volatility regime (0 = low, 0.5 = normal, 1 = high)."""
         try:
             if len(market_data) < 20:
                 return 0.5
@@ -730,22 +881,22 @@ class EnhancedSRBreakoutPredictor:
         try:
             if len(prices) < 26:
                 return 0.0
-            ema_12 = prices.ewm(span=12).mean()
-            ema_26 = prices.ewm(span=26).mean()
+            ema_12 = prices.ewm(span = 12).mean()
+            ema_26 = prices.ewm(span = 26).mean()
             macd_line = ema_12 - ema_26
             return macd_line.iloc[-1] if not macd_line.empty else 0.0
         except Exception:
             return 0.0
 
-    def _calculate_stochastic_d(self, market_data: pd.DataFrame, k_period: int=14, d_period: int=3) -> float:
+    def _calculate_stochastic_d(self, market_data: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> float:
         """Calculate Stochastic %D."""
         try:
             if len(market_data) < k_period:
                 return 50.0
-            low_min = market_data['low'].rolling(window=k_period).min()
-            high_max = market_data['high'].rolling(window=k_period).max()
+            low_min = market_data['low'].rolling(window = k_period).min()
+            high_max = market_data['high'].rolling(window = k_period).max()
             k_percent = 100 * ((market_data['close'] - low_min) / (high_max - low_min))
-            d_percent = k_percent.rolling(window=d_period).mean()
+            d_percent = k_percent.rolling(window = d_period).mean()
             return d_percent.iloc[-1] if not d_percent.empty else 50.0
         except Exception:
             return 50.0
@@ -757,7 +908,7 @@ class EnhancedSRBreakoutPredictor:
                 return 0.0
             price_change = market_data['close'].diff()
             obv = np.where(price_change > 0, market_data['volume'], np.where(price_change < 0, -market_data['volume'], 0))
-            obv = pd.Series(obv, index=market_data.index).cumsum()
+            obv = pd.Series(obv, index = market_data.index).cumsum()
             return obv.iloc[-1] if not obv.empty else 0.0
         except Exception:
             return 0.0
@@ -789,13 +940,13 @@ class EnhancedSRBreakoutPredictor:
         except Exception:
             return 0.0
 
-    def _calculate_volatility_proxy(self, market_data: pd.DataFrame, period: int=20) -> float:
+    def _calculate_volatility_proxy(self, market_data: pd.DataFrame, period: int = 20) -> float:
         """Calculate volatility proxy (simplified VIX)."""
         try:
             if len(market_data) < period:
                 return 0.0
             returns = market_data['close'].pct_change().dropna()
-            volatility = returns.rolling(window=period).std().iloc[-1]
+            volatility = returns.rolling(window = period).std().iloc[-1]
             return float(volatility * 100) if not np.isnan(volatility) else 0.0
         except Exception:
             return 0.0
@@ -829,3 +980,368 @@ class EnhancedSRBreakoutPredictor:
         """Disable real-time monitoring."""
         self.monitoring_enabled = False
         self.logger.info('✅ Breakout monitoring disabled')
+
+    # Methods required by SRLevelsManager
+    async def get_sr_context(self, market_data: pd.DataFrame, current_price: float) -> Dict[str, Any]:
+        """Get SR context for the given market data and current price."""
+        try:
+            self.logger.info('🔍 Getting SR context from enhanced predictor')
+            # Use basic level detection for now
+            support_levels = await self._detect_support_levels(market_data)
+            resistance_levels = await self._detect_resistance_levels(market_data)
+            
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels,
+                'current_price': current_price,
+                'timestamp': datetime.now().isoformat()
+            }
+        except Exception as e:
+            self.logger.error(f'Error getting SR context: {e}')
+            return {'support_levels': [], 'resistance_levels': [], 'current_price': current_price}
+
+    async def _detect_support_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect support levels using the configured method."""
+        try:
+            self.logger.info(f'🔍 Starting support level detection using {self.sr_detection_method} method on {len(market_data)} data points')
+            levels = []
+            
+            if self.sr_detection_method == 'fractal':
+                self.logger.info('📊 Using fractal method for support detection...')
+                levels = self._detect_fractal_levels(market_data, 'support')
+            elif self.sr_detection_method == 'volume':
+                self.logger.info('📊 Using volume method for support detection...')
+                levels = self._detect_volume_levels(market_data, 'support')
+            elif self.sr_detection_method == 'pivot':
+                self.logger.info('📊 Using pivot method for support detection...')
+                levels = self._detect_pivot_levels(market_data, 'support')
+            elif self.sr_detection_method == 'atr':
+                self.logger.info('📊 Using ATR method for support detection...')
+                levels = self._detect_atr_levels(market_data, 'support')
+            else:
+                # Default to fractal
+                self.logger.info('📊 Using default fractal method for support detection...')
+                levels = self._detect_fractal_levels(market_data, 'support')
+            
+            self.logger.info(f'✅ Support detection completed: {len(levels)} levels found using {self.sr_detection_method} method')
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error detecting support levels: {e}')
+            return []
+
+    async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Detect resistance levels using the configured method."""
+        try:
+            self.logger.info(f'🔍 Starting resistance level detection using {self.sr_detection_method} method on {len(market_data)} data points')
+            levels = []
+            
+            if self.sr_detection_method == 'fractal':
+                self.logger.info('📊 Using fractal method for resistance detection...')
+                levels = self._detect_fractal_levels(market_data, 'resistance')
+            elif self.sr_detection_method == 'volume':
+                self.logger.info('📊 Using volume method for resistance detection...')
+                levels = self._detect_volume_levels(market_data, 'resistance')
+            elif self.sr_detection_method == 'pivot':
+                self.logger.info('📊 Using pivot method for resistance detection...')
+                levels = self._detect_pivot_levels(market_data, 'resistance')
+            elif self.sr_detection_method == 'atr':
+                self.logger.info('📊 Using ATR method for resistance detection...')
+                levels = self._detect_atr_levels(market_data, 'resistance')
+            else:
+                # Default to fractal
+                self.logger.info('📊 Using default fractal method for resistance detection...')
+                levels = self._detect_fractal_levels(market_data, 'resistance')
+            
+            self.logger.info(f'✅ Resistance detection completed: {len(levels)} levels found using {self.sr_detection_method} method')
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error detecting resistance levels: {e}')
+            return []
+
+    def _detect_fractal_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
+        """Detect levels using fractal method - optimized for large datasets."""
+        try:
+            levels = []
+            sample_data = market_data
+            
+            window = 5  # Increased window for better fractal detection
+            
+            if level_type == 'support':
+                # Use vectorized operations for better performance
+                lows = sample_data['low'].values
+                total_points = len(lows) - 2 * window
+
+                # Initialize enhanced progress logger
+                progress_logger = EnhancedProgressLogger(
+                    self.logger,
+                    total_items=total_points,
+                    operation_name=f"{level_type.capitalize()} fractal detection"
+                )
+                progress_logger.start()
+
+                for i in range(window, len(lows) - window):
+                    # Update progress with enhanced logging
+                    progress_logger.update(i - window)
+                    
+                    current_low = lows[i]
+                    # Check if current point is a local minimum
+                    if (current_low <= lows[i-window:i].min() and 
+                        current_low <= lows[i+1:i+window+1].min()):
+                        
+                        # Simplified touch counting for performance
+                        touches = 1
+                        threshold = 0.002  # More sensitive threshold for better level detection
+                        
+                        # Optimized touch counting using vectorized operations
+                        start_idx = max(0, i - 500)
+                        end_idx = min(len(lows), i + 500)
+                        window_lows = lows[start_idx:end_idx]
+                        price_diffs = abs(window_lows - current_low) / current_low
+                        touches = np.sum(price_diffs < threshold)
+                        
+                        if touches >= 3:
+                            levels.append({
+                                'price': float(current_low),
+                                'strength': min(touches / 5, 1.0),  # Adjusted scaling
+                                'type': 'support',
+                                'method': 'fractal',
+                                'touch_count': touches,
+                                'timestamp': datetime.now().isoformat()
+                            })
+            else:  # resistance
+                # Use vectorized operations for better performance
+                highs = sample_data['high'].values
+                total_points = len(highs) - 2 * window
+
+                # Initialize enhanced progress logger
+                progress_logger = EnhancedProgressLogger(
+                    self.logger,
+                    total_items=total_points,
+                    operation_name=f"{level_type.capitalize()} fractal detection"
+                )
+                progress_logger.start()
+
+                for i in range(window, len(highs) - window):
+                    # Update progress with enhanced logging
+                    progress_logger.update(i - window)
+                    
+                    current_high = highs[i]
+                    # Check if current point is a local maximum
+                    if (current_high >= highs[i-window:i].max() and 
+                        current_high >= highs[i+1:i+window+1].max()):
+                        
+                        # Simplified touch counting for performance
+                        touches = 1
+                        threshold = 0.002  # More sensitive threshold for better level detection
+                        
+                        # Optimized touch counting using vectorized operations
+                        start_idx = max(0, i - 500)
+                        end_idx = min(len(highs), i + 500)
+                        window_highs = highs[start_idx:end_idx]
+                        price_diffs = abs(window_highs - current_high) / current_high
+                        touches = np.sum(price_diffs < threshold)
+                        
+                        if touches >= 3:
+                            levels.append({
+                                'price': float(current_high),
+                                'strength': min(touches / 5, 1.0),  # Adjusted scaling
+                                'type': 'resistance',
+                                'method': 'fractal',
+                                'touch_count': touches,
+                                'timestamp': datetime.now().isoformat()
+                            })
+
+                # Complete progress logging
+                progress_logger.complete()
+
+            # Limit the number of levels returned for performance
+            levels = levels[:50]  # Return max 50 levels for better coverage
+            self.logger.info(f'✅ Fractal detection found {len(levels)} {level_type} levels')
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error in fractal level detection: {e}')
+            return []
+
+    def _detect_volume_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
+        """Detect levels using volume-based method - vectorized for performance."""
+        try:
+            self.logger.info(f'🔍 Starting volume-based {level_type} level detection on {len(market_data)} points')
+            
+            # Enhanced volume analysis with HVN (High Volume Nodes)
+            # Use multiple volume thresholds for better level detection
+            volume_90th = market_data['volume'].quantile(0.9)
+            volume_80th = market_data['volume'].quantile(0.8)
+            volume_70th = market_data['volume'].quantile(0.7)
+            
+            # Create volume profile bins
+            price_range = market_data['high'].max() - market_data['low'].min()
+            bin_size = price_range / 50  # 50 price bins for volume profile
+            
+            # Calculate volume at each price level
+            volume_profile = {}
+            for idx, row in market_data.iterrows():
+                price_bin = round(row['low'] / bin_size) * bin_size
+                if price_bin not in volume_profile:
+                    volume_profile[price_bin] = 0
+                volume_profile[price_bin] += row['volume']
+            
+            # Find HVN (High Volume Nodes) - price levels with highest volume
+            sorted_volume_profile = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
+            hvn_levels = [price for price, volume in sorted_volume_profile[:20]]  # Top 20 HVN levels
+            
+            # Also get traditional high volume points
+            high_volume_mask = market_data['volume'] > volume_80th
+            high_volume_data = market_data[high_volume_mask]
+            
+            self.logger.info(f'📊 Found {len(high_volume_data)} high-volume points and {len(hvn_levels)} HVN levels')
+            
+            levels = []
+            
+            # Add HVN levels first (these are the most important)
+            for hvn_price in hvn_levels:
+                levels.append({
+                    'price': float(hvn_price),
+                    'strength': 0.9,  # High strength for HVN
+                    'type': level_type,
+                    'method': 'hvn',
+                    'touch_count': 1,
+                    'volume': float(volume_profile.get(hvn_price, 0)),
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            if len(high_volume_data) > 0:
+                if level_type == 'support':
+                    # Vectorized support level creation
+                    prices = high_volume_data['low'].values
+                    volumes = high_volume_data['volume'].values
+                    timestamps = high_volume_data.index
+                    
+                    for i, (price, volume) in enumerate(zip(prices, volumes)):
+                        levels.append({
+                            'price': float(price),
+                            'strength': 0.7,
+                            'type': 'support',
+                            'method': 'volume',
+                            'touch_count': 1,
+                            'volume': float(volume),
+                            'timestamp': timestamps[i].isoformat() if hasattr(timestamps[i], 'isoformat') else str(timestamps[i])
+                        })
+                else:  # resistance
+                    # Vectorized resistance level creation
+                    prices = high_volume_data['high'].values
+                    volumes = high_volume_data['volume'].values
+                    timestamps = high_volume_data.index
+                    
+                    for i, (price, volume) in enumerate(zip(prices, volumes)):
+                        levels.append({
+                            'price': float(price),
+                            'strength': 0.7,
+                            'type': 'resistance',
+                            'method': 'volume',
+                            'touch_count': 1,
+                            'volume': float(volume),
+                            'timestamp': timestamps[i].isoformat() if hasattr(timestamps[i], 'isoformat') else str(timestamps[i])
+                        })
+            
+            # Limit results for performance
+            levels = levels[:30]  # Max 30 volume levels (including HVN)
+            self.logger.info(f'✅ Volume detection found {len(levels)} {level_type} levels')
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error in volume level detection: {e}')
+            return []
+
+    def _detect_pivot_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
+        """Detect levels using pivot point method."""
+        try:
+            levels = []
+            # Simple pivot point calculation
+            if len(market_data) >= 24:  # Need at least 24 hours of data
+                high_24h = market_data['high'].iloc[-24:].max()
+                low_24h = market_data['low'].iloc[-24:].min()
+                close = market_data['close'].iloc[-1]
+                
+                pivot = (high_24h + low_24h + close) / 3
+                r1 = 2 * pivot - low_24h
+                s1 = 2 * pivot - high_24h
+                
+                if level_type == 'support':
+                    levels.append({
+                        'price': s1,
+                        'strength': 0.6,
+                        'type': 'support',
+                        'method': 'pivot',
+                        'touch_count': 1,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:  # resistance
+                    levels.append({
+                        'price': r1,
+                        'strength': 0.6,
+                        'type': 'resistance',
+                        'method': 'pivot',
+                        'touch_count': 1,
+                        'timestamp': datetime.now().isoformat()
+                    })
+            
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error in pivot level detection: {e}')
+            return []
+
+    def _detect_atr_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
+        """Detect levels using ATR-based method."""
+        try:
+            levels = []
+            atr = self._calculate_atr(market_data)
+            current_price = market_data['close'].iloc[-1]
+            
+            if level_type == 'support':
+                support_price = current_price - (atr * 2)
+                levels.append({
+                    'price': support_price,
+                    'strength': 0.5,
+                    'type': 'support',
+                    'method': 'atr',
+                    'touch_count': 1,
+                    'atr': atr,
+                    'timestamp': datetime.now().isoformat()
+                })
+            else:  # resistance
+                resistance_price = current_price + (atr * 2)
+                levels.append({
+                    'price': resistance_price,
+                    'strength': 0.5,
+                    'type': 'resistance',
+                    'method': 'atr',
+                    'touch_count': 1,
+                    'atr': atr,
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            return levels
+        except Exception as e:
+            self.logger.error(f'Error in ATR level detection: {e}')
+            return []
+
+    def _count_level_touches(self, data: pd.DataFrame, level_price: float, level_type: str, start_idx: int) -> int:
+        """Count how many times price touched this level."""
+        try:
+            touches = 1
+            threshold = 0.002
+            
+            for i in range(start_idx + 1, len(data)):
+                if level_type == 'resistance':
+                    if abs(data['high'].iloc[i] - level_price) / level_price < threshold:
+                        touches += 1
+                else:  # support
+                    if abs(data['low'].iloc[i] - level_price) / level_price < threshold:
+                        touches += 1
+            
+            return touches
+        except Exception as e:
+            self.logger.error(f'Error counting level touches: {e}')
+            return 1
+
+# Alias for backward compatibility
+SRBreakoutPredictor = EnhancedSRBreakoutPredictor

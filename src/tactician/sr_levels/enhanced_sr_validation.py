@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """Enhanced S/R Validation and Backtesting Module.
+from ...utils.logger import system_logger
 
 This module provides comprehensive validation and backtesting capabilities
 for S/R level detection with advanced performance metrics.
@@ -10,9 +12,8 @@ import pandas as pd
 import warnings
 
 warnings.filterwarnings('ignore')
-from .core.decorators import handles_errors, traced
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+, traced
+from ...utils.logger import system_logger
 import logging
 import os
 
@@ -69,7 +70,7 @@ class EnhancedSRValidator:
         self.confidence_level = config.get('confidence_level', 0.95)
         self.min_sample_size = config.get('min_sample_size', 10)
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='validate SR levels')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='validate SR levels')
     @traced(span_name='EnhancedSR.validate_levels')
     def validate_sr_levels(self, levels: List[Any], market_data: pd.DataFrame) -> List[ValidationResult]:
         """
@@ -119,7 +120,7 @@ class EnhancedSRValidator:
             confidence_interval = self._calculate_confidence_interval(bounce_ratios)
             statistical_significance = self._calculate_statistical_significance(level, validation_data)
             validation_score = self._calculate_validation_score(bounce_rate, false_breakout_rate, volume_confirmation_rate, touch_count, failure_count, statistical_significance)
-            result = ValidationResult(level_id=f'level_{level_id}', level_price=level_price, level_type=level_type, validation_score=validation_score, bounce_rate=bounce_rate, false_breakout_rate=false_breakout_rate, volume_confirmation_rate=volume_confirmation_rate, time_to_breakout=time_to_breakout, max_bounce_ratio=bounce_ratios['max'] if bounce_ratios else 0.0, avg_bounce_ratio=bounce_ratios['avg'] if bounce_ratios else 0.0, touch_count=touch_count, failure_count=failure_count, confidence_interval=confidence_interval, statistical_significance=statistical_significance, metadata={'validation_period_bars': len(validation_data), 'level_strength': getattr(level, 'strength', 0.0), 'level_confidence': getattr(level, 'confidence_score', 0.0)})
+            result = ValidationResult(level_id = f'level_{level_id}', level_price = level_price, level_type = level_type, validation_score = validation_score, bounce_rate = bounce_rate, false_breakout_rate = false_breakout_rate, volume_confirmation_rate = volume_confirmation_rate, time_to_breakout = time_to_breakout, max_bounce_ratio = bounce_ratios['max'] if bounce_ratios else 0.0, avg_bounce_ratio = bounce_ratios['avg'] if bounce_ratios else 0.0, touch_count = touch_count, failure_count = failure_count, confidence_interval = confidence_interval, statistical_significance = statistical_significance, metadata={'validation_period_bars': len(validation_data), 'level_strength': getattr(level, 'strength', 0.0), 'level_confidence': getattr(level, 'confidence_score', 0.0)})
             return result
         except Exception as e:
             self.logger.warning(f'Single level validation failed: {e}')
@@ -202,7 +203,7 @@ class EnhancedSRValidator:
             level_price = getattr(level, 'price', 0.0)
             level_type = getattr(level, 'type', 'unknown')
             threshold = level_price * self.bounce_threshold
-            volume_ma = data['volume'].rolling(window=20).mean()
+            volume_ma = data['volume'].rolling(window = 20).mean()
             volume_confirmations = 0
             total_touches = 0
             for i, row in data.iterrows():
@@ -345,7 +346,7 @@ class EnhancedSRValidator:
             self.logger.warning(f'Validation score calculation failed: {e}')
             return 0.0
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='run comprehensive backtest')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='run comprehensive backtest')
     @traced(span_name='EnhancedSR.backtest')
     def run_comprehensive_backtest(self, levels: List[Any], market_data: pd.DataFrame) -> Optional[BacktestResult]:
         """
@@ -371,7 +372,7 @@ class EnhancedSRValidator:
             avg_false_breakout_rate = np.mean([r.false_breakout_rate for r in validation_results])
             avg_volume_confirmation = np.mean([r.volume_confirmation_rate for r in validation_results])
             performance_metrics = self._calculate_trading_performance(validation_results, market_data)
-            result = BacktestResult(total_levels=total_levels, validated_levels=validated_levels, avg_validation_score=avg_validation_score, avg_bounce_rate=avg_bounce_rate, avg_false_breakout_rate=avg_false_breakout_rate, avg_volume_confirmation=avg_volume_confirmation, sharpe_ratio=performance_metrics.get('sharpe_ratio', 0.0), max_drawdown=performance_metrics.get('max_drawdown', 0.0), win_rate=performance_metrics.get('win_rate', 0.0), profit_factor=performance_metrics.get('profit_factor', 0.0), total_trades=performance_metrics.get('total_trades', 0), successful_trades=performance_metrics.get('successful_trades', 0), failed_trades=performance_metrics.get('failed_trades', 0), performance_metrics=performance_metrics, level_performance={r.level_id: r for r in validation_results})
+            result = BacktestResult(total_levels = total_levels, validated_levels = validated_levels, avg_validation_score = avg_validation_score, avg_bounce_rate = avg_bounce_rate, avg_false_breakout_rate = avg_false_breakout_rate, avg_volume_confirmation = avg_volume_confirmation, sharpe_ratio = performance_metrics.get('sharpe_ratio', 0.0), max_drawdown = performance_metrics.get('max_drawdown', 0.0), win_rate = performance_metrics.get('win_rate', 0.0), profit_factor = performance_metrics.get('profit_factor', 0.0), total_trades = performance_metrics.get('total_trades', 0), successful_trades = performance_metrics.get('successful_trades', 0), failed_trades = performance_metrics.get('failed_trades', 0), performance_metrics = performance_metrics, level_performance={r.level_id: r for r in validation_results})
             self.logger.info(f'✅ Backtest completed: {validated_levels}/{total_levels} levels validated')
             return result
         except Exception as e:

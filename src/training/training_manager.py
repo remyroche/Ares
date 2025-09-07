@@ -2,20 +2,22 @@
 
 import warnings
 from datetime import datetime
-from typing import Any, Number
+from typing import Any, Union
+from numbers import Number
+from src.core.error_classes import execution_error, initialization_error
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 warnings.filterwarnings("ignore")
 
 # Import the new RegularizationManager
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 
-from src.utils.warning_symbols import (
+from ..utils.warning_symbols import (
     error,
     failed,
-    initialization_error,
     invalid,
     missing,
     validation_error,
@@ -63,7 +65,7 @@ class TrainingManager:
             AttributeError: (False, "Missing required training parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="training manager initialization",
     )
     async def initialize(self) -> bool:
@@ -95,7 +97,7 @@ class TrainingManager:
             self.print(failed("❌ Training Manager initialization failed: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_training_configuration(self) -> None:
         """Load training configuration."""
         try:
@@ -122,7 +124,7 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """Validate training configuration.
         
@@ -161,7 +163,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_training_modules(self) -> None:
         """Initialize training modules."""
         try:
@@ -194,7 +196,7 @@ class TrainingManager:
     async def _initialize_feature_integration(self) -> None:
         """Initialize feature integration manager."""
         try:
-            from .training.feature_integration import FeatureIntegrationManager
+            from .feature_integration import FeatureIntegrationManager
             
             self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()
@@ -204,7 +206,7 @@ class TrainingManager:
                 f"Error initializing feature integration manager: {e}",
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_model_training(self) -> None:
         """Initialize model training module."""
         try:
@@ -223,7 +225,7 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_hyperparameter_optimization(self) -> None:
         """Initialize hyperparameter optimization module."""
         try:
@@ -242,7 +244,7 @@ class TrainingManager:
                 f"Error initializing hyperparameter optimization: {e}",
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_model_evaluation(self) -> None:
         """Initialize model evaluation module."""
         try:
@@ -261,7 +263,7 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(initialization_error(error_msg))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_model_persistence(self) -> None:
         """Initialize model persistence module."""
         try:
@@ -286,7 +288,7 @@ class TrainingManager:
             AttributeError: (False, "Missing training components"),
             KeyError: (False, "Missing required training data"),
         },
-        default_return=False,
+        default_return = False,
         context="training execution",
     )
     async def execute_training(self, training_input: dict[str, Any]) -> bool:
@@ -340,7 +342,7 @@ class TrainingManager:
         self.logger.info("✅ Training execution completed successfully")
         return True
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_training_inputs(self, training_input: dict[str, Any]) -> bool:
         """Validate training inputs.
 
@@ -369,7 +371,7 @@ class TrainingManager:
 
         return True
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_model_training(
         self,
         training_input: dict[str, Any],
@@ -421,7 +423,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_hyperparameter_optimization(
         self,
         training_input: dict[str, Any],
@@ -483,7 +485,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_model_evaluation(
         self,
         training_input: dict[str, Any],
@@ -533,7 +535,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_model_persistence(
         self,
         training_input: dict[str, Any],
@@ -611,9 +613,9 @@ class TrainingManager:
                 # Use feature integration manager to add advanced features including liquidity
                 integrated_data = (
                     await self.feature_integration_manager.integrate_features(
-                        historical_data=historical_data,
-                        market_data=market_data,
-                        order_flow_data=order_flow_data,
+                        historical_data = historical_data,
+                        market_data = market_data,
+                        order_flow_data = order_flow_data,
                     )
                 )
 
@@ -912,7 +914,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _store_training_results(self) -> None:
         """Store training results."""
         try:
@@ -933,7 +935,7 @@ class TrainingManager:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_training_results(
         self,
         training_type: str | None = None,
@@ -958,7 +960,7 @@ class TrainingManager:
             self.print(error(error_msg))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_training_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get training history.
 
@@ -1007,7 +1009,7 @@ class TrainingManager:
             "training_history_count": len(self.training_history),
         }
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the training manager."""
         self.logger.info("🛑 Stopping Training Manager...")
@@ -1032,7 +1034,7 @@ class TrainingManager:
 # Global training manager instance
 training_manager: TrainingManager | None = None
 
-@handles_errors(fallback=None)
+@handles_errors(fallback = None)
 async def setup_training_manager(
     config: dict[str, Any] | None = None,
 ) -> TrainingManager | None:

@@ -1,4 +1,7 @@
 
+from .logger import system_logger
+from .logger import system_logger
+from .core.decorators import handles_errors
 '\nComprehensive Security Framework\n\nThis module provides centralized security controls including:\n- Credential management and encryption\n- API key security\n- Data encryption/decryption\n- Access control and authentication\n- Audit logging and monitoring\n- Security validation and compliance\n'
 import base64
 import hashlib
@@ -14,7 +17,6 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 
-from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
@@ -33,7 +35,7 @@ class SecurityViolation(Exception):
 class CredentialManager:
     """Manages API credentials and sensitive data securely."""
 
-    def __init__(self, master_key: str | None=None) -> None:
+    def __init__(self, master_key: str | None = None) -> None:
         """Initialize credential manager.
 
         Args:
@@ -41,7 +43,7 @@ class CredentialManager:
         """
         self.logger = system_logger.getChild('CredentialManager')
         self.credentials_file = Path('data_cache/credentials.enc')
-        self.credentials_file.parent.mkdir(parents=True, exist_ok=True)
+        self.credentials_file.parent.mkdir(parents = True, exist_ok = True)
         if master_key is None:
             master_key = self._generate_master_key()
         self.master_key = master_key
@@ -79,7 +81,7 @@ class CredentialManager:
         except Exception as e:
             self.logger.exception(f'Could not save credentials: {e}')
 
-    def store_credential(self, service: str, key: str, value: str, security_level: SecurityLevel=SecurityLevel.HIGH) -> None:
+    def store_credential(self, service: str, key: str, value: str, security_level: SecurityLevel = SecurityLevel.HIGH) -> None:
         """Store a credential securely.
 
         Args:
@@ -161,7 +163,7 @@ class CredentialManager:
 class DataEncryption:
     """Handles data encryption and decryption."""
 
-    def __init__(self, encryption_key: str | None=None) -> None:
+    def __init__(self, encryption_key: str | None = None) -> None:
         """Initialize data encryption.
 
         Args:
@@ -224,7 +226,7 @@ class DataEncryption:
             msg = f'Decryption failed: {e}'
             raise SecurityViolation(msg)
 
-    def encrypt_file(self, file_path: str, output_path: str | None=None) -> str:
+    def encrypt_file(self, file_path: str, output_path: str | None = None) -> str:
         """Encrypt a file.
 
         Args:
@@ -249,7 +251,7 @@ class DataEncryption:
             msg = f'File encryption failed: {e}'
             raise SecurityViolation(msg)
 
-    def decrypt_file(self, file_path: str, output_path: str | None=None) -> str:
+    def decrypt_file(self, file_path: str, output_path: str | None = None) -> str:
         """Decrypt a file.
 
         Args:
@@ -289,7 +291,7 @@ class AccessControl:
         self.access_tokens = {}
         self.permissions = {'admin': ['read', 'write', 'delete', 'execute', 'configure'], 'user': ['read', 'write'], 'viewer': ['read'], 'api': ['read', 'write']}
 
-    def generate_access_token(self, user_id: str, permissions: list[str], expires_in: int=3600) -> str:
+    def generate_access_token(self, user_id: str, permissions: list[str], expires_in: int = 3600) -> str:
         """Generate an access token.
 
         Args:
@@ -301,7 +303,7 @@ class AccessControl:
             Access token
         """
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
+        expires_at = datetime.now() + timedelta(seconds = expires_in)
         self.access_tokens[token] = {'user_id': user_id, 'permissions': permissions, 'created_at': datetime.now().isoformat(), 'expires_at': expires_at.isoformat()}
         self.logger.info(f'Generated access token for user {user_id}')
         return token
@@ -365,7 +367,7 @@ class AuditLogger:
         """
         self.logger = system_logger.getChild('AuditLogger')
         self.log_file = Path(log_file)
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file.parent.mkdir(parents = True, exist_ok = True)
         self.audit_handler = logging.FileHandler(self.log_file)
         self.audit_handler.setLevel(logging.INFO)
         self.audit_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -374,7 +376,7 @@ class AuditLogger:
         self.audit_logger.addHandler(self.audit_handler)
         self.audit_logger.setLevel(logging.INFO)
 
-    def log_security_event(self, event_type: str, user_id: str, action: str, details: dict[str, Any], severity: SecurityLevel=SecurityLevel.MEDIUM) -> None:
+    def log_security_event(self, event_type: str, user_id: str, action: str, details: dict[str, Any], severity: SecurityLevel = SecurityLevel.MEDIUM) -> None:
         """Log a security event.
 
         Args:
@@ -410,7 +412,7 @@ class AuditLogger:
 class SecurityFramework:
     """Comprehensive security framework."""
 
-    def __init__(self, master_key: str | None=None) -> None:
+    def __init__(self, master_key: str | None = None) -> None:
         """Initialize security framework.
 
         Args:
@@ -424,7 +426,7 @@ class SecurityFramework:
         self.audit_logger = AuditLogger()
         self.security_policies = {'password_min_length': 12, 'password_complexity': True, 'session_timeout': 3600, 'max_login_attempts': 5, 'encryption_required': True, 'audit_logging': True}
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def validate_security_configuration(self) -> bool:
         """Validate security configuration.
 
@@ -447,7 +449,7 @@ class SecurityFramework:
             self.logger.exception(f'Security configuration validation failed: {e}')
             return False
 
-    def secure_api_call(self, service: str, endpoint: str, data: dict[str, Any], security_level: SecurityLevel=SecurityLevel.HIGH) -> dict[str, Any]:
+    def secure_api_call(self, service: str, endpoint: str, data: dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH) -> dict[str, Any]:
         """Make a secure API call.
 
         Args:

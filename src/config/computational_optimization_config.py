@@ -128,7 +128,7 @@ def get_optimization_config(
 
     if custom_config:
         # Deep merge custom configuration
-        config = _deep_merge_config(config=custom_config)
+        config = _deep_merge_config(config = custom_config)
 
     return config
 

@@ -19,17 +19,17 @@ import logging
 import time
 
 # Add the project root to the Python path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-logger=system_logger.getChild("AggTradesFormatComparator")
+logger = system_logger.getChild("AggTradesFormatComparator")
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=False,
+    default_return = False,
     context="compare_agg_trades_formats",
 )
-async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=24) -> bool:
+async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int = 24) -> bool:
     """
     Compare aggregated trades formats between MEXC and Binance.
 
@@ -43,11 +43,11 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
     logger.info(f"🔍 Comparing aggregated trades formats for {symbol}")
 
     # Calculate time range
-    end_time=datetime.now()
-    start_time=end_time - timedelta(hours=lookback_hours)
+    end_time = datetime.now()
+    start_time = end_time - timedelta(hours = lookback_hours)
 
-    start_time_ms=int(start_time.timestamp() * 1000)
-    end_time_ms=int(end_time.timestamp() * 1000)
+    start_time_ms = int(start_time.timestamp() * 1000)
+    end_time_ms = int(end_time.timestamp() * 1000)
 
     logger.info(f"📅 Time range: {start_time} to {end_time}")
 
@@ -61,11 +61,11 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
 
     for exchange_name, exchange in exchanges.items():
         logger.info(f"📥 Downloading from {exchange_name.upper()}...")
-        trades=await exchange.get_historical_agg_trades(
-            symbol, start_time_ms=start_time_ms, end_time_ms=end_time_ms, limit=100,
+        trades = await exchange.get_historical_agg_trades(
+            symbol, start_time_ms = start_time_ms, end_time_ms = end_time_ms, limit = 100,
         )
         if trades:
-            df=pd.DataFrame(trades)
+            df = pd.DataFrame(trades)
             results[exchange_name] = df
             logger.info(
                 f"✅ Downloaded {len(trades)} trades from {exchange_name.upper()}",
@@ -76,12 +76,12 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
 
     # Compare formats (columns) between the two exchanges
     if "binance" in results and "mexc" in results:
-        binance_cols=set(results["binance"].columns)
-        mexc_cols=set(results["mexc"].columns)
+        binance_cols = set(results["binance"].columns)
+        mexc_cols = set(results["mexc"].columns)
         if binance_cols== mexc_cols:
             logger.info("✅ Column formats match between MEXC and Binance")
             return True
-        missing_in_mexc=binance_cols - mexc_cols
+        missing_in_mexc = binance_cols - mexc_cols
         missing_in_binance = mexc_cols - binance_cols
         if missing_in_mexc:
             print(missing(f"❌ Columns missing in MEXC: {sorted(missing_in_mexc)}"))
@@ -94,10 +94,10 @@ async def compare_agg_trades_formats(symbol: str="BTCUSDT", lookback_hours: int=
 
 
 def main():
-    parser=argparse.ArgumentParser(description="Compare aggregated trades formats")
+    parser = argparse.ArgumentParser(description="Compare aggregated trades formats")
     parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol")
-    parser.add_argument("--hours", type=int, default=24, help="Lookback hours")
-    args=parser.parse_args()
+    parser.add_argument("--hours", type = int, default = 24, help="Lookback hours")
+    args = parser.parse_args()
 
     asyncio.run(await compare_agg_trades_formats(args.symbol, args.hours))
 

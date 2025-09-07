@@ -1,13 +1,15 @@
 """Performance Monitoring System for Step 7 Enhanced Matrix Operations.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides performance monitoring and resource usage tracking
 for all functions and operations.
 """
 import time
 import gc
 from typing import Any, Dict
-import numpy as np
 import logging
+import numpy as np
 
 # Optional dependencies with fallback handling
 try:
@@ -20,7 +22,7 @@ except ImportError:
 
 class PerformanceMonitor:
     """Performance monitoring and resource usage tracking for all functions."""
-    
+
     def __init__(self, logger):
         self.logger = logger
         self.performance_metrics = {}
@@ -106,7 +108,7 @@ class PerformanceMonitor:
         """Get current system resource usage."""
         if self.psutil_available:
             return {
-                'cpu_percent': psutil.cpu_percent(interval=1),
+                'cpu_percent': psutil.cpu_percent(interval = 1),
                 'memory_percent': psutil.virtual_memory().percent,
                 'memory_available_gb': psutil.virtual_memory().available / 1024 / 1024 / 1024,
                 'disk_usage_percent': psutil.disk_usage('/').percent,

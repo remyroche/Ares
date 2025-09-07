@@ -21,8 +21,8 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.training.steps.config import CONFIG  # noqa: E402
-from src.training.steps.utils.base_validator import BaseValidator  # noqa: E402
+from .training.steps.config import CONFIG  # noqa: E402
+from .training.steps.utils.base_validator import BaseValidator  # noqa: E402
 
 
 import logging
@@ -194,7 +194,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         from src.training.steps.utils.logger import log_io_operation, log_dataframe_overview
                         from src.training.steps.data.parquet_dataset_manager import ParquetDatasetManager
 
-                        pdm = ParquetDatasetManager(logger=self.logger)
+                        pdm = ParquetDatasetManager(logger = self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
                         if os.path.isdir(part_base):
                             filters: list[tuple[str, str, Any]] = [
@@ -211,9 +211,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             columns = ["timestamp", "signal", "confidence"]
                             signals_data = pdm.scan_dataset(
                                 part_base,
-                                filters=filters,
-                                columns=columns,
-                                to_pandas=True,
+                                filters = filters,
+                                columns = columns,
+                                to_pandas = True,
                             )
                         else:
                             from src.utils.logger import (
@@ -225,7 +225,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 self.logger,
                                 "read_parquet",
                                 signals_parquet,
-                                columns=True,
+                                columns = True,
                             ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet,
@@ -358,7 +358,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                     try:
                         from src.training.steps.data.parquet_dataset_manager import ParquetDatasetManager
 
-                        pdm = ParquetDatasetManager(logger=self.logger)
+                        pdm = ParquetDatasetManager(logger = self.logger)
                         part_base = os.path.join(data_dir, "parquet", "labeled")
                         if os.path.isdir(part_base):
                             filters = [
@@ -374,9 +374,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             columns = ["timestamp", "label"]
                             labels_data = pdm.scan_dataset(
                                 part_base,
-                                filters=filters,
-                                columns=columns,
-                                to_pandas=True,
+                                filters = filters,
+                                columns = columns,
+                                to_pandas = True,
                             )
                         else:
                             from src.utils.logger import (
@@ -388,7 +388,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 self.logger,
                                 "read_parquet",
                                 labels_parquet,
-                                columns=True,
+                                columns = True,
                             ):
                                 labels_data = pd.read_parquet(
                                     labels_parquet, columns=["timestamp", "label"],
@@ -439,7 +439,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 self.logger,
                                 "read_parquet",
                                 signals_parquet,
-                                columns=True,
+                                columns = True,
                             ):
                                 signals_data = pd.read_parquet(
                                     signals_parquet,

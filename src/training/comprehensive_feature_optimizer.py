@@ -53,7 +53,7 @@ class ComprehensiveFeatureOptimizer:
         """Extract optimized lookback periods from matrix optimization results."""
         optimized_periods = {}
         if not self.matrix_results:
-            self.logger.warning('⚠️ No matrix optimization results provided, using default periods')
+            self.logger.info('ℹ️ No matrix optimization results provided, using default periods (normal for step02_5)')
             return self._get_default_periods()
         if 'diverse_lookback_periods' in self.matrix_results:
             for feature_name, result in self.matrix_results['diverse_lookback_periods'].items():
@@ -72,7 +72,7 @@ class ComprehensiveFeatureOptimizer:
         """Get default periods when no optimization results are available."""
         return {'RSI': [7, 14, 21], 'MACD_fast': [8, 12, 16], 'Bollinger_Bands': [10, 20, 30], 'SMA': [5, 20, 50], 'EMA': [5, 20, 50], 'ATR': [10, 20, 30], 'Stochastic': [5, 14, 21], 'ADX': [10, 20, 30], 'CCI': [10, 20, 30], 'Williams_R': [5, 14, 21], 'MFI': [10, 20, 30], 'ROC': [5, 10, 20], 'MOM': [5, 10, 20], 'TSI': [10, 20, 30], 'UO': [5, 10, 20], 'AO': [5, 10, 20], 'CMF': [10, 20, 30], 'VWAP': [5, 10, 20], 'VWAP_Momentum': [5, 10, 20], 'VWAP_Volatility': [5, 10, 20]}
 
-    async def generate_comprehensive_features(self, data: pd.DataFrame, target: pd.Series, regime_labels: pd.Series | None=None) -> dict[str, Any]:
+    async def generate_comprehensive_features(self, data: pd.DataFrame, target: pd.Series, regime_labels: pd.Series | None = None) -> dict[str, Any]:
         """
         Generate comprehensive features using optimized lookback periods.
 
@@ -107,8 +107,8 @@ class ComprehensiveFeatureOptimizer:
             if self.config.ohlcv_price_features:
                 feature_tasks.append(('ohlcv', self._generate_ohlcv_price_features(data, target)))
             if self.config.parallel_processing:
-                results = await asyncio.gather(*[task for _, task in feature_tasks], return_exceptions=True)
-                for (feature_type, _), result in zip(feature_tasks, results, strict=False):
+                results = await asyncio.gather(*[task for _, task in feature_tasks], return_exceptions = True)
+                for (feature_type, _), result in zip(feature_tasks, results, strict = False):
                     if isinstance(result, Exception):
                         self.logger.error(f'❌ Error generating {feature_type} features: {result}')
                     else:
@@ -133,7 +133,7 @@ class ComprehensiveFeatureOptimizer:
         """Generate interaction features using optimized periods."""
         features = {}
         base_features = await self._generate_base_features(data, target)
-        top_features = self._select_top_features(base_features, target, max_features=20)
+        top_features = self._select_top_features(base_features, target, max_features = 20)
         interaction_pairs = self._generate_interaction_pairs(top_features)
         for _i, (feat1, feat2) in enumerate(interaction_pairs[:self.config.max_interaction_pairs]):
             try:
@@ -393,7 +393,7 @@ class ComprehensiveFeatureOptimizer:
                         if indicator == 'SMA':
                             ma = close.rolling(period).mean()
                         else:
-                            ma = close.ewm(span=period).mean()
+                            ma = close.ewm(span = period).mean()
                         features[f'{indicator.lower()}_{period}'] = ma
                         ma_slope = ma.diff(period)
                         if ma_slope.var() > self.config.quality_thresholds['min_variance']:
@@ -402,7 +402,7 @@ class ComprehensiveFeatureOptimizer:
                 tr1 = high - low
                 tr2 = abs(high - close.shift())
                 tr3 = abs(low - close.shift())
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                true_range = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
                 features[f'true_range_{period}'] = true_range.rolling(period).mean()
                 atr = true_range.rolling(period).mean()
                 features[f'atr_{period}'] = atr
@@ -437,7 +437,7 @@ class ComprehensiveFeatureOptimizer:
             corr = abs(feature_series.corr(target))
             if not pd.isna(corr):
                 correlations.append((corr, feature_series, feature_name))
-        correlations.sort(key=lambda x: x[0], reverse=True)
+        correlations.sort(key = lambda x: x[0], reverse = True)
         return [feature_series for _, feature_series, _ in correlations[:max_features]]
 
     def _generate_interaction_pairs(self, features: list[pd.Series]) -> list[tuple[pd.Series, pd.Series]]:
@@ -491,7 +491,7 @@ class ComprehensiveFeatureOptimizer:
             if indicator_name == 'SMA':
                 return data['close'].rolling(period).mean()
             if indicator_name == 'EMA':
-                return data['close'].ewm(span=period).mean()
+                return data['close'].ewm(span = period).mean()
             if indicator_name == 'ATR':
                 return self._calculate_atr(data, period)
             if indicator_name == 'VWAP':
@@ -504,8 +504,8 @@ class ComprehensiveFeatureOptimizer:
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI with specified period."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / loss
         return 100 - 100 / (1 + rs)
 
@@ -517,13 +517,13 @@ class ComprehensiveFeatureOptimizer:
         tr1 = high - low
         tr2 = abs(high - close.shift())
         tr3 = abs(low - close.shift())
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         return tr.rolling(period).mean()
 
     def _calculate_vwap(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate VWAP with specified period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        return (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
 
     def _calculate_roll_spread(self, data: pd.DataFrame, period: int) -> pd.Series | None:
         """Calculate Roll spread estimator."""
@@ -615,7 +615,7 @@ class ComprehensiveFeatureOptimizer:
             results = {'comprehensive_feature_optimization': {'total_features_generated': len(self.optimized_periods), 'optimized_periods': self.optimized_periods, 'config': {'interaction_features': self.config.interaction_features, 'difference_acceleration_features': self.config.difference_acceleration_features, 'cross_timeframe_features': self.config.cross_timeframe_features, 'microstructure_features': self.config.microstructure_features, 'volatility_features': self.config.volatility_features, 'momentum_features': self.config.momentum_features, 'liquidity_features': self.config.liquidity_features, 'candlestick_patterns': self.config.candlestick_patterns, 'ohlcv_price_features': self.config.ohlcv_price_features}}}
             output_file = Path(output_path) / 'comprehensive_feature_optimization_results.json'
             with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+                json.dump(results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved comprehensive feature optimization results to: {output_file}')
         except Exception as e:
             self.logger.exception(f'❌ Failed to save optimization results: {e}')

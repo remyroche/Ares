@@ -1,31 +1,67 @@
-"""Step 2: Data Reading - Refactored to use BaseStep.
+
+"""Step 2: Data Reading - Refactored to use BaseStep with Hardware Optimizations.
+from src.utils.logger import system_logger
 
 This module handles reading the unified data from step1_5 and performs comprehensive
-data quality validation before proceeding to HMM regime discovery.
+data quality validation before proceeding to HMM regime discovery with M1 hardware acceleration.
 """
+from src.core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from pathlib import Path
 from src.training.base_step import BaseStep
-from src.utils.decorators.errors import handles_errors
 from src.utils.common_operations import validate_dataframe_schema, validate_data_quality
 from src.utils.parquet_utils import ParquetUtils
+from src.utils.pipeline_standards import PipelineStandards
 from typing import Any, Dict, Tuple
 import pandas as pd
 from src.utils.logger import system_logger
 import numpy as np
 import logging
 
+# Import optimization utilities for enhanced performance
+try:
+    from src.utils.vectorized_processing_core import get_vectorized_processing_core
+    from src.utils.optimized_data_manager import get_optimized_data_manager
+    from src.utils.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
+    OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    OPTIMIZATIONS_AVAILABLE = False
+
 class DataReadingStep(BaseStep):
     """Step 2: Data Reading and Validation using standardized base class."""
 
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize data reading step.
-        
+
         Args:
             config: Configuration dictionary
         """
         super().__init__(config, '02', 'data_reading')
         self.logger = system_logger.getChild('DataReadingStep')
         self.data_quality_thresholds = config.get('data_quality_thresholds', {'min_rows': 1000, 'max_missing_pct': 0.05, 'min_unique_timestamps': 500})
+
+        # Initialize optimization components
+        if OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.vectorized_core = get_vectorized_processing_core()
+                self.data_manager = get_optimized_data_manager()
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.logger.info('🚀 Step 2 initialized with M1 hardware acceleration and vectorized processing')
+            except Exception as e:
+                self.logger.warning(f'Failed to initialize optimizations: {e}')
+                self.vectorized_core = None
+                self.data_manager = None
+                self.gpu_manager = None
+                self.memory_optimizer = None
+        else:
+            self.vectorized_core = None
+            self.data_manager = None
+            self.gpu_manager = None
+            self.memory_optimizer = None
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -38,6 +74,7 @@ class DataReadingStep(BaseStep):
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the step."""
         return await self.execute_logic(training_input, pipeline_state)
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
@@ -56,7 +93,8 @@ class DataReadingStep(BaseStep):
             exchange = training_input.get('exchange', '').upper()
             timeframe = training_input.get('timeframe', '1m')
             if symbol and exchange and timeframe:
-                data_path = f'data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}'
+                standards = PipelineStandards(self.logger)
+                data_path = standards.build_path('unified_partitioned', exchange, symbol, timeframe=timeframe)
                 self.logger.info(f'Constructed data path for validation: {data_path}')
             else:
                 errors.append('No unified_data_path or raw_market_data in pipeline state, and cannot construct from training input')
@@ -67,7 +105,7 @@ class DataReadingStep(BaseStep):
                 errors.append(f'Missing required input: {key}')
         return (len(errors) == 0, errors)
 
-    @handles_errors(Exception, fallback={'success': False})
+    @handles_errors(exceptions=(Exception,), default_return={'success': False})
     async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data reading and validation logic.
         
@@ -83,7 +121,8 @@ class DataReadingStep(BaseStep):
             symbol = training_input.get('symbol', '').upper()
             exchange = training_input.get('exchange', '').upper()
             timeframe = training_input.get('timeframe', '1m')
-            data_path = f'data/training/unified/{exchange.lower()}/{symbol}/{timeframe}/exchange={exchange}'
+            standards = PipelineStandards(self.logger)
+            data_path = standards.build_path('unified_partitioned', exchange, symbol, timeframe=timeframe)
             self.logger.info(f'📖 Constructed data path: {data_path}')
         else:
             self.logger.info(f'📖 Reading data from: {data_path}')
@@ -105,7 +144,7 @@ class DataReadingStep(BaseStep):
                         dataframes.append(df)
                 if not dataframes:
                     raise ValueError(f'Failed to read any data from parquet files in {data_path}')
-                data = pd.concat(dataframes, ignore_index=True)
+                data = pd.concat(dataframes, ignore_index = True)
                 self.logger.info(f'📊 Concatenated {len(dataframes)} dataframes')
             else:
                 raise ValueError(f'Path does not exist: {data_path}')
@@ -121,7 +160,7 @@ class DataReadingStep(BaseStep):
                 for ts_col in ['timestamp', 'date', 'time']:
                     if ts_col in data.columns:
                         data[ts_col] = pd.to_datetime(data[ts_col], errors='coerce')
-                        data.set_index(ts_col, inplace=True)
+                        data.set_index(ts_col, inplace = True)
                         break
         except Exception as e:
             self.logger.warning(f'⚠️ Could not normalize index: {e}')
@@ -132,7 +171,7 @@ class DataReadingStep(BaseStep):
         validation_results = self._validate_data_quality(data)
         pipeline_state['validated_data'] = data
         pipeline_state['data_validation_results'] = validation_results
-        pipeline_state['data_info'] = {'shape': data.shape, 'columns': list(data.columns), 'index_type': str(type(data.index)), 'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024, 'date_range': {'start': str(data.index.min()) if hasattr(data.index, 'min') else None, 'end': str(data.index.max()) if hasattr(data.index, 'max') else None}}
+        pipeline_state['data_info'] = {'shape': data.shape, 'columns': list(data.columns), 'index_type': str(type(data.index)), 'memory_usage_mb': data.memory_usage(deep = True).sum() / 1024 / 1024, 'date_range': {'start': str(data.index.min()) if hasattr(data.index, 'min') else None, 'end': str(data.index.max()) if hasattr(data.index, 'max') else None}}
         self._log_validation_summary(validation_results)
         pipeline_state['dataframe'] = data
         pipeline_state['validated_data'] = data
@@ -163,6 +202,7 @@ class DataReadingStep(BaseStep):
             if validation_results.get('total_rows', 0) < self.data_quality_thresholds['min_rows']:
                 errors.append(f"Insufficient data rows: {validation_results.get('total_rows', 0)}")
         return (len(errors) == 0, errors)
+    @log_all_calls
 
     def _validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Perform comprehensive data quality validation.
@@ -194,11 +234,11 @@ class DataReadingStep(BaseStep):
                 results['issues'].append(f'Duplicate timestamps: {duplicate_count}')
                 results['data_quality_score'] -= 10
         if all((col in data.columns for col in ['high', 'low', 'open', 'close'])):
-            invalid_high = (data['high'] < data[['open', 'close', 'low']].max(axis=1)).sum()
+            invalid_high = (data['high'] < data[['open', 'close', 'low']].max(axis = 1)).sum()
             if invalid_high > 0:
                 results['issues'].append(f'Invalid high values: {invalid_high} rows')
                 results['data_quality_score'] -= 5
-            invalid_low = (data['low'] > data[['open', 'close', 'high']].min(axis=1)).sum()
+            invalid_low = (data['low'] > data[['open', 'close', 'high']].min(axis = 1)).sum()
             if invalid_low > 0:
                 results['issues'].append(f'Invalid low values: {invalid_low} rows')
                 results['data_quality_score'] -= 5
@@ -225,6 +265,7 @@ class DataReadingStep(BaseStep):
             pass
         results['data_quality_score'] = max(0, results['data_quality_score'])
         return results
+    @log_all_calls
 
     def _log_validation_summary(self, validation_results: Dict[str, Any]) -> None:
         """Log a summary of validation results.

@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 """
+from .logger import system_logger
+from .logger import system_logger
 Database Security Module
 
 This module provides comprehensive database security including:
@@ -16,7 +19,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-from .error_handler import handles_errors
 from .logger import system_logger
 import numpy as np
 
@@ -149,9 +151,9 @@ class DatabaseSecurityManager:
             ssl_params = {}
             if params.get('ssl', False):
                 ssl_params = {'sslmode': 'verify-full', 'sslcert': params.get('sslcert'), 'sslkey': params.get('sslkey'), 'sslrootcert': params.get('sslrootcert')}
-            connection = psycopg2.connect(host=params['host'], port=params['port'], database=params['database'], user=params['username'], password=params.get('password'), **ssl_params, connect_timeout=self.security_policies['connection_timeout'])
+            connection = psycopg2.connect(host = params['host'], port = params['port'], database = params['database'], user = params['username'], password = params.get('password'), **ssl_params, connect_timeout = self.security_policies['connection_timeout'])
             connection.autocommit = False
-            connection.set_session(readonly=params.get('readonly', False))
+            connection.set_session(readonly = params.get('readonly', False))
             return connection
         except ImportError:
             raise Exception('psycopg2 not installed for PostgreSQL connections')
@@ -162,7 +164,7 @@ class DatabaseSecurityManager:
             ssl_config = {}
             if params.get('ssl', False):
                 ssl_config = {'ssl_ca': params.get('sslca'), 'ssl_cert': params.get('sslcert'), 'ssl_key': params.get('sslkey'), 'ssl_verify_cert': True}
-            connection = mysql.connector.connect(host=params['host'], port=params['port'], database=params['database'], user=params['username'], password=params.get('password'), **ssl_config, connection_timeout=self.security_policies['connection_timeout'] * 1000, autocommit=False)
+            connection = mysql.connector.connect(host = params['host'], port = params['port'], database = params['database'], user = params['username'], password = params.get('password'), **ssl_config, connection_timeout = self.security_policies['connection_timeout'] * 1000, autocommit = False)
             return connection
         except ImportError:
             raise Exception('mysql-connector-python not installed for MySQL connections')
@@ -178,7 +180,7 @@ class DatabaseSecurityManager:
                 stat = db_file.stat()
                 if stat.st_mode & 511 != 384:
                     self.logger.warning(f'Insecure SQLite file permissions: {db_file}')
-            connection = sqlite3.connect(db_path, timeout=self.security_policies['connection_timeout'], check_same_thread=False)
+            connection = sqlite3.connect(db_path, timeout = self.security_policies['connection_timeout'], check_same_thread = False)
             connection.execute('PRAGMA foreign_keys = ON')
             connection.execute('PRAGMA journal_mode = WAL')
             return connection
@@ -214,7 +216,7 @@ class DatabaseSecurityManager:
         except ImportError:
             raise Exception('redis not installed for Redis connections')
 
-    @handles_errors(Exception, fallback=None, context='secure query execution')
+    @handles_errors(Exception, fallback = None, context='secure query execution')
     def execute_secure_query(self, connection: Any, query: str, parameters: Optional[List[Any]]=None) -> Optional[List[Dict[str, Any]]]:
         """Execute a secure database query."
 

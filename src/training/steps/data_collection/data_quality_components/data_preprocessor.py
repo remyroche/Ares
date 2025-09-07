@@ -1,4 +1,7 @@
 """Data Preprocessor Component
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 Handles all data preprocessing operations for market data.
 Extracted from raw_data_quality_checker.py
 """
@@ -10,7 +13,7 @@ from typing import Any, Optional, Tuple
 import pandas as pd
 import numpy as np
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 
@@ -24,10 +27,12 @@ class DataPreprocessor:
     - Data resampling and interpolation
     - Gap filling and data continuity
     """
+    @log_important_calls
     
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.logger = system_logger.getChild("DataPreprocessor")
         self.config = config or self._get_default_config()
+    @log_all_calls
         
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for preprocessing."""
@@ -72,7 +77,7 @@ class DataPreprocessor:
         tolerance_percentage = self.config["tolerance"]["interval_tolerance_percentage"]
         tolerance_seconds = expected_interval_seconds * tolerance_percentage
         
-        irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)]
+        irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
         irregular_ratio = len(irregular_intervals) / len(time_diffs)
         
         self.logger.info('🔍 Interval analysis:')
@@ -83,19 +88,19 @@ class DataPreprocessor:
         if irregular_ratio > self.config["tolerance"]["irregular_interval_threshold"]:
             self.logger.info('🔧 Applying enhanced preprocessing to fix irregular intervals')
             fixed_data = self.enhanced_preprocess_market_data(
-                data=data, 
-                symbol=symbol, 
-                exchange=exchange, 
-                expected_interval_seconds=int(expected_interval_seconds),
-                max_forward_fill_seconds=self.config['preprocessing']['max_forward_fill_seconds'],
-                download_missing_data=self.config['preprocessing']['download_missing_data']
+                data = data, 
+                symbol = symbol, 
+                exchange = exchange, 
+                expected_interval_seconds = int(expected_interval_seconds),
+                max_forward_fill_seconds = self.config['preprocessing']['max_forward_fill_seconds'],
+                download_missing_data = self.config['preprocessing']['download_missing_data']
             )
             
             # Verify the fix
             fixed_time_diffs = fixed_data.index.to_series().diff().dropna()
             if len(fixed_time_diffs) > 0:
                 fixed_expected_interval = fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else fixed_time_diffs.median()
-                fixed_irregular_intervals = fixed_time_diffs[abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds=tolerance_seconds)]
+                fixed_irregular_intervals = fixed_time_diffs[abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
                 fixed_irregular_ratio = len(fixed_irregular_intervals) / len(fixed_time_diffs)
                 
                 self.logger.info('✅ Fix verification:')
@@ -161,20 +166,21 @@ class DataPreprocessor:
         # Step 2: Re-add original data to preserve accuracy
         self.logger.info('🔧 Step 2: Re-adding original data to preserve accuracy')
         combined_data = resampled.copy()
-        for orig_time, orig_row in data.iterrows():
-            resampled_time = orig_time.floor(freq)
-            if resampled_time in combined_data.index:
-                combined_data.loc[resampled_time] = orig_row
+        # Vectorized replacement: floor original timestamps to bucket, deduplicate, update
+        orig = data.copy()
+        orig.index = orig.index.floor(freq)
+        orig = orig[~orig.index.duplicated(keep='last')]
+        combined_data.update(orig)
                 
         # Step 3: Analyze gaps and apply intelligent handling
         self.logger.info('🔧 Step 3: Analyzing gaps and applying intelligent handling')
         time_diffs = combined_data.index.to_series().diff().dropna()
-        gaps = time_diffs[time_diffs > pd.Timedelta(seconds=expected_interval_seconds)]
+        gaps = time_diffs[time_diffs > pd.Timedelta(seconds = expected_interval_seconds)]
         
         if len(gaps) > 0:
             self.logger.info(f'🔍 Found {len(gaps)} gaps in the data')
-            small_gaps = gaps[gaps <= pd.Timedelta(seconds=max_forward_fill_seconds)]
-            large_gaps = gaps[gaps > pd.Timedelta(seconds=max_forward_fill_seconds)]
+            small_gaps = gaps[gaps <= pd.Timedelta(seconds = max_forward_fill_seconds)]
+            large_gaps = gaps[gaps > pd.Timedelta(seconds = max_forward_fill_seconds)]
             
             self.logger.info(f'   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}')
             self.logger.info(f'   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}')
@@ -201,7 +207,7 @@ class DataPreprocessor:
             
         # Final verification
         final_gaps = combined_data.index.to_series().diff().dropna()
-        final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds=expected_interval_seconds)]
+        final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds = expected_interval_seconds)]
         
         self.logger.info('✅ Enhanced preprocessing completed:')
         self.logger.info(f'   Original shape: {data.shape}')
@@ -236,12 +242,21 @@ class DataPreprocessor:
         time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) > 0:
             expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-            if expected_interval.total_seconds() == 60:
+            seconds = int(expected_interval.total_seconds())
+            if seconds <= 60:
                 freq = '1T'
-            elif expected_interval.total_seconds() == 300:
+            elif seconds <= 300:
                 freq = '5T'
-            elif expected_interval.total_seconds() == 3600:
+            elif seconds <= 900:
+                freq = '15T'
+            elif seconds <= 1800:
+                freq = '30T'
+            elif seconds <= 3600:
                 freq = '1H'
+            elif seconds <= 14400:
+                freq = '4H'
+            elif seconds <= 86400:
+                freq = '1D'
             else:
                 freq = '1T'
         else:
@@ -260,6 +275,7 @@ class DataPreprocessor:
             data = data.resample(freq).ffill()
             
         return data
+    @log_all_calls
         
     def _download_and_fill_missing_data(
         self, 
@@ -294,9 +310,9 @@ class DataPreprocessor:
                 try:
                     # Run async downloader from sync context
                     success = asyncio.run(download_all_data_with_consolidation(
-                        symbol=symbol, 
-                        exchange_name=exchange, 
-                        interval=timeframe
+                        symbol = symbol, 
+                        exchange_name = exchange, 
+                        interval = timeframe
                     ))
                     
                     if not success:
@@ -313,6 +329,7 @@ class DataPreprocessor:
             return data
             
         return data
+    @log_all_calls
         
     def _determine_timeframe_from_data(self, data: pd.DataFrame) -> str:
         """Determine the timeframe from the data intervals.
@@ -349,6 +366,7 @@ class DataPreprocessor:
             return '1d'
         else:
             return '1d'
+    @log_all_calls
             
     def _load_and_filter_downloaded_data(
         self, 
@@ -381,13 +399,13 @@ class DataPreprocessor:
             for pattern in possible_paths:
                 files = glob.glob(pattern)
                 if files:
-                    files.sort(key=os.path.getmtime, reverse=True)
+                    files.sort(key = os.path.getmtime, reverse = True)
                     for file_path in files:
                         try:
                             self.logger.info(f'🔍 Loading data from: {file_path}')
                             
                             if file_path.endswith('.csv'):
-                                data = pd.read_csv(file_path, index_col=0, parse_dates=True)
+                                data = pd.read_csv(file_path, index_col = 0, parse_dates = True)
                             elif file_path.endswith('.parquet'):
                                 data = pd.read_parquet(file_path)
                             else:
@@ -408,6 +426,7 @@ class DataPreprocessor:
         except Exception as e:
             self.logger.exception(f'❌ Error searching for downloaded data: {e}')
             return None
+    @log_all_calls
             
     def _fill_gap_in_dataset(
         self, 

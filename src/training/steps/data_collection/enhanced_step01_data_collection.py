@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
 
 """
 Enhanced Step 1: Data Collection with Real-time Validation
@@ -23,7 +26,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 import collections
 import json
@@ -36,12 +39,14 @@ logger = system_logger.getChild("EnhancedStep01DataCollection")
 
 class EnhancedDataCollectionStep:
     """Enhanced Step 1: Data Collection with real-time validation."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.logger = logger.getChild('EnhancedDataCollectionStep')
         self.standards = pipeline_standards
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -138,7 +143,7 @@ class EnhancedDataCollectionStep:
             
             # Create data directory
             import os
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             
             # Initialize enhanced collection manager
             collection_manager = EnhancedDataCollectionManager(exchange, symbol, timeframe)
@@ -181,9 +186,9 @@ class EnhancedDataCollectionStep:
                 
                 # Download data
                 success = await download_all_data_with_consolidation(
-                    symbol=symbol,
-                    exchange_name=exchange,
-                    interval=timeframe
+                    symbol = symbol,
+                    exchange_name = exchange,
+                    interval = timeframe
                 )
                 
                 if not success:
@@ -270,7 +275,7 @@ class EnhancedDataCollectionStep:
             
             # Generate mock data for testing
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=7)  # 7 days of data
+            start_date = end_date - timedelta(days = 7)  # 7 days of data
             
             # Generate klines data
             klines_data = []
@@ -285,7 +290,7 @@ class EnhancedDataCollectionStep:
                     'close': str(3050.0 + np.random.normal(0, 50)),
                     'volume': str(1000.0 + np.random.uniform(0, 500))
                 })
-                current_time += timedelta(minutes=1)
+                current_time += timedelta(minutes = 1)
             
             # Generate aggtrades data
             aggtrades_data = []
@@ -299,7 +304,7 @@ class EnhancedDataCollectionStep:
                         'q': str(np.random.uniform(0.1, 5.0)),
                         'm': np.random.choice([True, False])
                     })
-                current_time += timedelta(minutes=1)
+                current_time += timedelta(minutes = 1)
             
             # Generate futures data
             futures_data = []
@@ -310,7 +315,7 @@ class EnhancedDataCollectionStep:
                     'fundingTime': int(current_time.timestamp() * 1000),
                     'fundingRate': str(np.random.normal(0, 0.0001))
                 })
-                current_time += timedelta(hours=8)  # Every 8 hours
+                current_time += timedelta(hours = 8)  # Every 8 hours
             
             self.logger.info(f'✅ Generated mock data: {len(klines_data)} klines, {len(aggtrades_data)} aggtrades, {len(futures_data)} futures')
             
@@ -444,6 +449,7 @@ class EnhancedDataCollectionStep:
         except Exception as e:
             self.logger.exception(f'❌ Error running enhanced quality check: {e}')
             return False
+    @log_all_calls
 
     def _calculate_quality_score(self, df: pd.DataFrame, data_type: str) -> float:
         """Calculate quality score for a DataFrame."""
@@ -457,11 +463,13 @@ class EnhancedDataCollectionStep:
             missing_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
             score -= missing_ratio * 0.3
             
-            # Check for infinite values
+            # Check for infinite values (vectorized)
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
             infinite_count = 0
             for col in numeric_cols:
-                infinite_count += df[col].apply(lambda x: float('inf') if pd.isna(x) else x).apply(lambda x: np.isinf(x) if isinstance(x, (int, float)) else False).sum()
+                col_data = df[col].values
+                # Vectorized infinite check
+                infinite_count += np.sum(np.isinf(col_data))
             
             if len(df) > 0:
                 infinite_ratio = infinite_count / (len(df) * len(numeric_cols))
@@ -593,7 +601,7 @@ if __name__ == "__main__":
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m",
-            force_rerun=True
+            force_rerun = True
         )
         
         if success:
@@ -602,3 +610,5 @@ if __name__ == "__main__":
             print("❌ Enhanced data collection failed")
     
     asyncio.run(main())
+#!/usr/bin/env python3
+import numpy as np

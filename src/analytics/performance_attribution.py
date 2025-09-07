@@ -2,12 +2,12 @@ from typing import Optional
 from typing import Dict
 from datetime import datetime
 from typing import Any
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 '\nPerformance Attribution System for 20 HMM Clusters and Timeframes\nTracks performance across clusters, timeframes, and barrier configurations\n'
 from collections import deque
 from dataclasses import dataclass
-from .utils.logger import system_logger
-from .core.decorators import handles_errors
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 import numpy as np
 import logging
 import time
@@ -43,15 +43,15 @@ class PerformanceAttributionSystem:
         self.logger = system_logger.getChild('PerformanceAttribution')
         self.attribution_config = config.get('performance_attribution', {})
         self.regime_names = [f'regime_{i:02d}' for i in range(20)]
-        self.timeframes = ['5m', '15m', '30m', '1h']
+        self.timeframes = ['1m', '5m', '15m', '30m', '1h']
         self.leverage_multiplier = self.attribution_config.get('leverage_multiplier', 10)
-        self.trade_attributions: deque = deque(maxlen=10000)
+        self.trade_attributions: deque = deque(maxlen = 10000)
         self.regime_metrics: Dict[str, Dict[str, Any]] = {}
         self.timeframe_metrics: Dict[str, Dict[str, Any]] = {}
         self.combined_metrics: Dict[str, Dict[str, Any]] = {}
         self.rolling_windows = {'short': 100, 'medium': 500, 'long': 1000}
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=False, context='performance attribution initialization')
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = False, context='performance attribution initialization')
     async def initialize(self) -> bool:
         """
         Initialize the Performance Attribution System.
@@ -62,21 +62,21 @@ class PerformanceAttributionSystem:
         try:
             self.logger.info('Initializing Performance Attribution System...')
             for regime in self.regime_names:
-                self.regime_metrics[regime] = {'trades': deque(maxlen=self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
+                self.regime_metrics[regime] = {'trades': deque(maxlen = self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
             for timeframe in self.timeframes:
-                self.timeframe_metrics[timeframe] = {'trades': deque(maxlen=self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
+                self.timeframe_metrics[timeframe] = {'trades': deque(maxlen = self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
             for regime in self.regime_names:
                 for timeframe in self.timeframes:
                     key = f'{regime}_{timeframe}'
-                    self.combined_metrics[key] = {'trades': deque(maxlen=self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
+                    self.combined_metrics[key] = {'trades': deque(maxlen = self.rolling_windows['long']), 'total_pnl': 0.0, 'trade_count': 0, 'last_updated': datetime.now()}
             self.logger.info('✅ Performance Attribution System initialized successfully')
             return True
         except Exception as e:
             self.logger.error(f'❌ Performance Attribution initialization failed: {e}')
             return False
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='trade attribution recording')
-    async def record_trade_attribution(self, trade_id: str, regime: str, timeframe: str, barrier_type: str, pnl: float, confidence: float, leverage: float=None, execution_time: float=None, metadata: Dict[str, Any]=None) -> Optional[TradeAttribution]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='trade attribution recording')
+    async def record_trade_attribution(self, trade_id: str, regime: str, timeframe: str, barrier_type: str, pnl: float, confidence: float, leverage: float = None, execution_time: float = None, metadata: Dict[str, Any]=None) -> Optional[TradeAttribution]:
         """
         Record trade attribution for performance tracking.
         
@@ -101,7 +101,7 @@ class PerformanceAttributionSystem:
             if timeframe not in self.timeframes:
                 self.logger.error(f'Invalid timeframe: {timeframe}')
                 return None
-            attribution = TradeAttribution(trade_id=trade_id, timestamp=datetime.now(), regime=regime, timeframe=timeframe, barrier_type=barrier_type, pnl=pnl * (leverage or self.leverage_multiplier), confidence=confidence, leverage=leverage or self.leverage_multiplier, execution_time=execution_time or 0.0, metadata=metadata or {})
+            attribution = TradeAttribution(trade_id = trade_id, timestamp = datetime.now(), regime = regime, timeframe = timeframe, barrier_type = barrier_type, pnl = pnl * (leverage or self.leverage_multiplier), confidence = confidence, leverage = leverage or self.leverage_multiplier, execution_time = execution_time or 0.0, metadata = metadata or {})
             self.trade_attributions.append(attribution)
             await self._update_attribution_metrics(attribution)
             return attribution
@@ -128,8 +128,8 @@ class PerformanceAttributionSystem:
         combined_metrics['trade_count'] += 1
         combined_metrics['last_updated'] = attribution.timestamp
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='regime performance analysis')
-    async def analyze_regime_performance(self, regime: str=None, window: str='medium') -> Optional[Dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='regime performance analysis')
+    async def analyze_regime_performance(self, regime: str = None, window: str='medium') -> Optional[Dict[str, Any]]:
         """
         Analyze performance for specific regime or all regimes.
         
@@ -179,13 +179,13 @@ class PerformanceAttributionSystem:
                 regime_performances.append({'regime': regime, 'total_pnl': regime_analysis['performance_metrics']['total_pnl'], 'sharpe_ratio': regime_analysis['performance_metrics']['sharpe_ratio']})
         if regime_performances:
             best_regime = max(regime_performances, key=lambda x: x['total_pnl'])
-            worst_regime = min(regime_performances, key=lambda x: x['total_pnl'])
+            worst_regime = min(regime_performances, key = lambda x: x['total_pnl'])
             overall_metrics['best_regime'] = best_regime['regime']
             overall_metrics['worst_regime'] = worst_regime['regime']
-        return {'analysis_timestamp': datetime.now(), 'window': window, 'regime_analyses': regime_analyses, 'overall_metrics': overall_metrics, 'regime_rankings': sorted(regime_performances, key=lambda x: x['total_pnl'], reverse=True)}
+        return {'analysis_timestamp': datetime.now(), 'window': window, 'regime_analyses': regime_analyses, 'overall_metrics': overall_metrics, 'regime_rankings': sorted(regime_performances, key = lambda x: x['total_pnl'], reverse = True)}
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='timeframe performance analysis')
-    async def analyze_timeframe_performance(self, timeframe: str=None, window: str='medium') -> Optional[Dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='timeframe performance analysis')
+    async def analyze_timeframe_performance(self, timeframe: str = None, window: str='medium') -> Optional[Dict[str, Any]]:
         """
         Analyze performance for specific timeframe or all timeframes.
         
@@ -235,12 +235,12 @@ class PerformanceAttributionSystem:
                 timeframe_performances.append({'timeframe': timeframe, 'total_pnl': timeframe_analysis['performance_metrics']['total_pnl'], 'sharpe_ratio': timeframe_analysis['performance_metrics']['sharpe_ratio']})
         if timeframe_performances:
             best_timeframe = max(timeframe_performances, key=lambda x: x['total_pnl'])
-            worst_timeframe = min(timeframe_performances, key=lambda x: x['total_pnl'])
+            worst_timeframe = min(timeframe_performances, key = lambda x: x['total_pnl'])
             overall_metrics['best_timeframe'] = best_timeframe['timeframe']
             overall_metrics['worst_timeframe'] = worst_timeframe['timeframe']
-        return {'analysis_timestamp': datetime.now(), 'window': window, 'timeframe_analyses': timeframe_analyses, 'overall_metrics': overall_metrics, 'timeframe_rankings': sorted(timeframe_performances, key=lambda x: x['total_pnl'], reverse=True)}
+        return {'analysis_timestamp': datetime.now(), 'window': window, 'timeframe_analyses': timeframe_analyses, 'overall_metrics': overall_metrics, 'timeframe_rankings': sorted(timeframe_performances, key = lambda x: x['total_pnl'], reverse = True)}
 
-    @handles_errors(exceptions=(ValueError, KeyError), default_return=None, context='combined performance analysis')
+    @handles_errors(exceptions=(ValueError, KeyError), default_return = None, context='combined performance analysis')
     async def analyze_combined_performance(self, window: str='medium') -> Optional[Dict[str, Any]]:
         """
         Analyze performance across regime-timeframe combinations.
@@ -274,10 +274,10 @@ class PerformanceAttributionSystem:
                         combined_analyses[key] = {'regime': regime, 'timeframe': timeframe, 'status': 'no_data', 'trade_count': 0}
             if combination_performances:
                 best_combination = max(combination_performances, key=lambda x: x['total_pnl'])
-                worst_combination = min(combination_performances, key=lambda x: x['total_pnl'])
+                worst_combination = min(combination_performances, key = lambda x: x['total_pnl'])
                 overall_metrics['best_combination'] = best_combination['combination']
                 overall_metrics['worst_combination'] = worst_combination['combination']
-            return {'analysis_timestamp': datetime.now(), 'window': window, 'combined_analyses': combined_analyses, 'overall_metrics': overall_metrics, 'combination_rankings': sorted(combination_performances, key=lambda x: x['total_pnl'], reverse=True)}
+            return {'analysis_timestamp': datetime.now(), 'window': window, 'combined_analyses': combined_analyses, 'overall_metrics': overall_metrics, 'combination_rankings': sorted(combination_performances, key = lambda x: x['total_pnl'], reverse = True)}
         except Exception as e:
             self.logger.error(f'Error analyzing combined performance: {e}')
             return None

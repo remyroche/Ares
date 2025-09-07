@@ -53,7 +53,7 @@ class HMMExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, hmm_model, features, feature_names)
             feature_importance = self._extract_feature_importance(hmm_model)
             confidence = self._calculate_regime_confidence(hmm_model, features, regime_prediction)
-            explanation = ExplanationResult(model_name='HMM_RegimeClassification', prediction=regime_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'regime_classifier', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_classification'})
+            explanation = ExplanationResult(model_name='HMM_RegimeClassification', prediction = regime_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'regime_classifier', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_classification'})
             self.save_explanation(explanation)
             self.logger.info('✅ HMM regime classification explained successfully')
             return explanation
@@ -86,7 +86,7 @@ class HMMExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, hmm_model, features, feature_names)
             feature_importance = self._extract_feature_importance(hmm_model)
             confidence = self._calculate_probability_confidence(regime_probabilities)
-            explanation = ExplanationResult(model_name='HMM_RegimeProbabilities', prediction=regime_probabilities, feature_names=feature_names, feature_values=features, shap_values=shap_values_by_regime, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'regime_probability', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_probabilities'})
+            explanation = ExplanationResult(model_name='HMM_RegimeProbabilities', prediction = regime_probabilities, feature_names = feature_names, feature_values = features, shap_values = shap_values_by_regime, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'regime_probability', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'regime_probabilities'})
             self.save_explanation(explanation)
             self.logger.info('✅ HMM regime probabilities explained successfully')
             return explanation
@@ -115,7 +115,7 @@ class HMMExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, hmm_model, features, feature_names)
             feature_importance = self._extract_feature_importance(hmm_model)
             confidence = self._calculate_transition_confidence(transition_prediction)
-            explanation = ExplanationResult(model_name='HMM_TransitionPrediction', prediction=transition_prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'transition_predictor', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'transition_prediction'})
+            explanation = ExplanationResult(model_name='HMM_TransitionPrediction', prediction = transition_prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'transition_predictor', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'transition_prediction'})
             self.save_explanation(explanation)
             self.logger.info('✅ HMM transition prediction explained successfully')
             return explanation
@@ -123,7 +123,7 @@ class HMMExplainer(BaseExplainer):
             self.logger.error(f'❌ Failed to explain HMM transition prediction: {e}')
             return None
 
-    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a general HMM model prediction."""
         try:
             self.logger.info('🔍 Explaining HMM prediction...')
@@ -169,7 +169,7 @@ class HMMExplainer(BaseExplainer):
         else:
             return 'generic'
 
-    async def _explain_generic_hmm_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def _explain_generic_hmm_model(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a generic HMM model."""
         try:
             if prediction is None:
@@ -185,7 +185,7 @@ class HMMExplainer(BaseExplainer):
                 lime_explanation = self._calculate_lime_explanation(self.lime_explainer, model, features, feature_names)
             feature_importance = self._extract_feature_importance(model)
             confidence = self._calculate_prediction_confidence(prediction, shap_values)
-            explanation = ExplanationResult(model_name='HMM_Generic', prediction=prediction, feature_names=feature_names, feature_values=features, shap_values=shap_values, lime_explanation=lime_explanation, feature_importance=feature_importance, confidence=confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'generic_prediction'})
+            explanation = ExplanationResult(model_name='HMM_Generic', prediction = prediction, feature_names = feature_names, feature_values = features, shap_values = shap_values, lime_explanation = lime_explanation, feature_importance = feature_importance, confidence = confidence, metadata={'model_type': 'generic', 'feature_groups': self.feature_groups, 'regime_types': self.regime_types, 'explanation_type': 'generic_prediction'})
             self.save_explanation(explanation)
             return explanation
         except Exception as e:
@@ -297,21 +297,21 @@ class HMMExplainer(BaseExplainer):
                         if shap_values is not None:
                             summary_parts.append(f'\nTop Factors for {regime}:')
                             feature_importance = list(zip(explanation.feature_names, shap_values))
-                            feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                            feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                             for i, (feature, importance) in enumerate(feature_importance[:3]):
                                 direction = 'increases' if importance > 0 else 'decreases'
                                 summary_parts.append(f'  {i + 1}. {feature}: {direction} by {abs(importance):.3f}')
                 else:
                     summary_parts.append('\nTop Contributing Factors:')
                     feature_importance = list(zip(explanation.feature_names, explanation.shap_values))
-                    feature_importance.sort(key=lambda x: abs(x[1]), reverse=True)
+                    feature_importance.sort(key = lambda x: abs(x[1]), reverse = True)
                     for i, (feature, importance) in enumerate(feature_importance[:5]):
                         direction = 'increases' if importance > 0 else 'decreases'
                         summary_parts.append(f'  {i + 1}. {feature}: {direction} prediction by {abs(importance):.3f}')
             group_importance = self.get_feature_group_importance(explanation)
             if group_importance:
                 summary_parts.append('\nFeature Group Importance:')
-                for group, importance in sorted(group_importance.items(), key=lambda x: x[1], reverse=True):
+                for group, importance in sorted(group_importance.items(), key = lambda x: x[1], reverse = True):
                     summary_parts.append(f'  {group}: {importance:.3f}')
             return '\n'.join(summary_parts)
         except Exception as e:

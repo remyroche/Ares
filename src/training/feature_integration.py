@@ -1,4 +1,6 @@
+from .core.decorators import handles_errors
 """Feature Integration Module for ML Training Pipeline.
+from src.utils.logger import system_logger
 
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
@@ -6,8 +8,7 @@ into the ML model training process.
 from typing import Any
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.warning_symbols import error, initialization_error
 import numpy as np
 import pandas as pd
@@ -26,10 +27,10 @@ class FeatureIntegrationManager:
         self.feature_selection_method = self.feature_config.get('feature_selection_method', 'correlation')
         self.advanced_feature_engineering = None
         self.feature_scaler = StandardScaler()
-        self.feature_pca = PCA(n_components=0.95)
+        self.feature_pca = PCA(n_components = 0.95)
         self.is_initialized = False
 
-    @handles_errors(exceptions=(Exception,), default_return=False, context='feature integration initialization')
+    @handles_errors(exceptions=(Exception,), default_return = False, context='feature integration initialization')
     async def initialize(self) -> bool:
         """Initialize feature integration manager."""
         try:
@@ -45,8 +46,8 @@ class FeatureIntegrationManager:
             self.logger.exception(f'❌ Error initializing feature integration manager: {e}')
             return False
 
-    @handles_errors(exceptions=(ValueError, AttributeError), default_return=None, context='feature integration')
-    async def integrate_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
+    @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='feature integration')
+    async def integrate_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Integrate advanced features (including liquidity features) into training data."
 
         Args:
@@ -65,10 +66,10 @@ class FeatureIntegrationManager:
             integrated_data = historical_data.copy()
             if self.advanced_feature_engineering:
                 advanced_features = await self._add_advanced_features(historical_data, market_data, order_flow_data)
-                integrated_data = pd.concat([integrated_data, advanced_features], axis=1)
+                integrated_data = pd.concat([integrated_data, advanced_features], axis = 1)
             if self.enable_liquidity_features:
                 liquidity_features = await self._add_liquidity_features(historical_data, market_data, order_flow_data)
-                integrated_data = pd.concat([integrated_data, liquidity_features], axis=1)
+                integrated_data = pd.concat([integrated_data, liquidity_features], axis = 1)
             selected_features = self._select_optimal_features(integrated_data)
             self.logger.info(f'✅ Integrated {len(selected_features.columns)} features')
             return selected_features
@@ -76,21 +77,29 @@ class FeatureIntegrationManager:
             self.logger.error(error(f'Error integrating features: {e}'))
             return historical_data
 
-    async def _add_advanced_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
+    async def _add_advanced_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Add advanced features from advanced feature engineering."""
         try:
             price_data = historical_data[['open', 'high', 'low', 'close']].copy()
             volume_data = historical_data[['volume']].copy()
-            advanced_features = await self.advanced_feature_engineering.engineer_features(price_data=price_data, volume_data=volume_data, order_flow_data=order_flow_data)
-            features_df = pd.DataFrame([advanced_features])
-            features_df = pd.concat([features_df] * len(historical_data), ignore_index=True)
+            advanced_features = await self.advanced_feature_engineering.engineer_features(price_data = price_data, volume_data = volume_data, order_flow_data = order_flow_data)
+
+            # Properly handle the advanced_features return value
+            if isinstance(advanced_features, dict):
+                features_df = pd.DataFrame([advanced_features])
+            elif isinstance(advanced_features, pd.DataFrame):
+                features_df = advanced_features
+            else:
+                self.logger.warning(f"Unexpected advanced_features type: {type(advanced_features)}")
+                features_df = pd.DataFrame()
+            features_df = pd.concat([features_df] * len(historical_data), ignore_index = True)
             features_df.index = historical_data.index
             return features_df
         except Exception as e:
             self.logger.error(error(f'Error adding advanced features: {e}'))
             return pd.DataFrame()
 
-    async def _add_liquidity_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None=None) -> pd.DataFrame:
+    async def _add_liquidity_features(self, historical_data: pd.DataFrame, market_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Add liquidity-specific features."""
         try:
             liquidity_features = {}
@@ -104,7 +113,7 @@ class FeatureIntegrationManager:
             liquidity_features['kyle_lambda'] = np.abs(price_changes).rolling(50).mean() / volume.rolling(50).mean()
             liquidity_features['volume_roc'] = volume.pct_change(5)
             liquidity_features['volume_ma_ratio'] = volume / volume.rolling(20).mean()
-            liquidity_percentile = liquidity_features['volume_liquidity'].rank(pct=True)
+            liquidity_percentile = liquidity_features['volume_liquidity'].rank(pct = True)
             liquidity_features['liquidity_regime'] = liquidity_percentile.apply(lambda x: 'high' if x > 0.8 else 'low' if x < 0.2 else 'medium')
             liquidity_features['liquidity_percentile'] = liquidity_percentile
             return pd.DataFrame(liquidity_features)
@@ -121,7 +130,7 @@ class FeatureIntegrationManager:
             data_clean = data_clean.loc[:, data_clean.std() > 0]
             if len(data_clean.columns) > 1:
                 correlation_matrix = data_clean.corr()
-                upper_triangle = np.triu(np.ones_like(correlation_matrix, dtype=bool))
+                upper_triangle = np.triu(np.ones_like(correlation_matrix, dtype = bool))
                 high_correlation = np.abs(correlation_matrix) > 0.95
                 high_correlation = high_correlation & upper_triangle
                 to_drop = []
@@ -129,12 +138,12 @@ class FeatureIntegrationManager:
                     for j in range(i + 1, len(correlation_matrix.columns)):
                         if high_correlation.iloc[i, j]:
                             to_drop.append(correlation_matrix.columns[j])
-                data_clean = data_clean.drop(columns=list(set(to_drop)))
+                data_clean = data_clean.drop(columns = list(set(to_drop)))
             if len(data_clean.columns) > 50:
                 try:
                     scaled_features = self.feature_scaler.fit_transform(data_clean)
                     pca_features = self.feature_pca.fit_transform(scaled_features)
-                    pca_df = pd.DataFrame(pca_features, index=data_clean.index, columns=[f'pca_component_{i}' for i in range(pca_features.shape[1])])
+                    pca_df = pd.DataFrame(pca_features, index = data_clean.index, columns=[f'pca_component_{i}' for i in range(pca_features.shape[1])])
                     self.logger.info(f'Applied PCA: {len(data_clean.columns)} -> {pca_features.shape[1]} features')
                     return pca_df
                 except Exception as e:
@@ -149,11 +158,11 @@ class FeatureIntegrationManager:
         """Get feature importance from trained model."""
         try:
             if hasattr(model, 'feature_importances_'):
-                importance_dict = dict(zip(feature_names, model.feature_importances_, strict=False))
-                return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
+                importance_dict = dict(zip(feature_names, model.feature_importances_, strict = False))
+                return dict(sorted(importance_dict.items(), key = lambda x: x[1], reverse = True))
             if hasattr(model, 'coef_'):
-                importance_dict = dict(zip(feature_names, np.abs(model.coef_[0]), strict=False))
-                return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
+                importance_dict = dict(zip(feature_names, np.abs(model.coef_[0]), strict = False))
+                return dict(sorted(importance_dict.items(), key = lambda x: x[1], reverse = True))
             return {}
         except Exception as e:
             self.logger.exception(f'Error getting feature importance: {e}')

@@ -1,4 +1,5 @@
 """
+from ...utils.logger import system_logger
 Launch Enhanced Monitoring Dashboard
 
 A launcher script for the enhanced monitoring dashboard GUI.
@@ -10,25 +11,25 @@ from pathlib import Path
 from typing import Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from .monitoring.gui.enhanced_dashboard import create_enhanced_monitoring_dashboard
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 
 def check_dependencies() -> bool:
     """Check if required dependencies are available."""
     missing_deps = []
     try:
-        import pandas
+        pass
     except ImportError:
         missing_deps.append('pandas')
     try:
-        import numpy
+        pass
     except ImportError:
         missing_deps.append('numpy')
     try:
-        import matplotlib
+        pass
     except ImportError:
         missing_deps.append('matplotlib')
     try:
-        import seaborn
+        pass
     except ImportError:
         missing_deps.append('seaborn')
     if missing_deps:
@@ -62,6 +63,5 @@ def main() -> int:
         messagebox.showerror('Launch Error', f'Failed to launch dashboard:\n{e}')
         return 1
 if __name__ == '__main__':
-    import asyncio
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

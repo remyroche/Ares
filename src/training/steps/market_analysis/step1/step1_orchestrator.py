@@ -1,4 +1,8 @@
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step1 Orchestrator - Coordinates data collection and validation processes.
+from src.utils.logger import system_logger
 
 Coordinates data collection processes for step01. This orchestrator focuses on:
 from .exceptions import (
@@ -14,7 +18,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.core.decorators import handles_errors, traced
 from src.utils.logger import system_logger
 
 from .aggtrades_validator import AggtradesValidator
@@ -22,7 +25,6 @@ from .comprehensive_gap_filler import ComprehensiveGapFiller
 from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-from .core.decorators.errors import handles_errors
 import collections
 import logging
 import time
@@ -35,10 +37,11 @@ logger = system_logger.getChild("Step1Orchestrator")
 
 class Step1Orchestrator:
     """Orchestrates step01 data collection processes with proper decorators and security."""
+    @log_important_calls
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok=True)
+        self.data_cache_path.mkdir(exist_ok = True)
 
         # Initialize components
         self.gap_detector = DataGapDetector(data_cache_path)
@@ -47,7 +50,18 @@ class Step1Orchestrator:
         self.data_downloader = MissingDataDownloaderAndGapFiller(data_cache_path)
         self.comprehensive_gap_filler = ComprehensiveGapFiller(data_cache_path)
 
-    @handles_errors(default_return={ "success": False, "errors": ["Step1 orchestration failed"], "warnings": [], "step1_5_ready": False, }, context="step1_orchestrator.run_complete_step1" )
+        # Initialize enhanced stability components
+        self._stability_enabled = True
+        try:
+            from .enhanced_data_resampler import EnhancedDataResampler
+            self.enhanced_resampler = EnhancedDataResampler(data_cache_path)
+            logger.info("✅ Enhanced stability features enabled")
+        except ImportError as e:
+            logger.warning(f"⚠️ Enhanced stability features not available: {e}")
+            self._stability_enabled = False
+            self.enhanced_resampler = None
+
+    @handles_errors(default_return={ "success": False, "errors": ["Step1 orchestration failed"], "warnings": [], "step1_5_ready": False, "stability_metrics": {}, }, context="step1_orchestrator.run_complete_step1" )
     async def run_complete_step1(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None, auto_fix: bool = True
     ) -> dict:
@@ -83,6 +97,8 @@ class Step1Orchestrator:
             "errors": [],
             "warnings": [],
             "step1_5_ready": False,
+            "stability_metrics": {},
+            "performance_stats": {},
         }
 
         # Step 1.1: Comprehensive Gap Detection and Filling
@@ -160,7 +176,7 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             aggtrades_validation = self.aggtrades_validator.validate_all_aggtrades(
-                symbol, exchange, auto_fix=auto_fix
+                symbol, exchange, auto_fix = auto_fix
             )
             results["aggtrades_validation"] = aggtrades_validation
 
@@ -210,10 +226,10 @@ class Step1Orchestrator:
             resampling_results = self.data_preparation.resample_all_timeframes(
                 symbol,
                 exchange,
-                timeframes=["5m", "15m", "30m"],
-                start_date=start_date,
-                end_date=end_date,
-                create_partitions=True
+                timeframes=["1m", "5m", "15m", "30m", "1h"],
+                start_date = start_date,
+                end_date = end_date,
+                create_partitions = True
             )
             results["resampling"] = resampling_results
 
@@ -262,30 +278,49 @@ class Step1Orchestrator:
             # Calculate execution time
             end_time = datetime.now()
             execution_time = end_time - start_time
-            
+
+            # Collect stability metrics if available
+            if self._stability_enabled and self.enhanced_resampler:
+                results["stability_metrics"] = self.enhanced_resampler.get_performance_summary()
+                results["performance_stats"] = {
+                    "total_time_seconds": execution_time.total_seconds(),
+                    "memory_usage_mb": getattr(self.enhanced_resampler.memory_manager, 'get_memory_usage', lambda: 0)(),
+                    "cache_performance": getattr(self.enhanced_resampler.cache, '_cache_performance', {}),
+                }
+
             logger.info("=" * 80)
             logger.info("📊 STEP1 EXECUTION SUMMARY")
             logger.info(f"⏱️  Total execution time: {execution_time}")
             logger.info(f"📁 Data cache path: {self.data_cache_path}")
             logger.info(f"🔧 Auto-fix enabled: {auto_fix}")
+            logger.info(f"🛡️  Stability features: {'Enabled' if self._stability_enabled else 'Disabled'}")
             logger.info(f"✅ Success: {results['success']}")
             logger.info(f"❌ Errors: {len(results['errors'])}")
             logger.info(f"⚠️  Warnings: {len(results['warnings'])}")
             logger.info(f"🎯 Step1_5 ready: {results['step1_5_ready']}")
-            
+
+            if self._stability_enabled and results.get("stability_metrics"):
+                stability = results["stability_metrics"]
+                logger.info("📊 STABILITY METRICS:")
+                logger.info(f"  • Success rate: {stability.get('success_rate', 0):.2%}")
+                logger.info(f"  • Memory peak: {stability.get('memory_peak_mb', 0):.1f} MB")
+                logger.info(f"  • Cache hits: {stability.get('cache_performance', {}).get('cache_hits', 0)}")
+
             if results["errors"]:
                 logger.error("❌ ERRORS ENCOUNTERED:")
                 for i, error in enumerate(results["errors"], 1):
                     logger.error(f"  {i}. {error}")
-            
+
             if results["warnings"]:
                 logger.warning("⚠️  WARNINGS ENCOUNTERED:")
                 for i, warning in enumerate(results["warnings"], 1):
                     logger.warning(f"  {i}. {warning}")
-            
+
             if results["success"]:
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
                 logger.info(f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}")
+                if self._stability_enabled:
+                    logger.info("🛡️  Process completed with enhanced stability features!")
             else:
                 logger.error("❌ STEP1 PROCESS COMPLETED WITH ERRORS!")
                 logger.error("🔍 Please review the errors above and fix issues before proceeding")

@@ -5,7 +5,7 @@ Provides comprehensive reporting capabilities for step execution,
 performance monitoring, and quality assessment.
 """
 
-from .step03_execution_reporter import (
+from src.training.steps.market_analysis.hmm_clustering.step03_execution_reporter import (
     Step03ExecutionReporter,
     Step03ExecutionReport,
     FunctionCallSummary,

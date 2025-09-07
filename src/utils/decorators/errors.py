@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Error handling decorators with async/sync support and flexible signature.
 
 This module provides a robust `handles_errors` decorator compatible with various
@@ -5,7 +7,7 @@ call sites across the codebase. It supports both synchronous and asynchronous
 functions, optional exception filtering, default/fallback return values, and
 per-exception handlers.
 """
-from __future__ import annotations
+from ..logger import system_logger
 import asyncio
 import inspect
 import traceback
@@ -23,20 +25,20 @@ def _resolve_default_return(default_return: Any, *args: Any, **kwargs: Any) -> A
     except Exception:
         return None
 
-def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optional[Iterable[Type[BaseException]]]=None, exception_types: Optional[Iterable[Type[BaseException]]]=None, default_return: Any=None, fallback: Any=None, context: Optional[str]=None, error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]]=None) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
+def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optional[Iterable[Type[BaseException]]]=None, exception_types: Optional[Iterable[Type[BaseException]]]=None, default_return: Any = None, fallback: Any = None, context: Optional[str]=None, error_handlers: Optional[Dict[Type[BaseException], Tuple[Any, str] | Any]]=None) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Awaitable[Any]]:
     """Decorator to handle errors consistently across sync/async functions.
 
-	Parameters
-	- exceptions / exception_types: Iterable of exception classes to catch. Defaults to (Exception,).
-	- default_return / fallback: Value (or callable) to return on error if no specific handler is found.
-	- context: Optional string describing the operation, used for logging.
-	- error_handlers: Mapping of Exception type to either a return value or a (return, message) tuple.
+    Parameters
+    - exceptions / exception_types: Iterable of exception classes to catch. Defaults to (Exception,).
+    - default_return / fallback: Value (or callable) to return on error if no specific handler is found.
+    - context: Optional string describing the operation, used for logging.
+    - error_handlers: Mapping of Exception type to either a return value or a (return, message) tuple.
 
-	Notes
-	- Works with or without parentheses: @handles_errors or @handles_errors(...)
-	- If wrapping an async function, the wrapper is async and awaits the function
-	- If default_return/fallback is callable, it will be invoked to produce the value
-	"""
+    Notes
+    - Works with or without parentheses: @handles_errors or @handles_errors(...)
+    - If wrapping an async function, the wrapper is async and awaits the function
+    - If default_return/fallback is callable, it will be invoked to produce the value
+    """
     catch_exceptions = tuple(exceptions or exception_types or (BaseException,))
     if catch_exceptions == (BaseException,):
         catch_exceptions = (Exception,)
@@ -47,7 +49,7 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
         import logging
         
         try:
-            from src.utils.logger import system_logger
+            from ..logger import system_logger
             if system_logger is not None:
                 prefix = f'Error in {fn_name}'
                 if context:

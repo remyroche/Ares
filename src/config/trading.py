@@ -30,22 +30,22 @@ def get_trading_config() -> dict[str, Any]:
         # --- Exchange Configurations ---
         "exchanges": {
             "binance": {
-                "symbols": ["BTCUSDT", "ETHUSDT"],
+                "symbols": settings.default_symbols,
                 "api_key": None,  # Will be set dynamically
                 "api_secret": None,  # Will be set dynamically
             },
             "gateio": {
-                "symbols": ["BTCUSDT", "ETHUSDT"],
+                "symbols": settings.default_symbols,
                 "api_key": settings.gateio_api_key,
                 "api_secret": settings.gateio_api_secret,
             },
             "mexc": {
-                "symbols": ["BTCUSDT", "ETHUSDT"],
+                "symbols": settings.default_symbols,
                 "api_key": settings.mexc_api_key,
                 "api_secret": settings.mexc_api_secret,
             },
             "okx": {
-                "symbols": ["BTCUSDT", "ETHUSDT"],
+                "symbols": settings.default_symbols,
                 "api_key": settings.okx_api_key,
                 "api_secret": settings.okx_api_secret,
                 "password": settings.okx_password,
@@ -227,3 +227,65 @@ def get_time_based_exit_config() -> dict[str, Any]:
     """
     trading_config = get_trading_config()
     return trading_config.get("time_based_exit", {})
+
+
+def get_leverage_sizing_config() -> dict[str, Any]:
+    """Get leverage sizing configuration.
+
+    Returns:
+        dict: Leverage sizing configuration
+
+    """
+    trading_config = get_trading_config()
+    return trading_config.get("leverage_sizing", {
+        "enabled": True,
+        "max_leverage": 10,
+        "min_leverage": 1,
+        "default_leverage": 3
+    })
+
+
+def get_position_closing_config() -> dict[str, Any]:
+    """Get position closing configuration.
+
+    Returns:
+        dict: Position closing configuration
+
+    """
+    trading_config = get_trading_config()
+    return trading_config.get("position_closing", {
+        "enabled": True,
+        "profit_target_pct": 0.05,
+        "stop_loss_pct": 0.03,
+        "trailing_stop_enabled": False
+    })
+
+
+def get_position_division_config() -> dict[str, Any]:
+    """Get position division configuration.
+
+    Returns:
+        dict: Position division configuration
+
+    """
+    trading_config = get_trading_config()
+    return trading_config.get("position_division", {
+        "enabled": False,
+        "max_divisions": 3,
+        "division_interval_pct": 0.02
+    })
+
+
+def get_position_monitoring_config() -> dict[str, Any]:
+    """Get position monitoring configuration.
+
+    Returns:
+        dict: Position monitoring configuration
+
+    """
+    trading_config = get_trading_config()
+    return trading_config.get("position_monitoring", {
+        "enabled": True,
+        "alert_interval_minutes": 5,
+        "max_position_age_hours": 24
+    })

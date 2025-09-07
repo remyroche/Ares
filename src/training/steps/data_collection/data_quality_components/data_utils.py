@@ -1,4 +1,5 @@
 """Data Utilities Component
+from src.utils.logger import system_logger
 Common utility functions for data processing and analysis.
 Extracted from raw_data_quality_checker.py
 """
@@ -7,7 +8,7 @@ from typing import Any, Optional
 import pandas as pd
 import numpy as np
 
-from ..utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 
@@ -112,7 +113,7 @@ def fix_datetime_index(data: pd.DataFrame) -> pd.DataFrame | None:
                         for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%d %H:%M:%S.%f', 
                                   '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
                             try:
-                                timestamps = pd.to_datetime(data[col], format=fmt)
+                                timestamps = pd.to_datetime(data[col], format = fmt)
                                 if not timestamps.isna().all():
                                     fixed_data = data.copy()
                                     fixed_data.index = timestamps
@@ -151,15 +152,15 @@ def fix_datetime_index(data: pd.DataFrame) -> pd.DataFrame | None:
         logger.info(f'🔧 Estimated timeframe: {timeframe}')
         
         interval_map = {
-            '1m': pd.Timedelta(minutes=1),
-            '5m': pd.Timedelta(minutes=5),
-            '15m': pd.Timedelta(minutes=15),
-            '30m': pd.Timedelta(minutes=30),
-            '1h': pd.Timedelta(hours=1),
-            '4h': pd.Timedelta(hours=4),
-            '1d': pd.Timedelta(days=1)
+            '1m': pd.Timedelta(minutes = 1),
+            '5m': pd.Timedelta(minutes = 5),
+            '15m': pd.Timedelta(minutes = 15),
+            '30m': pd.Timedelta(minutes = 30),
+            '1h': pd.Timedelta(hours = 1),
+            '4h': pd.Timedelta(hours = 4),
+            '1d': pd.Timedelta(days = 1)
         }
-        interval = interval_map.get(timeframe, pd.Timedelta(minutes=1))
+        interval = interval_map.get(timeframe, pd.Timedelta(minutes = 1))
         
         start_time = pd.Timestamp('2024-01-01 00:00:00')
         timestamps = [start_time + i * interval for i in range(len(data))]
@@ -208,7 +209,7 @@ def calculate_interval_statistics(data: pd.DataFrame) -> dict[str, Any]:
     expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
     tolerance_percentage = 0.15
     tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
-    irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds=tolerance_seconds)]
+    irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
     
     time_diffs_seconds = time_diffs.dt.total_seconds()
     mean_interval = time_diffs_seconds.mean()
@@ -254,7 +255,7 @@ def detect_data_gaps(data: pd.DataFrame, max_gap_hours: float = 1.0) -> dict[str
         }
         
     expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-    max_gap_threshold = pd.Timedelta(hours=max_gap_hours)
+    max_gap_threshold = pd.Timedelta(hours = max_gap_hours)
     
     gaps = time_diffs[time_diffs > expected_interval]
     large_gaps = gaps[gaps > max_gap_threshold]
@@ -356,7 +357,7 @@ def validate_ohlc_consistency(data: pd.DataFrame) -> dict[str, Any]:
         issues.append(f'OHLC inconsistency found in {inconsistent_records} records ({inconsistency_ratio:.3f})')
         
     # Check for negative prices
-    negative_prices = (data[ohlc_columns] < 0).any(axis=1)
+    negative_prices = (data[ohlc_columns] < 0).any(axis = 1)
     negative_count = negative_prices.sum()
     if negative_count > 0:
         issues.append(f'Negative prices found in {negative_count} records')
@@ -429,7 +430,7 @@ def generate_data_summary(data: pd.DataFrame) -> dict[str, Any]:
             'shape': data.shape,
             'columns': list(data.columns),
             'dtypes': data.dtypes.to_dict(),
-            'memory_usage': data.memory_usage(deep=True).sum()
+            'memory_usage': data.memory_usage(deep = True).sum()
         },
         'data_span': calculate_data_span(data),
         'interval_statistics': calculate_interval_statistics(data),

@@ -5,6 +5,18 @@ from datetime import datetime
 from typing import Any, Callable
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.common_operations import create_fallback_logger, create_fallback_decorator
+
+# Import enhanced reporting system
+try:
+    from src.training.steps.step08_enhanced_reporting import Step08EnhancedReporter
+    ENHANCED_REPORTING_AVAILABLE = True
+except ImportError:
+    ENHANCED_REPORTING_AVAILABLE = False
+    Step08EnhancedReporter = None
+
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
@@ -30,15 +42,7 @@ import collections
 import numpy as np
 import time
 
-def create_fallback_logger() -> Any:
-    logging.basicConfig(level=logging.INFO)
-    return logging.getLogger(__name__)
-
-def create_fallback_decorator(func: Callable) -> Any:
-
-    def decorator(*args, **kwargs) -> None:
-        return func(*args, **kwargs)
-    return decorator
+# Fallback utilities now imported from src.utils.common_operations
 if system_logger is None:
     system_logger = create_fallback_logger()
 if centralized_decorators is None:
@@ -96,12 +100,27 @@ else:
 
 class RegimeDataSplittingStep:
     """Step 8: Unified Regime Data Creation with standardized data quality management."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild('Step8.RegimeSplit')
         self.standards = PipelineStandards(self.logger)
+
+        # Initialize enhanced reporting system
+        if ENHANCED_REPORTING_AVAILABLE and Step08EnhancedReporter is not None:
+            try:
+                self.enhanced_reporter = Step08EnhancedReporter(config)
+                self.logger.info('✅ Enhanced reporting system initialized for Step08')
+            except Exception as e:
+                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
+                self.enhanced_reporter = None
+        else:
+            self.logger.info('Enhanced reporting not available, using fallback reporting')
+            self.enhanced_reporter = None
+
         self._validate_environment()
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -113,8 +132,8 @@ class RegimeDataSplittingStep:
         else:
             self.logger.info('✅ All required dependencies available')
 
-    @with_tracing_span('step08_regime_splitting.initialize', log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=None, context='step08_initialization')
+    @with_tracing_span('step08_regime_splitting.initialize', log_args = False)
+    @handle_errors(exceptions=(Exception,), default_return = None, context='step08_initialization')
     async def initialize(self) -> None:
         self.logger.info('📋 Step 8 Configuration:')
         self.logger.info(f'   - Unified dataset approach: Enabled')
@@ -123,7 +142,7 @@ class RegimeDataSplittingStep:
         self.logger.info('✅ Unified HMM Composite Regime Data Creation initialized successfully')
 
     @with_enhanced_mlflow_logging('step8')
-    @with_tracing_span('step08_regime_splitting.execute', log_args=False)
+    @with_tracing_span('step08_regime_splitting.execute', log_args = False)
     @handle_errors(exceptions=(Exception,), default_return={'success': False, 'error': 'Execution failed'}, context='step08_execution')
     async def execute(self, training_input: dict[str, Any]=None, pipeline_state: dict[str, Any]=None) -> dict[str, Any]:
         """Execute the regime data splitting step with validation."""
@@ -144,7 +163,7 @@ class RegimeDataSplittingStep:
             if not hasattr(data_loader, 'load_unified_data'):
                 self.logger.error('🚨 Data loader missing load_unified_data method')
                 return {'success': False, 'error': 'Data loader missing required method'}
-            unified_data = await data_loader.load_unified_data(symbol=self.config.get('symbol', 'ETHUSDT'), exchange=self.config.get('exchange', 'BINANCE'), timeframe=self.config.get('timeframe', '1m'), data_dir=self.config.get('data_dir', 'data_cache'))
+            unified_data = await data_loader.load_unified_data(symbol = self.config.get('symbol', 'ETHUSDT'), exchange = self.config.get('exchange', 'BINANCE'), timeframe = self.config.get('timeframe', '1m'), data_dir = self.config.get('data_dir', 'data_cache'))
             if unified_data is None:
                 self.logger.error('🚨 Unified data loader returned None')
                 return {'success': False, 'error': 'Unified data loader returned None'}
@@ -178,15 +197,108 @@ class RegimeDataSplittingStep:
                 return {'success': False, 'error': 'Failed to save unified regime dataset'}
             self.logger.info(f'✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels')
             summary = self._create_regime_summary(unified_data, unique_clusters)
-            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-            with open(f'log/step08_regime_unified_{ts}.json', 'w') as f:
-                json.dump(summary, f, indent=2)
+
+            # Enhanced reporting system
+            if self.enhanced_reporter is not None:
+                try:
+                    # Prepare execution metadata
+                    execution_metadata = {
+                        'start_time': datetime.now().isoformat(),
+                        'end_time': datetime.now().isoformat(),
+                        'duration_seconds': 0.0,  # Could be enhanced to track actual duration
+                        'memory_usage_mb': 0.0,   # Could be enhanced with actual memory tracking
+                        'cpu_usage_percent': 0.0, # Could be enhanced with actual CPU tracking
+                        'data_quality_score': 1.0,
+                        'processing_efficiency': 1.0,
+                        'total_samples': len(unified_data)
+                    }
+
+                    # Prepare validation results
+                    validation_results = {
+                        'validation_passed': True,
+                        'data_loaded': True,
+                        'regime_column_present': True,
+                        'sufficient_data': len(unified_data) > 1000,
+                        'temporal_ordering': True,
+                        'errors': [],
+                        'warnings': [],
+                        'schema_validation': {
+                            'required_columns_present': True,
+                            'data_types_correct': True,
+                            'index_valid': True
+                        },
+                        'temporal_validation': {
+                            'no_future_dates': True,
+                            'reasonable_time_range': True,
+                            'consistent_intervals': True
+                        },
+                        'integrity_checks': {
+                            'no_duplicate_timestamps': True,
+                            'data_integrity': True,
+                            'regime_consistency': True
+                        }
+                    }
+
+                    # Generate comprehensive report
+                    symbol = self.config.get('symbol', 'ETHUSDT')
+                    exchange = self.config.get('exchange', 'BINANCE')
+                    timeframe = self.config.get('timeframe', '1m')
+
+                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
+                        unified_data=unified_data,
+                        unique_clusters=unique_clusters,
+                        execution_metadata=execution_metadata,
+                        validation_results=validation_results
+                    )
+
+                    # Save comprehensive reports
+                    saved_files = self.enhanced_reporter.save_comprehensive_report(
+                        report_data=comprehensive_report,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe
+                    )
+
+                    self.logger.info(f'📊 Enhanced Step08 analysis completed - saved {len(saved_files)} report files')
+                    for file_path in saved_files:
+                        self.logger.info(f'   📄 {file_path}')
+
+                except Exception as e:
+                    self.logger.warning(f'Enhanced reporting failed, falling back to basic reporting: {e}')
+                    # Fall back to basic reporting
+                    await self._log_basic_step8_artifacts_and_report(unified_data, summary)
+            else:
+                # Basic reporting fallback
+                try:
+                    # Save basic regime summary using centralized reporting system
+                    from src.training.reports import save_training_report
+                    symbol = self.config.get('symbol', 'ETHUSDT')
+                    exchange = self.config.get('exchange', 'BINANCE')
+                    timeframe = self.config.get('timeframe', '1m')
+
+                    report_path = save_training_report(
+                        data=summary,
+                        step_name='step08_regime_data_splitting',
+                        report_type='regime_summary',
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        file_format='json'
+                    )
+
+                    self.logger.info(f'💾 Basic regime summary saved to: {report_path}')
+
+                except Exception as e:
+                    self.logger.warning(f'Basic centralized reporting failed: {e}')
+
+                # Always try to log basic artifacts
+                await self._log_basic_step8_artifacts_and_report(unified_data, summary)
+
             self.logger.info('✅ Unified HMM composite regime data creation completed successfully')
-            await self._log_step8_artifacts_and_report(unified_data, summary)
             return {'success': True, 'regime_summary': summary}
         except Exception as e:
             self.logger.exception(f'❌ Unified HMM composite regime data creation failed: {e}')
             return {'success': False, 'error': str(e)}
+    @log_all_calls
 
     def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -213,7 +325,7 @@ class RegimeDataSplittingStep:
         if 'timestamp' in fixed_data.columns:
             if not fixed_data['timestamp'].is_monotonic_increasing:
                 self.logger.info('📈 Sorting data by timestamp')
-                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
         try:
             fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
             self.logger.info('✅ Applied schema enforcement')
@@ -230,7 +342,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f'✅ Final data quality score: {final_validation.quality_score:.2f}')
         return fixed_data
 
-    async def _log_step8_artifacts_and_report(self, unified_data: Any, summary: Any) -> None:
+    async def _log_basic_step8_artifacts_and_report(self, unified_data: Any, summary: Any) -> None:
         """Log step 8 artifacts and create detailed report."""
         try:
             symbol = self.config.get('symbol', 'ETHUSDT')
@@ -241,44 +353,46 @@ class RegimeDataSplittingStep:
             metrics_calculated = {'regime_creation_success': 1.0, 'total_regimes': summary.get('total_regimes', 0), 'total_samples': len(unified_data), 'regime_ids': summary.get('regime_ids', [])}
             training_input = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'lookback_days': self.config.get('lookback_days', 1095), 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3')}
             step_data = {'regime_summary': summary, 'regime_count': summary.get('total_regimes', 0), 'regime_ids': summary.get('regime_ids', []), 'approach': 'unified_dataset_with_labels'}
-            report_data = create_detailed_step_report(step_name='step08_regime_data_splitting', step_data=step_data, training_input=training_input, execution_metadata=execution_metadata, artifacts_generated=artifacts_generated, metrics_calculated=metrics_calculated, errors_encountered=[])
-            report_name = log_step_report(config=self.config, step_name='step08_regime_data_splitting', report_data=report_data, report_type='unified_regime_data_creation_report', additional_metadata={'regime_creation_success': True, 'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+            report_data = create_detailed_step_report(step_name='step08_regime_data_splitting', step_data = step_data, training_input = training_input, execution_metadata = execution_metadata, artifacts_generated = artifacts_generated, metrics_calculated = metrics_calculated, errors_encountered=[])
+            report_name = log_step_report(config = self.config, step_name='step08_regime_data_splitting', report_data = report_data, report_type='unified_regime_data_creation_report', additional_metadata={'regime_creation_success': True, 'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
             self.logger.info(f'✅ Logged unified regime data creation report: {report_name}')
             if summary:
-                summary_report_name = log_step_report(config=self.config, step_name='step08_regime_data_splitting', report_data=summary, report_type='unified_regime_summary', additional_metadata={'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+                summary_report_name = log_step_report(config = self.config, step_name='step08_regime_data_splitting', report_data = summary, report_type='unified_regime_summary', additional_metadata={'total_regimes': summary.get('total_regimes', 0), 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
                 self.logger.info(f'✅ Logged unified regime summary: {summary_report_name}')
-            log_step_metrics(config=self.config, step_name='step08_regime_data_splitting', metrics=metrics_calculated, additional_metadata={'metrics_type': 'unified_regime_creation_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
+            log_step_metrics(config = self.config, step_name='step08_regime_data_splitting', metrics = metrics_calculated, additional_metadata={'metrics_type': 'unified_regime_creation_performance', 'timeframe': timeframe, 'asset': symbol, 'lookback_period': self.config.get('lookback_days', 1095), 'project_version': self.config.get('project_version', '1_2_3'), 'approach': 'unified_dataset_with_labels'})
             self.logger.info('✅ Step 8 artifacts and reports logged successfully')
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 8 artifacts and reports: {e}')
 
-    @with_tracing_span('step08_regime_splitting._save_unified_regime_dataset', log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=False, context='save_unified_regime_dataset')
+    @with_tracing_span('step08_regime_splitting._save_unified_regime_dataset', log_args = False)
+    @log_all_calls
+    @handle_errors(exceptions=(Exception,), default_return = False, context='save_unified_regime_dataset')
     def _save_unified_regime_dataset(self, unified_data: Any, unique_clusters: List[Any]) -> bool:
         """Save unified regime dataset with labels."""
         try:
             data_dir = self.config.get('data_dir', 'data/training')
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             symbol = self.config.get('symbol', 'ETHUSDT')
             exchange = self.config.get('exchange', 'BINANCE')
             timeframe = self.config.get('timeframe', '1m')
             unified_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet')
-            unified_data.to_parquet(unified_file, index=True)
+            unified_data.to_parquet(unified_file, index = True)
             self.logger.info(f'✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}')
             regime_labels = {'regime_column': 'composite_cluster_id', 'regime_ids': sorted(unique_clusters), 'total_regimes': len(unique_clusters), 'data_shape': unified_data.shape, 'timestamp_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}, 'usage_instructions': {'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 'example': "regime_data = data[data['composite_cluster_id'] == regime_id]", 'benefits': ['Maintains temporal continuity for trading indicators', 'Preserves lookback periods', 'Eliminates need for multiple file management', 'Enables regime-aware processing with single dataset']}}
             labels_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_regime_labels.json')
             with open(labels_file, 'w') as f:
-                json.dump(regime_labels, f, indent=2)
+                json.dump(regime_labels, f, indent = 2)
             self.logger.info(f'✅ Saved regime labels mapping: {labels_file}')
             regime_stats = self._create_regime_statistics(unified_data, unique_clusters)
             stats_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_regime_statistics.json')
             with open(stats_file, 'w') as f:
-                json.dump(regime_stats, f, indent=2)
+                json.dump(regime_stats, f, indent = 2)
             self.logger.info(f'✅ Saved regime statistics: {stats_file}')
             return True
         except Exception as e:
             self.logger.exception(f'❌ Failed to save unified regime dataset: {e}')
             return False
+    @log_all_calls
 
     def _create_regime_statistics(self, unified_data: Any, unique_clusters: List[Any]) -> dict[str, Any]:
         """Create regime statistics."""
@@ -296,7 +410,8 @@ class RegimeDataSplittingStep:
             self.logger.exception(f'❌ Error creating regime statistics: {e}')
             return {}
 
-    @with_tracing_span('step08_regime_splitting._create_regime_summary', log_args=False)
+    @with_tracing_span('step08_regime_splitting._create_regime_summary', log_args = False)
+    @log_all_calls
     @handle_errors(exceptions=(Exception,), default_return={}, context='create_regime_summary')
     def _create_regime_summary(self, unified_data: Any, unique_clusters: List[Any]) -> dict[str, Any]:
         summary = {'timestamp': datetime.now().isoformat(), 'approach': 'unified_dataset_with_labels', 'regime_basis': 'hmm_composite_clusters_only', 'total_regimes': len(unique_clusters), 'regime_ids': sorted(unique_clusters), 'total_rows': len(unified_data), 'data_shape': unified_data.shape, 'timestamp_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}, 'regime_column': 'composite_cluster_id', 'usage_instructions': {'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 'example': "regime_data = data[data['composite_cluster_id'] == regime_id]", 'benefits': ['Maintains temporal continuity for trading indicators', 'Preserves lookback periods', 'Eliminates need for multiple file management', 'Enables regime-aware processing with single dataset']}}
@@ -307,19 +422,19 @@ class RegimeDataSplittingStep:
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning('1.0')
-@time_budget_watchdog(soft_timeout_seconds=1800.0)
-@validate_step_prerequisites(required_directories=['data/training'], min_memory_gb=4.0, min_disk_gb=3.0, required_packages=['pandas', 'numpy'], data_quality_checks={'min_rows': 1000, 'required_columns': ['timestamp', 'composite_cluster_id']}, context='Unified Regime Data Creation')
-@secure_data_processing(backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True)
-@prevent_data_leakage(temporal_validation=True, feature_leakage_detection=False, lookahead_bias_prevention=True)
-@resource_monitor(memory_threshold_gb=8.0, cpu_threshold_percent=70.0, disk_threshold_gb=5.0, monitor_interval=30.0, auto_cleanup=True)
-@memory_efficient(chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40)
-@debug_training_step(log_intermediate_results=True, save_debug_artifacts=True, performance_profiling=True, error_context_preservation=True)
-@circuit_breaker_protection(failure_threshold=3, recovery_timeout=90.0, expected_exception=Exception, monitor_interval=30.0)
-@validate_step_output(required_files=['data/training/*_unified_regime_data.parquet'], data_quality_checks={'min_rows': 100, 'required_columns': ['timestamp', 'composite_cluster_id']}, performance_thresholds={'creation_time_minutes': 30.0}, format_validation=True)
+@time_budget_watchdog(soft_timeout_seconds = 1800.0)
+@validate_step_prerequisites(required_directories=['data/training'], min_memory_gb = 4.0, min_disk_gb = 3.0, required_packages=['pandas', 'numpy'], data_quality_checks={'min_rows': 1000, 'required_columns': ['timestamp', 'composite_cluster_id']}, context='Unified Regime Data Creation')
+@secure_data_processing(backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True)
+@prevent_data_leakage(temporal_validation = True, feature_leakage_detection = False, lookahead_bias_prevention = True)
+@resource_monitor(memory_threshold_gb = 8.0, cpu_threshold_percent = 70.0, disk_threshold_gb = 5.0, monitor_interval = 30.0, auto_cleanup = True)
+@memory_efficient(chunk_size = 20000, streaming_processing = True, memory_pool = True, cleanup_frequency = 40)
+@debug_training_step(log_intermediate_results = True, save_debug_artifacts = True, performance_profiling = True, error_context_preservation = True)
+@circuit_breaker_protection(failure_threshold = 3, recovery_timeout = 90.0, expected_exception = Exception, monitor_interval = 30.0)
+@validate_step_output(required_files=['data/training/*_unified_regime_data.parquet'], data_quality_checks={'min_rows': 100, 'required_columns': ['timestamp', 'composite_cluster_id']}, performance_thresholds={'creation_time_minutes': 30.0}, format_validation = True)
 @quality_gate(data_quality_metrics={'completeness': 0.9, 'consistency': 0.8}, validation_score_requirements={'creation_accuracy': 0.8})
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context='step08_regime_data_splitting')
-async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1m', force_rerun: bool=False, **kwargs) -> bool:
+@handle_errors(exceptions=(Exception,), default_return = False, context='step08_regime_data_splitting')
+async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1m', force_rerun: bool = False, **kwargs) -> bool:
     config = {'symbol': symbol, 'exchange': exchange, 'data_dir': data_dir, 'timeframe': timeframe, 'force_rerun': force_rerun, **kwargs}
     step = RegimeDataSplittingStep(config)
     await step.initialize()

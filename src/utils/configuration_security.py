@@ -1,4 +1,7 @@
+from .core.decorators import handles_errors
 """
+from .logger import system_logger
+from .logger import system_logger
 Configuration Security Module
 
 This module provides secure configuration management including:
@@ -17,9 +20,6 @@ from pathlib import Path
 
 import yaml
 
-from .core.decorators.errors import handles_errors
-
-from .error_handler import handles_errors
 from .logger import system_logger
 import numpy as np
 import logging
@@ -39,9 +39,9 @@ class ConfigurationSecurityManager:
         self.config_schemas = {'database': {'required': ['host', 'port', 'database', 'username'], 'optional': ['password', 'ssl_mode', 'connection_timeout'], 'types': {'host': str, 'port': int, 'database': str, 'username': str, 'password': str, 'ssl_mode': str, 'connection_timeout': int}}, 'api': {'required': ['base_url', 'timeout'], 'optional': ['api_key', 'api_secret', 'rate_limit'], 'types': {'base_url': str, 'timeout': int, 'api_key': str, 'api_secret': str, 'rate_limit': int}}, 'security': {'required': ['encryption_enabled', 'audit_logging'], 'optional': ['ssl_required', 'max_login_attempts'], 'types': {'encryption_enabled': bool, 'audit_logging': bool, 'ssl_required': bool, 'max_login_attempts': int}}}
         self.access_audit_log: List[Dict[str, Any]] = []
         self.backup_dir = Path('data_cache/config_backups')
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self.backup_dir.mkdir(parents = True, exist_ok = True)
 
-    @handles_errors(Exception, fallback=None, context='configuration loading')
+    @handles_errors(Exception, fallback = None, context='configuration loading')
     def load_secure_configuration(self, file_path: str, config_format: str='auto') -> Optional[Dict[str, Any]]:
         """Load configuration from file with security validation."
 
@@ -232,10 +232,10 @@ class ConfigurationSecurityManager:
             backup_file = self.backup_dir / f'{file_path.stem}_{timestamp}{file_path.suffix}'
             if file_path.suffix.lower() in ['.yml', '.yaml']:
                 with open(backup_file, 'w', encoding='utf-8') as f:
-                    yaml.dump(config, f, default_flow_style=False)
+                    yaml.dump(config, f, default_flow_style = False)
             elif file_path.suffix.lower() == '.json':
                 with open(backup_file, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2)
+                    json.dump(config, f, indent = 2)
             else:
                 shutil.copy2(file_path, backup_file)
             backup_file.chmod(self.security_policies['config_file_permissions'])
@@ -243,8 +243,8 @@ class ConfigurationSecurityManager:
         except Exception as e:
             self.logger.error(f'Failed to create configuration backup: {e}')
 
-    @handles_errors(Exception, fallback=None, context='configuration value access')
-    def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any=None) -> Any:
+    @handles_errors(Exception, fallback = None, context='configuration value access')
+    def get_config_value(self, config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
         """Get configuration value by dot-notation path."
 
         Args:
@@ -271,7 +271,7 @@ class ConfigurationSecurityManager:
             self.logger.error(f'Failed to get config value for {key_path}: {e}')
             return default
 
-    @handles_errors(Exception, fallback=None, context='configuration value setting')
+    @handles_errors(Exception, fallback = None, context='configuration value setting')
     def set_config_value(self, config: Dict[str, Any], key_path: str, value: Any) -> Optional[Dict[str, Any]]:
         """Set configuration value by dot-notation path."
 
@@ -321,10 +321,10 @@ class ConfigurationSecurityManager:
                 self._create_config_backup(file_path, config)
             if config_format == 'yaml':
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    yaml.dump(config, f, default_flow_style=False)
+                    yaml.dump(config, f, default_flow_style = False)
             elif config_format == 'json':
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2)
+                    json.dump(config, f, indent = 2)
             elif config_format == 'ini':
                 config_parser = configparser.ConfigParser()
                 for section, section_data in config.items():

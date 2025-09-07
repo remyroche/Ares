@@ -74,9 +74,9 @@ class StepOrchestratorWrapper:
             
             # Run the step-based training using the orchestrator
             success = await orchestrator.execute_from_step(
-                start_step=start_step, 
-                config=CONFIG, 
-                force_rerun=force_rerun,
+                start_step = start_step, 
+                config = CONFIG, 
+                force_rerun = force_rerun,
             )
             
             if success:
@@ -107,10 +107,10 @@ class StepOrchestratorWrapper:
         # Validate previous steps before proceeding
         validator = self.validation_factory.create_validator("step_validation", self.logger)
         validation_success = validator.validate(
-            start_step=start_step,
-            symbol=symbol,
-            exchange=exchange,
-            config=CONFIG
+            start_step = start_step,
+            symbol = symbol,
+            exchange = exchange,
+            config = CONFIG
         )
         
         if not validation_success:
@@ -119,12 +119,12 @@ class StepOrchestratorWrapper:
         
         # Run the step pipeline with the specified training mode
         return await self.run_step_based_training(
-            symbol=symbol,
-            exchange=exchange,
-            start_step=start_step,
-            training_mode=training_mode,
-            force_rerun=force_rerun,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            start_step = start_step,
+            training_mode = training_mode,
+            force_rerun = force_rerun,
+            with_gui = with_gui,
         )
     
     async def run_step2_with_existing_data(
@@ -142,9 +142,9 @@ class StepOrchestratorWrapper:
         # Validate data for step02 readiness
         validator = self.validation_factory.create_validator("data_validation", self.logger)
         validation_success, validation_data = validator.validate(
-            symbol=symbol,
-            exchange=exchange,
-            config=CONFIG
+            symbol = symbol,
+            exchange = exchange,
+            config = CONFIG
         )
         
         if not validation_success:
@@ -162,12 +162,12 @@ class StepOrchestratorWrapper:
         self.logger.info("✅ Data validation passed - proceeding with existing data")
         
         return await self.run_step_based_training(
-            symbol=symbol,
-            exchange=exchange,
-            start_step=start_step,
+            symbol = symbol,
+            exchange = exchange,
+            start_step = start_step,
             training_mode="blank",  # Use blank mode for step02 with existing data
-            force_rerun=force_rerun,
-            with_gui=with_gui,
+            force_rerun = force_rerun,
+            with_gui = with_gui,
         )
     
     def _normalize_step_name(self, step_name: Optional[str]) -> Optional[str]:
@@ -194,17 +194,17 @@ class StepOrchestratorWrapper:
             os.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            self.logger.info("💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days)")
+            self.logger.info("💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE = 1 for step-based training (10 days)")
         elif training_mode == "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
-            self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)")
+            self.logger.info("🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE = 1 for step-based training (180 days)")
         elif training_mode == "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
-            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training (730 days)")
+            self.logger.info("📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE = 1 for step-based training (730 days)")
     
     def _clear_checkpoint_files(self, symbol: str, exchange: str, timeframe: str = "1m") -> None:
         """Remove enhanced training checkpoints to guarantee a fresh start."""

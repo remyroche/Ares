@@ -1,5 +1,8 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import src.utils.warning_symbols
 import numpy as np
+from src.utils.logger import system_logger
 
 # src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
 
@@ -12,7 +15,10 @@ of different parameter combinations during hyperparameter optimization.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
+import logging
+import pandas as pd
+import time
 
 
 @dataclass
@@ -83,6 +89,7 @@ class PerformanceMetrics:
 
 class AdvancedEvaluationEngine:
     """Advanced evaluation engine for hyperparameter optimization."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -142,6 +149,7 @@ class AdvancedEvaluationEngine:
         except Exception as e:
             self.print(error(f"Error evaluating parameters: {e}"))
             return PerformanceMetrics()
+    @log_all_calls
 
     def _simulate_trading_performance(
         self,
@@ -220,7 +228,7 @@ class AdvancedEvaluationEngine:
                             "position_size": position_size,
                             "return": trade_return,
                             "is_win": is_win,
-                            "timestamp": datetime.now() + timedelta(hours=i),
+                            "timestamp": datetime.now() + timedelta(hours = i),
                         },
                     )
 
@@ -242,6 +250,7 @@ class AdvancedEvaluationEngine:
                 "cumulative_return": 0.0,
                 "n_trades": 0,
             }
+    @log_all_calls
 
     def _calculate_performance_metrics(
         self,
@@ -328,10 +337,10 @@ class AdvancedEvaluationEngine:
                 (df["timestamp"].diff().mean() or pd.Timedelta(0)).total_seconds()
             )
             max_consecutive_wins = int(
-                (df["is_win"].rolling(window=5).sum() == 5).sum()
+                (df["is_win"].rolling(window = 5).sum() == 5).sum()
             )
             max_consecutive_losses = int(
-                (df["is_win"].rolling(window=5).sum() == 0).sum()
+                (df["is_win"].rolling(window = 5).sum() == 0).sum()
             )
             recovery_factor = (
                 (total_return / abs(max_drawdown_pct + 1e-9))
@@ -348,14 +357,14 @@ class AdvancedEvaluationEngine:
             )
 
             return PerformanceMetrics(
-                win_rate=float(win_rate),
-                profit_factor=float(profit_factor),
-                total_return=float(total_return),
-                sharpe_ratio=float(sharpe_ratio),
-                sortino_ratio=float(sortino_ratio),
-                calmar_ratio=float(calmar_ratio),
-                max_drawdown=float(max_drawdown_pct),
-                volatility=float(volatility),
+                win_rate = float(win_rate),
+                profit_factor = float(profit_factor),
+                total_return = float(total_return),
+                sharpe_ratio = float(sharpe_ratio),
+                sortino_ratio = float(sortino_ratio),
+                calmar_ratio = float(calmar_ratio),
+                max_drawdown = float(max_drawdown_pct),
+                volatility = float(volatility),
                 value_at_risk=(
                     float(np.percentile(returns, 5)) if len(returns) > 0 else 0.0
                 ),
@@ -366,23 +375,24 @@ class AdvancedEvaluationEngine:
                     if len(returns) > 0
                     else 0.0
                 ),
-                total_trades=int(total_trades),
-                winning_trades=int(winning_trades),
-                losing_trades=int(losing_trades),
-                average_win=float(average_win),
-                average_loss=float(average_loss),
-                largest_win=float(df["return"].max()) if not df.empty else 0.0,
-                largest_loss=float(df["return"].min()) if not df.empty else 0.0,
-                average_trade_duration=average_trade_duration,
-                max_consecutive_wins=max_consecutive_wins,
-                max_consecutive_losses=max_consecutive_losses,
-                recovery_factor=float(recovery_factor),
-                profit_factor_ratio=float(profit_factor_ratio),
-                risk_reward_ratio=float(risk_reward_ratio),
+                total_trades = int(total_trades),
+                winning_trades = int(winning_trades),
+                losing_trades = int(losing_trades),
+                average_win = float(average_win),
+                average_loss = float(average_loss),
+                largest_win = float(df["return"].max()) if not df.empty else 0.0,
+                largest_loss = float(df["return"].min()) if not df.empty else 0.0,
+                average_trade_duration = average_trade_duration,
+                max_consecutive_wins = max_consecutive_wins,
+                max_consecutive_losses = max_consecutive_losses,
+                recovery_factor = float(recovery_factor),
+                profit_factor_ratio = float(profit_factor_ratio),
+                risk_reward_ratio = float(risk_reward_ratio),
             )
         except Exception as e:
             self.print(error(f"Error calculating performance metrics: {e}"))
             return PerformanceMetrics()
+    @log_all_calls
 
     def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
         """Calculate Sharpe ratio."""
@@ -398,6 +408,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating Sharpe ratio: {e}"))
             return 0.0
+    @log_all_calls
 
     def _calculate_sortino_ratio(self, returns: pd.Series) -> float:
         """Calculate Sortino ratio."""
@@ -415,6 +426,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating Sortino ratio: {e}"))
             return 0.0
+    @log_all_calls
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
@@ -429,6 +441,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating max drawdown: {e}"))
             return 0.0
+    @log_all_calls
 
     def _calculate_value_at_risk(
         self,
@@ -444,6 +457,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating VaR: {e}"))
             return 0.0
+    @log_all_calls
 
     def _calculate_conditional_value_at_risk(
         self,
@@ -460,6 +474,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating CVaR: {e}"))
             return 0.0
+    @log_all_calls
 
     def _calculate_max_consecutive_wins(self, df: pd.DataFrame) -> int:
         """Calculate maximum consecutive wins."""
@@ -481,6 +496,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating max consecutive wins: {e}"))
             return 0
+    @log_all_calls
 
     def _calculate_max_consecutive_losses(self, df: pd.DataFrame) -> int:
         """Calculate maximum consecutive losses."""
@@ -505,6 +521,7 @@ class AdvancedEvaluationEngine:
         except Exception:
             self.print(error("Error calculating max consecutive losses: {e}"))
             return 0
+    @log_all_calls
 
     def _validate_metrics(self, metrics: PerformanceMetrics) -> bool:
         """Validate metrics against performance thresholds."""
@@ -698,3 +715,5 @@ if __name__ == "__main__":
                 pass
         else:
             pass
+
+import src.utils.warning_symbols

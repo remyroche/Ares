@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 
 from .analyst.meta_labeling_system import CompositeHMMRegimeSystem
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
+from .training.training_manager import TrainingManager
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -41,15 +42,15 @@ class EventTriggerIndexer:
         self.logger = system_logger.getChild("EventTriggerIndexer")
         tm_cfg = (config or {}).get("TRANSITION_MODELING", {})
         self.event_cfg = EventConfig(
-            pre_window=int(tm_cfg.get("pre_window", 60)),
-            post_window=int(tm_cfg.get("post_window", 20)),
-            label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
-            window_iou_threshold=float(tm_cfg.get("window_iou_threshold", 0.5)),
-            use_reliability_weighting=bool(
+            pre_window = int(tm_cfg.get("pre_window", 60)),
+            post_window = int(tm_cfg.get("post_window", 20)),
+            label_cooldown_bars = int(tm_cfg.get("label_cooldown_bars", 45)),
+            window_iou_threshold = float(tm_cfg.get("window_iou_threshold", 0.5)),
+            use_reliability_weighting = bool(
                 tm_cfg.get("use_reliability_weighting", True),
             ),
-            use_rising_edge_only=bool(tm_cfg.get("use_rising_edge_only", True)),
-            preserve_secondary_labels=bool(
+            use_rising_edge_only = bool(tm_cfg.get("use_rising_edge_only", True)),
+            preserve_secondary_labels = bool(
                 tm_cfg.get("preserve_secondary_labels", True),
             ),
         )
@@ -66,13 +67,13 @@ class EventTriggerIndexer:
         # Override hardcoded thresholds with optimized values if available
         if intensity_config:
             self.event_cfg = EventConfig(
-                pre_window=int(tm_cfg.get("pre_window", 60)),
-                post_window=int(tm_cfg.get("post_window", 20)),
-                label_cooldown_bars=int(tm_cfg.get("label_cooldown_bars", 45)),
-                window_iou_threshold=float(intensity_config.get("intensity_nms_threshold", tm_cfg.get("window_iou_threshold", 0.5))),
-                use_reliability_weighting=bool(tm_cfg.get("use_reliability_weighting", True)),
-                use_rising_edge_only=bool(tm_cfg.get("use_rising_edge_only", True)),
-                preserve_secondary_labels=bool(tm_cfg.get("preserve_secondary_labels", True)),
+                pre_window = int(tm_cfg.get("pre_window", 60)),
+                post_window = int(tm_cfg.get("post_window", 20)),
+                label_cooldown_bars = int(tm_cfg.get("label_cooldown_bars", 45)),
+                window_iou_threshold = float(intensity_config.get("intensity_nms_threshold", tm_cfg.get("window_iou_threshold", 0.5))),
+                use_reliability_weighting = bool(tm_cfg.get("use_reliability_weighting", True)),
+                use_rising_edge_only = bool(tm_cfg.get("use_rising_edge_only", True)),
+                preserve_secondary_labels = bool(tm_cfg.get("preserve_secondary_labels", True)),
             )
 
     def _weighted_intensity(self, label: str, intensity: float) -> float:
@@ -91,7 +92,7 @@ class EventTriggerIndexer:
         post = self.event_cfg.post_window
         starts = indices - pre
         ends = indices + post
-        return np.stack([starts, ends], axis=1)
+        return np.stack([starts, ends], axis = 1)
 
     @staticmethod
     def _interval_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -106,12 +107,12 @@ class EventTriggerIndexer:
         if not event_rows:
             return []
         # Convert to arrays for efficiency
-        idx = np.array([r["row_index"] for r in event_rows], dtype=np.int64)
-        scores = np.array([r["weighted_intensity"] for r in event_rows], dtype=float)
+        idx = np.array([r["row_index"] for r in event_rows], dtype = np.int64)
+        scores = np.array([r["weighted_intensity"] for r in event_rows], dtype = float)
         windows = self._make_windows(idx)
         order = np.argsort(-scores)  # descending by weighted score
         keep: list[int] = []
-        suppressed = np.zeros(len(order), dtype=bool)
+        suppressed = np.zeros(len(order), dtype = bool)
         iou_thr = self.event_cfg.window_iou_threshold
         for i, o in enumerate(order):
             if suppressed[i]:
@@ -214,8 +215,8 @@ class EventTriggerIndexer:
                         try:
                             vals.append(
                                 meta._compute_label_intensity(
-                                    lab=p_slice,
-                                    v_slice=feats,
+                                    lab = p_slice,
+                                    v_slice = feats,
                                 ),
                             )
                         except Exception as e:
@@ -224,7 +225,7 @@ class EventTriggerIndexer:
                             )
                             vals.append(0.0)
                     out[f"intensity_{lab}"] = (
-                        pd.Series(vals, index=price_data.index)
+                        pd.Series(vals, index = price_data.index)
                         .reindex(out.index)
                         .fillna(0.0)
                     )
@@ -257,8 +258,8 @@ class EventTriggerIndexer:
 
         # Ensure intensities are available
         combined_df = self._compute_intensities_if_missing(
-            combined_df=price_data,
-            volume_data=candidate_labels,
+            combined_df = price_data,
+            volume_data = candidate_labels,
         )
 
         # Determine candidate labels from columns
@@ -283,7 +284,7 @@ class EventTriggerIndexer:
                 continue
             series = pd.to_numeric(combined_df[inten_col], errors="coerce").fillna(0.0)
             if self.event_cfg.use_rising_edge_only:
-                edges = self._rising_edge(series=series, threshold=thr)
+                edges = self._rising_edge(series = series, threshold = thr)
             else:
                 edges = series >= thr
             trigger_idx = np.where(edges.values)[0]
@@ -296,7 +297,7 @@ class EventTriggerIndexer:
             for ridx in trigger_idx:
                 ts = base_index[ridx]
                 intensity = float(series.iat[ridx])
-                weighted = self._weighted_intensity(label=lab, intensity=intensity)
+                weighted = self._weighted_intensity(label = lab, intensity = intensity)
                 # Collect secondary co-occurring labels above threshold at the same row
                 secondary: list[str] = []
                 if self.event_cfg.preserve_secondary_labels:
@@ -316,7 +317,7 @@ class EventTriggerIndexer:
                         "timeframe": timeframe
                         or combined_df.get(
                             "timeframe",
-                            pd.Series([None] * len(combined_df), index=base_index),
+                            pd.Series([None] * len(combined_df), index = base_index),
                         ).iat[ridx],
                         "instrument_id": instrument_id,
                     },
@@ -326,11 +327,11 @@ class EventTriggerIndexer:
             return pd.DataFrame()
 
         # Sort by time for cooldown
-        events_sorted = sorted(events, key=lambda r: r["row_index"])
+        events_sorted = sorted(events, key = lambda r: r["row_index"])
         events_cd = self._apply_cooldown(events_sorted)
         # Apply global NMS on windows
         events_nms = self._nms(events_cd)
 
         # Keep secondary labels info
         out_df = pd.DataFrame(events_nms)
-        return out_df.sort_values("row_index").reset_index(drop=True)
+        return out_df.sort_values("row_index").reset_index(drop = True)

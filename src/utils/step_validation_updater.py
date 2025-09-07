@@ -6,9 +6,10 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
+from .logger import system_logger
 
 class StepValidationUpdater:
     """Updates existing steps with pipeline standards validation."""
@@ -95,7 +96,7 @@ class StepValidationUpdater:
             if 'timestamp' in fixed_data.columns:
                 if not fixed_data['timestamp'].is_monotonic_increasing:
                     self.logger.info('📈 Sorting data by timestamp')
-                    fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                    fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
             try:
                 fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
                 self.logger.info('✅ Applied schema enforcement')

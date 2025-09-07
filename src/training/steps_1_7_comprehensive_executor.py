@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .training.steps.step01_5_data_converter import DataConverterStep
@@ -21,7 +22,7 @@ from .training.steps.step06_feature_engineering_validator import run_validator a
 from .training.steps.model_training.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
 from .training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 from .utils.enhanced_mlflow_integration import log_step_report
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.step_dependency_validator import validate_step_dependencies
 import numpy as np
 import pandas as pd
@@ -199,7 +200,7 @@ class Steps1To7ComprehensiveExecutor:
         try:
             validity_checks = []
             if all((col in data.columns for col in ['open', 'high', 'low', 'close'])):
-                price_validity = (data[['open', 'high', 'low', 'close']] > 0).all(axis=1).mean()
+                price_validity = (data[['open', 'high', 'low', 'close']] > 0).all(axis = 1).mean()
                 validity_checks.append(price_validity)
             if 'close' in data.columns:
                 price_range_validity = ((data['close'] > 0) & (data['close'] < 1000000.0)).mean()
@@ -255,13 +256,13 @@ class Steps1To7ComprehensiveExecutor:
         if 'timestamp' in data.columns:
             if data.index.name != 'timestamp':
                 try:
-                    data.set_index('timestamp', inplace=True)
+                    data.set_index('timestamp', inplace = True)
                     issues.append('Set timestamp as index')
                 except Exception:
                     issues.append('Failed to set timestamp as index')
             if not data.index.is_monotonic_increasing:
                 try:
-                    data.sort_index(inplace=True)
+                    data.sort_index(inplace = True)
                     issues.append('Sorted data by timestamp')
                 except Exception:
                     issues.append('Failed to sort data by timestamp')
@@ -275,7 +276,7 @@ class Steps1To7ComprehensiveExecutor:
             if expected_col not in data.columns:
                 for col in data.columns:
                     if col.lower() == expected_col:
-                        data.rename(columns={col: expected_col}, inplace=True)
+                        data.rename(columns={col: expected_col}, inplace = True)
                         issues.append(f'Renamed {col} to {expected_col}')
                         break
         return issues
@@ -348,7 +349,7 @@ class Steps1To7ComprehensiveExecutor:
             exchange = training_input.get('exchange', 'UNKNOWN')
             timeframe = training_input.get('timeframe', '1m')
             report_data = {'pipeline_success': pipeline_result['success'], 'total_execution_time': pipeline_result['total_execution_time'], 'average_quality_score': pipeline_result['average_quality_score'], 'step_results': pipeline_result['step_results'], 'errors_encountered': pipeline_result['errors_encountered'], 'execution_timings': self.execution_timings, 'data_quality_scores': self.data_quality_scores}
-            report_name = log_step_report(config=self.config, step_name='steps_1_7_comprehensive_execution', report_data=report_data, report_type='pipeline_execution_report', additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'pipeline_success': pipeline_result['success'], 'total_steps': 7, 'successful_steps': sum((1 for result in pipeline_result['step_results'].values() if result['success']))})
+            report_name = log_step_report(config = self.config, step_name='steps_1_7_comprehensive_execution', report_data = report_data, report_type='pipeline_execution_report', additional_metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'pipeline_success': pipeline_result['success'], 'total_steps': 7, 'successful_steps': sum((1 for result in pipeline_result['step_results'].values() if result['success']))})
             self.logger.info(f'✅ Logged comprehensive pipeline report: {report_name}')
         except Exception as e:
             self.logger.exception(f'❌ Failed to log pipeline report: {e}')

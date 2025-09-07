@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import numpy as np
 import pandas as pd
+from typing import Tuple, Optional, List, Dict, Any
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 """Profit-Based Feature Engineering System.
 
@@ -8,13 +13,12 @@ This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
 """
-from .core.decorators import handles_errors
 
 import time
 
 
 # Import essential decorators
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
 import logging
@@ -101,6 +105,7 @@ class ProfitBasedFeatureEngineering:
     This class provides extensive feature engineering capabilities based on profit
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
+    @log_important_calls
     """
     def __init__(
         self,
@@ -257,6 +262,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="basic_profit_features"
     )
+    @log_all_calls
     def _apply_basic_profit_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply basic profit features.
         
@@ -280,6 +286,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="categorical_features"
     )
+    @log_all_calls
     def _apply_categorical_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply categorical profit features.
         
@@ -317,6 +324,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="risk_reward_features"
     )
+    @log_all_calls
     def _apply_risk_reward_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk-reward features.
         
@@ -360,6 +368,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="momentum_features"
     )
+    @log_all_calls
     def _apply_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply momentum features.
         
@@ -399,6 +408,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="volatility_features"
     )
+    @log_all_calls
     def _apply_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volatility features.
         
@@ -443,6 +453,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="volume_features"
     )
+    @log_all_calls
     def _apply_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply volume-based profit features.
         
@@ -484,6 +495,7 @@ class ProfitBasedFeatureEngineering:
         default_return=pd.DataFrame(),
         context="rolling_features"
     )
+    @log_all_calls
     def _apply_rolling_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply rolling profit features.
         
@@ -573,6 +585,7 @@ class ProfitBasedFeatureEngineering:
             "feature_categories": feature_categories,
             "performance_metrics": self.performance_metrics
         }
+    @log_step_functions
 
     def select_features(
         self,
@@ -729,3 +742,5 @@ if __name__ == "__main__":
     # Benchmark performance
     benchmark_results = benchmark_profit_feature_engineering(data)
     print(f"Performance benchmark: {benchmark_results}")
+#!/usr/bin/env python3
+import numpy as np

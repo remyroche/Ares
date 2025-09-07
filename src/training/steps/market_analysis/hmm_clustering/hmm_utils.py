@@ -1,3 +1,4 @@
+from ....core.decorators import handles_errors
 """Utility functions and decorators for HMM regime discovery."""
 
 import logging
@@ -9,66 +10,41 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 
-# Import decorators safely
-try:
-    from src.utils.centralized_decorators import (
-        handles_errors, monitor_feature_engineering, validates, 
-        traced, log_execution_time, cached, ensure_data_integrity,
-        monitor_step_execution, secure_step_execution
-    )
-except ImportError:
-    # Fallback decorators if centralized_decorators is not available
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def monitor_feature_engineering(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def validates(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def traced(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def log_execution_time(func):
+# Import decorators
+from src.core.decorators.logging import log_execution_time
+from src.core.decorators.cache import cached
+
+# Placeholder decorators for compatibility
+def monitor_feature_engineering(*args, **kwargs):
+    def decorator(func):
         return func
-    
-    def cached(func):
+    return decorator
+
+def ensure_data_integrity(*args, **kwargs):
+    def decorator(func):
         return func
-    
-    def ensure_data_integrity(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def monitor_step_execution(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def secure_step_execution(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+    return decorator
+
+def monitor_step_execution(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
+
+def secure_step_execution(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
 
 
 def create_fallback_logger() -> Any:
     """Create a fallback logger if system_logger is not available."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 
 def ensure_directory(path: Path) -> Path:
     """Ensure directory exists and return the path."""
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents = True, exist_ok = True)
     return path
 
 
@@ -82,27 +58,27 @@ class TechnicalIndicators:
     """Collection of technical indicator calculation methods."""
     
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
         return rsi
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD (Moving Average Convergence Divergence)."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range (ATR)."""
         high = df['high']
@@ -111,16 +87,16 @@ class TechnicalIndicators:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=window).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = window).mean()
         return atr
 
     @staticmethod
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        sma = prices.rolling(window = window).mean()
+        std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
         bb_lower = sma - std * num_std
         bb_width = (bb_upper - bb_lower) / sma
@@ -135,7 +111,7 @@ class TechnicalIndicators:
         return bb_features
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average Directional Index (ADX)."""
         high = df['high']
@@ -144,26 +120,26 @@ class TechnicalIndicators:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         dm_plus = high - high.shift(1)
         dm_minus = low.shift(1) - low
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
         dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
-        tr_smooth = tr.rolling(window=window).mean()
-        dm_plus_smooth = dm_plus.rolling(window=window).mean()
-        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        tr_smooth = tr.rolling(window = window).mean()
+        dm_plus_smooth = dm_plus.rolling(window = window).mean()
+        dm_minus_smooth = dm_minus.rolling(window = window).mean()
         di_plus = 100 * (dm_plus_smooth / tr_smooth)
         di_minus = 100 * (dm_minus_smooth / tr_smooth)
         dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=window).mean()
+        adx = dx.rolling(window = window).mean()
         return adx
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_sr_strength(df: pd.DataFrame, window: int = 20) -> pd.Series:
         """Calculate support/resistance strength indicator."""
-        high_swing = df['high'].rolling(window=window, center=True).max()
-        low_swing = df['low'].rolling(window=window, center=True).min()
+        high_swing = df['high'].rolling(window = window, center = True).max()
+        low_swing = df['low'].rolling(window = window, center = True).min()
         current_price = df['close']
         high_strength = (high_swing - current_price) / high_swing
         low_strength = (current_price - low_swing) / low_swing
@@ -178,7 +154,7 @@ class FeatureCalculator:
         self.logger = logger
         self.indicators = TechnicalIndicators()
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     def prepare_hmm_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive features for HMM regime discovery."""
         try:
@@ -188,7 +164,7 @@ class FeatureCalculator:
             if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
             
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = df.sort_values('timestamp').reset_index(drop = True)
             
             features = pd.DataFrame()
             features['timestamp'] = df['timestamp']
@@ -238,10 +214,10 @@ class FeatureCalculator:
     def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add volatility features."""
         self.logger.info('📈 Calculating volatility features...')
-        features['volatility_5'] = df['close'].pct_change().rolling(window=5).std()
-        features['volatility_10'] = df['close'].pct_change().rolling(window=10).std()
-        features['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
-        features['ewma_volatility_20'] = df['close'].pct_change().ewm(span=20).std()
+        features['volatility_5'] = df['close'].pct_change().rolling(window = 5).std()
+        features['volatility_10'] = df['close'].pct_change().rolling(window = 10).std()
+        features['volatility_20'] = df['close'].pct_change().rolling(window = 20).std()
+        features['ewma_volatility_20'] = df['close'].pct_change().ewm(span = 20).std()
         features['volatility_acceleration'] = features['volatility_20'].diff()
         features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
         features['atr'] = self.indicators.calculate_atr(df)
@@ -250,9 +226,9 @@ class FeatureCalculator:
     def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add volume features."""
         self.logger.info('📊 Calculating volume features...')
-        features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window=5).mean()
-        features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window=10).mean()
-        features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window=20).mean()
+        features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window = 5).mean()
+        features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window = 10).mean()
+        features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window = 20).mean()
         features['volume_change'] = df['volume'].pct_change()
         features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
         features['volume_price_trend_ratio'] = features['volume_price_trend'] / features['volume_price_trend'].rolling(20).mean()
@@ -269,15 +245,15 @@ class FeatureCalculator:
         
         # Bollinger Bands
         bb_features = self.indicators.calculate_bollinger_bands(df['close'])
-        features = pd.concat([features, bb_features], axis=1)
+        features = pd.concat([features, bb_features], axis = 1)
 
     def _add_technical_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
         """Add technical features."""
         self.logger.info('🔧 Calculating additional technical features...')
-        features['sma_20'] = df['close'].rolling(window=20).mean()
-        features['sma_50'] = df['close'].rolling(window=50).mean()
-        features['ema_12'] = df['close'].ewm(span=12).mean()
-        features['ema_26'] = df['close'].ewm(span=26).mean()
+        features['sma_20'] = df['close'].rolling(window = 20).mean()
+        features['sma_50'] = df['close'].rolling(window = 50).mean()
+        features['ema_12'] = df['close'].ewm(span = 12).mean()
+        features['ema_26'] = df['close'].ewm(span = 26).mean()
         features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
         features['price_vs_sma50'] = (df['close'] - features['sma_50']) / features['sma_50']
         features['adx'] = self.indicators.calculate_adx(df)
@@ -292,7 +268,7 @@ class FeatureCalculator:
     def _clean_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate features."""
         self.logger.info('🧹 Cleaning and validating features...')
-        hmm_features = features.drop('timestamp', axis=1)
+        hmm_features = features.drop('timestamp', axis = 1)
         initial_rows = len(hmm_features)
         
         # Forward fill technical indicators

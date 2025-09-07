@@ -33,7 +33,7 @@ def create_sample_data(rows: int = 1000, issue_type: str = None) -> pd.DataFrame
     np.random.seed(42)
 
     # Generate base timestamp
-    timestamps = pd.date_range(start="2024-01-01", periods=rows, freq="1min")
+    timestamps = pd.date_range(start="2024-01-01", periods = rows, freq="1min")
     timestamps_ms = (timestamps.astype(np.int64) // 10**6).astype(np.int64)
 
     # Generate OHLC data
@@ -51,12 +51,12 @@ def create_sample_data(rows: int = 1000, issue_type: str = None) -> pd.DataFrame
     # Introduce specific issues for testing
     if issue_type == "missing_data":
         # Remove 5% of rows randomly
-        drop_indices = np.random.choice(df.index, size=int(0.05 * len(df)), replace=False)
-        df = df.drop(drop_indices).reset_index(drop=True)
+        drop_indices = np.random.choice(df.index, size = int(0.05 * len(df)), replace = False)
+        df = df.drop(drop_indices).reset_index(drop = True)
 
     elif issue_type == "outliers":
         # Add extreme outliers
-        outlier_indices = np.random.choice(df.index, size=int(0.02 * len(df)), replace=False)
+        outlier_indices = np.random.choice(df.index, size = int(0.02 * len(df)), replace = False)
         df.loc[outlier_indices, "volume"] *= 100  # Extreme volume spikes
         df.loc[outlier_indices[:5], "close"] *= 2  # Price spikes
 
@@ -67,11 +67,11 @@ def create_sample_data(rows: int = 1000, issue_type: str = None) -> pd.DataFrame
 
     elif issue_type == "data_corruption":
         # Add NaN values and impossible OHLC relationships
-        nan_indices = np.random.choice(df.index, size=int(0.03 * len(df)), replace=False)
+        nan_indices = np.random.choice(df.index, size = int(0.03 * len(df)), replace = False)
         df.loc[nan_indices, "volume"] = np.nan
 
         # Make high < low for some rows
-        corrupt_indices = np.random.choice(df.index, size=int(0.01 * len(df)), replace=False)
+        corrupt_indices = np.random.choice(df.index, size = int(0.01 * len(df)), replace = False)
         df.loc[corrupt_indices, "high"] = df.loc[corrupt_indices, "low"] - 1
 
     return df
@@ -113,8 +113,8 @@ def create_sample_features(df: pd.DataFrame, issue_type: str = None) -> pd.DataF
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     """Calculate RSI indicator."""
     delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(window = period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
@@ -133,8 +133,8 @@ async def demo_cross_step_validation():
     step2_data = step1_data.copy()
 
     result = validator.validate_step_transition(
-        previous_step_output=step1_data,
-        current_step_input=step2_data,
+        previous_step_output = step1_data,
+        current_step_input = step2_data,
         previous_step_name="step1_data_collection",
         current_step_name="step1_5_data_converter",
     )
@@ -148,8 +148,8 @@ async def demo_cross_step_validation():
     step2_data = await {func}(800, issue_type="missing_data")
 
     result = validator.validate_step_transition(
-        previous_step_output=step1_data,
-        current_step_input=step2_data,
+        previous_step_output = step1_data,
+        current_step_input = step2_data,
         previous_step_name="step1_5_data_converter",
         current_step_name="step2_feature_engineering",
     )
@@ -175,9 +175,9 @@ async def demo_statistical_validation():
     data = await {func}(1000)
 
     result = validator.validate_distribution(
-        df=data,
+        df = data,
         columns=["open", "high", "low", "close", "volume"],
-        check_stationarity=True,
+        check_stationarity = True,
     )
 
     logger.info(f"✅ Validation passed: {result.passed}")
@@ -188,9 +188,9 @@ async def demo_statistical_validation():
     data = await {func}(1000, issue_type="outliers")
 
     result = validator.validate_distribution(
-        df=data,
+        df = data,
         columns=["open", "high", "low", "close", "volume"],
-        check_stationarity=True,
+        check_stationarity = True,
     )
 
     logger.info(f"⚠️ Validation passed: {result.passed}")
@@ -205,9 +205,9 @@ async def demo_statistical_validation():
     data = await {func}(1000, issue_type="non_stationary")
 
     result = validator.validate_distribution(
-        df=data,
+        df = data,
         columns=["close", "volume"],
-        check_stationarity=True,
+        check_stationarity = True,
     )
 
     logger.info(f"⚠️ Validation passed: {result.passed}")
@@ -228,11 +228,11 @@ async def demo_feature_engineering_validation():
     features_data = create_sample_features(original_data)
 
     result = validator.validate_engineered_features(
-        original_df=original_data,
-        features_df=features_data,
+        original_df = original_data,
+        features_df = features_data,
         feature_config={},
-        validate_calculations=True,
-        check_dependencies=True,
+        validate_calculations = True,
+        check_dependencies = True,
     )
 
     logger.info(f"✅ Validation passed: {result.passed}")
@@ -244,11 +244,11 @@ async def demo_feature_engineering_validation():
     features_data = create_sample_features(original_data, issue_type="calculation_error")
 
     result = validator.validate_engineered_features(
-        original_df=original_data,
-        features_df=features_data,
+        original_df = original_data,
+        features_df = features_data,
         feature_config={},
-        validate_calculations=True,
-        check_dependencies=True,
+        validate_calculations = True,
+        check_dependencies = True,
     )
 
     logger.info(f"❌ Validation passed: {result.passed}")
@@ -260,11 +260,11 @@ async def demo_feature_engineering_validation():
     features_data = create_sample_features(original_data, issue_type="out_of_range")
 
     result = validator.validate_engineered_features(
-        original_df=original_data,
-        features_df=features_data,
+        original_df = original_data,
+        features_df = features_data,
         feature_config={},
-        validate_calculations=True,
-        check_dependencies=True,
+        validate_calculations = True,
+        check_dependencies = True,
     )
 
     logger.info(f"❌ Validation passed: {result.passed}")
@@ -280,11 +280,11 @@ async def demo_feature_engineering_validation():
     features_data = create_sample_features(original_data, issue_type="feature_leakage")
 
     result = validator.validate_engineered_features(
-        original_df=original_data,
-        features_df=features_data,
+        original_df = original_data,
+        features_df = features_data,
         feature_config={},
-        validate_calculations=True,
-        check_dependencies=True,
+        validate_calculations = True,
+        check_dependencies = True,
     )
 
     logger.info(f"❌ Validation passed: {result.passed}")

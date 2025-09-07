@@ -8,7 +8,7 @@ import joblib
 
 from .core.decorators import validates
 from .utils.common_operations import safe_json_load
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import json
 import logging
 

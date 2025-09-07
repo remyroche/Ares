@@ -1,3 +1,4 @@
+from ..core.decorators import handles_errors
 """
 Loss Calculator Module.
 
@@ -8,10 +9,8 @@ This module handles various loss calculations for model training and evaluation.
 from typing import Any, Dict
 
 
-from .core.decorators import handles_errors
 
 from .base import PnLLossFunctionsBase
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Advanced Dimensionality Reduction for Feature Matrices.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides comprehensive solutions for the curse of dimensionality
 in regime discovery, including automated dimensionality reduction, feature
 selection, and manifold learning techniques.
@@ -77,6 +79,7 @@ class DimensionalityReductionConfig:
     # Ensemble feature selection
     enable_ensemble_selection: bool = True
     ensemble_methods: List[str] = None
+    @log_all_calls
     
     def __post_init__(self):
         if self.ensemble_methods is None:
@@ -85,6 +88,7 @@ class DimensionalityReductionConfig:
 
 class AdvancedDimensionalityReducer:
     """Advanced dimensionality reduction with multiple strategies."""
+    @log_important_calls
     
     def __init__(self, config: Step03Config):
         self.config = config
@@ -97,6 +101,7 @@ class AdvancedDimensionalityReducer:
         self.feature_importance = {}
         self.selected_features = None
         self.reduced_features = None
+    @log_all_calls
         
     def _remove_correlated_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Remove highly correlated features."""
@@ -105,13 +110,13 @@ class AdvancedDimensionalityReducer:
             corr_matrix = features.corr().abs()
             
             # Find pairs of highly correlated features
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > self.dim_config.correlation_threshold)]
             
             # Remove features with highest average correlation
             if len(to_drop) > 0:
                 self.logger.info(f"Removing {len(to_drop)} highly correlated features")
-                features_cleaned = features.drop(columns=to_drop)
+                features_cleaned = features.drop(columns = to_drop)
             else:
                 features_cleaned = features.copy()
             
@@ -120,37 +125,39 @@ class AdvancedDimensionalityReducer:
         except Exception as e:
             self.logger.warning(f"Correlation removal failed: {e}")
             return features
+    @log_all_calls
     
     def _univariate_feature_selection(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Univariate feature selection using statistical tests."""
         try:
             # Use mutual information for better performance with non-linear relationships
-            selector = SelectKBest(score_func=mutual_info_classif, k=min(self.dim_config.univariate_k, X.shape[1]))
+            selector = SelectKBest(score_func = mutual_info_classif, k = min(self.dim_config.univariate_k, X.shape[1]))
             X_selected = selector.fit_transform(X, y)
             
             # Store feature importance
             self.feature_importance['univariate'] = selector.scores_
             
             self.logger.info(f"Univariate selection: {X.shape[1]} -> {X_selected.shape[1]} features")
-            return X_selected, selector.get_support(indices=True)
+            return X_selected, selector.get_support(indices = True)
             
         except Exception as e:
             self.logger.warning(f"Univariate feature selection failed: {e}")
             return X, np.arange(X.shape[1])
+    @log_all_calls
     
     def _recursive_feature_elimination(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Recursive feature elimination with cross-validation."""
         try:
             # Use Random Forest as base estimator
-            estimator = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
+            estimator = RandomForestClassifier(n_estimators = 50, random_state = 42, n_jobs=-1)
             
             # RFE with cross-validation
             selector = RFECV(
-                estimator=estimator,
-                step=1,
-                cv=self.dim_config.recursive_cv_folds,
+                estimator = estimator,
+                step = 1,
+                cv = self.dim_config.recursive_cv_folds,
                 scoring='f1',
-                min_features_to_select=self.dim_config.min_features,
+                min_features_to_select = self.dim_config.min_features,
                 n_jobs=-1
             )
             
@@ -160,20 +167,21 @@ class AdvancedDimensionalityReducer:
             self.feature_importance['recursive'] = selector.ranking_
             
             self.logger.info(f"Recursive elimination: {X.shape[1]} -> {X_selected.shape[1]} features")
-            return X_selected, selector.get_support(indices=True)
+            return X_selected, selector.get_support(indices = True)
             
         except Exception as e:
             self.logger.warning(f"Recursive feature elimination failed: {e}")
             return X, np.arange(X.shape[1])
+    @log_all_calls
     
     def _embedded_feature_selection(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Embedded feature selection using L1 regularization."""
         try:
             # Use ElasticNet for feature selection
             selector = ElasticNetCV(
-                l1_ratio=self.dim_config.elastic_net_l1_ratio,
-                cv=5,
-                random_state=42,
+                l1_ratio = self.dim_config.elastic_net_l1_ratio,
+                cv = 5,
+                random_state = 42,
                 n_jobs=-1
             )
             
@@ -192,6 +200,7 @@ class AdvancedDimensionalityReducer:
         except Exception as e:
             self.logger.warning(f"Embedded feature selection failed: {e}")
             return X, np.arange(X.shape[1])
+    @log_all_calls
     
     def _ensemble_feature_selection(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Ensemble feature selection combining multiple methods."""
@@ -234,6 +243,7 @@ class AdvancedDimensionalityReducer:
         except Exception as e:
             self.logger.warning(f"Ensemble feature selection failed: {e}")
             return X, np.arange(X.shape[1])
+    @log_all_calls
     
     def _linear_dimensionality_reduction(self, X: np.ndarray) -> Dict[str, np.ndarray]:
         """Apply linear dimensionality reduction methods."""
@@ -251,7 +261,7 @@ class AdvancedDimensionalityReducer:
             else:
                 n_components = min(self.dim_config.pca_components, X.shape[1])
             
-            pca = PCA(n_components=n_components, whiten=self.dim_config.pca_whiten)
+            pca = PCA(n_components = n_components, whiten = self.dim_config.pca_whiten)
             results['pca'] = pca.fit_transform(X)
             
             self.logger.info(f"PCA: {X.shape[1]} -> {results['pca'].shape[1]} components "
@@ -267,7 +277,7 @@ class AdvancedDimensionalityReducer:
             else:
                 ica_components = min(self.dim_config.ica_components, X.shape[1])
             
-            ica = FastICA(n_components=ica_components, max_iter=self.dim_config.ica_max_iter, random_state=42)
+            ica = FastICA(n_components = ica_components, max_iter = self.dim_config.ica_max_iter, random_state = 42)
             results['ica'] = ica.fit_transform(X)
             
             self.logger.info(f"FastICA: {X.shape[1]} -> {results['ica'].shape[1]} components")
@@ -282,7 +292,7 @@ class AdvancedDimensionalityReducer:
             else:
                 fa_components = min(self.dim_config.fa_components, X.shape[1])
             
-            fa = FactorAnalysis(n_components=fa_components, max_iter=self.dim_config.fa_max_iter, random_state=42)
+            fa = FactorAnalysis(n_components = fa_components, max_iter = self.dim_config.fa_max_iter, random_state = 42)
             results['factor_analysis'] = fa.fit_transform(X)
             
             self.logger.info(f"Factor Analysis: {X.shape[1]} -> {results['factor_analysis'].shape[1]} components")
@@ -293,7 +303,7 @@ class AdvancedDimensionalityReducer:
         try:
             # Truncated SVD
             svd_components = min(50, X.shape[1] // 2)
-            svd = TruncatedSVD(n_components=svd_components, random_state=42)
+            svd = TruncatedSVD(n_components = svd_components, random_state = 42)
             results['svd'] = svd.fit_transform(X)
             
             self.logger.info(f"Truncated SVD: {X.shape[1]} -> {results['svd'].shape[1]} components")
@@ -302,6 +312,7 @@ class AdvancedDimensionalityReducer:
             self.logger.warning(f"Truncated SVD failed: {e}")
         
         return results
+    @log_all_calls
     
     def _manifold_learning(self, X: np.ndarray) -> Dict[str, np.ndarray]:
         """Apply manifold learning methods."""
@@ -313,15 +324,15 @@ class AdvancedDimensionalityReducer:
         try:
             # t-SNE (for visualization and low-dimensional representation)
             if X.shape[0] > 1000:  # Subsample for t-SNE
-                indices = np.random.choice(X.shape[0], 1000, replace=False)
+                indices = np.random.choice(X.shape[0], 1000, replace = False)
                 X_subset = X[indices]
             else:
                 X_subset = X
             
             tsne = TSNE(
-                n_components=self.dim_config.tsne_components,
-                perplexity=self.dim_config.tsne_perplexity,
-                random_state=42,
+                n_components = self.dim_config.tsne_components,
+                perplexity = self.dim_config.tsne_perplexity,
+                random_state = 42,
                 n_jobs=-1
             )
             results['tsne'] = tsne.fit_transform(X_subset)
@@ -335,9 +346,9 @@ class AdvancedDimensionalityReducer:
             # UMAP (if available)
             if umap and X.shape[0] > 100:
                 umap_reducer = umap.UMAP(
-                    n_components=self.dim_config.umap_components,
-                    n_neighbors=self.dim_config.umap_n_neighbors,
-                    random_state=42,
+                    n_components = self.dim_config.umap_components,
+                    n_neighbors = self.dim_config.umap_n_neighbors,
+                    random_state = 42,
                     n_jobs=-1
                 )
                 results['umap'] = umap_reducer.fit_transform(X)
@@ -350,7 +361,7 @@ class AdvancedDimensionalityReducer:
         try:
             # Isomap
             if X.shape[0] > 100 and X.shape[1] > 10:
-                isomap = Isomap(n_components=min(10, X.shape[1] - 1), n_neighbors=10, n_jobs=-1)
+                isomap = Isomap(n_components = min(10, X.shape[1] - 1), n_neighbors = 10, n_jobs=-1)
                 results['isomap'] = isomap.fit_transform(X)
                 
                 self.logger.info(f"Isomap: {X.shape[1]} -> {results['isomap'].shape[1]} components")
@@ -362,9 +373,9 @@ class AdvancedDimensionalityReducer:
             # Locally Linear Embedding
             if X.shape[0] > 100 and X.shape[1] > 10:
                 lle = LocallyLinearEmbedding(
-                    n_components=min(10, X.shape[1] - 1),
-                    n_neighbors=10,
-                    random_state=42,
+                    n_components = min(10, X.shape[1] - 1),
+                    n_neighbors = 10,
+                    random_state = 42,
                     n_jobs=-1
                 )
                 results['lle'] = lle.fit_transform(X)
@@ -375,6 +386,7 @@ class AdvancedDimensionalityReducer:
             self.logger.warning(f"LLE failed: {e}")
         
         return results
+    @log_all_calls
     
     def _select_best_reduction_method(self, X: np.ndarray, y: np.ndarray, 
                                     reduction_results: Dict[str, np.ndarray]) -> Tuple[str, np.ndarray]:
@@ -394,7 +406,7 @@ class AdvancedDimensionalityReducer:
                     
                     # Determine optimal number of clusters
                     n_clusters = min(8, max(2, features.shape[0] // 100))
-                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    kmeans = KMeans(n_clusters = n_clusters, random_state = 42, n_init = 10)
                     labels = kmeans.fit_predict(features)
                     
                     # Calculate silhouette score
@@ -453,7 +465,7 @@ class AdvancedDimensionalityReducer:
                 
                 # Update features with selected ones
                 selected_columns = features_cleaned.columns[selected_indices]
-                features_cleaned = pd.DataFrame(X_selected, index=features_cleaned.index, columns=selected_columns)
+                features_cleaned = pd.DataFrame(X_selected, index = features_cleaned.index, columns = selected_columns)
             
             # Step 3: Linear dimensionality reduction
             self.logger.info("📐 Applying linear dimensionality reduction...")
@@ -473,7 +485,7 @@ class AdvancedDimensionalityReducer:
                 
                 # Create final features DataFrame
                 feature_names = [f"{best_method}_component_{i}" for i in range(best_features.shape[1])]
-                final_features = pd.DataFrame(best_features, index=features.index, columns=feature_names)
+                final_features = pd.DataFrame(best_features, index = features.index, columns = feature_names)
                 
                 self.reduction_results = {
                     'method': best_method,
@@ -501,3 +513,11 @@ class AdvancedDimensionalityReducer:
     def get_reduction_summary(self) -> Dict[str, Any]:
         """Get summary of dimensionality reduction results."""
         return self.reduction_results
+
+"""
+Advanced Dimensionality Reduction for Feature Matrices.
+
+This module provides comprehensive solutions for the curse of dimensionality
+in regime discovery, including automated dimensionality reduction, feature
+selection, and manifold learning techniques.
+"""

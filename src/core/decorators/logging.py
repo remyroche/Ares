@@ -16,7 +16,7 @@ from .compose import P, R, uniform_wrapper
 import numpy as np
 
 # Context variable for correlation ID
-correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default = None)
 
 # Sensitive field names to mask
 SENSITIVE_FIELDS = {
@@ -121,7 +121,7 @@ def log_call(
         logger_name: Custom logger name (defaults to function module)
 
     Example:
-        @log_call(level="INFO", log_args=True, mask_sensitive=True)
+        @log_call(level="INFO", log_args = True, mask_sensitive = True)
         def create_user(username: str, password: str) -> dict:
             # password will be masked in logs
             return {"id": 123, "username": username}
@@ -181,7 +181,7 @@ def log_call(
 
         # Log function call
         log_data = prepare_log_data(func, args, kwargs)
-        log_method(f"Calling {func.__name__}", extra=log_data)
+        log_method(f"Calling {func.__name__}", extra = log_data)
 
         try:
             result = func(*args, **kwargs)
@@ -189,17 +189,17 @@ def log_call(
             # Log successful completion
             duration = time.time() - start_time if start_time else None
             log_data = prepare_log_data(
-                func, args, kwargs, result=result, duration=duration
+                func, args, kwargs, result = result, duration = duration
             )
-            log_method(f"Completed {func.__name__}", extra=log_data)
+            log_method(f"Completed {func.__name__}", extra = log_data)
 
             return result
 
         except Exception as e:
             # Log error
             duration = time.time() - start_time if start_time else None
-            log_data = prepare_log_data(func, args, kwargs, error=e, duration=duration)
-            logger.error(f"Failed {func.__name__}", extra=log_data, exc_info=True)
+            log_data = prepare_log_data(func, args, kwargs, error = e, duration = duration)
+            logger.error(f"Failed {func.__name__}", extra = log_data, exc_info = True)
             raise
 
     async def async_handler(
@@ -212,7 +212,7 @@ def log_call(
 
         # Log function call
         log_data = prepare_log_data(func, args, kwargs)
-        log_method(f"Calling {func.__name__}", extra=log_data)
+        log_method(f"Calling {func.__name__}", extra = log_data)
 
         try:
             result = await func(*args, **kwargs)
@@ -220,17 +220,17 @@ def log_call(
             # Log successful completion
             duration = time.time() - start_time if start_time else None
             log_data = prepare_log_data(
-                func, args, kwargs, result=result, duration=duration
+                func, args, kwargs, result = result, duration = duration
             )
-            log_method(f"Completed {func.__name__}", extra=log_data)
+            log_method(f"Completed {func.__name__}", extra = log_data)
 
             return result
 
         except Exception as e:
             # Log error
             duration = time.time() - start_time if start_time else None
-            log_data = prepare_log_data(func, args, kwargs, error=e, duration=duration)
-            logger.error(f"Failed {func.__name__}", extra=log_data, exc_info=True)
+            log_data = prepare_log_data(func, args, kwargs, error = e, duration = duration)
+            logger.error(f"Failed {func.__name__}", extra = log_data, exc_info = True)
             raise
 
     return uniform_wrapper(f"log_call({level})", sync_handler, async_handler)
@@ -249,7 +249,7 @@ def log_execution_time(
         logger_name: Custom logger name
 
     Example:
-        @log_execution_time(threshold_ms=100)
+        @log_execution_time(threshold_ms = 100)
         def slow_operation():
             time.sleep(0.2)  # Will be logged
     """

@@ -10,9 +10,9 @@ from typing import Any
 import yaml
 from .utils.logger import system_logger
 from .utils.warning_symbols import failed, warning
-from .core.decorators.errors import handles_errors
 
 from logging import error
+from .core.decorators import handles_errors
 try:
     _watchdog_events = importlib.import_module('watchdog.events')
     _watchdog_observers = importlib.import_module('watchdog.observers')
@@ -130,7 +130,7 @@ class ConfigurationService:
         self.load_times: list[float] = []
         self.last_load_time: float = 0
 
-    def get_value(self, dotted_key: str, default: Any=None) -> Any:
+    def get_value(self, dotted_key: str, default: Any = None) -> Any:
         """Retrieve a configuration value using a dotted path from config_data.
 
         Falls back to the initial raw config (self.config) if not present in
@@ -161,7 +161,7 @@ class ConfigurationService:
         except Exception:
             self.print_message(message)
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration service setup'), AttributeError: (False, 'Missing required configuration parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='configuration service initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration service setup'), AttributeError: (False, 'Missing required configuration parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='configuration service initialization')
     async def initialize(self) -> bool:
         """Initialize configuration service with enhanced capabilities."""
         try:
@@ -186,7 +186,7 @@ class ConfigurationService:
             self.logger.exception(f'❌ Configuration Service initialization failed: {e}')
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_configuration(self) -> None:
         """Load configuration from multiple sources."""
         try:
@@ -206,7 +206,7 @@ class ConfigurationService:
         except Exception as e:
             self.print_message(error(f'Error loading configuration: {e}'))
 
-    @handles_errors(default_return=None, context='config file loading')
+    @handles_errors(default_return = None, context='config file loading')
     async def _load_config_file(self, config_file: str) -> None:
         """Load configuration from a specific file."""
         try:
@@ -330,7 +330,7 @@ class ConfigurationService:
             for config_dir in self.config_directories:
                 if os.path.exists(config_dir):
                     event_handler = ConfigurationWatcher(self)
-                    self.watcher.schedule(event_handler, config_dir, recursive=True)
+                    self.watcher.schedule(event_handler, config_dir, recursive = True)
                     self.watched_files.add(config_dir)
                     self.logger.info(f'Watching configuration directory: {config_dir}')
         except Exception as e:
@@ -361,7 +361,7 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f'Error reloading configuration: {e}')
 
-    def get_config(self, section: str | None=None) -> Any:
+    def get_config(self, section: str | None = None) -> Any:
         """Get configuration data."""
         try:
             if section:
@@ -401,7 +401,7 @@ class ConfigurationService:
             self.logger.exception(f'Error getting status: {e}')
             return {}
 
-    def get_history(self, limit: int | None=None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Get configuration history."""
         try:
             history = self.config_history.copy()

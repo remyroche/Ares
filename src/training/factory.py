@@ -10,12 +10,13 @@ from typing import Any
 import psutil
 
 from .config.computational_optimization_config import get_optimization_config
+from src.utils.logger import system_logger
 from src.training.enhanced_training_manager_optimized import (
     EnhancedTrainingManagerOptimized,
 )
 from .training.memory_profiler import MemoryLeakDetector, MemoryProfiler
 from .training.steps.optimized_step_executor import OptimizedStepExecutor
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 
 class OptimizedTrainingFactory:
@@ -58,8 +59,8 @@ class OptimizedTrainingFactory:
         )
 
         return MemoryProfiler(
-            enable_tracemalloc=enable_tracemalloc,
-            enable_continuous_monitoring=enable_continuous_monitoring,
+            enable_tracemalloc = enable_tracemalloc,
+            enable_continuous_monitoring = enable_continuous_monitoring,
         )
 
     def create_memory_leak_detector(

@@ -1,10 +1,12 @@
 """Integration script for per-regime processing in Steps 5-7."""
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import asyncio
 import shutil
 from datetime import datetime
 from pathlib import Path
 from .utils.common_operations import ensure_directory
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import logging
 import time
 import typing
@@ -13,6 +15,7 @@ logger = system_logger.getChild('RegimeIntegration')
 
 class RegimeProcessingIntegrator:
     """Integrates per-regime processing into existing pipeline."""
+    @log_important_calls
 
     def __init__(self) -> None:
         self.logger = system_logger.getChild('RegimeProcessingIntegrator')
@@ -46,7 +49,7 @@ class RegimeProcessingIntegrator:
     async def _update_step5_labeling(self) -> None:
         """Update Step 5 to use per-regime labeling."""
         import_code = '\n# Import regime-aware components\nfrom src.training.steps.steps_5_7_regime_implementation import (\n    RegimeAwareLabelingStep,\n    run_regime_aware_pipeline\n)\n'
-        modification_code = '\n    async def execute(self, training_input: dict[str, Any], \n                     pipeline_state: dict[str, Any]) -> dict[str, Any]:\n        """Execute labeling step with optional per-regime processing."""\n        \n        # Check if regime labels are available\n        if \'regime_labels\' in pipeline_state:\n            self.logger.info("Regime labels detected - using per-regime labeling")\n            \n            # Use regime-aware labeling\n            regime_labeler = RegimeAwareLabelingStep(self.config)\n            results = await regime_labeler.execute(\n                data=pipeline_state[\'processed_data\'],\n                regime_labels=pipeline_state[\'regime_labels\'],\n                symbol=training_input[\'symbol\'],\n                exchange=training_input[\'exchange\'],\n                timeframe=training_input[\'timeframe\']\n            )\n            \n            # Update pipeline state\n            pipeline_state[\'labeled_data_by_regime\'] = results[\'labeled_data_by_regime\']\n            pipeline_state[\'labeling_statistics\'] = results[\'statistics\']\n            pipeline_state[\'per_regime_processing\'] = True\n            \n        else:\n            # Fall back to original implementation\n            self.logger.info("No regime labels - using standard labeling")\n            pipeline_state = await self._original_execute(training_input, pipeline_state)\n            pipeline_state[\'per_regime_processing\'] = False\n            \n        return pipeline_state\n'
+        modification_code = '\n    async def execute(self, training_input: dict[str, Any], \n                     pipeline_state: dict[str, Any]) -> dict[str, Any]:\n        """Execute labeling step with optional per-regime processing."""\n        \n        # Check if regime labels are available\n        if \'regime_labels\' in pipeline_state:\n            self.logger.info("Regime labels detected - using per-regime labeling")\n            \n            # Use regime-aware labeling\n            regime_labeler = RegimeAwareLabelingStep(self.config)\n            results = await regime_labeler.execute(\n                data = pipeline_state[\'processed_data\'],\n                regime_labels = pipeline_state[\'regime_labels\'],\n                symbol = training_input[\'symbol\'],\n                exchange = training_input[\'exchange\'],\n                timeframe = training_input[\'timeframe\']\n            )\n            \n            # Update pipeline state\n            pipeline_state[\'labeled_data_by_regime\'] = results[\'labeled_data_by_regime\']\n            pipeline_state[\'labeling_statistics\'] = results[\'statistics\']\n            pipeline_state[\'per_regime_processing\'] = True\n            \n        else:\n            # Fall back to original implementation\n            self.logger.info("No regime labels - using standard labeling")\n            pipeline_state = await self._original_execute(training_input, pipeline_state)\n            pipeline_state[\'per_regime_processing\'] = False\n            \n        return pipeline_state\n'
         step5_path = Path('src/training/steps/step05_labeling_regime_aware.py')
         self.logger.info(f'Creating regime-aware version at {step5_path}')
         self.logger.info('Step 5 labeling updated for regime awareness')
@@ -68,7 +71,7 @@ class RegimeProcessingIntegrator:
         """Run integration tests."""
         self.logger.info('Running integration tests...')
         tests = [self._test_regime_labeling(), self._test_regime_features(), self._test_regime_matrix_ops(), self._test_end_to_end_pipeline()]
-        results = await asyncio.gather(*tests, return_exceptions=True)
+        results = await asyncio.gather(*tests, return_exceptions = True)
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 self.logger.error(f'Test {i} failed: {result}')
@@ -114,3 +117,5 @@ async def main() -> None:
         print('\n❌ Integration failed. Check logs for details.')
 if __name__ == '__main__':
     asyncio.run(main())
+"""Integration script for per-regime processing in Steps 5-7."""
+import asyncio

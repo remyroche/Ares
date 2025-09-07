@@ -1,4 +1,6 @@
+from ...core.decorators import handles_errors
 """
+from src.utils.logger import system_logger
 Enhanced Data Validation Framework with Decorators
 
 This module provides comprehensive validation during data collection with:
@@ -17,8 +19,7 @@ from enum import Enum
 from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -57,7 +58,7 @@ class ValidationError:
     exchange: Optional[str] = None
     data_type: Optional[str] = None
     timestamp: Optional[datetime] = None
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: Dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class FieldDefinition:
@@ -91,8 +92,8 @@ class DataSchema:
     primary_key: List[str]
     timestamp_field: str = 'timestamp'
     time_gap_config: Optional[TimeGapConfig] = None
-    required_columns: List[str] = field(default_factory=list)
-    optional_columns: List[str] = field(default_factory=list)
+    required_columns: List[str] = field(default_factory = list)
+    optional_columns: List[str] = field(default_factory = list)
     description: str = ''
 
 class EnhancedDataValidator:
@@ -115,8 +116,8 @@ class EnhancedDataValidator:
         self.logger.info(f'📋 Schema: {len(schema.fields)} fields, {len(schema.required_columns)} required columns')
 
     @handles_errors(fallback=[], context='validate_row')
-    @traced(span_name='validate_single_row', log_args=False, log_result_len_only=True)
-    def validate_row(self, row_data: Dict[str, Any], row_index: int=0) -> Dict[str, Any]:
+    @traced(span_name='validate_single_row', log_args = False, log_result_len_only = True)
+    def validate_row(self, row_data: Dict[str, Any], row_index: int = 0) -> Dict[str, Any]:
         """
         Validate and standardize a single row of data with extensive logging.
         
@@ -158,8 +159,8 @@ class EnhancedDataValidator:
             raise
 
     @handles_errors(fallback=[], context='validate_batch')
-    @traced(span_name='validate_data_batch', log_args=False, log_result_len_only=True)
-    @memory_efficient(batch_size=1000)
+    @traced(span_name='validate_data_batch', log_args = False, log_result_len_only = True)
+    @memory_efficient(batch_size = 1000)
     def validate_batch(self, batch_data: List[Dict[str, Any]], previous_timestamp: Optional[int]=None) -> List[Dict[str, Any]]:
         """
         Validate a batch of data with time gap detection and extensive logging.
@@ -188,7 +189,7 @@ class EnhancedDataValidator:
                             batch_errors.append(gap_error)
                 except ValueError as e:
                     self.logger.error(f'❌ Row {i} validation failed: {e}')
-                    batch_errors.append(ValidationError(field='row', message=str(e), severity=ValidationSeverity.CRITICAL, row_index=i, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                    batch_errors.append(ValidationError(field='row', message = str(e), severity = ValidationSeverity.CRITICAL, row_index = i, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
             validated_batch = self._remove_duplicates(validated_batch)
             self.validation_stats['total_rows_processed'] += len(batch_data)
             self.validation_stats['valid_rows'] += len(validated_batch)
@@ -207,7 +208,7 @@ class EnhancedDataValidator:
             self.logger.exception(f'❌ Error validating batch: {e}')
             return []
 
-    @handles_errors(fallback=None, context='get_source_value')
+    @handles_errors(fallback = None, context='get_source_value')
     def _get_source_value(self, row_data: Dict[str, Any], field_def: FieldDefinition) -> Any:
         """Get source value using field mapping."""
         if field_def.name in row_data:
@@ -223,20 +224,20 @@ class EnhancedDataValidator:
                 self.logger.debug(f'⚠️ Field mapping failed for {field_def.name}: {e}')
         return None
 
-    @handles_errors(fallback=None, context='validate_and_convert_field')
+    @handles_errors(fallback = None, context='validate_and_convert_field')
     def _validate_and_convert_field(self, value: Any, field_def: FieldDefinition, row_index: int) -> Any:
         """Validate and convert a field value with extensive logging."""
         self.logger.debug(f'🔍 Validating field {field_def.name}: {value} (type: {type(value)})')
         if value is None or (isinstance(value, float) and np.isnan(value)):
             if field_def.required:
-                raise ValidationError(field=field_def.name, message=f"Required field '{field_def.name}' is missing or NaN", severity=ValidationSeverity.CRITICAL, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now())
+                raise ValidationError(field = field_def.name, message = f"Required field '{field_def.name}' is missing or NaN", severity = ValidationSeverity.CRITICAL, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now())
             self.logger.debug(f'ℹ️ Using default value for {field_def.name}: {field_def.default_value}')
             return field_def.default_value
         try:
             converted_value = self._convert_type(value, field_def.dtype)
             self.logger.debug(f'✅ Type conversion successful: {value} -> {converted_value} ({field_def.dtype})')
         except (ValueError, TypeError) as e:
-            raise ValidationError(field=field_def.name, message=f'Type conversion failed: {e}', severity=ValidationSeverity.CRITICAL, value=value, expected=field_def.dtype, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now())
+            raise ValidationError(field = field_def.name, message = f'Type conversion failed: {e}', severity = ValidationSeverity.CRITICAL, value = value, expected = field_def.dtype, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now())
         validation_errors = self._validate_value(converted_value, field_def, row_index)
         if validation_errors:
             critical_errors = [e for e in validation_errors if e.severity == ValidationSeverity.CRITICAL]
@@ -246,7 +247,7 @@ class EnhancedDataValidator:
                 self.logger.warning(f'⚠️ {error.severity.value.upper()}: {error.message}')
         return converted_value
 
-    @handles_errors(fallback=None, context='convert_type')
+    @handles_errors(fallback = None, context='convert_type')
     def _convert_type(self, value: Any, target_type: str) -> Any:
         """Convert value to target type with logging."""
         self.logger.debug(f'🔄 Converting {value} ({type(value)}) to {target_type}')
@@ -270,34 +271,34 @@ class EnhancedDataValidator:
         self.logger.debug(f'🔍 Validating value constraints for {field_def.name}: {value}')
         if isinstance(value, float) and np.isnan(value):
             if not field_def.allow_nan:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' contains NaN value", severity=ValidationSeverity.HIGH, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' contains NaN value", severity = ValidationSeverity.HIGH, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if isinstance(value, float) and np.isinf(value):
             if not field_def.allow_infinite:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' contains infinite value", severity=ValidationSeverity.HIGH, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' contains infinite value", severity = ValidationSeverity.HIGH, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if isinstance(value, (int, float)) and value == 0:
             if not field_def.allow_zero:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' contains zero value", severity=ValidationSeverity.MEDIUM, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' contains zero value", severity = ValidationSeverity.MEDIUM, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if isinstance(value, (int, float)) and value < 0:
             if not field_def.allow_negative:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' contains negative value", severity=ValidationSeverity.HIGH, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' contains negative value", severity = ValidationSeverity.HIGH, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if isinstance(value, (int, float)):
             if field_def.min_value is not None and value < field_def.min_value:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' value {value} below minimum {field_def.min_value}", severity=ValidationSeverity.HIGH, value=value, expected=field_def.min_value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' value {value} below minimum {field_def.min_value}", severity = ValidationSeverity.HIGH, value = value, expected = field_def.min_value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
             if field_def.max_value is not None and value > field_def.max_value:
-                errors.append(ValidationError(field=field_def.name, message=f"Field '{field_def.name}' value {value} above maximum {field_def.max_value}", severity=ValidationSeverity.HIGH, value=value, expected=field_def.max_value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Field '{field_def.name}' value {value} above maximum {field_def.max_value}", severity = ValidationSeverity.HIGH, value = value, expected = field_def.max_value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if field_def.custom_validator:
             try:
                 if not field_def.custom_validator(value):
-                    errors.append(ValidationError(field=field_def.name, message=f"Custom validation failed for field '{field_def.name}'", severity=ValidationSeverity.MEDIUM, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                    errors.append(ValidationError(field = field_def.name, message = f"Custom validation failed for field '{field_def.name}'", severity = ValidationSeverity.MEDIUM, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
             except Exception as e:
-                errors.append(ValidationError(field=field_def.name, message=f"Custom validation error for field '{field_def.name}': {e}", severity=ValidationSeverity.MEDIUM, value=value, row_index=row_index, exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now()))
+                errors.append(ValidationError(field = field_def.name, message = f"Custom validation error for field '{field_def.name}': {e}", severity = ValidationSeverity.MEDIUM, value = value, row_index = row_index, exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now()))
         if errors:
             self.logger.debug(f'⚠️ Found {len(errors)} validation errors for {field_def.name}')
         else:
             self.logger.debug(f'✅ Value validation passed for {field_def.name}')
         return errors
 
-    @handles_errors(fallback=None, context='check_time_gap')
+    @handles_errors(fallback = None, context='check_time_gap')
     def _check_time_gap(self, current_timestamp: int, previous_timestamp: int) -> Optional[ValidationError]:
         """Check for time gap between batches with extensive logging."""
         if not self.schema.time_gap_config:
@@ -308,7 +309,7 @@ class EnhancedDataValidator:
         self.logger.debug(f'🕐 Checking time gap: {gap_seconds:.2f}s (max: {max_gap}s, tolerance: {tolerance}s)')
         if gap_seconds > max_gap + tolerance:
             self.validation_stats['time_gaps_detected'] += 1
-            error = ValidationError(field=self.schema.timestamp_field, message=f'Time gap detected: {gap_seconds:.2f}s > {max_gap}s (tolerance: {tolerance}s)', severity=self.schema.time_gap_config.severity, value=current_timestamp, expected=previous_timestamp + int(max_gap * 1000), exchange=self.exchange, data_type=self.schema.data_type.value, timestamp=datetime.now(), context={'gap_seconds': gap_seconds, 'max_gap_seconds': max_gap, 'tolerance_seconds': tolerance, 'previous_timestamp': previous_timestamp, 'current_timestamp': current_timestamp})
+            error = ValidationError(field = self.schema.timestamp_field, message = f'Time gap detected: {gap_seconds:.2f}s > {max_gap}s (tolerance: {tolerance}s)', severity = self.schema.time_gap_config.severity, value = current_timestamp, expected = previous_timestamp + int(max_gap * 1000), exchange = self.exchange, data_type = self.schema.data_type.value, timestamp = datetime.now(), context={'gap_seconds': gap_seconds, 'max_gap_seconds': max_gap, 'tolerance_seconds': tolerance, 'previous_timestamp': previous_timestamp, 'current_timestamp': current_timestamp})
             self.logger.warning(f'⚠️ Time gap detected: {gap_seconds:.2f}s')
             return error
         self.logger.debug(f'✅ Time gap check passed: {gap_seconds:.2f}s')
@@ -322,7 +323,7 @@ class EnhancedDataValidator:
         original_count = len(data)
         df = pd.DataFrame(data)
         if self.schema.primary_key:
-            df = df.drop_duplicates(subset=self.schema.primary_key, keep='first')
+            df = df.drop_duplicates(subset = self.schema.primary_key, keep='first')
         else:
             df = df.drop_duplicates(keep='first')
         deduplicated_data = df.to_dict('records')
@@ -332,7 +333,7 @@ class EnhancedDataValidator:
             self.logger.info(f'🔄 Removed {duplicates_removed} duplicate rows')
         return deduplicated_data
 
-    @handles_errors(fallback=None, context='add_metadata_fields')
+    @handles_errors(fallback = None, context='add_metadata_fields')
     def _add_metadata_fields(self, validated_row: Dict[str, Any], row_data: Dict[str, Any]) -> None:
         """Add metadata fields to validated row."""
         validated_row['exchange'] = self.exchange
@@ -340,7 +341,7 @@ class EnhancedDataValidator:
         if self.schema.timestamp_field in validated_row:
             timestamp = validated_row[self.schema.timestamp_field]
             if isinstance(timestamp, (int, float)):
-                dt = pd.to_datetime(timestamp, unit='ms', utc=True)
+                dt = pd.to_datetime(timestamp, unit='ms', utc = True)
                 validated_row['year'] = dt.year
                 validated_row['month'] = dt.month
                 validated_row['day'] = dt.day
@@ -348,7 +349,7 @@ class EnhancedDataValidator:
                 validated_row['minute'] = dt.minute
                 self.logger.debug(f"📅 Added date partitioning: {dt.strftime('%Y-%m-%d %H:%M')}")
 
-    @handles_errors(fallback=None, context='log_validation_errors')
+    @handles_errors(fallback = None, context='log_validation_errors')
     def _log_validation_errors(self, errors: List[ValidationError], row_index: int) -> None:
         """Log validation errors for a row with extensive context."""
         for error in errors:
@@ -361,7 +362,7 @@ class EnhancedDataValidator:
             else:
                 self.logger.info(f'ℹ️ LOW: Row {row_index}: {error.message}')
 
-    @handles_errors(fallback=None, context='log_batch_errors')
+    @handles_errors(fallback = None, context='log_batch_errors')
     def _log_batch_errors(self, errors: List[ValidationError]) -> None:
         """Log batch validation errors with summary."""
         critical_count = sum((1 for e in errors if e.severity == ValidationSeverity.CRITICAL))
@@ -405,19 +406,19 @@ class EnhancedDataValidator:
 
 def create_klines_schema() -> DataSchema:
     """Create standardized klines schema with comprehensive field definitions."""
-    return DataSchema(data_type=DataType.KLINES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Opening time of the kline in milliseconds'), FieldDefinition(name='open', dtype='float64', min_value=0.0, allow_zero=False, description='Opening price of the kline'), FieldDefinition(name='high', dtype='float64', min_value=0.0, allow_zero=False, description='Highest price during the kline period'), FieldDefinition(name='low', dtype='float64', min_value=0.0, allow_zero=False, description='Lowest price during the kline period'), FieldDefinition(name='close', dtype='float64', min_value=0.0, allow_zero=False, description='Closing price of the kline'), FieldDefinition(name='volume', dtype='float64', min_value=0.0, allow_zero=True, description='Volume of the base asset traded'), FieldDefinition(name='exchange', dtype='string', required=True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required=True, description='Trading symbol'), FieldDefinition(name='timeframe', dtype='string', required=True, description='Timeframe of the kline')], primary_key=['timestamp', 'exchange', 'symbol', 'timeframe'], time_gap_config=TimeGapConfig(max_gap_seconds=66.0, tolerance_seconds=5.0, severity=ValidationSeverity.HIGH, description='Maximum allowed gap between kline timestamps'), description='Standardized klines data schema for OHLCV data')
+    return DataSchema(data_type = DataType.KLINES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Opening time of the kline in milliseconds'), FieldDefinition(name='open', dtype='float64', min_value = 0.0, allow_zero = False, description='Opening price of the kline'), FieldDefinition(name='high', dtype='float64', min_value = 0.0, allow_zero = False, description='Highest price during the kline period'), FieldDefinition(name='low', dtype='float64', min_value = 0.0, allow_zero = False, description='Lowest price during the kline period'), FieldDefinition(name='close', dtype='float64', min_value = 0.0, allow_zero = False, description='Closing price of the kline'), FieldDefinition(name='volume', dtype='float64', min_value = 0.0, allow_zero = True, description='Volume of the base asset traded'), FieldDefinition(name='exchange', dtype='string', required = True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required = True, description='Trading symbol'), FieldDefinition(name='timeframe', dtype='string', required = True, description='Timeframe of the kline')], primary_key=['timestamp', 'exchange', 'symbol', 'timeframe'], time_gap_config = TimeGapConfig(max_gap_seconds = 66.0, tolerance_seconds = 5.0, severity = ValidationSeverity.HIGH, description='Maximum allowed gap between kline timestamps'), description='Standardized klines data schema for OHLCV data')
 
 def create_aggtrades_schema() -> DataSchema:
     """Create standardized aggtrades schema with comprehensive field definitions."""
-    return DataSchema(data_type=DataType.AGGTRADES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Timestamp of the trade in milliseconds'), FieldDefinition(name='price', dtype='float64', min_value=0.0, allow_zero=False, description='Price of the trade'), FieldDefinition(name='quantity', dtype='float64', min_value=0.0, allow_zero=False, description='Quantity of the trade'), FieldDefinition(name='is_buyer_maker', dtype='bool', required=False, default_value=False, description='Whether the buyer is the maker'), FieldDefinition(name='trade_id', dtype='int64', required=False, default_value=0, description='Unique trade identifier'), FieldDefinition(name='exchange', dtype='string', required=True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required=True, description='Trading symbol')], primary_key=['timestamp', 'trade_id', 'exchange', 'symbol'], time_gap_config=TimeGapConfig(max_gap_seconds=1.0, tolerance_seconds=0.1, severity=ValidationSeverity.MEDIUM, description='Maximum allowed gap between trade timestamps'), description='Standardized aggtrades data schema for trade data')
+    return DataSchema(data_type = DataType.AGGTRADES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Timestamp of the trade in milliseconds'), FieldDefinition(name='price', dtype='float64', min_value = 0.0, allow_zero = False, description='Price of the trade'), FieldDefinition(name='quantity', dtype='float64', min_value = 0.0, allow_zero = False, description='Quantity of the trade'), FieldDefinition(name='is_buyer_maker', dtype='bool', required = False, default_value = False, description='Whether the buyer is the maker'), FieldDefinition(name='trade_id', dtype='int64', required = False, default_value = 0, description='Unique trade identifier'), FieldDefinition(name='exchange', dtype='string', required = True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required = True, description='Trading symbol')], primary_key=['timestamp', 'trade_id', 'exchange', 'symbol'], time_gap_config = TimeGapConfig(max_gap_seconds = 1.0, tolerance_seconds = 0.1, severity = ValidationSeverity.MEDIUM, description='Maximum allowed gap between trade timestamps'), description='Standardized aggtrades data schema for trade data')
 
 def create_futures_schema() -> DataSchema:
     """Create standardized futures schema with comprehensive field definitions."""
-    return DataSchema(data_type=DataType.FUTURES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Timestamp of the funding rate in milliseconds'), FieldDefinition(name='funding_rate', dtype='float64', allow_zero=True, description='Funding rate for the period'), FieldDefinition(name='exchange', dtype='string', required=True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required=True, description='Trading symbol')], primary_key=['timestamp', 'exchange', 'symbol'], time_gap_config=TimeGapConfig(max_gap_seconds=32400.0, tolerance_seconds=300.0, severity=ValidationSeverity.MEDIUM, description='Maximum allowed gap between funding rate timestamps'), description='Standardized futures data schema for funding rate data')
+    return DataSchema(data_type = DataType.FUTURES, fields=[FieldDefinition(name='timestamp', dtype='int64', description='Timestamp of the funding rate in milliseconds'), FieldDefinition(name='funding_rate', dtype='float64', allow_zero = True, description='Funding rate for the period'), FieldDefinition(name='exchange', dtype='string', required = True, description='Exchange name'), FieldDefinition(name='symbol', dtype='string', required = True, description='Trading symbol')], primary_key=['timestamp', 'exchange', 'symbol'], time_gap_config = TimeGapConfig(max_gap_seconds = 32400.0, tolerance_seconds = 300.0, severity = ValidationSeverity.MEDIUM, description='Maximum allowed gap between funding rate timestamps'), description='Standardized futures data schema for funding rate data')
 SCHEMA_REGISTRY = {DataType.KLINES: create_klines_schema(), DataType.AGGTRADES: create_aggtrades_schema(), DataType.FUTURES: create_futures_schema()}
 logger.info(f'📋 Initialized schema registry with {len(SCHEMA_REGISTRY)} schemas')
 
-@handles_errors(fallback=None, context='get_validator')
+@handles_errors(fallback = None, context='get_validator')
 def get_validator(data_type: DataType, exchange: str='UNKNOWN') -> EnhancedDataValidator:
     """Get validator for specified data type and exchange with extensive logging."""
     logger.info(f'🔍 Getting validator for {data_type.value} data from {exchange}')
@@ -430,7 +431,7 @@ def get_validator(data_type: DataType, exchange: str='UNKNOWN') -> EnhancedDataV
     return validator
 
 @handles_errors(fallback=[], context='validate_data_batch')
-@traced(span_name='validate_data_batch', log_args=False, log_result_len_only=True)
+@traced(span_name='validate_data_batch', log_args = False, log_result_len_only = True)
 def validate_data_batch(data_type: DataType, batch_data: List[Dict[str, Any]], exchange: str='UNKNOWN', previous_timestamp: Optional[int]=None) -> List[Dict[str, Any]]:
     """Convenience function to validate a batch of data with extensive logging."""
     logger.info(f'🚀 Starting batch validation for {data_type.value} data from {exchange}')

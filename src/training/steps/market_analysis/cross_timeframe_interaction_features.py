@@ -1,3 +1,5 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 '\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,6 +31,7 @@ class CrossTimeframeConfig:
     variance_threshold: float = 1e-12
     parallel_processing: bool = True
     max_workers: int = 4
+    @log_all_calls
 
     def __post_init__(self) -> None:
         """Initialize default values"""
@@ -65,8 +68,9 @@ class InteractionConfig:
 
 class CrossTimeframeFeatureGenerator:
     """Refactored cross-timeframe feature generator with reduced complexity"""
+    @log_important_calls
 
-    def __init__(self, config: CrossTimeframeConfig | None=None, logger: logging.Logger | None=None) -> None:
+    def __init__(self, config: CrossTimeframeConfig | None = None, logger: logging.Logger | None = None) -> None:
         """Initialize the generator.
 
         Args:
@@ -76,7 +80,7 @@ class CrossTimeframeFeatureGenerator:
         self.config = config or CrossTimeframeConfig()
         self.logger = logger or logging.getLogger(__name__)
 
-    def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None=None) -> dict[str, pd.Series]:
+    def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
         """Generate cross-timeframe features with reduced complexity.
 
         Args:
@@ -99,6 +103,7 @@ class CrossTimeframeFeatureGenerator:
         valid_features = self._validate_features(features)
         self.logger.info(f'✅ Generated {len(valid_features)} valid cross-timeframe features')
         return valid_features
+    @log_all_calls
 
     def _validate_input_data(self, price_data: pd.DataFrame) -> bool:
         """Validate input data meets requirements"""
@@ -110,6 +115,7 @@ class CrossTimeframeFeatureGenerator:
             self.logger.warning(f'⚠️ Missing required columns: {required_cols - set(price_data.columns)}')
             return False
         return True
+    @log_all_calls
 
     def _extract_price_components(self, price_data: pd.DataFrame) -> dict[str, pd.Series]:
         """Extract and validate price components"""
@@ -122,11 +128,12 @@ class CrossTimeframeFeatureGenerator:
         except Exception as e:
             self.logger.exception(f'❌ Error extracting price components: {e}')
             return {}
+    @log_all_calls
 
     def _generate_features_parallel(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame | None) -> dict[str, pd.Series]:
         """Generate features using parallel processing"""
         features = {}
-        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers = self.config.max_workers) as executor:
             futures = []
             futures.append(executor.submit(self._generate_momentum_features, price_components))
             futures.append(executor.submit(self._generate_volatility_features, price_components))
@@ -141,6 +148,7 @@ class CrossTimeframeFeatureGenerator:
                 except Exception as e:
                     self.logger.exception(f'❌ Feature generation task failed: {e}')
         return features
+    @log_all_calls
 
     def _generate_features_sequential(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame | None) -> dict[str, pd.Series]:
         """Generate features sequentially"""
@@ -152,6 +160,7 @@ class CrossTimeframeFeatureGenerator:
         if volume_data is not None:
             features.update(self._generate_volume_features(price_components, volume_data))
         return features
+    @log_all_calls
 
     def _generate_momentum_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate momentum-based cross-timeframe features"""
@@ -173,16 +182,18 @@ class CrossTimeframeFeatureGenerator:
                         hl_features = self._calculate_hl_momentum(high, low, close, tf1, tf2)
                         features.update(hl_features)
         return features
+    @log_all_calls
 
     def _calculate_hl_momentum(self, high: pd.Series, low: pd.Series, close: pd.Series, tf1: int, tf2: int) -> dict[str, pd.Series]:
         """Calculate high-low momentum features"""
         features = {}
-        hl_momentum_1 = (high.rolling(tf1, min_periods=tf1 // 2).max() - low.rolling(tf1, min_periods=tf1 // 2).min()) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-08)
-        hl_momentum_2 = (high.rolling(tf2, min_periods=tf2 // 2).max() - low.rolling(tf2, min_periods=tf2 // 2).min()) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-08)
+        hl_momentum_1 = (high.rolling(tf1, min_periods = tf1 // 2).max() - low.rolling(tf1, min_periods = tf1 // 2).min()) / (close.rolling(tf1, min_periods = tf1 // 2).mean() + 1e-08)
+        hl_momentum_2 = (high.rolling(tf2, min_periods = tf2 // 2).max() - low.rolling(tf2, min_periods = tf2 // 2).min()) / (close.rolling(tf2, min_periods = tf2 // 2).mean() + 1e-08)
         hl_diff = hl_momentum_1 - hl_momentum_2
         if self._is_valid_feature(hl_diff):
             features[f'hl_momentum_{tf1}m_{tf2}m'] = hl_diff
         return features
+    @log_all_calls
 
     def _generate_volatility_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate volatility-based cross-timeframe features"""
@@ -196,12 +207,13 @@ class CrossTimeframeFeatureGenerator:
                     vol_features = self._calculate_volatility_pair(returns, tf1, tf2)
                     features.update(vol_features)
         return features
+    @log_all_calls
 
     def _calculate_volatility_pair(self, returns: pd.Series, tf1: int, tf2: int) -> dict[str, pd.Series]:
         """Calculate volatility features for a timeframe pair"""
         features = {}
-        vol_1 = returns.rolling(tf1, min_periods=tf1 // 2).std()
-        vol_2 = returns.rolling(tf2, min_periods=tf2 // 2).std()
+        vol_1 = returns.rolling(tf1, min_periods = tf1 // 2).std()
+        vol_2 = returns.rolling(tf2, min_periods = tf2 // 2).std()
         vol_ratio = vol_1 / (vol_2 + 1e-08)
         if self._is_valid_feature(vol_ratio):
             features[f'volatility_ratio_{tf1}m_{tf2}m'] = vol_ratio
@@ -209,10 +221,11 @@ class CrossTimeframeFeatureGenerator:
         if self._is_valid_feature(vol_diff):
             features[f'volatility_diff_{tf1}m_{tf2}m'] = vol_diff
         if len(returns) >= 20:
-            vol_std = (vol_1 - vol_2).rolling(20, min_periods=10).std()
+            vol_std = (vol_1 - vol_2).rolling(20, min_periods = 10).std()
             if self._is_valid_feature(vol_std):
                 features[f'volatility_std_{tf1}m_{tf2}m'] = vol_std
         return features
+    @log_all_calls
 
     def _generate_range_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate price range cross-timeframe features"""
@@ -227,12 +240,13 @@ class CrossTimeframeFeatureGenerator:
                     range_features = self._calculate_range_pair(high, low, close, tf1, tf2)
                     features.update(range_features)
         return features
+    @log_all_calls
 
     def _calculate_range_pair(self, high: pd.Series, low: pd.Series, close: pd.Series, tf1: int, tf2: int) -> dict[str, pd.Series]:
         """Calculate range features for a timeframe pair"""
         features = {}
-        range_1 = (high.rolling(tf1, min_periods=tf1 // 2).max() - low.rolling(tf1, min_periods=tf1 // 2).min()) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-08)
-        range_2 = (high.rolling(tf2, min_periods=tf2 // 2).max() - low.rolling(tf2, min_periods=tf2 // 2).min()) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-08)
+        range_1 = (high.rolling(tf1, min_periods = tf1 // 2).max() - low.rolling(tf1, min_periods = tf1 // 2).min()) / (close.rolling(tf1, min_periods = tf1 // 2).mean() + 1e-08)
+        range_2 = (high.rolling(tf2, min_periods = tf2 // 2).max() - low.rolling(tf2, min_periods = tf2 // 2).min()) / (close.rolling(tf2, min_periods = tf2 // 2).mean() + 1e-08)
         range_ratio = range_1 / (range_2 + 1e-08)
         if self._is_valid_feature(range_ratio):
             features[f'price_range_ratio_{tf1}m_{tf2}m'] = range_ratio
@@ -240,6 +254,7 @@ class CrossTimeframeFeatureGenerator:
         if self._is_valid_feature(range_diff):
             features[f'price_range_diff_{tf1}m_{tf2}m'] = range_diff
         return features
+    @log_all_calls
 
     def _generate_technical_indicator_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate technical indicator cross-timeframe features"""
@@ -248,6 +263,7 @@ class CrossTimeframeFeatureGenerator:
         features.update(self._generate_macd_features(price_components))
         features.update(self._generate_bb_features(price_components))
         return features
+    @log_all_calls
 
     def _generate_rsi_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate RSI cross-timeframe features"""
@@ -265,6 +281,7 @@ class CrossTimeframeFeatureGenerator:
                     if self._is_valid_feature(rsi_ratio):
                         features[f'rsi_ratio_{period1}_{period2}'] = rsi_ratio
         return features
+    @log_all_calls
 
     def _generate_macd_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate MACD cross-timeframe features"""
@@ -282,6 +299,7 @@ class CrossTimeframeFeatureGenerator:
                     if self._is_valid_feature(macd_ratio):
                         features[f'macd_ratio_{fast}_{slow}'] = macd_ratio
         return features
+    @log_all_calls
 
     def _generate_bb_features(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate Bollinger Bands cross-timeframe features"""
@@ -297,6 +315,7 @@ class CrossTimeframeFeatureGenerator:
                         if self._is_valid_feature(bb_diff):
                             features[f'bb_position_diff_{window}_{std}'] = bb_diff
         return features
+    @log_all_calls
 
     def _generate_volume_features(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame) -> dict[str, pd.Series]:
         """Generate volume-based cross-timeframe features"""
@@ -313,12 +332,13 @@ class CrossTimeframeFeatureGenerator:
                     volume_features = self._calculate_volume_pair(volume, tf1, tf2)
                     features.update(volume_features)
         return features
+    @log_all_calls
 
     def _calculate_volume_pair(self, volume: pd.Series, tf1: int, tf2: int) -> dict[str, pd.Series]:
         """Calculate volume features for a timeframe pair"""
         features = {}
-        vol_1 = volume.rolling(tf1, min_periods=tf1 // 2).mean()
-        vol_2 = volume.rolling(tf2, min_periods=tf2 // 2).mean()
+        vol_1 = volume.rolling(tf1, min_periods = tf1 // 2).mean()
+        vol_2 = volume.rolling(tf2, min_periods = tf2 // 2).mean()
         vol_ratio = vol_1 / (vol_2 + 1e-08)
         if self._is_valid_feature(vol_ratio):
             features[f'volume_ratio_{tf1}m_{tf2}m'] = vol_ratio
@@ -329,31 +349,35 @@ class CrossTimeframeFeatureGenerator:
         if self._is_valid_feature(vol_momentum):
             features[f'volume_momentum_{tf1}m_{tf2}m'] = vol_momentum
         return features
+    @log_all_calls
 
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI indicator"""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / (loss + 1e-08)
         return 100 - 100 / (1 + rs)
+    @log_all_calls
 
     def _calculate_macd(self, prices: pd.Series, fast_period: int, slow_period: int) -> pd.Series:
         """Calculate MACD indicator"""
-        exp1 = prices.ewm(span=fast_period, adjust=False).mean()
-        exp2 = prices.ewm(span=slow_period, adjust=False).mean()
+        exp1 = prices.ewm(span = fast_period, adjust = False).mean()
+        exp2 = prices.ewm(span = slow_period, adjust = False).mean()
         return exp1 - exp2
+    @log_all_calls
 
     def _calculate_bollinger_position(self, prices: pd.Series, window: int, num_std: float) -> pd.Series | None:
         """Calculate position relative to Bollinger Bands"""
         try:
-            sma = prices.rolling(window=window).mean()
-            std = prices.rolling(window=window).std()
+            sma = prices.rolling(window = window).mean()
+            std = prices.rolling(window = window).std()
             upper_band = sma + std * num_std
             lower_band = sma - std * num_std
             return (prices - lower_band) / (upper_band - lower_band + 1e-08)
         except Exception:
             return None
+    @log_all_calls
 
     def _is_valid_feature(self, feature: pd.Series) -> bool:
         """Check if a feature is valid"""
@@ -362,6 +386,7 @@ class CrossTimeframeFeatureGenerator:
         if feature.var() <= self.config.variance_threshold:
             return False
         return not feature.isna().all()
+    @log_all_calls
 
     def _validate_features(self, features: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Validate and filter features"""
@@ -375,8 +400,9 @@ class CrossTimeframeFeatureGenerator:
 
 class InteractionFeatureGenerator:
     """Refactored interaction feature generator with reduced complexity"""
+    @log_important_calls
 
-    def __init__(self, config: InteractionConfig | None=None, logger: logging.Logger | None=None) -> None:
+    def __init__(self, config: InteractionConfig | None = None, logger: logging.Logger | None = None) -> None:
         """Initialize the generator.
 
         Args:
@@ -386,7 +412,7 @@ class InteractionFeatureGenerator:
         self.config = config or InteractionConfig()
         self.logger = logger or logging.getLogger(__name__)
 
-    def generate_interaction_features(self, features: pd.DataFrame, feature_categories: dict[str, list[str]] | None=None) -> pd.DataFrame:
+    def generate_interaction_features(self, features: pd.DataFrame, feature_categories: dict[str, list[str]] | None = None) -> pd.DataFrame:
         """Generate interaction features with reduced complexity.
 
         Args:
@@ -410,17 +436,19 @@ class InteractionFeatureGenerator:
         final_features = self._remove_correlated_features(interaction_features)
         self.logger.info(f'✅ Generated {len(final_features.columns)} interaction features')
         return final_features
+    @log_all_calls
 
     def _select_top_features(self, features: pd.DataFrame) -> list[str]:
         """Select top features based on variance"""
         variances = features.var()
         valid_features = variances[variances > self.config.variance_threshold]
         return valid_features.nlargest(self.config.top_k_features).index.tolist()
+    @log_all_calls
 
     def _generate_interactions_parallel(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate interactions using parallel processing"""
         interaction_dfs = []
-        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers = self.config.max_workers) as executor:
             futures = []
             if self.config.include_ratios:
                 futures.append(executor.submit(self._generate_ratio_features, features))
@@ -438,8 +466,9 @@ class InteractionFeatureGenerator:
                 except Exception as e:
                     self.logger.exception(f'❌ Interaction generation failed: {e}')
         if interaction_dfs:
-            return pd.concat(interaction_dfs, axis=1)
+            return pd.concat(interaction_dfs, axis = 1)
         return pd.DataFrame()
+    @log_all_calls
 
     def _generate_interactions_sequential(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate interactions sequentially"""
@@ -453,12 +482,13 @@ class InteractionFeatureGenerator:
         if self.config.polynomial_degree > 1:
             interaction_dfs.append(self._generate_polynomial_features(features))
         if interaction_dfs:
-            return pd.concat(interaction_dfs, axis=1)
+            return pd.concat(interaction_dfs, axis = 1)
         return pd.DataFrame()
+    @log_all_calls
 
     def _generate_ratio_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate ratio interaction features"""
-        ratio_features = pd.DataFrame(index=features.index)
+        ratio_features = pd.DataFrame(index = features.index)
         feature_cols = features.columns.tolist()
         for i, col1 in enumerate(feature_cols):
             for col2 in feature_cols[i + 1:]:
@@ -469,10 +499,11 @@ class InteractionFeatureGenerator:
                     ratio_name = f'{col1}_ratio_{col2}'
                     ratio_features[ratio_name] = ratio
         return ratio_features
+    @log_all_calls
 
     def _generate_difference_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate difference interaction features"""
-        diff_features = pd.DataFrame(index=features.index)
+        diff_features = pd.DataFrame(index = features.index)
         feature_cols = features.columns.tolist()
         for i, col1 in enumerate(feature_cols):
             for col2 in feature_cols[i + 1:]:
@@ -483,10 +514,11 @@ class InteractionFeatureGenerator:
                     diff_name = f'{col1}_diff_{col2}'
                     diff_features[diff_name] = diff
         return diff_features
+    @log_all_calls
 
     def _generate_product_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate product interaction features"""
-        product_features = pd.DataFrame(index=features.index)
+        product_features = pd.DataFrame(index = features.index)
         feature_cols = features.columns.tolist()
         for i, col1 in enumerate(feature_cols):
             for col2 in feature_cols[i + 1:]:
@@ -497,10 +529,11 @@ class InteractionFeatureGenerator:
                     product_name = f'{col1}_x_{col2}'
                     product_features[product_name] = product
         return product_features
+    @log_all_calls
 
     def _generate_polynomial_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate polynomial interaction features"""
-        poly_features = pd.DataFrame(index=features.index)
+        poly_features = pd.DataFrame(index = features.index)
         for col in features.columns:
             for degree in range(2, self.config.polynomial_degree + 1):
                 poly = features[col] ** degree
@@ -508,6 +541,7 @@ class InteractionFeatureGenerator:
                     poly_name = f'{col}_pow{degree}'
                     poly_features[poly_name] = poly
         return poly_features
+    @log_all_calls
 
     def _same_category(self, col1: str, col2: str) -> bool:
         """Check if two columns belong to the same category"""
@@ -518,6 +552,7 @@ class InteractionFeatureGenerator:
             if cat1 in category_group and cat2 in category_group:
                 return True
         return False
+    @log_all_calls
 
     def _is_valid_interaction(self, feature: pd.Series) -> bool:
         """Check if an interaction feature is valid"""
@@ -526,14 +561,16 @@ class InteractionFeatureGenerator:
         if feature.var() <= self.config.variance_threshold:
             return False
         return not (feature.isna().all() or np.isinf(feature).any())
+    @log_all_calls
 
     def _remove_correlated_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Remove highly correlated features"""
         if features.empty:
             return features
         corr_matrix = features.corr().abs()
-        upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
         to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > self.config.correlation_threshold)]
-        result = features.drop(columns=to_drop)
+        result = features.drop(columns = to_drop)
         self.logger.info(f'Removed {len(to_drop)} highly correlated features')
         return result
+'\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'

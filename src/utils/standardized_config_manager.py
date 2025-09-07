@@ -106,11 +106,11 @@ class StandardizedConfigManager:
         """
         try:
             config_dir = self.base_config_path / config_type
-            config_dir.mkdir(parents=True, exist_ok=True)
+            config_dir.mkdir(parents = True, exist_ok = True)
             config_path = config_dir / f'{config_name}.json'
             config_with_metadata = {'metadata': {'created_at': datetime.now().isoformat(), 'version': '1.0.0', 'config_type': config_type}, 'config': config}
             with open(config_path, 'w') as f:
-                json.dump(config_with_metadata, f, indent=2)
+                json.dump(config_with_metadata, f, indent = 2)
             self.logger.info(f'✅ Saved config: {config_path}')
             return True
         except Exception as e:
@@ -147,7 +147,7 @@ class StandardizedConfigManager:
         return validation_results
 config_manager = StandardizedConfigManager()
 
-def get_standardized_config(step_name: str, config_overrides: dict[str, Any] | None=None) -> dict[str, Any]:
+def get_standardized_config(step_name: str, config_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     """Get standardized configuration for a step.
 
     Args:
@@ -157,7 +157,8 @@ def get_standardized_config(step_name: str, config_overrides: dict[str, Any] | N
     Returns:
         Standardized configuration dictionary
     """
-    base_config = await config_manager.load_config('pipeline')
+    import asyncio
+    base_config = asyncio.run(config_manager.load_config('pipeline'))
     if config_overrides:
         base_config.update(config_overrides)
     return config_manager.create_step_config(step_name, base_config)

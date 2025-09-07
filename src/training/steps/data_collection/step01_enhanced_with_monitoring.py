@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from src.utils.logger import system_logger
 
 """
 Enhanced Step 1: Data Collection with Comprehensive Function Call Monitoring
@@ -30,7 +31,7 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
     class MockDataFrame:
-
+        @log_important_calls
         def __init__(self, data: Union[pd.DataFrame, Dict[str, Any]]=None) -> None:
             self.data = data or []
             self.columns = []
@@ -38,10 +39,10 @@ except ImportError:
         def to_dict(self, orient: Any='records') -> None:
             return self.data
 
-        def head(self, n: int=5) -> None:
+        def head(self, n: int = 5) -> None:
             return MockDataFrame(self.data[:n])
 
-        def tail(self, n: int=5) -> None:
+        def tail(self, n: int = 5) -> None:
             return MockDataFrame(self.data[-n:])
 
         def isnull(self) -> None:
@@ -50,14 +51,16 @@ except ImportError:
         def sum(self) -> int:
             return 0
 
+        @log_all_calls
         def __len__(self) -> None:
             return len(self.data)
 
+        @log_all_calls
         def __iter__(self) -> None:
             return iter(self.data)
 
     class MockSeries:
-
+        @log_important_calls
         def __init__(self, data: Union[pd.DataFrame, Dict[str, Any]]=None) -> None:
             self.data = data or []
 
@@ -65,18 +68,20 @@ except ImportError:
             return 0
     pd = type('MockPandas', (), {'DataFrame': MockDataFrame, 'Series': MockSeries, 'read_parquet': lambda path: MockDataFrame(), 'to_datetime': lambda x: x, 'isna': lambda x: False, 'date_range': lambda start, end, freq: []})()
     np = type('MockNumpy', (), {'random': type('MockRandom', (), {'seed': lambda x: None, 'normal': lambda mean, std, size: [0] * size, 'uniform': lambda low, high, size: [0] * size, 'choice': lambda choices: choices[0] if choices else None, 'randint': lambda low, high: low})(), 'array': lambda x: x, 'isinf': lambda x: False})()
+
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.function_call_monitor import monitor_comprehensive, monitor_standard, monitor_basic, get_function_call_monitor, log_function_call_summary
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
-from src.utils.error_handler import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 logger = system_logger.getChild('Step01EnhancedMonitoring')
 function_monitor = get_function_call_monitor()
 
 class EnhancedDataCollectionStepWithMonitoring:
     """Enhanced Step 1: Data Collection with comprehensive function call monitoring."""
-
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the enhanced data collection step with monitoring."""
         self.config = config
@@ -84,6 +89,7 @@ class EnhancedDataCollectionStepWithMonitoring:
         self.standards = pipeline_standards
         self._validate_environment()
 
+    @log_all_calls
     @monitor_comprehensive
     def _validate_environment(self) -> None:
         """Validate environment dependencies with comprehensive monitoring."""
@@ -166,7 +172,7 @@ class EnhancedDataCollectionStepWithMonitoring:
             exchange = training_input.get('exchange')
             timeframe = training_input.get('timeframe', '1m')
             self.logger.info(f'📊 Starting monitored data collection for {exchange}_{symbol}_{timeframe}')
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             download_success = await self._monitored_data_download(symbol, exchange, timeframe, data_dir)
             if download_success:
                 self.logger.info('✅ Data download completed successfully')
@@ -189,9 +195,9 @@ class EnhancedDataCollectionStepWithMonitoring:
         """Download data with basic monitoring."""
         try:
             try:
-                from src.training.steps.data_downloader import download_all_data_with_consolidation
+                from src.training.steps.data_collection.data_downloader import download_all_data_with_consolidation
                 self.logger.info(f'🔄 Downloading data from {exchange} API...')
-                success = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe, data_dir=data_dir)
+                success = await download_all_data_with_consolidation(symbol = symbol, exchange_name = exchange, interval = timeframe, data_dir = data_dir)
                 if success:
                     self.logger.info('✅ Data download completed successfully')
                     return True
@@ -245,6 +251,7 @@ class EnhancedDataCollectionStepWithMonitoring:
             self.logger.exception(f'❌ Error validating {file_name}: {e}')
             return None
 
+    @log_all_calls
     @monitor_basic
     def _determine_schema_name(self, file_name: str) -> str:
         """Determine schema name based on file name."""
@@ -255,6 +262,7 @@ class EnhancedDataCollectionStepWithMonitoring:
         else:
             return 'unified'
 
+    @log_all_calls
     @monitor_basic
     def _log_monitored_validation_result(self, file_name: str, validation_result: Any) -> None:
         """Log validation result with monitoring."""
@@ -265,22 +273,25 @@ class EnhancedDataCollectionStepWithMonitoring:
             self._log_monitored_issues(validation_result.issues)
         self._log_monitored_warnings(validation_result.warnings)
 
+    @log_all_calls
     @monitor_basic
-    def _log_monitored_issues(self, issues: List[Any], max_display: int=3) -> None:
+    def _log_monitored_issues(self, issues: List[Any], max_display: int = 3) -> None:
         """Log validation issues with monitoring."""
         for issue in issues[:max_display]:
             self.logger.warning(f'   - {issue.message}')
         if len(issues) > max_display:
             self.logger.warning(f'   ... and {len(issues) - max_display} more issues')
 
+    @log_all_calls
     @monitor_basic
-    def _log_monitored_warnings(self, warnings: List[Any], max_display: int=3) -> None:
+    def _log_monitored_warnings(self, warnings: List[Any], max_display: int = 3) -> None:
         """Log validation warnings with monitoring."""
         for warning in warnings[:max_display]:
             self.logger.info(f'   ⚠️ {warning.message}')
         if len(warnings) > max_display:
             self.logger.info(f'   ... and {len(warnings) - max_display} more warnings')
 
+    @log_all_calls
     @monitor_standard
     def _process_monitored_validation_results(self, validation_results: List[Any]) -> bool:
         """Process and summarize validation results with monitoring."""
@@ -328,8 +339,8 @@ class EnhancedDataCollectionStepWithMonitoring:
         try:
             from datetime import datetime, timedelta
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            timestamps = pd.date_range(start=start_date, end=end_date, freq='1min')
+            start_date = end_date - timedelta(days = 30)
+            timestamps = pd.date_range(start = start_date, end = end_date, freq='1min')
             np.random.seed(42)
             base_price = 3000.0
             price_changes = np.random.normal(0, 0.002, len(timestamps))
@@ -475,7 +486,7 @@ class EnhancedDataCollectionStepWithMonitoring:
             self.logger.exception(f'❌ Failed to log enhanced step 1 artifacts and reports: {e}')
 
 @monitor_comprehensive
-async def run_enhanced_step01_with_monitoring(symbol: str, exchange: str, timeframe: str='1m', data_dir: Optional[str]=None, force_rerun: bool=False, **kwargs: Any) -> bool:
+async def run_enhanced_step01_with_monitoring(symbol: str, exchange: str, timeframe: str='1m', data_dir: Optional[str]=None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the enhanced data collection step with comprehensive monitoring.
 
     Args:
@@ -532,7 +543,7 @@ if __name__ == '__main__':
             print('Usage: python step01_enhanced_with_monitoring.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
             print('Example: python step01_enhanced_with_monitoring.py ETHUSDT BINANCE 1m data_cache true')
             return
-        success = await run_enhanced_step01_with_monitoring(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+        success = await run_enhanced_step01_with_monitoring(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
         if success:
             print('✅ Enhanced Step 1: Data Collection completed successfully')
         else:

@@ -1,4 +1,8 @@
+from ...core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 7: Enhanced Matrix Operations - Simplified Version.
+from src.utils.logger import system_logger
 
 This is the simplified version of step07_enhanced_matrix_operations.py with
 reduced complexity through modular design. All functionality is preserved
@@ -20,7 +24,6 @@ import sys
 sys.path.insert(0, str(project_root))
 
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .core.decorators import CachePolicy, cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
 from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Import our new modular components
@@ -57,7 +60,7 @@ enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integ
 # Fallback logger and decorators
 def create_fallback_logger():
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
@@ -106,6 +109,7 @@ else:
 
 class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations - Simplified with modular design."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize Step 7 Enhanced Matrix Operations with modular components."""
@@ -137,6 +141,7 @@ class Step7EnhancedMatrixOperations:
         # Step-specific configuration
         self.step_config = config.get("step07_enhanced_matrix_operations", {})
         self.output_dir = ensure_directory(self.step_config.get("output_dir", "data/matrix_operations"))
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -149,12 +154,12 @@ class Step7EnhancedMatrixOperations:
             self.logger.info("✅ All required dependencies available")
 
     @comprehensive_function_tracker(system_logger)
-    @log_execution_time(threshold_ms=30000)
-    @cached(policy=CachePolicy.PER_REQUEST, ttl=3600)
+    @log_execution_time(threshold_ms = 30000)
+    @cached(policy = CachePolicy.PER_REQUEST, ttl = 3600)
     @log_call()
-    @circuit_breaker(failure_threshold=3, recovery_timeout=300.0)
+    @circuit_breaker(failure_threshold = 3, recovery_timeout = 300.0)
     @validates()
-    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=False)
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return = False)
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute Step 7: Enhanced Matrix Operations with simplified modular design.
@@ -240,7 +245,7 @@ class Step7EnhancedMatrixOperations:
             for c in d.select_dtypes(include=['float64']).columns:
                 d[c] = d[c].astype('float32')
         
-        df = pd.concat([df_train, df_val], ignore_index=True)
+        df = pd.concat([df_train, df_val], ignore_index = True)
         self.logger.info(f'📈 Loaded {len(df)} rows of engineered features')
         self.logger.info(f'🔢 Features: {len(df.columns)} columns')
         
@@ -265,8 +270,8 @@ class Step7EnhancedMatrixOperations:
                 hmm_regimes = self._load_hmm_regimes(symbol, exchange, timeframe)
                 
                 feature_optimization_results = await feature_optimizer.optimize_feature_parameters(
-                    data=df, target=target, regimes=hmm_regimes, 
-                    symbol=symbol, exchange=exchange, timeframe=timeframe
+                    data = df, target = target, regimes = hmm_regimes, 
+                    symbol = symbol, exchange = exchange, timeframe = timeframe
                 )
                 self.logger.info('✅ Feature engineering parameter optimization completed')
                 return feature_optimization_results
@@ -293,7 +298,7 @@ class Step7EnhancedMatrixOperations:
             
             if timeframe_data:
                 timeframe_analysis_results = await timeframe_analyzer.analyze_timeframe_relevance(
-                    data_dict=timeframe_data, symbol=symbol, exchange=exchange, leverage_range=(10, 100)
+                    data_dict = timeframe_data, symbol = symbol, exchange = exchange, leverage_range=(10, 100)
                 )
                 self.logger.info('✅ Timeframe relevance analysis completed')
                 return timeframe_analysis_results
@@ -303,6 +308,7 @@ class Step7EnhancedMatrixOperations:
             self.logger.warning('⚠️ Skipping timeframe analysis - analyzer not available')
         
         return {}
+    @log_all_calls
 
     def _load_hmm_regimes(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
         """Load HMM regime data if available."""
@@ -338,13 +344,13 @@ class Step7EnhancedMatrixOperations:
         
         # Apply feature filtering using the modular component
         filtered_features_df, filtering_metadata = self.feature_filtering.regime_aware_initial_filtering(
-            features_df=features_df,
-            labels_df=labels_df,
-            regime_labels=regime_labels
+            features_df = features_df,
+            labels_df = labels_df,
+            regime_labels = regime_labels
         )
         
         # Reconstruct full dataframe with filtered features
-        df_filtered = pd.concat([filtered_features_df, labels_df], axis=1)
+        df_filtered = pd.concat([filtered_features_df, labels_df], axis = 1)
         
         self.logger.info(f"✅ Feature filtering applied: {len(feature_columns)} → {len(filtered_features_df.columns)} features")
         
@@ -400,6 +406,7 @@ class Step7EnhancedMatrixOperations:
             results['sr_optimization_analysis'] = await self.matrix_operations.execute_sr_optimization_analysis(df, matrix_config)
         
         return results
+    @log_all_calls
 
     def _prepare_matrix_operations_config(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Prepare configuration for matrix operations."""
@@ -447,17 +454,17 @@ class Step7EnhancedMatrixOperations:
         
         # Save configuration
         config_file = self.output_dir / f'{exchange}_{symbol}_{timeframe}_matrix_operations_config.json'
-        safe_json_dump(self.step_config, config_file, indent=2, default=str)
+        safe_json_dump(self.step_config, config_file, indent = 2, default = str)
         output_files['config'] = str(config_file)
         
         # Save results
         results_file = self.output_dir / f'{exchange}_{symbol}_{timeframe}_matrix_operations_results.json'
-        safe_json_dump(matrix_results, results_file, indent=2, default=str)
+        safe_json_dump(matrix_results, results_file, indent = 2, default = str)
         output_files['results'] = str(results_file)
         
         # Save quality metrics
         quality_file = self.output_dir / f'{exchange}_{symbol}_{timeframe}_quality_metrics.json'
-        safe_json_dump(quality_metrics, quality_file, indent=2, default=str)
+        safe_json_dump(quality_metrics, quality_file, indent = 2, default = str)
         output_files['quality_metrics'] = str(quality_file)
         
         # Generate and save detailed report
@@ -486,11 +493,12 @@ class Step7EnhancedMatrixOperations:
         }
         
         summary_file = self.output_dir / f'{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json'
-        safe_json_dump(summary, summary_file, indent=2, default=str)
+        safe_json_dump(summary, summary_file, indent = 2, default = str)
         output_files['summary'] = str(summary_file)
         
         self.logger.info(f'💾 Saved matrix operations results to {self.output_dir}')
         return output_files
+    @log_all_calls
 
     def _update_pipeline_state(self, pipeline_state: Dict[str, Any], start_time: datetime, 
                              output_files: Dict[str, str], matrix_results: Dict[str, Any],
@@ -514,6 +522,7 @@ class Step7EnhancedMatrixOperations:
         }
         
         return pipeline_state
+    @log_all_calls
 
     def _log_comprehensive_summaries(self, pipeline_state: Dict[str, Any]) -> None:
         """Log comprehensive summaries from all monitoring components."""
@@ -592,18 +601,18 @@ class Step7EnhancedMatrixOperations:
             
             report_data = create_detailed_step_report(
                 step_name='step07_enhanced_matrix_operations',
-                step_data=step_data,
-                training_input=training_input,
-                execution_metadata=execution_metadata,
-                artifacts_generated=artifacts_generated,
-                metrics_calculated=metrics_calculated,
+                step_data = step_data,
+                training_input = training_input,
+                execution_metadata = execution_metadata,
+                artifacts_generated = artifacts_generated,
+                metrics_calculated = metrics_calculated,
                 errors_encountered=[] if pipeline_state.get('step07_enhanced_matrix_operations', {}).get('status') == 'completed' else ['Matrix operations failed']
             )
             
             report_name = log_step_report(
-                config=self.config,
+                config = self.config,
                 step_name='step07_enhanced_matrix_operations',
-                report_data=report_data,
+                report_data = report_data,
                 report_type='matrix_operations_report',
                 additional_metadata={
                     'matrix_operations_success': pipeline_state.get('step07_enhanced_matrix_operations', {}).get('status') == 'completed',
@@ -620,9 +629,9 @@ class Step7EnhancedMatrixOperations:
             # Log additional reports
             if matrix_results:
                 matrix_report_name = log_step_report(
-                    config=self.config,
+                    config = self.config,
                     step_name='step07_enhanced_matrix_operations',
-                    report_data=matrix_results,
+                    report_data = matrix_results,
                     report_type='matrix_results',
                     additional_metadata={
                         'matrix_operations_count': len(matrix_results),
@@ -636,9 +645,9 @@ class Step7EnhancedMatrixOperations:
             
             if quality_metrics:
                 quality_report_name = log_step_report(
-                    config=self.config,
+                    config = self.config,
                     step_name='step07_enhanced_matrix_operations',
-                    report_data=quality_metrics,
+                    report_data = quality_metrics,
                     report_type='quality_metrics',
                     additional_metadata={
                         'overall_quality_score': quality_metrics.get('overall_quality', 0.0),
@@ -651,9 +660,9 @@ class Step7EnhancedMatrixOperations:
                 self.logger.info(f'✅ Logged quality metrics: {quality_report_name}')
             
             log_step_metrics(
-                config=self.config,
+                config = self.config,
                 step_name='step07_enhanced_matrix_operations',
-                metrics=metrics_calculated,
+                metrics = metrics_calculated,
                 additional_metadata={
                     'metrics_type': 'matrix_operations_performance',
                     'timeframe': timeframe,

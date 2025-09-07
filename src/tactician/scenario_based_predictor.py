@@ -236,7 +236,7 @@ class ScenarioBasedPredictor:
 
             if X_val is None or y_val is None:
                 X_train_split, X_val, y_train_split, y_val = train_test_split(
-                    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train,
+                    X_train, y_train, test_size = 0.2, random_state = 42, stratify = y_train,
                 )
             else:
                 X_train_split, y_train_split = X_train, y_train
@@ -254,7 +254,7 @@ class ScenarioBasedPredictor:
             )
 
             self.feature_importance = dict(
-                zip([f"feature_{i}" for i in range(X_train.shape[1])], self.model.feature_importances_, strict=False),
+                zip([f"feature_{i}" for i in range(X_train.shape[1])], self.model.feature_importances_, strict = False),
             )
 
             y_pred = self.model.predict(X_val)
@@ -292,7 +292,7 @@ class ScenarioBasedPredictor:
             confidence = self._calculate_confidence(probabilities[0])
 
             return {
-                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0], strict=False)),
+                "probabilities": dict(zip(range(len(probabilities[0])), probabilities[0], strict = False)),
                 "predicted_scenario": predicted_scenario,
                 "scenario_name": self.scenarios[predicted_scenario]["name"],
                 "confidence": float(confidence),
@@ -358,7 +358,7 @@ class ScenarioBasedPredictor:
             base_prob = 1.0 / n_scenarios
             probabilities = [base_prob * 0.8] * (n_scenarios - 1) + [base_prob * 1.4]
             return {
-                "probabilities": dict(zip(range(n_scenarios), probabilities, strict=False)),
+                "probabilities": dict(zip(range(n_scenarios), probabilities, strict = False)),
                 "predicted_scenario": 5,
                 "scenario_name": self.scenarios[5]["name"],
                 "confidence": 0.3,

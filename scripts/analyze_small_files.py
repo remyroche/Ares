@@ -25,10 +25,10 @@ class SmallFileAnalyzer:
     """Analyzer for identifying small files in partitioned datasets."""
 
     def __init__(self, data_cache_path: str="data_cache"):
-        self.data_cache_path=Path(data_cache_path)
-        self.small_file_threshold_mb=1.0  # Files smaller than 1MB are considered small
+        self.data_cache_path = Path(data_cache_path)
+        self.small_file_threshold_mb = 1.0  # Files smaller than 1MB are considered small
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
+    @performance_monitor(level = PerformanceLevel.DETAILED)
     def analyze_small_files(self) -> dict[str, Any]:
         """Analyze all partitioned datasets to identify small files."""
         results: dict[str, Any] = {
@@ -43,18 +43,18 @@ class SmallFileAnalyzer:
             },
         }
 
-        partitioned_dirs=self._find_partitioned_datasets()
+        partitioned_dirs = self._find_partitioned_datasets()
 
         for dataset_path in partitioned_dirs:
             # Extract dataset info from path
-            dataset_info=self._parse_dataset_path(dataset_path)
+            dataset_info = self._parse_dataset_path(dataset_path)
             if not dataset_info:
                 continue
 
             # Analyze the dataset for small files
-            analysis=self._analyze_dataset_small_files(dataset_path)
+            analysis = self._analyze_dataset_small_files(dataset_path)
 
-            dataset_key=f"{dataset_info['exchange']}_{dataset_info['symbol']}_{dataset_info['timeframe']}"
+            dataset_key = f"{dataset_info['exchange']}_{dataset_info['symbol']}_{dataset_info['timeframe']}"
             results["datasets"][dataset_key] = {
                 "path": str(dataset_path),
                 "info": dataset_info,
@@ -84,7 +84,7 @@ class SmallFileAnalyzer:
         partitioned_dirs: list[Path] = []
 
         # Look for unified directory structure
-        unified_path=self.data_cache_path / "unified"
+        unified_path = self.data_cache_path / "unified"
         if unified_path.exists():
             for exchange_dir in unified_path.iterdir():
                 if not exchange_dir.is_dir():
@@ -96,7 +96,7 @@ class SmallFileAnalyzer:
                         if not timeframe_dir.is_dir():
                             continue
                         # Check if this is a partitioned structure
-                        if (timeframe_dir / "exchange=BINANCE").exists():
+                        if (timeframe_dir / "exchange = BINANCE").exists():
                             partitioned_dirs.append(timeframe_dir)
 
         return partitioned_dirs
@@ -104,7 +104,7 @@ class SmallFileAnalyzer:
     def _parse_dataset_path(self, dataset_path: Path) -> dict[str, str] | None:
         """Parse dataset path to extract exchange, symbol, and timeframe."""
         # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
-        parts=dataset_path.parts
+        parts = dataset_path.parts
         if len(parts) >= 4 and parts[-4] == "unified":
             return {
                 "exchange": parts[-3],
@@ -115,16 +115,16 @@ class SmallFileAnalyzer:
 
     def _analyze_dataset_small_files(self, dataset_path: Path) -> dict[str, Any]:
         """Analyze the given dataset directory for small files."""
-        total_files=0
+        total_files = 0
         small_files = 0
         total_size_bytes = 0
         small_files_size_bytes = 0
 
         for root, _dirs, files in os.walk(dataset_path):
             for fname in files:
-                fpath=Path(root) / fname
+                fpath = Path(root) / fname
                 try:
-                    size=fpath.stat().st_size
+                    size = fpath.stat().st_size
                 except FileNotFoundError:
                     continue
                 total_files += 1
@@ -142,16 +142,16 @@ class SmallFileAnalyzer:
 
 
 def main() -> None:
-    parser=argparse.ArgumentParser(description="Analyze small files in datasets")
+    parser = argparse.ArgumentParser(description="Analyze small files in datasets")
     parser.add_argument(
         "--data_cache_path",
         default="data_cache",
         help="Path to the data_cache directory",
     )
-    args=parser.parse_args()
+    args = parser.parse_args()
 
-    analyzer=SmallFileAnalyzer(data_cache_path=args.data_cache_path)
-    results=analyzer.analyze_small_files()
+    analyzer = SmallFileAnalyzer(data_cache_path = args.data_cache_path)
+    results = analyzer.analyze_small_files()
 
     print("=== Summary===")
     for key, value in results["summary"].items():

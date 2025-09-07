@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import Any
 
 
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ...utils.logger import system_logger
 import numpy as np
 import logging
 import time
+from src.core.decorators import handles_errors
 
 # src/supervisor/risk_allocator.py
 
@@ -53,7 +53,7 @@ class RiskAllocator:
             AttributeError: (False, "Missing required risk allocator parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="risk allocator initialization",
     )
     async def initialize(self) -> bool:
@@ -69,7 +69,7 @@ class RiskAllocator:
             self.logger.exception(f"❌ Risk Allocator initialization failed: {e}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_risk_configuration(self) -> None:
         try:
             self.risk_config.setdefault("allocation_interval", 60)
@@ -80,7 +80,7 @@ class RiskAllocator:
         except Exception as e:
             self.logger.exception(f"Error loading risk configuration: {e}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         try:
             if self.allocation_interval <= 0:
@@ -99,7 +99,7 @@ class RiskAllocator:
         error_handlers={
             Exception: (False, "Risk allocator run failed"),
         },
-        default_return=False,
+        default_return = False,
         context="risk allocator run",
     )
     async def run(self) -> bool:
@@ -115,7 +115,7 @@ class RiskAllocator:
             self.is_running = False
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_risk_allocation(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -129,7 +129,7 @@ class RiskAllocator:
         except Exception as e:
             self.logger.exception(f"Error in risk allocation step: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _calculate_risk_allocations(self) -> None:
         try:
             # Simulate risk allocation calculations
@@ -144,7 +144,7 @@ class RiskAllocator:
         except Exception as e:
             self.logger.exception(f"Error calculating risk allocations: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _update_risk_limits(self) -> None:
         try:
             # Update risk limits
@@ -159,7 +159,7 @@ class RiskAllocator:
         except Exception as e:
             self.logger.exception(f"Error updating risk limits: {e}")
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
         try:

@@ -1,6 +1,5 @@
 
 
-from logging import error
 """Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,
@@ -9,11 +8,12 @@ including health checks, performance tracking, and alerting functionality.
 import asyncio
 from datetime import datetime
 from typing import Any
+from logging import error
+from src.core.decorators import handles_errors
 
-from .core.domain import handle_specific_errors
-from .utils.logger import system_logger
-from .utils.warning_symbols import failed, invalid
-from .core.decorators.errors import handles_errors
+from src.utils.compat import handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import failed, invalid
 import time
 
 # src/supervisor/monitoring.py

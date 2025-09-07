@@ -14,38 +14,42 @@ import sys
 from pathlib import Path
 import time
 import argparse
+from typing import Any, Dict
+
+from src.utils.logger import system_logger
+from src.training.core.decorators import (
+    handles_errors, validates, log_call, traced
+)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .core.decorators import handles_errors, validates, log_call, traced
-from .utils.datetime_utils import (
+from src.utils.datetime_utils import (
     get_current_datetime, format_datetime
 )
-from .utils.file_utils import (
-    ensure_directory, safe_json_dump, safe_json_load, safe_copy, 
+from src.utils.file_utils import (
+    ensure_directory, safe_json_dump, safe_json_load, safe_copy,
     safe_file_exists, safe_read_parquet, safe_to_parquet
 )
-from .utils.validation import (
+from src.utils.validation import (
     validate_dataframe_schema, validate_data_quality
 )
-from .utils.data_utils import (
+from src.utils.data_utils import (
     safe_float, safe_int, optimize_dataframe_dtypes
 )
-from .utils.logger import (
+from src.utils.logger import (
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
-from .utils.logger import system_logger
-from .training.steps.model_training import run_model_training_pipeline
+from src.training.steps.model_training import run_model_training_pipeline
 import json
 import logging
 import numpy as np
 import pandas as pd
 import typing
 
-@handles_errors(Exception, fallback=False, log_level="ERROR")
-@validates(strict=True)
+@handles_errors(Exception, fallback = False, log_level="ERROR")
+@validates(strict = True)
 @log_call
 @traced
 async def validate_training_config(config: Dict[str, Any]) -> bool:
@@ -84,7 +88,7 @@ async def validate_training_config(config: Dict[str, Any]) -> bool:
         logger.info(f"✅ Exchange validation passed: {config['exchange']}")
     
     # Validate timeframe
-    valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+    valid_timeframes = ['1m', '5m', '15m', '30m', '1h']
     if config['timeframe'] not in valid_timeframes:
         logger.error(f"❌ Invalid timeframe: {config['timeframe']}. Must be one of {valid_timeframes}")
         print(f"❌ Invalid timeframe: {config['timeframe']}. Must be one of {valid_timeframes}")
@@ -135,7 +139,7 @@ async def validate_training_config(config: Dict[str, Any]) -> bool:
     print("✅ Training configuration validation passed")
     return True
 
-@handles_errors(Exception, fallback=False, log_level="ERROR")
+@handles_errors(Exception, fallback = False, log_level="ERROR")
 @log_call
 @traced
 async def validate_data_availability(config: Dict[str, Any]) -> bool:
@@ -244,7 +248,7 @@ async def validate_data_availability(config: Dict[str, Any]) -> bool:
         print(f"❌ Error validating data file {required_files[0]}: {e}")
         return False
 
-@handles_errors(Exception, fallback=False, log_level="ERROR")
+@handles_errors(Exception, fallback = False, log_level="ERROR")
 @log_call
 @traced
 async def create_training_summary(config: Dict[str, Any], execution_time: float, success: bool) -> None:
@@ -300,7 +304,7 @@ async def create_training_summary(config: Dict[str, Any], execution_time: float,
     
     # Save summary
     summary_file = f"{config['data_dir']}/model_training_summary_{config['symbol']}_{config['timeframe']}.json"
-    safe_json_dump(summary, summary_file, indent=2)
+    safe_json_dump(summary, summary_file, indent = 2)
     logger.info(f"💾 Training summary saved to: {summary_file}")
     print(f"💾 Training summary saved to: {summary_file}")
     
@@ -347,15 +351,15 @@ async def main():
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Enhanced Model Training Pipeline")
-    parser.add_argument("--symbol", type=str, default="ETHUSDT", help="Trading symbol")
-    parser.add_argument("--exchange", type=str, default="BINANCE", help="Exchange name")
-    parser.add_argument("--timeframe", type=str, default="1m", help="Timeframe")
-    parser.add_argument("--data-dir", type=str, default="data_cache", help="Data directory")
+    parser.add_argument("--symbol", type = str, default="ETHUSDT", help="Trading symbol")
+    parser.add_argument("--exchange", type = str, default="BINANCE", help="Exchange name")
+    parser.add_argument("--timeframe", type = str, default="1m", help="Timeframe")
+    parser.add_argument("--data-dir", type = str, default="data_cache", help="Data directory")
     parser.add_argument("--force-rerun", action="store_true", help="Force rerun all steps")
-    parser.add_argument("--max-trials", type=int, default=100, help="Maximum trials for optimization")
-    parser.add_argument("--n-trials", type=int, default=50, help="Number of trials")
-    parser.add_argument("--lookback-days", type=int, default=180, help="Lookback days for training")
-    parser.add_argument("--random-state", type=int, default=42, help="Random state for reproducibility")
+    parser.add_argument("--max-trials", type = int, default = 100, help="Maximum trials for optimization")
+    parser.add_argument("--n-trials", type = int, default = 50, help="Number of trials")
+    parser.add_argument("--lookback-days", type = int, default = 180, help="Lookback days for training")
+    parser.add_argument("--random-state", type = int, default = 42, help="Random state for reproducibility")
     
     # Training component flags
     parser.add_argument("--no-hmm", action="store_true", help="Skip HMM training")
@@ -453,10 +457,10 @@ async def main():
         logger.info("📊 You can monitor progress in the logs directory.")
         
         success = await run_model_training_pipeline(
-            symbol=config['symbol'],
-            exchange=config['exchange'],
-            timeframe=config['timeframe'],
-            data_dir=config['data_dir'],
+            symbol = config['symbol'],
+            exchange = config['exchange'],
+            timeframe = config['timeframe'],
+            data_dir = config['data_dir'],
             **config
         )
         

@@ -7,11 +7,11 @@ from typing import Generic, Protocol, TypeVar, runtime_checkable
 from src.custom_types import ConfigDict, PerformanceMetrics, TradingComponent
 import logging
 
-ConfigT = TypeVar('ConfigT', bound=ConfigDict)
+ConfigT = TypeVar('ConfigT', bound = ConfigDict)
 DataT = TypeVar('DataT')
 ResultT = TypeVar('ResultT')
-ErrorT = TypeVar('ErrorT', bound=Exception)
-ComponentT = TypeVar('ComponentT', bound=TradingComponent)
+ErrorT = TypeVar('ErrorT', bound = Exception)
+ComponentT = TypeVar('ComponentT', bound = TradingComponent)
 
 @runtime_checkable
 class Serializable(Protocol):

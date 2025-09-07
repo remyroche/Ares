@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import pandas as pd
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
 
 """
 Enhanced API-Agnostic Data Collector
@@ -29,10 +31,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, ValidationSeverity
 )
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import logging
 import numpy as np
 import typing
@@ -42,6 +45,7 @@ logger = system_logger.getChild("EnhancedAPIAgnosticDataCollector")
 
 class DataGapDetector:
     """Comprehensive data gap detection and analysis."""
+    @log_important_calls
     
     def __init__(self, exchange: str, symbol: str, timeframe: str):
         self.exchange = exchange.upper()
@@ -59,7 +63,7 @@ class DataGapDetector:
         self.logger.info(f"🔍 Initialized gap detector for {self.exchange} {self.symbol} {self.timeframe}")
     
     @handles_errors(fallback=[], context="detect_gaps")
-    @traced(span_name="detect_data_gaps", log_args=False, log_result_len_only=True)
+    @traced(span_name="detect_data_gaps", log_args = False, log_result_len_only = True)
     def detect_gaps(self, data: pd.DataFrame, data_type: str) -> List[Dict[str, Any]]:
         """
         Detect gaps in data with extensive logging.
@@ -81,7 +85,7 @@ class DataGapDetector:
         threshold = self.gap_thresholds.get(data_type, 60.0)  # Default 1 minute
         
         # Sort data by timestamp
-        sorted_data = data.sort_values('timestamp').reset_index(drop=True)
+        sorted_data = data.sort_values('timestamp').reset_index(drop = True)
         
         for i in range(1, len(sorted_data)):
             current_ts = sorted_data.iloc[i]['timestamp']
@@ -96,8 +100,8 @@ class DataGapDetector:
                     'end_timestamp': current_ts,
                     'gap_seconds': gap_seconds,
                     'gap_minutes': gap_seconds / 60.0,
-                    'start_time': pd.to_datetime(previous_ts, unit='ms', utc=True),
-                    'end_time': pd.to_datetime(current_ts, unit='ms', utc=True),
+                    'start_time': pd.to_datetime(previous_ts, unit='ms', utc = True),
+                    'end_time': pd.to_datetime(current_ts, unit='ms', utc = True),
                     'data_type': data_type,
                     'exchange': self.exchange,
                     'symbol': self.symbol,
@@ -110,7 +114,7 @@ class DataGapDetector:
         self.logger.info(f"📊 Gap detection completed: {len(gaps)} gaps found")
         return gaps
     
-    @handles_errors(fallback=None, context="get_gap_summary")
+    @handles_errors(fallback = None, context="get_gap_summary")
     def get_gap_summary(self, gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Get summary of detected gaps."""
         if not gaps:
@@ -126,7 +130,7 @@ class DataGapDetector:
             'average_gap': average_gap,
             'average_gap_minutes': average_gap / 60.0,
             'largest_gap': max(gaps, key=lambda x: x['gap_seconds']),
-            'smallest_gap': min(gaps, key=lambda x: x['gap_seconds'])
+            'smallest_gap': min(gaps, key = lambda x: x['gap_seconds'])
         }
         
         self.logger.info(f"📊 Gap Summary:")
@@ -139,6 +143,7 @@ class DataGapDetector:
 
 class IncrementalDataDownloader:
     """Incremental data downloader with gap detection and batch management."""
+    @log_important_calls
     
     def __init__(self, exchange: str, symbol: str, timeframe: str):
         self.exchange = exchange.upper()
@@ -162,8 +167,8 @@ class IncrementalDataDownloader:
         
         self.logger.info(f"🚀 Initialized incremental downloader for {self.exchange} {self.symbol} {self.timeframe}")
     
-    @handles_errors(fallback=None, context="get_last_timestamp")
-    @traced(span_name="get_last_timestamp", log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = None, context="get_last_timestamp")
+    @traced(span_name="get_last_timestamp", log_args = False, log_result_len_only = True)
     async def get_last_timestamp(self, data_dir: str, data_type: str) -> Optional[int]:
         """Get the last timestamp from existing data files."""
         try:
@@ -192,7 +197,7 @@ class IncrementalDataDownloader:
                 return None
             
             last_timestamp = df['timestamp'].max()
-            last_time = pd.to_datetime(last_timestamp, unit='ms', utc=True)
+            last_time = pd.to_datetime(last_timestamp, unit='ms', utc = True)
             
             self.logger.info(f"✅ Last timestamp: {last_timestamp} ({last_time})")
             return int(last_timestamp)
@@ -201,9 +206,9 @@ class IncrementalDataDownloader:
             self.logger.exception(f"❌ Error getting last timestamp: {e}")
             return None
     
-    @handles_errors(fallback=False, context="download_incremental_batch")
-    @traced(span_name="download_incremental_batch", log_args=False, log_result_len_only=True)
-    @memory_efficient(batch_size=1000)
+    @handles_errors(fallback = False, context="download_incremental_batch")
+    @traced(span_name="download_incremental_batch", log_args = False, log_result_len_only = True)
+    @memory_efficient(batch_size = 1000)
     async def download_incremental_batch(
         self, 
         data_type: str, 
@@ -239,14 +244,14 @@ class IncrementalDataDownloader:
             
             if start_timestamp is None:
                 # No previous data, start from 24 hours ago
-                start_timestamp = int((datetime.now() - timedelta(hours=24)).timestamp() * 1000)
+                start_timestamp = int((datetime.now() - timedelta(hours = 24)).timestamp() * 1000)
                 self.logger.info(f"ℹ️ No previous timestamp, starting from 24 hours ago")
             
             # Determine end timestamp
             if end_timestamp is None:
                 end_timestamp = int(datetime.now().timestamp() * 1000)
             
-            self.logger.info(f"🕐 Download period: {pd.to_datetime(start_timestamp, unit='ms', utc=True)} to {pd.to_datetime(end_timestamp, unit='ms', utc=True)}")
+            self.logger.info(f"🕐 Download period: {pd.to_datetime(start_timestamp, unit='ms', utc = True)} to {pd.to_datetime(end_timestamp, unit='ms', utc = True)}")
             
             # Download data using exchange API
             raw_data = await self._download_from_exchange(
@@ -308,10 +313,10 @@ class IncrementalDataDownloader:
             
             # Create exchange instance
             exchange_instance = ExchangeFactory.create_exchange(
-                exchange_name=self.exchange,
+                exchange_name = self.exchange,
                 api_key="",  # Use public endpoints
                 api_secret="",
-                trade_symbol=self.symbol
+                trade_symbol = self.symbol
             )
             
             # Download data based on type
@@ -336,18 +341,18 @@ class IncrementalDataDownloader:
         """Download klines data from exchange."""
         try:
             # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
+            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc = True)
+            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc = True)
             
             self.logger.info(f"📊 Downloading klines from {start_dt} to {end_dt}")
             
             # Download klines data
             klines_data = await exchange_instance.get_historical_klines(
-                symbol=self.symbol,
-                interval=self.timeframe,
-                start_time=start_dt,
-                end_time=end_dt,
-                limit=batch_size
+                symbol = self.symbol,
+                interval = self.timeframe,
+                start_time = start_dt,
+                end_time = end_dt,
+                limit = batch_size
             )
             
             # Convert to list of dictionaries
@@ -373,8 +378,8 @@ class IncrementalDataDownloader:
         """Download aggtrades data from exchange."""
         try:
             # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
+            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc = True)
+            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc = True)
             
             self.logger.info(f"📊 Downloading aggtrades from {start_dt} to {end_dt}")
             
@@ -392,8 +397,8 @@ class IncrementalDataDownloader:
         """Download futures data from exchange."""
         try:
             # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
+            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc = True)
+            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc = True)
             
             self.logger.info(f"📊 Downloading futures from {start_dt} to {end_dt}")
             
@@ -438,6 +443,7 @@ class IncrementalDataDownloader:
 
 class EnhancedAPIAgnosticDataCollector:
     """Enhanced API-agnostic data collector with comprehensive features."""
+    @log_important_calls
     
     def __init__(self, exchange: str, symbol: str, timeframe: str):
         self.exchange = exchange.upper()
@@ -462,8 +468,8 @@ class EnhancedAPIAgnosticDataCollector:
         
         self.logger.info(f"🚀 Initialized Enhanced API-Agnostic Data Collector for {self.exchange} {self.symbol} {self.timeframe}")
     
-    @handles_errors(fallback=False, context="collect_data_for_period")
-    @traced(span_name="collect_data_for_period", log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context="collect_data_for_period")
+    @traced(span_name="collect_data_for_period", log_args = False, log_result_len_only = True)
     @with_enhanced_mlflow_logging
     async def collect_data_for_period(
         self, 
@@ -505,10 +511,10 @@ class EnhancedAPIAgnosticDataCollector:
                 
                 # Download data for the period
                 success, data, _ = await self.incremental_downloader.download_incremental_batch(
-                    data_type=data_type,
-                    start_timestamp=start_timestamp,
-                    end_timestamp=end_timestamp,
-                    batch_size=10000  # Large batch for period collection
+                    data_type = data_type,
+                    start_timestamp = start_timestamp,
+                    end_timestamp = end_timestamp,
+                    batch_size = 10000  # Large batch for period collection
                 )
                 
                 if success and data:
@@ -567,8 +573,8 @@ class EnhancedAPIAgnosticDataCollector:
                 'timestamp': datetime.now().isoformat()
             }
     
-    @handles_errors(fallback=False, context="collect_incremental_data")
-    @traced(span_name="collect_incremental_data", log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context="collect_incremental_data")
+    @traced(span_name="collect_incremental_data", log_args = False, log_result_len_only = True)
     async def collect_incremental_data(
         self, 
         data_types: List[str] = None,
@@ -606,7 +612,7 @@ class EnhancedAPIAgnosticDataCollector:
                 last_timestamp = await self.incremental_downloader.get_last_timestamp(data_dir, data_type)
                 
                 if last_timestamp:
-                    self.logger.info(f"🕐 Resuming from timestamp: {pd.to_datetime(last_timestamp, unit='ms', utc=True)}")
+                    self.logger.info(f"🕐 Resuming from timestamp: {pd.to_datetime(last_timestamp, unit='ms', utc = True)}")
                 else:
                     self.logger.info(f"ℹ️ No existing data found, starting from 24 hours ago")
                 
@@ -616,9 +622,9 @@ class EnhancedAPIAgnosticDataCollector:
                     self.logger.info(f"📦 Downloading batch {batch_num + 1}/{max_batches}")
                     
                     success, data, next_timestamp = await self.incremental_downloader.download_incremental_batch(
-                        data_type=data_type,
-                        start_timestamp=last_timestamp,
-                        batch_size=1000
+                        data_type = data_type,
+                        start_timestamp = last_timestamp,
+                        batch_size = 1000
                     )
                     
                     if success and data:
@@ -687,8 +693,8 @@ class EnhancedAPIAgnosticDataCollector:
                 'timestamp': datetime.now().isoformat()
             }
     
-    @handles_errors(fallback=False, context="detect_and_fill_gaps")
-    @traced(span_name="detect_and_fill_gaps", log_args=False, log_result_len_only=True)
+    @handles_errors(fallback = False, context="detect_and_fill_gaps")
+    @traced(span_name="detect_and_fill_gaps", log_args = False, log_result_len_only = True)
     async def detect_and_fill_gaps(
         self, 
         data_dir: str = "data_cache",
@@ -737,15 +743,15 @@ class EnhancedAPIAgnosticDataCollector:
                     self.logger.info(f"🔄 Filling gap: {gap['start_time']} to {gap['end_time']}")
                     
                     success, data, _ = await self.incremental_downloader.download_incremental_batch(
-                        data_type=data_type,
-                        start_timestamp=gap['start_timestamp'],
-                        end_timestamp=gap['end_timestamp'],
-                        batch_size=10000
+                        data_type = data_type,
+                        start_timestamp = gap['start_timestamp'],
+                        end_timestamp = gap['end_timestamp'],
+                        batch_size = 10000
                     )
                     
                     if success and data:
                         # Save gap data
-                        await self._save_collected_data(data, data_type, data_dir, gap_id=gap['start_timestamp'])
+                        await self._save_collected_data(data, data_type, data_dir, gap_id = gap['start_timestamp'])
                         gaps_filled += 1
                         self.logger.info(f"✅ Filled gap with {len(data)} rows")
                     else:
@@ -791,7 +797,7 @@ class EnhancedAPIAgnosticDataCollector:
                 'timestamp': datetime.now().isoformat()
             }
     
-    @handles_errors(fallback=pd.DataFrame(), context="load_existing_data")
+    @handles_errors(fallback = pd.DataFrame(), context="load_existing_data")
     async def _load_existing_data(self, data_dir: str, data_type: str) -> pd.DataFrame:
         """Load existing data from files."""
         try:
@@ -812,8 +818,8 @@ class EnhancedAPIAgnosticDataCollector:
                 dataframes.append(df)
             
             if dataframes:
-                combined_df = pd.concat(dataframes, ignore_index=True)
-                combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
+                combined_df = pd.concat(dataframes, ignore_index = True)
+                combined_df = combined_df.sort_values('timestamp').reset_index(drop = True)
                 self.logger.info(f"📖 Loaded {len(combined_df)} existing {data_type} rows from {len(files)} files")
                 return combined_df
             
@@ -823,14 +829,14 @@ class EnhancedAPIAgnosticDataCollector:
             self.logger.exception(f"❌ Error loading existing data: {e}")
             return pd.DataFrame()
     
-    @handles_errors(fallback=False, context="save_collected_data")
+    @handles_errors(fallback = False, context="save_collected_data")
     async def _save_collected_data(self, data: List[Dict[str, Any]], data_type: str, data_dir: str, batch_num: int = None, gap_id: int = None):
         """Save collected data to files."""
         try:
             import os
             
             # Create data directory
-            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(data_dir, exist_ok = True)
             
             # Generate filename
             if gap_id:
@@ -883,8 +889,8 @@ class EnhancedAPIAgnosticDataCollector:
 
 
 # Convenience functions
-@handles_errors(fallback=False, context="collect_data_for_period")
-@traced(span_name="collect_data_for_period", log_args=False, log_result_len_only=True)
+@handles_errors(fallback = False, context="collect_data_for_period")
+@traced(span_name="collect_data_for_period", log_args = False, log_result_len_only = True)
 async def collect_data_for_period(
     exchange: str,
     symbol: str,
@@ -899,8 +905,8 @@ async def collect_data_for_period(
     return await collector.collect_data_for_period(start_time, end_time, data_types, data_dir)
 
 
-@handles_errors(fallback=False, context="collect_incremental_data")
-@traced(span_name="collect_incremental_data", log_args=False, log_result_len_only=True)
+@handles_errors(fallback = False, context="collect_incremental_data")
+@traced(span_name="collect_incremental_data", log_args = False, log_result_len_only = True)
 async def collect_incremental_data(
     exchange: str,
     symbol: str,
@@ -914,8 +920,8 @@ async def collect_incremental_data(
     return await collector.collect_incremental_data(data_types, data_dir, max_batches)
 
 
-@handles_errors(fallback=False, context="detect_and_fill_gaps")
-@traced(span_name="detect_and_fill_gaps", log_args=False, log_result_len_only=True)
+@handles_errors(fallback = False, context="detect_and_fill_gaps")
+@traced(span_name="detect_and_fill_gaps", log_args = False, log_result_len_only = True)
 async def detect_and_fill_gaps(
     exchange: str,
     symbol: str,
@@ -941,7 +947,7 @@ if __name__ == "__main__":
             symbol="ETHUSDT",
             timeframe="1m",
             data_types=["klines"],
-            max_batches=3
+            max_batches = 3
         )
         
         logger.info(f"✅ Incremental collection result: {result['success']}")

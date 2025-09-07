@@ -1,4 +1,5 @@
 """
+from ...utils.logger import system_logger
 S/R-Focused Unified Regime Classifier
 
 This version prioritizes:
@@ -9,7 +10,7 @@ This version prioritizes:
 from datetime import datetime
 from typing import Any, List, Dict, Optional, Tuple
 from sklearn.preprocessing import StandardScaler
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 import pandas as pd
 from .core.decorators.validation import validates as validate_data_quality, traced as with_tracing_span
@@ -178,7 +179,7 @@ class UnifiedRegimeClassifierSRFocused:
         """Cluster nearby S/R levels."""
         if not levels:
             return []
-        sorted_levels = sorted(levels, key=lambda x: x['price'])
+        sorted_levels = sorted(levels, key = lambda x: x['price'])
         clusters = []
         current_cluster = [sorted_levels[0]]
         tolerance = self.sr_detection_config['touch_tolerance']
@@ -293,8 +294,8 @@ class UnifiedRegimeClassifierSRFocused:
                 supports.append((price, relevance))
             elif relevance['level_data']['type'] == 'resistance' and price > current_price:
                 resistances.append((price, relevance))
-        supports.sort(key=lambda x: x[1]['total_score'], reverse=True)
-        resistances.sort(key=lambda x: x[1]['total_score'], reverse=True)
+        supports.sort(key = lambda x: x[1]['total_score'], reverse = True)
+        resistances.sort(key = lambda x: x[1]['total_score'], reverse = True)
         most_relevant_support = supports[0][1] if supports else None
         most_relevant_resistance = resistances[0][1] if resistances else None
         return (most_relevant_support, most_relevant_resistance)

@@ -1,5 +1,6 @@
 
 import pandas as pd
+from src.utils.logger import system_logger
 """Example: Using the Simplified Training Pipeline
 
 This example demonstrates how to use the new simplified and refactored
@@ -8,7 +9,7 @@ training components to run a complete training pipeline.
 import asyncio
 from pathlib import Path
 from .training.core.training_manager import create_training_manager
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 import sys
 import logging
@@ -23,7 +24,7 @@ async def run_basic_training_example() -> None:
         logger.info('📦 Creating training manager...')
         manager = await create_training_manager(config)
         logger.info('🔄 Executing full pipeline...')
-        result = await manager.train(symbol='BTCUSDT', exchange='binance', start_step=None, end_step=None, force_rerun=False)
+        result = await manager.train(symbol='BTCUSDT', exchange='binance', start_step = None, end_step = None, force_rerun = False)
         if result['success']:
             logger.info('✅ Training completed successfully!')
             report = result['execution_report']
@@ -54,11 +55,11 @@ async def run_partial_pipeline_example() -> None:
     try:
         manager = await create_training_manager(config)
         logger.info('📊 Running data preparation steps only...')
-        result = await manager.train(symbol='ETHUSDT', exchange='binance', start_step='01', end_step='02', force_rerun=False)
+        result = await manager.train(symbol='ETHUSDT', exchange='binance', start_step='01', end_step='02', force_rerun = False)
         if result['success']:
             logger.info('✅ Data preparation completed!')
             logger.info('🔄 Continuing with feature engineering...')
-            result = await manager.train(symbol='ETHUSDT', exchange='binance', start_step='03', end_step='06', force_rerun=False)
+            result = await manager.train(symbol='ETHUSDT', exchange='binance', start_step='03', end_step='06', force_rerun = False)
             if result['success']:
                 logger.info('✅ Feature engineering completed!')
     except Exception as e:
@@ -74,7 +75,7 @@ async def run_custom_step_example() -> None:
     logger.info('🚀 Starting custom step configuration example')
     try:
         manager = await create_training_manager(config)
-        result = await manager.train(symbol='BTCUSDT', exchange='binance', force_rerun=True)
+        result = await manager.train(symbol='BTCUSDT', exchange='binance', force_rerun = True)
         if result['success']:
             logger.info('✅ Custom pipeline completed!')
     except Exception as e:
@@ -128,4 +129,5 @@ def main() -> None:
         print(f"Available examples: {', '.join(examples.keys())}")
         sys.exit(1)
 if __name__ == '__main__':
-    await main()
+    import asyncio
+    asyncio.run(main())

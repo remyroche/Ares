@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ..utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Real-time Metrics Dashboard
 
@@ -11,11 +13,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
-from .core.decorators.errors import handles_errors
 import logging
 import time
 
@@ -64,7 +65,7 @@ class MetricsDashboard:
         self.metrics: list[DashboardMetric] = []
         self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     async def initialize(self) -> bool:
         self.logger.info("📊 Initializing Metrics Dashboard ...")
         self.metrics.clear()

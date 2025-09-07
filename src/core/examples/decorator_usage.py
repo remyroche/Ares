@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from src.core.errors.base import ValidationError
 Examples of using the core decorator system.
 
 This file demonstrates various decorator usage patterns and
@@ -8,9 +10,13 @@ import asyncio
 import time
 from src.utils.decorators import CachePolicy, authenticated, cached, circuit_breaker, compose, handles_errors, log_call, requires_role, retry, timeout, traced, validate_schema, validates
 from src.core.errors import ValidationError, register_exception_mapping
+import logging
+import numpy as np
+import pandas as pd
+import random
 
-@validates(strict=True)
-@handles_errors(ValueError, TypeError, map_to=ValidationError)
+@validates(strict = True)
+@handles_errors(ValueError, TypeError, map_to = ValidationError)
 def calculate_price(base_price: float, tax_rate: float) -> float:
     """Calculate price with tax."""
     if base_price < 0:
@@ -18,15 +24,15 @@ def calculate_price(base_price: float, tax_rate: float) -> float:
         raise ValueError(msg)
     return base_price * (1 + tax_rate)
 
-@compose(log_call(level='INFO', mask_sensitive=True), validates(), handles_errors(fallback={'error': 'processing failed'}), cached(policy=CachePolicy.PER_REQUEST))
+@compose(log_call(level='INFO', mask_sensitive = True), validates(), handles_errors(fallback={'error': 'processing failed'}), cached(policy = CachePolicy.PER_REQUEST))
 def process_user_data(user_id: str, data: dict) -> dict:
     """Process user data with multiple decorators."""
     return {'user_id': user_id, 'processed': True, 'timestamp': time.time(), **data}
 
-@retry(max_attempts=3, delay=1.0, backoff=2.0)
-@circuit_breaker(failure_threshold=5, recovery_timeout=60)
+@retry(max_attempts = 3, delay = 1.0, backoff = 2.0)
+@circuit_breaker(failure_threshold = 5, recovery_timeout = 60)
 @timeout(30.0)
-@traced(span_name='external_api_call', record_result=True)
+@traced(span_name='external_api_call', record_result = True)
 async def fetch_external_data(api_endpoint: str) -> dict:
     """Fetch data from external API with resilience patterns."""
     await asyncio.sleep(0.1)
@@ -36,9 +42,9 @@ async def fetch_external_data(api_endpoint: str) -> dict:
     return {'endpoint': api_endpoint, 'data': 'external_data'}
 
 @authenticated()
-@requires_role('admin', 'moderator', require_all=False)
+@requires_role('admin', 'moderator', require_all = False)
 @log_call(level='INFO')
-@handles_errors(propagate=True)
+@handles_errors(propagate = True)
 def delete_content(content_id: str) -> bool:
     """Delete content - requires authentication and proper role."""
     print(f'Deleting content {content_id}')
@@ -62,16 +68,16 @@ class UserCreateSchema:
         self.age = age
 
 @validate_schema(UserCreateSchema)
-@cached(policy=CachePolicy.CROSS_REQUEST, ttl=300)
+@cached(policy = CachePolicy.CROSS_REQUEST, ttl = 300)
 @traced(span_name='create_user')
 def create_user(user_data: dict) -> dict:
     """Create user with schema validation."""
     return {'id': 'user_123', 'created_at': time.time(), **user_data}
 try:
 
-    @validate_dataframe(columns=['id', 'value', 'category'], dtypes={'id': int, 'value': float}, min_rows=1)
-    @handles_errors(pd.errors.EmptyDataError, fallback=pd.DataFrame())
-    @cached(policy=CachePolicy.PER_REQUEST)
+    @validate_dataframe(columns=['id', 'value', 'category'], dtypes={'id': int, 'value': float}, min_rows = 1)
+    @handles_errors(pd.errors.EmptyDataError, fallback = pd.DataFrame())
+    @cached(policy = CachePolicy.PER_REQUEST)
     def analyze_data(df: pd.DataFrame) -> dict:
         """Analyze DataFrame with validation."""
         return {'row_count': len(df), 'mean_value': df['value'].mean(), 'categories': df['category'].unique().tolist()}
@@ -91,13 +97,11 @@ def business_operation(value: int) -> int:
     return value * 2
 
 @traced(kind='client', attributes={'service': 'database'})
-@cached(policy=CachePolicy.CROSS_REQUEST, ttl=60)
-@retry(max_attempts=2)
+@cached(policy = CachePolicy.CROSS_REQUEST, ttl = 60)
+@retry(max_attempts = 2)
 async def get_user_from_db(user_id: str) -> dict:
     """Get user from database with caching and tracing."""
     await asyncio.sleep(0.05)
-    from .core.decorators import span_event
-    from .core.decorators.errors import handles_errors
     span_event('query_started', {'user_id': user_id})
     result = {'id': user_id, 'name': f'User {user_id}'}
     span_attribute('result_size', len(str(result)))
@@ -108,7 +112,7 @@ async def get_user_from_db(user_id: str) -> dict:
 class UserService:
     """Service class with automatic method tracing."""
 
-    @cached(policy=CachePolicy.PER_REQUEST)
+    @cached(policy = CachePolicy.PER_REQUEST)
     def get_user(self, user_id: str) -> dict:
         """Get user by ID."""
         return {'id': user_id, 'service': 'UserService'}
@@ -121,9 +125,9 @@ class UserService:
 
 @authenticated()
 @validates()
-@cached(policy=CachePolicy.PER_REQUEST)
+@cached(policy = CachePolicy.PER_REQUEST)
 @traced()
-@handles_errors(fallback=None)
+@handles_errors(fallback = None)
 def complex_operation(user_id: str, action: str) -> dict:
     """
     Demonstrate decorator stacking order.

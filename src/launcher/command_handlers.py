@@ -34,11 +34,11 @@ class TrainingCommandHandler(BaseCommandHandler):
                 lookback_days: Optional[int] = None, with_gui: bool = False) -> bool:
         """Execute unified training with the specified mode."""
         return self.launcher._run_unified_training(
-            symbol=symbol,
-            exchange=exchange,
-            training_mode=training_mode,
-            lookback_days=lookback_days,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            training_mode = training_mode,
+            lookback_days = lookback_days,
+            with_gui = with_gui,
         )
 
 
@@ -49,10 +49,10 @@ class TradingCommandHandler(BaseCommandHandler):
                 with_gui: bool = False) -> bool:
         """Execute unified trading with the specified mode."""
         return self.launcher._run_unified_trading(
-            symbol=symbol,
-            exchange=exchange,
-            trading_mode=trading_mode,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            trading_mode = trading_mode,
+            with_gui = with_gui,
         )
 
 
@@ -65,12 +65,12 @@ class StepBasedCommandHandler(BaseCommandHandler):
         """Execute step-based training with validation."""
         return asyncio.run(
             self.launcher.run_step_based_training_with_validation(
-                symbol=symbol,
-                exchange=exchange,
-                start_step=start_step,
-                training_mode=training_mode,
-                force_rerun=force_rerun,
-                with_gui=with_gui,
+                symbol = symbol,
+                exchange = exchange,
+                start_step = start_step,
+                training_mode = training_mode,
+                force_rerun = force_rerun,
+                with_gui = with_gui,
             )
         )
 
@@ -83,9 +83,9 @@ class DataLoadingCommandHandler(BaseCommandHandler):
         """Execute data loading and consolidation."""
         actual_lookback = 30 if blank_mode else lookback_days
         return self.launcher.run_data_loading(
-            symbol=symbol,
-            exchange=exchange,
-            lookback_days=actual_lookback,
+            symbol = symbol,
+            exchange = exchange,
+            lookback_days = actual_lookback,
         )
 
 
@@ -109,9 +109,9 @@ class PipelineCommandHandler(BaseCommandHandler):
             return False
             
         return pipeline_methods[pipeline_type](
-            symbol=symbol,
-            exchange=exchange,
-            with_gui=with_gui,
+            symbol = symbol,
+            exchange = exchange,
+            with_gui = with_gui,
         )
 
 
@@ -123,10 +123,10 @@ class RegimeCommandHandler(BaseCommandHandler):
         """Execute regime operations."""
         return asyncio.run(
             self.launcher.run_regime_operations(
-                symbol=symbol,
-                exchange=exchange,
-                subcommand=subcommand,
-                with_gui=with_gui,
+                symbol = symbol,
+                exchange = exchange,
+                subcommand = subcommand,
+                with_gui = with_gui,
             )
         )
 

@@ -5,13 +5,14 @@ import pandas as pd
 from typing import Optional
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ..utils.logger import system_logger
 'Base explainer classes for SHAP and LIME integration.\n\nThis module provides the foundation for model explainability across all ML models\nin the trading system, enabling traceability of trade decisions back to individual factors.\n'
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import json
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 try:
     import shap
     SHAP_AVAILABLE = True
@@ -92,12 +93,12 @@ class BaseExplainer(ABC):
         self.enable_lime = self.explain_config.get('enable_lime', True) and LIME_AVAILABLE
         self.max_features = self.explain_config.get('max_features', 20)
         self.explanations_storage = Path(self.explain_config.get('storage_path', 'data/explanations'))
-        self.explanations_storage.mkdir(parents=True, exist_ok=True)
+        self.explanations_storage.mkdir(parents = True, exist_ok = True)
         self.shap_explainer = None
         self.lime_explainer = None
 
     @abstractmethod
-    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any=None) -> ExplanationResult:
+    async def explain_prediction(self, model: Any, features: np.ndarray, feature_names: List[str], prediction: Any = None) -> ExplanationResult:
         """Explain a model prediction."""
         pass
 
@@ -116,13 +117,13 @@ class BaseExplainer(ABC):
                     explainer = shap.TreeExplainer(model)
                 else:
                     sample_size = min(100, len(training_data))
-                    sample_data = training_data.sample(n=sample_size, random_state=42)
+                    sample_data = training_data.sample(n = sample_size, random_state = 42)
                     explainer = shap.KernelExplainer(model.predict_proba, sample_data)
             elif hasattr(model, 'feature_importances_'):
                 explainer = shap.TreeExplainer(model)
             else:
                 sample_size = min(100, len(training_data))
-                sample_data = training_data.sample(n=sample_size, random_state=42)
+                sample_data = training_data.sample(n = sample_size, random_state = 42)
                 explainer = shap.KernelExplainer(model.predict, sample_data)
             self.logger.info(f'✅ SHAP explainer created for {self.model_name}')
             return explainer
@@ -135,7 +136,7 @@ class BaseExplainer(ABC):
         if not self.enable_lime or not LIME_AVAILABLE:
             return None
         try:
-            explainer = LimeTabularExplainer(training_data.values, feature_names=feature_names, class_names=['class_0', 'class_1'] if len(training_data.columns) > 1 else None, mode='classification' if len(training_data.columns) > 1 else 'regression', discretize_continuous=True)
+            explainer = LimeTabularExplainer(training_data.values, feature_names = feature_names, class_names=['class_0', 'class_1'] if len(training_data.columns) > 1 else None, mode='classification' if len(training_data.columns) > 1 else 'regression', discretize_continuous = True)
             self.logger.info(f'✅ LIME explainer created for {self.model_name}')
             return explainer
         except Exception as e:
@@ -170,7 +171,7 @@ class BaseExplainer(ABC):
                     return model.predict_proba(x)
                 else:
                     return model.predict(x).reshape(-1, 1)
-            explanation = explainer.explain_instance(features.flatten(), predict_fn, num_features=min(self.max_features, len(feature_names)))
+            explanation = explainer.explain_instance(features.flatten(), predict_fn, num_features = min(self.max_features, len(feature_names)))
             explanation_data = {'feature_importance': dict(explanation.as_list()), 'explanation_text': explanation.as_html(), 'prediction': explanation.predicted_value, 'confidence': explanation.score}
             return explanation_data
         except Exception as e:
@@ -202,7 +203,7 @@ class BaseExplainer(ABC):
             filepath = self.explanations_storage / filename
             explanation_dict = {'model_name': explanation.model_name, 'prediction': explanation.prediction, 'feature_names': explanation.feature_names, 'feature_values': explanation.feature_values.tolist(), 'shap_values': explanation.shap_values.tolist() if explanation.shap_values is not None else None, 'lime_explanation': explanation.lime_explanation, 'feature_importance': explanation.feature_importance, 'confidence': explanation.confidence, 'timestamp': explanation.timestamp.isoformat(), 'metadata': explanation.metadata}
             with open(filepath, 'w') as f:
-                json.dump(explanation_dict, f, indent=2)
+                json.dump(explanation_dict, f, indent = 2)
             self.logger.info(f'💾 Explanation saved to {filepath}')
             return True
         except Exception as e:
@@ -217,12 +218,12 @@ class TradeDecisionTracer:
         self.config = config
         self.logger = system_logger.getChild('TradeDecisionTracer')
         self.traces_storage = Path(config.get('explainability', {}).get('traces_storage_path', 'data/decision_traces'))
-        self.traces_storage.mkdir(parents=True, exist_ok=True)
+        self.traces_storage.mkdir(parents = True, exist_ok = True)
         self.active_traces: Dict[str, TradeDecisionTrace] = {}
 
     async def start_decision_trace(self, decision_id: str, decision_type: str, market_conditions: Optional[Dict[str, Any]]=None) -> TradeDecisionTrace:
         """Start tracing a trade decision."""
-        trace = TradeDecisionTrace(decision_id=decision_id, timestamp=datetime.now(), decision_type=decision_type, final_decision=None, confidence=0.0, market_conditions=market_conditions or {})
+        trace = TradeDecisionTrace(decision_id = decision_id, timestamp = datetime.now(), decision_type = decision_type, final_decision = None, confidence = 0.0, market_conditions = market_conditions or {})
         self.active_traces[decision_id] = trace
         self.logger.info(f'🔍 Started decision trace for {decision_id}')
         return trace
@@ -270,7 +271,7 @@ class TradeDecisionTracer:
             if explanation.lime_explanation and 'feature_importance' in explanation.lime_explanation:
                 for feature, importance in explanation.lime_explanation['feature_importance']:
                     all_factors.append({'feature': feature, 'importance': abs(importance), 'value': 0, 'model': explanation.model_name, 'type': 'lime'})
-        all_factors.sort(key=lambda x: x['importance'], reverse=True)
+        all_factors.sort(key = lambda x: x['importance'], reverse = True)
         trace.top_contributing_factors = all_factors[:10]
         for factor in all_factors:
             if factor['importance'] > 0.1:
@@ -287,7 +288,7 @@ class TradeDecisionTracer:
             filepath = self.traces_storage / filename
             trace_dict = {'decision_id': trace.decision_id, 'timestamp': trace.timestamp.isoformat(), 'decision_type': trace.decision_type, 'final_decision': trace.final_decision, 'confidence': trace.confidence, 'top_contributing_factors': trace.top_contributing_factors, 'risk_factors': trace.risk_factors, 'opportunity_factors': trace.opportunity_factors, 'market_conditions': trace.market_conditions, 'metadata': trace.metadata}
             with open(filepath, 'w') as f:
-                json.dump(trace_dict, f, indent=2)
+                json.dump(trace_dict, f, indent = 2)
             self.logger.info(f'💾 Decision trace saved to {filepath}')
             return True
         except Exception as e:

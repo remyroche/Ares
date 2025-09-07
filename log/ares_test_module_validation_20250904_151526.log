@@ -1,4 +1,0 @@
-2025-09-04 15:15:26 - test_module - INFO - Module logger created - Log file: log/ares_test_module_validation_20250904_151526.log
-2025-09-04 15:15:26 - test_module - INFO - This message goes to the module-specific log file
-2025-09-04 15:15:26 - test_module - WARNING - Module-specific warning
-2025-09-04 15:15:26 - test_module - ERROR - Module-specific error

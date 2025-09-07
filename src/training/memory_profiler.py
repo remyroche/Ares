@@ -10,7 +10,7 @@ from typing import Any
 
 import psutil
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import logging
 import pandas as pd
@@ -34,7 +34,7 @@ class MemoryProfiler:
 
         # Memory tracking
         self.memory_snapshots = deque(
-            maxlen=1000,
+            maxlen = 1000,
         )  # Circular buffer for memory snapshots
         self.object_counts = defaultdict(int)
         self.object_sizes = defaultdict(int)
@@ -131,7 +131,7 @@ class MemoryProfiler:
 
         # Convert to regular dict and sort by count
         sorted_counts = dict(
-            sorted(object_counts.items(), key=lambda x: x[1], reverse=True),
+            sorted(object_counts.items(), key = lambda x: x[1], reverse = True),
         )
 
         # Return top 20 most common object types
@@ -212,8 +212,8 @@ class MemoryProfiler:
         if object_growth:
             top_growth = sorted(
                 object_growth.items(),
-                key=lambda x: x[1],
-                reverse=True,
+                key = lambda x: x[1],
+                reverse = True,
             )[:5]
             for obj_type, growth in top_growth:
                 if growth > 1000:  # Significant object growth
@@ -228,8 +228,8 @@ class MemoryProfiler:
                 "indicators": leak_indicators,
                 "window_size": self.leak_detection_window,
                 "recommendation": self._generate_leak_recommendations(
-                    rss_growth=rss_growth,
-                    object_growth=object_growth,
+                    rss_growth = rss_growth,
+                    object_growth = object_growth,
                 ),
             }
 
@@ -274,8 +274,8 @@ class MemoryProfiler:
 
         self.is_monitoring = True
         self.monitoring_thread = threading.Thread(
-            target=self._monitoring_loop,
-            daemon=True,
+            target = self._monitoring_loop,
+            daemon = True,
         )
         self.monitoring_thread.start()
         self.logger.info("Continuous memory monitoring started")
@@ -284,7 +284,7 @@ class MemoryProfiler:
         """Stop continuous memory monitoring."""
         self.is_monitoring = False
         if self.monitoring_thread:
-            self.monitoring_thread.join(timeout=1)
+            self.monitoring_thread.join(timeout = 1)
         self.logger.info("Continuous memory monitoring stopped")
 
     def _monitoring_loop(self) -> None:
@@ -392,7 +392,7 @@ class MemoryProfiler:
                     growing_objects[obj_type] = growth_rate
 
         return dict(
-            sorted(growing_objects.items(), key=lambda x: x[1], reverse=True)[:10],
+            sorted(growing_objects.items(), key = lambda x: x[1], reverse = True)[:10],
         )
 
     def force_garbage_collection(self) -> dict[str, Any]:
@@ -479,8 +479,8 @@ class MemoryProfiler:
 
         # Generate recommendations
         recommendations = self._generate_memory_recommendations(
-            current_snapshot=current_snapshot,
-            trends=trends,
+            current_snapshot = current_snapshot,
+            trends = trends,
         )
 
         return {
@@ -572,8 +572,8 @@ class MemoryLeakDetector:
 
         # Method 1: RSS growth analysis
         rss_analysis = self._analyze_rss_growth(
-            threshold_mb=threshold_mb,
-            window_size=window_size,
+            threshold_mb = threshold_mb,
+            window_size = window_size,
         )
         results["detection_methods"]["rss_growth"] = rss_analysis
 

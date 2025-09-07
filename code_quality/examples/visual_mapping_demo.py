@@ -29,7 +29,7 @@ def demonstrate_visual_mapping():
     
     # Create output directory
     output_dir = Path("code_quality/demo_visualizations")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents = True, exist_ok = True)
     
     # Sample data representing a typical Python project
     sample_data = {
@@ -369,7 +369,7 @@ def demonstrate_visual_mapping():
     # Save the sample data for reference
     sample_data_file = output_dir / "sample_data.json"
     with open(sample_data_file, 'w') as f:
-        json.dump(sample_data, f, indent=2)
+        json.dump(sample_data, f, indent = 2)
     print(f"\nSample data saved to: {sample_data_file}")
     
     return generated_files

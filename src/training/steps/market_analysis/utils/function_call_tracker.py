@@ -1,5 +1,7 @@
 """Function Call Tracking System for Step 7 Enhanced Matrix Operations.
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 This module provides comprehensive function call tracking, validation, and reporting
 capabilities to monitor execution flow and performance.
 """
@@ -15,7 +17,7 @@ import logging
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""
-    
+
     def __init__(self, logger):
         self.logger = logger
         self.call_stack = []
@@ -94,7 +96,7 @@ class FunctionCallTracker:
             self.logger.debug(f"Error traceback: {traceback.format_exc()}")
         
         return completion_report
-    
+
     def _get_result_size(self, result: Any) -> str:
         """Get human-readable size of result."""
         if result is None:
@@ -130,7 +132,7 @@ class FunctionCallTracker:
             'total_duration_seconds': total_duration,
             'average_duration_seconds': total_duration / total_calls if total_calls > 0 else 0,
             'function_to_function_calls': len(self.function_to_function_calls),
-            'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default=0),
+            'max_stack_depth': max((r['stack_depth'] for r in self.completion_reports.values()), default = 0),
             'session_duration_seconds': time.time() - self.start_time
         }
 
@@ -170,7 +172,7 @@ def comprehensive_function_tracker(logger):
                 return result
                 
             except Exception as e:
-                tracker.track_function_completion(call_id, error=e)
+                tracker.track_function_completion(call_id, error = e)
                 raise
         
         @functools.wraps(func)
@@ -201,7 +203,7 @@ def comprehensive_function_tracker(logger):
                 return result
                 
             except Exception as e:
-                tracker.track_function_completion(call_id, error=e)
+                tracker.track_function_completion(call_id, error = e)
                 raise
         
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper

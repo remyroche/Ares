@@ -1,18 +1,20 @@
 
-import numpy as np
-from typing import Any
-import pandas as pd
-from typing import Dict
 """Ensemble aggregation component for analyst ensemble creation."""
+
+import numpy as np
+from typing import Any, Dict
+import pandas as pd
 from sklearn.ensemble import StackingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.logger import system_logger
 import logging
 
 class EnsembleAggregator:
     """Handles ensemble aggregation strategies."""
 
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the ensemble aggregator.
         
@@ -25,7 +27,7 @@ class EnsembleAggregator:
         self.blending_holdout_ratio = self.config.get('blending_holdout_ratio', 0.2)
         self.use_proba_features = self.config.get('use_proba_features', True)
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='weighted ensemble creation')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='weighted ensemble creation')
     async def create_weighted_ensemble(self, models: Dict[str, Dict[str, Any]], features: pd.DataFrame) -> Any:
         """Create a weighted ensemble based on model performance.
         
@@ -46,11 +48,11 @@ class EnsembleAggregator:
             weights.append(performance)
         weights = np.array(weights)
         weights = weights / weights.sum()
-        weighted_ensemble = VotingClassifier(estimators=model_list, voting='soft', weights=weights, n_jobs=-1)
+        weighted_ensemble = VotingClassifier(estimators = model_list, voting='soft', weights = weights, n_jobs=-1)
         self.logger.info(f'Created weighted ensemble with {len(model_list)} models, weights: {dict(zip([m[0] for m in model_list], weights))}')
         return weighted_ensemble
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='stacking ensemble creation')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='stacking ensemble creation')
     async def create_stacking_ensemble(self, models: Dict[str, Dict[str, Any]], features: pd.DataFrame, meta_learner_type: str='logistic_regression') -> Any:
         """Create a stacking ensemble with meta-learner.
         
@@ -68,11 +70,11 @@ class EnsembleAggregator:
             model = model_info['model']
             base_models.append((model_name, model))
         meta_learner = self._create_meta_learner(meta_learner_type)
-        stacking_ensemble = StackingClassifier(estimators=base_models, final_estimator=meta_learner, cv=self.stacking_cv_folds, stack_method='predict_proba' if self.use_proba_features else 'predict', n_jobs=-1)
+        stacking_ensemble = StackingClassifier(estimators = base_models, final_estimator = meta_learner, cv = self.stacking_cv_folds, stack_method='predict_proba' if self.use_proba_features else 'predict', n_jobs=-1)
         self.logger.info(f'Created stacking ensemble with {len(base_models)} base models and {meta_learner_type} meta-learner')
         return stacking_ensemble
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='blending ensemble creation')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='blending ensemble creation')
     async def create_blending_ensemble(self, models: Dict[str, Dict[str, Any]], features: pd.DataFrame) -> Any:
         """Create a blending ensemble.
         
@@ -87,11 +89,14 @@ class EnsembleAggregator:
 
         class BlendingEnsemble:
 
-            def __init__(self, base_models: List[Any], meta_learner: Any, holdout_ratio: float=0.2) -> None:
+            @log_important_calls
+            def __init__(self, base_models: List[Any], meta_learner: Any, holdout_ratio: float = 0.2) -> None:
                 self.base_models = base_models
                 self.meta_learner = meta_learner
                 self.holdout_ratio = holdout_ratio
                 self.is_fitted = False
+
+            @log_important_calls
 
             def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray]) -> None:
                 n_samples = len(X)
@@ -120,6 +125,7 @@ class EnsembleAggregator:
                 self.is_fitted = True
                 return self
 
+            @log_step_functions
             def predict(self, X: Union[pd.DataFrame, np.ndarray]) -> None:
                 if not self.is_fitted:
                     raise ValueError('Model must be fitted before prediction')
@@ -155,7 +161,7 @@ class EnsembleAggregator:
         self.logger.info(f'Created blending ensemble with {len(base_models)} base models')
         return blending_ensemble
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='meta ensemble creation')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='meta ensemble creation')
     async def create_meta_ensemble(self, regime_models: Dict[str, Any], features: pd.DataFrame) -> Any:
         """Create a meta-ensemble from regime-specific models.
         
@@ -168,7 +174,7 @@ class EnsembleAggregator:
         """
         self.logger.info('Creating meta-ensemble across regimes...')
         model_list = list(regime_models.items())
-        meta_ensemble = VotingClassifier(estimators=model_list, voting='soft', n_jobs=-1)
+        meta_ensemble = VotingClassifier(estimators = model_list, voting='soft', n_jobs=-1)
         self.logger.info(f'Created meta-ensemble with {len(model_list)} regime models')
         return meta_ensemble
 
@@ -182,7 +188,7 @@ class EnsembleAggregator:
             Meta-learner model instance
         """
         if meta_learner_type == 'logistic_regression':
-            return LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
+            return LogisticRegression(random_state = 42, max_iter = 1000, class_weight='balanced')
         else:
             self.logger.warning(f'Unknown meta-learner type: {meta_learner_type}, using logistic regression')
-            return LogisticRegression(random_state=42, max_iter=1000, class_weight='balanced')
+            return LogisticRegression(random_state = 42, max_iter = 1000, class_weight='balanced')

@@ -1,15 +1,18 @@
 
 import numpy as np
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Ensemble creation component for analyst enhancement."""
 from typing import Any, Dict, List, Optional
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import logging
 
 class EnsembleCreator:
     """Handles ensemble creation from enhanced analyst models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the ensemble creator.
@@ -86,7 +89,7 @@ class EnsembleCreator:
     async def _create_voting_ensemble(self, base_models: List[tuple], regime_id: str) -> Optional[VotingClassifier]:
         """Create a voting ensemble."""
         try:
-            voting_ensemble = VotingClassifier(estimators=base_models, voting=self.voting_type, n_jobs=-1)
+            voting_ensemble = VotingClassifier(estimators = base_models, voting = self.voting_type, n_jobs=-1)
             self.logger.info(f'Created {self.voting_type} voting ensemble with {len(base_models)} models for regime {regime_id}')
             return voting_ensemble
         except Exception as e:
@@ -97,10 +100,10 @@ class EnsembleCreator:
         """Create a stacking ensemble."""
         try:
             if self.meta_learner == 'logistic_regression':
-                meta_model = LogisticRegression(random_state=42, max_iter=1000)
+                meta_model = LogisticRegression(random_state = 42, max_iter = 1000)
             else:
-                meta_model = LogisticRegression(random_state=42, max_iter=1000)
-            stacking_ensemble = StackingClassifier(estimators=base_models, final_estimator=meta_model, cv=3, n_jobs=-1)
+                meta_model = LogisticRegression(random_state = 42, max_iter = 1000)
+            stacking_ensemble = StackingClassifier(estimators = base_models, final_estimator = meta_model, cv = 3, n_jobs=-1)
             self.logger.info(f'Created stacking ensemble with {len(base_models)} models and {self.meta_learner} meta-learner for regime {regime_id}')
             return stacking_ensemble
         except Exception as e:
@@ -146,7 +149,7 @@ class EnsembleCreator:
                     best_models.append(best_model)
             if len(best_models) < 2:
                 return {}
-            cross_regime_voting = VotingClassifier(estimators=best_models, voting=self.voting_type, n_jobs=-1)
+            cross_regime_voting = VotingClassifier(estimators = best_models, voting = self.voting_type, n_jobs=-1)
             return {'voting': {'model': cross_regime_voting, 'base_models': [name for name, _ in best_models], 'method': 'cross_regime_voting', 'voting_type': self.voting_type}}
         except Exception as e:
             self.logger.error(f'Failed to create cross-regime ensemble: {str(e)}')

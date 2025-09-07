@@ -4,11 +4,12 @@ from typing import Callable
 from typing import Tuple
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ..utils.logger import system_logger
 'Integration decorators for adding explainability to existing model pipelines.\n\nThis module provides decorators that can be applied to existing model methods\nto automatically generate explanations and trace trade decisions.\n'
 import functools
 from datetime import datetime
 from .explainability.explainability_orchestrator import ExplainabilityOrchestrator
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import logging
 import pandas as pd
 import time
@@ -27,7 +28,7 @@ class ExplainabilityIntegration:
         self.explanation_timeout = self.integration_config.get('explanation_timeout', 30)
         self.model_registry = {}
 
-    def explainable_prediction(self, model_type: str, model_name: str='main', feature_extractor: Optional[Callable]=None, decision_tracer: bool=True) -> None:
+    def explainable_prediction(self, model_type: str, model_name: str='main', feature_extractor: Optional[Callable]=None, decision_tracer: bool = True) -> None:
         """Decorator for making model predictions explainable."""
 
         def decorator(func: Callable) -> None:

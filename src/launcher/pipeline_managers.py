@@ -36,12 +36,12 @@ class BasePipelineManager(ABC):
         try:
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                env=env or os.environ.copy(),
+                stdout = subprocess.PIPE,
+                stderr = subprocess.STDOUT,
+                text = True,
+                bufsize = 1,
+                universal_newlines = True,
+                env = env or os.environ.copy(),
             )
             self.launcher.processes.append(process)
             
@@ -320,7 +320,7 @@ class BacktestingPipelineManager(BasePipelineManager):
                 f"launcher_{symbol}_{exchange}", 
                 log_dir="log/backtesting"
             )
-            launcher_logger.start_performance_monitoring(interval=5.0)
+            launcher_logger.start_performance_monitoring(interval = 5.0)
 
             try:
                 launcher_logger.log_info("🚀 Starting Enhanced Backtesting from Launcher", "LAUNCHER")
@@ -383,10 +383,10 @@ class BacktestingPipelineManager(BasePipelineManager):
 
                 success = asyncio.run(
                     self._run_backtesting_pipeline(
-                        symbol=symbol,
-                        exchange=exchange,
+                        symbol = symbol,
+                        exchange = exchange,
                         timeframe="1m",
-                        data_dir=data_dir,
+                        data_dir = data_dir,
                         **enhanced_config
                     )
                 )

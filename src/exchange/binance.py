@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import time
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlencode
 import aiohttp
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 try:
     from src.utils.network_operations import handle_network_operations
 except ImportError:
@@ -12,7 +14,7 @@ except ImportError:
     def handle_network_operations(*args, **kwargs) -> None:
         return None
 try:
-    from src.utils.decorators import handles_errors, retry
+    from tenacity import retry
 except ImportError:
 
     def handles_errors(*args, **kwargs) -> None:
@@ -77,7 +79,7 @@ class BinanceExchange:
         self.timeout: int = self.exchange_config.get('timeout', 30)
         self.max_retries: int = self.exchange_config.get('max_retries', 3)
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid Binance exchange configuration'), AttributeError: (False, 'Missing required exchange parameters'), KeyError: (False, 'Missing configuration keys')}, default_return=False, context='Binance exchange initialization')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid Binance exchange configuration'), AttributeError: (False, 'Missing required exchange parameters'), KeyError: (False, 'Missing configuration keys')}, default_return = False, context='Binance exchange initialization')
     async def initialize(self) -> bool:
         """
         Initialize Binance exchange with enhanced error handling.
@@ -94,7 +96,7 @@ class BinanceExchange:
         self.logger.info('✅ Binance Exchange initialization completed successfully')
         return True
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid exchange configuration'), AttributeError: (None, 'Missing exchange attributes')}, default_return=None, context='exchange configuration loading')
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid exchange configuration'), AttributeError: (None, 'Missing exchange attributes')}, default_return = None, context='exchange configuration loading')
     async def _load_exchange_configuration(self) -> None:
         """Load exchange configuration."""
         self.exchange_config.setdefault('use_testnet', True)
@@ -110,7 +112,7 @@ class BinanceExchange:
         self.max_retries = self.exchange_config['max_retries']
         self.logger.info('Exchange configuration loaded successfully')
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration values'), AttributeError: (False, 'Missing configuration attributes')}, default_return=False, context='configuration validation')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid configuration values'), AttributeError: (False, 'Missing configuration attributes')}, default_return = False, context='configuration validation')
     def _validate_configuration(self) -> bool:
         """
         Validate exchange configuration.
@@ -130,7 +132,7 @@ class BinanceExchange:
         self.logger.info('Configuration validation successful')
         return True
 
-    @retry(max_retries=3, default_return=False)
+    @retry(max_retries = 3, default_return = False)
     async def _initialize_connection(self) -> bool:
         """
         Initialize connection to Binance API.
@@ -139,7 +141,7 @@ class BinanceExchange:
             bool: True if successful, False otherwise
         """
         try:
-            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout))
+            self.session = aiohttp.ClientSession(timeout = aiohttp.ClientTimeout(total = self.timeout))
             server_time = await self._get_server_time()
             if server_time:
                 self.is_connected = True
@@ -151,7 +153,7 @@ class BinanceExchange:
             self.print(connection_error('Error initializing connection: {e}'))
             return False
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def _get_server_time(self) -> int | None:
         """
         Get server time from Binance.
@@ -199,7 +201,7 @@ class BinanceExchange:
             self.print(error('Error generating signature: {e}'))
             return ''
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def get_account_info(self) -> dict[str, Any] | None:
         """
         Get account information.
@@ -219,7 +221,7 @@ class BinanceExchange:
             params['signature'] = signature
             url = f'{self._get_base_url()}/api/v3/account'
             headers = {'X-MBX-APIKEY': self.api_key}
-            async with self.session.get(url, params=params, headers=headers) as response:
+            async with self.session.get(url, params = params, headers = headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info('Account information retrieved successfully')
@@ -230,8 +232,8 @@ class BinanceExchange:
             self.print(error('Error getting account info: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
-    async def get_position_risk(self, symbol: str | None=None) -> list[dict[str, Any]] | None:
+    @retry(max_retries = 3, default_return = None)
+    async def get_position_risk(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
         """
         Get position risk information.
 
@@ -256,7 +258,7 @@ class BinanceExchange:
             params['signature'] = signature
             url = f'{self._get_futures_base_url()}/fapi/v2/positionRisk'
             headers = {'X-MBX-APIKEY': self.api_key}
-            async with self.session.get(url, params=params, headers=headers) as response:
+            async with self.session.get(url, params = params, headers = headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info('Position risk information retrieved successfully')
@@ -267,8 +269,8 @@ class BinanceExchange:
             self.print(error('Error getting position risk: {e}'))
             return None
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid order parameters'), AttributeError: (False, 'Missing order components'), KeyError: (False, 'Missing required order data')}, default_return=False, context='order creation')
-    async def create_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float | None=None, time_in_force: str | None=None, stop_price: float | None=None, new_client_order_id: str | None=None, reduce_only: bool | None=None, close_on_trigger: bool | None=None, take_profit: float | None=None, stop_loss: float | None=None, post_only: bool | None=None) -> dict[str, Any] | None:
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid order parameters'), AttributeError: (False, 'Missing order components'), KeyError: (False, 'Missing required order data')}, default_return = False, context='order creation')
+    async def create_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float | None = None, time_in_force: str | None = None, stop_price: float | None = None, new_client_order_id: str | None = None, reduce_only: bool | None = None, close_on_trigger: bool | None = None, take_profit: float | None = None, stop_loss: float | None = None, post_only: bool | None = None) -> dict[str, Any] | None:
         """
         Create an order.
 
@@ -317,7 +319,7 @@ class BinanceExchange:
             params['signature'] = signature
             url = f'{self._get_base_url()}/api/v3/order'
             headers = {'X-MBX-APIKEY': self.api_key}
-            async with self.session.post(url, data=params, headers=headers) as response:
+            async with self.session.post(url, data = params, headers = headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(f"Order created successfully: {data.get('orderId')}")
@@ -340,13 +342,13 @@ class BinanceExchange:
         headers = {'X-MBX-APIKEY': self.api_key}
         try:
             if method == 'GET':
-                async with self.session.get(url, params=params, headers=headers) as resp:
+                async with self.session.get(url, params = params, headers = headers) as resp:
                     if resp.status == 200:
                         return await resp.json()
                     self.print(failed('GET {path} failed: {await resp.text()}'))
                     return None
             if method == 'DELETE':
-                async with self.session.delete(url, params=params, headers=headers) as resp:
+                async with self.session.delete(url, params = params, headers = headers) as resp:
                     if resp.status == 200:
                         await resp.read()
                         return True
@@ -358,18 +360,18 @@ class BinanceExchange:
             self.print(connection_error('Network error calling {path}: {e}'))
             return None
 
-    @handles_errors(error_handlers={ValueError: (False, 'Invalid cancel parameters'), AttributeError: (False, 'Missing cancel components'), KeyError: (False, 'Missing required cancel data')}, default_return=False, context='order cancellation')
+    @handles_errors(error_handlers={ValueError: (False, 'Invalid cancel parameters'), AttributeError: (False, 'Missing cancel components'), KeyError: (False, 'Missing required cancel data')}, default_return = False, context='order cancellation')
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel an existing order."""
         result = await self._signed_request(method='DELETE', path='/api/v3/order', params={'symbol': symbol, 'orderId': order_id})
         return bool(result)
 
-    async def get_open_orders(self, symbol: str | None=None) -> list[dict[str, Any]] | None:
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
         """Get all open orders, optionally filtered by symbol."""
         params: dict[str, Any] = {}
         if symbol:
             params['symbol'] = symbol
-        result = await self._signed_request(method='GET', path='/api/v3/openOrders', params=params)
+        result = await self._signed_request(method='GET', path='/api/v3/openOrders', params = params)
         return result if isinstance(result, list) else None
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -402,13 +404,13 @@ class BinanceExchange:
         except Exception:
             return False
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid status parameters'), AttributeError: (None, 'Missing status components'), KeyError: (None, 'Missing required status data')}, default_return=None, context='order status')
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid status parameters'), AttributeError: (None, 'Missing status components'), KeyError: (None, 'Missing required status data')}, default_return = None, context='order status')
     async def get_order_status(self, symbol: str, order_id: str) -> dict[str, Any] | None:
         """Get the status of an order."""
         return await self._signed_request(method='GET', path='/api/v3/order', params={'symbol': symbol, 'orderId': order_id})
 
-    @retry(max_retries=3, default_return=None)
-    async def get_klines(self, symbol: str, interval: str='1m', limit: int=500) -> list[list[Any]] | None:
+    @retry(max_retries = 3, default_return = None)
+    async def get_klines(self, symbol: str, interval: str='1m', limit: int = 500) -> list[list[Any]] | None:
         """
         Get kline/candlestick data.
 
@@ -426,7 +428,7 @@ class BinanceExchange:
                 return None
             params = {'symbol': symbol, 'interval': interval, 'limit': limit}
             url = f'{self._get_base_url()}/api/v3/klines'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(f'Klines retrieved successfully: {len(data)} records')
@@ -437,7 +439,7 @@ class BinanceExchange:
             self.print(error('Error getting klines: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
         """
         Get ticker information.
@@ -454,7 +456,7 @@ class BinanceExchange:
                 return None
             params = {'symbol': symbol}
             url = f'{self._get_base_url()}/api/v3/ticker/24hr'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(f'Ticker retrieved successfully: {symbol}')
@@ -465,8 +467,8 @@ class BinanceExchange:
             self.print(error('Error getting ticker: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
-    async def get_order_book(self, symbol: str, limit: int=100) -> dict[str, Any] | None:
+    @retry(max_retries = 3, default_return = None)
+    async def get_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any] | None:
         """
         Get order book.
 
@@ -483,7 +485,7 @@ class BinanceExchange:
                 return None
             params = {'symbol': symbol, 'limit': limit}
             url = f'{self._get_base_url()}/api/v3/depth'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(f'Order book retrieved successfully: {symbol}')
@@ -494,7 +496,7 @@ class BinanceExchange:
             self.print(error('Error getting order book: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def get_aggregate_trades(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get aggregate trades for a symbol within a time range.
@@ -510,7 +512,7 @@ class BinanceExchange:
         try:
             params = {'symbol': symbol, 'startTime': start_time_ms, 'endTime': end_time_ms, 'limit': 1000}
             url = f'{self._get_base_url()}/api/v3/aggTrades'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     return await response.json()
                 self.logger.error(f'Failed to get aggregate trades: {response.status}')
@@ -519,7 +521,7 @@ class BinanceExchange:
             self.print(error('Error getting aggregate trades: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def get_historical_agg_trades_ccxt(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get historical aggregated trades data.
@@ -538,7 +540,7 @@ class BinanceExchange:
                 return None
             params = {'symbol': symbol, 'startTime': start_time_ms, 'endTime': end_time_ms, 'limit': 1000}
             url = f'{self._get_base_url()}/api/v3/aggTrades'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.logger.info(f'Aggregated trades retrieved successfully: {len(data)} records')
@@ -549,7 +551,7 @@ class BinanceExchange:
             self.print(error('Error getting aggregated trades: {e}'))
             return None
 
-    @retry(max_retries=3, default_return=None)
+    @retry(max_retries = 3, default_return = None)
     async def futures_funding_rate(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get futures funding rates for a symbol within a time range.
@@ -565,7 +567,7 @@ class BinanceExchange:
         try:
             params = {'symbol': symbol, 'startTime': start_time_ms, 'endTime': end_time_ms, 'limit': 1000}
             url = f'{self._get_futures_base_url()}/fapi/v1/fundingRate'
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     return await response.json()
                 self.print(failed('Failed to get funding rates: {response.status}'))
@@ -583,7 +585,7 @@ class BinanceExchange:
         """
         return {'is_connected': self.is_connected, 'use_testnet': self.use_testnet, 'base_url': self._get_base_url(), 'timeout': self.timeout, 'max_retries': self.max_retries, 'api_key_configured': bool(self.api_key), 'api_secret_configured': bool(self.api_secret)}
 
-    @handles_errors(Exception, fallback=None, context='Binance exchange cleanup')
+    @handles_errors(Exception, fallback = None, context='Binance exchange cleanup')
     async def stop(self) -> None:
         """Stop the Binance exchange."""
         self.logger.info('🛑 Stopping Binance Exchange...')
@@ -597,8 +599,8 @@ class BinanceExchange:
             self.print(error('Error stopping Binance exchange: {e}'))
 binance_exchange: BinanceExchange | None = None
 
-@handles_errors(Exception, fallback=None, context='Binance exchange setup')
-async def setup_binance_exchange(config: dict[str, Any] | None=None) -> BinanceExchange | None:
+@handles_errors(Exception, fallback = None, context='Binance exchange setup')
+async def setup_binance_exchange(config: dict[str, Any] | None = None) -> BinanceExchange | None:
     """
     Setup global Binance exchange.
 

@@ -4,10 +4,13 @@ import numpy as np
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import warnings
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 warnings.filterwarnings('ignore')
 
 class EnsembleClusteringRegimeDetector:
     """Vectorized ensemble clustering for regime detection."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]=None) -> None:
         self.config = config or {}
@@ -38,6 +41,7 @@ class EnsembleClusteringRegimeDetector:
         confidence_scores = self._vectorized_confidence_calculation(ensemble_results, consensus_regimes)
         final_results = {'consensus_regimes': consensus_regimes, 'confidence_scores': confidence_scores, 'ensemble_results': ensemble_results, 'quality_weights': quality_weights, 'method_weights': method_weights, 'n_regimes': len(np.unique(consensus_regimes)), 'ensemble_quality': self._fast_ensemble_quality_assessment(features_optimized, consensus_regimes)}
         return (consensus_regimes, final_results)
+    @log_all_calls
 
     def _optimize_feature_preprocessing(self, features: np.ndarray) -> np.ndarray:
         """Optimize feature preprocessing for efficiency."""
@@ -47,20 +51,21 @@ class EnsembleClusteringRegimeDetector:
         if features.shape[1] > 50:
             from sklearn.decomposition import IncrementalPCA
             n_components = min(50, features.shape[1] // 2)
-            pca = IncrementalPCA(n_components=n_components, batch_size=1000)
+            pca = IncrementalPCA(n_components = n_components, batch_size = 1000)
             features_reduced = pca.fit_transform(features)
         else:
             features_reduced = features
         scaler = RobustScaler()
         features_scaled = scaler.fit_transform(features_reduced)
         return features_scaled
+    @log_all_calls
 
     def _parallel_clustering_execution(self, features: np.ndarray) -> Dict[str, Any]:
         """Execute clustering methods in parallel for efficiency."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         ensemble_results = {}
         tasks = {'hmm': lambda: self._hmm_clustering_optimized(features), 'kmeans': lambda: self._kmeans_clustering_optimized(features), 'dbscan': lambda: self._dbscan_clustering_optimized(features)}
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers = 3) as executor:
             future_to_method = {executor.submit(task): method for method, task in tasks.items()}
             for future in as_completed(future_to_method):
                 method = future_to_method[future]
@@ -71,6 +76,7 @@ class EnsembleClusteringRegimeDetector:
                     print(f'Error in {method} clustering: {e}')
                     ensemble_results[method] = {'regimes': np.zeros(len(features)), 'quality_score': 0.0}
         return ensemble_results
+    @log_all_calls
 
     def _hmm_clustering_optimized(self, features: np.ndarray) -> Dict[str, Any]:
         """Optimized HMM clustering with reduced parameter space."""
@@ -89,11 +95,11 @@ class EnsembleClusteringRegimeDetector:
                 try:
                     max_samples = min(5000, len(features))
                     if len(features) > max_samples:
-                        indices = np.random.choice(len(features), max_samples, replace=False)
+                        indices = np.random.choice(len(features), max_samples, replace = False)
                         features_subset = features[indices]
                     else:
                         features_subset = features
-                    model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=50, random_state=self.random_state)
+                    model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 50, random_state = self.random_state)
                     model.fit(features_subset)
                     regimes = model.predict(features)
                     regime_probs = model.predict_proba(features)
@@ -106,6 +112,7 @@ class EnsembleClusteringRegimeDetector:
                 except Exception as e:
                     continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _kmeans_clustering_optimized(self, features: np.ndarray) -> Dict[str, Any]:
         """Optimized K-means clustering with reduced parameter space."""
@@ -116,7 +123,7 @@ class EnsembleClusteringRegimeDetector:
         n_clusters_range = [15, 20, 25, 30]
         for n_clusters in n_clusters_range:
             try:
-                model = KMeans(n_clusters=n_clusters, n_init=5, max_iter=100, random_state=self.random_state, n_jobs=self.n_jobs)
+                model = KMeans(n_clusters = n_clusters, n_init = 5, max_iter = 100, random_state = self.random_state, n_jobs = self.n_jobs)
                 regimes = model.fit_predict(features)
                 quality_score = self._fast_kmeans_quality_score(features, regimes, model)
                 if quality_score > best_score:
@@ -127,6 +134,7 @@ class EnsembleClusteringRegimeDetector:
             except Exception as e:
                 continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _dbscan_clustering_optimized(self, features: np.ndarray) -> Dict[str, Any]:
         """Optimized DBSCAN clustering with reduced parameter space."""
@@ -139,7 +147,7 @@ class EnsembleClusteringRegimeDetector:
         for eps in eps_values:
             for min_samples in min_samples_values:
                 try:
-                    model = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=self.n_jobs)
+                    model = DBSCAN(eps = eps, min_samples = min_samples, n_jobs = self.n_jobs)
                     regimes = model.fit_predict(features)
                     n_noise = np.sum(regimes == -1)
                     n_clusters = len(np.unique(regimes)) - (1 if n_noise > 0 else 0)
@@ -154,6 +162,7 @@ class EnsembleClusteringRegimeDetector:
                 except Exception as e:
                     continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _fast_hmm_quality_score(self, features: np.ndarray, regimes: np.ndarray, regime_probs: np.ndarray) -> float:
         """Fast HMM quality score calculation."""
@@ -163,18 +172,19 @@ class EnsembleClusteringRegimeDetector:
                 return 0.0
             regime_counts = np.bincount(regimes)
             balance_score = 1.0 - np.std(regime_counts) / np.mean(regime_counts)
-            max_probs = np.max(regime_probs, axis=1)
+            max_probs = np.max(regime_probs, axis = 1)
             stability_score = np.mean(max_probs)
             quality_score = 0.6 * balance_score + 0.4 * stability_score
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _fast_kmeans_quality_score(self, features: np.ndarray, regimes: np.ndarray, model: KMeans) -> float:
         """Fast K-means quality score calculation."""
         try:
             sample_size = min(1000, len(features))
-            sample_indices = np.random.choice(len(features), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features), sample_size, replace = False)
             features_sample = features[sample_indices]
             regimes_sample = regimes[sample_indices]
             if len(np.unique(regimes_sample)) > 1:
@@ -187,6 +197,7 @@ class EnsembleClusteringRegimeDetector:
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _fast_dbscan_quality_score(self, features: np.ndarray, regimes: np.ndarray, model: DBSCAN) -> float:
         """Fast DBSCAN quality score calculation."""
@@ -197,7 +208,7 @@ class EnsembleClusteringRegimeDetector:
             features_clean = features[non_noise_mask]
             regimes_clean = regimes[non_noise_mask]
             sample_size = min(1000, len(features_clean))
-            sample_indices = np.random.choice(len(features_clean), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features_clean), sample_size, replace = False)
             features_sample = features_clean[sample_indices]
             regimes_sample = regimes_clean[sample_indices]
             if len(np.unique(regimes_sample)) > 1:
@@ -211,6 +222,7 @@ class EnsembleClusteringRegimeDetector:
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _fast_quality_assessment(self, ensemble_results: Dict[str, Any], features: np.ndarray) -> Dict[str, float]:
         """Fast quality assessment for ensemble methods."""
@@ -223,19 +235,20 @@ class EnsembleClusteringRegimeDetector:
         else:
             quality_weights = {method: 1.0 / len(quality_scores) for method in quality_scores.keys()}
         return quality_weights
+    @log_all_calls
 
     def _optimized_consensus_voting(self, ensemble_results: Dict[str, Any], quality_weights: Dict[str, float], method_weights: Dict[str, float]) -> np.ndarray:
         """Optimized consensus voting with vectorized operations."""
         n_samples = len(list(ensemble_results.values())[0]['regimes'])
         n_methods = len(ensemble_results)
-        regime_matrix = np.zeros((n_samples, n_methods), dtype=int)
-        weight_matrix = np.zeros((n_samples, n_methods), dtype=float)
+        regime_matrix = np.zeros((n_samples, n_methods), dtype = int)
+        weight_matrix = np.zeros((n_samples, n_methods), dtype = float)
         method_names = list(ensemble_results.keys())
         for i, method in enumerate(method_names):
             regime_matrix[:, i] = ensemble_results[method]['regimes']
             combined_weight = quality_weights[method] * method_weights[method]
             weight_matrix[:, i] = combined_weight
-        consensus_regimes = np.zeros(n_samples, dtype=int)
+        consensus_regimes = np.zeros(n_samples, dtype = int)
         for i in range(n_samples):
             sample_regimes = regime_matrix[i, :]
             sample_weights = weight_matrix[i, :]
@@ -247,18 +260,20 @@ class EnsembleClusteringRegimeDetector:
                 regime_votes[regime] = regime_vote
             consensus_regimes[i] = max(regime_votes, key=regime_votes.get)
         return consensus_regimes
+    @log_all_calls
 
     def _vectorized_confidence_calculation(self, ensemble_results: Dict[str, Any], consensus_regimes: np.ndarray) -> np.ndarray:
         """Vectorized confidence calculation."""
         n_samples = len(consensus_regimes)
         n_methods = len(ensemble_results)
-        agreement_matrix = np.zeros((n_samples, n_methods), dtype=bool)
+        agreement_matrix = np.zeros((n_samples, n_methods), dtype = bool)
         method_names = list(ensemble_results.keys())
         for i, method in enumerate(method_names):
             method_regimes = ensemble_results[method]['regimes']
             agreement_matrix[:, i] = method_regimes == consensus_regimes
-        confidence_scores = np.mean(agreement_matrix, axis=1)
+        confidence_scores = np.mean(agreement_matrix, axis = 1)
         return confidence_scores
+    @log_all_calls
 
     def _fast_ensemble_quality_assessment(self, features: np.ndarray, consensus_regimes: np.ndarray) -> Dict[str, float]:
         """Fast ensemble quality assessment."""
@@ -268,7 +283,7 @@ class EnsembleClusteringRegimeDetector:
             if n_regimes < 2:
                 return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': float('inf')}
             sample_size = min(2000, len(features))
-            sample_indices = np.random.choice(len(features), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features), sample_size, replace = False)
             features_sample = features[sample_indices]
             regimes_sample = consensus_regimes[sample_indices]
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
@@ -280,6 +295,7 @@ class EnsembleClusteringRegimeDetector:
             return {'silhouette_score': silhouette, 'calinski_harabasz_score': calinski_harabasz, 'davies_bouldin_score': davies_bouldin, 'regime_balance': regime_balance, 'n_regimes': n_regimes}
         except Exception as e:
             return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': float('inf')}
+    @log_all_calls
 
     def _hmm_clustering_vectorized(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform HMM clustering with vectorized operations."""
@@ -294,10 +310,10 @@ class EnsembleClusteringRegimeDetector:
         for n_components in range(self.hmm_params['n_components_range'][0], self.hmm_params['n_components_range'][1] + 1):
             for covariance_type in self.hmm_params['covariance_types']:
                 try:
-                    model = hmm.GaussianHMM(n_components=n_components, covariance_type=covariance_type, n_iter=100, random_state=self.random_state)
+                    model = hmm.GaussianHMM(n_components = n_components, covariance_type = covariance_type, n_iter = 100, random_state = self.random_state)
                     max_samples = min(10000, len(features))
                     if len(features) > max_samples:
-                        indices = np.random.choice(len(features), max_samples, replace=False)
+                        indices = np.random.choice(len(features), max_samples, replace = False)
                         features_subset = features[indices]
                     else:
                         features_subset = features
@@ -313,6 +329,7 @@ class EnsembleClusteringRegimeDetector:
                 except Exception as e:
                     continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _kmeans_clustering_vectorized(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform K-means clustering with vectorized operations."""
@@ -322,7 +339,7 @@ class EnsembleClusteringRegimeDetector:
         best_params = None
         for n_clusters in range(self.kmeans_params['n_clusters_range'][0], self.kmeans_params['n_clusters_range'][1] + 1):
             try:
-                model = KMeans(n_clusters=n_clusters, n_init=self.kmeans_params['n_init'], max_iter=self.kmeans_params['max_iter'], random_state=self.random_state, n_jobs=self.n_jobs)
+                model = KMeans(n_clusters = n_clusters, n_init = self.kmeans_params['n_init'], max_iter = self.kmeans_params['max_iter'], random_state = self.random_state, n_jobs = self.n_jobs)
                 regimes = model.fit_predict(features)
                 quality_score = self._calculate_kmeans_quality_score(features, regimes, model)
                 if quality_score > best_score:
@@ -333,6 +350,7 @@ class EnsembleClusteringRegimeDetector:
             except Exception as e:
                 continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _dbscan_clustering_vectorized(self, features: np.ndarray) -> Dict[str, Any]:
         """Perform DBSCAN clustering with vectorized operations."""
@@ -345,7 +363,7 @@ class EnsembleClusteringRegimeDetector:
         for eps in eps_values:
             for min_samples in min_samples_values:
                 try:
-                    model = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=self.n_jobs)
+                    model = DBSCAN(eps = eps, min_samples = min_samples, n_jobs = self.n_jobs)
                     regimes = model.fit_predict(features)
                     n_noise = np.sum(regimes == -1)
                     n_clusters = len(np.unique(regimes)) - (1 if n_noise > 0 else 0)
@@ -360,6 +378,7 @@ class EnsembleClusteringRegimeDetector:
                 except Exception as e:
                     continue
         return {'regimes': best_regimes if best_regimes is not None else np.zeros(len(features)), 'quality_score': best_score, 'model': best_model, 'params': best_params}
+    @log_all_calls
 
     def _calculate_hmm_quality_score(self, features: np.ndarray, regimes: np.ndarray, regime_probs: np.ndarray) -> float:
         """Calculate quality score for HMM clustering."""
@@ -371,14 +390,14 @@ class EnsembleClusteringRegimeDetector:
             for regime in unique_regimes:
                 regime_mask = regimes == regime
                 if np.sum(regime_mask) > 0:
-                    centroid = np.mean(features[regime_mask], axis=0)
+                    centroid = np.mean(features[regime_mask], axis = 0)
                     regime_centroids.append(centroid)
             if len(regime_centroids) < 2:
                 return 0.0
             regime_centroids = np.array(regime_centroids)
             inter_distances = pdist(regime_centroids)
             separation_score = np.mean(inter_distances)
-            max_probs = np.max(regime_probs, axis=1)
+            max_probs = np.max(regime_probs, axis = 1)
             stability_score = np.mean(max_probs)
             regime_sizes = [np.sum(regimes == regime) for regime in unique_regimes]
             balance_score = 1 / (1 + np.std(regime_sizes) / np.mean(regime_sizes))
@@ -386,6 +405,7 @@ class EnsembleClusteringRegimeDetector:
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _calculate_kmeans_quality_score(self, features: np.ndarray, regimes: np.ndarray, model: KMeans) -> float:
         """Calculate quality score for K-means clustering."""
@@ -402,6 +422,7 @@ class EnsembleClusteringRegimeDetector:
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _calculate_dbscan_quality_score(self, features: np.ndarray, regimes: np.ndarray, model: DBSCAN) -> float:
         """Calculate quality score for DBSCAN clustering."""
@@ -423,6 +444,7 @@ class EnsembleClusteringRegimeDetector:
             return quality_score
         except Exception as e:
             return 0.0
+    @log_all_calls
 
     def _calculate_quality_weights(self, ensemble_results: Dict[str, Any]) -> Dict[str, float]:
         """Calculate weights based on quality scores."""
@@ -435,19 +457,20 @@ class EnsembleClusteringRegimeDetector:
         else:
             quality_weights = {method: 1.0 / len(quality_scores) for method in quality_scores.keys()}
         return quality_weights
+    @log_all_calls
 
     def _weighted_consensus_voting_vectorized(self, ensemble_results: Dict[str, Any], quality_weights: Dict[str, float], method_weights: Dict[str, float]) -> np.ndarray:
         """Perform weighted consensus voting using vectorized operations."""
         n_samples = len(list(ensemble_results.values())[0]['regimes'])
         n_methods = len(ensemble_results)
-        regime_matrix = np.zeros((n_samples, n_methods), dtype=int)
-        weight_matrix = np.zeros((n_samples, n_methods), dtype=float)
+        regime_matrix = np.zeros((n_samples, n_methods), dtype = int)
+        weight_matrix = np.zeros((n_samples, n_methods), dtype = float)
         method_names = list(ensemble_results.keys())
         for i, method in enumerate(method_names):
             regime_matrix[:, i] = ensemble_results[method]['regimes']
             combined_weight = quality_weights[method] * method_weights[method]
             weight_matrix[:, i] = combined_weight
-        consensus_regimes = np.zeros(n_samples, dtype=int)
+        consensus_regimes = np.zeros(n_samples, dtype = int)
         for i in range(n_samples):
             sample_regimes = regime_matrix[i, :]
             sample_weights = weight_matrix[i, :]
@@ -459,18 +482,20 @@ class EnsembleClusteringRegimeDetector:
                 regime_votes[regime] = regime_vote
             consensus_regimes[i] = max(regime_votes, key=regime_votes.get)
         return consensus_regimes
+    @log_all_calls
 
     def _calculate_ensemble_confidence_vectorized(self, ensemble_results: Dict[str, Any], consensus_regimes: np.ndarray) -> np.ndarray:
         """Calculate ensemble confidence scores using vectorized operations."""
         n_samples = len(consensus_regimes)
         n_methods = len(ensemble_results)
-        agreement_matrix = np.zeros((n_samples, n_methods), dtype=bool)
+        agreement_matrix = np.zeros((n_samples, n_methods), dtype = bool)
         method_names = list(ensemble_results.keys())
         for i, method in enumerate(method_names):
             method_regimes = ensemble_results[method]['regimes']
             agreement_matrix[:, i] = method_regimes == consensus_regimes
-        confidence_scores = np.mean(agreement_matrix, axis=1)
+        confidence_scores = np.mean(agreement_matrix, axis = 1)
         return confidence_scores
+    @log_all_calls
 
     def _calculate_ensemble_quality(self, features: np.ndarray, consensus_regimes: np.ndarray) -> Dict[str, float]:
         """Calculate overall ensemble quality metrics."""

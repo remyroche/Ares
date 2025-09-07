@@ -1,11 +1,11 @@
 
+from .logger import system_logger
+from .logger import system_logger
+from .core.decorators import handles_errors
 '\nSteps 1-7 Compatibility Framework\n\nThis module provides comprehensive compatibility management between steps 1-7 including:\n- Data schema validation across steps\n- Input/output contract validation\n- Step dependency management\n- Cross-step data consistency checks\n- Configuration compatibility validation\n- Error propagation handling\n'
 import json
 from datetime import datetime
 from typing import Any
-
-
-from .core.decorators.errors import handles_errors
 
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
@@ -36,7 +36,7 @@ class Steps1_7CompatibilityFramework:
         self.error_handler = standardized_error_handler
         self.compatibility_history: list[dict[str, Any]] = []
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def validate_step_contract(self, step_name: str, inputs: dict[str, Any], outputs: dict[str, Any]) -> bool:
         """Validate that a step's inputs and outputs match its contract.
 
@@ -117,7 +117,7 @@ class Steps1_7CompatibilityFramework:
                     self.logger.warning(f"Column '{column}' has type {actual_type}, expected {expected_type}")
         return True
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def validate_cross_step_consistency(self, step_data: dict[str, pd.DataFrame], step_sequence: list[str]) -> bool:
         """Validate data consistency across multiple steps.
 
@@ -161,7 +161,7 @@ class Steps1_7CompatibilityFramework:
         self.logger.info('Cross-step data consistency validation passed')
         return True
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def validate_configuration_compatibility(self, configs: dict[str, dict[str, Any]]) -> bool:
         """Validate that configurations are compatible across steps.
 
@@ -194,7 +194,7 @@ class Steps1_7CompatibilityFramework:
         self.logger.info('Configuration compatibility validation passed')
         return True
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def validate_step_dependencies(self, step_name: str, dependencies: list[str], available_data: dict[str, Any]) -> bool:
         """Validate that all dependencies for a step are available.
 
@@ -216,14 +216,14 @@ class Steps1_7CompatibilityFramework:
         self.logger.info(f'All dependencies satisfied for {step_name}')
         return True
 
-    def _record_compatibility_check(self, step_name: str, check_type: str, result: bool, details: dict[str, Any] | None=None) -> None:
+    def _record_compatibility_check(self, step_name: str, check_type: str, result: bool, details: dict[str, Any] | None = None) -> None:
         """Record a compatibility check result."""
         check_record = {'step_name': step_name, 'check_type': check_type, 'result': result, 'timestamp': datetime.now().isoformat(), 'details': details or {}}
         self.compatibility_history.append(check_record)
         if len(self.compatibility_history) > 1000:
             self.compatibility_history = self.compatibility_history[-500:]
 
-    def get_compatibility_report(self, step_name: str | None=None) -> dict[str, Any]:
+    def get_compatibility_report(self, step_name: str | None = None) -> dict[str, Any]:
         """Get a compatibility report.
 
         Args:
@@ -258,7 +258,7 @@ class Steps1_7CompatibilityFramework:
         try:
             report = self.get_compatibility_report()
             with open(file_path, 'w') as f:
-                json.dump(report, f, indent=2)
+                json.dump(report, f, indent = 2)
             return True
         except Exception as e:
             self.logger.exception(f'Failed to export compatibility report: {e}')

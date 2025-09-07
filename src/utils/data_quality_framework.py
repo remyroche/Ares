@@ -1,4 +1,6 @@
 
+from .logger import system_logger
+from .logger import system_logger
 '\nComprehensive Data Quality Framework\n\nThis module provides a comprehensive data quality framework that includes:\n- Data validation and schema enforcement\n- Data quality scoring and metrics\n- Data cleaning and preprocessing\n- Data profiling and analysis\n- Quality policy management\n- Cross-step quality consistency\n'
 from datetime import datetime
 from typing import Any
@@ -294,7 +296,7 @@ class DataQualityFramework:
             outlier_handling = rules.get('outlier_handling', 'detect_only')
             outlier_config = rules.get('outlier_config', {})
             if outlier_handling == 'detect_only':
-                outliers = self.outlier_handler.detect_outliers(data, method=outlier_config.get('method', 'iqr'), threshold=outlier_config.get('threshold', 1.5), raise_errors=outlier_config.get('raise_errors', False))
+                outliers = self.outlier_handler.detect_outliers(data, method = outlier_config.get('method', 'iqr'), threshold = outlier_config.get('threshold', 1.5), raise_errors = outlier_config.get('raise_errors', False))
                 if outliers:
                     self.logger.info(f'Detected {len(outliers)} outlier groups')
                     for outlier in outliers:
@@ -303,7 +305,7 @@ class DataQualityFramework:
                 severity_threshold = outlier_config.get('severity_threshold', 'medium')
                 severity_map = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3}
                 threshold_level = severity_map.get(severity_threshold, 1)
-                outliers = self.outlier_handler.detect_outliers(data, method=outlier_config.get('method', 'iqr'), threshold=outlier_config.get('threshold', 1.5), raise_errors=False)
+                outliers = self.outlier_handler.detect_outliers(data, method = outlier_config.get('method', 'iqr'), threshold = outlier_config.get('threshold', 1.5), raise_errors = False)
                 high_severity_outliers = [o for o in outliers if o.severity.value >= threshold_level]
                 if high_severity_outliers:
                     outlier_indices = set()
@@ -324,7 +326,7 @@ class DataQualityFramework:
                         IQR = Q3 - Q1
                         lower_bound = Q1 - threshold * IQR
                         upper_bound = Q3 + threshold * IQR
-                        data[col] = data[col].clip(lower=lower_bound, upper=upper_bound)
+                        data[col] = data[col].clip(lower = lower_bound, upper = upper_bound)
                         capped_lower = (data[col] == lower_bound).sum()
                         capped_upper = (data[col] == upper_bound).sum()
                         if capped_lower > 0 or capped_upper > 0:
@@ -334,7 +336,7 @@ class DataQualityFramework:
                         std_val = data[col].std()
                         lower_bound = mean_val - threshold * std_val
                         upper_bound = mean_val + threshold * std_val
-                        data[col] = data[col].clip(lower=lower_bound, upper=upper_bound)
+                        data[col] = data[col].clip(lower = lower_bound, upper = upper_bound)
                         capped_lower = (data[col] == lower_bound).sum()
                         capped_upper = (data[col] == upper_bound).sum()
                         if capped_lower > 0 or capped_upper > 0:
@@ -391,7 +393,7 @@ class DataQualityFramework:
     def _analyze_outliers(self, data: pd.DataFrame) -> dict[str, Any]:
         """Analyze outliers in data."""
         try:
-            outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold=1.5, raise_errors=False)
+            outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold = 1.5, raise_errors = False)
             if not outliers:
                 return {'total_outlier_groups': 0, 'severity_distribution': {}}
             severity_counts = {}
@@ -417,7 +419,7 @@ class DataQualityFramework:
             score -= null_percentage * 0.5
             duplicate_percentage = data.duplicated().sum() / len(data) * 100
             score -= duplicate_percentage * 0.3
-            outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold=1.5, raise_errors=False)
+            outliers = self.outlier_handler.detect_outliers(data, method='iqr', threshold = 1.5, raise_errors = False)
             if outliers:
                 critical_outliers = len([o for o in outliers if o.severity == OutlierSeverity.CRITICAL])
                 high_outliers = len([o for o in outliers if o.severity == OutlierSeverity.HIGH])
@@ -490,7 +492,7 @@ class DataQualityFramework:
             if col in formatted.columns:
                 formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('float64')
         if 'timestamp' in formatted.columns:
-            formatted = formatted.sort_values('timestamp').reset_index(drop=True)
+            formatted = formatted.sort_values('timestamp').reset_index(drop = True)
         return formatted
 
     def _format_features_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -523,7 +525,7 @@ class DataQualityFramework:
         profile = {
             'timestamp': datetime.now().isoformat(),
             'data_shape': data.shape,
-            'memory_usage': data.memory_usage(deep=True).sum(),
+            'memory_usage': data.memory_usage(deep = True).sum(),
             'columns': {},
             'summary': {
                 'total_rows': len(data),
@@ -565,7 +567,7 @@ class DataQualityFramework:
             profile['columns'][column] = col_profile
         return profile
 
-    def get_quality_report(self, data: pd.DataFrame, include_profile: bool=True) -> dict[str, Any]:
+    def get_quality_report(self, data: pd.DataFrame, include_profile: bool = True) -> dict[str, Any]:
         """Generate comprehensive data quality report.
 
         Args:

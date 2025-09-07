@@ -37,16 +37,16 @@ class FunctionCallContext:
     start_time: float
     end_time: Optional[float] = None
     status: FunctionCallStatus = FunctionCallStatus.PENDING
-    input_args: Dict[str, Any] = field(default_factory=dict)
-    input_kwargs: Dict[str, Any] = field(default_factory=dict)
+    input_args: Dict[str, Any] = field(default_factory = dict)
+    input_kwargs: Dict[str, Any] = field(default_factory = dict)
     output_result: Any = None
     error_details: Optional[Dict[str, Any]] = None
     execution_time: Optional[float] = None
     memory_usage: Optional[float] = None
     cpu_usage: Optional[float] = None
-    called_functions: List[str] = field(default_factory=list)
+    called_functions: List[str] = field(default_factory = list)
     parent_call_id: Optional[str] = None
-    child_calls: List[str] = field(default_factory=list)
+    child_calls: List[str] = field(default_factory = list)
 
 @dataclass
 class FunctionInteractionReport:
@@ -56,10 +56,10 @@ class FunctionInteractionReport:
     failed_calls: int = 0
     total_execution_time: float = 0.0
     average_execution_time: float = 0.0
-    function_call_details: List[FunctionCallContext] = field(default_factory=list)
-    call_hierarchy: Dict[str, List[str]] = field(default_factory=dict)
-    performance_metrics: Dict[str, Any] = field(default_factory=dict)
-    error_summary: Dict[str, int] = field(default_factory=dict)
+    function_call_details: List[FunctionCallContext] = field(default_factory = list)
+    call_hierarchy: Dict[str, List[str]] = field(default_factory = dict)
+    performance_metrics: Dict[str, Any] = field(default_factory = dict)
+    error_summary: Dict[str, int] = field(default_factory = dict)
 
 class FunctionCallMonitor:
     """Comprehensive function call monitoring system with performance tracking."""
@@ -77,7 +77,7 @@ class FunctionCallMonitor:
         """Setup logger for function monitoring."""
         import logging
         self.logger = logging.getLogger(f'{__name__}.FunctionCallMonitor')
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level = logging.INFO)
 
     def _setup_performance_monitoring(self) -> None:
         """Setup performance monitoring capabilities."""
@@ -129,7 +129,7 @@ class FunctionCallMonitor:
             input_kwargs[k] = {'type': val_type, 'value': val_value, 'size': len(str(v)) if hasattr(v, '__len__') else 0}
         initial_memory = self._get_memory_usage()
         initial_cpu = self._get_cpu_usage()
-        context = FunctionCallContext(function_name=func.__name__, module_name=func.__module__, call_id=call_id, start_time=time.time(), status=FunctionCallStatus.IN_PROGRESS, input_args=input_args, input_kwargs=input_kwargs, parent_call_id=parent_call_id, memory_usage=initial_memory, cpu_usage=initial_cpu)
+        context = FunctionCallContext(function_name = func.__name__, module_name = func.__module__, call_id = call_id, start_time = time.time(), status = FunctionCallStatus.IN_PROGRESS, input_args = input_args, input_kwargs = input_kwargs, parent_call_id = parent_call_id, memory_usage = initial_memory, cpu_usage = initial_cpu)
         self.active_calls[call_id] = context
         if parent_call_id and parent_call_id in self.active_calls:
             self.active_calls[parent_call_id].child_calls.append(call_id)
@@ -143,7 +143,7 @@ class FunctionCallMonitor:
         self.logger.info(f'   - Input kwargs: {len(input_kwargs)} keyword arguments')
         return call_id
 
-    def complete_function_call(self, call_id: str, result: Any=None, error: Optional[Exception]=None) -> None:
+    def complete_function_call(self, call_id: str, result: Any = None, error: Optional[Exception]=None) -> None:
         """Complete monitoring a function call with detailed outcome analysis."""
         if call_id not in self.active_calls:
             self.logger.warning(f'⚠️ Unknown call ID: {call_id}')
@@ -205,7 +205,7 @@ class FunctionCallMonitor:
                 error_type = call.error_details.get('error_type', 'Unknown')
                 error_summary[error_type] = error_summary.get(error_type, 0) + 1
         if self.completed_calls:
-            fastest_call = min(self.completed_calls, key=lambda c: c.execution_time or float('inf'))
+            fastest_call = min(self.completed_calls, key = lambda c: c.execution_time or float('inf'))
             slowest_call = max(self.completed_calls, key=lambda c: c.execution_time or 0)
             function_frequency = {}
             for call in self.completed_calls:
@@ -223,7 +223,7 @@ class FunctionCallMonitor:
             performance_metrics = {'fastest_call': fastest_call.function_name, 'fastest_call_time': fastest_call.execution_time, 'slowest_call': slowest_call.function_name, 'slowest_call_time': slowest_call.execution_time, 'most_called_function': most_called_function, 'most_called_count': function_frequency.get(most_called_function, 0) if most_called_function else 0, 'success_rate': successful_calls / total_calls * 100 if total_calls > 0 else 0.0, 'median_execution_time': median_execution_time, 'max_call_depth': max_depth, 'dataframe_operations': dataframe_calls, 'dict_operations': dict_calls, 'list_operations': list_calls, 'function_frequency': function_frequency}
         else:
             performance_metrics = {'fastest_call': None, 'fastest_call_time': 0.0, 'slowest_call': None, 'slowest_call_time': 0.0, 'most_called_function': None, 'most_called_count': 0, 'success_rate': 0.0, 'median_execution_time': 0.0, 'max_call_depth': 0, 'dataframe_operations': 0, 'dict_operations': 0, 'list_operations': 0, 'function_frequency': {}}
-        return FunctionInteractionReport(total_calls=total_calls, successful_calls=successful_calls, failed_calls=failed_calls, total_execution_time=total_execution_time, average_execution_time=average_execution_time, function_call_details=self.completed_calls.copy(), call_hierarchy=call_hierarchy, performance_metrics=performance_metrics, error_summary=error_summary)
+        return FunctionInteractionReport(total_calls = total_calls, successful_calls = successful_calls, failed_calls = failed_calls, total_execution_time = total_execution_time, average_execution_time = average_execution_time, function_call_details = self.completed_calls.copy(), call_hierarchy = call_hierarchy, performance_metrics = performance_metrics, error_summary = error_summary)
 
     def _calculate_call_depth(self, call_id: str) -> int:
         """Calculate the depth of a function call in the hierarchy."""
@@ -246,9 +246,9 @@ class FunctionCallMonitor:
                     break
         return depth
 function_monitor = FunctionCallMonitor()
-current_call_context = contextvars.ContextVar('current_call_id', default=None)
+current_call_context = contextvars.ContextVar('current_call_id', default = None)
 
-def comprehensive_function_monitoring(validate_inputs: bool=True, validate_outputs: bool=True, track_performance: bool=True, track_memory: bool=True, timeout_seconds: Optional[int]=None, retry_attempts: int=0) -> None:
+def comprehensive_function_monitoring(validate_inputs: bool = True, validate_outputs: bool = True, track_performance: bool = True, track_memory: bool = True, timeout_seconds: Optional[int]=None, retry_attempts: int = 0) -> None:
     """Comprehensive decorator for function call monitoring and validation."""
 
     def decorator(func: Callable) -> Callable:
@@ -262,7 +262,7 @@ def comprehensive_function_monitoring(validate_inputs: bool=True, validate_outpu
                 if validate_inputs:
                     await _validate_function_inputs(func, args, kwargs)
                 if timeout_seconds:
-                    result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
+                    result = await asyncio.wait_for(func(*args, **kwargs), timeout = timeout_seconds)
                 else:
                     result = await func(*args, **kwargs)
                 if validate_outputs:
@@ -270,7 +270,7 @@ def comprehensive_function_monitoring(validate_inputs: bool=True, validate_outpu
                 function_monitor.complete_function_call(call_id, result)
                 return result
             except Exception as e:
-                function_monitor.complete_function_call(call_id, error=e)
+                function_monitor.complete_function_call(call_id, error = e)
                 if retry_attempts > 0:
                     return await _retry_function_call(func, args, kwargs, retry_attempts, call_id)
                 raise
@@ -291,7 +291,7 @@ def comprehensive_function_monitoring(validate_inputs: bool=True, validate_outpu
                 function_monitor.complete_function_call(call_id, result)
                 return result
             except Exception as e:
-                function_monitor.complete_function_call(call_id, error=e)
+                function_monitor.complete_function_call(call_id, error = e)
                 if retry_attempts > 0:
                     return _retry_function_call_sync(func, args, kwargs, retry_attempts, call_id)
                 raise
@@ -392,7 +392,7 @@ async def _retry_function_call(func: Callable, args: tuple, kwargs: dict, retry_
             finally:
                 current_call_context.reset(token)
         except Exception as e:
-            function_monitor.complete_function_call(retry_call_id, error=e)
+            function_monitor.complete_function_call(retry_call_id, error = e)
             if attempt == retry_attempts - 1:
                 raise
             await asyncio.sleep(0.1 * 2 ** attempt)
@@ -411,7 +411,7 @@ def _retry_function_call_sync(func: Callable, args: tuple, kwargs: dict, retry_a
             finally:
                 current_call_context.reset(token)
         except Exception as e:
-            function_monitor.complete_function_call(retry_call_id, error=e)
+            function_monitor.complete_function_call(retry_call_id, error = e)
             if attempt == retry_attempts - 1:
                 raise
             time.sleep(0.1 * 2 ** attempt)
@@ -430,7 +430,7 @@ class StandaloneStep02Tester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def test_function(x: int) -> int:
                 """Simple test function."""
                 await asyncio.sleep(0.01)
@@ -456,20 +456,20 @@ class StandaloneStep02Tester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def parent_function(x: int) -> Dict[str, Any]:
                 """Parent function."""
                 child1_result = await child_function_1(x)
                 child2_result = await child_function_2(x)
                 return {'parent': x, 'child1': child1_result, 'child2': child2_result}
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def child_function_1(x: int) -> int:
                 """Child function 1."""
                 await asyncio.sleep(0.01)
                 return x + 1
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def child_function_2(x: int) -> int:
                 """Child function 2."""
                 await asyncio.sleep(0.01)
@@ -494,7 +494,7 @@ class StandaloneStep02Tester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def failing_function(x: int) -> int:
                 """Function that fails with negative input."""
                 if x < 0:
@@ -525,7 +525,7 @@ class StandaloneStep02Tester:
             function_monitor.completed_calls.clear()
             function_monitor.call_counter = 0
 
-            @comprehensive_function_monitoring(validate_inputs=True, validate_outputs=True, track_performance=True, timeout_seconds=30, retry_attempts=1)
+            @comprehensive_function_monitoring(validate_inputs = True, validate_outputs = True, track_performance = True, timeout_seconds = 30, retry_attempts = 1)
             async def performance_function(duration: float) -> Dict[str, Any]:
                 """Function with controllable duration."""
                 await asyncio.sleep(duration)

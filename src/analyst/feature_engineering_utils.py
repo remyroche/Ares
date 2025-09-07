@@ -1,3 +1,4 @@
+from src.core.decorators import handles_errors
 """Utility functions and classes for advanced feature engineering."""
 
 import logging
@@ -5,35 +6,81 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional
 
-from .core.decorators import handles_errors
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 
 
 class TechnicalIndicatorCalculator:
     """Collection of technical indicator calculation methods."""
+
+    def __init__(self, config: List[Dict[str, Any]]):
+        """Initialize with configuration."""
+        self.config = config
+        self.logger = system_logger.getChild('TechnicalIndicatorCalculator')
+
+    def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Calculate all configured technical indicators."""
+        results = pd.DataFrame(index=data.index)
+
+        for indicator_config in self.config:
+            name = indicator_config.get('name', '')
+            params = indicator_config.get('params', {})
+
+            try:
+                if name == 'RSI':
+                    period = params.get('period', 14)
+                    results[f'rsi_{period}'] = self.calculate_rsi(data['close'], period)
+                elif name == 'SMA':
+                    period = params.get('period', 20)
+                    results[f'sma_{period}'] = data['close'].rolling(period).mean()
+                elif name == 'EMA':
+                    period = params.get('period', 12)
+                    results[f'ema_{period}'] = data['close'].ewm(span=period).mean()
+                elif name == 'MACD':
+                    fast = params.get('fast', 12)
+                    slow = params.get('slow', 26)
+                    signal = params.get('signal', 9)
+                    results[f'macd_{fast}_{slow}_{signal}'] = self.calculate_macd(data['close'], fast, slow)
+                elif name == 'ATR':
+                    period = params.get('period', 14)
+                    results[f'atr_{period}'] = self.calculate_atr(data, period)
+                elif name == 'BB':
+                    window = params.get('window', 20)
+                    num_std = params.get('num_std', 2)
+                    bb_features = self.calculate_bollinger_bands(data['close'], window, num_std)
+                    for col in bb_features.columns:
+                        results[f'{col}_{window}'] = bb_features[col]
+                elif name == 'ADX':
+                    period = params.get('period', 14)
+                    results[f'adx_{period}'] = self.calculate_adx(data, period)
+                else:
+                    self.logger.warning(f"Unknown indicator: {name}")
+            except Exception as e:
+                self.logger.error(f"Error calculating {name}: {e}")
+
+        return results
     
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        gain = delta.where(delta > 0, 0).rolling(window = window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
         rs = gain / loss
         rsi = 100 - 100 / (1 + rs)
         return rsi
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD (Moving Average Convergence Divergence)."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
         return macd
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range (ATR)."""
         high = df['high']
@@ -42,16 +89,16 @@ class TechnicalIndicatorCalculator:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(window=window).mean()
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = window).mean()
         return atr
 
     @staticmethod
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        sma = prices.rolling(window = window).mean()
+        std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
         bb_lower = sma - std * num_std
         bb_width = (bb_upper - bb_lower) / sma
@@ -66,7 +113,7 @@ class TechnicalIndicatorCalculator:
         return bb_features
 
     @staticmethod
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average Directional Index (ADX)."""
         high = df['high']
@@ -75,18 +122,18 @@ class TechnicalIndicatorCalculator:
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2, tr3], axis = 1).max(axis = 1)
         dm_plus = high - high.shift(1)
         dm_minus = low.shift(1) - low
         dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
         dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
-        tr_smooth = tr.rolling(window=window).mean()
-        dm_plus_smooth = dm_plus.rolling(window=window).mean()
-        dm_minus_smooth = dm_minus.rolling(window=window).mean()
+        tr_smooth = tr.rolling(window = window).mean()
+        dm_plus_smooth = dm_plus.rolling(window = window).mean()
+        dm_minus_smooth = dm_minus.rolling(window = window).mean()
         di_plus = 100 * (dm_plus_smooth / tr_smooth)
         di_minus = 100 * (dm_minus_smooth / tr_smooth)
         dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=window).mean()
+        adx = dx.rolling(window = window).mean()
         return adx
 
 
@@ -96,7 +143,7 @@ class VolatilityCalculator:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_parkinson_volatility(self, price_data: pd.DataFrame) -> pd.Series:
         """Calculate Parkinson volatility estimator."""
         try:
@@ -107,7 +154,7 @@ class VolatilityCalculator:
             self.logger.debug(f"Error calculating Parkinson volatility: {e}")
             return pd.Series()
 
-    @handles_errors(fallback=pd.Series())
+    @handles_errors(fallback = pd.Series())
     def calculate_garman_klass_volatility(self, price_data: pd.DataFrame) -> pd.Series:
         """Calculate Garman-Klass volatility estimator."""
         try:
@@ -124,7 +171,7 @@ class VolatilityCalculator:
     def calculate_volatility_regime(self, realized_vol: pd.Series) -> str:
         """Calculate volatility regime classification."""
         try:
-            vol_percentile = realized_vol.rank(pct=True).iloc[-1]
+            vol_percentile = realized_vol.rank(pct = True).iloc[-1]
             
             if vol_percentile > 0.8:
                 return "high"
@@ -210,7 +257,7 @@ class LiquidityCalculator:
                 spread_liquidity = order_flow_data["spread"].rolling(20).mean().iloc[-1]
             
             # Liquidity regime classification
-            liquidity_percentile = volume_liquidity.rank(pct=True).iloc[-1]
+            liquidity_percentile = volume_liquidity.rank(pct = True).iloc[-1]
             
             if liquidity_percentile > 0.8:
                 liquidity_regime = "high"
@@ -402,12 +449,12 @@ class AdaptiveIndicatorCalculator:
             
             # Adaptive SMA
             adaptive_sma = (
-                price_data["close"].rolling(window=adaptive_period.astype(int)).mean()
+                price_data["close"].rolling(window = adaptive_period.astype(int)).mean()
             )
             
             # Adaptive EMA
             adaptive_alpha = 2 / (adaptive_period + 1)
-            adaptive_ema = price_data["close"].ewm(alpha=adaptive_alpha).mean()
+            adaptive_ema = price_data["close"].ewm(alpha = adaptive_alpha).mean()
             
             return {
                 "adaptive_sma": adaptive_sma.iloc[-1]

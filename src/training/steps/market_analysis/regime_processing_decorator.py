@@ -1,6 +1,8 @@
 from typing import Callable
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 'Decorator for automatic per-regime processing in training steps.\n\nThis module provides a decorator that automatically handles per-regime processing\nfor training steps, ensuring consistent regime-based execution across steps 4-21.\n'
 import functools
 from src.training.steps.market_analysis.regime_handler import regime_handler
@@ -12,7 +14,7 @@ from src.utils.common_operations import get_logger
 
 logger = get_logger('RegimeProcessingDecorator')
 
-def per_regime_processing(result_type: str='generic', parallel: bool=True, preserve_context: bool=True, context_window: int=100) -> None:
+def per_regime_processing(result_type: str='generic', parallel: bool = True, preserve_context: bool = True, context_window: int = 100) -> None:
     """Decorator to automatically process functions on a per-regime basis.
     
     This decorator wraps a processing function to automatically:
@@ -48,9 +50,9 @@ def per_regime_processing(result_type: str='generic', parallel: bool=True, prese
                     regime_data = regime_data.drop(columns=['is_regime_context'])
                     proc_kwargs['context_mask'] = context_mask
                 return await func(regime_data, **proc_kwargs)
-            results = await regime_handler.process_per_regime(data=data, processing_func=regime_processor, symbol=symbol, exchange=exchange, timeframe=timeframe, parallel=parallel, **kwargs)
+            results = await regime_handler.process_per_regime(data = data, processing_func = regime_processor, symbol = symbol, exchange = exchange, timeframe = timeframe, parallel = parallel, **kwargs)
             step_name = func.__name__.replace('process_', '').replace('_regime', '')
-            await regime_handler.save_regime_results(results=results, step_name=step_name, symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, result_type=result_type)
+            await regime_handler.save_regime_results(results = results, step_name = step_name, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, result_type = result_type)
             logger.info(f'✅ Completed per-regime processing for {func.__name__}')
             return results
         wrapper.__name__ = f'per_regime_{func.__name__}'
@@ -79,7 +81,7 @@ def aggregate_regime_results(results: Dict[int, pd.DataFrame], aggregation_metho
             df_copy = df.copy()
             df_copy['regime_id'] = regime_id
             dfs.append(df_copy)
-        return pd.concat(dfs, ignore_index=True)
+        return pd.concat(dfs, ignore_index = True)
     elif aggregation_method == 'merge':
         base_df = None
         for regime_id, df in valid_results.items():
@@ -99,7 +101,7 @@ def aggregate_regime_results(results: Dict[int, pd.DataFrame], aggregation_metho
                 if col in df.columns:
                     values.append(df[col])
             if values:
-                avg_df[col] = pd.concat(values).groupby(level=0).mean()
+                avg_df[col] = pd.concat(values).groupby(level = 0).mean()
         return avg_df
     else:
         raise ValueError(f'Unknown aggregation method: {aggregation_method}')
@@ -110,6 +112,7 @@ class RegimeProcessingContext:
     This provides a clean way to handle regime processing with proper
     setup and teardown, useful for steps that need custom regime handling.
     """
+    @log_important_calls
 
     def __init__(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
         self.symbol = symbol
@@ -130,7 +133,7 @@ class RegimeProcessingContext:
         """Cleanup on exit."""
         pass
 
-    def get_regime_data(self, regime_id: int, preserve_context: bool=True) -> pd.DataFrame:
+    def get_regime_data(self, regime_id: int, preserve_context: bool = True) -> pd.DataFrame:
         """Get data for a specific regime."""
         if self.regime_data is None:
             return pd.DataFrame()
@@ -142,4 +145,4 @@ class RegimeProcessingContext:
         if regime_data.empty:
             logger.warning(f'⚠️ No data for regime {regime_id}')
             return None
-        return await processing_func(regime_data, regime_id=regime_id, symbol=self.symbol, exchange=self.exchange, timeframe=self.timeframe, **kwargs)
+        return await processing_func(regime_data, regime_id = regime_id, symbol = self.symbol, exchange = self.exchange, timeframe = self.timeframe, **kwargs)

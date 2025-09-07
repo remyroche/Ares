@@ -1,4 +1,8 @@
 # src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 """Fractional Triple Barrier Labeling for enhanced model training.
 
@@ -9,10 +13,8 @@ gradient flow and more nuanced risk management.
 from typing import Any
 
 
-from .core.decorators import handles_errors, traced
-from .utils.logger import get_logger
+from src.utils.logger import system_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-from .core.decorators.errors import handles_errors
 import numpy as np
 import pandas as pd
 import logging
@@ -28,6 +30,7 @@ class FractionalTripleBarrierLabeling:
     - Volatility normalization
     - Regime-specific scaling
     """
+    @log_important_calls
 
     def __init__(
         self,
@@ -47,11 +50,11 @@ class FractionalTripleBarrierLabeling:
             fractional_config: Configuration for fractional labeling
         """
         self.base_labeler = OptimizedTripleBarrierLabeling(
-            profit_take_multiplier=profit_take_multiplier,
-            stop_loss_multiplier=stop_loss_multiplier,
-            time_barrier_minutes=time_barrier_minutes,
-            max_lookahead=max_lookahead,
-            binary_classification=False,  # We want all samples for fractional processing
+            profit_take_multiplier = profit_take_multiplier,
+            stop_loss_multiplier = stop_loss_multiplier,
+            time_barrier_minutes = time_barrier_minutes,
+            max_lookahead = max_lookahead,
+            binary_classification = False,  # We want all samples for fractional processing
         )
 
         # Default fractional configuration
@@ -69,7 +72,7 @@ class FractionalTripleBarrierLabeling:
 
         self.logger = get_logger("FractionalTripleBarrierLabeling")
 
-    @handles_errors(fallback=pd.DataFrame())
+    @handles_errors(fallback = pd.DataFrame())
     @traced(span_name="FractionalTripleBarrier.apply")
     def apply_fractional_triple_barrier_labeling(
         self,
@@ -119,6 +122,7 @@ class FractionalTripleBarrierLabeling:
         self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
 
         return filtered_data
+    @log_all_calls
 
     def _calculate_fractional_components(
         self,
@@ -149,6 +153,7 @@ class FractionalTripleBarrierLabeling:
             )
 
         return components
+    @log_all_calls
 
     def _calculate_distance_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
         """Calculate distance-based fractional scores."""
@@ -171,6 +176,7 @@ class FractionalTripleBarrierLabeling:
             scores[stop_hits] = np.clip(stop_pcts / target_loss, 0, 1)
 
         return scores
+    @log_all_calls
 
     def _calculate_time_decay_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
         """Calculate time decay scores based on how quickly barriers were hit."""
@@ -194,6 +200,7 @@ class FractionalTripleBarrierLabeling:
             scores[stop_hits] = np.clip(stop_pcts / self.base_labeler.stop_loss_multiplier, 0, 1)
 
         return scores
+    @log_all_calls
 
     def _calculate_volatility_scores(
         self,
@@ -215,6 +222,7 @@ class FractionalTripleBarrierLabeling:
             scores = np.clip(1 / vol_norm, 0.5, 2.0)
 
         return scores
+    @log_all_calls
 
     def _combine_fractional_components(
         self,
@@ -237,6 +245,7 @@ class FractionalTripleBarrierLabeling:
         # Scale to [-1, 1] range
         return np.clip(final_labels, -1, 1)
 
+    @log_all_calls
 
     def _calculate_confidence_scores(
         self,
@@ -252,7 +261,7 @@ class FractionalTripleBarrierLabeling:
             components["distance_score"],
             components["time_score"],
             components["volatility_score"],
-        ], axis=0)
+        ], axis = 0)
 
         # Higher consistency (lower std) means higher confidence
         consistency_confidence = 1 - component_std
@@ -279,3 +288,6 @@ class FractionalTripleBarrierLabeling:
             "neutral_labels": (labeled_data["fractional_label"] == 0).sum(),
         }
 
+
+# src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
+from src.utils.logger import system_logger

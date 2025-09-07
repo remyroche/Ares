@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 """Progress Manager for Training Steps.
 
 This module handles saving and loading progress for each training step,
@@ -12,11 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..utils.logger import system_logger
+
 from src.utils.warning_symbols import (
     failed,
 )
-from src.utils.decorators.errors import handles_errors
 import numpy as np
 import logging
 import time
@@ -35,12 +36,12 @@ class ProgressManager:
 
         # Create progress directory
         self.progress_dir = Path(data_dir) / "progress" / f"{exchange}_{symbol}"
-        self.progress_dir.mkdir(parents=True, exist_ok=True)
+        self.progress_dir.mkdir(parents = True, exist_ok = True)
 
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
         self.logger.info(f"Progress directory: {self.progress_dir}")
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def save_step_progress(
         self,
         step_name: str,
@@ -74,7 +75,7 @@ class ProgressManager:
             # Save as JSON for human readability
             json_file = self.progress_dir / f"{step_name}.json"
             with open(json_file, "w") as f:
-                json.dump(progress_data, f, indent=2, default=str)
+                json.dump(progress_data, f, indent = 2, default = str)
 
             # Save as pickle for complex objects
             pickle_file = self.progress_dir / f"{step_name}.pkl"
@@ -90,7 +91,7 @@ class ProgressManager:
             self.logger.error(f"{failed} {error_msg}")
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
         """Load progress for a specific step.
 

@@ -1,10 +1,13 @@
-from .core.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from typing import Optional
 from typing import Dict
 import pandas as pd
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
 
 'Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.\n\nThis step trains a multi-timeframe HMM cluster ensemble system that combines\npredictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)\nto improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.\n\nThe ensemble predicts REGIME TRANSITIONS only, not price direction.\nPrice direction predictions are made in other components.\n'
 import os
@@ -12,13 +15,14 @@ import time
 from datetime import datetime
 from .training.steps.multi_timeframe_hmm_ensemble import MultiTimeframeHMMEnsemble, EnsembleConfig, TimeframeConfig
 from .config.multi_timeframe_hmm_ensemble_config import get_multi_timeframe_hmm_ensemble_config
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 import json
 import logging
 
 class RegimeSpecificMultiTimeframeEnsemble:
     """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -27,7 +31,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
         self.regime_ensembles = {}
         self.regime_validation_results = {}
         self.regime_optimization_results = {}
-        self.timeframes = ['1m', '5m', '15m', '30m']
+        self.timeframes = ['1m', '5m', '15m', '30m', '1h']
         self.logger.info('🎯 Regime-Specific Multi-Timeframe Ensemble initialized')
 
     async def run_regime_specific_ensemble_step(self, symbol: str, exchange: str, data_dir: str, timeframe: str, lookback_days: int) -> bool:
@@ -79,7 +83,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
                 self.logger.error("❌ Regime column 'composite_cluster_id' not found")
                 return pd.DataFrame()
             if 'timestamp' in unified_data.columns:
-                cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=lookback_days)
+                cutoff_date = pd.Timestamp.now() - pd.Timedelta(days = lookback_days)
                 unified_data = unified_data[unified_data['timestamp'] >= cutoff_date]
             self.logger.info(f"✅ Loaded {len(unified_data)} samples with {unified_data['composite_cluster_id'].nunique()} regimes")
             return unified_data
@@ -244,13 +248,14 @@ class RegimeSpecificMultiTimeframeEnsemble:
                     regime_save_path = f'{data_dir}/regime_ensembles/{symbol}/regime_{regime}'
                     ensure_directory(regime_save_path)
                     ensemble_config_path = f'{regime_save_path}/ensemble_config.json'
-                    safe_json_dump(ensemble, ensemble_config_path, indent=2, default=str)
+                    safe_json_dump(ensemble, ensemble_config_path, indent = 2, default = str)
                     if regime in self.regime_validation_results:
                         validation_path = f'{regime_save_path}/validation_results.json'
-                        safe_json_dump(self.regime_validation_results[regime], validation_path, indent=2, default=str)
+                        safe_json_dump(self.regime_validation_results[regime], validation_path, indent = 2, default = str)
                     self.logger.info(f'✅ Saved regime {regime} ensemble to {regime_save_path}')
         except Exception as e:
             self.logger.error(f'❌ Error saving regime-specific ensembles: {e}')
+    @log_all_calls
 
     def _log_regime_specific_metrics(self, regime: str, metrics: dict, step_name: str) -> None:
         """Log regime-specific metrics."""
@@ -263,14 +268,14 @@ class RegimeSpecificMultiTimeframeEnsemble:
         """Get regime-specific parameters."""
         return {'regime': regime, 'timeframe': timeframe}
 
-@validates(required_directories=['data/training', 'data/regime_forecasting'], min_memory_gb=4.0, min_disk_gb=2.0, required_packages=['pandas', 'numpy', 'lightgbm', 'sklearn'], data_quality_checks={'min_rows': 100, 'required_columns': ['timestamp', 'composite_cluster_id']}, context='Multi-Timeframe HMM Ensemble Training')
-@log_execution_time(memory_threshold_gb=8.0, cpu_threshold_percent=80.0, disk_threshold_gb=5.0, monitor_interval=10.0, auto_cleanup=True)
-@cached(chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5)
-@circuit_breaker(max_execution_time=3600, max_memory_usage_gb=16.0, max_cpu_usage_percent=90.0, error_threshold=3, recovery_timeout=300)
-@log_call(enable_debug_logging=True, save_intermediate_results=True, enable_profiling=True, debug_output_dir='debug_output/step9_5')
-@monitor_feature_engineering(track_feature_importance=True, track_model_performance=True, track_data_quality=True, save_artifacts=True)
+@validates(required_directories=['data/training', 'data/regime_forecasting'], min_memory_gb = 4.0, min_disk_gb = 2.0, required_packages=['pandas', 'numpy', 'lightgbm', 'sklearn'], data_quality_checks={'min_rows': 100, 'required_columns': ['timestamp', 'composite_cluster_id']}, context='Multi-Timeframe HMM Ensemble Training')
+@log_execution_time(memory_threshold_gb = 8.0, cpu_threshold_percent = 80.0, disk_threshold_gb = 5.0, monitor_interval = 10.0, auto_cleanup = True)
+@cached(chunk_size = 5000, streaming_processing = True, memory_pool = True, cleanup_frequency = 5)
+@circuit_breaker(max_execution_time = 3600, max_memory_usage_gb = 16.0, max_cpu_usage_percent = 90.0, error_threshold = 3, recovery_timeout = 300)
+@log_call(enable_debug_logging = True, save_intermediate_results = True, enable_profiling = True, debug_output_dir='debug_output/step9_5')
+@monitor_feature_engineering(track_feature_importance = True, track_model_performance = True, track_data_quality = True, save_artifacts = True)
 @handles_errors(exceptions=(Exception,), default_return={'status': 'FAILED', 'error': 'Unknown error'}, context='multi-timeframe HMM ensemble training')
-async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h', lookback_days: int=365, **kwargs) -> Dict[str, Any]:
+async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h', lookback_days: int = 365, **kwargs) -> Dict[str, Any]:
     """
     Run multi-timeframe HMM ensemble training step.
 
@@ -298,8 +303,8 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
         timeframes_config = ensemble_config.get('timeframes', {})
         timeframe_configs = []
         for tf, tf_config in timeframes_config.items():
-            timeframe_configs.append(TimeframeConfig(timeframe=tf, weight=tf_config.get('weight', 0.25), min_samples=tf_config.get('min_samples', 50), enable_hazard_model=tf_config.get('enable_hazard_model', True), enable_price_prediction=tf_config.get('enable_price_prediction', False)))
-        config = EnsembleConfig(timeframes=timeframe_configs, meta_learner_type=ensemble_config.get('meta_learner', {}).get('type', 'lgbm'), enable_dynamic_weighting=ensemble_config.get('dynamic_weighting', {}).get('enabled', True), weight_update_frequency=ensemble_config.get('dynamic_weighting', {}).get('update_frequency', 100), min_confidence_threshold=ensemble_config.get('prediction', {}).get('min_confidence_threshold', 0.6), ensemble_method=ensemble_config.get('ensemble_method', 'meta_learner'))
+            timeframe_configs.append(TimeframeConfig(timeframe = tf, weight = tf_config.get('weight', 0.25), min_samples = tf_config.get('min_samples', 50), enable_hazard_model = tf_config.get('enable_hazard_model', True), enable_price_prediction = tf_config.get('enable_price_prediction', False)))
+        config = EnsembleConfig(timeframes = timeframe_configs, meta_learner_type = ensemble_config.get('meta_learner', {}).get('type', 'lgbm'), enable_dynamic_weighting = ensemble_config.get('dynamic_weighting', {}).get('enabled', True), weight_update_frequency = ensemble_config.get('dynamic_weighting', {}).get('update_frequency', 100), min_confidence_threshold = ensemble_config.get('prediction', {}).get('min_confidence_threshold', 0.6), ensemble_method = ensemble_config.get('ensemble_method', 'meta_learner'))
         regime_forecasting_data = {}
         rf_dir = os.path.join(data_dir, 'regime_forecasting')
         if not os.path.exists(rf_dir):
@@ -311,7 +316,7 @@ async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str='1h
             if os.path.exists(rf_path):
                 try:
                     rf_data = safe_json_load(rf_path)
-                    regime_df = pd.DataFrame({'timestamp': pd.date_range(start=datetime.now(), periods=100, freq='1H'), 'composite_cluster_id': [rf_data.get('current_regime', 0)] * 100, 'regime_probabilities': [rf_data.get('next_regime_probabilities', {})] * 100})
+                    regime_df = pd.DataFrame({'timestamp': pd.date_range(start = datetime.now(), periods = 100, freq='1H'), 'composite_cluster_id': [rf_data.get('current_regime', 0)] * 100, 'regime_probabilities': [rf_data.get('next_regime_probabilities', {})] * 100})
                     regime_forecasting_data[tf] = regime_df
                     logger.info(f'✅ Loaded regime forecasting data for {tf}: {len(regime_df)} rows')
                 except Exception as e:
@@ -360,7 +365,7 @@ async def _train_per_regime_ensembles(config: Dict[str, Any], symbol: str, excha
     for regime_name in regime_list:
         try:
             logger.info(f'🎯 Training per-regime ensemble for regime {regime_name}')
-            regime_ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange, regime_name=regime_name)
+            regime_ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange, regime_name = regime_name)
             regime_success = regime_ensemble.train_ensemble(regime_forecasting_data)
             per_regime_status[regime_name] = {'success': bool(regime_success), 'models_dir': regime_ensemble.models_dir}
         except Exception as e:
@@ -414,3 +419,4 @@ async def validate_step(symbol: str, exchange: str, data_dir: str, **kwargs) -> 
     except Exception as e:
         logger.exception(f'❌ Multi-timeframe HMM ensemble validation failed: {e}')
         return {'validation_passed': False, 'error': str(e), 'status': 'FAILED'}
+from typing import Optional

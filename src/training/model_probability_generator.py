@@ -118,7 +118,7 @@ class ModelProbabilityGenerator:
                 return False
         return True
 
-    def generate_ensemble_probabilities(self, models: list, model_types: list, X_test: np.ndarray, y_test: np.ndarray, market_data: pd.DataFrame, weights: list | None=None, **kwargs) -> dict[str, float]:
+    def generate_ensemble_probabilities(self, models: list, model_types: list, X_test: np.ndarray, y_test: np.ndarray, market_data: pd.DataFrame, weights: list | None = None, **kwargs) -> dict[str, float]:
         """
         Generate probability outputs for an ensemble of models.
 
@@ -144,12 +144,12 @@ class ModelProbabilityGenerator:
                 msg = 'Number of weights must match number of models'
                 raise ValueError(msg)
             all_probabilities = []
-            for model, model_type in zip(models, model_types, strict=False):
+            for model, model_type in zip(models, model_types, strict = False):
                 model_probs = self.generate_price_action_probabilities(model, X_test, y_test, market_data, model_type, **kwargs)
                 all_probabilities.append(model_probs)
             ensemble_probabilities = {}
             for key in ['triple_barrier_probability', 'direction_probability', 'magnitude_probability', 'barrier_avoidance_probability']:
-                weighted_sum = sum((prob[key] * weight for prob, weight in zip(all_probabilities, weights, strict=False)))
+                weighted_sum = sum((prob[key] * weight for prob, weight in zip(all_probabilities, weights, strict = False)))
                 ensemble_probabilities[key] = weighted_sum
             ensemble_probabilities['generation_timestamp'] = datetime.now().isoformat()
             ensemble_probabilities['model_type'] = 'ensemble'

@@ -1,11 +1,13 @@
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-from src.utils.error_handler import handles_errors
+from ....core.decorators import handles_errors
+
 """Model serializer component for model persistence."""
 import pickle
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 import joblib
 from skl2onnx import convert_sklearn
@@ -23,6 +25,7 @@ except ImportError:
 
 class ModelSerializer:
     """Handles model serialization in multiple formats."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model serializer.
@@ -37,7 +40,7 @@ class ModelSerializer:
         self.base_dir = Path(self.config.get('base_dir', 'models'))
         self.format_handlers = {'pickle': self._save_pickle, 'joblib': self._save_joblib, 'onnx': self._save_onnx, 'json': self._save_json}
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='model serialization')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='model serialization')
     async def save_model(self, model: Any, model_id: str, format_name: str, version_info: Dict[str, Any], metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save a model in specified format.
         
@@ -55,7 +58,7 @@ class ModelSerializer:
             self.logger.warning(f'Unknown format: {format_name}')
             return None
         save_dir = self.base_dir / version_info['version'] / 'models' / format_name
-        save_dir.mkdir(parents=True, exist_ok=True)
+        save_dir.mkdir(parents = True, exist_ok = True)
         handler = self.format_handlers[format_name]
         file_path = await handler(model, model_id, save_dir, metadata)
         return file_path
@@ -76,7 +79,7 @@ class ModelSerializer:
             file_path = save_dir / f'{model_id}.pkl'
             model_wrapper = {'model': model, 'metadata': metadata or {}, 'format': 'pickle', 'protocol': self.protocol_version}
             with open(file_path, 'wb') as f:
-                pickle.dump(model_wrapper, f, protocol=self.protocol_version)
+                pickle.dump(model_wrapper, f, protocol = self.protocol_version)
             return str(file_path)
         except Exception as e:
             self.logger.error(f'Failed to save {model_id} as pickle: {str(e)}')
@@ -101,7 +104,7 @@ class ModelSerializer:
             file_path = save_dir / f'{model_id}.joblib'
             model_wrapper = {'model': model, 'metadata': metadata or {}, 'format': 'joblib'}
             compress = 3 if self.compression else 0
-            joblib.dump(model_wrapper, file_path, compress=compress)
+            joblib.dump(model_wrapper, file_path, compress = compress)
             return str(file_path)
         except Exception as e:
             self.logger.error(f'Failed to save {model_id} as joblib: {str(e)}')
@@ -130,13 +133,13 @@ class ModelSerializer:
             n_features = metadata.get('n_features', 10) if metadata else 10
             initial_type = [('float_input', FloatTensorType([None, n_features]))]
             try:
-                onx = convert_sklearn(model, initial_types=initial_type)
+                onx = convert_sklearn(model, initial_types = initial_type)
                 with open(file_path, 'wb') as f:
                     f.write(onx.SerializeToString())
                 if metadata:
                     meta_path = save_dir / f'{model_id}_metadata.json'
                     with open(meta_path, 'w') as f:
-                        json.dump(metadata, f, indent=2, default=str)
+                        json.dump(metadata, f, indent = 2, default = str)
                 return str(file_path)
             except Exception as e:
                 self.logger.warning(f'ONNX conversion failed for {model_id}: {str(e)}')
@@ -168,13 +171,13 @@ class ModelSerializer:
             if hasattr(model, 'feature_importances_'):
                 model_info['feature_importances'] = model.feature_importances_.tolist()
             with open(file_path, 'w') as f:
-                json.dump(model_info, f, indent=2, default=str)
+                json.dump(model_info, f, indent = 2, default = str)
             return str(file_path)
         except Exception as e:
             self.logger.error(f'Failed to save {model_id} metadata as JSON: {str(e)}')
             return None
 
-    @handles_errors(exceptions=(Exception,), default_return=None, context='model loading')
+    @handles_errors(exceptions=(Exception,), default_return = None, context='model loading')
     async def load_model(self, file_path: str, format_name: Optional[str]=None) -> Optional[Any]:
         """Load a model from file.
         
@@ -198,6 +201,7 @@ class ModelSerializer:
         
         # Load model using appropriate loader
         return await self._load_model_by_format(path, format_name)
+    @log_all_calls
 
     def _detect_format(self, path: Path) -> Optional[str]:
         """Detect file format from extension."""
@@ -267,3 +271,4 @@ class ModelSerializer:
         except Exception as e:
             self.logger.error(f'Failed to load ONNX model: {str(e)}')
             return None
+from ....core.decorators import handles_errors

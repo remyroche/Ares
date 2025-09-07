@@ -7,7 +7,7 @@ from typing import Any
 
 
 from .transition.multitask_rf import MultiTaskRandomForest
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import json
@@ -40,8 +40,8 @@ class RollingMTInference:
         tm = (config or {}).get("TRANSITION_MODELING", {})
         r = tm.get("rolling", {}) if isinstance(tm.get("rolling", {}), dict) else {}
         self.cfg = RollingInferenceConfig(
-            pre_window=int(r.get("pre_window", tm.get("pre_window", 60))),
-            horizons=list(r.get("direction_horizons", [5, 15])),
+            pre_window = int(r.get("pre_window", tm.get("pre_window", 60))),
+            horizons = list(r.get("direction_horizons", [5, 15])),
             path_class_priority=[
                 "beginning_of_trend",
                 "continuation",
@@ -60,7 +60,7 @@ class RollingMTInference:
         try:
             models, meta, feat = MultiTaskRandomForest.load(
                 self.models_dir,
-                prefix=self.prefix,
+                prefix = self.prefix,
             )
             self.models = models
             self.thresholds = meta.get("thresholds", {})
@@ -98,10 +98,10 @@ class RollingMTInference:
 
     def _build_X_last(self, combined_df: pd.DataFrame) -> pd.DataFrame:
         if combined_df is None or combined_df.empty:
-            return pd.DataFrame(columns=self.feature_names)
+            return pd.DataFrame(columns = self.feature_names)
         pre = self.cfg.pre_window
         if len(combined_df) < pre + 1:
-            return pd.DataFrame(columns=self.feature_names)
+            return pd.DataFrame(columns = self.feature_names)
         seq = combined_df.iloc[-pre:]
         rf = self._rf_pooled_features(seq)
         # Build DataFrame with known feature columns; fill missing
@@ -153,7 +153,7 @@ class RollingMTInference:
                     p_adj = self._apply_reliability(
                         "path_class",
                         float(proba[i]),
-                        cls=str(c),
+                        cls = str(c),
                     )
                     p_path[str(c)] = p_adj
                 # Optionally normalize
@@ -204,7 +204,7 @@ class RollingMTInference:
                     p_adj = self._apply_reliability(
                         "next_regime",
                         float(proba[i]),
-                        cls=str(c),
+                        cls = str(c),
                     )
                     p_nr[str(c)] = p_adj
                 s = float(sum(p_nr.values()))
@@ -222,7 +222,7 @@ class RollingMTInference:
         fav_thr = 0.6
         for cls in ["beginning_of_trend", "continuation"]:
             p = float(p_path.get(cls, 0.0))
-            thr = self._get_threshold("path_class", cls, default=0.6)
+            thr = self._get_threshold("path_class", cls, default = 0.6)
             if p >= thr and p > fav:
                 allow = True
                 trigger = cls
@@ -230,7 +230,7 @@ class RollingMTInference:
                 fav_thr = thr
         if not allow and "p_onset_beginning" in out:
             p_onset = float(out.get("p_onset_beginning", 0.0))
-            thr_onset = self._get_threshold("onset_beginning", default=0.6)
+            thr_onset = self._get_threshold("onset_beginning", default = 0.6)
             if p_onset >= thr_onset:
                 allow = True
                 trigger = "onset_beginning"
@@ -245,7 +245,7 @@ class RollingMTInference:
         H = out.get("horizon")
         if H is not None:
             p_up = float(out.get(f"p_direction_up_{H}", 0.0))
-            thr_up = self._get_threshold(f"direction_up_{H}", default=0.6)
+            thr_up = self._get_threshold(f"direction_up_{H}", default = 0.6)
             side = "long" if p_up >= thr_up else "short"
             # reinforcement: scale between 0.5 and 2.0 based on how far above threshold fav is
             if allow and fav_thr < 1.0:
@@ -261,9 +261,9 @@ class RollingMTInference:
 
         # Exit logic
         p_rev = float(p_path.get("reversal", 0.0))
-        thr_rev = self._get_threshold("path_class", "reversal", default=0.6)
+        thr_rev = self._get_threshold("path_class", "reversal", default = 0.6)
         p_end = float(out.get("p_end_trend", 0.0))
-        thr_end = self._get_threshold("end_trend", default=0.6)
+        thr_end = self._get_threshold("end_trend", default = 0.6)
         favorable = max(
             float(p_path.get("continuation", 0.0)),
             float(p_path.get("beginning_of_trend", 0.0)),

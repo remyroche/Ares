@@ -1,7 +1,9 @@
 # src/analyst/advanced_feature_engineering.py
 
-from .core.decorators import handles_errors
 import numpy as np
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.core.error_classes import initialization_error
 
 """
 Advanced Feature Engineering for enhanced financial performance.
@@ -12,7 +14,6 @@ import logging
 from typing import Any
 
 
-from .utils.logger import system_logger
 import pandas as pd
 
 
@@ -1272,7 +1273,7 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 try:
-                    from .analyst.meta_labeling_system import MetaLabelingSystem
+                    from .meta_labeling_system import MetaLabelingSystem
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
                     await self.meta_labeling_system.initialize()
@@ -2129,7 +2130,13 @@ class AdvancedFeatureEngineering:
         """Select optimal features using feature importance and correlation analysis."""
         try:
             # Convert to DataFrame for analysis
-            feature_df = pd.DataFrame([features])
+            if isinstance(features, dict):
+                feature_df = pd.DataFrame([features])
+            elif isinstance(features, pd.DataFrame):
+                feature_df = features
+            else:
+                self.logger.warning(f"Unexpected features type: {type(features)}")
+                return {}
 
             # Remove NaN values
             feature_df = feature_df.dropna(axis=1)

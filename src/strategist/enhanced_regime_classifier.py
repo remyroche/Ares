@@ -1,12 +1,13 @@
+from ..core.decorators import handles_errors
 """
+from ..utils.logger import system_logger
 Enhanced Regime Classifier for Strategist
 Implements refined market regime detection with more granular regime types
 """
 from hmmlearn import hmm
 from sklearn.preprocessing import StandardScaler
 from datetime import datetime
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from ..utils.logger import system_logger
 from typing import Tuple
 import pandas as pd
 from typing import Dict
@@ -50,12 +51,12 @@ class EnhancedRegimeClassifier:
         self.medium_window = config.get('medium_window', 20)
         self.long_window = config.get('long_window', 50)
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def initialize(self) -> bool:
         """Initialize the enhanced regime classifier."""
         try:
             self.logger.info('Initializing Enhanced Regime Classifier...')
-            self.hmm_model = hmm.GaussianHMM(n_components=self.n_states, covariance_type='diag', n_iter=100, random_state=42)
+            self.hmm_model = hmm.GaussianHMM(n_components = self.n_states, covariance_type='diag', n_iter = 100, random_state = 42)
             self.logger.info('✅ Enhanced Regime Classifier initialized')
             return True
         except Exception as e:
@@ -73,7 +74,7 @@ class EnhancedRegimeClassifier:
         - Price position relative to moving averages
         - Trend strength indicators
         """
-        features = pd.DataFrame(index=market_data.index)
+        features = pd.DataFrame(index = market_data.index)
         features['return_1'] = market_data['close'].pct_change(1)
         features['return_5'] = market_data['close'].pct_change(self.short_window)
         features['return_20'] = market_data['close'].pct_change(self.medium_window)
@@ -100,7 +101,7 @@ class EnhancedRegimeClassifier:
         features['range_position'] = (market_data['close'] - low_rolling) / (high_rolling - low_rolling)
         return features.fillna(0)
 
-    def classify_regime(self, features: pd.Series, hmm_state: int=None) -> str:
+    def classify_regime(self, features: pd.Series, hmm_state: int = None) -> str:
         """
         Classify market regime based on enhanced features.
         

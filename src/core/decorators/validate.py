@@ -1,4 +1,5 @@
 import pandas as pd
+from src.core.errors.base import ValidationError
 
 """
 Request and DTO validation decorators.
@@ -51,7 +52,7 @@ def validates(
         extra: How to handle extra fields ("allow", "forbid", "ignore")
 
     Example:
-        @validates(strict=True)
+        @validates(strict = True)
         def create_user(name: str, age: int, email: str) -> dict:
             return {"name": name, "age": age, "email": email}
     """
@@ -67,7 +68,7 @@ def validates(
             bound.apply_defaults()
         except TypeError as e:
             msg = f"Invalid arguments: {e}"
-            raise ValidationError(message=msg)
+            raise ValidationError(message = msg)
 
         # Validate each argument
         errors = []
@@ -85,8 +86,8 @@ def validates(
                         param_name,
                         param_value,
                         expected_type,
-                        strict=strict,
-                        coerce=coerce,
+                        strict = strict,
+                        coerce = coerce,
                     )
 
                     # Update with coerced value if needed
@@ -103,7 +104,7 @@ def validates(
         if errors:
             msg = f"Validation failed for {func.__name__}"
             raise ValidationError(
-                message=msg,
+                message = msg,
                 details={"errors": errors},
             )
 
@@ -122,7 +123,7 @@ def validates(
             bound.apply_defaults()
         except TypeError as e:
             msg = f"Invalid arguments: {e}"
-            raise ValidationError(message=msg)
+            raise ValidationError(message = msg)
 
         errors = []
         for param_name, param_value in bound.arguments.items():
@@ -137,8 +138,8 @@ def validates(
                         param_name,
                         param_value,
                         expected_type,
-                        strict=strict,
-                        coerce=coerce,
+                        strict = strict,
+                        coerce = coerce,
                     )
 
                     if coerce and not isinstance(param_value, expected_type):
@@ -154,7 +155,7 @@ def validates(
         if errors:
             msg = f"Validation failed for {func.__name__}"
             raise ValidationError(
-                message=msg,
+                message = msg,
                 details={"errors": errors},
             )
 
@@ -201,7 +202,7 @@ def validate_schema(
             # Default to first parameter
             if not args:
                 msg = "No arguments provided to validate"
-                raise ValidationError(message=msg)
+                raise ValidationError(message = msg)
             param_value = args[0]
             param_name_used = params[0] if params else "arg0"
 
@@ -245,7 +246,7 @@ def validate_schema(
         else:
             if not args:
                 msg = "No arguments provided to validate"
-                raise ValidationError(message=msg)
+                raise ValidationError(message = msg)
             param_value = args[0]
             param_name_used = params[0] if params else "arg0"
 
@@ -297,7 +298,7 @@ def validate_dataframe(
         @validate_dataframe(
             columns=["id", "name", "value"],
             dtypes={"id": int, "value": float},
-            min_rows=1
+            min_rows = 1
         )
         def process_data(df: pd.DataFrame) -> pd.DataFrame:
             return df.groupby("name").sum()
@@ -314,16 +315,16 @@ def validate_dataframe(
 
         if param_name not in bound.arguments:
             msg = f"Parameter {param_name} not found"
-            raise ValidationError(message=msg)
+            raise ValidationError(message = msg)
 
         df = bound.arguments[param_name]
 
         if not isinstance(df, pd.DataFrame):
             msg = f"Parameter {param_name} must be a pandas DataFrame"
             raise ValidationError(
-                message=msg,
-                field=param_name,
-                value=type(df).__name__,
+                message = msg,
+                field = param_name,
+                value = type(df).__name__,
             )
 
         # Validate columns
@@ -332,8 +333,8 @@ def validate_dataframe(
             if missing_cols:
                 msg = f"Missing required columns: {missing_cols}"
                 raise ValidationError(
-                    message=msg,
-                    field=param_name,
+                    message = msg,
+                    field = param_name,
                     details={"missing_columns": list(missing_cols)},
                 )
 
@@ -346,14 +347,14 @@ def validate_dataframe(
                     if expected_type == int and actual_type.kind not in "iu":
                         msg = f"Column {col} has wrong dtype: expected int-like, got {actual_type}"
                         raise ValidationError(
-                            message=msg,
-                            field=f"{param_name}.{col}",
+                            message = msg,
+                            field = f"{param_name}.{col}",
                         )
                     if expected_type == float and actual_type.kind not in "iuf":
                         msg = f"Column {col} has wrong dtype: expected float-like, got {actual_type}"
                         raise ValidationError(
-                            message=msg,
-                            field=f"{param_name}.{col}",
+                            message = msg,
+                            field = f"{param_name}.{col}",
                         )
 
         # Validate row count
@@ -361,16 +362,16 @@ def validate_dataframe(
         if row_count < min_rows:
             msg = f"DataFrame has too few rows: {row_count} < {min_rows}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"row_count": row_count, "min_rows": min_rows},
             )
 
         if max_rows is not None and row_count > max_rows:
             msg = f"DataFrame has too many rows: {row_count} > {max_rows}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"row_count": row_count, "max_rows": max_rows},
             )
 
@@ -386,7 +387,7 @@ def validate_dataframe(
 
         if param_name not in bound.arguments:
             msg = f"Parameter {param_name} not found"
-            raise ValidationError(message=msg)
+            raise ValidationError(message = msg)
 
         df = bound.arguments[param_name]
 
@@ -394,9 +395,9 @@ def validate_dataframe(
         if not isinstance(df, pd.DataFrame):
             msg = f"Parameter {param_name} must be a pandas DataFrame"
             raise ValidationError(
-                message=msg,
-                field=param_name,
-                value=type(df).__name__,
+                message = msg,
+                field = param_name,
+                value = type(df).__name__,
             )
 
         # Validate columns
@@ -405,8 +406,8 @@ def validate_dataframe(
             if missing_cols:
                 msg = f"Missing required columns: {missing_cols}"
                 raise ValidationError(
-                    message=msg,
-                    field=param_name,
+                    message = msg,
+                    field = param_name,
                     details={"missing_columns": list(missing_cols)},
                 )
 
@@ -419,14 +420,14 @@ def validate_dataframe(
                     if expected_type == int and actual_type.kind not in "iu":
                         msg = f"Column {col} has wrong dtype: expected int-like, got {actual_type}"
                         raise ValidationError(
-                            message=msg,
-                            field=f"{param_name}.{col}",
+                            message = msg,
+                            field = f"{param_name}.{col}",
                         )
                     if expected_type == float and actual_type.kind not in "iuf":
                         msg = f"Column {col} has wrong dtype: expected float-like, got {actual_type}"
                         raise ValidationError(
-                            message=msg,
-                            field=f"{param_name}.{col}",
+                            message = msg,
+                            field = f"{param_name}.{col}",
                         )
 
         # Validate row count
@@ -434,16 +435,16 @@ def validate_dataframe(
         if row_count < min_rows:
             msg = f"DataFrame has too few rows: {row_count} < {min_rows}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"row_count": row_count, "min_rows": min_rows},
             )
 
         if max_rows is not None and row_count > max_rows:
             msg = f"DataFrame has too many rows: {row_count} > {max_rows}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"row_count": row_count, "max_rows": max_rows},
             )
 
@@ -471,14 +472,14 @@ def _validate_param(
             elif not isinstance(value, expected_type):
                 msg = f"Expected {expected_type.__name__}, got {type(value).__name__}"
                 raise ValidationError(
-                    message=msg,
-                    field=name,
+                    message = msg,
+                    field = name,
                 )
         except pydantic.ValidationError as e:
             msg = f"Validation failed for {name}"
             raise ValidationError(
-                message=msg,
-                field=name,
+                message = msg,
+                field = name,
                 details={"pydantic_errors": e.errors()},
             )
 
@@ -486,9 +487,9 @@ def _validate_param(
     elif strict and not isinstance(value, expected_type):
         msg = f"Expected {expected_type.__name__}, got {type(value).__name__}"
         raise ValidationError(
-            message=msg,
-            field=name,
-            value=value,
+            message = msg,
+            field = name,
+            value = value,
         )
 
 
@@ -518,14 +519,14 @@ def _validate_against_schema(
                 return value
             msg = f"Cannot validate {type(value).__name__} against {schema.__name__}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
             )
         except pydantic.ValidationError as e:
             msg = "Schema validation failed"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"errors": e.errors()},
             )
 
@@ -534,8 +535,8 @@ def _validate_against_schema(
         if not isinstance(value, dict):
             msg = f"Expected dict for {param_name}, got {type(value).__name__}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
             )
 
         errors = []
@@ -566,8 +567,8 @@ def _validate_against_schema(
         if errors:
             msg = "Dict validation failed"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
                 details={"errors": errors},
             )
 
@@ -578,7 +579,7 @@ def _validate_against_schema(
         if not isinstance(value, schema):
             msg = f"Expected {schema.__name__}, got {type(value).__name__}"
             raise ValidationError(
-                message=msg,
-                field=param_name,
+                message = msg,
+                field = param_name,
             )
         return value

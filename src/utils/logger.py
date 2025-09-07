@@ -60,6 +60,9 @@ if warning_symbols is None:
     def error(msg: Any) -> None:
         return print(f'ERROR: {msg}')
 
+    def info(msg: Any) -> None:
+        return print(f'INFO: {msg}')
+
     def failed(msg: Any) -> None:
         return print(f'FAILED: {msg}')
 
@@ -260,9 +263,9 @@ class EnhancedLogger:
             if self.log_file and self.log_config.get('file_output', True):
                 log_dir = os.path.dirname(self.log_file)
                 if log_dir and (not os.path.exists(log_dir)):
-                    os.makedirs(log_dir, exist_ok=True)
+                    os.makedirs(log_dir, exist_ok = True)
                 from logging.handlers import RotatingFileHandler
-                file_handler = RotatingFileHandler(self.log_file, maxBytes=self.max_file_size, backupCount=self.backup_count)
+                file_handler = RotatingFileHandler(self.log_file, maxBytes = self.max_file_size, backupCount = self.backup_count)
                 file_handler.setFormatter(formatter)
                 self.logger.addHandler(file_handler)
             if self.enable_correlation:
@@ -424,7 +427,7 @@ class EnhancedLogger:
             print(f'Error stopping enhanced logger: {e}')
 system_logger: logging.Logger | None = None
 
-def setup_logging(config: dict[str, Any] | None=None) -> logging.Logger | None:
+def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None:
     """
     Setup global logging system with comprehensive file logging.
 
@@ -438,7 +441,7 @@ def setup_logging(config: dict[str, Any] | None=None) -> logging.Logger | None:
         global system_logger
         if config is None:
             log_dir = Path('log')
-            log_dir.mkdir(exist_ok=True)
+            log_dir.mkdir(exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             log_file = log_dir / f'ares_{timestamp}.log'
             config = {'logging': {'level': 'INFO', 'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s', 'file': str(log_file), 'console_output': True, 'file_output': True, 'max_file_size': 10 * 1024 * 1024, 'backup_count': 5, 'json': True, 'correlation': True, 'warning_symbols': True}}
@@ -514,10 +517,12 @@ def get_logger(name: str) -> logging.Logger:
     if system_logger is None:
         system_logger = setup_logging()
     try:
-        from .utils.comprehensive_logger import get_comprehensive_logger
-        comprehensive_logger = get_comprehensive_logger()
-        if comprehensive_logger:
-            return comprehensive_logger.get_component_logger(name)
+        # TODO: Import when module is available
+        # from .utils.comprehensive_logger import get_comprehensive_logger
+        # comprehensive_logger = get_comprehensive_logger()
+        # if comprehensive_logger:
+        #     return comprehensive_logger.get_component_logger(name)
+        pass
     except ImportError:
         pass
     base_logger = system_logger.getChild(name)
@@ -545,8 +550,10 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
             self.base_logger = base_logger
             self.comprehensive_logger = None
             try:
-                from .utils.comprehensive_logger import get_comprehensive_logger
-                self.comprehensive_logger = get_comprehensive_logger()
+                # TODO: Import when module is available
+                # from .utils.comprehensive_logger import get_comprehensive_logger
+                # self.comprehensive_logger = get_comprehensive_logger()
+                self.comprehensive_logger = None
             except ImportError:
                 pass
 
@@ -571,12 +578,14 @@ def initialize_comprehensive_integration() -> None:
 def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""
     try:
-        from .utils.comprehensive_logger import get_comprehensive_logger
+        # TODO: Import when module is available
+        # from .utils.comprehensive_logger import get_comprehensive_logger
 
-        comprehensive_logger = get_comprehensive_logger()
-        if comprehensive_logger:
-            initialize_comprehensive_integration()
-            return True
+        # comprehensive_logger = get_comprehensive_logger()
+        # if comprehensive_logger:
+        #     initialize_comprehensive_integration()
+        #     return True
+        return False
     except ImportError:
         pass
     except Exception:
@@ -600,7 +609,7 @@ def _format_bytes(num_bytes: int | None) -> str:
         return str(num_bytes) if num_bytes is not None else 'n/a'
 
 @contextmanager
-def log_io_operation(logger: logging.Logger, operation: str, path: str | os.PathLike | None=None, **context: Any) -> None:
+def log_io_operation(logger: logging.Logger, operation: str, path: str | os.PathLike | None = None, **context: Any) -> None:
     """Context-managed I/O logging with duration and best-effort file size."
 
     - Logs start and end of an I/O operation with optional context (e.g., columns, filters, compression)
@@ -633,7 +642,7 @@ def log_io_operation(logger: logging.Logger, operation: str, path: str | os.Path
             pass
         raise
 
-def log_dataframe_overview(logger: logging.Logger, df: Any, *, name: str | None=None, sample_rows: int=3) -> None:
+def log_dataframe_overview(logger: logging.Logger, df: Any, *, name: str | None = None, sample_rows: int = 3) -> None:
     """Log essential DataFrame diagnostics without heavy output."
 
     - shape, columns count, memory usage, dtype summary
@@ -652,7 +661,7 @@ def log_dataframe_overview(logger: logging.Logger, df: Any, *, name: str | None=
         columns_list = list(getattr(df, 'columns', []))
         mem_mb = None
         try:
-            mem_mb = float(df.memory_usage(deep=True).sum()) / 1024.0 ** 2
+            mem_mb = float(df.memory_usage(deep = True).sum()) / 1024.0 ** 2
         except Exception:
             pass
         try:
@@ -677,7 +686,7 @@ def log_dataframe_overview(logger: logging.Logger, df: Any, *, name: str | None=
         pass
 
 @contextmanager
-def heartbeat(logger: logging.Logger, name: str, interval_seconds: float=15.0, details_provider: Callable[[], str] | None=None, context: dict[str, str] | None=None) -> None:
+def heartbeat(logger: logging.Logger, name: str, interval_seconds: float = 15.0, details_provider: Callable[[], str] | None = None, context: dict[str, str] | None = None) -> None:
     """
     Periodically log a short progress message while a long-running block executes.
 
@@ -727,7 +736,7 @@ def heartbeat(logger: logging.Logger, name: str, interval_seconds: float=15.0, d
             logger.info(f'▶️ {name} start')
         except Exception:
             pass
-        t = threading.Thread(target=_runner, name=f'heartbeat:{name}', daemon=True)
+        t = threading.Thread(target = _runner, name = f'heartbeat:{name}', daemon = True)
         t.start()
         yield
     except Exception as e:
@@ -741,7 +750,7 @@ def heartbeat(logger: logging.Logger, name: str, interval_seconds: float=15.0, d
     finally:
         stop_event.set()
         try:
-            t.join(timeout=1.0)
+            t.join(timeout = 1.0)
         except Exception:
             pass
         try:
@@ -751,7 +760,7 @@ def heartbeat(logger: logging.Logger, name: str, interval_seconds: float=15.0, d
         except Exception:
             pass
 
-def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, total_steps: int, status: str='running', details: str='', context: dict=None) -> None:
+def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, total_steps: int, status: str='running', details: str='', context: dict = None) -> None:
     """
     Log step progress with comprehensive emoji-based status indicators.
     
@@ -794,7 +803,7 @@ def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, 
     except Exception as e:
         logger.error(f'❌ Failed to log step progress: {e}')
 
-def log_validation_result(logger: logging.Logger, validator_name: str, result: bool, details: str='', metrics: dict=None) -> None:
+def log_validation_result(logger: logging.Logger, validator_name: str, result: bool, details: str='', metrics: dict = None) -> None:
     """
     Log validation results (only failures for troubleshooting).
     
@@ -820,7 +829,7 @@ def log_validation_result(logger: logging.Logger, validator_name: str, result: b
     except Exception as e:
         logger.error(f'❌ Failed to log validation result: {e}')
 
-def log_data_quality_check(logger: logging.Logger, check_name: str, status: str, details: str='', stats: dict=None) -> None:
+def log_data_quality_check(logger: logging.Logger, check_name: str, status: str, details: str='', stats: dict = None) -> None:
     """
     Log data quality check results (only failures and warnings for troubleshooting).
     
@@ -849,7 +858,7 @@ def log_data_quality_check(logger: logging.Logger, check_name: str, status: str,
     except Exception as e:
         logger.error(f'❌ Failed to log data quality check: {e}')
 
-def log_performance_metrics(logger: logging.Logger, operation_name: str, duration: float, memory_usage: float=None, additional_metrics: dict=None) -> None:
+def log_performance_metrics(logger: logging.Logger, operation_name: str, duration: float, memory_usage: float = None, additional_metrics: dict = None) -> None:
     """
     Log performance metrics (only for slow operations that need troubleshooting).
     
@@ -881,7 +890,7 @@ def log_performance_metrics(logger: logging.Logger, operation_name: str, duratio
     except Exception as e:
         logger.error(f'❌ Failed to log performance metrics: {e}')
 
-def log_error_with_context(logger: logging.Logger, error: Exception, context: dict=None, operation: str='', recovery_attempted: bool=False) -> None:
+def log_error_with_context(logger: logging.Logger, error: Exception, context: dict = None, operation: str='', recovery_attempted: bool = False) -> None:
     """
     Log errors with comprehensive context and recovery information.
     
@@ -904,11 +913,11 @@ def log_error_with_context(logger: logging.Logger, error: Exception, context: di
         else:
             message += ' | 🚫 No recovery attempted'
         logger.error(message)
-        logger.debug(f'🔍 Stack trace for {operation}:', exc_info=True)
+        logger.debug(f'🔍 Stack trace for {operation}:', exc_info = True)
     except Exception as e:
         logger.error(f'❌ Failed to log error with context: {e}')
 
-def log_system_status(logger: logging.Logger, component: str, status: str, details: str='', health_metrics: dict=None) -> None:
+def log_system_status(logger: logging.Logger, component: str, status: str, details: str='', health_metrics: dict = None) -> None:
     """
     Log system component status with health indicators (only for issues).
     
@@ -948,3 +957,16 @@ def log_validation_result(result: dict) -> None:
 def log_data_quality_check(check: dict) -> None:
     """Log data quality check."""
     system_logger.info(f'Data quality check: {check}')
+
+# Export system_logger for external use
+__all__ = [
+    'system_logger',
+    'setup_logging',
+    'get_logger',
+    'get_system_logger',
+    'log_io_operation',
+    'log_dataframe_overview',
+    'heartbeat',
+    'log_validation_result',
+    'log_data_quality_check'
+]

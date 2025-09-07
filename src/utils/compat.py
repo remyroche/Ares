@@ -1,4 +1,6 @@
 import typing
+from .utils.compat import handle_specific_errors
+from .core.decorators import handles_errors
 
 """Compatibility shims to forward legacy decorators to core equivalents.
 
@@ -8,8 +10,6 @@ that map old decorator signatures to the new core decorators.
 from functools import wraps
 import asyncio
 from typing import Any, Callable, Dict, Tuple, Type
-
-from .decorators.errors import handles_errors as _handles_errors
 
 
 

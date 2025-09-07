@@ -1,6 +1,7 @@
 # src/training/model_trainer.py
 
 
+from src.utils.logger import system_logger
 from src.utils.decorators import (
     cached,
     circuit_breaker,
@@ -8,7 +9,7 @@ from src.utils.decorators import (
     log_call,
     log_execution_time,
     traced,
-    validates
+    validates,
 )
 
 from src.core.domain import (
@@ -34,19 +35,20 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
 
-from .training.data_cleaning import handle_missing_data
-from .training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
+from src.training.data_cleaning import handle_missing_data
+from src.training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 
 import logging
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
 from src.utils.warning_symbols import (
     error,
@@ -306,7 +308,12 @@ class RayModelTrainer:
                 lookback_period = f"{lookback_years}_years"
                 
                 # Log enhanced training metadata
-                from .utils.mlflow_utils import log_enhanced_training_metadata
+                from src.utils.mlflow_utils import (
+                    log_enhanced_training_metadata,
+                    log_params_with_metadata,
+                    log_metrics_with_metadata,
+                    log_artifacts_with_metadata
+                )
                 log_enhanced_training_metadata(
                     asset=symbol,
                     exchange=exchange,
@@ -321,7 +328,7 @@ class RayModelTrainer:
                 do_hpo = use_hpo
                 if do_hpo:
                     try:
-                        from src.training.steps.validation.step17_final_parameters_optimization.optimized_optuna_optimization import (
+                        from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
                             AdvancedOptunaManager,
                         )
                     except Exception as e:  # ImportError or dependency issues

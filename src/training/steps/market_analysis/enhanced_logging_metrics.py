@@ -13,6 +13,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, asdict
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 try:
     HAS_PANDAS_NUMPY = True
 except ImportError:
@@ -72,6 +74,7 @@ class FeatureQualityMetrics:
     duplicate_features: int = 0
     quality_score: float = 0.0
     issues: List[str] = None
+    @log_all_calls
 
     def __post_init__(self) -> None:
         if self.issues is None:
@@ -87,6 +90,7 @@ class RegimeQualityMetrics:
     regime_persistence: float = 0.0
     quality_threshold_met: bool = False
     issues: List[str] = None
+    @log_all_calls
 
     def __post_init__(self) -> None:
         if self.regime_counts is None:
@@ -109,6 +113,7 @@ class StepMetrics:
     feature_metrics: FeatureQualityMetrics = None
     regime_metrics: RegimeQualityMetrics = None
     custom_metrics: Dict[str, Any] = None
+    @log_all_calls
 
     def __post_init__(self) -> None:
         if self.feature_metrics is None:
@@ -127,7 +132,7 @@ class EnhancedPipelineLogger:
         """Initialize the enhanced logger."""
         self.logger = get_logger(name)
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir.mkdir(exist_ok = True)
         self.step_metrics: Dict[str, StepMetrics] = {}
         self.pipeline_start_time = None
         self.pipeline_end_time = None
@@ -135,7 +140,7 @@ class EnhancedPipelineLogger:
         self.quality_thresholds = {'feature_quality_min_score': 0.7, 'regime_balance_min_score': 0.3, 'regime_persistence_min': 0.5, 'max_nan_ratio': 0.1, 'max_correlation_threshold': 0.95, 'min_regime_samples': 100}
         self.emoji_map = {'start': '▶️', 'success': '✓', 'error': '❌', 'warning': '⚠️', 'info': 'ℹ️', 'progress': '⏳', 'feature': '🔧', 'regime': '🎯', 'matrix': '🧮', 'validation': '🔍', 'quality': '📊', 'performance': '⚡', 'memory': '💾', 'time': '⏱️', 'data': '📋', 'config': '⚙️', 'threshold': '🎚️', 'issue': '🚨', 'fix': '🔧', 'complete': '✓', 'step': '📝', 'pipeline': '🔄', 'troubleshoot': '🔍', 'update': '📊', 'check': '✓', 'fail': '❌', 'skip': '⏭️', 'retry': '🔄'}
 
-    def start_pipeline(self, symbol: str, exchange: str, correlation_id: str=None) -> None:
+    def start_pipeline(self, symbol: str, exchange: str, correlation_id: str = None) -> None:
         """Start pipeline logging with comprehensive initialization."""
         self.pipeline_start_time = get_current_datetime()
         self.correlation_id = correlation_id or f'market_analysis_{symbol}_{exchange}_{int(time.time())}'
@@ -148,7 +153,7 @@ class EnhancedPipelineLogger:
         self.logger.info(f"{self.emoji_map['config']} Correlation ID: {self.correlation_id}")
         self.logger.info('=' * 100)
 
-    def end_pipeline(self, success: bool=True, error_message: str='') -> None:
+    def end_pipeline(self, success: bool = True, error_message: str='') -> None:
         """End pipeline logging with comprehensive summary."""
         self.pipeline_end_time = get_current_datetime()
         duration = (self.pipeline_end_time - self.pipeline_start_time).total_seconds()
@@ -166,10 +171,10 @@ class EnhancedPipelineLogger:
         self._save_metrics_to_file()
         self.logger.info('=' * 100)
 
-    def start_step(self, step_name: str, description: str='', step_number: int=None, total_steps: int=None) -> None:
+    def start_step(self, step_name: str, description: str='', step_number: int = None, total_steps: int = None) -> None:
         """Start logging for a specific step."""
         start_time = get_current_datetime()
-        self.step_metrics[step_name] = StepMetrics(step_name=step_name, start_time=start_time)
+        self.step_metrics[step_name] = StepMetrics(step_name = step_name, start_time = start_time)
         step_header = f"{self.emoji_map['step']} Starting Step: {step_name}"
         if step_number is not None and total_steps is not None:
             step_header = f"{self.emoji_map['step']} STEP {step_number}/{total_steps}: {step_name}"
@@ -179,7 +184,7 @@ class EnhancedPipelineLogger:
         self.logger.info(f"{self.emoji_map['time']} Start Time: {format_datetime(start_time)}")
         self.logger.info('-' * 80)
 
-    def end_step(self, step_name: str, success: bool=True, error_message: str='', input_shape: Tuple[int, int]=None, output_shape: Tuple[int, int]=None, memory_usage_mb: float=0.0) -> None:
+    def end_step(self, step_name: str, success: bool = True, error_message: str='', input_shape: Tuple[int, int]=None, output_shape: Tuple[int, int]=None, memory_usage_mb: float = 0.0) -> None:
         """End logging for a specific step."""
         if step_name not in self.step_metrics:
             self.logger.warning(f"{self.emoji_map['warning']} Step {step_name} not found in metrics")
@@ -314,6 +319,7 @@ class EnhancedPipelineLogger:
             self.logger.warning(f'{emoji} {step_name} - {issue_type.upper()}: {message}')
         else:
             self.logger.info(f'{emoji} {step_name} - {issue_type.upper()}: {message}')
+    @log_all_calls
 
     def _calculate_feature_quality_metrics(self, data: Union[pd.DataFrame, Dict[str, Any]], feature_columns: List[str]) -> FeatureQualityMetrics:
         """Calculate comprehensive feature quality metrics."""
@@ -367,6 +373,7 @@ class EnhancedPipelineLogger:
             metrics.quality_score = 0.5
             metrics.issues.append(f'Error calculating metrics: {str(e)}')
         return metrics
+    @log_all_calls
 
     def _calculate_regime_quality_metrics(self, regimes: List[Any], regime_labels: List[str]=None) -> RegimeQualityMetrics:
         """Calculate comprehensive regime clustering quality metrics."""
@@ -421,6 +428,7 @@ class EnhancedPipelineLogger:
             metrics.quality_threshold_met = False
             metrics.issues.append(f'Error calculating regime metrics: {str(e)}')
         return metrics
+    @log_all_calls
 
     def _log_step_summary(self) -> None:
         """Log a summary of all steps."""
@@ -446,6 +454,7 @@ class EnhancedPipelineLogger:
             for step_name, metrics in self.step_metrics.items():
                 if not metrics.success:
                     self.logger.error(f'   ❌ {step_name}: {metrics.error_message}')
+    @log_all_calls
 
     def _save_metrics_to_file(self) -> None:
         """Save all metrics to a JSON file."""
@@ -460,7 +469,7 @@ class EnhancedPipelineLogger:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = self.log_dir / f'market_analysis_metrics_{timestamp}.json'
             with open(filename, 'w') as f:
-                json.dump(metrics_data, f, indent=2)
+                json.dump(metrics_data, f, indent = 2)
             self.logger.info(f"{self.emoji_map['memory']} Metrics saved to: {filename}")
         except Exception as e:
             self.logger.error(f"{self.emoji_map['error']} Failed to save metrics: {e}")

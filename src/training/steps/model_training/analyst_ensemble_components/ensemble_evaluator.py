@@ -3,15 +3,18 @@ import numpy as np
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Ensemble evaluation component for analyst ensemble creation."""
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, confusion_matrix, classification_report
 from sklearn.model_selection import cross_val_score, KFold
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import logging
 
 class EnsembleEvaluator:
     """Handles evaluation of ensemble models."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the ensemble evaluator.
@@ -58,7 +61,7 @@ class EnsembleEvaluator:
         """
         if features.empty:
             return {metric: 0.0 for metric in self.metrics}
-        y = np.random.randint(0, 2, size=len(features))
+        y = np.random.randint(0, 2, size = len(features))
         test_size = int(len(features) * self.test_size)
         X_train = features.iloc[:-test_size]
         y_train = y[:-test_size]
@@ -110,8 +113,8 @@ class EnsembleEvaluator:
         """
         cv_scores = {}
         try:
-            kfold = KFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
-            scores = cross_val_score(ensemble, X, y, cv=kfold, scoring='accuracy', n_jobs=-1)
+            kfold = KFold(n_splits = self.cv_folds, shuffle = True, random_state = 42)
+            scores = cross_val_score(ensemble, X, y, cv = kfold, scoring='accuracy', n_jobs=-1)
             cv_scores['accuracy'] = scores.mean()
             cv_scores['accuracy_std'] = scores.std()
         except Exception as e:
@@ -143,6 +146,7 @@ class EnsembleEvaluator:
         comparison_results = {'best_ensemble': best_ensemble, 'best_score': best_score, 'average_score': np.mean(scores), 'score_std': np.std(scores), 'all_scores': {name: metrics.get(target_metric, 0.0) for name, metrics in evaluation_results.items()}}
         self.logger.info(f'Best ensemble: {best_ensemble} with {target_metric}={best_score:.4f}')
         return comparison_results
+    @log_all_calls
 
     def _log_evaluation_summary(self, evaluation_results: Dict[str, Dict[str, float]]) -> None:
         """Log a summary of evaluation results.
@@ -181,7 +185,7 @@ class EnsembleEvaluator:
             y_pred = ensemble.predict(X_test)
             cm = confusion_matrix(y_test, y_pred)
             diagnostics['confusion_matrix'] = cm.tolist()
-            report = classification_report(y_test, y_pred, output_dict=True)
+            report = classification_report(y_test, y_pred, output_dict = True)
             diagnostics['classification_report'] = report
             if hasattr(ensemble, 'feature_importances_'):
                 importances = ensemble.feature_importances_
@@ -189,7 +193,7 @@ class EnsembleEvaluator:
                 diagnostics['feature_importances'] = dict(zip(feature_names, importances.tolist()))
             if hasattr(ensemble, 'predict_proba'):
                 probas = ensemble.predict_proba(X_test)
-                diagnostics['confidence_stats'] = {'mean': float(probas.max(axis=1).mean()), 'std': float(probas.max(axis=1).std()), 'min': float(probas.max(axis=1).min()), 'max': float(probas.max(axis=1).max())}
+                diagnostics['confidence_stats'] = {'mean': float(probas.max(axis = 1).mean()), 'std': float(probas.max(axis = 1).std()), 'min': float(probas.max(axis = 1).min()), 'max': float(probas.max(axis = 1).max())}
         except Exception as e:
             self.logger.error(f'Failed to generate diagnostics: {str(e)}')
         return diagnostics

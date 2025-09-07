@@ -9,10 +9,11 @@ import traceback
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from scipy import stats
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
 import time
+from .logger import system_logger
 
 
 @dataclass
@@ -24,7 +25,7 @@ class QualityMetric:
     severity: str  # 'info', 'warning', 'error', 'critical'
     message: str
     suggested_action: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
 
 @dataclass
@@ -37,7 +38,7 @@ class QualityAssessment:
     critical_issues: int
     assessment_timestamp: datetime
     data_shape: Tuple[int, int]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
 
 class AdvancedQualityMetrics:
@@ -126,10 +127,10 @@ class AdvancedQualityMetrics:
                     self.logger.warning(f"⚠️ Quality check failed: {e}")
                     metrics.append(QualityMetric(
                         name='check_error',
-                        value=0.0,
-                        threshold=1.0,
+                        value = 0.0,
+                        threshold = 1.0,
                         severity='warning',
-                        message=f'Quality check failed: {str(e)}'
+                        message = f'Quality check failed: {str(e)}'
                     ))
             
             # Calculate overall score
@@ -142,13 +143,13 @@ class AdvancedQualityMetrics:
             
             # Create assessment
             assessment = QualityAssessment(
-                overall_score=overall_score,
-                metrics=metrics,
-                issues_found=issues_found,
-                warnings_found=warnings_found,
-                critical_issues=critical_issues,
-                assessment_timestamp=start_time,
-                data_shape=data.shape,
+                overall_score = overall_score,
+                metrics = metrics,
+                issues_found = issues_found,
+                warnings_found = warnings_found,
+                critical_issues = critical_issues,
+                assessment_timestamp = start_time,
+                data_shape = data.shape,
                 metadata={
                     'context': context,
                     'step_name': step_name,
@@ -169,19 +170,19 @@ class AdvancedQualityMetrics:
         except Exception as e:
             self.logger.exception(f"❌ Error in quality assessment: {e}")
             return QualityAssessment(
-                overall_score=0.0,
+                overall_score = 0.0,
                 metrics=[QualityMetric(
                     name='assessment_error',
-                    value=0.0,
-                    threshold=1.0,
+                    value = 0.0,
+                    threshold = 1.0,
                     severity='critical',
-                    message=f'Assessment failed: {str(e)}'
+                    message = f'Assessment failed: {str(e)}'
                 )],
-                issues_found=1,
-                warnings_found=0,
-                critical_issues=1,
-                assessment_timestamp=start_time,
-                data_shape=data.shape
+                issues_found = 1,
+                warnings_found = 0,
+                critical_issues = 1,
+                assessment_timestamp = start_time,
+                data_shape = data.shape
             )
     
     def _check_temporal_consistency(self, data: pd.DataFrame) -> List[QualityMetric]:
@@ -196,7 +197,7 @@ class AdvancedQualityMetrics:
             
             # Check for gaps
             time_diffs = timestamps.diff().dropna()
-            gap_threshold = timedelta(hours=self.tolerant_thresholds['temporal_consistency']['max_gap_hours'])
+            gap_threshold = timedelta(hours = self.tolerant_thresholds['temporal_consistency']['max_gap_hours'])
             
             large_gaps = time_diffs[time_diffs > gap_threshold]
             gap_percentage = len(large_gaps) / len(time_diffs) if len(time_diffs) > 0 else 0
@@ -204,10 +205,10 @@ class AdvancedQualityMetrics:
             if gap_percentage > self.tolerant_thresholds['temporal_consistency']['max_gap_percentage']:
                 metrics.append(QualityMetric(
                     name='temporal_gaps',
-                    value=gap_percentage,
-                    threshold=self.tolerant_thresholds['temporal_consistency']['max_gap_percentage'],
+                    value = gap_percentage,
+                    threshold = self.tolerant_thresholds['temporal_consistency']['max_gap_percentage'],
                     severity='warning',
-                    message=f'Large temporal gaps found: {gap_percentage:.1%} of intervals',
+                    message = f'Large temporal gaps found: {gap_percentage:.1%} of intervals',
                     suggested_action='Check data collection continuity'
                 ))
             
@@ -218,10 +219,10 @@ class AdvancedQualityMetrics:
             if duplicate_percentage > 0.05:  # 5% duplicates
                 metrics.append(QualityMetric(
                     name='temporal_duplicates',
-                    value=duplicate_percentage,
-                    threshold=0.05,
+                    value = duplicate_percentage,
+                    threshold = 0.05,
                     severity='warning',
-                    message=f'Duplicate timestamps found: {duplicate_percentage:.1%}',
+                    message = f'Duplicate timestamps found: {duplicate_percentage:.1%}',
                     suggested_action='Remove duplicate timestamps'
                 ))
             
@@ -229,8 +230,8 @@ class AdvancedQualityMetrics:
             if not timestamps.is_monotonic_increasing:
                 metrics.append(QualityMetric(
                     name='temporal_monotonicity',
-                    value=0.0,
-                    threshold=1.0,
+                    value = 0.0,
+                    threshold = 1.0,
                     severity='warning',
                     message='Timestamps are not monotonically increasing',
                     suggested_action='Sort data by timestamp'
@@ -239,10 +240,10 @@ class AdvancedQualityMetrics:
         except Exception as e:
             metrics.append(QualityMetric(
                 name='temporal_consistency_error',
-                value=0.0,
-                threshold=1.0,
+                value = 0.0,
+                threshold = 1.0,
                 severity='warning',
-                message=f'Temporal consistency check failed: {str(e)}'
+                message = f'Temporal consistency check failed: {str(e)}'
             ))
         
         return metrics
@@ -271,11 +272,11 @@ class AdvancedQualityMetrics:
                 
                 if anomaly_percentage > self.tolerant_thresholds['price_anomaly_detection']['max_anomaly_percentage']:
                     metrics.append(QualityMetric(
-                        name=f'{col}_price_anomalies',
-                        value=anomaly_percentage,
-                        threshold=self.tolerant_thresholds['price_anomaly_detection']['max_anomaly_percentage'],
+                        name = f'{col}_price_anomalies',
+                        value = anomaly_percentage,
+                        threshold = self.tolerant_thresholds['price_anomaly_detection']['max_anomaly_percentage'],
                         severity='warning',
-                        message=f'Price anomalies in {col}: {anomaly_percentage:.1%} extreme changes',
+                        message = f'Price anomalies in {col}: {anomaly_percentage:.1%} extreme changes',
                         suggested_action='Review price data for errors'
                     ))
                 
@@ -283,11 +284,11 @@ class AdvancedQualityMetrics:
                 negative_prices = (prices < 0).sum()
                 if negative_prices > 0:
                     metrics.append(QualityMetric(
-                        name=f'{col}_negative_prices',
-                        value=negative_prices,
-                        threshold=0,
+                        name = f'{col}_negative_prices',
+                        value = negative_prices,
+                        threshold = 0,
                         severity='critical',
-                        message=f'Negative prices in {col}: {negative_prices} occurrences',
+                        message = f'Negative prices in {col}: {negative_prices} occurrences',
                         suggested_action='Fix price data source'
                     ))
                 
@@ -295,21 +296,21 @@ class AdvancedQualityMetrics:
                 zero_prices = (prices == 0).sum()
                 if zero_prices > len(prices) * 0.01:  # More than 1% zero prices
                     metrics.append(QualityMetric(
-                        name=f'{col}_zero_prices',
-                        value=zero_prices / len(prices),
-                        threshold=0.01,
+                        name = f'{col}_zero_prices',
+                        value = zero_prices / len(prices),
+                        threshold = 0.01,
                         severity='warning',
-                        message=f'Zero prices in {col}: {zero_prices} occurrences',
+                        message = f'Zero prices in {col}: {zero_prices} occurrences',
                         suggested_action='Check for data collection issues'
                     ))
         
         except Exception as e:
             metrics.append(QualityMetric(
                 name='price_anomaly_detection_error',
-                value=0.0,
-                threshold=1.0,
+                value = 0.0,
+                threshold = 1.0,
                 severity='warning',
-                message=f'Price anomaly detection failed: {str(e)}'
+                message = f'Price anomaly detection failed: {str(e)}'
             ))
         
         return metrics
@@ -338,10 +339,10 @@ class AdvancedQualityMetrics:
                 if spike_percentage > 0.05:  # More than 5% spikes
                     metrics.append(QualityMetric(
                         name='volume_spikes',
-                        value=spike_percentage,
-                        threshold=0.05,
+                        value = spike_percentage,
+                        threshold = 0.05,
                         severity='info',
-                        message=f'Volume spikes detected: {spike_percentage:.1%} of data',
+                        message = f'Volume spikes detected: {spike_percentage:.1%} of data',
                         suggested_action='Review for market events or data errors'
                     ))
             
@@ -352,10 +353,10 @@ class AdvancedQualityMetrics:
             if zero_percentage > self.tolerant_thresholds['volume_pattern_analysis']['zero_volume_threshold']:
                 metrics.append(QualityMetric(
                     name='zero_volume',
-                    value=zero_percentage,
-                    threshold=self.tolerant_thresholds['volume_pattern_analysis']['zero_volume_threshold'],
+                    value = zero_percentage,
+                    threshold = self.tolerant_thresholds['volume_pattern_analysis']['zero_volume_threshold'],
                     severity='warning',
-                    message=f'High zero volume percentage: {zero_percentage:.1%}',
+                    message = f'High zero volume percentage: {zero_percentage:.1%}',
                     suggested_action='Check for market closure or data issues'
                 ))
             
@@ -364,20 +365,20 @@ class AdvancedQualityMetrics:
             if negative_volume > 0:
                 metrics.append(QualityMetric(
                     name='negative_volume',
-                    value=negative_volume,
-                    threshold=0,
+                    value = negative_volume,
+                    threshold = 0,
                     severity='critical',
-                    message=f'Negative volume detected: {negative_volume} occurrences',
+                    message = f'Negative volume detected: {negative_volume} occurrences',
                     suggested_action='Fix volume data source'
                 ))
         
         except Exception as e:
             metrics.append(QualityMetric(
                 name='volume_pattern_analysis_error',
-                value=0.0,
-                threshold=1.0,
+                value = 0.0,
+                threshold = 1.0,
                 severity='warning',
-                message=f'Volume pattern analysis failed: {str(e)}'
+                message = f'Volume pattern analysis failed: {str(e)}'
             ))
         
         return metrics
@@ -397,10 +398,10 @@ class AdvancedQualityMetrics:
                 if invalid_hl > 0:
                     metrics.append(QualityMetric(
                         name='invalid_high_low',
-                        value=invalid_hl,
-                        threshold=0,
+                        value = invalid_hl,
+                        threshold = 0,
                         severity='critical',
-                        message=f'Invalid high < low relationships: {invalid_hl} occurrences',
+                        message = f'Invalid high < low relationships: {invalid_hl} occurrences',
                         suggested_action='Fix OHLC data source'
                     ))
                 
@@ -410,10 +411,10 @@ class AdvancedQualityMetrics:
                 if invalid_ho > 0 or invalid_hc > 0:
                     metrics.append(QualityMetric(
                         name='invalid_high_oc',
-                        value=invalid_ho + invalid_hc,
-                        threshold=0,
+                        value = invalid_ho + invalid_hc,
+                        threshold = 0,
                         severity='critical',
-                        message=f'Invalid high < open/close relationships: {invalid_ho + invalid_hc} occurrences',
+                        message = f'Invalid high < open/close relationships: {invalid_ho + invalid_hc} occurrences',
                         suggested_action='Fix OHLC data source'
                     ))
                 
@@ -423,19 +424,19 @@ class AdvancedQualityMetrics:
                 if invalid_lo > 0 or invalid_lc > 0:
                     metrics.append(QualityMetric(
                         name='invalid_low_oc',
-                        value=invalid_lo + invalid_lc,
-                        threshold=0,
+                        value = invalid_lo + invalid_lc,
+                        threshold = 0,
                         severity='critical',
-                        message=f'Invalid low > open/close relationships: {invalid_lo + invalid_lc} occurrences',
+                        message = f'Invalid low > open/close relationships: {invalid_lo + invalid_lc} occurrences',
                         suggested_action='Fix OHLC data source'
                     ))
             except Exception as e:
                 metrics.append(QualityMetric(
                     name='market_microstructure_error',
-                    value=0.0,
-                    threshold=1.0,
+                    value = 0.0,
+                    threshold = 1.0,
                     severity='warning',
-                    message=f'Market microstructure check failed: {str(e)}'
+                    message = f'Market microstructure check failed: {str(e)}'
                 ))
         
         return metrics
@@ -452,10 +453,10 @@ class AdvancedQualityMetrics:
             if null_percentage > self.tolerant_thresholds['data_completeness']['null_threshold']:
                 metrics.append(QualityMetric(
                     name='data_completeness',
-                    value=null_percentage,
-                    threshold=self.tolerant_thresholds['data_completeness']['null_threshold'],
+                    value = null_percentage,
+                    threshold = self.tolerant_thresholds['data_completeness']['null_threshold'],
                     severity='warning',
-                    message=f'High null percentage: {null_percentage:.1%}',
+                    message = f'High null percentage: {null_percentage:.1%}',
                     suggested_action='Review data collection and processing'
                 ))
             
@@ -464,32 +465,32 @@ class AdvancedQualityMetrics:
             if empty_columns:
                 metrics.append(QualityMetric(
                     name='empty_columns',
-                    value=len(empty_columns),
-                    threshold=0,
+                    value = len(empty_columns),
+                    threshold = 0,
                     severity='warning',
-                    message=f'Empty columns found: {empty_columns}',
+                    message = f'Empty columns found: {empty_columns}',
                     suggested_action='Remove or populate empty columns'
                 ))
             
             # Check for completely empty rows
-            empty_rows = data.isnull().all(axis=1).sum()
+            empty_rows = data.isnull().all(axis = 1).sum()
             if empty_rows > 0:
                 metrics.append(QualityMetric(
                     name='empty_rows',
-                    value=empty_rows,
-                    threshold=0,
+                    value = empty_rows,
+                    threshold = 0,
                     severity='warning',
-                    message=f'Empty rows found: {empty_rows}',
+                    message = f'Empty rows found: {empty_rows}',
                     suggested_action='Remove empty rows'
                 ))
         
         except Exception as e:
             metrics.append(QualityMetric(
                 name='data_completeness_error',
-                value=0.0,
-                threshold=1.0,
+                value = 0.0,
+                threshold = 1.0,
                 severity='warning',
-                message=f'Data completeness check failed: {str(e)}'
+                message = f'Data completeness check failed: {str(e)}'
             ))
         
         return metrics
@@ -511,11 +512,11 @@ class AdvancedQualityMetrics:
                 skewness = stats.skew(values)
                 if abs(skewness) > self.tolerant_thresholds['statistical_consistency']['distribution_skew_threshold']:
                     metrics.append(QualityMetric(
-                        name=f'{col}_skewness',
-                        value=abs(skewness),
-                        threshold=self.tolerant_thresholds['statistical_consistency']['distribution_skew_threshold'],
+                        name = f'{col}_skewness',
+                        value = abs(skewness),
+                        threshold = self.tolerant_thresholds['statistical_consistency']['distribution_skew_threshold'],
                         severity='info',
-                        message=f'High skewness in {col}: {skewness:.2f}',
+                        message = f'High skewness in {col}: {skewness:.2f}',
                         suggested_action='Consider data transformation'
                     ))
                 
@@ -523,31 +524,31 @@ class AdvancedQualityMetrics:
                 kurtosis = stats.kurtosis(values)
                 if abs(kurtosis) > self.tolerant_thresholds['statistical_consistency']['distribution_kurtosis_threshold']:
                     metrics.append(QualityMetric(
-                        name=f'{col}_kurtosis',
-                        value=abs(kurtosis),
-                        threshold=self.tolerant_thresholds['statistical_consistency']['distribution_kurtosis_threshold'],
+                        name = f'{col}_kurtosis',
+                        value = abs(kurtosis),
+                        threshold = self.tolerant_thresholds['statistical_consistency']['distribution_kurtosis_threshold'],
                         severity='info',
-                        message=f'High kurtosis in {col}: {kurtosis:.2f}',
+                        message = f'High kurtosis in {col}: {kurtosis:.2f}',
                         suggested_action='Review data distribution'
                     ))
                 
                 # Check for constant values
                 if values.nunique() == 1:
                     metrics.append(QualityMetric(
-                        name=f'{col}_constant_values',
-                        value=1.0,
-                        threshold=0,
+                        name = f'{col}_constant_values',
+                        value = 1.0,
+                        threshold = 0,
                         severity='warning',
-                        message=f'Constant values in {col}',
+                        message = f'Constant values in {col}',
                         suggested_action='Check for data collection issues'
                     ))
             except Exception as e:
                 metrics.append(QualityMetric(
                     name='statistical_consistency_error',
-                    value=0.0,
-                    threshold=1.0,
+                    value = 0.0,
+                    threshold = 1.0,
                     severity='warning',
-                    message=f'Statistical consistency check failed: {str(e)}'
+                    message = f'Statistical consistency check failed: {str(e)}'
                 ))
         
         return metrics
@@ -561,8 +562,8 @@ class AdvancedQualityMetrics:
             if data.shape[0] == 0:
                 metrics.append(QualityMetric(
                     name='empty_dataset',
-                    value=0,
-                    threshold=1,
+                    value = 0,
+                    threshold = 1,
                     severity='critical',
                     message='Dataset is empty',
                     suggested_action='Check data source'
@@ -571,8 +572,8 @@ class AdvancedQualityMetrics:
             if data.shape[1] == 0:
                 metrics.append(QualityMetric(
                     name='no_columns',
-                    value=0,
-                    threshold=1,
+                    value = 0,
+                    threshold = 1,
                     severity='critical',
                     message='Dataset has no columns',
                     suggested_action='Check data source'
@@ -583,20 +584,20 @@ class AdvancedQualityMetrics:
             if duplicate_rows > len(data) * 0.1:  # More than 10% duplicates
                 metrics.append(QualityMetric(
                     name='duplicate_rows',
-                    value=duplicate_rows / len(data),
-                    threshold=0.1,
+                    value = duplicate_rows / len(data),
+                    threshold = 0.1,
                     severity='warning',
-                    message=f'High duplicate row percentage: {duplicate_rows / len(data):.1%}',
+                    message = f'High duplicate row percentage: {duplicate_rows / len(data):.1%}',
                     suggested_action='Remove duplicate rows'
                 ))
         
         except Exception as e:
             metrics.append(QualityMetric(
                 name='basic_integrity_error',
-                value=0.0,
-                threshold=1.0,
+                value = 0.0,
+                threshold = 1.0,
                 severity='warning',
-                message=f'Basic integrity check failed: {str(e)}'
+                message = f'Basic integrity check failed: {str(e)}'
             ))
         
         return metrics

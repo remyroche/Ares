@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 import pandas as pd
+from src.utils.logger import system_logger
 
 """
 Enhanced Step 1.5: Data Converter with Real-time Validation
@@ -23,7 +26,7 @@ from typing import Any, Dict, List, Optional
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
 import collections
 import datetime
@@ -36,6 +39,7 @@ logger = system_logger.getChild("EnhancedStep01_5DataConverter")
 
 class EnhancedUnifiedDataConverter:
     """Enhanced unified data converter with real-time validation."""
+    @log_important_calls
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -61,6 +65,7 @@ class EnhancedUnifiedDataConverter:
         # Data storage
         self.unified_data: List[Dict[str, Any]] = []
         self.conversion_errors: List[str] = []
+    @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -160,7 +165,7 @@ class EnhancedUnifiedDataConverter:
             
             # Create unified directory
             import os
-            os.makedirs(unified_dir, exist_ok=True)
+            os.makedirs(unified_dir, exist_ok = True)
             
             # Load and validate source data
             source_data = await self._load_and_validate_source_data(data_dir, exchange, symbol, timeframe)
@@ -251,6 +256,7 @@ class EnhancedUnifiedDataConverter:
         except Exception as e:
             self.logger.exception(f'❌ Error loading and validating source data: {e}')
             return {}
+    @log_all_calls
 
     def _validate_dataframe(self, df: pd.DataFrame, data_type: DataType, data_name: str) -> Optional[pd.DataFrame]:
         """Validate a DataFrame against its schema."""
@@ -283,7 +289,7 @@ class EnhancedUnifiedDataConverter:
             
             # Sort by timestamp
             if 'timestamp' in validated_df.columns:
-                validated_df = validated_df.sort_values('timestamp').reset_index(drop=True)
+                validated_df = validated_df.sort_values('timestamp').reset_index(drop = True)
             
             self.logger.info(f'✅ Validated {len(validated_df)}/{len(df)} {data_name} rows')
             
@@ -363,17 +369,19 @@ class EnhancedUnifiedDataConverter:
         except Exception as e:
             self.logger.exception(f'❌ Error merging aggtrades data: {e}')
             return klines_df
+    @log_all_calls
 
     def _prepare_klines_for_merge(self, klines_df: pd.DataFrame) -> pd.DataFrame:
         """Prepare klines data for merging."""
         klines_df = klines_df.copy()
-        klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
+        klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc = True)
         return klines_df
+    @log_all_calls
 
     def _prepare_aggtrades_for_merge(self, aggtrades_df: pd.DataFrame) -> pd.DataFrame:
         """Prepare aggtrades data for merging."""
         aggtrades_df = aggtrades_df.copy()
-        aggtrades_df['datetime'] = pd.to_datetime(aggtrades_df['timestamp'], unit='ms', utc=True)
+        aggtrades_df['datetime'] = pd.to_datetime(aggtrades_df['timestamp'], unit='ms', utc = True)
         aggtrades_df['kline_datetime'] = aggtrades_df['datetime'].dt.floor('1min')
         
         # Aggregate aggtrades data by minute
@@ -385,6 +393,7 @@ class EnhancedUnifiedDataConverter:
         # Flatten column names
         aggtrades_agg.columns = ['kline_datetime', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
         return aggtrades_agg
+    @log_all_calls
 
     def _perform_aggtrades_merge(self, klines_df: pd.DataFrame, aggtrades_agg: pd.DataFrame) -> pd.DataFrame:
         """Perform the actual merge and post-processing."""
@@ -412,8 +421,8 @@ class EnhancedUnifiedDataConverter:
             # Ensure timestamp columns are in the same format
             if 'timestamp' in klines_df.columns and 'timestamp' in futures_df.columns:
                 # Convert timestamps to datetime for merging
-                klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
-                futures_df['datetime'] = pd.to_datetime(futures_df['timestamp'], unit='ms', utc=True)
+                klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc = True)
+                futures_df['datetime'] = pd.to_datetime(futures_df['timestamp'], unit='ms', utc = True)
                 
                 # Round futures timestamps to minute boundaries
                 futures_df['kline_datetime'] = futures_df['datetime'].dt.floor('1min')
@@ -477,7 +486,7 @@ class EnhancedUnifiedDataConverter:
             
             # Sort by timestamp
             if 'timestamp' in validated_df.columns:
-                validated_df = validated_df.sort_values('timestamp').reset_index(drop=True)
+                validated_df = validated_df.sort_values('timestamp').reset_index(drop = True)
             
             self.logger.info(f'✅ Validated {len(validated_df)}/{len(df)} unified rows')
             
@@ -496,7 +505,7 @@ class EnhancedUnifiedDataConverter:
             
             # Create unified data path
             unified_path = os.path.join(unified_dir, exchange.lower(), symbol, timeframe)
-            os.makedirs(unified_path, exist_ok=True)
+            os.makedirs(unified_path, exist_ok = True)
             
             # Save as parquet file
             filename = f"unified_{exchange}_{symbol}_{timeframe}_validated.parquet"
@@ -522,7 +531,7 @@ class EnhancedUnifiedDataConverter:
             
             import json
             with open(config_filepath, 'w') as f:
-                json.dump(config_data, f, indent=2)
+                json.dump(config_data, f, indent = 2)
             
             self.logger.info(f'✅ Saved configuration to {config_filename}')
             
@@ -560,6 +569,7 @@ class EnhancedUnifiedDataConverter:
         except Exception as e:
             self.logger.exception(f'❌ Error running enhanced quality validation: {e}')
             return False
+    @log_all_calls
 
     def _calculate_unified_quality_score(self, df: pd.DataFrame) -> float:
         """Calculate quality score for unified DataFrame."""
@@ -573,11 +583,13 @@ class EnhancedUnifiedDataConverter:
             missing_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
             score -= missing_ratio * 0.2
             
-            # Check for infinite values
+            # Check for infinite values (vectorized)
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
             infinite_count = 0
             for col in numeric_cols:
-                infinite_count += df[col].apply(lambda x: float('inf') if pd.isna(x) else x).apply(lambda x: np.isinf(x) if isinstance(x, (int, float)) else False).sum()
+                col_data = df[col].values
+                # Vectorized infinite check
+                infinite_count += np.sum(np.isinf(col_data))
             
             if len(df) > 0:
                 infinite_ratio = infinite_count / (len(df) * len(numeric_cols))
@@ -713,7 +725,7 @@ if __name__ == "__main__":
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m",
-            force_rerun=True
+            force_rerun = True
         )
         
         if success:
@@ -722,3 +734,5 @@ if __name__ == "__main__":
             print("❌ Enhanced data conversion failed")
     
     asyncio.run(main())
+#!/usr/bin/env python3
+import pandas as pd

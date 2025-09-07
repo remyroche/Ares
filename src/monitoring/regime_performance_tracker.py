@@ -1,6 +1,7 @@
 
 import pandas as pd
 import numpy as np
+from ...utils.logger import system_logger
 """Regime Performance Tracking System.
 
 This module provides comprehensive tracking of trading performance segmented by market regime.
@@ -13,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 from .utils.common_operations import ensure_directory, safe_json_dump
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import logging
 import time
 
@@ -62,10 +63,10 @@ class RegimePerformanceTracker:
         finally:
             conn.close()
 
-    async def calculate_regime_metrics(self, symbol: str, period_days: int=30) -> Dict[str, Any]:
+    async def calculate_regime_metrics(self, symbol: str, period_days: int = 30) -> Dict[str, Any]:
         """Calculate comprehensive metrics for each regime."""
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=period_days)
+        start_date = end_date - timedelta(days = period_days)
         conn = sqlite3.connect(self.db_path)
         try:
             query = '\n                SELECT regime, pnl, pnl_percent, holding_period_minutes,\n                       max_drawdown, regime_confidence\n                FROM trades\n                WHERE symbol = ? AND timestamp >= ? AND timestamp <= ?\n            '
@@ -112,7 +113,7 @@ class RegimePerformanceTracker:
 
     def _compare_regimes(self, metrics: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
         """Compare performance across regimes."""
-        comparison = {'best_regime': {'by_sharpe': max([(r, m['sharpe_ratio']) for r, m in metrics.items() if r != 'comparison'], key=lambda x: x[1])[0] if metrics else None, 'by_pnl': max([(r, m['total_pnl']) for r, m in metrics.items() if r != 'comparison'], key=lambda x: x[1])[0] if metrics else None, 'by_win_rate': max([(r, m['win_rate']) for r, m in metrics.items() if r != 'comparison'], key=lambda x: x[1])[0] if metrics else None}, 'regime_ranking': sorted([(r, m['sharpe_ratio']) for r, m in metrics.items() if r not in ['comparison', 'transitions']], key=lambda x: x[1], reverse=True)}
+        comparison = {'best_regime': {'by_sharpe': max([(r, m['sharpe_ratio']) for r, m in metrics.items() if r != 'comparison'], key = lambda x: x[1])[0] if metrics else None, 'by_pnl': max([(r, m['total_pnl']) for r, m in metrics.items() if r != 'comparison'], key = lambda x: x[1])[0] if metrics else None, 'by_win_rate': max([(r, m['win_rate']) for r, m in metrics.items() if r != 'comparison'], key = lambda x: x[1])[0] if metrics else None}, 'regime_ranking': sorted([(r, m['sharpe_ratio']) for r, m in metrics.items() if r not in ['comparison', 'transitions']], key = lambda x: x[1], reverse = True)}
         return comparison
 
     async def _analyze_transitions(self, symbol: str, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
@@ -149,7 +150,7 @@ class RegimePerformanceTracker:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         try:
-            yesterday = (datetime.now() - timedelta(days=1)).date()
+            yesterday = (datetime.now() - timedelta(days = 1)).date()
             query = '\n                SELECT symbol, regime, COUNT(*) as trade_count,\n                       SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_trades,\n                       SUM(pnl) as total_pnl,\n                       MAX(max_drawdown) as max_drawdown,\n                       AVG(holding_period_minutes) as avg_holding_period\n                FROM trades\n                WHERE DATE(timestamp) = ?\n                GROUP BY symbol, regime\n            '
             results = cursor.execute(query, (yesterday,)).fetchall()
             for row in results:
@@ -183,5 +184,5 @@ if __name__ == '__main__':
         trade = {'timestamp': datetime.now(), 'symbol': 'BTCUSDT', 'regime': 'bull', 'regime_confidence': 0.85, 'action': 'long', 'entry_price': 50000, 'exit_price': 51000, 'quantity': 0.1, 'pnl': 100, 'pnl_percent': 2.0, 'holding_period_minutes': 120, 'max_drawdown': 0.5, 'models_used': ['momentum_model', 'breakout_model'], 'features_used': ['rsi', 'macd', 'volume']}
         await tracker.track_trade(trade)
         report = await tracker.generate_regime_report('BTCUSDT')
-        print(json.dumps(report, indent=2))
+        print(json.dumps(report, indent = 2))
     asyncio.run( main())

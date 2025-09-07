@@ -11,7 +11,7 @@ from typing import Any
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, f1_score, mean_absolute_error
 
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -47,13 +47,13 @@ class MultiTaskRandomForest:
             else {}
         )
         self.cfg = MTRFConfig(
-            enabled=bool(mt.get("enabled", True)),
-            n_estimators=int(mt.get("n_estimators", 400)),
-            max_depth=int(mt.get("max_depth", 14)),
-            min_samples_leaf=int(mt.get("min_samples_leaf", 5)),
-            random_state=int(mt.get("random_state", 42)),
-            max_train_samples=int(mt.get("max_train_samples", 300000)),
-            enable_regression=bool(mt.get("enable_regression", True)),
+            enabled = bool(mt.get("enabled", True)),
+            n_estimators = int(mt.get("n_estimators", 400)),
+            max_depth = int(mt.get("max_depth", 14)),
+            min_samples_leaf = int(mt.get("min_samples_leaf", 5)),
+            random_state = int(mt.get("random_state", 42)),
+            max_train_samples = int(mt.get("max_train_samples", 300000)),
+            enable_regression = bool(mt.get("enable_regression", True)),
         )
         self.horizons = list(horizons)
         self.models: dict[str, Any] = {}
@@ -111,10 +111,10 @@ class MultiTaskRandomForest:
         ytr = y_pc.iloc[:split_idx]
         yva = y_pc.iloc[split_idx:]
         pc_model = RandomForestClassifier(
-            n_estimators=self.cfg.n_estimators,
-            max_depth=self.cfg.max_depth,
-            min_samples_leaf=self.cfg.min_samples_leaf,
-            random_state=self.cfg.random_state,
+            n_estimators = self.cfg.n_estimators,
+            max_depth = self.cfg.max_depth,
+            min_samples_leaf = self.cfg.min_samples_leaf,
+            random_state = self.cfg.random_state,
             n_jobs=-1,
         )
         pc_model.fit(Xtr, ytr)
@@ -125,8 +125,8 @@ class MultiTaskRandomForest:
             "report": classification_report(
                 yva,
                 pc_pred,
-                output_dict=True,
-                zero_division=0,
+                output_dict = True,
+                zero_division = 0,
             ),
             "classes": list(pc_model.classes_),
         }
@@ -162,10 +162,10 @@ class MultiTaskRandomForest:
             ytr = yh.iloc[:split_idx]
             yva = yh.iloc[split_idx:]
             clf = RandomForestClassifier(
-                n_estimators=self.cfg.n_estimators,
-                max_depth=self.cfg.max_depth,
-                min_samples_leaf=self.cfg.min_samples_leaf,
-                random_state=self.cfg.random_state,
+                n_estimators = self.cfg.n_estimators,
+                max_depth = self.cfg.max_depth,
+                min_samples_leaf = self.cfg.min_samples_leaf,
+                random_state = self.cfg.random_state,
                 n_jobs=-1,
             )
             clf.fit(Xtr, ytr)
@@ -175,8 +175,8 @@ class MultiTaskRandomForest:
                 "report": classification_report(
                     yva,
                     y_pred,
-                    output_dict=True,
-                    zero_division=0,
+                    output_dict = True,
+                    zero_division = 0,
                 ),
             }
             try:
@@ -220,10 +220,10 @@ class MultiTaskRandomForest:
                 ytr = y_nr.iloc[:split_idx]
                 yva = y_nr.iloc[split_idx:]
                 nr_model = RandomForestClassifier(
-                    n_estimators=self.cfg.n_estimators,
-                    max_depth=self.cfg.max_depth,
-                    min_samples_leaf=self.cfg.min_samples_leaf,
-                    random_state=self.cfg.random_state,
+                    n_estimators = self.cfg.n_estimators,
+                    max_depth = self.cfg.max_depth,
+                    min_samples_leaf = self.cfg.min_samples_leaf,
+                    random_state = self.cfg.random_state,
                     n_jobs=-1,
                 )
                 nr_model.fit(Xtr, ytr)
@@ -232,8 +232,8 @@ class MultiTaskRandomForest:
                     "report": classification_report(
                         yva,
                         nr_model.predict(Xva),
-                        output_dict=True,
-                        zero_division=0,
+                        output_dict = True,
+                        zero_division = 0,
                     ),
                     "classes": list(nr_model.classes_),
                 }
@@ -269,10 +269,10 @@ class MultiTaskRandomForest:
             ytr = yh.iloc[:split_idx]
             yva = yh.iloc[split_idx:]
             clf = RandomForestClassifier(
-                n_estimators=self.cfg.n_estimators,
-                max_depth=self.cfg.max_depth,
-                min_samples_leaf=self.cfg.min_samples_leaf,
-                random_state=self.cfg.random_state,
+                n_estimators = self.cfg.n_estimators,
+                max_depth = self.cfg.max_depth,
+                min_samples_leaf = self.cfg.min_samples_leaf,
+                random_state = self.cfg.random_state,
                 n_jobs=-1,
             )
             clf.fit(Xtr, ytr)
@@ -282,8 +282,8 @@ class MultiTaskRandomForest:
                 "report": classification_report(
                     yva,
                     y_pred,
-                    output_dict=True,
-                    zero_division=0,
+                    output_dict = True,
+                    zero_division = 0,
                 ),
             }
             try:
@@ -314,10 +314,10 @@ class MultiTaskRandomForest:
                 ytr = yh.iloc[:split_idx]
                 yva = yh.iloc[split_idx:]
                 reg = RandomForestRegressor(
-                    n_estimators=max(200, self.cfg.n_estimators // 2),
-                    max_depth=self.cfg.max_depth,
-                    min_samples_leaf=self.cfg.min_samples_leaf,
-                    random_state=self.cfg.random_state,
+                    n_estimators = max(200, self.cfg.n_estimators // 2),
+                    max_depth = self.cfg.max_depth,
+                    min_samples_leaf = self.cfg.min_samples_leaf,
+                    random_state = self.cfg.random_state,
                     n_jobs=-1,
                 )
                 reg.fit(Xtr, ytr)
@@ -330,7 +330,7 @@ class MultiTaskRandomForest:
         return results
 
     def save(self, models_dir: str, prefix: str = "rolling_mtrf") -> dict[str, Any]:
-        os.makedirs(models_dir, exist_ok=True)
+        os.makedirs(models_dir, exist_ok = True)
         saved: dict[str, str] = {}
         # Save each model
         for name, model in self.models.items():
@@ -349,7 +349,7 @@ class MultiTaskRandomForest:
         try:
             meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
             with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
+                json.dump(meta, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"Failed to save meta: {e}")
             meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
@@ -357,13 +357,13 @@ class MultiTaskRandomForest:
         try:
             thr_path = os.path.join(models_dir, "thresholds.json")
             with open(thr_path, "w", encoding="utf-8") as f:
-                json.dump(self.thresholds_, f, indent=2)
+                json.dump(self.thresholds_, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"Failed to save thresholds: {e}")
         try:
             rel_path = os.path.join(models_dir, "reliability.json")
             with open(rel_path, "w", encoding="utf-8") as f:
-                json.dump(self.reliability_, f, indent=2)
+                json.dump(self.reliability_, f, indent = 2)
         except Exception as e:
             self.logger.warning(f"Failed to save reliability: {e}")
         return {
@@ -429,7 +429,7 @@ class MultiTaskRandomForest:
             except Exception as e:
                 self.logger.warning(
                     f"Prediction failed for model '{name}': {e}",
-                    exc_info=True,
+                    exc_info = True,
                 )
                 out[name] = []
         return out

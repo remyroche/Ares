@@ -2,6 +2,9 @@
 from typing import Dict
 import pandas as pd
 from typing import Any
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 12: Analyst Enhancement - Migrated to use BaseStep pattern.
 
 This step refines the trained analyst models through a regime-specific sequential process.
@@ -12,12 +15,12 @@ from .hyperparameter_optimizer import HyperparameterOptimizer
 from .feature_selector import FeatureSelector
 from .model_optimizer import ModelOptimizer
 from .ensemble_creator import EnsembleCreator
-from .core.decorators.errors import handles_errors
 import numpy as np
 import logging
 
 class AnalystEnhancementStep(BaseStep):
     """Step 12: Analyst Enhancement with regime-aware optimization."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Analyst Enhancement step.
@@ -26,6 +29,7 @@ class AnalystEnhancementStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, '12', 'analyst_enhancement')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -36,10 +40,12 @@ class AnalystEnhancementStep(BaseStep):
         self.regime_config = self._initialize_regime_config()
         self.regime_enhancement_results: Dict[str, Dict[str, Any]] = {}
         self.regime_optimized_models: Dict[str, Any] = {}
+    @log_all_calls
 
     def _initialize_regime_config(self) -> Dict[str, Any]:
         """Initialize regime-specific configuration."""
         return {'regime_specific_hpo': True, 'regime_specific_feature_selection': True, 'regime_specific_model_optimization': True, 'min_regime_samples': 100, 'regime_validation_split': 0.2, 'regime_parallel_processing': True, 'regime_memory_optimization': True, 'max_regime_models': 10, 'regime_ensemble_voting': 'weighted'}
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate step inputs.
@@ -146,6 +152,7 @@ class AnalystEnhancementStep(BaseStep):
                 enhanced_models[model_name] = models[model_name]
                 enhancement_results[model_name] = {'error': str(e)}
         return {'models': enhanced_models, 'results': enhancement_results}
+    @log_all_calls
 
     def _get_regime_features(self, features: pd.DataFrame, regime_info: Dict[str, Any]) -> pd.DataFrame:
         """Extract features for a specific regime."""
@@ -153,10 +160,12 @@ class AnalystEnhancementStep(BaseStep):
         if isinstance(regime_mask, list):
             regime_mask = np.array(regime_mask)
         return features[regime_mask]
+    @log_all_calls
 
     def _get_regime_models(self, analyst_models: Dict[str, Any], regime_id: str) -> Dict[str, Any]:
         """Get models for a specific regime."""
         return analyst_models.get(regime_id, {})
+    @log_all_calls
 
     def _split_regime_data(self, features: pd.DataFrame, regime_info: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         """Split regime data into training and validation sets."""
@@ -171,6 +180,7 @@ class AnalystEnhancementStep(BaseStep):
         X_val = X.iloc[split_idx:]
         y_val = y.iloc[split_idx:]
         return (X_train, y_train, X_val, y_val)
+    @log_all_calls
 
     def _calculate_enhancement_metrics(self, enhancement_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate overall enhancement metrics."""

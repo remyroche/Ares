@@ -1,5 +1,7 @@
 # src/training/di_training_manager.py
 
+from src.core.error_classes import execution_error, initialization_error
+from .training.training_manager import TrainingManager
 from .core.decorators import handles_errors
 
 """Dependency injection-aware training manager."

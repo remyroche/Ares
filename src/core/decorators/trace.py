@@ -20,7 +20,7 @@ import uuid
 
 # Context variable for current trace
 current_trace_var: ContextVar[Optional["TraceContext"]] = ContextVar(
-    "current_trace", default=None
+    "current_trace", default = None
 )
 
 
@@ -51,11 +51,11 @@ class Span:
     span_id: str
     parent_span_id: str | None = None
     kind: SpanKind = SpanKind.INTERNAL
-    start_time: float = field(default_factory=time.time)
+    start_time: float = field(default_factory = time.time)
     end_time: float | None = None
     status: SpanStatus = SpanStatus.UNSET
-    attributes: dict[str, Any] = field(default_factory=dict)
-    events: list[tuple[str, float, dict[str, Any]]] = field(default_factory=list)
+    attributes: dict[str, Any] = field(default_factory = dict)
+    events: list[tuple[str, float, dict[str, Any]]] = field(default_factory = list)
 
     def set_attribute(self, key: str, value: Any) -> None:
         """Set an attribute on the span."""
@@ -89,8 +89,8 @@ class TraceContext:
     """Context for a complete trace."""
 
     trace_id: str
-    spans: list[Span] = field(default_factory=list)
-    baggage: dict[str, str] = field(default_factory=dict)
+    spans: list[Span] = field(default_factory = list)
+    baggage: dict[str, str] = field(default_factory = dict)
 
     def create_span(
         self,
@@ -101,11 +101,11 @@ class TraceContext:
         """Create a new span in this trace."""
 
         span = Span(
-            name=name,
-            trace_id=self.trace_id,
-            span_id=str(uuid.uuid4()),
-            parent_span_id=parent_span.span_id if parent_span else None,
-            kind=kind,
+            name = name,
+            trace_id = self.trace_id,
+            span_id = str(uuid.uuid4()),
+            parent_span_id = parent_span.span_id if parent_span else None,
+            kind = kind,
         )
 
         # Add correlation ID as attribute
@@ -139,7 +139,7 @@ def create_trace(trace_id: str | None = None) -> TraceContext:
     if trace_id is None:
         trace_id = str(uuid.uuid4())
 
-    trace = TraceContext(trace_id=trace_id)
+    trace = TraceContext(trace_id = trace_id)
     _trace_storage[trace_id] = trace
     return trace
 
@@ -163,7 +163,7 @@ def traced(
         record_result: Whether to record function result
 
     Example:
-        @traced(span_name="fetch_user_data", kind=SpanKind.CLIENT)
+        @traced(span_name="fetch_user_data", kind = SpanKind.CLIENT)
         def fetch_user(user_id: str) -> dict:
             return api.get_user(user_id)
     """
@@ -356,7 +356,7 @@ def trace_method(
         for name, method in cls.__dict__.items():
             if callable(method) and not name.startswith("_"):
                 span_name = f"{prefix}.{name}"
-                traced_method = traced(span_name=span_name, kind=kind)(method)
+                traced_method = traced(span_name = span_name, kind = kind)(method)
                 setattr(cls, name, traced_method)
 
         return cls

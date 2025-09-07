@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 import traceback
 from datetime import datetime
-from src.utils.logger import system_logger
+from .logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, ValidationResult
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+from .logger import system_logger
 
 class StepValidationWrapper:
     """Wraps pipeline steps with validation using pipeline standards."""
@@ -112,7 +113,7 @@ class StepValidationWrapper:
                 if 'timestamp' in fixed_data.columns:
                     if not fixed_data['timestamp'].is_monotonic_increasing:
                         self.logger.info('📈 Sorting data by timestamp')
-                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop=True)
+                        fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
                 try:
                     fixed_data = self.validation_wrapper.standards.enforce_schema(fixed_data, self.schema_name)
                     self.logger.info('✅ Applied schema enforcement')

@@ -2,6 +2,9 @@ from collections.abc import Callable
 import pandas as pd
 
 import src.utils.decorators
+import typing
+import src.utils.decorators
+import numpy as np
 from src.utils.decorators import (
     traced,
     validates,
@@ -23,10 +26,10 @@ class FeatureGenerator:
             self.feature_functions.extend(custom_features)
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.generate", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.generate", log_args = False)
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
-        features = pd.DataFrame(index=data.index)
+        features = pd.DataFrame(index = data.index)
         for func in self.feature_functions:
             feat = func(data)
             features = features.join(feat, how="outer")
@@ -38,8 +41,8 @@ class FeatureGenerator:
         return labels.fillna(0)
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.price_features", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.price_features", log_args = False)
     def price_features(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
@@ -47,12 +50,12 @@ class FeatureGenerator:
                 "high_low_ratio": data["high"] / data["low"],
                 "open_close_ratio": data["open"] / data["close"],
             },
-            index=data.index,
+            index = data.index,
         )
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.moving_averages", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.moving_averages", log_args = False)
     def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
@@ -60,24 +63,24 @@ class FeatureGenerator:
                 "ma_10": data["close"].rolling(10).mean(),
                 "ma_20": data["close"].rolling(20).mean(),
             },
-            index=data.index,
+            index = data.index,
         )
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.volatility_features", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.volatility_features", log_args = False)
     def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
                 "volatility_5": data["close"].rolling(5).std(),
                 "volatility_10": data["close"].rolling(10).std(),
             },
-            index=data.index,
+            index = data.index,
         )
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.volume_features", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.volume_features", log_args = False)
     def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         vol_ma_5 = data["volume"].rolling(5).mean()
         return pd.DataFrame(
@@ -85,33 +88,33 @@ class FeatureGenerator:
                 "volume_ma_5": vol_ma_5,
                 "volume_ratio": data["volume"] / vol_ma_5,
             },
-            index=data.index,
+            index = data.index,
         )
 
     @validates
-    @validates(mode="warn", arg_index=1)
-    @traced("FeatureGenerator.technical_indicators", log_args=False)
+    @validates(mode="warn", arg_index = 1)
+    @traced("FeatureGenerator.technical_indicators", log_args = False)
     def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             {
                 "rsi": self._calculate_rsi(data["close"]),
                 "macd": self._calculate_macd(data["close"]),
             },
-            index=data.index,
+            index = data.index,
         )
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
         rs = gain / loss.replace(0, 1e-9)
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(
         self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9,
     ) -> pd.Series:
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
         macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
+        signal_line = macd_line.ewm(span = signal).mean()
         return macd_line - signal_line

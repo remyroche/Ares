@@ -1,5 +1,7 @@
 from src.utils.decorators import cached, circuit_breaker, handles_errors, log_call, log_execution_time, validates
 from .core.domain import quality_gate, secure_data_processing
+from src.utils.logger import system_logger
+from .core.decorators import handles_errors
 '\nEnhanced Matrix Operations with M1 GPU Integration.\nCombines advanced matrix operations with Mac M1 GPU acceleration.\n'
 import asyncio
 import time
@@ -7,8 +9,7 @@ from typing import Any
 from sklearn.linear_model import LinearRegression
 from .training.gpu_acceleration_m1 import M1GPUAcceleration
 from src.training.steps.step07_enhanced_matrix_operations import EnhancedMatrixOperations
-from .utils.logger import system_logger
-from .core.decorators.errors import handles_errors
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -30,16 +31,16 @@ class EnhancedMatrixGPUIntegration:
         self.integration_results: dict[str, Any] = {}
         self.performance_metrics: dict[str, Any] = {}
 
-    @secure_data_processing(encryption_level='high', data_validation=True)
-    @prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
-    @log_execution_time(cpu_threshold_percent=85.0, memory_threshold_gb=16.0)
-    @cached(chunk_size=5000, streaming_processing=True)
-    @log_call(log_intermediate_results=True, save_debug_artifacts=True)
-    @circuit_breaker(failure_threshold=3, recovery_timeout=600.0)
+    @secure_data_processing(encryption_level='high', data_validation = True)
+    @prevent_data_leakage(temporal_validation = True, lookahead_bias_prevention = True)
+    @log_execution_time(cpu_threshold_percent = 85.0, memory_threshold_gb = 16.0)
+    @cached(chunk_size = 5000, streaming_processing = True)
+    @log_call(log_intermediate_results = True, save_debug_artifacts = True)
+    @circuit_breaker(failure_threshold = 3, recovery_timeout = 600.0)
     @validates(required_files=[], data_quality_checks={'min_rows': 100})
     @quality_gate(model_performance_thresholds={}, data_quality_metrics={'completeness': 0.9})
-    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=None)
-    async def enhanced_gpu_matrix_operations(self, features_df: pd.DataFrame, target: pd.Series | None=None) -> tuple[pd.DataFrame, dict[str, Any]]:
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return = None)
+    async def enhanced_gpu_matrix_operations(self, features_df: pd.DataFrame, target: pd.Series | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
         """
         Apply enhanced matrix operations with GPU acceleration.
 
@@ -58,22 +59,22 @@ class EnhancedMatrixGPUIntegration:
             if self.gpu_accel.mps_available:
                 self.logger.info('📊 Applying GPU-accelerated matrix operations...')
                 features_array = features_df.values
-                U, S, Vt, svd_metadata = self.gpu_accel.gpu_svd_decomposition(features_array, k=50)
+                U, S, Vt, svd_metadata = self.gpu_accel.gpu_svd_decomposition(features_array, k = 50)
                 svd_features = U[:, :20]
                 svd_feature_names = [f'gpu_svd_component_{i + 1}' for i in range(svd_features.shape[1])]
-                svd_df = pd.DataFrame(svd_features, columns=svd_feature_names, index=features_df.index)
-                enhanced_df = pd.concat([enhanced_df, svd_df], axis=1)
+                svd_df = pd.DataFrame(svd_features, columns = svd_feature_names, index = features_df.index)
+                enhanced_df = pd.concat([enhanced_df, svd_df], axis = 1)
                 all_metadata['gpu_svd'] = svd_metadata
                 eigenvalues, eigenvectors, eigen_metadata = self.gpu_accel.gpu_eigenvalue_decomposition(np.corrcoef(features_array.T))
                 eigen_features = features_array @ eigenvectors[:, :15]
                 eigen_feature_names = [f'gpu_eigen_component_{i + 1}' for i in range(eigen_features.shape[1])]
-                eigen_df = pd.DataFrame(eigen_features, columns=eigen_feature_names, index=features_df.index)
-                enhanced_df = pd.concat([enhanced_df, eigen_df], axis=1)
+                eigen_df = pd.DataFrame(eigen_features, columns = eigen_feature_names, index = features_df.index)
+                enhanced_df = pd.concat([enhanced_df, eigen_df], axis = 1)
                 all_metadata['gpu_eigenvalue'] = eigen_metadata
                 if target is not None:
                     nn_predictions, nn_metadata = self.gpu_accel.gpu_neural_network_operations(features_array, target.values, hidden_layers=[100, 50])
-                    nn_df = pd.DataFrame(nn_predictions, columns=['gpu_nn_prediction'], index=features_df.index)
-                    enhanced_df = pd.concat([enhanced_df, nn_df], axis=1)
+                    nn_df = pd.DataFrame(nn_predictions, columns=['gpu_nn_prediction'], index = features_df.index)
+                    enhanced_df = pd.concat([enhanced_df, nn_df], axis = 1)
                     all_metadata['gpu_neural_network'] = nn_metadata
                 self.logger.info(f'✅ GPU operations completed: +{len(enhanced_df.columns) - len(features_df.columns)} features')
             else:
@@ -100,11 +101,11 @@ class EnhancedMatrixGPUIntegration:
             self.logger.exception(f'❌ Enhanced GPU Matrix Operations failed: {e}')
             return (features_df, {'error': str(e)})
 
-    @secure_data_processing(encryption_level='high', data_validation=True)
-    @cached(chunk_size=3000, streaming_processing=True)
-    @log_call(log_intermediate_results=True)
+    @secure_data_processing(encryption_level='high', data_validation = True)
+    @cached(chunk_size = 3000, streaming_processing = True)
+    @log_call(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={'completeness': 0.95})
-    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=None)
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return = None)
     async def gpu_optimized_training_pipeline(self, training_data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         GPU-optimized training pipeline with enhanced matrix operations.
@@ -133,8 +134,8 @@ class EnhancedMatrixGPUIntegration:
                     pipeline_metadata['gpu_batch_operations'] = batch_metadata
                     batch_features = np.column_stack(batch_results)
                     batch_feature_names = [f'gpu_batch_feature_{i + 1}' for i in range(batch_features.shape[1])]
-                    batch_df = pd.DataFrame(batch_features, columns=batch_feature_names, index=features_df.index)
-                    enhanced_data['features'] = pd.concat([enhanced_features, batch_df], axis=1)
+                    batch_df = pd.DataFrame(batch_features, columns = batch_feature_names, index = features_df.index)
+                    enhanced_data['features'] = pd.concat([enhanced_features, batch_df], axis = 1)
                 if target is not None:
                     self.logger.info('⚡ Applying GPU-optimized performance enhancements...')
                     optimized_features, opt_metadata = self.matrix_ops.optimization_algorithms(enhanced_data['features'], target)
@@ -150,12 +151,12 @@ class EnhancedMatrixGPUIntegration:
             self.logger.exception(f'❌ GPU-Optimized Training Pipeline failed: {e}')
             return (training_data, {'error': str(e)})
 
-    @secure_data_processing(encryption_level='medium', data_validation=True)
-    @cached(chunk_size=2000, streaming_processing=True)
-    @log_call(log_intermediate_results=True)
+    @secure_data_processing(encryption_level='medium', data_validation = True)
+    @cached(chunk_size = 2000, streaming_processing = True)
+    @log_call(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={'completeness': 0.9})
-    @handles_errors(exceptions=(ValueError, RuntimeError), default_return=None)
-    async def benchmark_gpu_vs_cpu(self, features_df: pd.DataFrame, target: pd.Series | None=None) -> dict[str, Any]:
+    @handles_errors(exceptions=(ValueError, RuntimeError), default_return = None)
+    async def benchmark_gpu_vs_cpu(self, features_df: pd.DataFrame, target: pd.Series | None = None) -> dict[str, Any]:
         """
         Benchmark GPU vs CPU performance for matrix operations.
 
@@ -181,10 +182,10 @@ class EnhancedMatrixGPUIntegration:
                 benchmark_results['benchmarks']['matrix_multiplication'] = {'cpu_time': cpu_time, 'gpu_time': gpu_time, 'speedup': cpu_time / gpu_time if gpu_time > 0 else 0, 'result_difference': result_diff, 'gpu_metadata': gpu_metadata}
             matrix = features_df.values[:500, :min(50, features_df.shape[1])]
             cpu_start = time.time()
-            U_cpu, S_cpu, Vt_cpu = np.linalg.svd(matrix, full_matrices=False)
+            U_cpu, S_cpu, Vt_cpu = np.linalg.svd(matrix, full_matrices = False)
             cpu_svd_time = time.time() - cpu_start
             if self.gpu_accel.mps_available:
-                U_gpu, S_gpu, Vt_gpu, gpu_metadata = self.gpu_accel.gpu_svd_decomposition(matrix, k=20)
+                U_gpu, S_gpu, Vt_gpu, gpu_metadata = self.gpu_accel.gpu_svd_decomposition(matrix, k = 20)
                 gpu_svd_time = gpu_metadata['processing_time']
                 s_diff = float(np.abs(S_cpu[:min(len(S_cpu), len(S_gpu))] - S_gpu).max())
                 benchmark_results['benchmarks']['svd_decomposition'] = {'cpu_time': cpu_svd_time, 'gpu_time': gpu_svd_time, 'speedup': cpu_svd_time / gpu_svd_time if gpu_svd_time > 0 else 0, 'singular_value_difference': s_diff, 'gpu_metadata': gpu_metadata}

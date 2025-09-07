@@ -3,15 +3,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from .core.domain import handle_specific_errors
-from .utils.logger import system_logger
+from src.utils.compat import handle_specific_errors
+from ..utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     initialization_error,
     invalid,
     missing,
 )
-from .core.decorators.errors import handles_errors
+from ..core.decorators import handles_errors
 import time
 
 # Model imports - uncomment when models are available

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 """
 Monitoring Integration Manager (minimal scaffold)
 
@@ -9,12 +11,10 @@ Coordinates monitoring components.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .core.decorators import log_execution_time
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
-from .core.decorators.errors import handles_errors
 import logging
 
 
@@ -39,13 +39,13 @@ class MonitoringIntegrationManager:
         self.is_integrated: bool = False
         self.integration_task: asyncio.Task | None = None
 
-    @log_execution_time(level=PerformanceLevel.DETAILED)
+    @log_execution_time(level = PerformanceLevel.DETAILED)
     @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),
             AttributeError: (False, "Missing integration parameters"),
         },
-        default_return=False,
+        default_return = False,
         context="monitoring_integration_manager.initialize",
     )
     async def initialize(self) -> bool:

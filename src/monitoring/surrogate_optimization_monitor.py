@@ -1,10 +1,11 @@
 
 from dataclasses import dataclass
+from ...utils.logger import system_logger
 '\nSurrogate Optimization Monitoring System\n\nThis module provides comprehensive monitoring capabilities for surrogate optimization:\n- Real-time performance tracking\n- Automated reporting\n- Performance alerts\n- Historical analysis\n- Dashboard integration\n'
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -61,7 +62,7 @@ class SurrogateOptimizationMonitor:
         """Start real-time monitoring thread."""
         if self.monitoring_thread is None or not self.monitoring_thread.is_alive():
             self.is_monitoring = True
-            self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+            self.monitoring_thread = threading.Thread(target = self._monitoring_loop, daemon = True)
             self.monitoring_thread.start()
             self.logger.info('Started real-time monitoring')
 
@@ -100,11 +101,11 @@ class SurrogateOptimizationMonitor:
         if metrics.actual_score is not None:
             accuracy = self._calculate_surrogate_accuracy(metrics)
             if accuracy < self.alert_thresholds['surrogate_accuracy_threshold']:
-                alerts.append(PerformanceAlert(timestamp=time.time(), alert_type='low_surrogate_accuracy', severity='warning', message=f'Low surrogate accuracy: {accuracy:.3f}', metrics={'accuracy': accuracy, 'trial_id': metrics.trial_id}))
+                alerts.append(PerformanceAlert(timestamp = time.time(), alert_type='low_surrogate_accuracy', severity='warning', message = f'Low surrogate accuracy: {accuracy:.3f}', metrics={'accuracy': accuracy, 'trial_id': metrics.trial_id}))
         if metrics.training_time > self.alert_thresholds['training_time_threshold']:
-            alerts.append(PerformanceAlert(timestamp=time.time(), alert_type='slow_training', severity='warning', message=f'Slow training time: {metrics.training_time:.2f}s', metrics={'training_time': metrics.training_time, 'trial_id': metrics.trial_id}))
+            alerts.append(PerformanceAlert(timestamp = time.time(), alert_type='slow_training', severity='warning', message = f'Slow training time: {metrics.training_time:.2f}s', metrics={'training_time': metrics.training_time, 'trial_id': metrics.trial_id}))
         if metrics.memory_usage > self.alert_thresholds['memory_usage_threshold']:
-            alerts.append(PerformanceAlert(timestamp=time.time(), alert_type='high_memory_usage', severity='critical', message=f'High memory usage: {metrics.memory_usage:.1%}', metrics={'memory_usage': metrics.memory_usage, 'trial_id': metrics.trial_id}))
+            alerts.append(PerformanceAlert(timestamp = time.time(), alert_type='high_memory_usage', severity='critical', message = f'High memory usage: {metrics.memory_usage:.1%}', metrics={'memory_usage': metrics.memory_usage, 'trial_id': metrics.trial_id}))
         for alert in alerts:
             self.alerts.append(alert)
             self.logger.warning(f'Alert: {alert.message}')
@@ -128,7 +129,7 @@ class SurrogateOptimizationMonitor:
         if len(recent_scores) >= 5:
             improvement = max(recent_scores) - min(recent_scores)
             if improvement < 0.001:
-                stall_alert = PerformanceAlert(timestamp=time.time(), alert_type='convergence_stall', severity='warning', message='Possible convergence stall detected', metrics={'improvement': improvement, 'trials_checked': len(recent_scores)})
+                stall_alert = PerformanceAlert(timestamp = time.time(), alert_type='convergence_stall', severity='warning', message='Possible convergence stall detected', metrics={'improvement': improvement, 'trials_checked': len(recent_scores)})
                 self.alerts.append(stall_alert)
                 self.logger.warning('Convergence stall detected')
 
@@ -184,7 +185,7 @@ class SurrogateOptimizationMonitor:
         factors.append(cost_efficiency)
         return np.mean(factors)
 
-    def generate_performance_report(self, filepath: str | None=None) -> str:
+    def generate_performance_report(self, filepath: str | None = None) -> str:
         """Generate comprehensive performance report."""
         summary = self.get_performance_summary()
         report_lines = ['=' * 80, 'SURROGATE OPTIMIZATION PERFORMANCE REPORT', '=' * 80, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", '', 'PERFORMANCE SUMMARY:', f"  Total Trials: {summary.get('total_trials', 0)}", f"  Expensive Evaluations: {summary.get('expensive_evaluations', 0)}", f"  Surrogate Evaluations: {summary.get('surrogate_evaluations', 0)}", f"  Expensive Evaluation Ratio: {summary.get('expensive_evaluation_ratio', 0):.2%}", f"  Total Time: {summary.get('total_time', 0):.2f}s", '', 'ACCURACY METRICS:', f"  Average Surrogate Accuracy: {summary.get('avg_surrogate_accuracy', 0):.3f}", f"  Best Score Achieved: {summary.get('best_score', 0):.4f}", f"  Convergence Rate: {summary.get('convergence_rate', 0):.4f}", f"  Average Uncertainty: {summary.get('avg_uncertainty', 0):.3f}", '', 'TIMING METRICS:', f"  Average Training Time: {summary.get('avg_training_time', 0):.3f}s", f"  Average Prediction Time: {summary.get('avg_prediction_time', 0):.3f}s", '', 'EFFICIENCY METRICS:', f"  Overall Performance Efficiency: {summary.get('performance_efficiency', 0):.3f}", '', 'ALERTS:', f"  Total Alerts: {summary.get('alerts_count', 0)}"]
@@ -199,7 +200,7 @@ class SurrogateOptimizationMonitor:
             self.logger.info(f'Performance report saved to {filepath}')
         return report
 
-    def create_performance_visualizations(self, save_dir: str | None=None) -> dict[str, plt.Figure]:
+    def create_performance_visualizations(self, save_dir: str | None = None) -> dict[str, plt.Figure]:
         """Create performance visualization plots."""
         if not self.metrics_history:
             return {}
@@ -207,35 +208,35 @@ class SurrogateOptimizationMonitor:
         sns.set_palette('husl')
         figures = {}
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('Surrogate Optimization Performance Analysis', fontsize=16)
+        fig.suptitle('Surrogate Optimization Performance Analysis', fontsize = 16)
         scores = [m.actual_score or m.surrogate_score for m in self.metrics_history]
         trial_ids = [m.trial_id for m in self.metrics_history]
-        axes[0, 0].plot(trial_ids, scores, 'b-', alpha=0.7, linewidth=2)
+        axes[0, 0].plot(trial_ids, scores, 'b-', alpha = 0.7, linewidth = 2)
         axes[0, 0].set_title('Score Progression')
         axes[0, 0].set_xlabel('Trial ID')
         axes[0, 0].set_ylabel('Score')
-        axes[0, 0].grid(True, alpha=0.3)
+        axes[0, 0].grid(True, alpha = 0.3)
         uncertainties = [m.uncertainty for m in self.metrics_history]
-        axes[0, 1].plot(trial_ids, uncertainties, 'r-', alpha=0.7, linewidth=2)
+        axes[0, 1].plot(trial_ids, uncertainties, 'r-', alpha = 0.7, linewidth = 2)
         axes[0, 1].set_title('Uncertainty Progression')
         axes[0, 1].set_xlabel('Trial ID')
         axes[0, 1].set_ylabel('Uncertainty')
-        axes[0, 1].grid(True, alpha=0.3)
+        axes[0, 1].grid(True, alpha = 0.3)
         eval_types = [m.evaluation_type for m in self.metrics_history]
         expensive_count = eval_types.count('expensive')
         surrogate_count = eval_types.count('surrogate')
-        axes[1, 0].pie([expensive_count, surrogate_count], labels=['Expensive', 'Surrogate'], autopct='%1.1f%%', startangle=90)
+        axes[1, 0].pie([expensive_count, surrogate_count], labels=['Expensive', 'Surrogate'], autopct='%1.1f%%', startangle = 90)
         axes[1, 0].set_title('Evaluation Type Distribution')
         training_times = [m.training_time for m in self.metrics_history]
-        axes[1, 1].hist(training_times, bins=20, alpha=0.7, color='green')
+        axes[1, 1].hist(training_times, bins = 20, alpha = 0.7, color='green')
         axes[1, 1].set_title('Training Time Distribution')
         axes[1, 1].set_xlabel('Training Time (s)')
         axes[1, 1].set_ylabel('Frequency')
-        axes[1, 1].grid(True, alpha=0.3)
+        axes[1, 1].grid(True, alpha = 0.3)
         plt.tight_layout()
         figures['performance_analysis'] = fig
         fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-        fig.suptitle('Surrogate Accuracy Analysis', fontsize=16)
+        fig.suptitle('Surrogate Accuracy Analysis', fontsize = 16)
         accuracy_metrics = []
         accuracy_trials = []
         for _i, metrics in enumerate(self.metrics_history):
@@ -244,37 +245,37 @@ class SurrogateOptimizationMonitor:
                 accuracy_metrics.append(accuracy)
                 accuracy_trials.append(metrics.trial_id)
         if accuracy_metrics:
-            axes[0].plot(accuracy_trials, accuracy_metrics, 'g-', alpha=0.7, linewidth=2)
-            axes[0].axhline(y=self.alert_thresholds['surrogate_accuracy_threshold'], color='r', linestyle='--', alpha=0.7, label='Threshold')
+            axes[0].plot(accuracy_trials, accuracy_metrics, 'g-', alpha = 0.7, linewidth = 2)
+            axes[0].axhline(y = self.alert_thresholds['surrogate_accuracy_threshold'], color='r', linestyle='--', alpha = 0.7, label='Threshold')
             axes[0].set_title('Surrogate Accuracy Over Time')
             axes[0].set_xlabel('Trial ID')
             axes[0].set_ylabel('Accuracy')
             axes[0].legend()
-            axes[0].grid(True, alpha=0.3)
+            axes[0].grid(True, alpha = 0.3)
         if accuracy_metrics:
-            axes[1].hist(accuracy_metrics, bins=15, alpha=0.7, color='orange')
-            axes[1].axvline(x=self.alert_thresholds['surrogate_accuracy_threshold'], color='r', linestyle='--', alpha=0.7, label='Threshold')
+            axes[1].hist(accuracy_metrics, bins = 15, alpha = 0.7, color='orange')
+            axes[1].axvline(x = self.alert_thresholds['surrogate_accuracy_threshold'], color='r', linestyle='--', alpha = 0.7, label='Threshold')
             axes[1].set_title('Surrogate Accuracy Distribution')
             axes[1].set_xlabel('Accuracy')
             axes[1].set_ylabel('Frequency')
             axes[1].legend()
-            axes[1].grid(True, alpha=0.3)
+            axes[1].grid(True, alpha = 0.3)
         plt.tight_layout()
         figures['accuracy_analysis'] = fig
         if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
+            os.makedirs(save_dir, exist_ok = True)
             for name, fig in figures.items():
                 filepath = os.path.join(save_dir, f'{name}.png')
-                fig.savefig(filepath, dpi=300, bbox_inches='tight')
+                fig.savefig(filepath, dpi = 300, bbox_inches='tight')
                 self.logger.info(f'Saved visualization: {filepath}')
         return figures
 
-    def get_recent_alerts(self, hours: int=24) -> list[PerformanceAlert]:
+    def get_recent_alerts(self, hours: int = 24) -> list[PerformanceAlert]:
         """Get alerts from the last N hours."""
         cutoff_time = time.time() - hours * 3600
         return [alert for alert in self.alerts if alert.timestamp >= cutoff_time]
 
-    def clear_old_metrics(self, days: int=7) -> None:
+    def clear_old_metrics(self, days: int = 7) -> None:
         """Clear metrics older than N days."""
         cutoff_time = time.time() - days * 24 * 3600
         self.metrics_history = [metrics for metrics in self.metrics_history if metrics.timestamp >= cutoff_time]
@@ -289,14 +290,14 @@ class SurrogateOptimizationMonitor:
         for metrics in self.metrics_history:
             data.append(asdict(metrics))
         df = pd.DataFrame(data)
-        df.to_csv(filepath, index=False)
+        df.to_csv(filepath, index = False)
         self.logger.info(f'Exported {len(data)} metrics to {filepath}')
 
     def stop_monitoring(self) -> None:
         """Stop real-time monitoring."""
         self.is_monitoring = False
         if self.monitoring_thread and self.monitoring_thread.is_alive():
-            self.monitoring_thread.join(timeout=5.0)
+            self.monitoring_thread.join(timeout = 5.0)
         self.logger.info('Stopped real-time monitoring')
 
     def __del__(self) -> None:

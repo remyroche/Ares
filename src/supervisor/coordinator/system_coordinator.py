@@ -1,4 +1,6 @@
+from ..core.decorators import handles_errors
 """
+from ...utils.logger import system_logger
 System Coordinator Module.
 
 This is the main coordinator that orchestrates all the coordinator components
@@ -10,9 +12,8 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .core.decorators import handles_errors
-from .core.domain import handle_specific_errors
-from .utils.logger import system_logger
+from src.utils.compat import handle_specific_errors
+from ...utils.logger import system_logger
 from .utils.warning_symbols import error, failed
 from .supervisor.enhanced_prediction_service import EnhancedPredictionService
 
@@ -86,7 +87,7 @@ class SystemCoordinator:
             AttributeError: (False, "Missing required supervisor parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="supervisor initialization",
     )
     async def initialize(self) -> bool:
@@ -144,8 +145,8 @@ class SystemCoordinator:
         
         for component in component_names:
             self.circuit_breakers[component] = CircuitBreaker(
-                failure_threshold=self.supervisor_config.get("circuit_breaker_threshold", 5),
-                timeout=self.supervisor_config.get("circuit_breaker_timeout", 60)
+                failure_threshold = self.supervisor_config.get("circuit_breaker_threshold", 5),
+                timeout = self.supervisor_config.get("circuit_breaker_timeout", 60)
             )
         
         self.logger.info("Circuit breakers configured for all components")
@@ -168,7 +169,7 @@ class SystemCoordinator:
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
-        default_return=False,
+        default_return = False,
         context="supervisor run",
     )
     async def run(self) -> bool:

@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
 from copy import copy
 from typing import Dict, List, Optional, Union, Any, Tuple
+from ...utils.logger import system_logger
+from .core.decorators import handles_errors
 '\nEnhanced S/R Detection Optimization Module\n\nThis module implements comprehensive optimization strategies for S/R detection\nspecifically optimized for 1-30m timeframes. It includes:\n\n1. Multi-Method Ensemble Optimization\n2. Advanced Strength Scoring Optimization\n3. Multi-Timeframe Confluence Optimization\n4. Advanced S/R Method Optimization\n5. DBSCAN Clustering Optimization with real data testing\n6. Timeframe-specific parameter optimization\n\nThe optimized parameters are then used by the main S/R predictor.\n'
 import json
 import warnings
@@ -24,12 +26,12 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
     print('Warning: sklearn not available, clustering optimization disabled')
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_levels.sr_regime_optimizer import SRRegimeOptimizer
 from src.tactician.sr_levels.sr_ml_enhancer import SRMLEnhancer
 from src.tactician.sr_levels.sr_computational_optimizer import SRComputationalOptimizer
 from src.tactician.sr_levels.sr_breakout_predictor_enhanced import EnhancedSRBreakoutPredictor
-from src.utils.logger import system_logger
+from ...utils.logger import system_logger
 from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
 from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError, SRConfigurationError, validate_sr_data, validate_sr_parameters, handle_sr_error
 if TYPE_CHECKING:
@@ -40,11 +42,11 @@ import time
 @dataclass
 class OptimizationResult:
     """Result of S/R detection optimization."""
-    method_weights: dict[str, float] = field(default_factory=dict)
-    strength_weights: dict[str, float] = field(default_factory=dict)
-    dbscan_params: dict[str, Any] = field(default_factory=dict)
-    timeframe_weights: dict[str, float] = field(default_factory=dict)
-    advanced_params: dict[str, Any] = field(default_factory=dict)
+    method_weights: dict[str, float] = field(default_factory = dict)
+    strength_weights: dict[str, float] = field(default_factory = dict)
+    dbscan_params: dict[str, Any] = field(default_factory = dict)
+    timeframe_weights: dict[str, float] = field(default_factory = dict)
+    advanced_params: dict[str, Any] = field(default_factory = dict)
     optimization_score: float = 0.0
     sharpe_ratio: float = 0.0
     win_rate: float = 0.0
@@ -141,7 +143,7 @@ class SRDetectionOptimizer:
         self.performance_thresholds = {'min_sr_validation_score': self.sr_config.performance_thresholds.min_sr_validation_score, 'min_bounce_rate': self.sr_config.performance_thresholds.min_bounce_rate, 'max_false_breakout_rate': self.sr_config.performance_thresholds.max_false_breakout_rate, 'min_volume_confirmation': self.sr_config.performance_thresholds.min_volume_confirmation, 'min_level_detection_accuracy': self.sr_config.performance_thresholds.min_level_detection_accuracy}
         self.parameter_ranges = self.sr_config.parameter_ranges
 
-    @sr_error_handler(exceptions=(SRConfigurationError, SRDataError, AttributeError), default_return=False, context='S/R detection optimizer initialization', max_retries=2, retry_delay=1.0)
+    @sr_error_handler(exceptions=(SRConfigurationError, SRDataError, AttributeError), default_return = False, context='S/R detection optimizer initialization', max_retries = 2, retry_delay = 1.0)
     async def initialize(self) -> bool:
         """Initialize the S/R detection optimizer with enhancements."""
         try:
@@ -200,9 +202,9 @@ class SRDetectionOptimizer:
             self.logger.exception(f'Configuration validation failed: {e}')
             return False
 
-    @handles_errors(error_handlers={ValueError: (None, 'Invalid data for optimization'), AttributeError: (None, 'Optimizer not properly initialized')}, default_return=None, context='comprehensive S/R optimization')
-    @sr_error_handler(exceptions=(SROptimizationError, SRDataError, ValueError), default_return=None, context='S/R detection optimization', max_retries=1, retry_delay=2.0)
-    async def optimize_sr_detection(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None=None, target_data: pd.Series | None=None, target_timeframe: str='15m') -> OptimizationResult | None:
+    @handles_errors(error_handlers={ValueError: (None, 'Invalid data for optimization'), AttributeError: (None, 'Optimizer not properly initialized')}, default_return = None, context='comprehensive S/R optimization')
+    @sr_error_handler(exceptions=(SROptimizationError, SRDataError, ValueError), default_return = None, context='S/R detection optimization', max_retries = 1, retry_delay = 2.0)
+    async def optimize_sr_detection(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None = None, target_data: pd.Series | None = None, target_timeframe: str='15m') -> OptimizationResult | None:
         """
         Run comprehensive S/R detection optimization for specific timeframe.
 
@@ -253,7 +255,7 @@ class SRDetectionOptimizer:
             self.logger.exception(f'Optimization failed: {e}')
             return None
 
-    async def optimize_sr_detection_enhanced(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None=None, target_data: pd.Series | None=None, target_timeframe: str='15m') -> OptimizationResult | None:
+    async def optimize_sr_detection_enhanced(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] | None = None, target_data: pd.Series | None = None, target_timeframe: str='15m') -> OptimizationResult | None:
         """Enhanced S/R detection optimization with ML, regime optimization, and computational efficiency."""
         try:
             self.logger.info(f'🚀 Starting enhanced S/R optimization for {target_timeframe}')
@@ -382,7 +384,7 @@ class SRDetectionOptimizer:
                 score = await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
                 if score > best_score:
                     best_score = score
-                    best_result = OptimizationResult(method_weights=self._extract_method_weights(params), strength_weights=self._extract_strength_weights(params), dbscan_params=self._extract_dbscan_params(params), timeframe_weights=self._extract_timeframe_weights(params), advanced_params=self._extract_advanced_params(params), optimization_score=score, n_trials=i + 1, best_trial_number=i, optimization_method='basic_grid_search', timeframe_optimized=target_timeframe)
+                    best_result = OptimizationResult(method_weights = self._extract_method_weights(params), strength_weights = self._extract_strength_weights(params), dbscan_params = self._extract_dbscan_params(params), timeframe_weights = self._extract_timeframe_weights(params), advanced_params = self._extract_advanced_params(params), optimization_score = score, n_trials = i + 1, best_trial_number = i, optimization_method='basic_grid_search', timeframe_optimized = target_timeframe)
                 if i % 10 == 0:
                     self.logger.info(f'Basic optimization progress: {i}/{min(len(param_ranges), self.n_trials)}')
             return best_result
@@ -464,7 +466,7 @@ class SRDetectionOptimizer:
             await self._update_sr_predictor_params(params)
             cv_scores = []
             if len(training_data) >= self.cv_folds * 50:
-                tscv = TimeSeriesSplit(n_splits=self.cv_folds)
+                tscv = TimeSeriesSplit(n_splits = self.cv_folds)
                 for train_idx, val_idx in tscv.split(training_data):
                     val_data = training_data.iloc[val_idx]
                     current_price = val_data['close'].iloc[-1]
@@ -523,23 +525,23 @@ class SRDetectionOptimizer:
         try:
             indicators = {}
             if 'volume' in data.columns:
-                indicators['volume_ma_20'] = data['volume'].rolling(window=20).mean()
-                indicators['volume_ma_50'] = data['volume'].rolling(window=50).mean()
+                indicators['volume_ma_20'] = data['volume'].rolling(window = 20).mean()
+                indicators['volume_ma_50'] = data['volume'].rolling(window = 50).mean()
             if 'close' in data.columns:
-                indicators['sma_20'] = data['close'].rolling(window=20).mean()
-                indicators['sma_50'] = data['close'].rolling(window=50).mean()
-                indicators['ema_12'] = data['close'].ewm(span=12).mean()
-                indicators['ema_26'] = data['close'].ewm(span=26).mean()
+                indicators['sma_20'] = data['close'].rolling(window = 20).mean()
+                indicators['sma_50'] = data['close'].rolling(window = 50).mean()
+                indicators['ema_12'] = data['close'].ewm(span = 12).mean()
+                indicators['ema_26'] = data['close'].ewm(span = 26).mean()
             if all((col in data.columns for col in ['high', 'low', 'close'])):
                 high_low = data['high'] - data['low']
                 high_close = np.abs(data['high'] - data['close'].shift())
                 low_close = np.abs(data['low'] - data['close'].shift())
                 true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-                indicators['atr_14'] = true_range.rolling(window=14).mean()
+                indicators['atr_14'] = true_range.rolling(window = 14).mean()
             if 'close' in data.columns:
                 delta = data['close'].diff()
-                gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                gain = delta.where(delta > 0, 0).rolling(window = 14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
                 rs = gain / loss
                 indicators['rsi_14'] = 100 - 100 / (1 + rs)
             return indicators
@@ -661,7 +663,7 @@ class SRDetectionOptimizer:
             if not all_levels:
                 return 0.0
             current_price = market_data['close'].iloc[-1]
-            optimization_result = await optimizer.optimize_parameters(market_data=market_data, sr_levels=all_levels)
+            optimization_result = await optimizer.optimize_parameters(market_data = market_data, sr_levels = all_levels)
             if not optimization_result:
                 return 0.0
             performance_score = self._calculate_timeframe_specific_score(optimization_result, target_timeframe)
@@ -924,7 +926,7 @@ class SRDetectionOptimizer:
         values = list(param_ranges.values())
         combinations = []
         for combination in itertools.product(*values):
-            params = dict(zip(keys, combination, strict=False))
+            params = dict(zip(keys, combination, strict = False))
             method_weights = [params['fractal_weight'], params['volume_weight'], params['pivot_weight'], params['atr_weight']]
             total_weight = sum(method_weights)
             if total_weight > 0:
@@ -954,7 +956,7 @@ class SRDetectionOptimizer:
         try:
             results = {'best_result': self.best_result.to_dict() if self.best_result else None, 'all_results': [r.to_dict() for r in self.optimization_results], 'optimization_history': self.optimization_history, 'config': self.config}
             with open(filepath, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+                json.dump(results, f, indent = 2, default = str)
             self.logger.info(f'✅ Optimization results saved to {filepath}')
             return True
         except Exception as e:

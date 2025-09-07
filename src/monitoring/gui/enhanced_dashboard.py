@@ -1,10 +1,11 @@
 """
+from ...utils.logger import system_logger
 Enhanced Monitoring Dashboard with Visualization
 
 A comprehensive GUI dashboard that combines data display and visualization
 for enhanced ML monitoring with HMM regime analysis.
 """
-from .utils.logger import system_logger
+from ...utils.logger import system_logger
 from .monitoring_dashboard import MonitoringDashboard
 from .data_visualization import MonitoringVisualization, VisualizationControlPanel
 import logging
@@ -29,36 +30,36 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         """Create the enhanced trade decisions tab with visualization."""
         self.trade_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.trade_frame, text='Trade Decisions')
-        paned_window = ttk.PanedWindow(self.trade_frame, orient=tk.HORIZONTAL)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        paned_window = ttk.PanedWindow(self.trade_frame, orient = tk.HORIZONTAL)
+        paned_window.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         left_frame = ttk.Frame(paned_window)
-        paned_window.add(left_frame, weight=1)
+        paned_window.add(left_frame, weight = 1)
         right_frame = ttk.Frame(paned_window)
-        paned_window.add(right_frame, weight=1)
+        paned_window.add(right_frame, weight = 1)
         toolbar = ttk.Frame(left_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Trade Data', command=self._load_trade_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Filter', command=self._show_trade_filter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Export', command=self._export_trade_data).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Trade Data', command = self._load_trade_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Filter', command = self._show_trade_filter).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Export', command = self._export_trade_data).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(left_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.trade_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.trade_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.trade_tree.xview)
-        self.trade_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.trade_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.trade_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.trade_tree.xview)
+        self.trade_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.trade_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.trade_tree['columns'] = ('timestamp', 'token', 'action', 'price', 'confidence', 'regime')
         self.trade_tree['show'] = 'headings'
         for col in self.trade_tree['columns']:
-            self.trade_tree.heading(col, text=col.title())
-            self.trade_tree.column(col, width=100)
+            self.trade_tree.heading(col, text = col.title())
+            self.trade_tree.column(col, width = 100)
         self.visualization_frame = ttk.Frame(right_frame)
-        self.visualization_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.visualization_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.visualization_controls = VisualizationControlPanel(self.visualization_frame, None)
         viz_container = ttk.Frame(self.visualization_frame)
-        viz_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_container.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.visualization = MonitoringVisualization(viz_container)
         self.visualization_controls.visualization = self.visualization
 
@@ -66,36 +67,36 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         """Create the enhanced daily summary tab with visualization."""
         self.summary_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.summary_frame, text='Daily Summary')
-        paned_window = ttk.PanedWindow(self.summary_frame, orient=tk.HORIZONTAL)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        paned_window = ttk.PanedWindow(self.summary_frame, orient = tk.HORIZONTAL)
+        paned_window.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         left_frame = ttk.Frame(paned_window)
-        paned_window.add(left_frame, weight=1)
+        paned_window.add(left_frame, weight = 1)
         right_frame = ttk.Frame(paned_window)
-        paned_window.add(right_frame, weight=1)
+        paned_window.add(right_frame, weight = 1)
         toolbar = ttk.Frame(left_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Summary Data', command=self._load_summary_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Date Range', command=self._show_date_range).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Export', command=self._export_summary_data).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Summary Data', command = self._load_summary_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Date Range', command = self._show_date_range).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Export', command = self._export_summary_data).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(left_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.summary_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.summary_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.summary_tree.xview)
-        self.summary_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.summary_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.summary_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.summary_tree.xview)
+        self.summary_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.summary_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.summary_tree['columns'] = ('date', 'total_trades', 'long_trades', 'short_trades', 'dominant_regime', 'total_pnl', 'win_rate', 'profit_factor')
         self.summary_tree['show'] = 'headings'
         for col in self.summary_tree['columns']:
-            self.summary_tree.heading(col, text=col.replace('_', ' ').title())
-            self.summary_tree.column(col, width=120)
+            self.summary_tree.heading(col, text = col.replace('_', ' ').title())
+            self.summary_tree.column(col, width = 120)
         viz_container = ttk.Frame(right_frame)
-        viz_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_container.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         viz_controls = VisualizationControlPanel(viz_container, None)
         viz_plot_frame = ttk.Frame(viz_container)
-        viz_plot_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_plot_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.summary_visualization = MonitoringVisualization(viz_plot_frame)
         viz_controls.visualization = self.summary_visualization
 
@@ -103,35 +104,35 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         """Create the enhanced regime analysis tab with visualization."""
         self.regime_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.regime_frame, text='Regime Analysis')
-        paned_window = ttk.PanedWindow(self.regime_frame, orient=tk.HORIZONTAL)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        paned_window = ttk.PanedWindow(self.regime_frame, orient = tk.HORIZONTAL)
+        paned_window.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         left_frame = ttk.Frame(paned_window)
-        paned_window.add(left_frame, weight=1)
+        paned_window.add(left_frame, weight = 1)
         right_frame = ttk.Frame(paned_window)
-        paned_window.add(right_frame, weight=1)
+        paned_window.add(right_frame, weight = 1)
         toolbar = ttk.Frame(left_frame)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text='Load Regime Data', command=self._load_regime_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text='Regime Filter', command=self._show_regime_filter).pack(side=tk.LEFT, padx=5)
+        toolbar.pack(fill = tk.X, padx = 5, pady = 5)
+        ttk.Button(toolbar, text='Load Regime Data', command = self._load_regime_data).pack(side = tk.LEFT, padx = 5)
+        ttk.Button(toolbar, text='Regime Filter', command = self._show_regime_filter).pack(side = tk.LEFT, padx = 5)
         tree_frame = ttk.Frame(left_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.regime_tree = ttk.Treeview(tree_frame)
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.regime_tree.yview)
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.regime_tree.xview)
-        self.regime_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        self.regime_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.VERTICAL, command = self.regime_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient = tk.HORIZONTAL, command = self.regime_tree.xview)
+        self.regime_tree.configure(yscrollcommand = v_scrollbar.set, xscrollcommand = h_scrollbar.set)
+        self.regime_tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = True)
+        v_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
+        h_scrollbar.pack(side = tk.BOTTOM, fill = tk.X)
         self.regime_tree['columns'] = ('regime_id', 'regime_name', 'probability', 'stability', 'duration', 'trade_count', 'avg_pnl', 'win_rate')
         self.regime_tree['show'] = 'headings'
         for col in self.regime_tree['columns']:
-            self.regime_tree.heading(col, text=col.replace('_', ' ').title())
-            self.regime_tree.column(col, width=120)
+            self.regime_tree.heading(col, text = col.replace('_', ' ').title())
+            self.regime_tree.column(col, width = 120)
         viz_container = ttk.Frame(right_frame)
-        viz_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_container.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         viz_controls = VisualizationControlPanel(viz_container, None)
         viz_plot_frame = ttk.Frame(viz_container)
-        viz_plot_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_plot_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.regime_visualization = MonitoringVisualization(viz_plot_frame)
         viz_controls.visualization = self.regime_visualization
 
@@ -139,23 +140,23 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
         """Create the enhanced statistics tab with visualization."""
         stats_frame = ttk.Frame(self.notebook)
         self.notebook.add(stats_frame, text='Statistics & Analytics')
-        paned_window = ttk.PanedWindow(stats_frame, orient=tk.VERTICAL)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        paned_window = ttk.PanedWindow(stats_frame, orient = tk.VERTICAL)
+        paned_window.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         top_frame = ttk.Frame(paned_window)
-        paned_window.add(top_frame, weight=1)
+        paned_window.add(top_frame, weight = 1)
         bottom_frame = ttk.Frame(paned_window)
-        paned_window.add(bottom_frame, weight=2)
-        stats_text = tk.Text(top_frame, wrap=tk.WORD, font=('Courier', 10))
-        stats_scrollbar = ttk.Scrollbar(top_frame, orient=tk.VERTICAL, command=stats_text.yview)
-        stats_text.configure(yscrollcommand=stats_scrollbar.set)
-        stats_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        paned_window.add(bottom_frame, weight = 2)
+        stats_text = tk.Text(top_frame, wrap = tk.WORD, font=('Courier', 10))
+        stats_scrollbar = ttk.Scrollbar(top_frame, orient = tk.VERTICAL, command = stats_text.yview)
+        stats_text.configure(yscrollcommand = stats_scrollbar.set)
+        stats_text.pack(side = tk.LEFT, fill = tk.BOTH, expand = True, padx = 5, pady = 5)
+        stats_scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
         self.stats_text = stats_text
         viz_container = ttk.Frame(bottom_frame)
-        viz_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_container.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         viz_controls = VisualizationControlPanel(viz_container, None)
         viz_plot_frame = ttk.Frame(viz_container)
-        viz_plot_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        viz_plot_frame.pack(fill = tk.BOTH, expand = True, padx = 5, pady = 5)
         self.stats_visualization = MonitoringVisualization(viz_plot_frame)
         viz_controls.visualization = self.stats_visualization
 
@@ -168,7 +169,7 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
                 for mode, df in self.trade_data.items():
                     all_data.append(df)
                 if all_data:
-                    df = pd.concat(all_data, ignore_index=True)
+                    df = pd.concat(all_data, ignore_index = True)
                     self.visualization.set_trade_data(df)
                     self.visualization.plot_trade_performance()
             elif self.current_mode in self.trade_data:
@@ -184,7 +185,7 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
                 for mode, df in self.daily_summary_data.items():
                     all_data.append(df)
                 if all_data:
-                    df = pd.concat(all_data, ignore_index=True)
+                    df = pd.concat(all_data, ignore_index = True)
                     self.summary_visualization.set_daily_summary_data(df)
                     self.summary_visualization.plot_daily_summary()
             elif self.current_mode in self.daily_summary_data:
@@ -200,7 +201,7 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
                 for mode, df in self.trade_data.items():
                     all_data.append(df)
                 if all_data:
-                    df = pd.concat(all_data, ignore_index=True)
+                    df = pd.concat(all_data, ignore_index = True)
                     self.regime_visualization.set_trade_data(df)
                     self.regime_visualization.plot_regime_analysis()
             elif self.current_mode in self.trade_data:
@@ -216,13 +217,13 @@ class EnhancedMonitoringDashboard(MonitoringDashboard):
                 for mode, df in self.trade_data.items():
                     all_trade_data.append(df)
                 if all_trade_data:
-                    df = pd.concat(all_trade_data, ignore_index=True)
+                    df = pd.concat(all_trade_data, ignore_index = True)
                     self.stats_visualization.set_trade_data(df)
                 all_summary_data = []
                 for mode, df in self.daily_summary_data.items():
                     all_summary_data.append(df)
                 if all_summary_data:
-                    df = pd.concat(all_summary_data, ignore_index=True)
+                    df = pd.concat(all_summary_data, ignore_index = True)
                     self.stats_visualization.set_daily_summary_data(df)
             else:
                 if self.current_mode in self.trade_data:

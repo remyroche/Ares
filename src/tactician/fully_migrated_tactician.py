@@ -1,13 +1,21 @@
 
 import pandas as pd
-'\nFully Migrated Tactician\n\nThis module implements a complete migration to the enhanced scenario-based prediction system,\nreplacing the old multi-output system entirely. All decision logic is now based on\nfractal scenario analysis with comprehensive technical indicators.\n'
 import logging
-from datetime import datetime
-from typing import Any
-from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
-from .core.decorators.errors import handles_errors
 import numpy as np
 import time
+from datetime import datetime
+from typing import Any, Callable
+
+from ..core.decorators import handles_errors
+from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+
+"""
+Fully Migrated Tactician
+
+This module implements a complete migration to the enhanced scenario-based prediction system,
+replacing the old multi-output system entirely. All decision logic is now based on
+fractal scenario analysis with comprehensive technical indicators.
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +108,7 @@ class FullyMigratedTactician:
             return False
 
     @handles_errors
-    async def generate_predictions(self, market_data: pd.DataFrame, analyst_barriers: dict[str, float], symbol: str, timeframe: str, analyst_confidence: float=0.5) -> dict[str, Any]:
+    async def generate_predictions(self, market_data: pd.DataFrame, analyst_barriers: dict[str, float], symbol: str, timeframe: str, analyst_confidence: float = 0.5) -> dict[str, Any]:
         """
         Generate predictions using only enhanced scenario analysis.
 

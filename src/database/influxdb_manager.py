@@ -44,11 +44,11 @@ class InfluxDBManager:
         self.bucket = bucket
 
         self.client = influxdb_client.InfluxDBClient(
-            url=self.url,
-            token=self.token,
-            org=self.org,
+            url = self.url,
+            token = self.token,
+            org = self.org,
         )
-        self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
+        self.write_api = self.client.write_api(write_options = SYNCHRONOUS)
         self.query_api = self.client.query_api()
         self.logger = logger.getChild("InfluxDBManager")
         self.logger.info("InfluxDBManager initialized with synchronous client.")
@@ -83,9 +83,9 @@ class InfluxDBManager:
                 df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce")
 
         self.write_api.write(
-            bucket=self.bucket,
-            record=df_copy,
-            data_frame_measurement_name=measurement_name,
+            bucket = self.bucket,
+            record = df_copy,
+            data_frame_measurement_name = measurement_name,
             data_frame_tag_columns=["symbol", "interval"],
         )
         self.logger.info(
@@ -120,11 +120,11 @@ class InfluxDBManager:
         |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
         |> rename(columns: {{_time: "timestamp"}})
         """
-        df = self.query_api.query_data_frame(query, org=self.org)
+        df = self.query_api.query_data_frame(query, org = self.org)
         if isinstance(df, list):
             if not df:
                 return pd.DataFrame()
-            df = pd.concat(df, ignore_index=True)
+            df = pd.concat(df, ignore_index = True)
 
         if df.empty:
             return pd.DataFrame()

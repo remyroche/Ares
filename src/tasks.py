@@ -2,10 +2,10 @@ import asyncio
 import os
 from celery import Celery
 from celery.schedules import crontab
-from ares_pipeline import AresPipeline
-from sqlite_manager import SQLiteManager
-from src.training.managers.training_manager import TrainingManager
-from src.config.environment import get_environment_settings
+from .ares_pipeline import AresPipeline
+from .database.sqlite_manager import SQLiteManager
+from .training.training_manager import TrainingManager
+from .config.environment import get_environment_settings
 app = Celery('ares_tasks', broker='redis://localhost:6379/0')
 
 @app.task
@@ -43,5 +43,5 @@ def run_monthly_training_pipeline() -> None:
         asyncio.run(run_training())
     except Exception as e:
         print(f'An unexpected error occurred while running the training pipeline task: {e}')
-app.conf.beat_schedule = {'run-monthly-training': {'task': 'src.tasks.run_monthly_training_pipeline', 'schedule': crontab(day_of_month='1', hour=0, minute=0)}}
+app.conf.beat_schedule = {'run-monthly-training': {'task': 'src.tasks.run_monthly_training_pipeline', 'schedule': crontab(day_of_month='1', hour = 0, minute = 0)}}
 app.conf.timezone = 'UTC'

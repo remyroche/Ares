@@ -1,6 +1,9 @@
 
 import pandas as pd
 import numpy as np
+from ....core.decorators import handles_errors
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Step 13: Analyst Ensemble Creation - Migrated to use BaseStep pattern.
 
 This step combines multiple analyst models into ensemble predictions with advanced voting mechanisms.
@@ -11,11 +14,11 @@ from .ensemble_aggregator import EnsembleAggregator
 from .voting_mechanism import VotingMechanism
 from .weight_optimizer import WeightOptimizer
 from .ensemble_evaluator import EnsembleEvaluator
-from .core.decorators.errors import handles_errors
 import logging
 
 class AnalystEnsembleCreationStep(BaseStep):
     """Step 13: Analyst Ensemble Creation with advanced voting mechanisms."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Analyst Ensemble Creation step.
@@ -24,6 +27,7 @@ class AnalystEnsembleCreationStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, '13', 'analyst_ensemble_creation')
+    @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
@@ -35,10 +39,12 @@ class AnalystEnsembleCreationStep(BaseStep):
         self.ensemble_models: Dict[str, Any] = {}
         self.ensemble_weights: Dict[str, Dict[str, float]] = {}
         self.ensemble_metrics: Dict[str, Any] = {}
+    @log_all_calls
 
     def _initialize_ensemble_config(self) -> Dict[str, Any]:
         """Initialize ensemble-specific configuration."""
         return {'aggregation_methods': ['voting', 'weighted', 'stacking', 'blending'], 'voting_types': ['hard', 'soft', 'weighted_soft'], 'weight_optimization': True, 'dynamic_weighting': True, 'regime_aware_aggregation': True, 'min_models_for_ensemble': 3, 'ensemble_diversity_threshold': 0.3, 'cross_validation_folds': 5, 'meta_learner_type': 'logistic_regression'}
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate step inputs.
@@ -167,6 +173,7 @@ class AnalystEnsembleCreationStep(BaseStep):
         except Exception as e:
             self.logger.error(f'Failed to create cross-regime ensemble: {str(e)}')
             return {'ensemble': {}, 'metrics': {}, 'best_type': None, 'error': str(e)}
+    @log_all_calls
 
     def _prepare_models_for_aggregation(self, regime_models: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare models for ensemble aggregation."""
@@ -183,7 +190,7 @@ class AnalystEnsembleCreationStep(BaseStep):
         try:
             predictions = []
             sample_size = min(1000, len(features))
-            sample_indices = np.random.choice(len(features), sample_size, replace=False)
+            sample_indices = np.random.choice(len(features), sample_size, replace = False)
             X_sample = features.iloc[sample_indices]
             for model_info in models.values():
                 model = model_info['model']
@@ -205,6 +212,7 @@ class AnalystEnsembleCreationStep(BaseStep):
         except Exception as e:
             self.logger.warning(f'Failed to calculate model diversity: {str(e)}')
             return 0.0
+    @log_all_calls
 
     def _get_regime_features(self, features: pd.DataFrame, regime_info: Dict[str, Any]) -> pd.DataFrame:
         """Extract features for a specific regime."""
@@ -215,6 +223,7 @@ class AnalystEnsembleCreationStep(BaseStep):
             regime_mask = np.array(regime_mask)
             return features[regime_mask]
         return features
+    @log_all_calls
 
     def _create_ensemble_summary(self, regime_ensembles: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Create a summary of all ensembles."""

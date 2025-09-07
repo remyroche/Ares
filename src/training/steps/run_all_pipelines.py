@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 """Enhanced Main Orchestrator for All Training Pipelines.
 
 This module provides a comprehensive interface to run all training pipelines with:
@@ -28,7 +31,7 @@ from .core.domain import handle_errors, memory_efficient, validate_data_quality,
 from src.utils.common_operations import format_datetime, get_current_datetime, ensure_directory, safe_json_dump, safe_json_load, safe_file_exists
 from .utils.validator_orchestrator import ValidatorOrchestrator
 from .utils.data_quality_framework import DataQualityFramework
-from .utils.logger import system_logger
+from src.utils.logger import system_logger
 from .utils.prometheus_metrics import metrics
 from .utils.data_formatting_framework import DataFormattingFramework
 from .training.steps.data_collection import run_data_collection_pipeline
@@ -75,6 +78,7 @@ class PipelineConfig:
 
 class EnhancedPipelineOrchestrator:
     """Enhanced orchestrator for all training pipelines with comprehensive validation and error handling."""
+    @log_important_calls
 
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
@@ -88,16 +92,17 @@ class EnhancedPipelineOrchestrator:
         ensure_directory(config.data_dir)
         if config.enable_monitoring:
             self._initialize_monitoring()
+    @log_all_calls
 
     def _initialize_monitoring(self) -> None:
         """Initialize monitoring and metrics collection."""
         try:
-            metrics.initialize_pipeline_monitoring(symbol=self.config.symbol, exchange=self.config.exchange, timeframe=self.config.timeframe)
+            metrics.initialize_pipeline_monitoring(symbol = self.config.symbol, exchange = self.config.exchange, timeframe = self.config.timeframe)
             self.logger.info('✅ Pipeline monitoring initialized')
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to initialize monitoring: {e}')
 
-    @handle_errors(fallback=False)
+    @handle_errors(fallback = False)
     @monitor_pipeline_step('prerequisites_validation')
     async def validate_pipeline_prerequisites(self) -> bool:
         """Validate prerequisites before starting pipeline execution."""
@@ -123,7 +128,7 @@ class EnhancedPipelineOrchestrator:
             self.logger.exception(f'❌ Prerequisites validation failed: {e}')
             return False
 
-    @handle_errors(fallback=None)
+    @handle_errors(fallback = None)
     @monitor_pipeline_step('save_checkpoint')
     async def save_checkpoint(self, pipeline_name: str, result: PipelineResult) -> None:
         """Save pipeline execution checkpoint."""
@@ -134,7 +139,7 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to save checkpoint: {e}')
 
-    @handle_errors(fallback=None)
+    @handle_errors(fallback = None)
     @monitor_pipeline_step('load_checkpoint')
     async def load_checkpoint(self) -> Optional[Dict[str, Any]]:
         """Load pipeline execution checkpoint."""
@@ -148,7 +153,7 @@ class EnhancedPipelineOrchestrator:
             self.logger.warning(f'⚠️ Failed to load checkpoint: {e}')
             return None
 
-    @handle_errors(fallback=False)
+    @handle_errors(fallback = False)
     @validate_data_quality()
     @monitor_pipeline_step('validate_pipeline_data')
     async def validate_pipeline_data(self, pipeline_name: str, data_paths: List[str]) -> Tuple[bool, Dict[str, Any]]:
@@ -165,7 +170,7 @@ class EnhancedPipelineOrchestrator:
                     continue
                 file_type = self._determine_file_type(data_path)
                 schema_validation = {'passed': True, 'schema': file_type, 'note': 'Basic file validation'}
-                quality_result = await self.data_quality_framework.validate_data_file(file_path=data_path, validation_level=self.config.validation_level)
+                quality_result = await self.data_quality_framework.validate_data_file(file_path = data_path, validation_level = self.config.validation_level)
                 combined_result = {'schema_validation': schema_validation, 'quality_validation': quality_result, 'overall_passed': schema_validation.get('passed', False) and quality_result.get('passed', False)}
                 validation_results[data_path] = combined_result
                 if not combined_result['overall_passed']:
@@ -183,6 +188,7 @@ class EnhancedPipelineOrchestrator:
         except Exception as e:
             self.logger.exception(f'❌ Data validation failed for {pipeline_name}: {e}')
             return (False, {'error': str(e)})
+    @log_all_calls
 
     def _determine_file_type(self, file_path: str) -> str:
         """Determine file type based on path for schema validation."""
@@ -197,7 +203,7 @@ class EnhancedPipelineOrchestrator:
         else:
             return 'general'
 
-    @handle_errors(fallback=False)
+    @handle_errors(fallback = False)
     @monitor_pipeline_step('rollback_pipeline')
     async def rollback_pipeline(self, pipeline_name: str) -> bool:
         """Rollback pipeline execution if needed."""
@@ -219,34 +225,34 @@ class EnhancedPipelineOrchestrator:
             return False
 
     @memory_efficient
-    @handle_errors(fallback=False)
+    @handle_errors(fallback = False)
     @monitor_pipeline_step('execute_pipeline')
     async def execute_pipeline(self, pipeline_name: str, pipeline_func: Any, pipeline_config: Dict[str, Any]) -> PipelineResult:
         """Execute a single pipeline with comprehensive error handling and validation."""
         self.logger.info(f'🚀 Executing {pipeline_name} pipeline...')
         start_time = time.time()
-        result = PipelineResult(name=pipeline_name, status=PipelineStatus.RUNNING, execution_time=0.0)
+        result = PipelineResult(name = pipeline_name, status = PipelineStatus.RUNNING, execution_time = 0.0)
         try:
             if not await self.validate_pipeline_prerequisites():
                 result.status = PipelineStatus.FAILED
                 result.error = 'Prerequisites validation failed'
                 return result
-            pipeline_task = asyncio.create_task(pipeline_func(symbol=self.config.symbol, exchange=self.config.exchange, timeframe=self.config.timeframe, data_dir=self.config.data_dir, **pipeline_config))
-            success = await asyncio.wait_for(pipeline_task, timeout=self.config.timeout_seconds)
+            pipeline_task = asyncio.create_task(pipeline_func(symbol = self.config.symbol, exchange = self.config.exchange, timeframe = self.config.timeframe, data_dir = self.config.data_dir, **pipeline_config))
+            success = await asyncio.wait_for(pipeline_task, timeout = self.config.timeout_seconds)
             execution_time = time.time() - start_time
             result.execution_time = execution_time
             if success:
                 result.status = PipelineStatus.COMPLETED
                 self.logger.info(f'✅ {pipeline_name} completed successfully in {execution_time:.2f}s')
                 if self.config.enable_monitoring:
-                    metrics.record_pipeline_execution(pipeline_name=pipeline_name, duration=execution_time, status='SUCCESS')
+                    metrics.record_pipeline_execution(pipeline_name = pipeline_name, duration = execution_time, status='SUCCESS')
             else:
                 result.status = PipelineStatus.FAILED
                 result.error = 'Pipeline execution returned False'
                 result.rollback_required = True
                 self.logger.error(f'❌ {pipeline_name} failed after {execution_time:.2f}s')
                 if self.config.enable_monitoring:
-                    metrics.record_pipeline_execution(pipeline_name=pipeline_name, duration=execution_time, status='FAILED')
+                    metrics.record_pipeline_execution(pipeline_name = pipeline_name, duration = execution_time, status='FAILED')
             await self.save_checkpoint(pipeline_name, result)
         except asyncio.TimeoutError:
             execution_time = time.time() - start_time
@@ -264,7 +270,7 @@ class EnhancedPipelineOrchestrator:
             self.logger.exception(f'💥 {pipeline_name} failed with exception: {e}')
         return result
 
-    @handle_errors(fallback=False)
+    @handle_errors(fallback = False)
     @monitor_pipeline_step('run_all_pipelines')
     async def run_all_pipelines(self) -> bool:
         """Run all training pipelines in sequence with enhanced validation and error handling."""
@@ -281,7 +287,7 @@ class EnhancedPipelineOrchestrator:
         self.logger.info('=' * 100)
         total_start_time = time.time()
         pipeline_configs = {'data_collection': {'force_rerun': self.config.force_rerun, 'quality_checks': True, 'validate_data': True, 'convert_format': True, 'validation_level': self.config.validation_level}, 'market_analysis': {'force_rerun': self.config.force_rerun, 'hmm_clustering': True, 'regime_splitting': True, 'feature_engineering': True, 'matrix_operations': True, 'feature_selection': True, 'validation_level': self.config.validation_level}, 'model_training': {'force_rerun': self.config.force_rerun, 'hmm_training': True, 'regime_intelligence': True, 'analyst_creation': True, 'analyst_enhancement': True, 'ensemble_creation': True, 'tactician_training': True, 'validation_level': self.config.validation_level}, 'optimisation': {'force_rerun': self.config.force_rerun, 'confidence_calibration': True, 'parameter_optimization': True, 'validation_level': self.config.validation_level}, 'backtesting': {'force_rerun': self.config.force_rerun, 'walk_forward_validation': True, 'monte_carlo_validation': True, 'ab_testing': True, 'model_saving': True, 'validation_level': self.config.validation_level}}
-        pipelines = [('Data Collection', run_data_collection_pipeline, pipeline_configs['data_collection'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}"]), ('Market Analysis', run_market_analysis_pipeline, pipeline_configs['market_analysis'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}", PipelineStandards.build_path('processed_data', self.config.exchange, self.config.symbol) + f'/volume_{self.config.exchange}_{self.config.symbol}_consolidated.parquet']), ('Model Training', run_model_training_pipeline, pipeline_configs['model_training'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_hmm_model.pkl']), ('Optimization', run_optimisation_pipeline, pipeline_configs['optimisation'], [f'models/{self.config.symbol}_{self.config.exchange}_analyst_ensemble.pkl', f'models/{self.config.symbol}_{self.config.exchange}_tactician_model.pkl']), ('Backtesting', run_backtesting_pipeline, pipeline_configs['backtesting'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange=self.config.exchange, asset=self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_final_models.pkl'])]
+        pipelines = [('Data Collection', run_data_collection_pipeline, pipeline_configs['data_collection'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}"]), ('Market Analysis', run_market_analysis_pipeline, pipeline_configs['market_analysis'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", PipelineStandards.build_path('processed_data', self.config.exchange, self.config.symbol) + f'/volume_{self.config.exchange}_{self.config.symbol}_consolidated.parquet']), ('Model Training', run_model_training_pipeline, pipeline_configs['model_training'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_hmm_model.pkl']), ('Optimization', run_optimisation_pipeline, pipeline_configs['optimisation'], [f'models/{self.config.symbol}_{self.config.exchange}_analyst_ensemble.pkl', f'models/{self.config.symbol}_{self.config.exchange}_tactician_model.pkl']), ('Backtesting', run_backtesting_pipeline, pipeline_configs['backtesting'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_final_models.pkl'])]
         for pipeline_name, pipeline_func, pipeline_config, data_dependencies in pipelines:
             self.logger.info(f'\n🔄 Starting {pipeline_name} Pipeline...')
             self.logger.info('-' * 80)
@@ -333,12 +339,12 @@ class EnhancedPipelineOrchestrator:
             from .utils.report_manager import get_report_manager
             report_manager = get_report_manager()
             enhanced_results = {'symbol': self.config.symbol, 'exchange': self.config.exchange, 'timeframe': self.config.timeframe, 'total_execution_time': total_time, 'successful_pipelines': successful_pipelines, 'failed_pipelines': failed_pipelines, 'rolled_back_pipelines': rolled_back_pipelines, 'pipeline_results': [{'name': result.name, 'status': result.status.value, 'execution_time': result.execution_time, 'error': result.error, 'data_quality_score': result.data_quality_score, 'rollback_required': result.rollback_required} for result in self.pipeline_results], 'config': {'symbol': self.config.symbol, 'exchange': self.config.exchange, 'timeframe': self.config.timeframe, 'data_dir': self.config.data_dir, 'validation_level': self.config.validation_level, 'enable_rollback': self.config.enable_rollback, 'enable_monitoring': self.config.enable_monitoring}, 'timestamp': format_datetime(get_current_datetime())}
-            results_file = report_manager.save_general_report(report_type='pipeline_summary', symbol=self.config.symbol, exchange=self.config.exchange, report_data=enhanced_results, file_extension='txt')
-            run_summary_file = report_manager.generate_run_summary(symbol=self.config.symbol, exchange=self.config.exchange)
+            results_file = report_manager.save_general_report(report_type='pipeline_summary', symbol = self.config.symbol, exchange = self.config.exchange, report_data = enhanced_results, file_extension='txt')
+            run_summary_file = report_manager.generate_run_summary(symbol = self.config.symbol, exchange = self.config.exchange)
             try:
                 from .utils.report_collector import get_report_collector
                 report_collector = get_report_collector()
-                collection_summary_file = report_collector.generate_collection_summary(symbol=self.config.symbol, exchange=self.config.exchange)
+                collection_summary_file = report_collector.generate_collection_summary(symbol = self.config.symbol, exchange = self.config.exchange)
                 self.logger.info(f'📊 Report collection summary generated: {collection_summary_file}')
             except Exception as e:
                 self.logger.warning(f'⚠️ Failed to generate collection summary: {e}')
@@ -357,13 +363,13 @@ class EnhancedPipelineOrchestrator:
 
 async def run_all_pipelines(symbol: str='ETHUSDT', exchange: str='BINANCE', timeframe: str='1m', data_dir: str='data_cache', **config: Dict[str, Any]) -> bool:
     """Legacy function for backward compatibility. Use EnhancedPipelineOrchestrator for new implementations."""
-    pipeline_config = PipelineConfig(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=config.get('force_rerun', True), enable_validation=config.get('enable_validation', True), enable_rollback=config.get('enable_rollback', True), enable_monitoring=config.get('enable_monitoring', True), validation_level=config.get('validation_level', 'CRITICAL'), max_retries=config.get('max_retries', 3), timeout_seconds=config.get('timeout_seconds', 3600))
+    pipeline_config = PipelineConfig(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = config.get('force_rerun', True), enable_validation = config.get('enable_validation', True), enable_rollback = config.get('enable_rollback', True), enable_monitoring = config.get('enable_monitoring', True), validation_level = config.get('validation_level', 'CRITICAL'), max_retries = config.get('max_retries', 3), timeout_seconds = config.get('timeout_seconds', 3600))
     orchestrator = EnhancedPipelineOrchestrator(pipeline_config)
     return await orchestrator.run_all_pipelines()
 
 async def main() -> None:
     """Enhanced main function to run all pipelines with comprehensive validation and error handling."""
-    pipeline_config = PipelineConfig(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', force_rerun=True, enable_validation=True, enable_rollback=True, enable_monitoring=True, validation_level='CRITICAL', max_retries=3, timeout_seconds=3600)
+    pipeline_config = PipelineConfig(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', force_rerun = True, enable_validation = True, enable_rollback = True, enable_monitoring = True, validation_level='CRITICAL', max_retries = 3, timeout_seconds = 3600)
     orchestrator = EnhancedPipelineOrchestrator(pipeline_config)
     try:
         success = await orchestrator.run_all_pipelines()

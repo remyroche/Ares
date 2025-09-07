@@ -11,7 +11,7 @@ from pathlib import Path
 from scripts.gui_launcher import GUILauncher
 
 # Add the project root to the Python path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -29,7 +29,7 @@ def main():
 
     # Create GUI launcher and run
     launcher, GUILauncher()
-    launcher.run_with_bot(bot_command, auto_gui=not args.no_gui)
+    launcher.run_with_bot(bot_command, auto_gui = not args.no_gui)
 
 
 if __name__== "__main__":

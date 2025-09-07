@@ -1,6 +1,8 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
-from typing import Callable
+from typing import Dict, List, Optional, Union, Any, Tuple, Callable
+import pandas as pd  # noqa: F401
+from src.utils.logger import system_logger
+
 """Validator for Step 4: Regime Data Splitting.
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
@@ -9,25 +11,16 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 import pandas as pd
-try:
-    from src.utils.centralized_decorators import validates
-except ImportError:
+from src.core.decorators.logging import log_execution_time, log_call
+from src.core.decorators import validates
 
-    def validates(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
-
-def smart_validation_cache(*args, **kwargs) -> None:
-
-    def decorator(func: Callable) -> None:
+def smart_validation_cache(*args, **kwargs):
+    def decorator(func: Callable):
         return func
     return decorator
 
-def validate_step4_comprehensive(*args, **kwargs) -> bool:
-
-    def decorator(func: Callable) -> None:
+def validate_step4_comprehensive(*args, **kwargs):
+    def decorator(func: Callable):
         return func
     return decorator
 try:
@@ -73,12 +66,12 @@ class BaseValidator:
         except Exception as e:
             return False, {'path': path, 'description': description, 'exists': False, 'error': str(e)}
 
-    def validate_dataframe_quality(self, df: Any, min_rows: int=0, required_columns: Optional[List[str]]=None, check_data_types: bool=False, check_value_ranges: bool=False, check_duplicates: bool=False, check_temporal_consistency: bool=False) -> tuple[bool, dict[str, Any]]:
+    def validate_dataframe_quality(self, df: Any, min_rows: int = 0, required_columns: Optional[List[str]]=None, check_data_types: bool = False, check_value_ranges: bool = False, check_duplicates: bool = False, check_temporal_consistency: bool = False) -> tuple[bool, dict[str, Any]]:
         """Validate DataFrame quality using shared validator if available, else basic checks."""
         metrics: dict[str, Any] = {}
         passed = True
         try:
-            import pandas as pd  # noqa: F401
+            pass
         except Exception:
             return False, {'error': 'pandas_not_available'}
         if df is None:
@@ -98,7 +91,7 @@ class BaseValidator:
                 passed = False
         if self._dq_validator is not None:
             try:
-                result = self._dq_validator.validate_dataframe_quality(df, context=self.step_name)
+                result = self._dq_validator.validate_dataframe_quality(df, context = self.step_name)
                 metrics['dq_summary'] = result.get_summary()
                 passed = passed and bool(result.passed)
             except Exception as e:
@@ -117,7 +110,6 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             pass
         self.logger = system_logger.getChild('Validator.Step4')
 
-    @validates()
     async def validate_step4_regime_data_splitting(self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]) -> bool:
         """Validate Step 4: Regime Data Splitting."
 
@@ -157,7 +149,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             self.logger.exception(f'❌ Step 4 validation failed: {error_context}')
             return False
 
-    @smart_validation_cache(ttl_seconds=300)
+    @smart_validation_cache(ttl_seconds = 300)
     async def _validate_regime_file(self, regime_file: Path) -> bool:
         """Validate a regime split file with caching."""
         try:
@@ -166,7 +158,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             if not file_exists:
                 return False
             df = pd.read_parquet(regime_file)
-            df_valid, df_metrics = self.validate_dataframe_quality(df=df, min_rows=100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types=True, check_value_ranges=True, check_duplicates=True, check_temporal_consistency=True)
+            df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {regime_file.name}')
                 return False
@@ -181,7 +173,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             self.logger.exception(f'❌ Failed to validate regime file: {error_context}')
             return False
 
-    @smart_validation_cache(ttl_seconds=600)
+    @smart_validation_cache(ttl_seconds = 600)
     async def _validate_statistics_file(self, stats_file: Path) -> bool:
         """Validate the regime statistics file with caching."""
         try:
@@ -273,7 +265,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                         try:
                             df = pd.read_parquet(file_path)
                             try:
-                                df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows=100, check_data_types=True)
+                                df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)
                             except Exception:
                                 df_valid = len(df) >= 100
                             validation_result['details'][f'{Path(file_path).stem}_rows'] = len(df)
@@ -319,4 +311,4 @@ if __name__ == '__main__':
     test_state = {}
     import asyncio
     result = asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent = 2))

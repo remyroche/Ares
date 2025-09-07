@@ -1,4 +1,5 @@
-"""Comprehensive Reporting System for Backtesting Pipeline.
+"""
+Comprehensive Reporting System for Backtesting Pipeline.
 
 This module provides detailed reporting capabilities for troubleshooting and analysis,
 including quality assessment, performance metrics, and actionable recommendations.
@@ -6,6 +7,7 @@ including quality assessment, performance metrics, and actionable recommendation
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import numpy as np
 import pandas as pd
 import logging
@@ -15,6 +17,7 @@ import time
 
 class BacktestingReportGenerator:
     """Comprehensive report generator for backtesting pipeline."""
+    @log_important_calls
 
     def __init__(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
         self.symbol = symbol
@@ -31,7 +34,7 @@ class BacktestingReportGenerator:
         """Generate comprehensive backtesting report."""
         report = {'execution_summary': self._generate_execution_summary(pipeline_results), 'backtesting_results': self._generate_backtesting_results(pipeline_results), 'regime_analysis': self._generate_regime_analysis(pipeline_results), 'model_performance': self._generate_model_performance_analysis(pipeline_results), 'risk_analysis': self._generate_risk_analysis(pipeline_results), 'quality_assessment': self._generate_quality_assessment(pipeline_results, logger_data), 'performance_analysis': self._generate_performance_analysis(logger_data), 'data_quality_report': self._generate_data_quality_report(), 'validation_results': self._generate_validation_results(pipeline_results), 'error_analysis': self._generate_error_analysis(logger_data), 'recommendations': self._generate_recommendations(pipeline_results, logger_data), 'troubleshooting_guide': self._generate_troubleshooting_guide(logger_data), 'metadata': self._generate_metadata()}
         if output_file:
-            safe_json_dump(report, output_file, indent=2)
+            safe_json_dump(report, output_file, indent = 2)
         return report
 
     def generate_step_report(self, step_name: str, step_results: Dict[str, Any], symbol: str, timeframe: str, data_dir: str, output_file: Optional[str]=None) -> Dict[str, Any]:
@@ -39,9 +42,10 @@ class BacktestingReportGenerator:
         timestamp = get_current_datetime()
         report = {'step_info': {'step_name': step_name, 'symbol': symbol, 'timeframe': timeframe, 'timestamp': timestamp, 'data_directory': data_dir}, 'step_results': step_results, 'step_metrics': self._extract_step_metrics(step_results), 'step_analysis': self._analyze_step_results(step_name, step_results), 'quality_assessment': self._assess_step_quality(step_name, step_results), 'recommendations': self._generate_step_recommendations(step_name, step_results), 'troubleshooting': self._generate_step_troubleshooting(step_name, step_results)}
         if output_file:
-            safe_json_dump(report, output_file, indent=2)
+            safe_json_dump(report, output_file, indent = 2)
             logging.info(f'Step report saved to: {output_file}')
         return report
+    @log_all_calls
 
     def _extract_step_metrics(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract key metrics from step results."""
@@ -59,11 +63,13 @@ class BacktestingReportGenerator:
         if 'memory_usage' in step_results:
             metrics['memory_usage'] = step_results['memory_usage']
         return metrics
+    @log_all_calls
 
     def _analyze_step_results(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze step results for insights."""
         analysis = {'step_type': step_name, 'success': step_results.get('success', False), 'data_quality': self._assess_data_quality(step_results), 'performance_insights': self._extract_performance_insights(step_results), 'regime_insights': self._extract_regime_insights(step_results), 'model_insights': self._extract_model_insights(step_results)}
         return analysis
+    @log_all_calls
 
     def _assess_step_quality(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Assess quality of step results."""
@@ -83,6 +89,7 @@ class BacktestingReportGenerator:
                     quality_flags.append({'type': 'WARNING', 'message': f'Negative returns in {regime} regime', 'details': {'regime': regime, 'return': regime_data['regime_return']}})
                     quality_score -= 5
         return {'quality_score': max(0, quality_score), 'quality_flags': quality_flags, 'overall_assessment': 'EXCELLENT' if quality_score >= 90 else 'GOOD' if quality_score >= 70 else 'FAIR' if quality_score >= 50 else 'POOR'}
+    @log_all_calls
 
     def _generate_step_recommendations(self, step_name: str, step_results: Dict[str, Any]) -> List[Dict[str, str]]:
         """Generate recommendations for step improvement."""
@@ -96,6 +103,7 @@ class BacktestingReportGenerator:
                 if 'regime_return' in regime_data and regime_data['regime_return'] < 0:
                     recommendations.append({'category': 'REGIME_PERFORMANCE', 'priority': 'MEDIUM', 'recommendation': f'Address negative returns in {regime} regime', 'action': f'Review strategy parameters for {regime} market conditions'})
         return recommendations
+    @log_all_calls
 
     def _generate_step_troubleshooting(self, step_name: str, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate troubleshooting guide for step issues."""
@@ -110,6 +118,7 @@ class BacktestingReportGenerator:
             troubleshooting['common_issues'].extend(['Statistical significance issues', 'Insufficient sample size', 'Biased test groups'])
             troubleshooting['debugging_steps'].extend(['Verify sample size calculations', 'Check group randomization', 'Review statistical tests'])
         return troubleshooting
+    @log_all_calls
 
     def _assess_data_quality(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Assess data quality for the step."""
@@ -125,6 +134,7 @@ class BacktestingReportGenerator:
                 quality_metrics['consistency'] -= len(inconsistencies) * 10
                 quality_metrics['issues'].extend(inconsistencies)
         return quality_metrics
+    @log_all_calls
 
     def _extract_performance_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract performance insights from step results."""
@@ -144,6 +154,7 @@ class BacktestingReportGenerator:
             else:
                 insights['performance_grade'] = 'POOR'
         return insights
+    @log_all_calls
 
     def _extract_regime_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract regime-specific insights."""
@@ -169,6 +180,7 @@ class BacktestingReportGenerator:
             if returns and max(returns) - min(returns) > 0.5:
                 insights['regime_stability'] = 'VOLATILE'
         return insights
+    @log_all_calls
 
     def _extract_model_insights(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract model-specific insights."""
@@ -306,22 +318,25 @@ def generate_detailed_regime_metrics_report(pipeline_results: Dict[str, Any], ou
     
     # Save report if output file specified
     if output_file:
-        safe_json_dump(report, output_file, indent=2)
+        safe_json_dump(report, output_file, indent = 2)
         logging.info(f'Detailed regime metrics report saved to: {output_file}')
     
     return report
 
 class ComprehensiveReporter:
     """Comprehensive reporter for backtesting pipeline."""
+    @log_important_calls
     
     def __init__(self, symbol: str, timeframe: str, data_dir: str) -> None:
         self.symbol = symbol
         self.timeframe = timeframe
         self.data_dir = data_dir
+    @log_all_calls
 
     def _generate_execution_summary(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate execution summary."""
         return {'symbol': self.symbol, 'timeframe': self.timeframe, 'execution_date': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'pipeline_version': 'enhanced_v2.0_with_logging', 'total_steps_completed': len([k for k, v in pipeline_results.items() if v is not None]), 'success_rate': self._calculate_success_rate(pipeline_results), 'overall_status': 'SUCCESS' if pipeline_results.get('success', False) else 'FAILED'}
+    @log_all_calls
 
     def _generate_backtesting_results(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive backtesting results analysis."""
@@ -340,6 +355,7 @@ class ComprehensiveReporter:
                 backtesting_results['ab_testing_results'] = self._extract_performance_metrics(ab_results)
         backtesting_results['performance_summary'] = self._calculate_overall_performance_summary(backtesting_results)
         return backtesting_results
+    @log_all_calls
 
     def _generate_regime_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate detailed regime analysis."""
@@ -355,6 +371,7 @@ class ComprehensiveReporter:
         regime_analysis['regime_stability'] = self._analyze_regime_stability(regime_analysis)
         regime_analysis['regime_recommendations'] = self._generate_regime_recommendations(regime_analysis)
         return regime_analysis
+    @log_all_calls
 
     def _generate_model_performance_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate model performance analysis."""
@@ -370,6 +387,7 @@ class ComprehensiveReporter:
         model_analysis['model_comparison'] = self._compare_model_performance(model_analysis)
         model_analysis['model_recommendations'] = self._generate_model_recommendations(model_analysis)
         return model_analysis
+    @log_all_calls
 
     def _generate_risk_analysis(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive risk analysis."""
@@ -386,6 +404,7 @@ class ComprehensiveReporter:
         risk_analysis['concentration_risk'] = self._calculate_concentration_risk(pipeline_results)
         risk_analysis['risk_recommendations'] = self._generate_risk_recommendations(risk_analysis)
         return risk_analysis
+    @log_all_calls
 
     def _generate_quality_assessment(self, pipeline_results: Dict[str, Any], logger_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate quality assessment report."""
@@ -395,6 +414,7 @@ class ComprehensiveReporter:
         quality_score = self._calculate_quality_score(quality_flags, errors, warnings)
         quality_categories = self._categorize_quality_flags(quality_flags)
         return {'overall_quality_score': quality_score, 'quality_level': self._determine_quality_level(quality_score), 'quality_flags_count': len(quality_flags), 'error_count': len(errors), 'warning_count': len(warnings), 'quality_categories': quality_categories, 'critical_issues': [f for f in quality_flags if f.get('severity') == 'ERROR'], 'warnings': [f for f in quality_flags if f.get('severity') == 'WARNING'], 'data_quality_issues': [f for f in quality_flags if f.get('type') == 'DATA_QUALITY'], 'validation_issues': [f for f in quality_flags if f.get('type') == 'VALIDATION'], 'performance_issues': [f for f in quality_flags if f.get('type') == 'PERFORMANCE']}
+    @log_all_calls
 
     def _generate_performance_analysis(self, logger_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate performance analysis report."""
@@ -410,7 +430,8 @@ class ComprehensiveReporter:
             if isinstance(metrics, dict):
                 memory_usage.append(metrics.get('memory_mb', 0))
                 cpu_usage.append(metrics.get('cpu_percent', 0))
-        return {'execution_time_analysis': {'total_execution_time': total_time, 'average_step_time': avg_step_time, 'max_step_time': max_step_time, 'min_step_time': min_step_time, 'slowest_step': max(step_times.items(), key=lambda x: x[1])[0] if step_times else None, 'fastest_step': min(step_times.items(), key=lambda x: x[1])[0] if step_times else None}, 'resource_usage_analysis': {'peak_memory_mb': max(memory_usage) if memory_usage else 0, 'average_memory_mb': np.mean(memory_usage) if memory_usage else 0, 'peak_cpu_percent': max(cpu_usage) if cpu_usage else 0, 'average_cpu_percent': np.mean(cpu_usage) if cpu_usage else 0}, 'performance_bottlenecks': self._identify_performance_bottlenecks(step_times, performance_metrics), 'efficiency_metrics': self._calculate_efficiency_metrics(step_times, performance_metrics)}
+        return {'execution_time_analysis': {'total_execution_time': total_time, 'average_step_time': avg_step_time, 'max_step_time': max_step_time, 'min_step_time': min_step_time, 'slowest_step': max(step_times.items(), key=lambda x: x[1])[0] if step_times else None, 'fastest_step': min(step_times.items(), key = lambda x: x[1])[0] if step_times else None}, 'resource_usage_analysis': {'peak_memory_mb': max(memory_usage) if memory_usage else 0, 'average_memory_mb': np.mean(memory_usage) if memory_usage else 0, 'peak_cpu_percent': max(cpu_usage) if cpu_usage else 0, 'average_cpu_percent': np.mean(cpu_usage) if cpu_usage else 0}, 'performance_bottlenecks': self._identify_performance_bottlenecks(step_times, performance_metrics), 'efficiency_metrics': self._calculate_efficiency_metrics(step_times, performance_metrics)}
+    @log_all_calls
 
     def _generate_data_quality_report(self) -> Dict[str, Any]:
         """Generate data quality report."""
@@ -421,7 +442,7 @@ class ComprehensiveReporter:
             if safe_file_exists(file_path):
                 try:
                     df = pd.read_parquet(file_path)
-                    quality_metrics = {'total_records': len(df), 'missing_values': df.isnull().sum().sum(), 'duplicate_records': df.duplicated().sum(), 'data_types': df.dtypes.to_dict(), 'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024}
+                    quality_metrics = {'total_records': len(df), 'missing_values': df.isnull().sum().sum(), 'duplicate_records': df.duplicated().sum(), 'data_types': df.dtypes.to_dict(), 'memory_usage_mb': df.memory_usage(deep = True).sum() / 1024 / 1024}
                     quality_report['data_files_status'][file_name] = 'AVAILABLE'
                     quality_report['data_quality_metrics'][file_name] = quality_metrics
                     if quality_metrics['missing_values'] > 0:
@@ -435,11 +456,13 @@ class ComprehensiveReporter:
                 quality_report['data_files_status'][file_name] = 'MISSING'
                 quality_report['data_issues'].append({'file': file_name, 'issue': 'File not found', 'count': 0})
         return quality_report
+    @log_all_calls
 
     def _generate_validation_results(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate validation results report."""
         validation_results = {'walk_forward_validation': self._analyze_validation_step(pipeline_results.get('walk_forward_results'), 'Walk Forward'), 'monte_carlo_validation': self._analyze_validation_step(pipeline_results.get('monte_carlo_results'), 'Monte Carlo'), 'ab_testing': self._analyze_validation_step(pipeline_results.get('ab_testing_results'), 'A/B Testing'), 'model_saving': self._analyze_validation_step(pipeline_results.get('model_saving_results'), 'Model Saving')}
         return validation_results
+    @log_all_calls
 
     def _generate_error_analysis(self, logger_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate error analysis report."""
@@ -458,6 +481,7 @@ class ComprehensiveReporter:
                 warning_categories[context] = []
             warning_categories[context].append(warning)
         return {'error_summary': {'total_errors': len(errors), 'error_categories': {k: len(v) for k, v in error_categories.items()}, 'most_common_error': max(error_categories.items(), key=lambda x: len(x[1]))[0] if error_categories else None}, 'warning_summary': {'total_warnings': len(warnings), 'warning_categories': {k: len(v) for k, v in warning_categories.items()}, 'most_common_warning_context': max(warning_categories.items(), key=lambda x: len(x[1]))[0] if warning_categories else None}, 'error_details': error_categories, 'warning_details': warning_categories, 'error_timeline': self._generate_error_timeline(errors)}
+    @log_all_calls
 
     def _generate_recommendations(self, pipeline_results: Dict[str, Any], logger_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate actionable recommendations."""
@@ -479,20 +503,24 @@ class ComprehensiveReporter:
             if max_memory > 2000:
                 recommendations.append({'category': 'Performance', 'priority': 'MEDIUM', 'title': 'Optimize Memory Usage', 'description': f'Peak memory usage was {max_memory:.1f} MB.', 'action': 'Consider optimizing memory usage or increasing available memory'})
         return recommendations
+    @log_all_calls
 
     def _generate_troubleshooting_guide(self, logger_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate troubleshooting guide."""
         return {'common_issues': [{'issue': 'Missing data files', 'symptoms': ['File not found errors', 'Data directory validation failures'], 'solutions': ['Run data collection: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE', 'Check data directory permissions', 'Verify file paths in configuration']}, {'issue': 'High memory usage', 'symptoms': ['Memory errors', 'Slow performance', 'System crashes'], 'solutions': ['Reduce data size or use smaller timeframes', 'Increase system memory', 'Optimize data processing algorithms']}, {'issue': 'Validation failures', 'symptoms': ['Validation errors', 'Quality flags', 'Failed steps'], 'solutions': ['Review validation criteria', 'Check data quality', 'Adjust validation thresholds']}], 'debugging_steps': ['Check log files for detailed error messages', 'Review quality flags and warnings', 'Validate input data quality', 'Check system resources (memory, CPU)', 'Review configuration parameters'], 'support_resources': ['Log files in log/backtesting/ directory', 'Quality assessment reports', 'Performance monitoring data', 'Configuration files']}
+    @log_all_calls
 
     def _generate_metadata(self) -> Dict[str, Any]:
         """Generate report metadata."""
         return {'report_version': '2.0', 'generated_at': format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S'), 'generator': 'BacktestingReportGenerator', 'symbol': self.symbol, 'exchange': self.exchange, 'timeframe': self.timeframe, 'data_directory': str(self.data_dir)}
+    @log_all_calls
 
     def _calculate_success_rate(self, pipeline_results: Dict[str, Any]) -> float:
         """Calculate success rate of pipeline steps."""
         total_steps = len([k for k in pipeline_results.keys() if k.endswith('_results')])
         successful_steps = len([k for k, v in pipeline_results.items() if k.endswith('_results') and v is not None])
         return successful_steps / total_steps * 100 if total_steps > 0 else 0
+    @log_all_calls
 
     def _calculate_quality_score(self, quality_flags: List, errors: List, warnings: List) -> float:
         """Calculate overall quality score (0-100)."""
@@ -505,6 +533,7 @@ class ComprehensiveReporter:
                 base_score -= 5
         base_score -= len(warnings) * 2
         return max(0, min(100, base_score))
+    @log_all_calls
 
     def _determine_quality_level(self, quality_score: float) -> str:
         """Determine quality level based on score."""
@@ -516,6 +545,7 @@ class ComprehensiveReporter:
             return 'FAIR'
         else:
             return 'POOR'
+    @log_all_calls
 
     def _categorize_quality_flags(self, quality_flags: List) -> Dict[str, List]:
         """Categorize quality flags by type."""
@@ -526,6 +556,7 @@ class ComprehensiveReporter:
                 categories[flag_type] = []
             categories[flag_type].append(flag)
         return categories
+    @log_all_calls
 
     def _identify_performance_bottlenecks(self, step_times: Dict, performance_metrics: Dict) -> List[Dict]:
         """Identify performance bottlenecks."""
@@ -542,6 +573,7 @@ class ComprehensiveReporter:
                 if max_memory > 1000:
                     bottlenecks.append({'type': 'HIGH_MEMORY_USAGE', 'peak_memory_mb': max_memory, 'severity': 'HIGH' if max_memory > 2000 else 'MEDIUM'})
         return bottlenecks
+    @log_all_calls
 
     def _calculate_efficiency_metrics(self, step_times: Dict, performance_metrics: Dict) -> Dict[str, Any]:
         """Calculate efficiency metrics."""
@@ -550,6 +582,7 @@ class ComprehensiveReporter:
         total_time = sum(step_times.values())
         step_count = len(step_times)
         return {'steps_per_minute': step_count / total_time * 60 if total_time > 0 else 0, 'average_step_efficiency': total_time / step_count if step_count > 0 else 0, 'time_distribution': {step: time_taken / total_time * 100 for step, time_taken in step_times.items()}}
+    @log_all_calls
 
     def _analyze_validation_step(self, results: Any, step_name: str) -> Dict[str, Any]:
         """Analyze validation step results."""
@@ -559,14 +592,16 @@ class ComprehensiveReporter:
             return {'status': 'COMPLETED', 'message': f'{step_name} validation completed successfully', 'details': results}
         else:
             return {'status': 'COMPLETED', 'message': f'{step_name} validation completed', 'details': str(results)}
+    @log_all_calls
 
     def _generate_error_timeline(self, errors: List) -> List[Dict]:
         """Generate error timeline."""
         timeline = []
         for error in errors:
             timeline.append({'timestamp': error.get('timestamp', 0), 'error_type': error.get('type', 'Unknown'), 'message': error.get('message', ''), 'context': error.get('context', '')})
-        timeline.sort(key=lambda x: x['timestamp'])
+        timeline.sort(key = lambda x: x['timestamp'])
         return timeline
+    @log_all_calls
 
     def _extract_performance_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract performance metrics from results."""
@@ -576,6 +611,7 @@ class ComprehensiveReporter:
             if key in results:
                 metrics[key] = results[key]
         return metrics
+    @log_all_calls
 
     def _calculate_overall_performance_summary(self, backtesting_results: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate overall performance summary."""
@@ -590,13 +626,14 @@ class ComprehensiveReporter:
             summary['average_sharpe_ratio'] = np.mean(sharpe_ratios) if sharpe_ratios else 0
             summary['average_return'] = np.mean(returns) if returns else 0
             best_method = max(all_metrics, key=lambda x: x[1].get('sharpe_ratio', 0))
-            worst_method = min(all_metrics, key=lambda x: x[1].get('sharpe_ratio', 0))
+            worst_method = min(all_metrics, key = lambda x: x[1].get('sharpe_ratio', 0))
             summary['best_performing_method'] = {'method': best_method[0], 'sharpe_ratio': best_method[1].get('sharpe_ratio', 0), 'total_return': best_method[1].get('total_return', 0)}
             summary['worst_performing_method'] = {'method': worst_method[0], 'sharpe_ratio': worst_method[1].get('sharpe_ratio', 0), 'total_return': worst_method[1].get('total_return', 0)}
             if len(sharpe_ratios) > 1:
                 consistency_score = 1.0 - np.std(sharpe_ratios) / (np.mean(sharpe_ratios) + 1e-08)
                 summary['consistency_score'] = max(0, min(1, consistency_score))
         return summary
+    @log_all_calls
 
     def _analyze_regime_stability(self, regime_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze regime stability and transitions."""
@@ -613,6 +650,7 @@ class ComprehensiveReporter:
             avg_persistence = np.mean(list(stability['regime_persistence'].values()))
             stability['stability_score'] = min(1.0, avg_persistence / 30.0)
         return stability
+    @log_all_calls
 
     def _generate_regime_recommendations(self, regime_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate regime-specific recommendations."""
@@ -626,6 +664,7 @@ class ComprehensiveReporter:
             if stability.get('stability_score', 0) < 0.5:
                 recommendations.append({'type': 'REGIME_STABILITY', 'issue': 'Low regime stability', 'recommendation': 'Consider increasing regime persistence or adjusting regime detection parameters'})
         return recommendations
+    @log_all_calls
 
     def _compare_model_performance(self, model_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Compare performance across different models."""
@@ -635,7 +674,7 @@ class ComprehensiveReporter:
             for model_name, accuracy in model_analysis['model_accuracy'].items():
                 models.append({'name': model_name, 'accuracy': accuracy, 'confidence': model_analysis['model_confidence'].get(model_name, 0)})
         if models:
-            models.sort(key=lambda x: x['accuracy'], reverse=True)
+            models.sort(key = lambda x: x['accuracy'], reverse = True)
             comparison['model_rankings'] = models
             if models:
                 comparison['best_model'] = models[0]
@@ -645,6 +684,7 @@ class ComprehensiveReporter:
                     gap = best_accuracy - model['accuracy']
                     comparison['performance_gaps'][model['name']] = gap
         return comparison
+    @log_all_calls
 
     def _generate_model_recommendations(self, model_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate model-specific recommendations."""
@@ -658,6 +698,7 @@ class ComprehensiveReporter:
                 if confidence < 0.7:
                     recommendations.append({'type': 'MODEL_CONFIDENCE', 'model': model_name, 'issue': f'Low confidence: {confidence:.2%}', 'recommendation': f'Improve feature engineering or model architecture for {model_name}'})
         return recommendations
+    @log_all_calls
 
     def _calculate_liquidity_risk(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate liquidity risk metrics."""
@@ -672,6 +713,7 @@ class ComprehensiveReporter:
             avg_volume = liquidity_risk['volume_analysis'].get('average_volume', 0)
             liquidity_risk['liquidity_score'] = min(1.0, avg_volume / 1000000)
         return liquidity_risk
+    @log_all_calls
 
     def _calculate_concentration_risk(self, pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate concentration risk metrics."""
@@ -690,6 +732,7 @@ class ComprehensiveReporter:
                     hhi = sum((v ** 2 for v in values))
                     concentration_risk['concentration_score'] = hhi
         return concentration_risk
+    @log_all_calls
 
     def _generate_risk_recommendations(self, risk_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate risk-specific recommendations."""
@@ -703,6 +746,129 @@ class ComprehensiveReporter:
             if conc_risk.get('concentration_score', 0) > 0.3:
                 recommendations.append({'type': 'CONCENTRATION_RISK', 'issue': f"High concentration: {conc_risk['concentration_score']:.2f}", 'recommendation': 'Diversify across more regimes or time periods'})
         return recommendations
+
+    def _vectorized_portfolio_calculations(self, returns_data: pd.DataFrame,
+                                          weights: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """Vectorized portfolio return and risk calculations."""
+        try:
+            if returns_data.empty:
+                return {'error': 'No returns data provided'}
+
+            # Convert to numpy arrays for vectorized operations
+            returns_matrix = returns_data.values
+            n_assets, n_periods = returns_matrix.shape
+
+            # Use equal weights if none provided
+            if weights is None:
+                weights = np.ones(n_assets) / n_assets
+
+            # Vectorized portfolio returns
+            portfolio_returns = np.dot(weights, returns_matrix)
+
+            # Vectorized portfolio volatility
+            portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(np.cov(returns_matrix), weights)))
+
+            # Vectorized Sharpe ratio
+            risk_free_rate = 0.02  # Assume 2% risk-free rate
+            excess_returns = portfolio_returns - risk_free_rate / 252  # Daily risk-free rate
+            sharpe_ratio = np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(252) if np.std(excess_returns) > 0 else 0
+
+            # Vectorized maximum drawdown
+            cumulative = np.cumprod(1 + portfolio_returns)
+            running_max = np.maximum.accumulate(cumulative)
+            drawdowns = (cumulative - running_max) / running_max
+            max_drawdown = np.min(drawdowns)
+
+            # Vectorized Value at Risk (VaR) calculations
+            var_95 = np.percentile(portfolio_returns, 5)
+            var_99 = np.percentile(portfolio_returns, 1)
+
+            # Vectorized Expected Shortfall (CVaR)
+            cvar_95 = np.mean(portfolio_returns[portfolio_returns <= var_95])
+            cvar_99 = np.mean(portfolio_returns[portfolio_returns <= var_99])
+
+            return {
+                'portfolio_returns': portfolio_returns.tolist(),
+                'portfolio_volatility': float(portfolio_volatility),
+                'sharpe_ratio': float(sharpe_ratio),
+                'max_drawdown': float(max_drawdown),
+                'var_95': float(var_95),
+                'var_99': float(var_99),
+                'cvar_95': float(cvar_95),
+                'cvar_99': float(cvar_99),
+                'total_return': float(np.prod(1 + portfolio_returns) - 1),
+                'annualized_return': float(np.prod(1 + portfolio_returns)**(252/len(portfolio_returns)) - 1),
+                'annualized_volatility': float(portfolio_volatility * np.sqrt(252))
+            }
+
+        except Exception as e:
+            return {'error': f'Vectorized portfolio calculation failed: {str(e)}'}
+
+    def _vectorized_risk_metrics_batch(self, returns_datasets: List[pd.DataFrame],
+                                       confidence_levels: List[float] = [0.95, 0.99]) -> Dict[str, Any]:
+        """Calculate risk metrics for multiple return series using vectorized operations."""
+        try:
+            if not returns_datasets:
+                return {'error': 'No return datasets provided'}
+
+            # Combine all datasets for batch processing
+            all_returns = []
+            dataset_indices = []
+
+            for i, returns_df in enumerate(returns_datasets):
+                returns_array = returns_df.values.flatten()
+                all_returns.extend(returns_array)
+                dataset_indices.extend([i] * len(returns_array))
+
+            all_returns = np.array(all_returns)
+            dataset_indices = np.array(dataset_indices)
+
+            results = {}
+            for conf_level in confidence_levels:
+                # Vectorized VaR calculation for all datasets
+                var_values = []
+                for i in range(len(returns_datasets)):
+                    dataset_returns = all_returns[dataset_indices == i]
+                    if len(dataset_returns) > 0:
+                        var = np.percentile(dataset_returns, (1 - conf_level) * 100)
+                        var_values.append(float(var))
+                    else:
+                        var_values.append(0.0)
+
+                results[f'var_{int(conf_level*100)}'] = var_values
+
+                # Vectorized CVaR calculation
+                cvar_values = []
+                for i in range(len(returns_datasets)):
+                    dataset_returns = all_returns[dataset_indices == i]
+                    if len(dataset_returns) > 0:
+                        var = np.percentile(dataset_returns, (1 - conf_level) * 100)
+                        cvar = np.mean(dataset_returns[dataset_returns <= var])
+                        cvar_values.append(float(cvar))
+                    else:
+                        cvar_values.append(0.0)
+
+                results[f'cvar_{int(conf_level*100)}'] = cvar_values
+
+            # Vectorized maximum drawdown for all datasets
+            max_drawdowns = []
+            for i in range(len(returns_datasets)):
+                dataset_returns = all_returns[dataset_indices == i]
+                if len(dataset_returns) > 0:
+                    cumulative = np.cumprod(1 + dataset_returns)
+                    running_max = np.maximum.accumulate(cumulative)
+                    drawdowns = (cumulative - running_max) / running_max
+                    max_dd = float(np.min(drawdowns))
+                else:
+                    max_dd = 0.0
+                max_drawdowns.append(max_dd)
+
+            results['max_drawdowns'] = max_drawdowns
+
+            return results
+
+        except Exception as e:
+            return {'error': f'Batch risk metrics calculation failed: {str(e)}'}
 
 def generate_backtesting_report(symbol: str, exchange: str, timeframe: str, data_dir: str, pipeline_results: Dict[str, Any], logger_data: Dict[str, Any], output_file: Optional[str]=None) -> Dict[str, Any]:
     """Generate comprehensive backtesting report."""

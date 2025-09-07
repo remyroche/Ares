@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from .logger import system_logger
 """Centralized Report Manager for Ares Trading System.
 
 This module provides a unified interface for managing all reports generated
@@ -22,7 +23,7 @@ from .utils.common import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_file_exists
 )
-from .utils.logger import system_logger
+from .logger import system_logger
 import logging
 import time
 import typing
@@ -160,7 +161,7 @@ class ReportManager:
         }
         
         if file_extension == "json":
-            safe_json_dump(enhanced_report_data, str(report_path), indent=2)
+            safe_json_dump(enhanced_report_data, str(report_path), indent = 2)
         else:
             with open(report_path, 'w', encoding='utf-8') as f:
                 if file_extension == "md":
@@ -211,7 +212,7 @@ class ReportManager:
         }
         
         if file_extension == "json":
-            safe_json_dump(enhanced_report_data, str(report_path), indent=2)
+            safe_json_dump(enhanced_report_data, str(report_path), indent = 2)
         else:
             with open(report_path, 'w', encoding='utf-8') as f:
                 if file_extension == "md":
@@ -261,7 +262,7 @@ class ReportManager:
         }
         
         if file_extension == "json":
-            safe_json_dump(enhanced_report_data, str(report_path), indent=2)
+            safe_json_dump(enhanced_report_data, str(report_path), indent = 2)
         else:
             with open(report_path, 'w', encoding='utf-8') as f:
                 if file_extension == "md":
@@ -415,7 +416,7 @@ class ReportManager:
             "## Report Content",
             "",
             "```json",
-            json.dumps(content, indent=2, default=str),
+            json.dumps(content, indent = 2, default = str),
             "```"
         ]
         
@@ -687,7 +688,7 @@ class ReportManager:
             "",
             "Report Content:",
             "-" * 20,
-            json.dumps(content, indent=2, default=str)
+            json.dumps(content, indent = 2, default = str)
         ]
         
         return "\n".join(text_lines)

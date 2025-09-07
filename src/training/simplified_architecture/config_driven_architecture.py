@@ -154,19 +154,19 @@ class ConfigLoader:
             retry_policy = RetryPolicy(**retry_data) if retry_data else None
             validation_data = step_data.get('validation')
             validation = ValidationConfig(**validation_data) if validation_data else None
-            step_config = StepConfig(class_name=step_data['class_name'], enabled=step_data.get('enabled', True), order=step_data.get('order', 0), parameters=step_data.get('parameters', {}), inputs=step_data.get('inputs', {}), outputs=step_data.get('outputs', []), retry_policy=retry_policy, validation=validation)
+            step_config = StepConfig(class_name = step_data['class_name'], enabled = step_data.get('enabled', True), order = step_data.get('order', 0), parameters = step_data.get('parameters', {}), inputs = step_data.get('inputs', {}), outputs = step_data.get('outputs', []), retry_policy = retry_policy, validation = validation)
             steps[step_name] = step_config
         dependencies = {}
         for dep_name, dep_data in data.get('dependencies', {}).items():
             dep_config = DependencyConfig(**dep_data)
             dependencies[dep_name] = dep_config
-        return PipelineConfig(name=data['name'], version=data['version'], description=data.get('description', ''), steps=steps, global_settings=data.get('global_settings', {}), dependencies=dependencies)
+        return PipelineConfig(name = data['name'], version = data['version'], description = data.get('description', ''), steps = steps, global_settings = data.get('global_settings', {}), dependencies = dependencies)
 
 class ConfigBuilder:
     """Builder pattern for creating configurations programmatically."""
 
     def __init__(self, name: str, version: str) -> None:
-        self.config = PipelineConfig(name=name, version=version)
+        self.config = PipelineConfig(name = name, version = version)
 
     def with_description(self, description: str) -> 'ConfigBuilder':
         """Add description to pipeline."""
@@ -175,13 +175,13 @@ class ConfigBuilder:
 
     def add_step(self, name: str, class_name: str, **kwargs) -> 'ConfigBuilder':
         """Add a step to the pipeline."""
-        step_config = StepConfig(class_name=class_name, **kwargs)
+        step_config = StepConfig(class_name = class_name, **kwargs)
         self.config.steps[name] = step_config
         return self
 
     def add_dependency(self, name: str, class_name: str, module: str, type: str='singleton', **kwargs) -> 'ConfigBuilder':
         """Add a dependency."""
-        dep_config = DependencyConfig(type=type, class_name=class_name, module=module, parameters=kwargs)
+        dep_config = DependencyConfig(type = type, class_name = class_name, module = module, parameters = kwargs)
         self.config.dependencies[name] = dep_config
         return self
 
@@ -194,17 +194,17 @@ class ConfigBuilder:
         """Build and return the configuration."""
         return self.config
 
-    def save(self, file_path: Union[str, Path], format: ConfigFormat=ConfigFormat.YAML) -> None:
+    def save(self, file_path: Union[str, Path], format: ConfigFormat = ConfigFormat.YAML) -> None:
         """Save configuration to file."""
         file_path = Path(file_path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.parent.mkdir(parents = True, exist_ok = True)
         config_dict = self._to_dict(self.config)
         if format == ConfigFormat.JSON:
             with open(file_path, 'w') as f:
-                json.dump(config_dict, f, indent=2)
+                json.dump(config_dict, f, indent = 2)
         elif format == ConfigFormat.YAML:
             with open(file_path, 'w') as f:
-                yaml.dump(config_dict, f, default_flow_style=False)
+                yaml.dump(config_dict, f, default_flow_style = False)
 
     def _to_dict(self, obj: Any) -> Dict[str, Any]:
         """Convert dataclass to dictionary recursively."""
@@ -221,7 +221,7 @@ EXAMPLE_YAML_CONFIG = '\nname: ML_Trading_Pipeline\nversion: 1.0.0\ndescription:
 class ConfigDrivenPipeline:
     """Executes pipeline based on configuration."""
 
-    def __init__(self, config: PipelineConfig, container: Any=None) -> None:
+    def __init__(self, config: PipelineConfig, container: Any = None) -> None:
         self.config = config
         self.container = container
         self.steps = {}
@@ -229,7 +229,7 @@ class ConfigDrivenPipeline:
 
     async def initialize(self) -> None:
         """Initialize pipeline from configuration."""
-        sorted_steps = sorted(self.config.steps.items(), key=lambda x: x[1].order)
+        sorted_steps = sorted(self.config.steps.items(), key = lambda x: x[1].order)
         for step_name, step_config in sorted_steps:
             if not step_config.enabled:
                 continue
@@ -264,4 +264,5 @@ def example_usage() -> None:
 if __name__ == '__main__':
     with open('config/example_pipeline.yaml', 'w') as f:
         f.write(EXAMPLE_YAML_CONFIG)
-    await example_usage()
+    import asyncio
+    asyncio.run(example_usage())

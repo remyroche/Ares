@@ -1,6 +1,6 @@
-import pandas as pd
 import typing
 import numpy as np
+import pandas as pd
 
 # Improvements for the Fractal Location Classifier
 
@@ -179,9 +179,9 @@ class LocationClassifierEnhancements:
         
         # 5. Volume Profile at Current Price
         # Is current price area high or low volume?
-        price_bins = pd.cut(market_data['close'], bins=50)
+        price_bins = pd.cut(market_data['close'], bins = 50)
         volume_profile = market_data.groupby(price_bins)['volume'].sum()
-        current_bin = pd.cut([current_price], bins=volume_profile.index.categories)[0]
+        current_bin = pd.cut([current_price], bins = volume_profile.index.categories)[0]
         
         if current_bin in volume_profile.index:
             current_volume_profile = volume_profile[current_bin]

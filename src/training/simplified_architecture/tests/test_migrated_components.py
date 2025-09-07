@@ -23,6 +23,7 @@ from ..dependency_injection import EnhancedDIContainer, ServiceLifetime
 from ..enhanced_config_system import ConfigurationManager, PipelineConfiguration
 from ..enhanced_pipeline_orchestrator import EnhancedPipelineOrchestrator
 from ..migrated_components.data_components import DataCollectionStep, DataConverterStep, DataQualityMetrics
+import logging
 
 class TestDataCollectionStep:
     """Test suite for DataCollectionStep."""
@@ -44,7 +45,7 @@ class TestDataCollectionStep:
     @pytest.fixture
     def sample_data(self):
         """Create sample market data."""
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1H')
+        dates = pd.date_range(start='2024-01-01', periods = 1000, freq='1H')
         np.random.seed(42)
         
         data = pd.DataFrame({
@@ -53,14 +54,14 @@ class TestDataCollectionStep:
             'low': 95 + np.random.randn(1000).cumsum(),
             'close': 100 + np.random.randn(1000).cumsum(),
             'volume': np.random.randint(1000, 10000, 1000)
-        }, index=dates)
+        }, index = dates)
         
         return data
 
     @pytest.fixture
     def temp_file(self, sample_data):
         """Create temporary parquet file with sample data."""
-        with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix='.parquet', delete = False) as f:
             sample_data.to_parquet(f.name)
             yield f.name
         os.unlink(f.name)
@@ -160,7 +161,7 @@ class TestDataCollectionStep:
     @pytest.mark.asyncio
     async def test_execute_impl_success(self, data_collection_step, temp_file):
         """Test successful step execution."""
-        result = await data_collection_step._execute_impl(source=temp_file)
+        result = await data_collection_step._execute_impl(source = temp_file)
         
         assert isinstance(result, dict)
         assert 'data' in result
@@ -181,11 +182,11 @@ class TestDataCollectionStep:
             'volume': [1000, 1100]
         })
         
-        with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix='.parquet', delete = False) as f:
             invalid_data.to_parquet(f.name)
             
             with pytest.raises(ValueError, match="Data validation failed"):
-                await data_collection_step._execute_impl(source=f.name)
+                await data_collection_step._execute_impl(source = f.name)
             
             os.unlink(f.name)
 
@@ -269,7 +270,7 @@ class TestDataConverterStep:
     @pytest.mark.asyncio
     async def test_execute_impl_success(self, converter_step, sample_input_data):
         """Test successful converter execution."""
-        result = await converter_step._execute_impl(data=sample_input_data)
+        result = await converter_step._execute_impl(data = sample_input_data)
         
         assert isinstance(result, dict)
         assert 'data' in result
@@ -318,11 +319,11 @@ class TestDependencyInjection:
     def test_circular_dependency_detection(self, di_container):
         """Test circular dependency detection."""
         class ServiceA:
-            def __init__(self, service_b=None):
+            def __init__(self, service_b = None):
                 self.service_b = service_b
         
         class ServiceB:
-            def __init__(self, service_a=None):
+            def __init__(self, service_a = None):
                 self.service_a = service_a
         
         di_container.register_singleton("service_a", ServiceA, dependencies=["service_b"])
@@ -335,7 +336,7 @@ class TestDependencyInjection:
     def test_dependency_validation(self, di_container):
         """Test dependency validation."""
         class TestService:
-            def __init__(self, missing_dep=None):
+            def __init__(self, missing_dep = None):
                 self.missing_dep = missing_dep
         
         di_container.register_singleton("test_service", TestService, dependencies=["missing_dep"])
@@ -453,7 +454,7 @@ class TestPipelineOrchestrator:
     @pytest.fixture
     def orchestrator(self, sample_pipeline_config):
         """Create pipeline orchestrator for testing."""
-        return EnhancedPipelineOrchestrator(config=sample_pipeline_config)
+        return EnhancedPipelineOrchestrator(config = sample_pipeline_config)
 
     def test_orchestrator_initialization(self, orchestrator):
         """Test orchestrator initialization."""
@@ -487,7 +488,7 @@ class TestStepFactory:
     def test_step_creation(self):
         """Test step creation from configuration."""
         class TestStep:
-            def __init__(self, config, logger=None, di_container=None):
+            def __init__(self, config, logger = None, di_container = None):
                 self.config = config
                 self.logger = logger
                 self.di_container = di_container
@@ -530,7 +531,7 @@ class TestIntegration:
             'volume': [1000, 1100, 1200, 1300, 1400]
         })
         
-        with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix='.parquet', delete = False) as f:
             sample_data.to_parquet(f.name)
             
             # Create configuration
@@ -551,7 +552,7 @@ class TestIntegration:
             )
             
             # Create orchestrator
-            orchestrator = EnhancedPipelineOrchestrator(config=config)
+            orchestrator = EnhancedPipelineOrchestrator(config = config)
             
             # Run pipeline
             result = await orchestrator.run()

@@ -21,8 +21,8 @@ class PurgedKFoldTime:
     interpreted as number of rows.
     """
     n_splits: int = 5
-    purge: pd.Timedelta | int = pd.Timedelta(minutes=30)
-    embargo: pd.Timedelta | int = pd.Timedelta(minutes=15)
+    purge: pd.Timedelta | int = pd.Timedelta(minutes = 30)
+    embargo: pd.Timedelta | int = pd.Timedelta(minutes = 15)
 
     def split(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]=None, groups: List[Any]=None) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
@@ -34,7 +34,7 @@ class PurgedKFoldTime:
             msg = 'n_splits must be at least 2 and at most n_samples'
             raise ValueError(msg)
         np.argsort(np.arange(n_samples))
-        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=int)
+        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype = int)
         fold_sizes[:n_samples % self.n_splits] += 1
         current = 0
         folds = []
@@ -48,9 +48,9 @@ class PurgedKFoldTime:
             if is_time:
                 val_start_time = index[val_start_i]
                 val_end_time = index[val_stop_i - 1]
-                purge_delta = self.purge if isinstance(self.purge, pd.Timedelta) else pd.Timedelta(minutes=int(self.purge))
-                embargo_delta = self.embargo if isinstance(self.embargo, pd.Timedelta) else pd.Timedelta(minutes=int(self.embargo))
-                train_mask = np.ones(n_samples, dtype=bool)
+                purge_delta = self.purge if isinstance(self.purge, pd.Timedelta) else pd.Timedelta(minutes = int(self.purge))
+                embargo_delta = self.embargo if isinstance(self.embargo, pd.Timedelta) else pd.Timedelta(minutes = int(self.embargo))
+                train_mask = np.ones(n_samples, dtype = bool)
                 left_bound_time = val_start_time - purge_delta
                 right_bound_time = val_end_time + embargo_delta
                 in_window = (index >= left_bound_time) & (index <= right_bound_time)
@@ -62,7 +62,7 @@ class PurgedKFoldTime:
                 embargo_n = int(self.embargo) if isinstance(self.embargo, int | float) else 0
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
-                train_mask = np.ones(n_samples, dtype=bool)
+                train_mask = np.ones(n_samples, dtype = bool)
                 train_mask[left:right] = False
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]

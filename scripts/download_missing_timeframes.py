@@ -20,18 +20,18 @@ import logging
 import time
 
 # Add project root to path
-project_root=Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-logger=system_logger.getChild("MissingTimeframesDownloader")
+logger = system_logger.getChild("MissingTimeframesDownloader")
 
 
 class MissingTimeframesDownloader:
     """Downloads missing timeframe data for multi-timeframe HMM ensemble."""
 
     def __init__(self, config: dict[str, Any]):
-        self.config=config
-        self.required_timeframes = ["5m", "15m", "30m"]
+        self.config = config
+        self.required_timeframes = ["1m", "5m", "15m", "30m", "1h"]
         self.symbol="ETHUSDT"
         self.exchange = "BINANCE"
         self.data_dir = Path("data")
@@ -42,7 +42,7 @@ class MissingTimeframesDownloader:
 
         existing_data: dict[str, bool] = {}
         for timeframe in self.required_timeframes:
-            csv_file=self.data_dir / f"ETHUSDT_{timeframe}.csv"
+            csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
             existing_data[timeframe] = csv_file.exists()
 
             status="✅" if existing_data[timeframe] else "❌"
@@ -57,10 +57,10 @@ class MissingTimeframesDownloader:
         logger.info(f"📥 Downloading {timeframe} data for {self.symbol}...")
 
         try:
-            success=await download_all_data_with_consolidation(
-                symbol=self.symbol,
-                exchange_name=self.exchange,
-                interval=timeframe,
+            success = await download_all_data_with_consolidation(
+                symbol = self.symbol,
+                exchange_name = self.exchange,
+                interval = timeframe,
             )
 
             if success:
@@ -77,7 +77,7 @@ class MissingTimeframesDownloader:
         logger.info("🚀 Starting download of missing timeframe data...")
 
         # Check existing data
-        existing_data=await self.check_existing_data()
+        existing_data = await self.check_existing_data()
 
         # Identify missing timeframes
         missing_timeframes=[tf for tf, exists in existing_data.items() if not exists]
@@ -91,7 +91,7 @@ class MissingTimeframesDownloader:
         # Download missing timeframes
         download_results: dict[str, bool] = {}
         for timeframe in missing_timeframes:
-            success=await self.download_timeframe(timeframe)
+            success = await self.download_timeframe(timeframe)
             download_results[timeframe] = success
 
             # Add small delay between downloads to respect rate limits
@@ -105,12 +105,12 @@ class MissingTimeframesDownloader:
         """Verify that all downloads were successful."""
         logger.info("🔍 Verifying downloads...")
 
-        all_successful=True
+        all_successful = True
         for timeframe, success in results.items():
             status="✅" if success else "❌"
             logger.info(f"  {timeframe}: {status} {'Success' if success else 'Failed'}")
             if not success:
-                all_successful=False
+                all_successful = False
 
         if all_successful:
             logger.info("✅ All timeframes successfully downloaded!")
@@ -128,18 +128,18 @@ class MissingTimeframesDownloader:
 
 
 def main() -> None:
-    parser=argparse.ArgumentParser(description="Download missing timeframes")
+    parser = argparse.ArgumentParser(description="Download missing timeframes")
     parser.add_argument("--symbol", default="ETHUSDT")
     parser.add_argument("--exchange", default="BINANCE")
-    args=parser.parse_args()
+    args = parser.parse_args()
 
-    cfg=dict(CONFIG)
+    cfg = dict(CONFIG)
     cfg["symbol"] = args.symbol
     cfg["exchange"] = args.exchange
 
-    downloader=MissingTimeframesDownloader(cfg)
+    downloader = MissingTimeframesDownloader(cfg)
 
-    results=asyncio.run(downloader.download_missing_timeframes())
+    results = asyncio.run(downloader.download_missing_timeframes())
     downloader.print_summary(results)
     downloader.verify_downloads(results)
 

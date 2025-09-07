@@ -24,8 +24,8 @@ except ImportError as e:
 
 from sklearn.linear_model import LogisticRegression
 
-from .database.sqlite_manager import SQLiteManager
-from .utils.logger import get_logger
+from ..database.sqlite_manager import SQLiteManager
+from src.utils.logger import get_logger
 import logging
 
 # Component logger
@@ -35,7 +35,7 @@ logger = get_logger("TpSlOptimizer")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-@numba.jit(nopython=True, cache=True)
+@numba.jit(nopython = True, cache = True)
 def _numba_backtest(
     close_prices: np.ndarray,
     low_prices: np.ndarray,
@@ -106,8 +106,8 @@ def _numba_backtest(
                 position_direction = 0
 
     if not trades:
-        return np.empty((0, 2), dtype=np.float64)
-    return np.array(trades, dtype=np.float64)
+        return np.empty((0, 2), dtype = np.float64)
+    return np.array(trades, dtype = np.float64)
 
 
 class TpSlOptimizer:
@@ -156,7 +156,7 @@ class TpSlOptimizer:
             # Drop any rows with invalid timestamps before indexing
             self.data = self.data.dropna(subset=["timestamp"]).copy()
             # Keep column and also use as index
-            self.data = self.data.set_index("timestamp", drop=False)
+            self.data = self.data.set_index("timestamp", drop = False)
         except Exception as e:
             logger.exception(f"Failed to standardize timestamp column: {e}")
             raise
@@ -172,17 +172,17 @@ class TpSlOptimizer:
             for c in ("OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"):
                 if c in self.data.columns:
                     rename_map[c] = c.capitalize()
-            self.data = self.data.rename(columns=rename_map)
+            self.data = self.data.rename(columns = rename_map)
         except Exception as e:
             logger.warning(f"Column normalization warning: {e}")
 
         # Feature Engineering (requires pandas_ta accessor to be registered)
         try:
-            self.data.ta.rsi(length=14, append=True)
-            self.data.ta.macd(append=True)
-            self.data.ta.bbands(length=20, append=True)
-            self.data.ta.atr(length=14, append=True)
-            self.data.ta.adx(length=14, append=True)
+            self.data.ta.rsi(length = 14, append = True)
+            self.data.ta.macd(append = True)
+            self.data.ta.bbands(length = 20, append = True)
+            self.data.ta.atr(length = 14, append = True)
+            self.data.ta.adx(length = 14, append = True)
         except Exception as e:
             # Enforce dependency presence; do not proceed with limited features
             logger.exception(f"pandas_ta feature engineering failed: {e}")
@@ -199,7 +199,7 @@ class TpSlOptimizer:
             price_change < -PROFIT_THRESHOLD,
         ]
         choices = [1, -1]
-        self.data["target"] = np.select(conditions, choices, default=0)
+        self.data["target"] = np.select(conditions, choices, default = 0)
 
         self.data = self.data.dropna()
 
@@ -214,7 +214,7 @@ class TpSlOptimizer:
 
         model = LogisticRegression(
             solver="liblinear",
-            random_state=42,
+            random_state = 42,
             class_weight="balanced",
         )
         model.fit(X, y)
@@ -293,10 +293,10 @@ class TpSlOptimizer:
         }
 
     def objective(self, trial: optuna.trial.Trial) -> float:
-        tp_long = trial.suggest_float("tp_long", 0.005, 0.1, log=True)
-        sl_long = trial.suggest_float("sl_long", 0.005, 0.1, log=True)
-        tp_short = trial.suggest_float("tp_short", 0.005, 0.1, log=True)
-        sl_short = trial.suggest_float("sl_short", 0.005, 0.1, log=True)
+        tp_long = trial.suggest_float("tp_long", 0.005, 0.1, log = True)
+        sl_long = trial.suggest_float("sl_long", 0.005, 0.1, log = True)
+        tp_short = trial.suggest_float("tp_short", 0.005, 0.1, log = True)
+        sl_short = trial.suggest_float("sl_short", 0.005, 0.1, log = True)
 
         early_exit_confidence = trial.suggest_float("early_exit_confidence", 0.5, 0.95)
         enable_ml_early_exit = trial.suggest_categorical(
@@ -305,12 +305,12 @@ class TpSlOptimizer:
         )
 
         results_df = self._run_backtest(
-            tp_long=tp_long,
-            sl_long=sl_long,
-            tp_short=tp_short,
-            sl_short=sl_short,
-            enable_ml_early_exit=enable_ml_early_exit,
-            early_exit_confidence=early_exit_confidence,
+            tp_long = tp_long,
+            sl_long = sl_long,
+            tp_short = tp_short,
+            sl_short = sl_short,
+            enable_ml_early_exit = enable_ml_early_exit,
+            early_exit_confidence = early_exit_confidence,
         )
 
         if len(results_df) < 25:
@@ -361,7 +361,7 @@ class TpSlOptimizer:
             f"Starting asymmetrical TP/SL optimization for {n_trials} trials...",
         )
         study = optuna.create_study(direction="maximize")
-        study.optimize(self.objective, n_trials=n_trials, show_progress_bar=True)
+        study.optimize(self.objective, n_trials = n_trials, show_progress_bar = True)
 
         logger.info("TP/SL optimization finished.")
 
@@ -397,16 +397,16 @@ class TpSlOptimizer:
         # Re-run backtest using best parameters to summarize trade counts over the period
         try:
             results_df = self._run_backtest(
-                tp_long=best_trial.params.get("tp_long"),
-                sl_long=best_trial.params.get("sl_long"),
-                tp_short=best_trial.params.get("tp_short"),
-                sl_short=best_trial.params.get("sl_short"),
-                enable_ml_early_exit=best_trial.params.get("enable_ml_early_exit"),
-                early_exit_confidence=best_trial.params.get("early_exit_confidence"),
+                tp_long = best_trial.params.get("tp_long"),
+                sl_long = best_trial.params.get("sl_long"),
+                tp_short = best_trial.params.get("tp_short"),
+                sl_short = best_trial.params.get("sl_short"),
+                enable_ml_early_exit = best_trial.params.get("enable_ml_early_exit"),
+                early_exit_confidence = best_trial.params.get("early_exit_confidence"),
             )
             # Compute profit factor and theoretical final equity when starting with 100 USDT
             pnl_series = (
-                results_df["pnl"] if not results_df.empty else pd.Series(dtype=float)
+                results_df["pnl"] if not results_df.empty else pd.Series(dtype = float)
             )
             metrics_total = self._calculate_performance_metrics(pnl_series)
             profit_factor_best = metrics_total.get("profit_factor", 0)

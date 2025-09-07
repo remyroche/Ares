@@ -29,10 +29,10 @@ class ServiceDescriptor:
     service_type: Type
     factory: Callable[..., Any]
     lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT
-    dependencies: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory = list)
     instance: Optional[Any] = None
     scope_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory = dict)
 
     def __post_init__(self) -> None:
         if self.dependencies is None:
@@ -81,13 +81,13 @@ class EnhancedDIContainer:
         """Register a scoped service."""
         self._register_service(name, service_type, factory, ServiceLifetime.SCOPED, dependencies, metadata)
 
-    def register_factory(self, name: str, factory: Callable[..., T], lifetime: ServiceLifetime=ServiceLifetime.TRANSIENT, dependencies: Optional[List[str]]=None, metadata: Optional[Dict[str, Any]]=None) -> None:
+    def register_factory(self, name: str, factory: Callable[..., T], lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT, dependencies: Optional[List[str]]=None, metadata: Optional[Dict[str, Any]]=None) -> None:
         """Register a service with a custom factory function."""
         self._register_service(name, None, factory, lifetime, dependencies, metadata)
 
     def register_instance(self, name: str, instance: Any, metadata: Optional[Dict[str, Any]]=None) -> None:
         """Register an existing instance as a singleton."""
-        descriptor = ServiceDescriptor(service_type=type(instance), factory=lambda: instance, lifetime=ServiceLifetime.SINGLETON, instance=instance, metadata=metadata or {})
+        descriptor = ServiceDescriptor(service_type = type(instance), factory = lambda: instance, lifetime = ServiceLifetime.SINGLETON, instance = instance, metadata = metadata or {})
         self._services[name] = descriptor
         self._service_health[name] = True
         self.logger.debug(f'Registered instance: {name} (type: {type(instance).__name__})')
@@ -100,7 +100,7 @@ class EnhancedDIContainer:
             raise ServiceRegistrationError(f"Either service_type or factory must be provided for service '{name}'")
         if factory is None:
             factory = service_type
-        descriptor = ServiceDescriptor(service_type=service_type or type(factory()), factory=factory, lifetime=lifetime, dependencies=dependencies or [], metadata=metadata or {})
+        descriptor = ServiceDescriptor(service_type = service_type or type(factory()), factory = factory, lifetime = lifetime, dependencies = dependencies or [], metadata = metadata or {})
         self._services[name] = descriptor
         self._service_health[name] = True
         self.logger.debug(f'Registered service: {name} (lifetime: {lifetime.value}, dependencies: {dependencies})')
@@ -211,7 +211,7 @@ class ServiceScope:
         if self.scope_id in self.container._scopes:
             del self.container._scopes[self.scope_id]
 
-def injectable(lifetime: ServiceLifetime=ServiceLifetime.TRANSIENT, dependencies: Optional[List[str]]=None, metadata: Optional[Dict[str, Any]]=None) -> None:
+def injectable(lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT, dependencies: Optional[List[str]]=None, metadata: Optional[Dict[str, Any]]=None) -> None:
     """Decorator to mark a class as injectable."""
 
     def decorator(cls) -> None:
@@ -328,7 +328,7 @@ class FileLogger(ILogger):
 
     def __init__(self, log_file: Path) -> None:
         self.log_file = log_file
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file.parent.mkdir(parents = True, exist_ok = True)
 
     def info(self, message: str) -> None:
         self._write_log('INFO', message)
@@ -343,7 +343,7 @@ class FileLogger(ILogger):
 class DataValidator(IDataValidator):
     """Basic data validator implementation."""
 
-    def __init__(self, logger: ILogger=None) -> None:
+    def __init__(self, logger: ILogger = None) -> None:
         self.logger = logger or ConsoleLogger()
 
     def validate(self, data: Any) -> bool:
@@ -370,13 +370,13 @@ def create_pipeline_container(config: dict) -> DIContainer:
     container = DIContainer()
     if config.get('logging', {}).get('type') == 'file':
         log_file = Path(config['logging']['file'])
-        container.register('logger', ILogger, lambda: FileLogger(log_file), singleton=True)
+        container.register('logger', ILogger, lambda: FileLogger(log_file), singleton = True)
     else:
-        container.register('logger', ILogger, ConsoleLogger, singleton=True)
-    container.register('validator', IDataValidator, lambda logger: DataValidator(logger), singleton=True, dependencies=['logger'])
+        container.register('logger', ILogger, ConsoleLogger, singleton = True)
+    container.register('validator', IDataValidator, lambda logger: DataValidator(logger), singleton = True, dependencies=['logger'])
     if config.get('cache', {}).get('enabled', False):
         from .caching import MemoryCache
-        container.register('cache', MemoryCache, lambda: MemoryCache(config['cache']), singleton=True)
+        container.register('cache', MemoryCache, lambda: MemoryCache(config['cache']), singleton = True)
     return container
 if __name__ == '__main__':
     config = {'logging': {'type': 'console'}, 'cache': {'enabled': True}}

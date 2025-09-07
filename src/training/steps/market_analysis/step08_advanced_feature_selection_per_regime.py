@@ -6,24 +6,23 @@ feature selection is optimized specifically for each regime's characteristics.
 import asyncio
 from pathlib import Path
 import json
+from typing import Dict, Any, Optional, List
 from src.training.steps.market_analysis.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.pipeline_standards import pipeline_standards
 import numpy as np
 
-try:
-    from src.core.decorators import traced, validates, handles_errors
-except Exception:
-    from src.utils.decorators import traced, validates, handles_errors
+from ....utils.decorators import traced, validates, handles_errors
 from src.utils.logger import get_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import logging
-import typing
 
 logger = get_logger('Step8AdvancedFeatureSelectionPerRegime')
 
 class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
     """Advanced feature selection step that processes each regime separately."""
 
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_feature_selection', True)
@@ -32,7 +31,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
 
     @traced(span_name='execute_per_regime_feature_selection')
     @per_regime_step('step08_advanced_feature_selection')
-    async def execute_per_regime_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool=False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool=True) -> bool:
+    async def execute_per_regime_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool = True) -> bool:
         """Execute feature selection on a per-regime basis.
         
         Each regime may have different feature importance patterns, so feature
@@ -100,6 +99,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error loading matrix data for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _get_regime_feature_selection_config(self, regime_id: int) -> Dict[str, Any]:
         """Get feature selection configuration for a specific regime.
@@ -164,6 +164,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error applying feature selection for regime {regime_id}: {e}')
             return None
+    @log_all_calls
 
     def _apply_correlation_filtering(self, matrix_data: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> Dict[str, Any]:
         """Apply correlation-based feature filtering.
@@ -189,6 +190,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error in correlation filtering: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _apply_variance_filtering(self, matrix_data: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> Dict[str, Any]:
         """Apply variance-based feature filtering.
@@ -218,6 +220,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error in variance filtering: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _apply_mutual_information_filtering(self, matrix_data: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> Dict[str, Any]:
         """Apply mutual information-based feature filtering.
@@ -242,6 +245,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error in mutual information filtering: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _apply_recursive_feature_elimination(self, matrix_data: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> Dict[str, Any]:
         """Apply recursive feature elimination.
@@ -267,6 +271,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error in recursive feature elimination: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _apply_permutation_importance(self, matrix_data: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> Dict[str, Any]:
         """Apply permutation importance analysis.
@@ -289,6 +294,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.error(f'❌ Error in permutation importance: {e}')
             return {'error': str(e)}
+    @log_all_calls
 
     def _combine_selection_results(self, selection_metadata: Dict[str, Any], regime_config: Dict[str, Any], feature_columns: List[str]) -> List[str]:
         """Combine results from different feature selection methods.
@@ -340,7 +346,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
         try:
             selection_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_feature_selection_regime_{regime_id}.json'
             with open(selection_path, 'w') as f:
-                json.dump(selection_results, f, indent=2, default=str)
+                json.dump(selection_results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved feature selection results for regime {regime_id}: {selection_path}')
             return True
         except Exception as e:
@@ -350,7 +356,7 @@ class PerRegimeAdvancedFeatureSelectionStep(Step08AdvancedFeatureSelection):
 @traced(span_name='run_per_regime_feature_selection_step')
 @validates()
 @handles_errors
-async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
+async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the enhanced per-regime feature selection step.
     
     Args:
@@ -371,7 +377,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
         data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
     config['per_regime_feature_selection'] = True
     step = PerRegimeAdvancedFeatureSelectionStep(config)
-    success = await step.execute_per_regime_feature_selection(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir, force_rerun=force_rerun)
+    success = await step.execute_per_regime_feature_selection(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
     if success:
         logger.info('✅ Step 8: Per-Regime Advanced Feature Selection completed successfully')
     else:

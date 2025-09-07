@@ -1,4 +1,6 @@
 """Base validation step using BaseStep pattern."""
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
 from abc import abstractmethod
 from .training.base_step import BaseStep
 import pandas as pd
@@ -7,6 +9,7 @@ import typing
 
 class BaseValidationStep(BaseStep):
     """Base class for all validation steps."""
+    @log_important_calls
 
     def __init__(self, config: Dict[str, Any], step_number: str, validation_type: str) -> None:
         """Initialize the validation step.
@@ -18,6 +21,7 @@ class BaseValidationStep(BaseStep):
         """
         super().__init__(config, step_number, validation_type)
         self.validation_config = {'min_samples': config.get('min_validation_samples', 100), 'validation_split': config.get('validation_split', 0.2), 'random_state': config.get('random_state', 42), 'parallel_processing': config.get('parallel_processing', True), 'save_results': config.get('save_validation_results', True)}
+    @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate common inputs for validation steps.
@@ -38,6 +42,7 @@ class BaseValidationStep(BaseStep):
         errors.extend(step_errors)
         return (len(errors) == 0, errors)
 
+    @log_all_calls
     @abstractmethod
     def _validate_step_specific_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific inputs.
@@ -67,6 +72,7 @@ class BaseValidationStep(BaseStep):
         errors.extend(step_errors)
         return (len(errors) == 0, errors)
 
+    @log_all_calls
     @abstractmethod
     def _validate_step_specific_outputs(self, pipeline_state: Dict[str, Any]) -> List[str]:
         """Validate step-specific outputs.
@@ -77,6 +83,7 @@ class BaseValidationStep(BaseStep):
         Returns:
             List of validation errors
         """
+    @log_all_calls
 
     def _extract_validation_data(self, pipeline_state: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.Series]:
         """Extract data for validation.
@@ -112,6 +119,7 @@ class BaseValidationStep(BaseStep):
                 return X, y
         
         return pd.DataFrame(), pd.Series()
+    @log_all_calls
     
     def _get_models_for_validation(
         self,
@@ -142,6 +150,7 @@ class BaseValidationStep(BaseStep):
                     for ens_type, ens_model in ensemble_data['ensemble'].items():
                         models[f'analyst_{regime_id}_{ens_type}'] = ens_model
         return models
+    @log_all_calls
 
     def _create_validation_summary(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
         """Create a summary of validation results.
@@ -160,6 +169,7 @@ class BaseValidationStep(BaseStep):
         self._add_step_specific_summary(summary, validation_results)
         return summary
 
+    @log_all_calls
     @abstractmethod
     def _add_step_specific_summary(self, summary: Dict[str, Any], validation_results: Dict[str, Any]) -> None:
         """Add step-specific items to summary.
@@ -168,3 +178,5 @@ class BaseValidationStep(BaseStep):
             summary: Summary dictionary to update
             validation_results: Validation results
         """
+"""Base validation step using BaseStep pattern."""
+from abc import abstractmethod

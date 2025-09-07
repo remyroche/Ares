@@ -68,14 +68,14 @@ class ErrorContext:
     error_category: ErrorCategory
     severity: ErrorSeverity
     stack_trace: str
-    function_parameters: Dict[str, Any] = field(default_factory=dict)
-    local_variables: Dict[str, Any] = field(default_factory=dict)
-    system_state: Dict[str, Any] = field(default_factory=dict)
-    recovery_attempts: List[Dict[str, Any]] = field(default_factory=list)
+    function_parameters: Dict[str, Any] = field(default_factory = dict)
+    local_variables: Dict[str, Any] = field(default_factory = dict)
+    system_state: Dict[str, Any] = field(default_factory = dict)
+    recovery_attempts: List[Dict[str, Any]] = field(default_factory = list)
     recovery_strategy: Optional[RecoveryStrategy] = None
     recovery_successful: bool = False
-    performance_impact: Dict[str, Any] = field(default_factory=dict)
-    related_errors: List[str] = field(default_factory=list)
+    performance_impact: Dict[str, Any] = field(default_factory = dict)
+    related_errors: List[str] = field(default_factory = list)
 
 @dataclass
 class ErrorReport:
@@ -84,20 +84,20 @@ class ErrorReport:
     start_time: datetime
     end_time: Optional[datetime] = None
     total_errors: int = 0
-    errors_by_category: Dict[str, int] = field(default_factory=dict)
-    errors_by_severity: Dict[str, int] = field(default_factory=dict)
+    errors_by_category: Dict[str, int] = field(default_factory = dict)
+    errors_by_severity: Dict[str, int] = field(default_factory = dict)
     recovery_attempts: int = 0
     successful_recoveries: int = 0
     failed_recoveries: int = 0
     performance_impact_total: float = 0.0
-    error_patterns: List[Dict[str, Any]] = field(default_factory=list)
-    recommendations: List[str] = field(default_factory=list)
-    detailed_errors: List[ErrorContext] = field(default_factory=list)
+    error_patterns: List[Dict[str, Any]] = field(default_factory = list)
+    recommendations: List[str] = field(default_factory = list)
+    detailed_errors: List[ErrorContext] = field(default_factory = list)
 
 class EnhancedErrorHandler:
     """Enhanced error handling system with comprehensive analysis and recovery."""
 
-    def __init__(self, enable_automatic_recovery: bool=True, enable_error_pattern_detection: bool=True, enable_performance_impact_analysis: bool=True, max_recovery_attempts: int=3, recovery_timeout_seconds: float=30.0, log_level: str='INFO', generate_error_reports: bool=True, error_report_path: Optional[str]=None) -> None:
+    def __init__(self, enable_automatic_recovery: bool = True, enable_error_pattern_detection: bool = True, enable_performance_impact_analysis: bool = True, max_recovery_attempts: int = 3, recovery_timeout_seconds: float = 30.0, log_level: str='INFO', generate_error_reports: bool = True, error_report_path: Optional[str]=None) -> None:
         """
         Initialize the enhanced error handler.
         
@@ -156,7 +156,7 @@ class EnhancedErrorHandler:
         except Exception:
             function_parameters = {'args': str(args), 'kwargs': str(kwargs)}
         system_state = {'timestamp': datetime.now().isoformat(), 'python_version': sys.version, 'platform': sys.platform, 'memory_usage': self._get_memory_usage(), 'cpu_usage': self._get_cpu_usage()}
-        return ErrorContext(error_id=error_id, timestamp=datetime.now(), function_name=func.__name__, module_name=func.__module__, error_type=type(error).__name__, error_message=str(error), error_category=category, severity=severity, stack_trace=traceback.format_exc(), function_parameters=function_parameters, local_variables=local_vars or {}, system_state=system_state, recovery_strategy=recovery_strategy)
+        return ErrorContext(error_id = error_id, timestamp = datetime.now(), function_name = func.__name__, module_name = func.__module__, error_type = type(error).__name__, error_message = str(error), error_category = category, severity = severity, stack_trace = traceback.format_exc(), function_parameters = function_parameters, local_variables = local_vars or {}, system_state = system_state, recovery_strategy = recovery_strategy)
 
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
@@ -297,7 +297,7 @@ class EnhancedErrorHandler:
         try:
             self.error_history.append(error_context)
             patterns = self._detect_error_patterns()
-            report = ErrorReport(report_id=str(uuid.uuid4()), start_time=datetime.now(), total_errors=len(self.error_history), detailed_errors=[error_context], error_patterns=patterns)
+            report = ErrorReport(report_id = str(uuid.uuid4()), start_time = datetime.now(), total_errors = len(self.error_history), detailed_errors=[error_context], error_patterns = patterns)
             for error in self.error_history:
                 category = error.error_category.value
                 severity = error.severity.value
@@ -305,12 +305,12 @@ class EnhancedErrorHandler:
                 report.errors_by_severity[severity] = report.errors_by_severity.get(severity, 0) + 1
             if self.error_report_path:
                 report_file = Path(self.error_report_path) / f'error_report_{error_context.error_id}.json'
-                report_file.parent.mkdir(parents=True, exist_ok=True)
+                report_file.parent.mkdir(parents = True, exist_ok = True)
                 import json
 
                 report_data = {'report_id': report.report_id, 'start_time': report.start_time.isoformat(), 'total_errors': report.total_errors, 'errors_by_category': report.errors_by_category, 'errors_by_severity': report.errors_by_severity, 'error_patterns': report.error_patterns, 'detailed_errors': [{'error_id': e.error_id, 'timestamp': e.timestamp.isoformat(), 'function_name': e.function_name, 'module_name': e.module_name, 'error_type': e.error_type, 'error_message': e.error_message, 'error_category': e.error_category.value, 'severity': e.severity.value, 'recovery_strategy': e.recovery_strategy.value if e.recovery_strategy else None, 'recovery_successful': e.recovery_successful} for e in report.detailed_errors]}
                 with open(report_file, 'w') as f:
-                    json.dump(report_data, f, indent=2, default=str)
+                    json.dump(report_data, f, indent = 2, default = str)
                 self.logger.info(f'📊 Error report saved to: {report_file}')
         except Exception as e:
             self.logger.error(f'Failed to generate error report: {e}')
@@ -361,7 +361,7 @@ class EnhancedErrorHandler:
                 self.logger.error(f'❌ Recovery failed for error {error_context.error_id}: {recovery_error}')
         raise error
 
-def handle_errors_enhanced(enable_automatic_recovery: bool=True, enable_error_pattern_detection: bool=True, enable_performance_impact_analysis: bool=True, max_recovery_attempts: int=3, recovery_timeout_seconds: float=30.0, log_level: str='INFO', generate_error_reports: bool=True, error_report_path: Optional[str]=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def handle_errors_enhanced(enable_automatic_recovery: bool = True, enable_error_pattern_detection: bool = True, enable_performance_impact_analysis: bool = True, max_recovery_attempts: int = 3, recovery_timeout_seconds: float = 30.0, log_level: str='INFO', generate_error_reports: bool = True, error_report_path: Optional[str]=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator factory for enhanced error handling.
     
@@ -378,17 +378,17 @@ def handle_errors_enhanced(enable_automatic_recovery: bool=True, enable_error_pa
     Returns:
         Decorator function for enhanced error handling
     """
-    handler = EnhancedErrorHandler(enable_automatic_recovery=enable_automatic_recovery, enable_error_pattern_detection=enable_error_pattern_detection, enable_performance_impact_analysis=enable_performance_impact_analysis, max_recovery_attempts=max_recovery_attempts, recovery_timeout_seconds=recovery_timeout_seconds, log_level=log_level, generate_error_reports=generate_error_reports, error_report_path=error_report_path)
+    handler = EnhancedErrorHandler(enable_automatic_recovery = enable_automatic_recovery, enable_error_pattern_detection = enable_error_pattern_detection, enable_performance_impact_analysis = enable_performance_impact_analysis, max_recovery_attempts = max_recovery_attempts, recovery_timeout_seconds = recovery_timeout_seconds, log_level = log_level, generate_error_reports = generate_error_reports, error_report_path = error_report_path)
     return handler.handle_errors
 
 def handle_step03_errors(func: Callable[P, R]) -> Callable[P, R]:
     """Specialized decorator for step03 functions with enhanced error handling."""
-    return handle_errors_enhanced(enable_automatic_recovery=True, enable_error_pattern_detection=True, enable_performance_impact_analysis=True, max_recovery_attempts=3, recovery_timeout_seconds=30.0, log_level='INFO', generate_error_reports=True, error_report_path='logs/step03_errors')(func)
+    return handle_errors_enhanced(enable_automatic_recovery = True, enable_error_pattern_detection = True, enable_performance_impact_analysis = True, max_recovery_attempts = 3, recovery_timeout_seconds = 30.0, log_level='INFO', generate_error_reports = True, error_report_path='logs/step03_errors')(func)
 
 def handle_critical_errors(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator for critical functions with maximum error handling."""
-    return handle_errors_enhanced(enable_automatic_recovery=True, enable_error_pattern_detection=True, enable_performance_impact_analysis=True, max_recovery_attempts=5, recovery_timeout_seconds=60.0, log_level='DEBUG', generate_error_reports=True, error_report_path='logs/critical_errors')(func)
+    return handle_errors_enhanced(enable_automatic_recovery = True, enable_error_pattern_detection = True, enable_performance_impact_analysis = True, max_recovery_attempts = 5, recovery_timeout_seconds = 60.0, log_level='DEBUG', generate_error_reports = True, error_report_path='logs/critical_errors')(func)
 
 def handle_errors_with_retry(func: Callable[P, R]) -> Callable[P, R]:
     """Lightweight decorator for error handling with retry only."""
-    return handle_errors_enhanced(enable_automatic_recovery=True, enable_error_pattern_detection=False, enable_performance_impact_analysis=False, max_recovery_attempts=3, recovery_timeout_seconds=10.0, log_level='WARNING', generate_error_reports=False)(func)
+    return handle_errors_enhanced(enable_automatic_recovery = True, enable_error_pattern_detection = False, enable_performance_impact_analysis = False, max_recovery_attempts = 3, recovery_timeout_seconds = 10.0, log_level='WARNING', generate_error_reports = False)(func)

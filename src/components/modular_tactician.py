@@ -1,15 +1,14 @@
 
 from datetime import datetime
 from typing import Any
-
-from .utils.logger import system_logger
-from .utils.warning_symbols import initialization_error, invalid, missing
-
-
-from logging import error
-# src/components/modular_tactician.py
-from .core.decorators.errors import handles_errors
 import time
+from logging import error
+
+from ..utils.logger import system_logger
+from ..utils.warning_symbols import initialization_error, invalid, missing
+from ..core.decorators import handles_errors
+
+# src/components/modular_tactician.py
 
 
 class ModularTactician:
@@ -57,7 +56,7 @@ class ModularTactician:
             AttributeError: (False, "Missing required tactician parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="modular tactician initialization",
     )
     async def initialize(self) -> bool:
@@ -85,7 +84,7 @@ class ModularTactician:
         )
         return True
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _load_tactician_configuration(self) -> None:
         """Load tactician configuration."""
         try:
@@ -112,7 +111,7 @@ class ModularTactician:
         except Exception as e:
             self.logger.exception(error(f"Error loading tactician configuration: {e}"))
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_configuration(self) -> bool:
         """
         Validate tactician configuration.
@@ -150,7 +149,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error validating configuration: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_tactician_modules(self) -> None:
         """Initialize tactician modules."""
         try:
@@ -177,7 +176,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing tactician modules: {e}")
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_entry_monitoring(self) -> None:
         """Initialize entry monitoring module."""
         try:
@@ -196,7 +195,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing entry monitoring: {e}")
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_exit_monitoring(self) -> None:
         """Initialize exit monitoring module."""
         try:
@@ -215,7 +214,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing exit monitoring: {e}")
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_position_monitoring(self) -> None:
         """Initialize position monitoring module."""
         try:
@@ -234,7 +233,7 @@ class ModularTactician:
                 initialization_error(f"Error initializing position monitoring: {e}")
             )
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _initialize_risk_monitoring(self) -> None:
         """Initialize risk monitoring module."""
         try:
@@ -259,7 +258,7 @@ class ModularTactician:
             AttributeError: (False, "Missing tactician components"),
             KeyError: (False, "Missing required tactician data"),
         },
-        default_return=False,
+        default_return = False,
         context="tactician execution",
     )
     async def execute_tactician(
@@ -328,7 +327,7 @@ class ModularTactician:
             self.is_tactician_active = False
             return False
 
-    @handles_errors(fallback=False)
+    @handles_errors(fallback = False)
     def _validate_tactician_inputs(
         self,
         market_data: dict[str, Any],
@@ -378,7 +377,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error validating tactician inputs: {e}"))
             return False
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_entry_monitoring(
         self,
         market_data: dict[str, Any],
@@ -432,7 +431,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error performing entry monitoring: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_exit_monitoring(
         self,
         market_data: dict[str, Any],
@@ -486,7 +485,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error performing exit monitoring: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_position_monitoring(
         self,
         market_data: dict[str, Any],
@@ -540,7 +539,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error performing position monitoring: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _perform_risk_monitoring(
         self,
         market_data: dict[str, Any],
@@ -875,7 +874,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error performing stress testing: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def _store_tactician_results(self) -> None:
         """Store tactician results."""
         try:
@@ -894,7 +893,7 @@ class ModularTactician:
         except Exception as e:
             self.logger.exception(error(f"Error storing tactician results: {e}"))
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_tactician_results(
         self,
         tactician_type: str | None = None,
@@ -917,7 +916,7 @@ class ModularTactician:
             self.logger.exception(error(f"Error getting tactician results: {e}"))
             return {}
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     def get_tactician_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get tactician history.
@@ -964,7 +963,7 @@ class ModularTactician:
             "tactician_history_count": len(self.tactician_history),
         }
 
-    @handles_errors(fallback=None)
+    @handles_errors(fallback = None)
     async def stop(self) -> None:
         """Stop the modular tactician."""
         self.logger.info("🛑 Stopping Modular Tactician...")

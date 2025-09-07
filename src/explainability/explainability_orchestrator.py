@@ -5,6 +5,7 @@ import pandas as pd
 from typing import Optional
 from typing import Tuple
 import numpy as np
+from ..utils.logger import system_logger
 'Explainability orchestrator for coordinating all model explanations.\n\nThis module provides a centralized orchestrator for managing SHAP/LIME explanations\nacross all ML models and creating comprehensive trade decision traces.\n'
 from datetime import datetime
 import asyncio
@@ -15,7 +16,7 @@ from .explainability.tactician_explainer import TacticianExplainer
 from .explainability.hmm_explainer import HMMExplainer
 from .explainability.sr_explainer import SRExplainer
 from .explainability.analyst_explainer import AnalystExplainer
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import logging
 import time
 
@@ -111,7 +112,7 @@ class ExplainabilityOrchestrator:
                 self.logger.error(f'❌ No explainer available for model type: {model_type}')
                 return None
             try:
-                explanation = await asyncio.wait_for(explainer.explain_prediction(model, features, feature_names, prediction), timeout=self.explanation_timeout)
+                explanation = await asyncio.wait_for(explainer.explain_prediction(model, features, feature_names, prediction), timeout = self.explanation_timeout)
                 if explanation:
                     if market_conditions:
                         explanation.metadata['market_conditions'] = market_conditions
@@ -174,7 +175,7 @@ class ExplainabilityOrchestrator:
             self.logger.error(f'❌ Failed to finalize decision trace {decision_id}: {e}')
             return None
 
-    async def explain_complete_trading_decision(self, decision_id: str, decision_type: str, market_data: pd.DataFrame, tactician_features: Optional[Tuple[np.ndarray, List[str]]]=None, hmm_features: Optional[Tuple[np.ndarray, List[str]]]=None, sr_features: Optional[Tuple[np.ndarray, List[str]]]=None, analyst_features: Optional[Tuple[np.ndarray, List[str]]]=None, final_decision: Optional[Any]=None, confidence: float=0.5) -> Optional[TradeDecisionTrace]:
+    async def explain_complete_trading_decision(self, decision_id: str, decision_type: str, market_data: pd.DataFrame, tactician_features: Optional[Tuple[np.ndarray, List[str]]]=None, hmm_features: Optional[Tuple[np.ndarray, List[str]]]=None, sr_features: Optional[Tuple[np.ndarray, List[str]]]=None, analyst_features: Optional[Tuple[np.ndarray, List[str]]]=None, final_decision: Optional[Any]=None, confidence: float = 0.5) -> Optional[TradeDecisionTrace]:
         """Explain a complete trading decision across all models."""
         try:
             self.logger.info(f'🔍 Explaining complete trading decision: {decision_id}')
@@ -186,25 +187,25 @@ class ExplainabilityOrchestrator:
             explanations_added = 0
             if tactician_features is not None:
                 features, feature_names = tactician_features
-                explanation = await self.explain_model_prediction('tactician', 'main', features, feature_names, market_conditions=market_conditions)
+                explanation = await self.explain_model_prediction('tactician', 'main', features, feature_names, market_conditions = market_conditions)
                 if explanation:
                     await self.add_explanation_to_trace(decision_id, 'tactician', explanation)
                     explanations_added += 1
             if hmm_features is not None:
                 features, feature_names = hmm_features
-                explanation = await self.explain_model_prediction('hmm', 'main', features, feature_names, market_conditions=market_conditions)
+                explanation = await self.explain_model_prediction('hmm', 'main', features, feature_names, market_conditions = market_conditions)
                 if explanation:
                     await self.add_explanation_to_trace(decision_id, 'hmm', explanation)
                     explanations_added += 1
             if sr_features is not None:
                 features, feature_names = sr_features
-                explanation = await self.explain_model_prediction('sr', 'main', features, feature_names, market_conditions=market_conditions)
+                explanation = await self.explain_model_prediction('sr', 'main', features, feature_names, market_conditions = market_conditions)
                 if explanation:
                     await self.add_explanation_to_trace(decision_id, 'sr', explanation)
                     explanations_added += 1
             if analyst_features is not None:
                 features, feature_names = analyst_features
-                explanation = await self.explain_model_prediction('analyst', 'main', features, feature_names, market_conditions=market_conditions)
+                explanation = await self.explain_model_prediction('analyst', 'main', features, feature_names, market_conditions = market_conditions)
                 if explanation:
                     await self.add_explanation_to_trace(decision_id, 'analyst', explanation)
                     explanations_added += 1
@@ -268,7 +269,7 @@ class ExplainabilityOrchestrator:
             latest_trace_file = max(trace_files, key=lambda x: x.stat().st_mtime)
             with open(latest_trace_file, 'r') as f:
                 trace_data = json.load(f)
-            trace = TradeDecisionTrace(decision_id=trace_data['decision_id'], timestamp=datetime.fromisoformat(trace_data['timestamp']), decision_type=trace_data['decision_type'], final_decision=trace_data['final_decision'], confidence=trace_data['confidence'], top_contributing_factors=trace_data.get('top_contributing_factors', []), risk_factors=trace_data.get('risk_factors', []), opportunity_factors=trace_data.get('opportunity_factors', []), market_conditions=trace_data.get('market_conditions', {}), metadata=trace_data.get('metadata', {}))
+            trace = TradeDecisionTrace(decision_id = trace_data['decision_id'], timestamp = datetime.fromisoformat(trace_data['timestamp']), decision_type = trace_data['decision_type'], final_decision = trace_data['final_decision'], confidence = trace_data['confidence'], top_contributing_factors = trace_data.get('top_contributing_factors', []), risk_factors = trace_data.get('risk_factors', []), opportunity_factors = trace_data.get('opportunity_factors', []), market_conditions = trace_data.get('market_conditions', {}), metadata = trace_data.get('metadata', {}))
             return trace
         except Exception as e:
             self.logger.error(f'❌ Failed to load decision trace {decision_id}: {e}')
@@ -296,7 +297,7 @@ class ExplainabilityOrchestrator:
         """Get information about registered models."""
         return {model_type: {model_name: {'initialized': model_info['initialized'], 'has_training_data': model_info['training_data'] is not None} for model_name, model_info in models.items()} for model_type, models in self.registered_models.items()}
 
-    async def cleanup_old_explanations(self, days_to_keep: int=30) -> int:
+    async def cleanup_old_explanations(self, days_to_keep: int = 30) -> int:
         """Clean up old explanation files."""
         try:
             explanations_storage = Path(self.explain_config.get('storage_path', 'data/explanations'))

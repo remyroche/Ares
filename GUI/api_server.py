@@ -41,6 +41,8 @@ try:
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
+    from src.monitoring.metrics_dashboard import MetricsDashboard
+    from src.monitoring.ml_monitor import MLMonitor
     from src.monitoring.performance_dashboard import PerformanceDashboard
     from src.monitoring.performance_monitor import PerformanceMonitor
     from src.supervisor.performance_reporter import PerformanceReporter
@@ -1748,8 +1750,8 @@ async def get_training_modes():
             return {
                 "modes": {
                     "light": {
-                        "description": "Light training mode for quick testing (30 days)",
-                        "lookback_days": 30,
+                        "description": "Light training mode for quick testing (10 days)",
+                        "lookback_days": 10,
                         "max_trials": 10,
                         "n_trials": 5,
                         "computational_intensity": "low",
@@ -1788,7 +1790,7 @@ async def get_training_modes():
                     }
                 },
                 "comparison": {
-                    "light": {"intensity_percentage": 0.1, "max_trials": 10, "n_trials": 5, "estimated_duration_minutes": 15, "lookback_days": 30},
+                    "light": {"intensity_percentage": 0.1, "max_trials": 10, "n_trials": 5, "estimated_duration_minutes": 15, "lookback_days": 10},
                     "blank": {"intensity_percentage": 0.5, "max_trials": 50, "n_trials": 25, "estimated_duration_minutes": 60, "lookback_days": 180},
                     "full": {"intensity_percentage": 1.0, "max_trials": 200, "n_trials": 100, "estimated_duration_minutes": 240, "lookback_days": 730}
                 },

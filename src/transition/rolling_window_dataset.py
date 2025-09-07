@@ -7,7 +7,7 @@ from typing import Any
 
 from .transition.path_targets import PathTargetEngineer
 from .transition.state_sequence_builder import StateSequenceBuilder
-from .utils.logger import system_logger
+from ..utils.logger import system_logger
 import numpy as np
 import logging
 import pandas as pd
@@ -60,17 +60,17 @@ class RollingWindowDatasetBuilder:
         tm = (config or {}).get("TRANSITION_MODELING", {})
         rcfg = tm.get("rolling", {}) if isinstance(tm.get("rolling", {}), dict) else {}
         self.rw_cfg = RollingWindowConfig(
-            pre_window=int(rcfg.get("pre_window", tm.get("pre_window", 60))),
-            post_window=int(rcfg.get("post_window", tm.get("post_window", 20))),
-            onset_horizon_bars=int(rcfg.get("onset_horizon_bars", 8)),
-            end_horizon_bars=int(rcfg.get("end_horizon_bars", 8)),
-            include_direction_horizons=list(rcfg.get("direction_horizons", [5, 15])),
-            max_samples=int(rcfg.get("max_samples", 0)) or None,
+            pre_window = int(rcfg.get("pre_window", tm.get("pre_window", 60))),
+            post_window = int(rcfg.get("post_window", tm.get("post_window", 20))),
+            onset_horizon_bars = int(rcfg.get("onset_horizon_bars", 8)),
+            end_horizon_bars = int(rcfg.get("end_horizon_bars", 8)),
+            include_direction_horizons = list(rcfg.get("direction_horizons", [5, 15])),
+            max_samples = int(rcfg.get("max_samples", 0)) or None,
         )
         self.state_builder = StateSequenceBuilder(
             config,
-            exchange=exchange,
-            symbol=symbol,
+            exchange = exchange,
+            symbol = symbol,
         )
         self.path_target = PathTargetEngineer(config)
 
@@ -177,14 +177,14 @@ class RollingWindowDatasetBuilder:
             s["onset_beginning"] = int(
                 any(
                     pc == "beginning_of_trend"
-                    for pc in path_classes[t : min(N=t + K + 1)]
+                    for pc in path_classes[t : min(N = t + K + 1)]
                 ),
             )
             # End of trend (end_of_trend or reversal within J bars)
             s["end_trend"] = int(
                 any(
                     pc in ("end_of_trend", "reversal")
-                    for pc in path_classes[t : min(N=t + J + 1)]
+                    for pc in path_classes[t : min(N = t + J + 1)]
                 ),
             )
 

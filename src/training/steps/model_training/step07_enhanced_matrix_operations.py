@@ -3,18 +3,34 @@ import numpy as np
 import pandas as pd
 
 """
-Step 7: Enhanced Matrix Operations with Advanced Performance Optimizations.
+Step 7: Enhanced Matrix Operations with Comprehensive Utility Integration.
 
 This module performs advanced matrix operations for comprehensive data analysis
-after feature engineering, with GPU/MPS acceleration support and async processing.
+after feature engineering, with extensive utility integration and dependency injection.
 
-🚀 ADVANCED FEATURES:
-- Async matrix processing for concurrent operations
-- Numba JIT compilation for compute-intensive functions
-- Memory pooling and optimization
+🚀 ENHANCED FEATURES:
+- Comprehensive utility integration from all utility modules
+- Dependency injection for clean architecture
+- M1 GPU/Memory/CPU optimization
+- Advanced mathematical validation
+- Enhanced data processing and serialization
 - Performance monitoring and profiling
 - Batch processing with intelligent task scheduling
 """
+
+# Import dependency injection system
+try:
+    from src.utils.dependency_injection import (
+        setup_step07_dependencies, get_step07_utility, inject_step07_utilities,
+        get_global_container
+    )
+    DEPENDENCY_INJECTION_AVAILABLE = True
+except ImportError:
+    DEPENDENCY_INJECTION_AVAILABLE = False
+    def setup_step07_dependencies(): return None
+    def get_step07_utility(name): return None
+    def inject_step07_utilities(func): return func
+    def get_global_container(): return None
 
 from typing import List, Dict, Any, Tuple, Optional, Union, Callable
 
@@ -96,6 +112,93 @@ except ImportError:
     M1_BATCH_AVAILABLE = False
     get_m1_gpu_manager = None
     m1_batch_process = None
+
+# Import comprehensive utility modules
+try:
+    from src.utils.common_operations import (
+        get_current_datetime, get_today, format_datetime, parse_datetime,
+        create_empty_dataframe, safe_fillna, safe_rolling, safe_mean, safe_std,
+        ensure_directory, safe_file_exists, safe_json_dump, safe_json_load,
+        safe_sleep, safe_gather, create_async_task, safe_append, safe_extend,
+        safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join,
+        get_logger, setup_basic_logging, create_argument_parser, add_common_arguments,
+        safe_exception_handler, safe_float, safe_int, suggest_float_uniform,
+        suggest_int_uniform, validate_dataframe, validate_numeric_range,
+        validate_dataframe_schema, validate_data_quality, optimize_dataframe_dtypes,
+        timed_operation, format_bytes, chunked_iterable, parallel_map,
+        safe_log_metric, safe_log_params, safe_log_artifact, standardize_price_action_probabilities
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Common operations utilities not available")
+    COMMON_OPERATIONS_AVAILABLE = False
+
+try:
+    from src.utils.common_utilities import (
+        safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+        calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+        safe_apply_function, create_summary_statistics, safe_drop_columns,
+        safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+        get_dataframe_info, safe_filter_dataframe, create_data_quality_report
+    )
+    COMMON_UTILITIES_AVAILABLE = True
+except ImportError:
+    warnings.warn("Common utilities not available")
+    COMMON_UTILITIES_AVAILABLE = False
+
+try:
+    from src.utils.math_validation import (
+        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+        validate_positive, validate_range, safe_kelly_calculation,
+        safe_weighted_average, safe_percentage_change, validate_correlation_matrix,
+        safe_matrix_inverse, math_safe
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    warnings.warn("Math validation utilities not available")
+    MATH_VALIDATION_AVAILABLE = False
+
+try:
+    from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+    PARQUET_UTILS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Parquet utilities not available")
+    PARQUET_UTILS_AVAILABLE = False
+
+try:
+    from src.utils.serialization_utils import (
+        JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
+        save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
+        save_data, load_data
+    )
+    SERIALIZATION_UTILS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Serialization utilities not available")
+    SERIALIZATION_UTILS_AVAILABLE = False
+
+try:
+    from src.utils.data_processing_utils import (
+        DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
+        validate_dataframe as validate_dataframe_util, clean_dataframe, transform_dataframe, get_dataframe_info as get_dataframe_info_util
+    )
+    DATA_PROCESSING_UTILS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Data processing utilities not available")
+    DATA_PROCESSING_UTILS_AVAILABLE = False
+
+try:
+    from src.utils.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
+    M1_MEMORY_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    warnings.warn("M1 memory optimizer not available")
+    M1_MEMORY_OPTIMIZER_AVAILABLE = False
+
+try:
+    from src.utils.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer, initialize_m1_cpu_optimizer
+    M1_CPU_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    warnings.warn("M1 CPU optimizer not available")
+    M1_CPU_OPTIMIZER_AVAILABLE = False
 
 # Safe imports with fallbacks
 try:
@@ -207,20 +310,29 @@ logger = system_logger.getChild('Step07Dependencies')
 logger.info(f"Dependency status: NumPy={NUMPY_AVAILABLE}, Pandas={PANDAS_AVAILABLE}, Numba={NUMBA_AVAILABLE}, PyTorch={TORCH_AVAILABLE}, psutil={PSUTIL_AVAILABLE}")
 
 def check_step07_dependencies() -> Dict[str, bool]:
-    """Check Step07 dependency status - all dependencies are required."""
+    """Check Step07 dependency status with comprehensive utility availability."""
     return {
-        'numpy': True,
-        'pandas': True,
-        'numba': True,
-        'torch': True,
-        'psutil': True,
-        'm1_gpu_utils': True,
-        'system_logger': True,
-        'logging_decorators': True,
-        'handles_errors': True,
-        'base_step': True,
-        'matrix_components': True,
-        'enhanced_reporting': True
+        'numpy': NUMPY_AVAILABLE,
+        'pandas': PANDAS_AVAILABLE,
+        'numba': NUMBA_AVAILABLE,
+        'torch': TORCH_AVAILABLE,
+        'psutil': PSUTIL_AVAILABLE,
+        'm1_gpu_utils': M1_GPU_UTILS_AVAILABLE,
+        'system_logger': SYSTEM_LOGGER_AVAILABLE,
+        'logging_decorators': LOGGING_DECORATORS_AVAILABLE,
+        'handles_errors': HANDLES_ERRORS_AVAILABLE,
+        'base_step': BASE_STEP_AVAILABLE,
+        'matrix_components': MATRIX_COMPONENTS_AVAILABLE,
+        'enhanced_reporting': ENHANCED_REPORTING_AVAILABLE,
+        'dependency_injection': DEPENDENCY_INJECTION_AVAILABLE,
+        'common_operations': COMMON_OPERATIONS_AVAILABLE,
+        'common_utilities': COMMON_UTILITIES_AVAILABLE,
+        'math_validation': MATH_VALIDATION_AVAILABLE,
+        'parquet_utils': PARQUET_UTILS_AVAILABLE,
+        'serialization_utils': SERIALIZATION_UTILS_AVAILABLE,
+        'data_processing_utils': DATA_PROCESSING_UTILS_AVAILABLE,
+        'm1_memory_optimizer': M1_MEMORY_OPTIMIZER_AVAILABLE,
+        'm1_cpu_optimizer': M1_CPU_OPTIMIZER_AVAILABLE
     }
 
 def get_step07_capabilities() -> Dict[str, Any]:
@@ -925,17 +1037,25 @@ class PerformanceMonitor:
         return {'total_functions_monitored': len(self.performance_metrics), 'total_duration_seconds': total_duration, 'total_memory_delta_mb': total_memory_delta, 'average_duration_seconds': total_duration / len(self.performance_metrics) if self.performance_metrics else 0, 'average_memory_delta_mb': total_memory_delta / len(self.performance_metrics) if self.performance_metrics else 0, 'session_duration_seconds': time.time() - self.start_time, 'psutil_available': self.psutil_available, 'function_metrics': self.performance_metrics}
 
 class EnhancedMatrixOperationsStep(BaseStep):
-    """Step 7: Enhanced Matrix Operations using standardized base class."""
+    """Step 7: Enhanced Matrix Operations with comprehensive utility integration."""
     @log_important_calls
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize enhanced matrix operations step.
+        """Initialize enhanced matrix operations step with utility integration.
         
         Args:
             config: Configuration dictionary
         """
         super().__init__(config, '07', 'enhanced_matrix_operations')
         self.logger = system_logger.getChild('EnhancedMatrixOperationsStep')
+        
+        # Setup dependency injection container
+        if DEPENDENCY_INJECTION_AVAILABLE:
+            self.di_container = setup_step07_dependencies()
+            self.logger.info('✅ Dependency injection container initialized')
+        else:
+            self.di_container = None
+            self.logger.warning('⚠️ Dependency injection not available')
         
         # Check dependencies and capabilities
         self.dependencies = check_step07_dependencies()
@@ -944,8 +1064,8 @@ class EnhancedMatrixOperationsStep(BaseStep):
         self.logger.info(f'🔍 Step07 Dependencies: {self.dependencies}')
         self.logger.info(f'📊 Step07 Capabilities: {self.capabilities}')
         
-        # All capabilities are available
-        self.logger.info('🚀 Full Step07 capabilities available')
+        # Initialize utility services
+        self._initialize_utility_services()
         
         # Initialize tracking systems
         self.call_tracker = FunctionCallTracker(self.logger)
@@ -955,6 +1075,9 @@ class EnhancedMatrixOperationsStep(BaseStep):
         self.logger.info('🛡️ Initialized enhanced error handling and validation system')
         self.performance_monitor = PerformanceMonitor(self.logger)
         self.logger.info('📊 Initialized performance monitoring system')
+        
+        # Initialize M1 optimizers
+        self._initialize_m1_optimizers()
         
         # Configure matrix operations based on capabilities
         self.matrix_config = config.get('matrix_operations_config', {
@@ -988,6 +1111,146 @@ class EnhancedMatrixOperationsStep(BaseStep):
         except Exception as e:
             self.logger.warning(f'⚠️ Enhanced reporting system failed to initialize: {e}')
             self.enhanced_reporter = None
+
+    def _initialize_utility_services(self) -> None:
+        """Initialize utility services using dependency injection."""
+        self.utility_services = {}
+        
+        # Initialize common operations utilities
+        if COMMON_OPERATIONS_AVAILABLE:
+            self.utility_services.update({
+                'datetime_utils': get_current_datetime,
+                'dataframe_utils': create_empty_dataframe,
+                'file_utils': ensure_directory,
+                'json_utils': safe_json_dump,
+                'async_utils': safe_sleep,
+                'list_utils': safe_append,
+                'dict_utils': safe_dict_get,
+                'string_utils': safe_lower,
+                'logging_utils': get_logger,
+                'validation_utils': validate_dataframe,
+                'math_utils': safe_mean,
+                'optimization_utils': optimize_dataframe_dtypes,
+                'performance_utils': timed_operation,
+                'parallel_utils': parallel_map,
+                'mlflow_utils': safe_log_metric,
+                'probability_utils': standardize_price_action_probabilities
+            })
+            self.logger.info('✅ Common operations utilities initialized')
+        
+        # Initialize common utilities
+        if COMMON_UTILITIES_AVAILABLE:
+            self.utility_services.update({
+                'dataframe_operations': safe_dataframe_operation,
+                'dataframe_validation': validate_dataframe_columns,
+                'dataframe_conversion': safe_convert_dtypes,
+                'data_quality_metrics': calculate_data_quality_metrics,
+                'dataframe_merge': safe_merge_dataframes,
+                'dataframe_groupby': safe_groupby_operation,
+                'dataframe_apply': safe_apply_function,
+                'summary_statistics': create_summary_statistics,
+                'dataframe_drop': safe_drop_columns,
+                'dataframe_rename': safe_rename_columns,
+                'timestamp_validation': validate_timestamp_column,
+                'timestamp_conversion': safe_timestamp_conversion,
+                'dataframe_info': get_dataframe_info,
+                'dataframe_filter': safe_filter_dataframe,
+                'data_quality_report': create_data_quality_report
+            })
+            self.logger.info('✅ Common utilities initialized')
+        
+        # Initialize math validation utilities
+        if MATH_VALIDATION_AVAILABLE:
+            self.utility_services.update({
+                'safe_divide': safe_divide,
+                'safe_log': safe_log,
+                'safe_sqrt': safe_sqrt,
+                'safe_power': safe_power,
+                'validate_finite': validate_finite,
+                'validate_positive': validate_positive,
+                'validate_range': validate_range,
+                'kelly_calculation': safe_kelly_calculation,
+                'weighted_average': safe_weighted_average,
+                'percentage_change': safe_percentage_change,
+                'correlation_validation': validate_correlation_matrix,
+                'matrix_inverse': safe_matrix_inverse,
+                'math_safe_decorator': math_safe
+            })
+            self.logger.info('✅ Math validation utilities initialized')
+        
+        # Initialize parquet utilities
+        if PARQUET_UTILS_AVAILABLE:
+            self.utility_services['parquet_utils'] = get_parquet_utils()
+            self.logger.info('✅ Parquet utilities initialized')
+        
+        # Initialize serialization utilities
+        if SERIALIZATION_UTILS_AVAILABLE:
+            self.utility_services.update({
+                'json_serializer': JSONSerializer,
+                'pickle_serializer': PickleSerializer,
+                'parquet_serializer': ParquetSerializer,
+                'universal_serializer': UniversalSerializer,
+                'save_json': save_json,
+                'load_json': load_json,
+                'save_pickle': save_pickle,
+                'load_pickle': load_pickle,
+                'save_parquet': save_parquet,
+                'load_parquet': load_parquet,
+                'save_data': save_data,
+                'load_data': load_data
+            })
+            self.logger.info('✅ Serialization utilities initialized')
+        
+        # Initialize data processing utilities
+        if DATA_PROCESSING_UTILS_AVAILABLE:
+            self.utility_services.update({
+                'dataframe_validator': DataFrameValidator(),
+                'dataframe_cleaner': DataFrameCleaner(),
+                'dataframe_transformer': DataFrameTransformer(),
+                'validate_dataframe_util': validate_dataframe_util,
+                'clean_dataframe_util': clean_dataframe,
+                'transform_dataframe_util': transform_dataframe,
+                'get_dataframe_info_util': get_dataframe_info_util
+            })
+            self.logger.info('✅ Data processing utilities initialized')
+
+    def _initialize_m1_optimizers(self) -> None:
+        """Initialize M1 optimization utilities."""
+        self.m1_optimizers = {}
+        
+        # Initialize M1 GPU manager
+        if M1_GPU_UTILS_AVAILABLE:
+            try:
+                self.m1_optimizers['gpu_manager'] = get_m1_gpu_manager()
+                self.logger.info('✅ M1 GPU manager initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ M1 GPU manager initialization failed: {e}')
+        
+        # Initialize M1 memory optimizer
+        if M1_MEMORY_OPTIMIZER_AVAILABLE:
+            try:
+                self.m1_optimizers['memory_optimizer'] = get_m1_memory_optimizer()
+                self.logger.info('✅ M1 memory optimizer initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ M1 memory optimizer initialization failed: {e}')
+        
+        # Initialize M1 CPU optimizer
+        if M1_CPU_OPTIMIZER_AVAILABLE:
+            try:
+                self.m1_optimizers['cpu_optimizer'] = get_m1_cpu_optimizer()
+                self.logger.info('✅ M1 CPU optimizer initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ M1 CPU optimizer initialization failed: {e}')
+
+    def get_utility(self, utility_name: str) -> Any:
+        """Get a utility service by name."""
+        if self.di_container and DEPENDENCY_INJECTION_AVAILABLE:
+            try:
+                return get_step07_utility(utility_name)
+            except Exception:
+                pass
+        
+        return self.utility_services.get(utility_name)
     @log_step_functions
 
     def _initialize_step(self) -> None:
@@ -1320,8 +1583,9 @@ class EnhancedMatrixOperationsStep(BaseStep):
             return {'optimized_periods': {'short': [5, 10, 20], 'medium': [50, 100], 'long': [200]}, 'method': 'default'}
 
     @comprehensive_function_tracker(None)
+    @inject_step07_utilities
     async def _compute_matrices(self, data: Any, selected_features: List[str], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Compute various matrices for the data with fallback support.
+        """Compute various matrices for the data with comprehensive utility integration.
         
         Args:
             data: Data to process (DataFrame, numpy array, or list)
@@ -1334,14 +1598,47 @@ class EnhancedMatrixOperationsStep(BaseStep):
         matrices = {}
         
         try:
-            # Handle different data types
+            # Use data processing utilities for data validation and cleaning
+            if DATA_PROCESSING_UTILS_AVAILABLE:
+                dataframe_validator = self.get_utility('dataframe_validator')
+                dataframe_cleaner = self.get_utility('dataframe_cleaner')
+                
+                if dataframe_validator and hasattr(data, 'columns'):
+                    # Validate DataFrame using utility
+                    validation_report = dataframe_validator.validate_dataframe(data)
+                    if not validation_report.is_valid:
+                        self.logger.warning(f"DataFrame validation issues: {validation_report.issues}")
+                        # Clean the data using utility
+                        if dataframe_cleaner:
+                            data = dataframe_cleaner.clean_dataframe(data)
+                            self.logger.info("✅ Data cleaned using utility")
+            
+            # Handle different data types with utility support
             if hasattr(data, 'columns'):
-                # Pandas DataFrame
+                # Pandas DataFrame - use dataframe utilities
                 if selected_features:
+                    # Validate selected features exist
+                    if COMMON_UTILITIES_AVAILABLE:
+                        validate_columns = self.get_utility('dataframe_validation')
+                        if validate_columns:
+                            is_valid, missing = validate_columns(data, selected_features)
+                            if not is_valid:
+                                self.logger.warning(f"Missing features: {missing}")
+                                # Use available features
+                                selected_features = [f for f in selected_features if f in data.columns]
+                    
                     feature_data = data[selected_features]
                 else:
                     feature_cols = [col for col in data.columns if col.startswith('feature_')]
                     feature_data = data[feature_cols] if feature_cols else data
+                
+                # Use data quality metrics utility
+                if COMMON_UTILITIES_AVAILABLE:
+                    quality_metrics = self.get_utility('data_quality_metrics')
+                    if quality_metrics:
+                        metrics = quality_metrics(feature_data)
+                        self.logger.info(f"📊 Data quality metrics: {metrics.get('total_rows', 0)} rows, {metrics.get('total_columns', 0)} columns")
+                        
             elif hasattr(data, 'shape'):
                 # NumPy array
                 feature_data = data
@@ -1352,15 +1649,32 @@ class EnhancedMatrixOperationsStep(BaseStep):
             
             matrix_computations = self.matrix_config.get('matrix_computations', {})
             
-            # Compute correlation matrix
+            # Compute correlation matrix with math validation
             if matrix_computations.get('correlation_matrix', True):
                 try:
                     if self.matrix_processor:
-                        matrices['correlation_matrix'] = await self.matrix_processor.compute_correlation_matrix(feature_data)
+                        correlation_matrix = await self.matrix_processor.compute_correlation_matrix(feature_data)
                     elif hasattr(feature_data, 'corr'):
-                        matrices['correlation_matrix'] = feature_data.corr().values
+                        correlation_matrix = feature_data.corr().values
                     else:
-                        matrices['correlation_matrix'] = self._compute_correlation_fallback(feature_data)
+                        correlation_matrix = self._compute_correlation_fallback(feature_data)
+                    
+                    # Validate correlation matrix using math validation utility
+                    if MATH_VALIDATION_AVAILABLE and correlation_matrix is not None:
+                        validate_correlation = self.get_utility('correlation_validation')
+                        if validate_correlation:
+                            try:
+                                validated_matrix = validate_correlation(correlation_matrix, "correlation_matrix")
+                                matrices['correlation_matrix'] = validated_matrix
+                                self.logger.info("✅ Correlation matrix validated using math validation utility")
+                            except Exception as validation_error:
+                                self.logger.warning(f"⚠️ Correlation matrix validation failed: {validation_error}")
+                                matrices['correlation_matrix'] = correlation_matrix
+                        else:
+                            matrices['correlation_matrix'] = correlation_matrix
+                    else:
+                        matrices['correlation_matrix'] = correlation_matrix
+                        
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to compute correlation matrix: {e}")
             
@@ -1679,33 +1993,98 @@ class EnhancedMatrixOperationsStep(BaseStep):
         reports['optimization'] = '\n'.join(opt_lines)
         return reports
 
+    @inject_step07_utilities
     async def _save_outputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> None:
-        """Save step outputs to disk.
+        """Save step outputs to disk using comprehensive serialization utilities.
         
         Args:
             training_input: Training input parameters
             pipeline_state: Pipeline state with results
         """
-        output_dir = Path(training_input.get('output_dir', 'output')) / 'step07_matrix_operations'
-        output_dir.mkdir(parents = True, exist_ok = True)
+        # Use file utilities for directory creation
+        if COMMON_OPERATIONS_AVAILABLE:
+            ensure_directory_func = self.get_utility('file_utils')
+            if ensure_directory_func:
+                output_dir = ensure_directory_func(training_input.get('output_dir', 'output')) / 'step07_matrix_operations'
+            else:
+                output_dir = Path(training_input.get('output_dir', 'output')) / 'step07_matrix_operations'
+                output_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            output_dir = Path(training_input.get('output_dir', 'output')) / 'step07_matrix_operations'
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save matrix results using serialization utilities
         if 'matrix_results' in pipeline_state:
             for split_name, matrices in pipeline_state['matrix_results'].items():
                 split_dir = output_dir / split_name
-                split_dir.mkdir(exist_ok = True)
+                if COMMON_OPERATIONS_AVAILABLE:
+                    ensure_directory_func = self.get_utility('file_utils')
+                    if ensure_directory_func:
+                        ensure_directory_func(split_dir)
+                    else:
+                        split_dir.mkdir(exist_ok=True)
+                else:
+                    split_dir.mkdir(exist_ok=True)
+                
                 for matrix_name, matrix in matrices.items():
                     if isinstance(matrix, np.ndarray):
-                        np.save(split_dir / f'{matrix_name}.npy', matrix)
+                        # Use serialization utilities for saving
+                        if SERIALIZATION_UTILS_AVAILABLE:
+                            save_data_func = self.get_utility('save_data')
+                            if save_data_func:
+                                try:
+                                    save_data_func(matrix, split_dir / f'{matrix_name}.npy', format_type='numpy')
+                                    self.logger.info(f'💾 Saved {matrix_name} using serialization utility')
+                                except Exception as e:
+                                    self.logger.warning(f'⚠️ Serialization utility failed, using fallback: {e}')
+                                    np.save(split_dir / f'{matrix_name}.npy', matrix)
+                            else:
+                                np.save(split_dir / f'{matrix_name}.npy', matrix)
+                        else:
+                            np.save(split_dir / f'{matrix_name}.npy', matrix)
                 self.logger.info(f'💾 Saved matrices for {split_name} split')
+        
+        # Save feature importance using JSON serialization utility
         if 'feature_importance' in pipeline_state:
             importance_path = output_dir / 'feature_importance.json'
-            with open(importance_path, 'w') as f:
-                json.dump(pipeline_state['feature_importance'], f, indent = 2)
-            self.logger.info(f'💾 Saved feature importance to {importance_path}')
+            if SERIALIZATION_UTILS_AVAILABLE:
+                save_json_func = self.get_utility('save_json')
+                if save_json_func:
+                    try:
+                        save_json_func(pipeline_state['feature_importance'], importance_path, indent=2)
+                        self.logger.info(f'💾 Saved feature importance using JSON utility')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ JSON utility failed, using fallback: {e}')
+                        with open(importance_path, 'w') as f:
+                            json.dump(pipeline_state['feature_importance'], f, indent=2)
+                else:
+                    with open(importance_path, 'w') as f:
+                        json.dump(pipeline_state['feature_importance'], f, indent=2)
+            else:
+                with open(importance_path, 'w') as f:
+                    json.dump(pipeline_state['feature_importance'], f, indent=2)
+        
+        # Save optimization insights using JSON serialization utility
         if 'optimization_insights' in pipeline_state:
             insights_path = output_dir / 'optimization_insights.json'
-            with open(insights_path, 'w') as f:
-                json.dump(pipeline_state['optimization_insights'], f, indent = 2)
-            self.logger.info(f'💾 Saved optimization insights')
+            if SERIALIZATION_UTILS_AVAILABLE:
+                save_json_func = self.get_utility('save_json')
+                if save_json_func:
+                    try:
+                        save_json_func(pipeline_state['optimization_insights'], insights_path, indent=2)
+                        self.logger.info(f'💾 Saved optimization insights using JSON utility')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ JSON utility failed, using fallback: {e}')
+                        with open(insights_path, 'w') as f:
+                            json.dump(pipeline_state['optimization_insights'], f, indent=2)
+                else:
+                    with open(insights_path, 'w') as f:
+                        json.dump(pipeline_state['optimization_insights'], f, indent=2)
+            else:
+                with open(insights_path, 'w') as f:
+                    json.dump(pipeline_state['optimization_insights'], f, indent=2)
+        
+        # Save matrix reports
         if 'matrix_reports' in pipeline_state:
             for report_name, content in pipeline_state['matrix_reports'].items():
                 report_path = output_dir / f'{report_name}_report.txt'
@@ -1717,29 +2096,77 @@ class EnhancedMatrixOperationsStep(BaseStep):
             exchange = training_input.get('exchange', 'UNKNOWN')
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir', 'data/training')
-            features_dir = Path(data_dir)
-            features_dir.mkdir(parents = True, exist_ok = True)
+            
+            # Use file utilities for directory creation
+            if COMMON_OPERATIONS_AVAILABLE:
+                ensure_directory_func = self.get_utility('file_utils')
+                if ensure_directory_func:
+                    features_dir = ensure_directory_func(data_dir)
+                else:
+                    features_dir = Path(data_dir)
+                    features_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                features_dir = Path(data_dir)
+                features_dir.mkdir(parents=True, exist_ok=True)
+            
             selected_features = pipeline_state.get('selected_features', [])
             engineered_data = pipeline_state.get('engineered_data', {})
 
             @log_all_calls
+            @inject_step07_utilities
             def _save_split(df: pd.DataFrame, split_name: str) -> None:
                 if df is None:
                     return
-                if selected_features:
-                    available = [c for c in selected_features if c in df.columns]
-                    if available:
-                        df_to_save = df[available]
+                
+                # Use dataframe utilities for data processing
+                if COMMON_UTILITIES_AVAILABLE:
+                    dataframe_operations = self.get_utility('dataframe_operations')
+                    if dataframe_operations and selected_features:
+                        # Use utility for column selection
+                        available = [c for c in selected_features if c in df.columns]
+                        if available:
+                            df_to_save = df[available]
+                        else:
+                            df_to_save = df
                     else:
                         df_to_save = df
                 else:
-                    df_to_save = df
+                    if selected_features:
+                        available = [c for c in selected_features if c in df.columns]
+                        if available:
+                            df_to_save = df[available]
+                        else:
+                            df_to_save = df
+                    else:
+                        df_to_save = df
+                
                 out_path = features_dir / f'{exchange}_{symbol}_{timeframe}_features_filtered_{split_name}.parquet'
-                try:
-                    standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
-                    self.logger.info(f'💾 Saved filtered features: {out_path}')
-                except Exception as e:
-                    self.logger.warning(f'⚠️ Failed to save filtered {split_name} features: {e}')
+                
+                # Use parquet utilities for saving
+                if PARQUET_UTILS_AVAILABLE:
+                    parquet_utils = self.get_utility('parquet_utils')
+                    if parquet_utils:
+                        try:
+                            # Use parquet utility for safe writing
+                            success = parquet_utils.safe_to_parquet(df_to_save, out_path)
+                            if success:
+                                self.logger.info(f'💾 Saved filtered features using parquet utility: {out_path}')
+                            else:
+                                self.logger.warning(f'⚠️ Parquet utility failed for {split_name}')
+                        except Exception as e:
+                            self.logger.warning(f'⚠️ Parquet utility error: {e}, using fallback')
+                            standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
+                            self.logger.info(f'💾 Saved filtered features (fallback): {out_path}')
+                    else:
+                        standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
+                        self.logger.info(f'💾 Saved filtered features: {out_path}')
+                else:
+                    try:
+                        standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
+                        self.logger.info(f'💾 Saved filtered features: {out_path}')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Failed to save filtered {split_name} features: {e}')
+            
             train_df = engineered_data.get('train') if isinstance(engineered_data, dict) else None
             val_df = engineered_data.get('val') if isinstance(engineered_data, dict) else None
             _save_split(train_df, 'train')

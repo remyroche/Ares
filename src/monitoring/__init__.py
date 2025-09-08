@@ -10,10 +10,45 @@ automated reporting, and comprehensive tracking.
 
 
 # Enhanced ML Monitoring Components
-from .monitoring.enhanced_ml_monitor import (
+from .enhanced_ml_monitoring import (
     EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision,
     EnsembleDecision, TradeDecision, TradingMode, ModelType,
     ModelPerformanceMetrics, EnsemblePerformanceMetrics
+)
+
+# Enhanced Monitoring Orchestrator
+from .enhanced_monitoring_orchestrator import (
+    EnhancedMonitoringOrchestrator, ComprehensiveTradeDecision,
+    EnhancedMonitoringConfig, MonthlyReport
+)
+
+# Trade Decision Context Capture
+from .trade_decision_capture import (
+    TradeDecisionContextCapture, ComprehensiveTradeContext,
+    MarketConditions, HMMRegimeContext, TradingSignalContext,
+    ModelDecisionContext, EnsembleDecisionContext
+)
+
+# SHAP/LIME Integration
+from .shap_lime_integration import (
+    ExplainabilityIntegrator, SHAPAnalyzer, LIMEAnalyzer,
+    SHAPExplanation, LIMEExplanation, ModelExplanationRequest
+)
+
+# Ensemble Monitoring
+from .ensemble_monitor import (
+    EnsembleMonitor, ModelWeight, EnsembleState, ModelContribution,
+    EnsemblePerformanceSnapshot
+)
+
+# Daily Summary Tracker
+from .daily_summary_tracker import (
+    DailySummaryTracker, DailyTradeSummary, RegimePerformance
+)
+
+# Trading Integration
+from .trading_integration import (
+    TradingSystemIntegrator, TradingSystemConfig
 )
 
 # GUI components
@@ -44,16 +79,45 @@ __all__ = [
     "ModelType",
     "ModelPerformanceMetrics",
     "EnsemblePerformanceMetrics",
+    
+    # Enhanced Monitoring Orchestrator
+    "EnhancedMonitoringOrchestrator",
+    "ComprehensiveTradeDecision",
+    "EnhancedMonitoringConfig",
+    "MonthlyReport",
+    
+    # Trade Decision Context Capture
+    "TradeDecisionContextCapture",
+    "ComprehensiveTradeContext",
+    "MarketConditions",
+    "HMMRegimeContext",
+    "TradingSignalContext",
+    "ModelDecisionContext",
+    "EnsembleDecisionContext",
+    
+    # SHAP/LIME Integration
     "ExplainabilityIntegrator",
+    "SHAPAnalyzer",
+    "LIMEAnalyzer",
+    "SHAPExplanation",
+    "LIMEExplanation",
+    "ModelExplanationRequest",
+    
+    # Ensemble Monitoring
     "EnsembleMonitor",
+    "ModelWeight",
+    "EnsembleState",
     "ModelContribution",
-    "CSVExportManager",
-    "TradingSystemIntegrator",
-    "MonitoringOrchestrator",
-    "create_monitoring_orchestrator",
+    "EnsemblePerformanceSnapshot",
+    
+    # Daily Summary Tracker
     "DailySummaryTracker",
     "DailyTradeSummary",
     "RegimePerformance",
+    
+    # Trading Integration
+    "TradingSystemIntegrator",
+    "TradingSystemConfig",
     
     # GUI components
     "MonitoringDashboard",

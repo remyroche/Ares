@@ -361,6 +361,18 @@ class SROptimizationStep(BaseStep):
         self.logger = system_logger.getChild('SROptimizationStep')
         self.standards = PipelineStandards(self.logger)
         self.sr_optimization_config = config.get('sr_optimization', {'min_touches': 2, 'tolerance_pct': 0.5, 'lookback_periods': 100})
+        
+        # NEW: Enhanced configuration parameters
+        self.enable_hyperparameter_optimization = config.get('enable_hyperparameter_optimization', True)
+        self.optimization_method = config.get('optimization_method', 'grid_search')  # 'grid_search', 'random_search', 'bayesian'
+        self.optimization_folds = config.get('optimization_folds', 5)
+        self.optimization_trials = config.get('optimization_trials', 50)
+        
+        # NEW: Walk-forward validation
+        self.enable_walk_forward_validation = config.get('enable_walk_forward_validation', True)
+        self.walk_forward_folds = config.get('walk_forward_folds', 5)
+        self.walk_forward_test_size = config.get('walk_forward_test_size', 0.2)
+        
         self.start_time = None
         # Use unified monitoring system instead of multiple trackers
         self.performance_monitor = global_monitor
@@ -879,7 +891,16 @@ class SROptimizationStep(BaseStep):
             self.logger.info(f"🤖 Direction accuracy: {ml_results.get('direction_accuracy', 0):.3f}")
             self.logger.info(f"🤖 Volatility MAE: {ml_results.get('volatility_mae', 0):.6f}")
             self.logger.info('📊 All major processing steps completed - preparing final results...')
-            optimization_results = {'best_parameters': self.sr_optimization_config, 'confidence_score': ml_results.get('direction_accuracy', 0.85), 'feature_count': len(features_data.columns), 'sr_levels_detected': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])), 'ml_model_performance': ml_results, 'internal_call_tracker': internal_call_tracker}
+            optimization_results = {
+                'best_parameters': self.sr_optimization_config, 
+                'confidence_score': ml_results.get('direction_accuracy', 0.85), 
+                'feature_count': len(features_data.columns), 
+                'sr_levels_detected': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])), 
+                'ml_model_performance': ml_results, 
+                'hyperparameter_optimization': hyperparameter_results,
+                'walk_forward_validation': walk_forward_results,
+                'internal_call_tracker': internal_call_tracker
+            }
             execution_time = time.time() - self.start_time
             self.logger.info(f'✅ Comprehensive SR optimization completed in {execution_time:.2f} seconds')
             self.logger.info(f"📈 Features engineered: {optimization_results['feature_count']}")
@@ -2248,6 +2269,14 @@ class SROptimizationStep(BaseStep):
             self.logger.info('🔧 Preparing features for ML training...')
             X, y_direction, y_volatility, feature_names = self._prepare_ml_features(features_data, target_data)
 
+            # Optimize hyperparameters
+            self.logger.info('🔧 Optimizing hyperparameters...')
+            hyperparameter_results = self._optimize_hyperparameters(X, y_direction, feature_names)
+
+            # Perform walk-forward validation
+            self.logger.info('🔧 Performing walk-forward validation...')
+            walk_forward_results = self._walk_forward_validation(X, y_direction, feature_names)
+
             # Feature selection for optimization
             self.logger.info('🎯 Performing feature selection for optimal performance...')
             X_selected, selected_feature_names, feature_selection_info = self._optimize_feature_selection(
@@ -2351,9 +2380,197 @@ class SROptimizationStep(BaseStep):
                 'traceback': traceback.format_exc()
             }
 
-    def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
-        """Prepare target variables from SR levels for ML training."""
+    def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range (ATR) for normalization."""
         try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Calculate ATR as rolling mean of True Range
+            atr = true_range.rolling(window=period).mean()
+            
+            return atr
+        except Exception as e:
+            self.logger.warning(f'ATR calculation failed: {e}')
+            # Fallback to simple price range
+            return (data['high'] - data['low']).rolling(window=period).mean()
+
+    def _create_enhanced_sr_features(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
+        """Create enhanced ML-optimized features from SR levels using fixed-size encoding."""
+        try:
+            # Extract SR level data
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            
+            # Calculate ATR for normalization
+            atr = self._calculate_atr(features_data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            
+            # Initialize enhanced features DataFrame
+            enhanced_features = pd.DataFrame(index=features_data.index)
+            current_prices = features_data['close'].values
+            
+            # 1. Distance features: distance to nearest support/resistance (normalized by ATR)
+            nearest_support_distances = []
+            nearest_resistance_distances = []
+            
+            for price in current_prices:
+                # Find nearest support
+                support_distances = [abs(price - level.get('price', level)) for level in support_levels 
+                                   if isinstance(level.get('price', level), (int, float))]
+                nearest_support_dist = min(support_distances) if support_distances else float('inf')
+                nearest_support_distances.append(nearest_support_dist / current_atr if current_atr > 0 else 0)
+                
+                # Find nearest resistance
+                resistance_distances = [abs(price - level.get('price', level)) for level in resistance_levels 
+                                      if isinstance(level.get('price', level), (int, float))]
+                nearest_resistance_dist = min(resistance_distances) if resistance_distances else float('inf')
+                nearest_resistance_distances.append(nearest_resistance_dist / current_atr if current_atr > 0 else 0)
+            
+            enhanced_features['dist_to_nearest_support_atr'] = nearest_support_distances
+            enhanced_features['dist_to_nearest_resistance_atr'] = nearest_resistance_distances
+            
+            # 2. Strength features: strength of nearest support/resistance
+            nearest_support_strengths = []
+            nearest_resistance_strengths = []
+            
+            for i, price in enumerate(current_prices):
+                # Find nearest support strength
+                support_strengths = []
+                for level in support_levels:
+                    if isinstance(level.get('price', level), (int, float)):
+                        dist = abs(price - level.get('price', level))
+                        if dist == nearest_support_distances[i] * current_atr:
+                            support_strengths.append(level.get('strength', 0.5))
+                nearest_support_strengths.append(max(support_strengths) if support_strengths else 0)
+                
+                # Find nearest resistance strength
+                resistance_strengths = []
+                for level in resistance_levels:
+                    if isinstance(level.get('price', level), (int, float)):
+                        dist = abs(price - level.get('price', level))
+                        if dist == nearest_resistance_distances[i] * current_atr:
+                            resistance_strengths.append(level.get('strength', 0.5))
+                nearest_resistance_strengths.append(max(resistance_strengths) if resistance_strengths else 0)
+            
+            enhanced_features['strength_of_nearest_support'] = nearest_support_strengths
+            enhanced_features['strength_of_nearest_resistance'] = nearest_resistance_strengths
+            
+            # 3. Multiplicity features: count of levels within 1×ATR, 2×ATR, 5×ATR
+            for atr_multiplier in [1, 2, 5]:
+                support_counts = []
+                resistance_counts = []
+                
+                for price in current_prices:
+                    threshold = current_atr * atr_multiplier
+                    
+                    # Count support levels within threshold
+                    support_count = sum(1 for level in support_levels 
+                                      if isinstance(level.get('price', level), (int, float)) and 
+                                      abs(price - level.get('price', level)) <= threshold)
+                    support_counts.append(support_count)
+                    
+                    # Count resistance levels within threshold
+                    resistance_count = sum(1 for level in resistance_levels 
+                                         if isinstance(level.get('price', level), (int, float)) and 
+                                         abs(price - level.get('price', level)) <= threshold)
+                    resistance_counts.append(resistance_count)
+                
+                enhanced_features[f'support_levels_within_{atr_multiplier}atr'] = support_counts
+                enhanced_features[f'resistance_levels_within_{atr_multiplier}atr'] = resistance_counts
+            
+            # 4. Top-k levels: distances and strengths for top-3 nearest levels
+            for k in range(1, 4):  # Top 3 levels
+                top_support_distances = []
+                top_support_strengths = []
+                top_resistance_distances = []
+                top_resistance_strengths = []
+                
+                for price in current_prices:
+                    # Get top-k support levels
+                    support_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
+                                  for level in support_levels 
+                                  if isinstance(level.get('price', level), (int, float))]
+                    support_data.sort(key=lambda x: x[0])
+                    
+                    if len(support_data) >= k:
+                        dist, strength = support_data[k-1]
+                        top_support_distances.append(dist / current_atr if current_atr > 0 else 0)
+                        top_support_strengths.append(strength)
+                    else:
+                        top_support_distances.append(float('inf'))
+                        top_support_strengths.append(0)
+                    
+                    # Get top-k resistance levels
+                    resistance_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
+                                     for level in resistance_levels 
+                                     if isinstance(level.get('price', level), (int, float))]
+                    resistance_data.sort(key=lambda x: x[0])
+                    
+                    if len(resistance_data) >= k:
+                        dist, strength = resistance_data[k-1]
+                        top_resistance_distances.append(dist / current_atr if current_atr > 0 else 0)
+                        top_resistance_strengths.append(strength)
+                    else:
+                        top_resistance_distances.append(float('inf'))
+                        top_resistance_strengths.append(0)
+                
+                enhanced_features[f'top_{k}_support_dist_atr'] = top_support_distances
+                enhanced_features[f'top_{k}_support_strength'] = top_support_strengths
+                enhanced_features[f'top_{k}_resistance_dist_atr'] = top_resistance_distances
+                enhanced_features[f'top_{k}_resistance_strength'] = top_resistance_strengths
+            
+            # 5. Binary flags: within tolerance, recent break
+            tolerance = current_atr * 0.5  # 0.5 ATR tolerance
+            within_tolerance = []
+            recent_break = []
+            
+            for i, price in enumerate(current_prices):
+                # Check if within tolerance of any level
+                within_support = any(abs(price - level.get('price', level)) <= tolerance 
+                                   for level in support_levels 
+                                   if isinstance(level.get('price', level), (int, float)))
+                within_resistance = any(abs(price - level.get('price', level)) <= tolerance 
+                                     for level in resistance_levels 
+                                     if isinstance(level.get('price', level), (int, float)))
+                within_tolerance.append(1 if (within_support or within_resistance) else 0)
+                
+                # Recent break (simplified - would need historical data for proper implementation)
+                recent_break.append(0)  # Placeholder
+            
+            enhanced_features['within_tolerance'] = within_tolerance
+            enhanced_features['recent_break'] = recent_break
+            
+            # 6. Time-since-touch: scalar for nearest level (simplified)
+            time_since_touch = []
+            for i in range(len(current_prices)):
+                # Simplified: use index position as proxy for time
+                time_since_touch.append(i % 100)  # Placeholder
+            
+            enhanced_features['time_since_last_touch'] = time_since_touch
+            
+            self.logger.info(f'✅ Enhanced SR features created: {len(enhanced_features.columns)} features')
+            return enhanced_features
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to create enhanced SR features: {e}')
+            # Return empty DataFrame as fallback
+            return pd.DataFrame(index=features_data.index)
+
+    def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
+        """Prepare target variables from SR levels for ML training with enhanced features."""
+        try:
+            # Create enhanced SR features
+            enhanced_sr_features = self._create_enhanced_sr_features(features_data, sr_levels)
+            
             # Extract SR level prices
             support_prices = [level.get('price', level) for level in sr_levels.get('support_levels', [])]
             resistance_prices = [level.get('price', level) for level in sr_levels.get('resistance_levels', [])]
@@ -2397,6 +2614,10 @@ class SROptimizationStep(BaseStep):
                 nearest_sr_distances.append(nearest_distance)
 
             target_data['volatility_target'] = np.array(nearest_sr_distances)
+
+            # Add enhanced SR features to target data
+            for col in enhanced_sr_features.columns:
+                target_data[col] = enhanced_sr_features[col]
 
             # Filter out neutral cases for cleaner training
             valid_mask = target_data['direction_target'] != 0.5
@@ -2442,6 +2663,276 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f'❌ Failed to prepare ML features: {e}')
             raise
+
+    def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimize hyperparameters using grid search, random search, or Bayesian optimization."""
+        try:
+            if not self.enable_hyperparameter_optimization:
+                self.logger.info('🔧 Hyperparameter optimization disabled')
+                return {}
+            
+            self.logger.info(f'🔧 Starting hyperparameter optimization using {self.optimization_method}')
+            
+            if self.optimization_method == 'grid_search':
+                return self._grid_search_optimization(X, y, feature_names)
+            elif self.optimization_method == 'random_search':
+                return self._random_search_optimization(X, y, feature_names)
+            elif self.optimization_method == 'bayesian':
+                return self._bayesian_optimization(X, y, feature_names)
+            else:
+                self.logger.warning(f'Unknown optimization method: {self.optimization_method}')
+                return {}
+                
+        except Exception as e:
+            self.logger.error(f'❌ Hyperparameter optimization failed: {e}')
+            return {}
+
+    def _grid_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Grid search hyperparameter optimization."""
+        try:
+            from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Define parameter grid
+            param_grid = {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 15, None],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4],
+                'max_features': ['sqrt', 'log2', None]
+            }
+            
+            # Use time series split for proper validation
+            tscv = TimeSeriesSplit(n_splits=self.optimization_folds)
+            
+            # Grid search
+            grid_search = GridSearchCV(
+                RandomForestClassifier(random_state=42),
+                param_grid,
+                cv=tscv,
+                scoring='accuracy',
+                n_jobs=-1,
+                verbose=1
+            )
+            
+            grid_search.fit(X, y)
+            
+            self.logger.info(f'🔧 Grid search best score: {grid_search.best_score_:.4f}')
+            self.logger.info(f'🔧 Grid search best params: {grid_search.best_params_}')
+            
+            return {
+                'method': 'grid_search',
+                'best_score': grid_search.best_score_,
+                'best_params': grid_search.best_params_,
+                'cv_results': grid_search.cv_results_
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Grid search optimization failed: {e}')
+            return {}
+
+    def _random_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Random search hyperparameter optimization."""
+        try:
+            from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            from scipy.stats import randint, uniform
+            
+            # Define parameter distributions
+            param_distributions = {
+                'n_estimators': randint(50, 300),
+                'max_depth': [5, 10, 15, 20, None],
+                'min_samples_split': randint(2, 20),
+                'min_samples_leaf': randint(1, 10),
+                'max_features': ['sqrt', 'log2', None],
+                'bootstrap': [True, False]
+            }
+            
+            # Use time series split for proper validation
+            tscv = TimeSeriesSplit(n_splits=self.optimization_folds)
+            
+            # Random search
+            random_search = RandomizedSearchCV(
+                RandomForestClassifier(random_state=42),
+                param_distributions,
+                n_iter=self.optimization_trials,
+                cv=tscv,
+                scoring='accuracy',
+                n_jobs=-1,
+                random_state=42,
+                verbose=1
+            )
+            
+            random_search.fit(X, y)
+            
+            self.logger.info(f'🔧 Random search best score: {random_search.best_score_:.4f}')
+            self.logger.info(f'🔧 Random search best params: {random_search.best_params_}')
+            
+            return {
+                'method': 'random_search',
+                'best_score': random_search.best_score_,
+                'best_params': random_search.best_params_,
+                'cv_results': random_search.cv_results_
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Random search optimization failed: {e}')
+            return {}
+
+    def _bayesian_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Bayesian optimization using scikit-optimize."""
+        try:
+            from skopt import gp_minimize
+            from skopt.space import Real, Integer, Categorical
+            from skopt.utils import use_named_args
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+            
+            # Define search space
+            space = [
+                Integer(50, 300, name='n_estimators'),
+                Categorical([5, 10, 15, 20, None], name='max_depth'),
+                Integer(2, 20, name='min_samples_split'),
+                Integer(1, 10, name='min_samples_leaf'),
+                Categorical(['sqrt', 'log2', None], name='max_features')
+            ]
+            
+            # Use time series split for proper validation
+            tscv = TimeSeriesSplit(n_splits=self.optimization_folds)
+            
+            @use_named_args(space)
+            def objective(**params):
+                # Handle None values
+                if params['max_depth'] is None:
+                    params['max_depth'] = None
+                
+                model = RandomForestClassifier(
+                    n_estimators=params['n_estimators'],
+                    max_depth=params['max_depth'],
+                    min_samples_split=params['min_samples_split'],
+                    min_samples_leaf=params['min_samples_leaf'],
+                    max_features=params['max_features'],
+                    random_state=42
+                )
+                
+                # Cross-validation score
+                scores = cross_val_score(model, X, y, cv=tscv, scoring='accuracy')
+                return -scores.mean()  # Minimize negative score
+            
+            # Bayesian optimization
+            result = gp_minimize(objective, space, n_calls=self.optimization_trials, random_state=42)
+            
+            # Extract best parameters
+            best_params = {
+                'n_estimators': result.x[0],
+                'max_depth': result.x[1],
+                'min_samples_split': result.x[2],
+                'min_samples_leaf': result.x[3],
+                'max_features': result.x[4]
+            }
+            
+            best_score = -result.fun
+            
+            self.logger.info(f'🔧 Bayesian optimization best score: {best_score:.4f}')
+            self.logger.info(f'🔧 Bayesian optimization best params: {best_params}')
+            
+            return {
+                'method': 'bayesian',
+                'best_score': best_score,
+                'best_params': best_params,
+                'optimization_result': result
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Bayesian optimization failed: {e}')
+            return {}
+
+    def _walk_forward_validation(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Perform walk-forward validation for time series data."""
+        try:
+            if not self.enable_walk_forward_validation:
+                self.logger.info('🔧 Walk-forward validation disabled')
+                return {}
+            
+            self.logger.info(f'🔧 Starting walk-forward validation with {self.walk_forward_folds} folds')
+            
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+            
+            # Calculate fold sizes
+            total_samples = len(X)
+            test_size = int(total_samples * self.walk_forward_test_size)
+            fold_size = (total_samples - test_size) // self.walk_forward_folds
+            
+            results = {
+                'fold_scores': [],
+                'fold_metrics': [],
+                'average_metrics': {}
+            }
+            
+            for fold in range(self.walk_forward_folds):
+                # Calculate train/test indices
+                train_end = (fold + 1) * fold_size
+                test_start = train_end
+                test_end = test_start + test_size
+                
+                if test_end > total_samples:
+                    break
+                
+                X_train = X[:train_end]
+                y_train = y[:train_end]
+                X_test = X[test_start:test_end]
+                y_test = y[test_start:test_end]
+                
+                # Train model
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+                model.fit(X_train, y_train)
+                
+                # Predict and evaluate
+                y_pred = model.predict(X_test)
+                
+                # Calculate metrics
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                
+                fold_metrics = {
+                    'fold': fold + 1,
+                    'accuracy': accuracy,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1,
+                    'train_size': len(X_train),
+                    'test_size': len(X_test)
+                }
+                
+                results['fold_scores'].append(accuracy)
+                results['fold_metrics'].append(fold_metrics)
+                
+                self.logger.info(f'🔧 Fold {fold + 1}: Accuracy = {accuracy:.4f}, F1 = {f1:.4f}')
+            
+            # Calculate average metrics
+            if results['fold_scores']:
+                results['average_metrics'] = {
+                    'mean_accuracy': np.mean(results['fold_scores']),
+                    'std_accuracy': np.std(results['fold_scores']),
+                    'mean_precision': np.mean([m['precision'] for m in results['fold_metrics']]),
+                    'mean_recall': np.mean([m['recall'] for m in results['fold_metrics']]),
+                    'mean_f1_score': np.mean([m['f1_score'] for m in results['fold_metrics']])
+                }
+                
+                self.logger.info(f'🔧 Walk-forward validation complete: Mean Accuracy = {results["average_metrics"]["mean_accuracy"]:.4f} ± {results["average_metrics"]["std_accuracy"]:.4f}')
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f'❌ Walk-forward validation failed: {e}')
+            return {}
 
     def _optimize_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Optimize feature selection for best model performance."""

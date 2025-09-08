@@ -604,7 +604,8 @@ class FeatureInteractionEngine:
                     self.logger.info(f'🧠 Applying memory optimizations to indicators ({data_size_mb:.1f}MB)')
 
             indicators_df = pd.DataFrame(indicators, index=market_data.index)
-            indicators_df = indicators_df.fillna(method='ffill').fillna(0)
+            # Use modern pandas fillna syntax (method='ffill' is deprecated)
+            indicators_df = indicators_df.ffill().fillna(0)
             self.logger.info(f'✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods')
 
             # Final memory optimization
@@ -1222,11 +1223,23 @@ class FeatureInteractionEngine:
 
     def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
         """
-        Identify current market regime.
+        Identify current market regime with fail-fast validation.
         """
         try:
+            # Fail-fast validation: Check minimum data requirements
+            if len(market_data) < 50:
+                self.logger.warning(f'Insufficient data for regime identification: {len(market_data)} rows (minimum 50 required)')
+                return 'ranging'
+            
+            # Calculate regime indicators with safety checks
             volatility = market_data['close'].pct_change().rolling(20).std().iloc[-1]
             trend_strength = abs(market_data['close'].rolling(20).mean().iloc[-1] - market_data['close'].rolling(50).mean().iloc[-1]) / market_data['close'].iloc[-1]
+            
+            # Validate calculations
+            if np.isnan(volatility) or np.isnan(trend_strength):
+                self.logger.warning('Market regime calculation produced NaN values')
+                return 'ranging'
+            
             if volatility > 0.03:
                 return 'volatile'
             if trend_strength > 0.02:

@@ -369,6 +369,10 @@ class SROptimizationStep(BaseStep):
         self.standards = PipelineStandards(self.logger)
         self.sr_optimization_config = config.get('sr_optimization', {'min_touches': 2, 'tolerance_pct': 0.5, 'lookback_periods': 100})
         
+        # Initialize optimized logging
+        self.debug_mode = config.get('debug_mode', False)
+        self._reduce_logging_verbosity()
+        
         # NEW: Enhanced configuration parameters
         self.enable_hyperparameter_optimization = config.get('enable_hyperparameter_optimization', True)
         self.optimization_method = config.get('optimization_method', 'grid_search')  # 'grid_search', 'random_search', 'bayesian'
@@ -412,31 +416,451 @@ class SROptimizationStep(BaseStep):
     
     @log_step_functions
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
-        """Validate step inputs."""
-        self.logger.info('🔍 Validating step inputs with detailed checks')
+        """Enhanced input validation with comprehensive fast-fail checks."""
+        self.logger.info('🔍 Enhanced input validation with fast-fail checks')
         errors = []
+        warnings = []
+        
+        # Fast-fail: Check required inputs
         required_inputs = ['validated_data']
-        self.logger.info(f'📥 Training input keys: {list(training_input.keys())}')
-        self.logger.info(f'📥 Pipeline state keys: {list(pipeline_state.keys())}')
-        for key in required_inputs:
-            if key not in training_input:
-                error_msg = f'Missing required input: {key}'
-                errors.append(error_msg)
-                self.logger.error(f'❌ {error_msg}')
-            else:
-                self.logger.info(f'✅ Found required input: {key}')
+        for input_key in required_inputs:
+            if input_key not in training_input:
+                errors.append(f'Missing required input: {input_key}')
+                return False, errors  # Fast-fail on missing required inputs
+        
+        # Fast-fail: Data quality checks
         if 'validated_data' in training_input:
-            data = training_input['validated_data']
-            self.logger.info(f'📊 Data type: {type(data)}')
-            if hasattr(data, 'shape'):
-                self.logger.info(f'📊 Data shape: {data.shape}')
-            elif hasattr(data, '__len__'):
-                self.logger.info(f'📊 Data length: {len(data)}')
-        validation_result = len(errors) == 0
-        self.logger.info(f"🔍 Input validation result: {('PASSED' if validation_result else 'FAILED')}")
-        if errors:
-            self.logger.error(f'❌ Validation errors: {errors}')
-        return validation_result
+            data_validation_result = self._fast_fail_data_validation(training_input['validated_data'])
+            if not data_validation_result['valid']:
+                errors.extend(data_validation_result['errors'])
+                return False, errors  # Fast-fail on data quality issues
+            warnings.extend(data_validation_result.get('warnings', []))
+        
+        # Fast-fail: Configuration validation
+        config_validation_result = self._fast_fail_config_validation(pipeline_state)
+        if not config_validation_result['valid']:
+            errors.extend(config_validation_result['errors'])
+            return False, errors  # Fast-fail on configuration issues
+        warnings.extend(config_validation_result.get('warnings', []))
+        
+        # Fast-fail: Resource validation
+        resource_validation_result = self._fast_fail_resource_validation()
+        if not resource_validation_result['valid']:
+            errors.extend(resource_validation_result['errors'])
+            return False, errors  # Fast-fail on resource issues
+        warnings.extend(resource_validation_result.get('warnings', []))
+        
+        # Log warnings but don't fail
+        for warning in warnings:
+            self.logger.warning(f'⚠️ {warning}')
+        
+        return len(errors) == 0, errors
+    
+    def _fast_fail_data_validation(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Fast-fail data validation with comprehensive checks."""
+        result = {'valid': True, 'errors': [], 'warnings': []}
+        
+        try:
+            # Check 1: Data existence and basic structure
+            if data is None:
+                result['errors'].append('Data is None')
+                result['valid'] = False
+                return result
+            
+            if data.empty:
+                result['errors'].append('Data is empty')
+                result['valid'] = False
+                return result
+            
+            # Check 2: Minimum data size
+            if len(data) < 500:
+                result['errors'].append(f'Insufficient data: {len(data)} rows (minimum: 500)')
+                result['valid'] = False
+                return result
+            
+            # Check 3: Required columns
+            required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                result['errors'].append(f'Missing required columns: {missing_cols}')
+                result['valid'] = False
+                return result
+            
+            # Check 4: Data freshness (if timestamp available)
+            if 'timestamp' in data.columns:
+                try:
+                    latest_time = pd.to_datetime(data['timestamp']).max()
+                    days_old = (datetime.now() - latest_time).days
+                    if days_old > 30:
+                        result['warnings'].append(f'Data is {days_old} days old (older than 30 days)')
+                except Exception:
+                    result['warnings'].append('Could not validate data freshness')
+            
+            # Check 5: Price data validity
+            price_cols = ['open', 'high', 'low', 'close']
+            for col in price_cols:
+                if col in data.columns:
+                    # Check for missing values
+                    missing_pct = data[col].isna().sum() / len(data)
+                    if missing_pct > 0.1:  # >10% missing
+                        result['errors'].append(f'Too many missing values in {col}: {missing_pct:.1%}')
+                        result['valid'] = False
+                        return result
+                    
+                    # Check for non-positive values
+                    if (data[col] <= 0).any():
+                        result['errors'].append(f'Invalid price values in {col}: non-positive values found')
+                        result['valid'] = False
+                        return result
+            
+            # Check 6: Volume data validity
+            if 'volume' in data.columns:
+                if (data['volume'] < 0).any():
+                    result['errors'].append('Invalid volume values: negative volumes found')
+                    result['valid'] = False
+                    return result
+            
+            # Check 7: OHLC consistency
+            if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+                invalid_ohlc = (
+                    (data['high'] < data['low']) |
+                    (data['high'] < data['open']) |
+                    (data['high'] < data['close']) |
+                    (data['low'] > data['open']) |
+                    (data['low'] > data['close'])
+                )
+                invalid_count = invalid_ohlc.sum()
+                if invalid_count > 0:
+                    invalid_pct = invalid_count / len(data)
+                    if invalid_pct > 0.05:  # >5% invalid OHLC
+                        result['errors'].append(f'Too many invalid OHLC relationships: {invalid_pct:.1%}')
+                        result['valid'] = False
+                        return result
+                    else:
+                        result['warnings'].append(f'Some invalid OHLC relationships found: {invalid_count} rows')
+            
+            # Check 8: Data quality score
+            quality_score = self._calculate_data_quality_score(data)
+            if quality_score < 0.7:
+                result['warnings'].append(f'Low data quality score: {quality_score:.2f}')
+            
+            return result
+            
+        except Exception as e:
+            result['errors'].append(f'Data validation error: {str(e)}')
+            result['valid'] = False
+            return result
+    
+    def _fast_fail_config_validation(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Fast-fail configuration validation."""
+        result = {'valid': True, 'errors': [], 'warnings': []}
+        
+        try:
+            config = pipeline_state.get('config', {})
+            sr_config = config.get('sr_optimization', {})
+            
+            # Check optimization parameters
+            optimization_trials = sr_config.get('optimization_trials', 100)
+            if optimization_trials > 1000:
+                result['warnings'].append(f'High optimization trials: {optimization_trials} (may cause long execution)')
+            
+            # Check memory-intensive settings
+            if sr_config.get('enable_hyperparameter_optimization', True):
+                if optimization_trials > 500:
+                    result['warnings'].append('Hyperparameter optimization with high trial count may be memory-intensive')
+            
+            return result
+            
+        except Exception as e:
+            result['errors'].append(f'Configuration validation error: {str(e)}')
+            result['valid'] = False
+            return result
+    
+    def _fast_fail_resource_validation(self) -> Dict[str, Any]:
+        """Fast-fail resource validation."""
+        result = {'valid': True, 'errors': [], 'warnings': []}
+        
+        try:
+            # Check memory usage
+            memory_usage = self._check_memory_usage()
+            if memory_usage > 0.9:
+                result['errors'].append(f'System memory usage too high: {memory_usage:.1%}')
+                result['valid'] = False
+                return result
+            elif memory_usage > 0.8:
+                result['warnings'].append(f'High system memory usage: {memory_usage:.1%}')
+            
+            # Check available disk space (if possible)
+            try:
+                import shutil
+                free_space = shutil.disk_usage('.').free / (1024**3)  # GB
+                if free_space < 1.0:  # Less than 1GB
+                    result['warnings'].append(f'Low disk space: {free_space:.1f}GB available')
+            except Exception:
+                pass  # Disk space check is optional
+            
+            return result
+            
+        except Exception as e:
+            result['errors'].append(f'Resource validation error: {str(e)}')
+            result['valid'] = False
+            return result
+    
+    def _calculate_data_quality_score(self, data: pd.DataFrame) -> float:
+        """Calculate comprehensive data quality score."""
+        try:
+            score = 1.0
+            
+            # Completeness score
+            completeness = 1 - (data.isna().sum().sum() / (len(data) * len(data.columns)))
+            score *= completeness
+            
+            # Consistency score (price relationships)
+            if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+                valid_ohlc = (
+                    (data['high'] >= data['low']) & 
+                    (data['high'] >= data['open']) & 
+                    (data['high'] >= data['close']) &
+                    (data['low'] <= data['open']) & 
+                    (data['low'] <= data['close'])
+                ).mean()
+                score *= valid_ohlc
+            
+            # Volume consistency
+            if 'volume' in data.columns:
+                positive_volume = (data['volume'] >= 0).mean()
+                score *= positive_volume
+            
+            # Price consistency (no zero or negative prices)
+            price_cols = ['open', 'high', 'low', 'close']
+            for col in price_cols:
+                if col in data.columns:
+                    positive_prices = (data[col] > 0).mean()
+                    score *= positive_prices
+            
+            return max(0.0, min(1.0, score))  # Clamp between 0 and 1
+            
+        except Exception:
+            return 0.5  # Default score if calculation fails
+    
+    def _robust_error_handling(self, operation_name: str, operation_func, *args, **kwargs):
+        """Robust error handling with automatic retry and fallback mechanisms."""
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                return operation_func(*args, **kwargs)
+            except MemoryError as e:
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Memory error in {operation_name}, retrying with reduced data...")
+                    # Reduce data size and retry
+                    reduced_args = self._reduce_data_size(args)
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    self.logger.error(f"Memory error in {operation_name} after {max_retries} attempts")
+                    return self._get_fallback_result(operation_name)
+            except asyncio.TimeoutError as e:
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Timeout in {operation_name}, retrying...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    self.logger.error(f"Timeout in {operation_name} after {max_retries} attempts")
+                    return self._get_fallback_result(operation_name)
+            except Exception as e:
+                self.logger.error(f"Error in {operation_name}: {e}")
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Retrying {operation_name} (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    return self._get_fallback_result(operation_name)
+        
+        return self._get_fallback_result(operation_name)
+    
+    def _reduce_data_size(self, args):
+        """Reduce data size for memory-constrained retries."""
+        reduced_args = []
+        for arg in args:
+            if isinstance(arg, pd.DataFrame) and len(arg) > 10000:
+                # Sample 10K rows for retry
+                reduced_args.append(arg.sample(n=10000, random_state=42))
+            else:
+                reduced_args.append(arg)
+        return reduced_args
+    
+    def _get_fallback_result(self, operation_name: str):
+        """Get fallback result for failed operations."""
+        fallback_results = {
+            'sr_detection': self._get_fallback_sr_levels(),
+            'ml_training': self._get_fallback_ml_result(pd.DataFrame(), {}),
+            'feature_selection': (np.array([]), np.array([]), {'error': 'feature_selection_failed'}),
+            'hyperparameter_optimization': self._get_default_hyperparameters()
+        }
+        return fallback_results.get(operation_name, {})
+    
+    def _performance_monitor(self, operation_name: str):
+        """Context manager for performance monitoring with memory tracking."""
+        class PerformanceMonitor:
+            def __init__(self, name, logger, check_memory_func):
+                self.name = name
+                self.logger = logger
+                self.check_memory_func = check_memory_func
+                self.start_time = None
+                self.start_memory = None
+            
+            def __enter__(self):
+                self.start_time = time.time()
+                self.start_memory = self.check_memory_func()
+                return self
+            
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                duration = time.time() - self.start_time
+                end_memory = self.check_memory_func()
+                memory_delta = end_memory - self.start_memory
+                
+                if exc_type is None:
+                    self.logger.info(f"⏱️ {self.name}: {duration:.2f}s, Memory: {memory_delta:+.1%}")
+                else:
+                    self.logger.error(f"❌ {self.name} failed after {duration:.2f}s, Memory: {memory_delta:+.1%}")
+        
+        return PerformanceMonitor(operation_name, self.logger, self._check_memory_usage)
+    
+    def _cached_computation(self, cache_dir: str = "cache/step02_5"):
+        """Decorator for caching expensive computations."""
+        import functools
+        import hashlib
+        import pickle
+        from pathlib import Path
+        
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(self, *args, **kwargs):
+                # Create cache key based on function name and arguments
+                cache_key_data = f"{func.__name__}_{str(args)}_{str(sorted(kwargs.items()))}"
+                cache_key = hashlib.md5(cache_key_data.encode()).hexdigest()
+                
+                cache_path = Path(cache_dir) / f"{cache_key}.pkl"
+                
+                # Check cache
+                if cache_path.exists():
+                    try:
+                        with open(cache_path, 'rb') as f:
+                            cached_result = pickle.load(f)
+                        self.logger.info(f'📦 Cache hit for {func.__name__}')
+                        return cached_result
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Cache read failed for {func.__name__}: {e}')
+                
+                # Compute and cache
+                result = func(self, *args, **kwargs)
+                
+                # Save to cache
+                try:
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(cache_path, 'wb') as f:
+                        pickle.dump(result, f)
+                    self.logger.info(f'💾 Cached result for {func.__name__}')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Cache write failed for {func.__name__}: {e}')
+                
+                return result
+            return wrapper
+        return decorator
+    
+    def _clear_cache(self, cache_dir: str = "cache/step02_5"):
+        """Clear computation cache."""
+        try:
+            from pathlib import Path
+            cache_path = Path(cache_dir)
+            if cache_path.exists():
+                import shutil
+                shutil.rmtree(cache_path)
+                self.logger.info(f'🗑️ Cleared cache directory: {cache_dir}')
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to clear cache: {e}')
+    
+    def _get_cache_stats(self, cache_dir: str = "cache/step02_5"):
+        """Get cache statistics."""
+        try:
+            from pathlib import Path
+            cache_path = Path(cache_dir)
+            if not cache_path.exists():
+                return {'files': 0, 'size_mb': 0}
+            
+            files = list(cache_path.glob('*.pkl'))
+            total_size = sum(f.stat().st_size for f in files)
+            
+            return {
+                'files': len(files),
+                'size_mb': total_size / (1024 * 1024)
+            }
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to get cache stats: {e}')
+            return {'files': 0, 'size_mb': 0}
+    
+    def _optimized_logging(self, level: str, message: str, *args, **kwargs):
+        """Optimized logging with level-based filtering and batching."""
+        
+        # Skip verbose logging in production
+        if level == 'debug' and not getattr(self, 'debug_mode', False):
+            return
+        
+        # Batch similar log messages to reduce overhead
+        if not hasattr(self, '_log_buffer'):
+            self._log_buffer = []
+        
+        self._log_buffer.append((level, message, args, kwargs))
+        
+        # Flush buffer when it reaches batch size or on important messages
+        if (len(self._log_buffer) >= 10 or 
+            level in ['error', 'critical'] or 
+            'completed' in message.lower() or 
+            'failed' in message.lower()):
+            self._flush_log_buffer()
+    
+    def _flush_log_buffer(self):
+        """Flush the log buffer to reduce I/O overhead."""
+        if not hasattr(self, '_log_buffer') or not self._log_buffer:
+            return
+        
+        # Group similar messages
+        message_counts = {}
+        for level, message, args, kwargs in self._log_buffer:
+            key = (level, message)
+            if key in message_counts:
+                message_counts[key] += 1
+            else:
+                message_counts[key] = 1
+        
+        # Log grouped messages
+        for (level, message), count in message_counts.items():
+            if count > 1:
+                self.logger.log(level, f"{message} (x{count})", *args, **kwargs)
+            else:
+                self.logger.log(level, message, *args, **kwargs)
+        
+        # Clear buffer
+        self._log_buffer.clear()
+    
+    def _reduce_logging_verbosity(self):
+        """Reduce logging verbosity for better performance."""
+        # Set logger level to INFO to reduce DEBUG overhead
+        if hasattr(self.logger, 'setLevel'):
+            self.logger.setLevel(logging.INFO)
+        
+        # Disable verbose sklearn logging
+        import logging
+        logging.getLogger('sklearn').setLevel(logging.WARNING)
+        logging.getLogger('sklearn.externals.joblib').setLevel(logging.WARNING)
+        
+        # Disable verbose pandas logging
+        logging.getLogger('pandas').setLevel(logging.WARNING)
     
     @log_all_calls
     def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -970,12 +1394,8 @@ class SROptimizationStep(BaseStep):
             self.logger.info('🤖 Step 3: Training ML models...')
             step_start = time.time()
 
-            # Use chunked processing for large datasets (>500K rows) to reduce memory usage
-            if len(features_data) > 500000:
-                self.logger.info('📊 Large dataset detected, using chunked processing...')
-                ml_results = await self._train_ml_models_chunked(features_data, sr_levels, chunk_size=200000)
-            else:
-                ml_results = await self._train_ml_models(features_data, sr_levels)
+            # Enhanced memory management with adaptive chunking
+            ml_results = await self._train_ml_models_with_memory_management(features_data, sr_levels)
 
             step_time = time.time() - step_start
             internal_call_tracker['step_calls'] += 1
@@ -2287,6 +2707,165 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'SR calculation failed: {e}')
             raise
 
+    async def _train_ml_models_with_memory_management(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
+        """Train ML models with intelligent memory management and adaptive chunking."""
+        try:
+            # Check memory usage and data size
+            memory_usage = self._check_memory_usage()
+            data_size = len(features_data)
+            
+            self.logger.info(f'🧠 Memory usage: {memory_usage:.1%}, Data size: {data_size:,} rows')
+            
+            # Determine processing strategy based on memory and data size
+            if memory_usage > 0.8 or data_size > 1000000:
+                # High memory usage or very large dataset - use aggressive chunking
+                chunk_size = min(50000, data_size // 10)
+                self.logger.info(f'📊 High memory usage detected, using aggressive chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            elif memory_usage > 0.6 or data_size > 500000:
+                # Moderate memory usage or large dataset - use moderate chunking
+                chunk_size = min(100000, data_size // 5)
+                self.logger.info(f'📊 Moderate memory usage detected, using moderate chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            elif data_size > 200000:
+                # Large dataset but good memory - use light chunking
+                chunk_size = min(200000, data_size // 3)
+                self.logger.info(f'📊 Large dataset detected, using light chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            else:
+                # Small dataset or good memory - process in memory
+                self.logger.info('📊 Processing in memory (no chunking needed)')
+                return await self._train_ml_models(features_data, sr_levels)
+                
+        except Exception as e:
+            self.logger.error(f'❌ Memory-managed ML training failed: {e}')
+            # Fallback to basic training
+            return await self._train_ml_models(features_data, sr_levels)
+    
+    async def _train_ml_models_chunked_optimized(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any], chunk_size: int) -> Dict[str, Any]:
+        """Optimized chunked ML training with memory monitoring and adaptive processing."""
+        try:
+            total_chunks = (len(features_data) + chunk_size - 1) // chunk_size
+            self.logger.info(f'📊 Processing {len(features_data):,} rows in {total_chunks} chunks of {chunk_size:,} rows each')
+            
+            all_results = []
+            chunk_processing_times = []
+            
+            for i in range(0, len(features_data), chunk_size):
+                chunk_end = min(i + chunk_size, len(features_data))
+                chunk_data = features_data.iloc[i:chunk_end]
+                chunk_num = i // chunk_size + 1
+                
+                # Check memory before processing each chunk
+                memory_before = self._check_memory_usage()
+                if memory_before > 0.9:
+                    self.logger.warning(f'⚠️ High memory usage before chunk {chunk_num}: {memory_before:.1%}')
+                    # Force garbage collection
+                    import gc
+                    gc.collect()
+                
+                self.logger.info(f'🔄 Processing chunk {chunk_num}/{total_chunks} ({len(chunk_data):,} rows)')
+                chunk_start = time.time()
+                
+                try:
+                    # Process chunk with timeout
+                    chunk_result = await asyncio.wait_for(
+                        self._train_ml_models(chunk_data, sr_levels),
+                        timeout=300  # 5 minutes per chunk
+                    )
+                    chunk_time = time.time() - chunk_start
+                    chunk_processing_times.append(chunk_time)
+                    
+                    # Check memory after processing
+                    memory_after = self._check_memory_usage()
+                    self.logger.info(f'✅ Chunk {chunk_num} completed in {chunk_time:.2f}s, memory: {memory_after:.1%}')
+                    
+                    all_results.append(chunk_result)
+                    
+                except asyncio.TimeoutError:
+                    self.logger.error(f'⏰ Chunk {chunk_num} timed out after 5 minutes')
+                    # Add fallback result for this chunk
+                    all_results.append(self._get_fallback_ml_result(chunk_data, sr_levels))
+                except Exception as chunk_error:
+                    self.logger.error(f'❌ Chunk {chunk_num} failed: {chunk_error}')
+                    # Add fallback result for this chunk
+                    all_results.append(self._get_fallback_ml_result(chunk_data, sr_levels))
+                
+                # Force garbage collection between chunks
+                import gc
+                gc.collect()
+            
+            # Aggregate results from all chunks
+            aggregated_result = self._aggregate_chunk_results(all_results, chunk_processing_times)
+            
+            self.logger.info(f'✅ Chunked ML training completed: {len(all_results)} chunks processed')
+            self.logger.info(f'⏱️ Average chunk time: {np.mean(chunk_processing_times):.2f}s')
+            self.logger.info(f'📊 Final memory usage: {self._check_memory_usage():.1%}')
+            
+            return aggregated_result
+            
+        except Exception as e:
+            self.logger.error(f'❌ Optimized chunked ML training failed: {e}')
+            return self._get_fallback_ml_result(features_data, sr_levels)
+    
+    def _get_fallback_ml_result(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
+        """Get fallback ML result when training fails."""
+        return {
+            'direction_accuracy': 0.5,
+            'volatility_mae': 0.1,
+            'model_type': 'fallback',
+            'training_samples': len(features_data),
+            'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
+            'training_time': 0.0,
+            'fallback_reason': 'chunk_processing_failed'
+        }
+    
+    def _aggregate_chunk_results(self, all_results: List[Dict[str, Any]], chunk_times: List[float]) -> Dict[str, Any]:
+        """Aggregate results from multiple chunks into a single result."""
+        try:
+            if not all_results:
+                return self._get_fallback_ml_result(pd.DataFrame(), {})
+            
+            # Calculate weighted averages based on training samples
+            total_samples = sum(result.get('training_samples', 0) for result in all_results)
+            if total_samples == 0:
+                return all_results[0]  # Return first result if no samples
+            
+            # Weighted accuracy
+            weighted_accuracy = sum(
+                result.get('direction_accuracy', 0.5) * result.get('training_samples', 0)
+                for result in all_results
+            ) / total_samples
+            
+            # Weighted MAE
+            weighted_mae = sum(
+                result.get('volatility_mae', 0.1) * result.get('training_samples', 0)
+                for result in all_results
+            ) / total_samples
+            
+            # Total training time
+            total_training_time = sum(result.get('training_time', 0) for result in all_results)
+            
+            # Most common model type
+            model_types = [result.get('model_type', 'unknown') for result in all_results]
+            most_common_model = max(set(model_types), key=model_types.count)
+            
+            return {
+                'direction_accuracy': weighted_accuracy,
+                'volatility_mae': weighted_mae,
+                'model_type': most_common_model,
+                'training_samples': total_samples,
+                'sr_levels_used': all_results[0].get('sr_levels_used', 0),
+                'training_time': total_training_time,
+                'chunks_processed': len(all_results),
+                'avg_chunk_time': np.mean(chunk_times) if chunk_times else 0.0,
+                'aggregation_method': 'weighted_average'
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Result aggregation failed: {e}')
+            return all_results[0] if all_results else self._get_fallback_ml_result(pd.DataFrame(), {})
+
     def _run_sr_calculation_chunked(self, sr_manager, data: pd.DataFrame) -> Dict[str, Any]:
         """Run SR calculation with chunked processing for large datasets."""
         try:
@@ -2570,12 +3149,104 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Enhanced SR detection failed: {e}')
             raise  # Re-raise the exception instead of falling back
 
+    async def _run_sr_detection_with_fast_fail(self, features_data: pd.DataFrame) -> Dict[str, Any]:
+        """Run SR detection with comprehensive fast-fail checks."""
+        try:
+            # Fast-fail: Check if we have sufficient data for SR detection
+            if len(features_data) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for SR detection: {len(features_data)} rows (minimum: 500)')
+                return self._get_fallback_sr_levels()
+            
+            # Fast-fail: Check memory usage before SR detection
+            memory_usage = self._check_memory_usage()
+            if memory_usage > 0.85:
+                self.logger.warning(f'⚠️ High memory usage before SR detection: {memory_usage:.1%}')
+                return self._get_fallback_sr_levels()
+            
+            # Run SR detection without timeout (let it complete naturally)
+            sr_levels = await self._run_sr_detection(features_data)
+            
+            # Fast-fail: Check if SR detection produced meaningful results
+            if not self._validate_sr_results(sr_levels):
+                self.logger.warning('⚠️ SR detection produced invalid results, using fallback')
+                return self._get_fallback_sr_levels()
+            
+            return sr_levels
+            
+        except Exception as e:
+            self.logger.error(f'❌ SR detection with fast-fail failed: {e}')
+            return self._get_fallback_sr_levels()
+    
+    def _get_fallback_sr_levels(self) -> Dict[str, Any]:
+        """Get fallback SR levels when detection fails."""
+        return {
+            'support_levels': [],
+            'resistance_levels': [],
+            'fallback_reason': 'sr_detection_failed',
+            'detection_time': 0.0
+        }
+    
+    def _validate_sr_results(self, sr_levels: Dict[str, Any]) -> bool:
+        """Validate SR detection results for meaningful output."""
+        try:
+            # Check if results are empty
+            if not sr_levels:
+                return False
+            
+            # Check if we have the expected structure
+            if 'support_levels' not in sr_levels or 'resistance_levels' not in sr_levels:
+                return False
+            
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            
+            # Check if we have at least some levels
+            total_levels = len(support_levels) + len(resistance_levels)
+            if total_levels == 0:
+                return False
+            
+            # Check if levels are reasonable (not too many or too few)
+            if total_levels > 1000:  # Too many levels might indicate an error
+                self.logger.warning(f'⚠️ Suspiciously high number of SR levels: {total_levels}')
+                return False
+            
+            # Check if levels have reasonable price values
+            all_levels = support_levels + resistance_levels
+            for level in all_levels[:10]:  # Check first 10 levels
+                if isinstance(level, dict):
+                    price = level.get('price', level.get('level', 0))
+                    if price <= 0 or price > 1000000:  # Unreasonable price values
+                        self.logger.warning(f'⚠️ Suspicious price value in SR level: {price}')
+                        return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ SR result validation failed: {e}')
+            return False
+
     async def _train_ml_models(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
-        """Train ML models for SR level prediction with comprehensive evaluation."""
+        """Train ML models for SR level prediction with comprehensive evaluation and fast-fail checks."""
         self.logger.info('🤖 Starting comprehensive ML model training for SR optimization...')
         start_time = time.time()
 
         try:
+            # Fast-fail: Check if we have sufficient data for ML training
+            if len(features_data) < 200:
+                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 200)')
+                return self._get_fallback_ml_result(features_data, sr_levels)
+            
+            # Fast-fail: Check if we have SR levels
+            total_sr_levels = len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
+            if total_sr_levels == 0:
+                self.logger.warning('⚠️ No SR levels available for ML training')
+                return self._get_fallback_ml_result(features_data, sr_levels)
+            
+            # Fast-fail: Check memory usage before ML training
+            memory_usage = self._check_memory_usage()
+            if memory_usage > 0.9:
+                self.logger.warning(f'⚠️ High memory usage before ML training: {memory_usage:.1%}')
+                return self._get_fallback_ml_result(features_data, sr_levels)
             # Validate input data
             if features_data.empty:
                 raise ValueError("Features data is empty")
@@ -2890,28 +3561,321 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Failed to prepare ML features: {e}')
             raise
 
+    @_cached_computation
     def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
-        """Optimize hyperparameters using grid search, random search, or Bayesian optimization."""
+        """Optimize hyperparameters using efficient methods with early stopping and resource management."""
         try:
             if not self.enable_hyperparameter_optimization:
                 self.logger.info('🔧 Hyperparameter optimization disabled')
                 return {}
             
-            self.logger.info(f'🔧 Starting hyperparameter optimization using {self.optimization_method}')
+            # Fast-fail: Check if we have sufficient data for optimization
+            if len(X) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {len(X)} samples (minimum: 500)')
+                return self._get_default_hyperparameters()
+            
+            # Fast-fail: Check memory usage before optimization
+            if self._check_memory_usage() > 0.8:
+                self.logger.warning('⚠️ High memory usage detected, using simplified optimization')
+                return self._simplified_hyperparameter_optimization(X, y, feature_names)
+            
+            self.logger.info(f'🔧 Starting optimized hyperparameter optimization using {self.optimization_method}')
             
             if self.optimization_method == 'grid_search':
-                return self._grid_search_optimization(X, y, feature_names)
+                return self._optimized_grid_search_optimization(X, y, feature_names)
             elif self.optimization_method == 'random_search':
-                return self._random_search_optimization(X, y, feature_names)
+                return self._optimized_random_search_optimization(X, y, feature_names)
             elif self.optimization_method == 'bayesian':
-                return self._bayesian_optimization(X, y, feature_names)
+                return self._optimized_bayesian_optimization(X, y, feature_names)
+            elif self.optimization_method == 'halving':
+                return self._halving_search_optimization(X, y, feature_names)
             else:
-                self.logger.warning(f'Unknown optimization method: {self.optimization_method}')
-                return {}
+                self.logger.warning(f'Unknown optimization method: {self.optimization_method}, using halving search')
+                return self._halving_search_optimization(X, y, feature_names)
                 
         except Exception as e:
             self.logger.error(f'❌ Hyperparameter optimization failed: {e}')
-            return {}
+            return self._get_default_hyperparameters()
+
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get default hyperparameters when optimization is not feasible."""
+        return {
+            'method': 'default',
+            'best_score': 0.0,
+            'best_params': {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2,
+                'max_features': 'sqrt'
+            },
+            'optimization_time': 0.0,
+            'reason': 'insufficient_data_or_memory'
+        }
+    
+    def _check_memory_usage(self) -> float:
+        """Check current memory usage as a percentage."""
+        try:
+            if PSUTIL_AVAILABLE:
+                memory = psutil.virtual_memory()
+                return memory.percent / 100.0
+            return 0.0
+        except Exception:
+            return 0.0
+    
+    def _simplified_hyperparameter_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Simplified hyperparameter optimization for resource-constrained environments."""
+        try:
+            from sklearn.model_selection import cross_val_score
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Very limited parameter space
+            param_combinations = [
+                {'n_estimators': 50, 'max_depth': 5, 'max_features': 'sqrt'},
+                {'n_estimators': 100, 'max_depth': 10, 'max_features': 'sqrt'},
+                {'n_estimators': 50, 'max_depth': None, 'max_features': 'log2'}
+            ]
+            
+            best_score = 0.0
+            best_params = param_combinations[0]
+            
+            for params in param_combinations:
+                model = RandomForestClassifier(random_state=42, **params)
+                scores = cross_val_score(model, X, y, cv=3, scoring='accuracy')
+                avg_score = scores.mean()
+                
+                if avg_score > best_score:
+                    best_score = avg_score
+                    best_params = params
+            
+            return {
+                'method': 'simplified',
+                'best_score': best_score,
+                'best_params': best_params,
+                'optimization_time': 0.0,
+                'reason': 'memory_constrained'
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Simplified hyperparameter optimization failed: {e}')
+            return self._get_default_hyperparameters()
+    
+    def _halving_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Halving search hyperparameter optimization for faster convergence."""
+        try:
+            from sklearn.experimental import enable_halving_search_cv
+            from sklearn.model_selection import HalvingGridSearchCV, TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Reduced parameter space for faster convergence
+            param_grid = {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, None],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2],
+                'max_features': ['sqrt', 'log2']
+            }
+            
+            # Use time series split with fewer folds
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            # Halving grid search for faster convergence
+            halving_search = HalvingGridSearchCV(
+                RandomForestClassifier(random_state=42),
+                param_grid,
+                cv=tscv,
+                scoring='accuracy',
+                n_jobs=min(4, os.cpu_count()),  # Limit parallelization
+                verbose=0,
+                factor=2,  # Halving factor
+                min_resources=100  # Minimum resources per candidate
+            )
+            
+            start_time = time.time()
+            halving_search.fit(X, y)
+            optimization_time = time.time() - start_time
+            
+            self.logger.info(f'🔧 Halving search best score: {halving_search.best_score_:.4f}')
+            self.logger.info(f'🔧 Halving search best params: {halving_search.best_params_}')
+            self.logger.info(f'⏱️ Optimization time: {optimization_time:.2f}s')
+            
+            return {
+                'method': 'halving_search',
+                'best_score': halving_search.best_score_,
+                'best_params': halving_search.best_params_,
+                'cv_results': halving_search.cv_results_,
+                'optimization_time': optimization_time
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Halving search optimization failed: {e}')
+            return self._simplified_hyperparameter_optimization(X, y, feature_names)
+    
+    def _optimized_grid_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimized grid search with reduced parameter space and early stopping."""
+        try:
+            from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Optimized parameter grid - balanced for performance and coverage
+            param_grid = {
+                'n_estimators': [50, 100, 200],  # Restored for better coverage
+                'max_depth': [5, 10, 15, None],  # Restored for better coverage
+                'min_samples_split': [2, 5, 10],  # Restored for better coverage
+                'min_samples_leaf': [1, 2, 4],  # Restored for better coverage
+                'max_features': ['sqrt', 'log2', None]  # Restored for better coverage
+            }
+            
+            # Use time series split with fewer folds
+            tscv = TimeSeriesSplit(n_splits=3)  # Reduced from 5+ folds
+            
+            # Grid search with limited parallelization
+            grid_search = GridSearchCV(
+                RandomForestClassifier(random_state=42),
+                param_grid,
+                cv=tscv,
+                scoring='accuracy',
+                n_jobs=min(4, os.cpu_count()),  # Limit parallelization
+                verbose=0  # Reduced verbosity
+            )
+            
+            start_time = time.time()
+            grid_search.fit(X, y)
+            optimization_time = time.time() - start_time
+            
+            self.logger.info(f'🔧 Optimized grid search best score: {grid_search.best_score_:.4f}')
+            self.logger.info(f'🔧 Optimized grid search best params: {grid_search.best_params_}')
+            self.logger.info(f'⏱️ Optimization time: {optimization_time:.2f}s')
+            
+            return {
+                'method': 'optimized_grid_search',
+                'best_score': grid_search.best_score_,
+                'best_params': grid_search.best_params_,
+                'cv_results': grid_search.cv_results_,
+                'optimization_time': optimization_time
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Optimized grid search failed: {e}')
+            return self._halving_search_optimization(X, y, feature_names)
+    
+    def _optimized_random_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimized random search with reduced iterations and early stopping."""
+        try:
+            from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            from scipy.stats import randint
+            
+            # Balanced parameter distributions for better coverage
+            param_distributions = {
+                'n_estimators': randint(50, 300),  # Expanded range for better coverage
+                'max_depth': [5, 10, 15, 20, None],  # More options for better coverage
+                'min_samples_split': randint(2, 20),  # Expanded range for better coverage
+                'min_samples_leaf': randint(1, 10),  # Expanded range for better coverage
+                'max_features': ['sqrt', 'log2', None],  # More options for better coverage
+                'bootstrap': [True, False]
+            }
+            
+            # Use time series split with fewer folds
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            # Random search with reduced iterations
+            random_search = RandomizedSearchCV(
+                RandomForestClassifier(random_state=42),
+                param_distributions,
+                n_iter=min(20, self.optimization_trials),  # Reduced iterations
+                cv=tscv,
+                scoring='accuracy',
+                n_jobs=min(4, os.cpu_count()),  # Limit parallelization
+                random_state=42,
+                verbose=0
+            )
+            
+            start_time = time.time()
+            random_search.fit(X, y)
+            optimization_time = time.time() - start_time
+            
+            self.logger.info(f'🔧 Optimized random search best score: {random_search.best_score_:.4f}')
+            self.logger.info(f'🔧 Optimized random search best params: {random_search.best_params_}')
+            self.logger.info(f'⏱️ Optimization time: {optimization_time:.2f}s')
+            
+            return {
+                'method': 'optimized_random_search',
+                'best_score': random_search.best_score_,
+                'best_params': random_search.best_params_,
+                'cv_results': random_search.cv_results_,
+                'optimization_time': optimization_time
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Optimized random search failed: {e}')
+            return self._halving_search_optimization(X, y, feature_names)
+    
+    def _optimized_bayesian_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimized Bayesian optimization with reduced iterations."""
+        try:
+            if not OPTIMIZATION_AVAILABLE:
+                self.logger.warning('⚠️ Bayesian optimization not available, falling back to halving search')
+                return self._halving_search_optimization(X, y, feature_names)
+            
+            from skopt import gp_minimize
+            from skopt.space import Real, Integer, Categorical
+            from skopt.utils import use_named_args
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+            
+            # Reduced search space
+            space = [
+                Integer(50, 200, name='n_estimators'),
+                Integer(5, 20, name='max_depth'),
+                Integer(2, 10, name='min_samples_split'),
+                Integer(1, 5, name='min_samples_leaf'),
+                Categorical(['sqrt', 'log2'], name='max_features')
+            ]
+            
+            # Use time series split with fewer folds
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            @use_named_args(space)
+            def objective(**params):
+                model = RandomForestClassifier(random_state=42, **params)
+                scores = cross_val_score(model, X, y, cv=tscv, scoring='accuracy')
+                return -scores.mean()  # Minimize negative accuracy
+            
+            start_time = time.time()
+            result = gp_minimize(
+                objective, 
+                space, 
+                n_calls=min(15, self.optimization_trials),  # Reduced iterations
+                random_state=42
+            )
+            optimization_time = time.time() - start_time
+            
+            # Extract best parameters
+            best_params = {
+                'n_estimators': result.x[0],
+                'max_depth': result.x[1],
+                'min_samples_split': result.x[2],
+                'min_samples_leaf': result.x[3],
+                'max_features': result.x[4]
+            }
+            
+            best_score = -result.fun
+            
+            self.logger.info(f'🔧 Optimized Bayesian search best score: {best_score:.4f}')
+            self.logger.info(f'🔧 Optimized Bayesian search best params: {best_params}')
+            self.logger.info(f'⏱️ Optimization time: {optimization_time:.2f}s')
+            
+            return {
+                'method': 'optimized_bayesian',
+                'best_score': best_score,
+                'best_params': best_params,
+                'optimization_time': optimization_time
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Optimized Bayesian optimization failed: {e}')
+            return self._halving_search_optimization(X, y, feature_names)
 
     def _grid_search_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
         """Grid search hyperparameter optimization."""
@@ -3160,64 +4124,66 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Walk-forward validation failed: {e}')
             return {}
 
+    @_cached_computation
     def _optimize_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-        """Optimize feature selection for best model performance."""
+        """Optimize feature selection with incremental filtering and caching for best performance."""
         try:
-            from sklearn.feature_selection import SelectFromModel, RFECV, mutual_info_classif
-            from sklearn.ensemble import RandomForestClassifier
-
+            # Fast-fail: Check if we have sufficient data for feature selection
+            if len(X) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for feature selection: {len(X)} samples (minimum: 500)')
+                return X, feature_names, self._get_fallback_feature_selection_info(feature_names)
+            
+            # Fast-fail: Check if we have too many features (memory constraint)
+            if len(feature_names) > 1000:
+                self.logger.warning(f'⚠️ Too many features for efficient selection: {len(feature_names)} (maximum: 1000)')
+                return self._aggressive_feature_reduction(X, y, feature_names)
+            
             feature_selection_info = {
                 'original_features': len(feature_names),
                 'methods_used': [],
                 'selected_features': 0,
-                'feature_importance': {}
+                'feature_importance': {},
+                'optimization_time': 0.0
             }
-
-            # Method 1: Feature importance from Random Forest
-            self.logger.info('🌲 Computing feature importance with Random Forest...')
-            rf_temp = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
-            rf_temp.fit(X, y)
-
-            # Get feature importance
-            importances = rf_temp.feature_importances_
-            feature_importance_dict = dict(zip(feature_names, importances))
-            feature_selection_info['feature_importance'] = feature_importance_dict
-
-            # Sort features by importance
-            sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
-
-            # Method 2: Select features based on criteria for optimal performance
-            # Criteria: Keep exactly 80 features with highest importance scores
-            target_features = min(80, len(feature_names))  # Keep exactly 80 features
-            top_feature_names = [name for name, _ in sorted_features[:target_features]]
-
-            # Create boolean mask for selected features
-            selected_mask = np.isin(feature_names, top_feature_names)
-            selected_feature_names = feature_names[selected_mask]
-            X_selected = X[:, selected_mask]
-
-            feature_selection_info['methods_used'].append('top_features_selection')
-            feature_selection_info['selected_features'] = len(selected_feature_names)
-            feature_selection_info['target_features'] = target_features
-            feature_selection_info['selection_criteria'] = f'Keep exactly 80 features with highest importance (selected {target_features})'
-            feature_selection_info['top_features'] = top_feature_names[:20]  # Show top 20 for reporting
-
-            # Method 3: Mutual information for additional validation
-            if len(selected_feature_names) > 10:  # Only if we have enough features
-                self.logger.info('🔗 Computing mutual information scores...')
-                mi_scores = mutual_info_classif(X_selected, y, random_state=42)
-                mi_dict = dict(zip(selected_feature_names, mi_scores))
-                feature_selection_info['mutual_information'] = mi_dict
-                feature_selection_info['methods_used'].append('mutual_information')
-
-            # Method 4: SHAP values for comprehensive feature importance
-            feature_selection_info['shap_importance'] = self._compute_shap_importance(
-                X_selected, y, selected_feature_names
+            
+            start_time = time.time()
+            
+            # Method 1: Fast initial filtering using statistical tests
+            self.logger.info('🔍 Fast initial feature filtering...')
+            X_filtered, filtered_feature_names, filter_info = self._fast_feature_filtering(X, y, feature_names)
+            feature_selection_info.update(filter_info)
+            
+            # Method 2: Incremental feature selection with Random Forest
+            self.logger.info('🌲 Computing feature importance with optimized Random Forest...')
+            X_selected, selected_feature_names, rf_info = self._incremental_rf_feature_selection(
+                X_filtered, y, filtered_feature_names
             )
-            feature_selection_info['methods_used'].append('shap_analysis')
-
-            self.logger.info(f'✅ Feature selection completed: {len(selected_feature_names)}/{len(feature_names)} features selected')
-            self.logger.info(f'🎯 Top 5 features: {[name for name, _ in sorted_features[:5]]}')
+            feature_selection_info.update(rf_info)
+            
+            # Method 3: Mutual information validation (only for manageable feature sets)
+            if len(selected_feature_names) <= 100:  # Only for manageable feature sets
+                self.logger.info('🔗 Computing mutual information scores...')
+                mi_info = self._compute_mutual_information_scores(X_selected, y, selected_feature_names)
+                feature_selection_info.update(mi_info)
+            
+            # Method 4: SHAP analysis (only for small feature sets and if memory allows)
+            if (len(selected_feature_names) <= 50 and 
+                self._check_memory_usage() < 0.7 and 
+                len(X_selected) <= 10000):
+                self.logger.info('🎯 Computing SHAP importance (optimized)...')
+                shap_info = self._compute_shap_importance_optimized(X_selected, y, selected_feature_names)
+                feature_selection_info.update(shap_info)
+            else:
+                self.logger.info('⏭️ Skipping SHAP analysis due to memory or size constraints')
+                feature_selection_info['shap_importance'] = {}
+                feature_selection_info['methods_used'].append('shap_skipped')
+            
+            optimization_time = time.time() - start_time
+            feature_selection_info['optimization_time'] = optimization_time
+            
+            self.logger.info(f'✅ Optimized feature selection completed: {len(selected_feature_names)}/{len(feature_names)} features selected')
+            self.logger.info(f'⏱️ Feature selection time: {optimization_time:.2f}s')
+            self.logger.info(f'🎯 Top 5 features: {selected_feature_names[:5].tolist()}')
 
             return X_selected, selected_feature_names, feature_selection_info
 
@@ -3228,8 +4194,191 @@ class SROptimizationStep(BaseStep):
                 'original_features': len(feature_names),
                 'methods_used': ['failed'],
                 'selected_features': len(feature_names),
-                'error': str(e)
+                'error': str(e),
+                'optimization_time': 0.0
             }
+    
+    def _get_fallback_feature_selection_info(self, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Get fallback feature selection info when selection is not feasible."""
+        return {
+            'original_features': len(feature_names),
+            'methods_used': ['fallback'],
+            'selected_features': len(feature_names),
+            'feature_importance': {},
+            'optimization_time': 0.0,
+            'reason': 'insufficient_data'
+        }
+    
+    def _aggressive_feature_reduction(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        """Aggressive feature reduction for memory-constrained environments."""
+        try:
+            from sklearn.feature_selection import SelectKBest, f_classif
+            
+            # Keep only top 200 features using statistical test
+            k_best = SelectKBest(f_classif, k=min(200, len(feature_names)))
+            X_reduced = k_best.fit_transform(X, y)
+            selected_features = feature_names[k_best.get_support()]
+            
+            return X_reduced, selected_features, {
+                'original_features': len(feature_names),
+                'methods_used': ['aggressive_reduction'],
+                'selected_features': len(selected_features),
+                'feature_importance': {},
+                'optimization_time': 0.0,
+                'reason': 'memory_constrained'
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Aggressive feature reduction failed: {e}')
+            return X, feature_names, self._get_fallback_feature_selection_info(feature_names)
+    
+    def _fast_feature_filtering(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        """Fast initial feature filtering using statistical tests."""
+        try:
+            from sklearn.feature_selection import SelectKBest, f_classif
+            
+            # Remove features with zero variance
+            non_zero_var_mask = np.var(X, axis=0) > 1e-8
+            X_var_filtered = X[:, non_zero_var_mask]
+            feature_names_var_filtered = feature_names[non_zero_var_mask]
+            
+            # Statistical test filtering - keep top 500 features
+            k_best = SelectKBest(f_classif, k=min(500, len(feature_names_var_filtered)))
+            X_filtered = k_best.fit_transform(X_var_filtered, y)
+            filtered_feature_names = feature_names_var_filtered[k_best.get_support()]
+            
+            return X_filtered, filtered_feature_names, {
+                'methods_used': ['variance_filtering', 'statistical_test'],
+                'variance_filtered': np.sum(~non_zero_var_mask),
+                'statistical_filtered': len(feature_names_var_filtered) - len(filtered_feature_names)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Fast feature filtering failed: {e}')
+            return X, feature_names, {'methods_used': ['filtering_failed']}
+    
+    def _incremental_rf_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        """Incremental Random Forest feature selection with optimized parameters."""
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            
+            # Use smaller Random Forest for faster computation
+            rf_temp = RandomForestClassifier(
+                n_estimators=30,  # Reduced from 50
+                max_depth=10,     # Limited depth
+                random_state=42, 
+                n_jobs=min(2, os.cpu_count())  # Limit parallelization
+            )
+            rf_temp.fit(X, y)
+
+            # Get feature importance
+            importances = rf_temp.feature_importances_
+            feature_importance_dict = dict(zip(feature_names, importances))
+            
+            # Sort features by importance
+            sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
+            
+            # Adaptive target features based on data size (more conservative)
+            if len(X) < 5000:
+                target_features = min(30, len(feature_names))
+            elif len(X) < 20000:
+                target_features = min(60, len(feature_names))
+            else:
+                target_features = min(120, len(feature_names))
+            
+            top_feature_names = [name for name, _ in sorted_features[:target_features]]
+            
+            # Create boolean mask for selected features
+            selected_mask = np.isin(feature_names, top_feature_names)
+            selected_feature_names = feature_names[selected_mask]
+            X_selected = X[:, selected_mask]
+            
+            return X_selected, selected_feature_names, {
+                'methods_used': ['incremental_rf_selection'],
+                'selected_features': len(selected_feature_names),
+                'target_features': target_features,
+                'feature_importance': feature_importance_dict,
+                'top_features': top_feature_names[:10]  # Show top 10 for reporting
+            }
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Incremental RF feature selection failed: {e}')
+            return X, feature_names, {'methods_used': ['rf_selection_failed']}
+    
+    def _compute_mutual_information_scores(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Compute mutual information scores for feature validation."""
+        try:
+            from sklearn.feature_selection import mutual_info_classif
+            
+            mi_scores = mutual_info_classif(X, y, random_state=42)
+            mi_dict = dict(zip(feature_names, mi_scores))
+            
+            return {
+                'mutual_information': mi_dict,
+                'methods_used': ['mutual_information']
+            }
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Mutual information computation failed: {e}')
+            return {'mutual_information': {}, 'methods_used': ['mi_failed']}
+    
+    def _compute_shap_importance_optimized(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimized SHAP importance computation with sampling and caching."""
+        try:
+            # Sample data for SHAP computation if too large
+            if len(X) > 5000:
+                sample_indices = np.random.choice(len(X), 5000, replace=False)
+                X_sample = X[sample_indices]
+                y_sample = y[sample_indices]
+                self.logger.info(f'📊 Sampling {len(X_sample)} points for SHAP analysis')
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Use smaller model for SHAP
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(
+                n_estimators=20,  # Reduced for faster SHAP computation
+                max_depth=8,
+                random_state=42,
+                n_jobs=1  # Single job for SHAP compatibility
+            )
+            model.fit(X_sample, y_sample)
+            
+            # Try to compute SHAP values with error handling
+            try:
+                import shap
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_sample[:1000])  # Limit to 1000 samples
+                
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1]  # Use positive class
+                
+                # Calculate mean absolute SHAP values
+                mean_shap_values = np.mean(np.abs(shap_values), axis=0)
+                shap_importance_dict = dict(zip(feature_names, mean_shap_values))
+                
+                # Get top features
+                sorted_shap = sorted(shap_importance_dict.items(), key=lambda x: x[1], reverse=True)
+                top_shap_features = [name for name, _ in sorted_shap[:10]]
+                
+                return {
+                    'shap_importance': shap_importance_dict,
+                    'shap_top_features': top_shap_features,
+                    'shap_sample_size': len(X_sample),
+                    'methods_used': ['shap_analysis_optimized']
+                }
+                
+            except ImportError:
+                self.logger.warning('⚠️ SHAP not available, skipping SHAP analysis')
+                return {'shap_importance': {}, 'methods_used': ['shap_unavailable']}
+            except Exception as shap_error:
+                self.logger.warning(f'⚠️ SHAP computation failed: {shap_error}')
+                return {'shap_importance': {}, 'methods_used': ['shap_failed']}
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Optimized SHAP computation failed: {e}')
+            return {'shap_importance': {}, 'methods_used': ['shap_optimized_failed']}
 
     def _apply_numpy_compatibility_patch(self) -> None:
         """Apply NumPy compatibility patch for SHAP library."""

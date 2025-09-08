@@ -7,7 +7,7 @@ including lookahead bias detection, data integrity checks, and temporal validati
 """
 
 import pandas as pd
-import numpy as np
+
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -15,7 +15,6 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, validates
 
 logger = system_logger.getChild('Step05Validation')
-
 
 @dataclass
 class ValidationResult:
@@ -27,7 +26,6 @@ class ValidationResult:
     recommendations: List[str]
     details: Dict[str, Any]
 
-
 @dataclass
 class LookaheadBiasResult:
     """Result of lookahead bias validation."""
@@ -37,7 +35,6 @@ class LookaheadBiasResult:
     future_data_leakage: bool
     recommendations: List[str]
     details: Dict[str, Any]
-
 
 class Step05Validator:
     """Comprehensive validator for Step05 labeling operations."""

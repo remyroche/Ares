@@ -17,7 +17,6 @@ from .feature_selector import FeatureSelector
 from .model_optimizer import ModelOptimizer
 from .ensemble_creator import EnsembleCreator
 import numpy as np
-import logging
 
 class AnalystEnhancementStep(BaseStep):
     """Step 12: Analyst Enhancement with regime-aware optimization."""

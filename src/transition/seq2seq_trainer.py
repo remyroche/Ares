@@ -14,8 +14,6 @@ else:
     # Runtime implementation
     pass
 
-import logging
-
 try:
     import pytorch_lightning as pl
 except Exception:

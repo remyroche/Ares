@@ -6,7 +6,7 @@ from logging import warning
 from ..utils.logger import system_logger
 
 from .database.influxdb_manager import InfluxDBManager
-import time
+
 from ..core.decorators import handles_errors
 
 try:

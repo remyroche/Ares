@@ -5,7 +5,6 @@ from src.core.decorators import handles_errors
 
 # src/monitoring/performance_monitor.py
 
-
 """
 Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
@@ -17,9 +16,6 @@ from datetime import datetime
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-import time
-
 
 @dataclass
 class PerformanceMetrics:
@@ -43,7 +39,6 @@ class PerformanceMetrics:
     confidence_analyst: float = 0.0
     confidence_tactician: float = 0.0
     confidence_final: float = 0.0
-
 
 class PerformanceMonitor:
     """Comprehensive performance monitoring system."""

@@ -12,7 +12,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from src.utils.logger import system_logger
 import numpy as np
-import logging
 
 class FeatureSelector:
     """Handles feature selection for analyst models."""

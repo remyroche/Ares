@@ -8,7 +8,6 @@ Integrates SHAP and LIME explanations with the monitoring system for detailed
 model decision explanations.
 """
 
-
 import time
 
 from .utils.common_operations import (
@@ -19,10 +18,6 @@ from ...utils.logger import system_logger
 from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
 from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
 import numpy as np
-import logging
-import typing
-
-
 
 @dataclass
 class FeatureExplanation:
@@ -33,7 +28,6 @@ class FeatureExplanation:
     contribution: float
     explanation_type: str  # "shap" or "lime"
     confidence: float = 0.0
-
 
 @dataclass
 class ModelExplanation:
@@ -47,7 +41,6 @@ class ModelExplanation:
     explanation_confidence: float = 0.0
     processing_time_ms: float = 0.0
 
-
 @dataclass
 class EnsembleExplanation:
     """Ensemble-level explanation aggregating individual model explanations."""
@@ -57,7 +50,6 @@ class EnsembleExplanation:
     consensus_features: List[str]
     disagreement_features: List[str]
     explanation_quality_score: float = 0.0
-
 
 class ExplainabilityIntegrator:
     """

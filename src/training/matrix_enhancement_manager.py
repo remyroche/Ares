@@ -20,8 +20,6 @@ from sklearn.preprocessing import StandardScaler
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-
 
 @dataclass
 class MatrixEnhancementConfig:
@@ -51,7 +49,6 @@ class MatrixEnhancementConfig:
     min_explained_variance: float = 0.95
     correlation_threshold: float = 0.8
     condition_number_threshold: float = 1e12
-
 
 class MatrixEnhancementManager:
     """Advanced matrix enhancement manager for ML training processes.

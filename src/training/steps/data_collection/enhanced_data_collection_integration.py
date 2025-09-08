@@ -19,7 +19,6 @@ Features:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 import time
@@ -33,11 +32,8 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
-import numpy as np
-import logging
 
 logger = system_logger.getChild("EnhancedDataCollectionIntegration")
-
 
 class EnhancedDataCollectionPipeline:
     """Enhanced data collection pipeline with comprehensive validation."""
@@ -145,7 +141,6 @@ class EnhancedDataCollectionPipeline:
             'timestamp': datetime.now().isoformat()
         }
 
-
 async def run_enhanced_data_collection_pipeline(
     symbol: str,
     exchange: str,
@@ -167,7 +162,6 @@ async def run_enhanced_data_collection_pipeline(
     
     pipeline = EnhancedDataCollectionPipeline(exchange, symbol, timeframe)
     return await pipeline.run_complete_pipeline(force_rerun)
-
 
 async def validate_existing_data(
     symbol: str,
@@ -328,7 +322,6 @@ async def validate_existing_data(
             'timestamp': datetime.now().isoformat()
         }
 
-
 async def demonstrate_enhanced_validation():
     """Demonstrate the enhanced validation framework."""
     
@@ -409,7 +402,6 @@ def test_klines_validation():
     logger.info("=" * 80)
     logger.info("🎉 Enhanced validation framework demonstration completed")
     logger.info("=" * 80)
-
 
 if __name__ == "__main__":
     # Run demonstration

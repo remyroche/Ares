@@ -10,8 +10,7 @@ Ensures that tactician labels are created specifically for each regime's charact
 """
 
 import asyncio
-from pathlib import Path
-import json
+
 from typing import Dict, Any, Optional, List, Tuple
 import time
 from contextlib import nullcontext
@@ -55,13 +54,10 @@ except ImportError as e:
     data_manager = None
 
 import numpy as np
-import logging
-import typing
+
 import pandas as pd
 
-
 logger = get_logger('Step14TacticianLabelingPerRegime')
-
 
 class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
     """Enhanced tactician labeling step that processes each regime separately with M1 optimizations."""
@@ -1163,7 +1159,6 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
 
     # Original method removed - use _save_regime_labeling_results_optimized instead
 
-
 # Enhanced optimization configuration for Step 14
 def create_enhanced_step14_config(base_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Create enhanced configuration for Step 14 with M1 optimizations."""
@@ -1212,7 +1207,6 @@ def create_enhanced_step14_config(base_config: Optional[Dict[str, Any]] = None) 
     })
 
     return config
-
 
 @validates()
 @handles_errors
@@ -1288,7 +1282,6 @@ async def run_per_regime_step(
 
     return success
 
-
 def cleanup_dead_code():
     """Clean up dead and redundant code from the module."""
     import inspect
@@ -1313,7 +1306,6 @@ def cleanup_dead_code():
 
     logger.info("✅ Dead code cleanup completed - review and remove redundant methods manually if needed")
 
-
 # Enhanced testing function with optimization validation
 async def test_enhanced_step14():
     """Test the enhanced per-regime tactician labeling step with optimization validation."""
@@ -1335,7 +1327,6 @@ async def test_enhanced_step14():
         logger.warning("⚠️ Enhanced Step 14 test failed - check optimization components")
 
     return success
-
 
 if __name__ == '__main__':
     # Run cleanup first

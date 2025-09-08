@@ -10,7 +10,7 @@ reduced complexity through modular design. All functionality is preserved
 but organized into separate, focused modules.
 """
 import os
-import time
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -35,8 +35,6 @@ from .utils.performance_monitor import PerformanceMonitor
 from .utils.matrix_operations import MatrixOperations
 from .utils.quality_metrics import QualityMetricsCalculator
 from .utils.feature_filtering import FeatureFiltering
-import collections
-import json
 
 # Optional dependencies with fallback handling
 REQUIRED_MODULES = [
@@ -106,7 +104,6 @@ else:
     log_step_metrics = enhanced_mlflow.log_step_metrics
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-
 
 class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations - Simplified with modular design."""
@@ -678,7 +675,6 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 7 artifacts and reports: {e}')
 
-
 async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, 
                   force_rerun: bool = False, **kwargs: Any) -> bool:
     """
@@ -723,6 +719,5 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
     except Exception as e:
         system_logger.error(f'❌ Step 7 failed: {str(e)}')
         return False
-
 
 __all__ = ['Step7EnhancedMatrixOperations', 'run_step']

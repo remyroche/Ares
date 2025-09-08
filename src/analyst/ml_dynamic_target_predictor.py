@@ -2,16 +2,13 @@
 ML Dynamic Target Predictor for predicting dynamic price targets.
 """
 
-import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
-
 
 class MLDynamicTargetPredictor:
     """

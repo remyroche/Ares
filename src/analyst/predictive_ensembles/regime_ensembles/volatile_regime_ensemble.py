@@ -8,7 +8,6 @@ from .utils.warning_symbols import failed
 from .base_ensemble import BaseEnsemble
 import numpy as np
 import pandas as pd
-import typing
 
 class VolatileRegimeEnsemble(BaseEnsemble):
     """

@@ -6,12 +6,10 @@ and includes thorough function call monitoring, validation, and detailed reporti
 """
 import asyncio
 import sys
-import time
-import traceback
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-import numpy as np
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -21,8 +19,6 @@ from src.utils.common_operations import safe_json_load, ensure_directory, safe_j
 from src.training.reports import save_training_report
 import pandas as pd
 
-import json
-import logging
 # Import the comprehensive function monitoring framework from step02
 from .utils.monitoring import (
     comprehensive_function_monitoring,
@@ -32,7 +28,6 @@ from .utils.monitoring import (
 )
 
 logger = system_logger.getChild('Step2DataReadingValidator')
-
 
 @comprehensive_function_monitoring(
     validate_inputs = True,
@@ -71,7 +66,6 @@ async def _validate_directory_structure(data_dir: str, exchange: str, symbol: st
         'unified_data_path': unified_data_path
     }
 
-
 @comprehensive_function_monitoring(
     validate_inputs = True,
     validate_outputs = True,
@@ -108,7 +102,6 @@ async def _validate_data_files(data_files: list, exchange: str, symbol: str, tim
             'validation_passed': False, 
             'error': error_msg
         }
-
 
 @comprehensive_function_monitoring(
     validate_inputs = True,
@@ -226,7 +219,6 @@ async def _validate_data_content(data: pd.DataFrame, exchange: str, symbol: str,
             'validation_passed': False, 
             'error': error_msg
         }
-
 
 @comprehensive_function_monitoring(
     validate_inputs = True,
@@ -447,7 +439,6 @@ async def generate_validation_function_report(
             'success': False,
             'error': str(e)
         }
-
 
 if __name__ == '__main__':
     async def test() -> None:

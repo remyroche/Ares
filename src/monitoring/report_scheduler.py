@@ -7,7 +7,6 @@ Report Scheduler (minimal scaffold)
 Automated report scheduling scaffolding.
 """
 
-
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -17,8 +16,6 @@ from ...utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
-import logging
-
 
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
@@ -27,17 +24,14 @@ class ReportType(Enum):
     EXECUTIVE_SUMMARY = "executive_summary"
     CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
-
 class ReportSchedule(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
-
 class ReportFormat(Enum):
     JSON = "json"
     HTML = "html"
-
 
 @dataclass
 class ReportConfig:
@@ -46,7 +40,6 @@ class ReportConfig:
     format: ReportFormat
     recipients: list[str]
     enabled: bool = True
-
 
 @dataclass
 class ReportHistory:
@@ -57,7 +50,6 @@ class ReportHistory:
     recipients: list[str]
     file_path: str
     status: str
-
 
 class ReportScheduler:
     """Automated report scheduler."""

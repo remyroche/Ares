@@ -6,7 +6,7 @@ with different trading modes (BACKTEST, PAPER, LIVE).
 """
 
 import os
-import asyncio
+
 from typing import Any, Dict, Optional
 from datetime import datetime
 
@@ -14,7 +14,6 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
 from .enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
-
 
 class TradingModeMonitoringIntegration:
     """
@@ -259,10 +258,8 @@ class TradingModeMonitoringIntegration:
         except Exception as e:
             self.logger.exception(f'Error stopping trading mode monitoring integration: {e}')
 
-
 # Global instance for easy access
 _trading_mode_monitoring: Optional[TradingModeMonitoringIntegration] = None
-
 
 async def get_trading_mode_monitoring() -> TradingModeMonitoringIntegration:
     """
@@ -279,7 +276,6 @@ async def get_trading_mode_monitoring() -> TradingModeMonitoringIntegration:
     
     return _trading_mode_monitoring
 
-
 async def record_trade_decision_auto(trade_data: Dict[str, Any]) -> None:
     """
     Automatically record a trade decision using the global monitoring instance.
@@ -292,7 +288,6 @@ async def record_trade_decision_auto(trade_data: Dict[str, Any]) -> None:
         await monitoring.record_trade_decision(trade_data)
     except Exception as e:
         system_logger.exception(f'Error in automatic trade decision recording: {e}')
-
 
 async def update_performance_auto(performance_data: Dict[str, Any], model_id: Optional[str] = None) -> None:
     """
@@ -307,7 +302,6 @@ async def update_performance_auto(performance_data: Dict[str, Any], model_id: Op
         await monitoring.update_performance_metrics(performance_data, model_id)
     except Exception as e:
         system_logger.exception(f'Error in automatic performance update: {e}')
-
 
 async def update_ensemble_auto(ensemble_data: Dict[str, Any], ensemble_id: Optional[str] = None) -> None:
     """

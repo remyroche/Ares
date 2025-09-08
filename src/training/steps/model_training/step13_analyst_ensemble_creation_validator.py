@@ -5,16 +5,13 @@ from typing import Any
 from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, success, warning, error
-import json
-import logging
+
 from ...core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/step13_*.py
 
-
 logger = system_logger
-
 
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
@@ -209,7 +206,6 @@ class Step7AnalystEnsembleCreationValidator:
     def print_message(self, message: str) -> None:
         """Print validation message."""
         self.logger.info(message)
-
 
 def step7_analyst_ensemble_creation_validator(
     symbol: str,

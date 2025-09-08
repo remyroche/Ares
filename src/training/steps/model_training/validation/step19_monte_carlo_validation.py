@@ -1,7 +1,7 @@
 # src/training/steps/model_training/validation/step19_monte_carlo_validation.py
 
 import asyncio
-import json
+
 import os
 import pandas as pd
 from datetime import datetime
@@ -226,17 +226,13 @@ class OptimizedMonteCarloEngine:
 
         return results
 
-
 # Backward compatibility
 class MonteCarloEngine(OptimizedMonteCarloEngine):
     """Legacy Monte Carlo engine for backward compatibility."""
     pass
 
-
 class Step19MonteCarloValidation(BaseStep):
     """Step 19: Monte Carlo Validation with comprehensive statistical analysis."""
-
-    
 
     @log_all_calls
     def _validate_environment(self) -> None:
@@ -702,7 +698,6 @@ class Step19MonteCarloValidation(BaseStep):
         self.logger.info(f"   🏔️ Peak Usage: {memory_report['peak_usage_gb']:.2f}GB")
         self.logger.info(f"   💯 Memory Efficiency: {memory_report['memory_efficiency']:.2%}")
 
-
     def _calculate_monte_carlo_results(
         self,
         simulation_results: Dict[str, Any],
@@ -843,7 +838,6 @@ class Step19MonteCarloValidation(BaseStep):
             },
         }
 
-
 # For backward compatibility with existing step structure
 @timeout(7200)
 @validates
@@ -891,7 +885,6 @@ async def run_step(
 
     except Exception:  # pragma: no cover - defensive
         return False
-
 
 if __name__ == "__main__":
     # Test the enhanced step with optimizations

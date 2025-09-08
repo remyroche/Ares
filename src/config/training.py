@@ -6,7 +6,6 @@ from .environment import get_environment_settings
 
 # src/config/training.py
 
-
 def get_training_config() -> dict[str, Any]:
     """Get the complete training configuration.
 
@@ -195,7 +194,6 @@ def get_training_config() -> dict[str, Any]:
         },
     }
 
-
 def get_training_pipeline_config() -> dict[str, Any]:
     """Get training pipeline configuration.
 
@@ -204,7 +202,6 @@ def get_training_pipeline_config() -> dict[str, Any]:
 
     """
     return get_training_config().get("training_pipeline", {})
-
 
 def get_model_training_config() -> dict[str, Any]:
     """Get model training configuration.
@@ -215,7 +212,6 @@ def get_model_training_config() -> dict[str, Any]:
     """
     return get_training_config().get("MODEL_TRAINING", {})
 
-
 def get_data_config() -> dict[str, Any]:
     """Get data configuration.
 
@@ -224,7 +220,6 @@ def get_data_config() -> dict[str, Any]:
 
     """
     return get_training_config().get("DATA_CONFIG", {})
-
 
 def get_enhanced_training_config() -> dict[str, Any]:
     """Get enhanced training configuration.
@@ -235,7 +230,6 @@ def get_enhanced_training_config() -> dict[str, Any]:
     """
     return get_training_config().get("ENHANCED_TRAINING", {})
 
-
 def get_hmm_lm_config() -> dict[str, Any]:
     """Get HMM-LM model configuration.
 
@@ -245,7 +239,6 @@ def get_hmm_lm_config() -> dict[str, Any]:
     """
     return get_training_config().get("HMM_LM", {})
 
-
 def get_feature_engineering_config() -> dict[str, Any]:
     """Get feature engineering configuration.
 
@@ -254,7 +247,6 @@ def get_feature_engineering_config() -> dict[str, Any]:
 
     """
     return get_training_config().get("FEATURE_ENGINEERING", {})
-
 
 def get_validation_config() -> dict[str, Any]:
     """Get validation configuration.

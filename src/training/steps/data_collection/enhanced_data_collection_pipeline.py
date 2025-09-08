@@ -50,8 +50,6 @@ from .utils.data_operations_utils import (
     ProcessingError
 )
 import pandas as pd
-import time
-import typing
 
 from .monitoring.pipeline_monitor import (
     PipelineMonitor,
@@ -64,7 +62,6 @@ from src.utils.common_operations import (
     format_datetime,
     ensure_directory
 )
-
 
 class EnhancedDataCollectionPipeline:
     """Enhanced data collection pipeline with comprehensive protection."""
@@ -465,7 +462,6 @@ class EnhancedDataCollectionPipeline:
         
         return report
 
-
 # Main execution function
 async def run_enhanced_data_collection_pipeline(
     symbol: str,
@@ -490,7 +486,6 @@ async def run_enhanced_data_collection_pipeline(
     result = await pipeline.run_pipeline(symbol, exchange, data_dir)
     
     return result
-
 
 if __name__ == "__main__":
     # Example usage

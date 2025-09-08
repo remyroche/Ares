@@ -3,15 +3,12 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-
 from ...utils.logger import system_logger
 import numpy as np
-import logging
-import time
+
 from src.core.decorators import handles_errors
 
 # src/supervisor/risk_allocator.py
-
 
 class RiskAllocator:
     """
@@ -404,9 +401,7 @@ class RiskAllocator:
             self.logger.exception(f"Error calculating risk summary: {e}")
             return {}
 
-
 risk_allocator: RiskAllocator | None = None
-
 
 async def setup_risk_allocator(
     config: dict[str, Any] | None = None,

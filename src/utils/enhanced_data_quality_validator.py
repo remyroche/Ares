@@ -12,8 +12,6 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
-import datetime
-
 try:
     from .logger import system_logger
 except ImportError:

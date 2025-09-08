@@ -8,7 +8,7 @@ with separate validation, financial calculation, error handling, and reporting m
 
 import asyncio
 import pandas as pd
-import numpy as np
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
@@ -49,7 +49,6 @@ except ImportError as e:
     system_logger.warning(f"⚠️ Optimization utilities not available: {e}")
 
 logger = system_logger.getChild('Step05LabelingRefactored')
-
 
 class Step05LabelingRefactored:
     """
@@ -554,7 +553,6 @@ class Step05LabelingRefactored:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
-
 async def run_step05_refactored(symbol: str, exchange: str, timeframe: str, 
                               data_dir: str = None, force_rerun: bool = False, 
                               config: Optional[Dict[str, Any]] = None) -> bool:
@@ -605,7 +603,6 @@ async def run_step05_refactored(symbol: str, exchange: str, timeframe: str,
     return await step.execute_labeling(symbol=symbol, exchange=exchange, 
                                      timeframe=timeframe, data_dir=data_dir, 
                                      force_rerun=force_rerun)
-
 
 if __name__ == '__main__':
     async def test():

@@ -3,7 +3,7 @@ Enhanced Error Handling System with Detailed Function-Level Tracking
 """
 import asyncio
 import functools
-import inspect
+
 import logging
 import traceback
 import sys
@@ -13,7 +13,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import threading
-import collections
 
 class ErrorSeverity(Enum):
     LOW = 'low'

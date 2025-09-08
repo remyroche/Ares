@@ -4,7 +4,6 @@
 Enhanced trading system protocols with comprehensive type safety (minimal scaffold).
 """
 
-import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
         TradeDecision,
         TradingSignal,
     )
-
 
 @runtime_checkable
 class TradingDataProvider(Protocol):
@@ -41,7 +39,6 @@ class TradingDataProvider(Protocol):
     @abstractmethod
     def is_connected(self) -> bool: ...
 
-
 @runtime_checkable
 class TradingMLPredictor(Protocol):
     """Protocol for ML trading predictors."""
@@ -62,7 +59,6 @@ class TradingMLPredictor(Protocol):
 
     @abstractmethod
     def is_model_ready(self) -> bool: ...
-
 
 @runtime_checkable
 class TradingRiskManager(Protocol):

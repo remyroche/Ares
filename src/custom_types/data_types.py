@@ -3,7 +3,6 @@
 
 """Data structure type definitions for market data and trading information."""
 
-import logging
 from typing import Literal, TypedDict
 
 from .base_types import (
@@ -16,7 +15,6 @@ from .base_types import (
     Volume,
 )
 
-
 class OHLCVData(TypedDict):
     """Type-safe OHLCV market data."""
 
@@ -26,7 +24,6 @@ class OHLCVData(TypedDict):
     low: Price
     close: Price
     volume: Volume
-
 
 class TickerData(TypedDict):
     """Type-safe ticker data."""
@@ -39,13 +36,11 @@ class TickerData(TypedDict):
     low_24h: Price
     timestamp: Timestamp
 
-
 class OrderBookLevel(TypedDict):
     """Type-safe order book level."""
 
     price: Price
     quantity: Volume
-
 
 class OrderBookData(TypedDict):
     """Type-safe order book data."""
@@ -54,7 +49,6 @@ class OrderBookData(TypedDict):
     timestamp: Timestamp
     bids: list[OrderBookLevel]
     asks: list[OrderBookLevel]
-
 
 class TradeData(TypedDict):
     """Type-safe individual trade data."""
@@ -65,7 +59,6 @@ class TradeData(TypedDict):
     quantity: Volume
     side: Literal["buy", "sell"]
     timestamp: Timestamp
-
 
 class AccountInfo(TypedDict):
     """Type-safe account information."""
@@ -78,7 +71,6 @@ class AccountInfo(TypedDict):
     margin_ratio: float | None
     positions: list[dict[str, float]]  # Will be typed more specifically
     open_orders: list[dict[str, str]]  # Will be typed more specifically
-
 
 class PositionInfo(TypedDict):
     """Type-safe position information."""
@@ -94,7 +86,6 @@ class PositionInfo(TypedDict):
     margin: float
     timestamp: Timestamp
 
-
 class OrderInfo(TypedDict):
     """Type-safe order information."""
 
@@ -108,7 +99,6 @@ class OrderInfo(TypedDict):
     status: Literal["pending", "open", "filled", "cancelled", "rejected"]
     filled_quantity: Volume
     timestamp: Timestamp
-
 
 # Aggregate types for convenience
 MarketDataDict = dict[Symbol, list[OHLCVData]]

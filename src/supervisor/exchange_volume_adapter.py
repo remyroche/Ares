@@ -22,10 +22,6 @@ from .core.exceptions import (
     missing,
     warning,
 )
-import numpy as np
-import logging
-import time
-
 
 class ExchangeVolumeAdapter:
     """
@@ -497,7 +493,6 @@ class ExchangeVolumeAdapter:
 
         except Exception:
             self.print(error("Error during cleanup: {e}"))
-
 
 @handles_errors(
     exceptions=(Exception,),

@@ -1,4 +1,4 @@
-import numpy as np
+
 from ...utils.logger import system_logger
 from src.core.decorators import handles_errors
 
@@ -15,9 +15,6 @@ from datetime import datetime
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-import time
-
 
 class DynamicWeighter:
     """
@@ -1161,9 +1158,7 @@ class DynamicWeighter:
             },
         }
 
-    # ============================================================================
     # ENHANCED ENSEMBLE WEIGHTING METHODS
-    # ============================================================================
 
     @handles_errors(fallback = None)
     async def update_model_weights_online(
@@ -1463,10 +1458,8 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error stopping dynamic weighter: {e}")
 
-
 # Global dynamic weighter instance
 dynamic_weighter: DynamicWeighter | None = None
-
 
 async def setup_dynamic_weighter(
     config: dict[str, Any] | None = None,

@@ -18,16 +18,14 @@ from typing import Union, Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import pickle
 
-
 import pandas as pd
-import typing
+
 from typing import Optional, Any, Dict, List
 from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
     safe_json_load,
 )
-
 
 class DataFormat(Enum):
     """Supported data formats."""
@@ -37,14 +35,12 @@ class DataFormat(Enum):
     PICKLE = "pickle"
     HDF5 = "hdf5"
 
-
 class CompressionType(Enum):
     """Supported compression types."""
     NONE = "none"
     GZIP = "gzip"
     BZIP2 = "bzip2"
     LZ4 = "lz4"
-
 
 @dataclass
 class DataOperationResult:
@@ -63,7 +59,6 @@ class DataOperationResult:
         if self.errors is None:
             self.errors = []
 
-
 @dataclass
 class DataQualityMetrics:
     """Data quality metrics."""
@@ -77,7 +72,6 @@ class DataQualityMetrics:
     quality_score: float
     issues: List[str]
     timestamp: str
-
 
 class MemoryOptimizedDataHandler:
     """Memory-optimized data structures for large datasets."""
@@ -226,7 +220,6 @@ class MemoryOptimizedDataHandler:
         except Exception as e:
             self.logger.warning(f"Failed to create memory-mapped array: {e}")
             return data
-
 
 class DataFormatter:
     """Utility class for data formatting operations."""
@@ -441,7 +434,6 @@ class DataFormatter:
         
         return issues
 
-
 class DataAnalyzer:
     """Utility class for data analysis operations."""
     
@@ -612,7 +604,6 @@ class DataAnalyzer:
         
         return issues
 
-
 class DataAccessManager:
     """Utility class for managing data access and security."""
     
@@ -685,7 +676,6 @@ class DataAccessManager:
             level,
             f"Data access: {user_id} | {data_type} | {symbol} | {exchange} | {'GRANTED' if granted else 'DENIED'}"
         )
-
 
 class DataStorageManager:
     """Utility class for managing data storage operations."""
@@ -845,7 +835,6 @@ class DataStorageManager:
             # Default to parquet for unknown extensions
             return DataFormat.PARQUET
 
-
 class ErrorHandler:
     """Utility class for comprehensive error handling."""
     
@@ -932,7 +921,6 @@ class ErrorHandler:
             "error_types": error_types,
             "recent_errors": self.error_log[-10:]  # Last 10 errors
         }
-
 
 # Export main classes
 __all__ = [

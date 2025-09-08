@@ -13,12 +13,8 @@ from ..standardized_parquet_handler import standardized_parquet_handler
     validation_error,
 )
 from ....core.decorators import handles_errors
-import logging
-import pandas as pd
-import time
 
 # src/training/multi_timeframe_training_manager.py
-
 
 class MultiTimeframeTrainingManager:
     """Multi-timeframe training manager with comprehensive error handling and type safety."""
@@ -1291,8 +1287,5 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-
 # Global multi-timeframe training manager instance
 multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
-
-

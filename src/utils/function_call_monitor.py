@@ -15,7 +15,6 @@ import inspect
 import logging
 import time
 import traceback
-import numpy as np
 
 try:
     import psutil
@@ -29,7 +28,6 @@ from enum import Enum
 import json
 import threading
 from contextlib import contextmanager
-import collections
 
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""

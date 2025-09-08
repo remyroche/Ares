@@ -8,8 +8,6 @@ Provides comprehensive settings for Metal Performance Shaders (MPS) integration.
 
 from dataclasses import dataclass
 from typing import Any
-import logging
-
 
 @dataclass
 class M1GPUConfig:
@@ -49,7 +47,6 @@ class M1GPUConfig:
     enable_memory_optimization: bool = True
     enable_compute_optimization: bool = True
 
-
 @dataclass
 class M1MatrixOperationsConfig:
     """Configuration for M1-optimized matrix operations."""
@@ -75,7 +72,6 @@ class M1MatrixOperationsConfig:
     convergence_tolerance: float = 1e-8
     max_iterations: int = 1000
 
-
 @dataclass
 class M1SecurityConfig:
     """Configuration for M1 GPU security."""
@@ -94,7 +90,6 @@ class M1SecurityConfig:
     enable_gpu_quality_gates: bool = True
     enable_result_validation: bool = True
     enable_error_detection: bool = True
-
 
 def get_m1_gpu_config() -> dict[str, Any]:
     """Get comprehensive configuration for M1 GPU acceleration."""
@@ -180,7 +175,6 @@ def get_m1_gpu_config() -> dict[str, Any]:
         },
     }
 
-
 def get_optimized_m1_config(optimization_target: str = "performance") -> dict[str, Any]:
     """Get M1 configuration optimized for specific target."""
 
@@ -225,7 +219,6 @@ def get_optimized_m1_config(optimization_target: str = "performance") -> dict[st
 
     return base_config
 
-
 def get_minimal_m1_config() -> dict[str, Any]:
     """Get minimal M1 configuration for basic GPU operations."""
 
@@ -249,7 +242,6 @@ def get_minimal_m1_config() -> dict[str, Any]:
     config["matrix_operations"]["min_batch_size_for_gpu"] = 200
 
     return config
-
 
 def validate_m1_config(config: dict[str, Any]) -> bool:
     """Validate M1 GPU configuration settings."""
@@ -310,11 +302,9 @@ def validate_m1_config(config: dict[str, Any]) -> bool:
         print(f"M1 configuration validation failed: {e}")
         return False
 
-
 def get_default_m1_config() -> dict[str, Any]:
     """Get default M1 configuration for GPU acceleration."""
     return get_m1_gpu_config()
-
 
 def get_production_m1_config() -> dict[str, Any]:
     """Get production-ready M1 configuration."""

@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import time
 import numpy as np
-import logging
+
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum

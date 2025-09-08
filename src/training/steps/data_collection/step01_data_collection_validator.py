@@ -9,18 +9,12 @@ from typing import Any, Dict, List
 import pandas as pd
 from src.utils.logger import system_logger
 
-
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
-import datetime
-import logging
-import numpy as np
-
-
 
 class Step1DataCollectionValidator:
     """Validator for Step 1: Data Collection."""
@@ -546,9 +540,6 @@ class Step1DataCollectionValidator:
             )
             return False
 
-
-
-
 import time
 async def run_validator(
     training_input: Dict[str, Any],
@@ -592,7 +583,6 @@ async def run_validator(
         }
         system_logger.error(f"❌ Step01 validator failed: {str(e)}")
         return error_result
-
 
 if __name__ == "__main__":
     import asyncio

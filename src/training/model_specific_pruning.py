@@ -8,11 +8,10 @@ from sklearn.linear_model import Lasso
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
+
 from .core.decorators import handles_errors
 
 # src/training/model_specific_pruning.py
-
 
 class ModelSpecificPruning:
     """Model-specific feature pruning for different ML architectures.

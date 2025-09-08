@@ -20,7 +20,7 @@ import functools
 import inspect
 import logging
 import time
-import traceback
+
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -29,8 +29,6 @@ from enum import Enum
 import json
 import threading
 from contextlib import contextmanager
-import sys
-import os
 
 class ValidationLevel(Enum):
     """Validation levels for function calls."""

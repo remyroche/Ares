@@ -13,7 +13,6 @@ from ..utils.logger import system_logger
 from ..utils.warning_symbols import failed, initialization_error
 from .performance_monitor import PerformanceMonitor
 import numpy as np
-import time
 
 class BehaviorMetricType(Enum):
     """Model behavior metric types."""

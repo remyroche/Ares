@@ -25,6 +25,13 @@ sys.path.insert(0, str(project_root))
 # Core imports
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 # Import logging decorators
 try:
@@ -67,7 +74,6 @@ def validate_data(func):
     """Fallback decorator when validation decorators are not available."""
     return func
 
-
 class Step1DataCollection:
     """
     Step 1: Data Collection
@@ -104,6 +110,11 @@ class Step1DataCollection:
         """
         try:
             self.logger.info("Starting data collection...")
+            
+            # Initialize lookahead bias detector
+            current_time = datetime.now()
+            bias_detector = get_global_detector()
+            bias_detector.set_current_timestamp(current_time)
             
             if not DATA_DOWNLOADER_AVAILABLE:
                 self.logger.error("Data downloader not available - cannot collect data")
@@ -165,10 +176,16 @@ class Step1DataCollection:
                 self.logger.error(f"Missing required columns: {missing_columns}")
                 return False
             
-            # Check for NaN values
-            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
-            if nan_ratio > 0.1:  # More than 10% NaN values
-                self.logger.warning(f"High NaN ratio: {nan_ratio:.2%}")
+            # Check for NaN values with safe division
+            try:
+                total_cells = len(data) * len(data.columns)
+                nan_count = data.isnull().sum().sum()
+                nan_ratio = safe_divide(nan_count, total_cells, 0.0)
+                if nan_ratio > 0.1:  # More than 10% NaN values
+                    self.logger.warning(f"High NaN ratio: {nan_ratio:.2%}")
+                    return False
+            except MathValidationError as e:
+                self.logger.warning(f"Mathematical validation error in NaN ratio calculation: {e}")
                 return False
             
             # Check for infinite values
@@ -176,6 +193,21 @@ class Step1DataCollection:
             if inf_count > 0:
                 self.logger.warning(f"Found {inf_count} infinite values")
                 return False
+            
+            # Validate no lookahead bias in data
+            try:
+                if hasattr(data, 'index') and len(data) > 0:
+                    current_time = data.index[-1] if hasattr(data.index, '__getitem__') else None
+                    if current_time:
+                        bias_detector = get_global_detector()
+                        bias_detector.set_current_timestamp(current_time)
+                        data = validate_no_future_data(data, 'timestamp', current_time)
+                        self.logger.info("✅ Lookahead bias validation passed")
+            except LookaheadBiasError as e:
+                self.logger.error(f"Lookahead bias detected: {e}")
+                return False
+            except Exception as e:
+                self.logger.warning(f"Lookahead bias validation failed: {e}")
             
             self.logger.info("Data validation passed")
             return True
@@ -215,7 +247,6 @@ class Step1DataCollection:
             self.logger.exception(f"Error getting data summary: {e}")
             return {'error': str(e)}
 
-
 # Main execution function
 async def main():
     """Main execution function for Step1 data collection."""
@@ -237,7 +268,6 @@ async def main():
         print(f"Data summary: {summary}")
     else:
         print("❌ Data collection failed")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -7,7 +7,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class BaseValidator(ABC):
     """Base class for all validators in the backtesting pipeline."""
 

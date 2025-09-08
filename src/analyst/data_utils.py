@@ -9,7 +9,7 @@ from src.utils.warning_symbols import critical, failed, initialization_error, in
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
-import time
+
 from src.core.decorators import handles_errors
 
 class DataUtils:
@@ -558,7 +558,6 @@ class DataUtils:
             self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
             self.logger.error('Error stopping data utils: {e}')
 data_utils: DataUtils | None = None
-
 
 def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate klines data quality."""

@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Step 06: Advanced Feature Engineering with Hardware Acceleration (standard path for orchestrator).
 
@@ -48,7 +47,6 @@ try:
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
-
 
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Advanced feature engineering using the standardized BaseStep."""

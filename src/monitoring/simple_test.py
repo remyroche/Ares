@@ -6,7 +6,7 @@ A minimal test that doesn't require external dependencies.
 """
 
 import sys
-import os
+
 from pathlib import Path
 
 # Add the src directory to the Python path

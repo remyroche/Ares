@@ -5,16 +5,11 @@ Performance Metrics Calculator Module.
 This module handles various performance metric calculations for trading strategies.
 """
 
-
 from typing import Any, Dict, List
-
-
 
 from .base import PnLLossFunctionsBase
 from src.core.decorators.errors import handles_errors
 import numpy as np
-import logging
-
 
 class PerformanceMetricsCalculator(PnLLossFunctionsBase):
     """

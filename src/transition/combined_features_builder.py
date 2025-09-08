@@ -1,15 +1,11 @@
 # src/transition/combined_features_builder.py
 
-
 from dataclasses import dataclass
 from typing import Any
-
 
 from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-import os
 
 REQUIRED_FEATURES = [
     "log_returns",
@@ -26,11 +22,9 @@ REQUIRED_FEATURES = [
     "volatility_acceleration",
 ]
 
-
 @dataclass
 class CombinedFeaturesConfig:
     volatility_threshold: float = 0.02
-
 
 class CombinedFeaturesBuilder:
     def __init__(self, config: dict[str, Any] | None = None) -> None:

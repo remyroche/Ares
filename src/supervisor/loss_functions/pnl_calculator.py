@@ -6,15 +6,10 @@ This module handles profit and loss calculations for trading positions
 and strategies.
 """
 
-
 from typing import Any, Dict
-
-
 
 from .base import PnLLossFunctionsBase
 import numpy as np
-import logging
-
 
 class PnLCalculator(PnLLossFunctionsBase):
     """

@@ -1,4 +1,3 @@
-import numpy as np
 
 # src/training/factory.py
 
@@ -17,7 +16,6 @@ from src.training.enhanced_training_manager_optimized import (
 from .training.memory_profiler import MemoryLeakDetector, MemoryProfiler
 from .training.steps.optimized_step_executor import OptimizedStepExecutor
 from src.utils.logger import system_logger
-import logging
 
 class OptimizedTrainingFactory:
     """Factory for creating optimized training components."""

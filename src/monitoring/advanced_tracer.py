@@ -8,7 +8,6 @@ This module provides comprehensive request/response tracing across all component
 of the Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
-
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,9 +15,6 @@ from enum import Enum
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-import time
-
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
@@ -28,7 +24,6 @@ class TraceLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
-
 
 class ComponentType(Enum):
     """Component types for tracing."""
@@ -41,7 +36,6 @@ class ComponentType(Enum):
     DATABASE = "database"
     GUI = "gui"
     MONITORING = "monitoring"
-
 
 @dataclass
 class TraceSpan:
@@ -60,7 +54,6 @@ class TraceSpan:
     parent_span_id: str | None = None
     child_span_ids: list[str] = field(default_factory = list)
 
-
 @dataclass
 class TraceRequest:
     """Complete trace request with all spans."""
@@ -76,7 +69,6 @@ class TraceRequest:
     performance_metrics: dict[str, float] = field(default_factory = dict)
     metadata: dict[str, Any] = field(default_factory = dict)
 
-
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for tracing."""
@@ -87,7 +79,6 @@ class PerformanceMetrics:
     throughput_ops_per_sec: float
     error_rate: float
     success_rate: float
-
 
 class AdvancedTracer:
     """

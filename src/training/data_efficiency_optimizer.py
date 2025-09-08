@@ -1,6 +1,5 @@
 # src/training/data_efficiency_optimizer.py
 
-
 import gc
 import os
 import time
@@ -12,7 +11,6 @@ from numbers import Number
 import psutil
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-
 
 from src.utils.logger import system_logger
 import pandas as pd
@@ -27,9 +25,6 @@ from .core.decorators import handles_errors
 from ..database.sqlite_manager import SQLiteManager
 import pickle
 import ast
-import numpy as np
-import json
-import logging
 
 class DataEfficiencyOptimizer:
     """Comprehensive data efficiency optimizer for handling large datasets (2+ years of historical data)."

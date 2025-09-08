@@ -6,7 +6,6 @@ Provides detailed model explanations using SHAP and LIME for comprehensive
 trade decision analysis and model interpretability.
 """
 
-import asyncio
 import json
 import time
 from dataclasses import dataclass, asdict
@@ -18,7 +17,6 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class SHAPExplanation:
@@ -32,7 +30,6 @@ class SHAPExplanation:
     explanation_time_ms: float
     timestamp: datetime
 
-
 @dataclass
 class LIMEExplanation:
     """LIME explanation for a model prediction."""
@@ -45,7 +42,6 @@ class LIMEExplanation:
     timestamp: datetime
     local_fidelity: float
 
-
 @dataclass
 class ModelExplanationRequest:
     """Request for model explanation."""
@@ -56,7 +52,6 @@ class ModelExplanationRequest:
     prediction: Optional[float] = None
     model: Optional[Any] = None
     training_data: Optional[pd.DataFrame] = None
-
 
 class SHAPAnalyzer:
     """SHAP analyzer for model explanations."""
@@ -246,7 +241,6 @@ class SHAPAnalyzer:
             self.logger.error(f"Error generating SHAP explanation: {e}")
             return None
 
-
 class LIMEAnalyzer:
     """LIME analyzer for model explanations."""
     
@@ -402,7 +396,6 @@ class LIMEAnalyzer:
         except Exception as e:
             self.logger.error(f"Error generating LIME explanation: {e}")
             return None
-
 
 class ExplainabilityIntegrator:
     """Integrates SHAP and LIME explanations for comprehensive model interpretability."""

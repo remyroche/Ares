@@ -14,30 +14,31 @@ Date: 2024-01-XX
 Version: 2.0.0
 """
 
-import asyncio
 import json
 import os
 import warnings
 from datetime import datetime, timedelta
-from pathlib import Path
+
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
-import logging
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
-from scipy.stats import norm
 
 # Core imports
-from src.utils.logger import system_logger
+
 from src.utils.comprehensive_function_logger import (
     log_step_functions, log_important_calls, log_all_calls, 
     log_internal_call, log_step_progress, log_data_operation
 )
 from src.utils.common_operations import create_fallback_logger, create_fallback_decorator
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 # Enhanced optimization imports
 try:

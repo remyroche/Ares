@@ -7,8 +7,6 @@ This module provides device detection and management utilities.
 
 import queue
 import threading
-import logging
-from typing import Optional
 
 try:
     import torch

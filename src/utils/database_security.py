@@ -20,15 +20,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from .logger import system_logger
-import numpy as np
 
 import psycopg2
 import sqlite3
 from pymongo import MongoClient
 import redis
-import logging
-import time
-
 
 class DatabaseType:
     """Database type enumeration."""

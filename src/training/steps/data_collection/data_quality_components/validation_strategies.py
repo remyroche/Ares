@@ -9,11 +9,8 @@ Extracted from raw_data_quality_checker.py
 from datetime import timedelta
 from typing import Any, Optional
 import pandas as pd
-import numpy as np
 
 from src.utils.logger import system_logger
-import logging
-
 
 class ValidationStrategy:
     """Base class for validation strategies."""
@@ -34,7 +31,6 @@ class ValidationStrategy:
             True if validation passed, False otherwise
         """
         raise NotImplementedError
-
 
 class StructureValidationStrategy(ValidationStrategy):
     """Validates data structure and basic requirements."""
@@ -204,7 +200,6 @@ class StructureValidationStrategy(ValidationStrategy):
             self.logger.debug(f'⚠️ Error estimating timeframe: {e}')
             return '1m'
 
-
 class CompletenessValidationStrategy(ValidationStrategy):
     """Validates data completeness and missing values."""
     
@@ -276,7 +271,6 @@ class CompletenessValidationStrategy(ValidationStrategy):
         
         return True
 
-
 class IntegrityValidationStrategy(ValidationStrategy):
     """Validates data integrity and logical consistency."""
     
@@ -341,7 +335,6 @@ class IntegrityValidationStrategy(ValidationStrategy):
         
         return True
 
-
 class MarketSpecificValidationStrategy(ValidationStrategy):
     """Validates market-specific issues and anomalies."""
     
@@ -394,7 +387,6 @@ class MarketSpecificValidationStrategy(ValidationStrategy):
         }
         
         return True
-
 
 class FeatureEngineeringValidationStrategy(ValidationStrategy):
     """Validates data quality specifically for feature engineering requirements."""

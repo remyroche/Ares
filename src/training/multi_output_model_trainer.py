@@ -19,7 +19,7 @@ import joblib
 import torch
 import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.neural_network import MLPClassifier
+
 from sklearn.preprocessing import StandardScaler
 from pathlib import Path
 try:
@@ -49,7 +49,6 @@ except ImportError:
     PROFIT_FEATURES_AVAILABLE = False
     ProfitBasedFeatureEngineering = None
 from src.utils.logger import system_logger
-import logging
 
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""

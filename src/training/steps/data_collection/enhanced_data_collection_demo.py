@@ -28,7 +28,6 @@ from .utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
 from src.utils.enhanced_data_validation import DataType, get_validator, validate_data_batch, ValidationSeverity
 from .exchange_field_mappings import get_exchange_mapper, list_supported_exchanges
 from .enhanced_api_agnostic_data_collector import EnhancedAPIAgnosticDataCollector, collect_data_for_period, collect_incremental_data, detect_and_fill_gaps
-import logging
 
 logger = system_logger.getChild('EnhancedDataCollectionDemo')
 

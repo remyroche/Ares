@@ -1,15 +1,11 @@
 # src/transition/inference_combiner.py
 
-
 import json
 import os
 from dataclasses import dataclass
 from typing import Any
 
 from ..utils.logger import system_logger
-import numpy as np
-import logging
-
 
 @dataclass
 class EnsembleConfig:
@@ -20,7 +16,6 @@ class EnsembleConfig:
     ]  # regime -> timeframe -> {class: thr}
     timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
     reliability_path: str | None
-
 
 class TransitionInferenceCombiner:
     """

@@ -23,7 +23,7 @@ except ImportError:
 
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
-from functools import lru_cache
+
 import hashlib
 
 """
@@ -33,7 +33,6 @@ This module implements advanced S/R detection algorithms with improved accuracy
 and robustness for 1-30m timeframes.
 
 🚀 ADVANCED OPTIMIZATION FEATURES:
-==================================
 
 1. NUMBA JIT COMPILATION:
    - Fractal detection loops optimized with parallel processing
@@ -65,7 +64,6 @@ and robustness for 1-30m timeframes.
    - Batch processing for multiple calculations
 
 ADDITIONAL OPTIMIZATIONS:
-========================
 
 6. SWING POINT SELECTION:
    - Adaptive limiting based on dataset size
@@ -84,7 +82,6 @@ ADDITIONAL OPTIMIZATIONS:
    - Execution time profiling
 
 COMPLEXITY IMPROVEMENT:
-======================
 
 Before: O(n² × c) where n = swing points, c = computation cost
 After:  O(k² × c) where k = filtered candidates (k << n)
@@ -99,8 +96,6 @@ This results in ~250-750x theoretical speedup while maintaining accuracy.
 
 import numpy as np
 warnings.filterwarnings('ignore')
-import logging
-
 
 # Numba-optimized functions for SR detection
 if NUMBA_AVAILABLE:
@@ -2084,7 +2079,6 @@ class EnhancedSRDetector:
         except Exception as e:
             self.logger.error(f'Optimized channel detection failed: {e}')
             return []
-
 
     def _precompute_line_parameters(self, indices: List[int], values: List[float]) -> List[Dict]:
         """Pre-compute line parameters for all possible triplets using vectorized operations."""

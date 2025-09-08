@@ -12,11 +12,10 @@ Primary responsibilities:
 
 import os
 from typing import Any, Dict, Iterator, List, Optional, Tuple
-import numpy as np
+
 import pandas as pd
 
 import pandas as pd
-import numpy as np
 
 try:
     from .logger import system_logger
@@ -30,7 +29,6 @@ try:
 except Exception:  # pragma: no cover - fallback
     get_hmm_composite_manager = None  # type: ignore
 
-
 REGIME_COLUMN_CANDIDATES: list[str] = [
     "composite_cluster_id",
     "regime",
@@ -39,7 +37,6 @@ REGIME_COLUMN_CANDIDATES: list[str] = [
     "cluster_id",
     "regime_id",
 ]
-
 
 def get_regime_column(df: pd.DataFrame) -> Optional[str]:
     """Return the name of the regime column if present, else None.
@@ -50,7 +47,6 @@ def get_regime_column(df: pd.DataFrame) -> Optional[str]:
         if candidate in df.columns:
             return candidate
     return None
-
 
 def ensure_regime_labels(
     df: pd.DataFrame,
@@ -114,7 +110,6 @@ def ensure_regime_labels(
         logger.warning(f"Failed to ensure regime labels: {e}")
         return df
 
-
 def get_regime_ids(df: pd.DataFrame, regime_column: Optional[str] = None) -> List[Any]:
     """Return sorted unique regime identifiers from DataFrame."""
     col = regime_column or get_regime_column(df)
@@ -125,7 +120,6 @@ def get_regime_ids(df: pd.DataFrame, regime_column: Optional[str] = None) -> Lis
         return sorted(series.unique().tolist())
     except Exception:
         return sorted(series.astype(str).unique().tolist())
-
 
 def iter_regimes(
     df: pd.DataFrame,
@@ -139,7 +133,6 @@ def iter_regimes(
     for regime_id, regime_df in df.groupby(col, sort = True):
         if len(regime_df) >= min_samples:
             yield regime_id, regime_df
-
 
 def split_train_val_test_by_regime(
     df: pd.DataFrame,
@@ -180,7 +173,6 @@ def split_train_val_test_by_regime(
         }
     return results
 
-
 def _candidate_unified_paths(
     exchange: str, symbol: str, timeframe: str, data_dir: str
 ) -> List[str]:
@@ -190,7 +182,6 @@ def _candidate_unified_paths(
         os.path.join("data", "training", base_name),
         os.path.join("data_cache", "training", base_name),
     ]
-
 
 def load_unified_regime_dataset(
     exchange: str, symbol: str, timeframe: str, data_dir: str = "data/training"
@@ -209,4 +200,3 @@ def load_unified_regime_dataset(
             continue
     logger.warning("Unified regime dataset not found for %s_%s_%s", exchange, symbol, timeframe)
     return None
-

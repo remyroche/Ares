@@ -11,7 +11,6 @@ from statsmodels.tsa.stattools import adfuller
 from .utils.logger import get_logger
 import numpy as np
 import pandas as pd
-import logging
 
 class FractionalDifferentiation:
     """Fractional differentiation for enhanced feature engineering.

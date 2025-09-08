@@ -68,7 +68,7 @@ except ImportError:
         return {}
 
 from src.core.decorators.logging import log_execution_time, log_call
-from src.core.decorators.cache import cached
+
 try:
     from src.utils.logger import get_logger
     logger = get_logger('Step6FeatureEngineeringPerRegime')

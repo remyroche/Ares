@@ -5,7 +5,6 @@ This is the main orchestrator for the unified regime intelligence system,
 coordinating all modular components for clean, maintainable execution.
 """
 
-import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
@@ -23,7 +22,6 @@ from .artifacts import ArtifactManager
 from ...utils.logger import system_logger
 
 logger = system_logger.getChild('Step10Orchestrator')
-
 
 class UnifiedRegimeIntelligenceOrchestrator:
     """Main orchestrator for the unified regime intelligence system.
@@ -215,7 +213,6 @@ class UnifiedRegimeIntelligenceOrchestrator:
             self.logger.info("✅ Step 10 cleanup completed")
         except Exception as e:
             self.logger.error(f"❌ Step 10 cleanup failed: {e}")
-
 
 # Factory function for backward compatibility
 async def run_step(symbol: str, exchange: str, timeframe: str = "1m",

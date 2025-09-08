@@ -14,10 +14,8 @@ import numpy as np
 from .logger import system_logger
 import pandas as pd
 import numpy as np
-import logging
-import typing
-import numpy as np
 
+import numpy as np
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
     """
@@ -73,7 +71,6 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
             vif_scores[feature] = np.nan
 
     return pd.Series(vif_scores)
-
 
 def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
     """
@@ -173,7 +170,6 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
         # Return default values
         return pd.Series([1.0] * len(features), index = features)
 
-
 def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
     """
     Analyze VIF values for potential issues.
@@ -229,4 +225,3 @@ def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
     logger.info(f"   Issues found: {len(analysis['issues'])}")
 
     return analysis
-

@@ -1,9 +1,8 @@
-import typing
+
 import numpy as np
 import pandas as pd
 
 # Improvements for the Fractal Location Classifier
-
 
 class LocationClassifierEnhancements:
     """Enhanced methods for the fractal location classifier."""

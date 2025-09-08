@@ -14,11 +14,8 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.logger import get_logger
-import json
-import logging
 
 # src/training/steps/step20_ab_testing.py
-
 
 class ABTestingStep:
     """Step 20: Extended A/B Testing."""
@@ -76,7 +73,6 @@ class ABTestingStep:
         self.logger.info(f'✅ Step 20: A/B Testing completed successfully in {execution_time:.2f} seconds')
         return {"success": True, "status": "SUCCESS", "results_file": results_path}
 
-
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",
@@ -91,13 +87,11 @@ async def run_step(
     result = await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
     return result.get("success", False)
 
-
 if __name__ == "__main__":
 
     async def _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())
-
 
 import asyncio

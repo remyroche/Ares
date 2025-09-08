@@ -8,15 +8,13 @@ import functools
 import inspect
 import logging
 import time
-import traceback
+
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import json
 import threading
-import numpy as np
-import collections
 
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""

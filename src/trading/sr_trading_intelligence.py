@@ -12,8 +12,6 @@ from .tactician.sr_levels_manager import SRLevelsManager
 from ..utils.logger import system_logger
 
 from .tactician.sr_levels_manager import create_sr_levels_manager
-import logging
-import time
 
 logger = system_logger.getChild('SRTradingIntelligence')
 

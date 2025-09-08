@@ -37,7 +37,6 @@ from .step03_memory_manager import get_memory_manager, memory_aware_processing
 umap = safe_import('umap')
 sklearn = safe_import('sklearn')
 
-
 @dataclass
 class DimensionalityReductionConfig:
     """Configuration for dimensionality reduction."""
@@ -85,7 +84,6 @@ class DimensionalityReductionConfig:
     def __post_init__(self):
         if self.ensemble_methods is None:
             self.ensemble_methods = ['univariate', 'recursive', 'embedded']
-
 
 class AdvancedDimensionalityReducer:
     """Advanced dimensionality reduction with multiple strategies."""

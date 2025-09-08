@@ -1,6 +1,5 @@
 # src/transition/multitask_rf.py
 
-
 import json
 import os
 import pickle
@@ -14,8 +13,6 @@ from sklearn.metrics import classification_report, f1_score, mean_absolute_error
 from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-
 
 @dataclass
 class MTRFConfig:
@@ -26,7 +23,6 @@ class MTRFConfig:
     random_state: int
     max_train_samples: int
     enable_regression: bool
-
 
 class MultiTaskRandomForest:
     """

@@ -8,7 +8,6 @@ from itertools import combinations
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls
 
-
 class FeatureInteractionEngine:
     """Engine for creating feature interactions and polynomial features."""
 

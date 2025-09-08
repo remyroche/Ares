@@ -7,7 +7,6 @@ Real-time Metrics Dashboard
 Provides real-time metrics visualization scaffolding for the Ares trading bot.
 """
 
-
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
@@ -17,9 +16,6 @@ from ..utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
-import logging
-import time
-
 
 class MetricType(Enum):
     """Metric types for categorization."""
@@ -30,7 +26,6 @@ class MetricType(Enum):
     TRADING_ANALYTICS = "trading_analytics"
     RISK_METRICS = "risk_metrics"
     ENSEMBLE_METRICS = "ensemble_metrics"
-
 
 @dataclass
 class DashboardMetric:
@@ -43,7 +38,6 @@ class DashboardMetric:
     last_updated: datetime
     metadata: dict[str, Any]
     unit: str | None
-
 
 class MetricsDashboard:
     """Real-time metrics dashboard."""

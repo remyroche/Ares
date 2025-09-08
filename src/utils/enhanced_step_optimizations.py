@@ -14,7 +14,7 @@ from functools import wraps
 from contextlib import contextmanager
 import pandas as pd
 import numpy as np
-import gc
+
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
@@ -23,7 +23,6 @@ import json
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
-
 
 class OptimizationStrategy(Enum):
     """Available optimization strategies."""
@@ -34,7 +33,6 @@ class OptimizationStrategy(Enum):
     PERFORMANCE_FIRST = "performance_first"
     MEMORY_FIRST = "memory_first"
 
-
 class WorkloadType(Enum):
     """Types of workloads for optimization selection."""
     CPU_INTENSIVE = "cpu_intensive"
@@ -43,7 +41,6 @@ class WorkloadType(Enum):
     GPU_INTENSIVE = "gpu_intensive"
     MIXED = "mixed"
     LIGHTWEIGHT = "lightweight"
-
 
 @dataclass
 class OptimizationProfile:
@@ -55,7 +52,6 @@ class OptimizationProfile:
     constraints: Dict[str, Any] = field(default_factory=dict)
     preferences: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class OptimizationDecision:
     """Decision made by the optimization selector."""
@@ -66,7 +62,6 @@ class OptimizationDecision:
     reasoning: List[str]
     expected_improvement: Dict[str, float]
     timestamp: float = field(default_factory=time.time)
-
 
 class IntelligentOptimizationSelector:
     """Intelligent optimization selector based on workload analysis and learning."""
@@ -564,7 +559,6 @@ class IntelligentOptimizationSelector:
         except Exception as e:
             self.logger.error(f"Failed to load profiles: {e}")
 
-
 class StepOptimizationManager:
     """Manager for optimizing training pipeline steps."""
 
@@ -811,7 +805,6 @@ class StepOptimizationManager:
             return self.optimization_selector.get_optimization_stats()
         return {'intelligent_selection': False}
 
-
 # Decorator for optimizing step functions
 def optimized_step(operation_type: str = "general", enable_gpu: bool = True,
                   enable_parallel: bool = True, memory_efficient: bool = True):
@@ -846,7 +839,6 @@ def optimized_step(operation_type: str = "general", enable_gpu: bool = True,
         return wrapper
     return decorator
 
-
 # Convenience functions
 def get_step_optimization_manager() -> StepOptimizationManager:
     """Get global step optimization manager instance."""
@@ -854,12 +846,10 @@ def get_step_optimization_manager() -> StepOptimizationManager:
         get_step_optimization_manager._instance = StepOptimizationManager()
     return get_step_optimization_manager._instance
 
-
 def optimize_dataframe(df: pd.DataFrame, operation: str = "general") -> pd.DataFrame:
     """Optimize DataFrame for specific operations."""
     manager = get_step_optimization_manager()
     return manager.optimize_dataframe_operations(df, operation)
-
 
 def parallel_features(data: pd.DataFrame,
                      generators: List[Callable[[pd.DataFrame], pd.Series]]) -> pd.DataFrame:
@@ -867,12 +857,10 @@ def parallel_features(data: pd.DataFrame,
     manager = get_step_optimization_manager()
     return manager.parallel_feature_processing(data, generators)
 
-
 def matrix_ops(matrices: List[np.ndarray], operation: str = "multiply") -> np.ndarray:
     """Perform optimized matrix operations."""
     manager = get_step_optimization_manager()
     return manager.matrix_optimized_operations(matrices, operation)
-
 
 def efficient_groupby(df: pd.DataFrame, group_cols: List[str],
                      agg_dict: Dict[str, str]) -> pd.DataFrame:
@@ -880,12 +868,10 @@ def efficient_groupby(df: pd.DataFrame, group_cols: List[str],
     manager = get_step_optimization_manager()
     return manager.memory_efficient_groupby(df, group_cols, agg_dict)
 
-
 def save_optimized(data: Union[pd.DataFrame, np.ndarray], filename: str) -> str:
     """Save data with optimizations."""
     manager = get_step_optimization_manager()
     return manager.optimized_data_storage(data, filename)
-
 
 def create_optimization_profile(workload_type: WorkloadType, data_size_mb: float,
                               expected_duration: float = 60.0, priority: str = "normal") -> OptimizationProfile:
@@ -897,12 +883,10 @@ def create_optimization_profile(workload_type: WorkloadType, data_size_mb: float
         priority=priority
     )
 
-
 def select_intelligent_optimizations(profile: OptimizationProfile) -> OptimizationDecision:
     """Select intelligent optimizations based on workload profile."""
     manager = get_step_optimization_manager()
     return manager.select_intelligent_optimizations(profile)
-
 
 def record_optimization_performance(profile: OptimizationProfile,
                                   decision: OptimizationDecision,
@@ -912,12 +896,10 @@ def record_optimization_performance(profile: OptimizationProfile,
     manager = get_step_optimization_manager()
     manager.record_optimization_performance(profile, decision, actual_improvement, execution_time)
 
-
 def get_intelligent_optimization_stats() -> Dict[str, Any]:
     """Get intelligent optimization statistics."""
     manager = get_step_optimization_manager()
     return manager.get_intelligent_optimization_stats()
-
 
 # Import psutil for memory monitoring
 try:

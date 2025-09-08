@@ -8,8 +8,6 @@ These are static configuration parameters that should not be optimized.
 
 from dataclasses import dataclass
 from typing import Any
-import pandas as pd
-
 
 @dataclass
 class DatabaseConfig:
@@ -23,7 +21,6 @@ class DatabaseConfig:
     max_connections: int = 10
     connection_timeout: int = 30
 
-
 @dataclass
 class ExchangeConfig:
     """Exchange configuration settings."""
@@ -34,7 +31,6 @@ class ExchangeConfig:
     testnet: bool = True
     rate_limit: int = 1200
     timeout: int = 30
-
 
 @dataclass
 class SystemConfig:
@@ -61,7 +57,6 @@ class SystemConfig:
     cache_dir: str = "cache"
     max_cache_size_gb: float = 10.0
 
-
 @dataclass
 class EnvironmentConfig:
     """Environment-specific configuration."""
@@ -83,7 +78,6 @@ class EnvironmentConfig:
     okx_api_key: str = ""
     okx_api_secret: str = ""
     okx_password: str = ""
-
 
 @dataclass
 class TradingConfig:
@@ -117,7 +111,6 @@ class TradingConfig:
     volatility_multiplier: float = 1.5
     max_take_profit: float = 0.15
 
-
 @dataclass
 class TrainingConfig:
     """Training-specific configuration (non-optimizable)."""
@@ -144,7 +137,6 @@ class TrainingConfig:
     cv_folds: int = 5
     cv_strategy: str = "time_series_split"
 
-
 def get_static_config() -> dict[str, Any]:
     """Get the complete non-optimizable configuration."""
     return {
@@ -155,7 +147,6 @@ def get_static_config() -> dict[str, Any]:
         "trading": TradingConfig(),
         "training": TrainingConfig(),
     }
-
 
 def get_config_section(section_name: str) -> dict[str, Any]:
     """Get a specific configuration section."""

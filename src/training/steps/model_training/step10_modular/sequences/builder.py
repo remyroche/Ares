@@ -10,7 +10,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild('Step10SequenceBuilder')
 
-
 class SequenceBuilder:
     """Sequence building coordinator for Step 10.
 

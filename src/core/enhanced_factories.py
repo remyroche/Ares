@@ -13,7 +13,6 @@ from src.interfaces.base_interfaces import IAnalyst, IExchangeClient, IPerforman
 from .supervisor.performance_reporter import PerformanceReporter
 from .utils.logger import system_logger
 from .utils.state_manager import StateManager
-import logging
 
 class TradingSystemFactory:
     """

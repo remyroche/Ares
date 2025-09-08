@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Optional, Callable
 import psutil
 
-from functools import cached_property
 import numpy as np
 import pandas as pd
 import warnings
@@ -22,7 +21,6 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards
-import json
 
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.core.decorators', 'src.utils.logger', 'src.training.steps.data_downloader', 'pyarrow']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)

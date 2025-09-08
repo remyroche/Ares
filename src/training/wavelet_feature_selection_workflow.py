@@ -1,5 +1,4 @@
 
-
 import numpy as np
 import pandas as pd
 from src.core.error_classes import execution_error, initialization_error
@@ -39,14 +38,12 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
 from src.utils.logger import system_logger
-import logging
 
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
-
 
 @dataclass
 class FeatureImportanceResult:
@@ -58,7 +55,6 @@ class FeatureImportanceResult:
     combined_score: float
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
-
 
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy."

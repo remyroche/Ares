@@ -79,7 +79,6 @@ INTERNAL_MODULES = {
     'ml_transition_detector': 'step03_enhanced_ml_transition_detector'
 }
 
-
 class ImportManager:
     """Manages imports and resolves circular dependencies."""
     @log_important_calls
@@ -213,15 +212,12 @@ class ImportManager:
         
         return all_modules
 
-
 # Global import manager instance
 _global_import_manager = ImportManager()
-
 
 def get_import_manager() -> ImportManager:
     """Get global import manager instance."""
     return _global_import_manager
-
 
 def safe_import(module_name: str, fallback: Any = None) -> Any:
     """Safely import a module with fallback."""
@@ -239,19 +235,16 @@ def safe_import(module_name: str, fallback: Any = None) -> Any:
         except ImportError:
             return fallback
 
-
 def check_feature_availability(feature_name: str) -> bool:
     """Check if a feature is available with current dependencies."""
     manager = get_import_manager()
     deps_available = manager.check_dependencies_for_feature(feature_name)
     return all(deps_available.values())
 
-
 def get_available_features() -> List[str]:
     """Get list of available features."""
     manager = get_import_manager()
     return manager.get_available_features()
-
 
 # Convenience imports for common use cases
 def get_ml_imports() -> Dict[str, Any]:
@@ -263,7 +256,6 @@ def get_ml_imports() -> Dict[str, Any]:
         'pandas': safe_import('pandas')
     }
 
-
 def get_optimization_imports() -> Dict[str, Any]:
     """Get imports needed for optimization functionality."""
     return {
@@ -271,7 +263,6 @@ def get_optimization_imports() -> Dict[str, Any]:
         'numpy': safe_import('numpy'),
         'scipy': safe_import('scipy')
     }
-
 
 def get_hmm_imports() -> Dict[str, Any]:
     """Get imports needed for HMM functionality."""
@@ -281,7 +272,6 @@ def get_hmm_imports() -> Dict[str, Any]:
         'sklearn': safe_import('sklearn')
     }
 
-
 def get_memory_imports() -> Dict[str, Any]:
     """Get imports needed for memory management."""
     return {
@@ -290,7 +280,6 @@ def get_memory_imports() -> Dict[str, Any]:
         'numpy': safe_import('numpy'),
         'pandas': safe_import('pandas')
     }
-
 
 # Initialize imports on module load
 _global_import_manager.import_all_available()

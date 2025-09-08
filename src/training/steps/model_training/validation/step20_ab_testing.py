@@ -31,6 +31,30 @@ class ABTestingStep:
         self.logger.info("🚀 Initializing A/B Testing Step...")
         self.logger.info("✅ A/B Testing Step initialized successfully")
 
+    def _validate_input_parameters(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
+        """Fast fail validation for input parameters."""
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError(f"Invalid symbol: {symbol}. Must be a non-empty string.")
+        
+        if not exchange or not isinstance(exchange, str):
+            raise ValueError(f"Invalid exchange: {exchange}. Must be a non-empty string.")
+        
+        if not timeframe or not isinstance(timeframe, str):
+            raise ValueError(f"Invalid timeframe: {timeframe}. Must be a non-empty string.")
+        
+        if not data_dir or not isinstance(data_dir, str):
+            raise ValueError(f"Invalid data_dir: {data_dir}. Must be a non-empty string.")
+        
+        # Additional validation for common issues
+        if len(symbol) < 3:
+            raise ValueError(f"Symbol too short: {symbol}. Must be at least 3 characters.")
+        
+        if exchange.upper() not in ['BINANCE', 'COINBASE', 'KRAKEN', 'BITFINEX']:
+            self.logger.warning(f"Unusual exchange: {exchange}. Proceeding with caution.")
+        
+        if timeframe not in ['1m', '5m', '15m', '30m', '1h', '4h', '1d']:
+            self.logger.warning(f"Unusual timeframe: {timeframe}. Proceeding with caution.")
+
     async def execute(
         self,
         symbol: str,
@@ -40,6 +64,9 @@ class ABTestingStep:
         **kwargs
     ) -> dict[str, Any]:
         """Execute extended A/B testing and persist expected artifacts."""
+        # Fast fail validation
+        self._validate_input_parameters(symbol, exchange, timeframe, data_dir)
+        
         self.logger.info(f'🚀 Starting Step 20: A/B Testing for {symbol} on {exchange}')
 
         ensure_directory(data_dir)

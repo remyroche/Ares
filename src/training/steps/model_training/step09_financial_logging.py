@@ -49,7 +49,10 @@ class Step09FinancialLogger:
                                           execution_data: Dict[str, Any], regime_models: Dict[str, Any]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log training results metrics
+            # Note: Data quality and performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
+            
+            # Log training results metrics (financial relevance)
             if training_results:
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
@@ -81,7 +84,7 @@ class Step09FinancialLogger:
                     step_name="Step09_HMM_Based_Training_Per_Regime"
                 )
                 
-                # Log training success rate
+                # Log training success rate (financial relevance)
                 total_trainings = training_results.get('total_models_trained', 1)
                 successful_trainings = training_results.get('successful_trainings', 0)
                 training_success_rate = successful_trainings / total_trainings
@@ -92,7 +95,7 @@ class Step09FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="training_success_rate",
                     metric_value=training_success_rate,
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step09_HMM_Based_Training_Per_Regime"
                 )
             
@@ -139,7 +142,7 @@ class Step09FinancialLogger:
                     step_name="Step09_HMM_Based_Training_Per_Regime"
                 )
                 
-                # Log model stability metrics
+                # Log model stability metrics (financial relevance)
                 if 'model_stability_score' in model_performance:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -147,7 +150,7 @@ class Step09FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="model_stability_score",
                         metric_value=model_performance['model_stability_score'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step09_HMM_Based_Training_Per_Regime"
                     )
                 
@@ -170,7 +173,7 @@ class Step09FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="ensemble_diversity_score",
                         metric_value=ensemble_perf.get('diversity_score', 0.0),
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step09_HMM_Based_Training_Per_Regime"
                     )
             
@@ -246,7 +249,7 @@ class Step09FinancialLogger:
                             timeframe=self.timeframe,
                             metric_name=f"regime_{regime_id}_convergence_score",
                             metric_value=regime_model_data['convergence_score'],
-                            metric_type="quality",
+                            metric_type="trading",
                             step_name="Step09_HMM_Based_Training_Per_Regime",
                             regime_id=str(regime_id)
                         )
@@ -279,51 +282,8 @@ class Step09FinancialLogger:
                                 additional_data={'feature_name': feature_name}
                             )
             
-            # Log execution performance metrics
-            if execution_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=execution_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step09_HMM_Based_Training_Per_Regime"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=execution_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step09_HMM_Based_Training_Per_Regime"
-                )
-                
-                # Log training efficiency
-                if 'training_efficiency' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="training_efficiency",
-                        metric_value=execution_data['training_efficiency'],
-                        metric_type="performance",
-                        step_name="Step09_HMM_Based_Training_Per_Regime"
-                    )
-                
-                # Log computational efficiency
-                if 'computational_efficiency' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="computational_efficiency",
-                        metric_value=execution_data['computational_efficiency'],
-                        metric_type="performance",
-                        step_name="Step09_HMM_Based_Training_Per_Regime"
-                    )
+            # Note: Execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance estimation
             if training_results and model_performance:

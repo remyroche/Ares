@@ -49,41 +49,8 @@ class Step08FinancialLogger:
                                           execution_data: Dict[str, Any], regime_analysis: Dict[str, Any]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log data quality metrics
-            if regime_data is not None and not regime_data.empty:
-                total_rows, total_columns = regime_data.shape
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_rows",
-                    metric_value=float(total_rows),
-                    metric_type="data_quality",
-                    step_name="Step08_Regime_Data_Splitting"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_columns",
-                    metric_value=float(total_columns),
-                    metric_type="data_quality",
-                    step_name="Step08_Regime_Data_Splitting"
-                )
-                
-                # Log missing values
-                missing_values = regime_data.isnull().sum().sum()
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_missing_values",
-                    metric_value=float(missing_values),
-                    metric_type="data_quality",
-                    step_name="Step08_Regime_Data_Splitting"
-                )
+            # Note: Data quality metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log regime distribution metrics
             if regime_distribution:
@@ -97,7 +64,7 @@ class Step08FinancialLogger:
                     step_name="Step08_Regime_Data_Splitting"
                 )
                 
-                # Log data balance score
+                # Log data balance score (financial relevance)
                 if 'data_balance_score' in regime_distribution:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -105,7 +72,7 @@ class Step08FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="data_balance_score",
                         metric_value=regime_distribution['data_balance_score'],
-                        metric_type="quality",
+                        metric_type="regime",
                         step_name="Step08_Regime_Data_Splitting"
                     )
                 
@@ -222,51 +189,8 @@ class Step08FinancialLogger:
                         regime_id=str(regime_id)
                     )
             
-            # Log execution performance metrics
-            if execution_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=execution_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step08_Regime_Data_Splitting"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=execution_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step08_Regime_Data_Splitting"
-                )
-                
-                # Log data processing rate
-                if 'data_processing_rate' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="data_processing_rate",
-                        metric_value=execution_data['data_processing_rate'],
-                        metric_type="performance",
-                        step_name="Step08_Regime_Data_Splitting"
-                    )
-                
-                # Log regime splitting efficiency
-                if 'regime_splitting_efficiency' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="regime_splitting_efficiency",
-                        metric_value=execution_data['regime_splitting_efficiency'],
-                        metric_type="performance",
-                        step_name="Step08_Regime_Data_Splitting"
-                    )
+            # Note: Execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance estimation
             if regime_data is not None and not regime_data.empty and regime_distribution:
@@ -301,8 +225,7 @@ class Step08FinancialLogger:
                     'additional_metrics': {
                         'total_regimes': total_regimes,
                         'data_balance_score': data_balance_score,
-                        'regime_transition_frequency': regime_analysis.get('regime_transition_frequency', 0.0) if regime_analysis else 0.0,
-                        'total_data_points': total_rows if 'total_rows' in locals() else 0
+                        'regime_transition_frequency': regime_analysis.get('regime_transition_frequency', 0.0) if regime_analysis else 0.0
                     }
                 }
                 

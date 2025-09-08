@@ -49,41 +49,8 @@ class Step04_5FinancialLogger:
                                           execution_data: Dict[str, Any], triple_barrier_results: Dict[str, Any]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log data quality metrics
-            if labeled_data is not None and not labeled_data.empty:
-                total_rows, total_columns = labeled_data.shape
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_rows",
-                    metric_value=float(total_rows),
-                    metric_type="data_quality",
-                    step_name="Step04_5_Triple_Barrier_Method"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_columns",
-                    metric_value=float(total_columns),
-                    metric_type="data_quality",
-                    step_name="Step04_5_Triple_Barrier_Method"
-                )
-                
-                # Log missing values
-                missing_values = labeled_data.isnull().sum().sum()
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_missing_values",
-                    metric_value=float(missing_values),
-                    metric_type="data_quality",
-                    step_name="Step04_5_Triple_Barrier_Method"
-                )
+            # Note: Data quality metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log label statistics
             if label_stats:
@@ -127,7 +94,7 @@ class Step04_5FinancialLogger:
                     step_name="Step04_5_Triple_Barrier_Method"
                 )
                 
-                # Log signal distribution balance
+                # Log signal distribution balance (financial relevance)
                 total_signals = label_stats.get('total_signals', 1)
                 buy_ratio = label_stats.get('buy_signals', 0) / total_signals
                 sell_ratio = label_stats.get('sell_signals', 0) / total_signals
@@ -143,7 +110,7 @@ class Step04_5FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="signal_distribution_balance",
                     metric_value=distribution_balance,
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step04_5_Triple_Barrier_Method"
                 )
                 
@@ -253,7 +220,7 @@ class Step04_5FinancialLogger:
                         step_name="Step04_5_Triple_Barrier_Method"
                     )
                 
-                # Log label success rate
+                # Log label success rate (financial relevance)
                 if 'label_success_rate' in triple_barrier_results:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -261,43 +228,12 @@ class Step04_5FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="label_success_rate",
                         metric_value=triple_barrier_results['label_success_rate'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step04_5_Triple_Barrier_Method"
                     )
             
-            # Log execution performance metrics
-            if execution_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=execution_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step04_5_Triple_Barrier_Method"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=execution_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step04_5_Triple_Barrier_Method"
-                )
-                
-                # Log signal generation rate
-                if 'signal_generation_rate' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="execution_signal_generation_rate",
-                        metric_value=execution_data['signal_generation_rate'],
-                        metric_type="performance",
-                        step_name="Step04_5_Triple_Barrier_Method"
-                    )
+            # Note: Execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance estimation
             if labeled_data is not None and not labeled_data.empty and label_stats:

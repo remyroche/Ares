@@ -49,41 +49,8 @@ class Step05FinancialLogger:
                                           execution_data: Dict[str, Any], labeling_results: Dict[str, Any]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log data quality metrics
-            if labeled_data is not None and not labeled_data.empty:
-                total_rows, total_columns = labeled_data.shape
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_rows",
-                    metric_value=float(total_rows),
-                    metric_type="data_quality",
-                    step_name="Step05_Labeling"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_columns",
-                    metric_value=float(total_columns),
-                    metric_type="data_quality",
-                    step_name="Step05_Labeling"
-                )
-                
-                # Log missing values
-                missing_values = labeled_data.isnull().sum().sum()
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_missing_values",
-                    metric_value=float(missing_values),
-                    metric_type="data_quality",
-                    step_name="Step05_Labeling"
-                )
+            # Note: Data quality metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log label statistics
             if label_stats:
@@ -127,7 +94,7 @@ class Step05FinancialLogger:
                     step_name="Step05_Labeling"
                 )
                 
-                # Log label distribution balance
+                # Log label distribution balance (financial relevance)
                 total_labels = label_stats.get('total_labels', 1)
                 buy_ratio = label_stats.get('buy_labels', 0) / total_labels
                 sell_ratio = label_stats.get('sell_labels', 0) / total_labels
@@ -143,11 +110,11 @@ class Step05FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="label_distribution_balance",
                     metric_value=distribution_balance,
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step05_Labeling"
                 )
                 
-                # Log label quality metrics
+                # Log label quality metrics (financial relevance)
                 if 'label_confidence_score' in label_stats:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -155,7 +122,7 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="label_confidence_score",
                         metric_value=label_stats['label_confidence_score'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
                 
@@ -166,7 +133,7 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="label_consistency_score",
                         metric_value=label_stats['label_consistency_score'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
                 
@@ -177,11 +144,11 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="label_purity_score",
                         metric_value=label_stats['label_purity_score'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
                 
-                # Log false positive and negative rates
+                # Log false positive and negative rates (financial relevance)
                 if 'false_positive_rate' in label_stats:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -189,7 +156,7 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="false_positive_rate",
                         metric_value=label_stats['false_positive_rate'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
                 
@@ -200,11 +167,11 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="false_negative_rate",
                         metric_value=label_stats['false_negative_rate'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
                 
-                # Log label accuracy estimate
+                # Log label accuracy estimate (financial relevance)
                 if 'label_accuracy_estimate' in label_stats:
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -212,7 +179,7 @@ class Step05FinancialLogger:
                         timeframe=self.timeframe,
                         metric_name="label_accuracy_estimate",
                         metric_value=label_stats['label_accuracy_estimate'],
-                        metric_type="quality",
+                        metric_type="trading",
                         step_name="Step05_Labeling"
                     )
             
@@ -236,7 +203,7 @@ class Step05FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="meta_labeling_success_rate",
                     metric_value=meta_analysis.get('meta_labeling_success_rate', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step05_Labeling"
                 )
                 
@@ -246,55 +213,12 @@ class Step05FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="meta_label_confidence_avg",
                     metric_value=meta_analysis.get('meta_label_confidence_avg', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step05_Labeling"
                 )
             
-            # Log execution performance metrics
-            if execution_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=execution_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step05_Labeling"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=execution_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step05_Labeling"
-                )
-                
-                # Log label creation rate
-                if 'label_creation_rate' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="label_creation_rate",
-                        metric_value=execution_data['label_creation_rate'],
-                        metric_type="performance",
-                        step_name="Step05_Labeling"
-                    )
-                
-                # Log processing efficiency
-                if 'processing_efficiency' in execution_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="processing_efficiency",
-                        metric_value=execution_data['processing_efficiency'],
-                        metric_type="performance",
-                        step_name="Step05_Labeling"
-                    )
+            # Note: Execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance estimation
             if labeled_data is not None and not labeled_data.empty and label_stats:

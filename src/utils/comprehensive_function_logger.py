@@ -19,13 +19,13 @@ import numpy as np
 
 # Import global monitor for function call tracking
 try:
-    from src.utils.step02_5_utilities import global_monitor
-import logging
-
+    from .monitoring_utils import global_monitor
     GLOBAL_MONITOR_AVAILABLE = True
 except ImportError:
     global_monitor = None
     GLOBAL_MONITOR_AVAILABLE = False
+
+import logging
 
 # Context variable for tracking function call depth
 call_depth_var: ContextVar[int] = ContextVar("call_depth", default=0)

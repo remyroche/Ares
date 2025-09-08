@@ -5,6 +5,7 @@ import pandas as pd
 from src.core.error_classes import execution_error, initialization_error
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
+import pandas as pd
 
 """
 Enhanced Trading Launcher
@@ -24,7 +25,6 @@ import json
 import os
 
 try:
-    import pandas as pd
 except Exception:  # Fallback for environments without pandas
     class _PD:
         pass
@@ -43,6 +43,9 @@ from src.utils.warning_symbols import (
 
 from typing import TYPE_CHECKING
 from src.integration.paper_trading_integration import (
+import logging
+import time
+
     PaperTradingIntegration,
     setup_paper_trading_integration,
 )

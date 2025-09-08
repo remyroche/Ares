@@ -1,5 +1,6 @@
-import pandas as pd
 from src.core.errors.base import ValidationError
+import numpy as np
+import pandas as pd
 
 """
 Request and DTO validation decorators.
@@ -27,6 +28,8 @@ except ImportError:
 
 try:
     import pydantic
+import logging
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     pydantic = None

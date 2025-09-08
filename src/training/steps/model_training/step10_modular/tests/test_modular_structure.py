@@ -6,6 +6,7 @@ This module tests the basic functionality of the modular Step 10 implementation.
 import asyncio
 import sys
 from pathlib import Path
+import numpy as np
 
 # Add the modular step10 to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))

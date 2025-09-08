@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
 from src.utils.common_operations import format_datetime, get_current_datetime
+import logging
 
 class BaseCommandHandler(ABC):
     """Base class for all command handlers."""

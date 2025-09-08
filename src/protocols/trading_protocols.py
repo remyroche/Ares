@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from .custom_types.base_types import Symbol, Timestamp
     from .custom_types.ml_types import PredictionResult
     from src.custom_types.trading_types import (
+import logging
+
         PositionInfo,
         RegimeClassification,
         RiskParameters,

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
+import time
 
 def extract_circular_calls():
     """Extract circular calls from the call graph analysis"""

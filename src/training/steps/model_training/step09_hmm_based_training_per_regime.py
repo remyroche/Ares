@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
 
 # Import financial metrics logger
 try:
@@ -22,8 +24,6 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Tuple
 import json
-import pandas as pd
-import numpy as np
 # Import base training step with proper error handling
 try:
     from ..step09_hmm_based_training import EnhancedHMMBasedTrainingStep

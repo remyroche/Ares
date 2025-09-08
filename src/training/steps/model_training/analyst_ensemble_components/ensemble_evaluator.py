@@ -11,6 +11,7 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, confusion_matrix, classification_report
 from sklearn.model_selection import cross_val_score, KFold
 from src.utils.logger import system_logger
+import logging
 
 class EnsembleEvaluator:
     """Handles evaluation of ensemble models."""

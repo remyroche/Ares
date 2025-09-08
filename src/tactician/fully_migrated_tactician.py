@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from ..core.decorators import handles_errors
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+import time
 
 """
 Fully Migrated Tactician

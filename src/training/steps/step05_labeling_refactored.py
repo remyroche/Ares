@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """
 Step05 Labeling - Refactored with Modular Architecture
 
@@ -43,6 +45,9 @@ try:
     from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
     from src.utils.optimized_data_manager import OptimizedDataManager
+import json
+import logging
+
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:
     OPTIMIZATIONS_AVAILABLE = False

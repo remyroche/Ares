@@ -17,6 +17,7 @@ import logging
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, validates
+import os
 
 logger = system_logger.getChild('Step05EnhancedValidation')
 

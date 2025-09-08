@@ -1,6 +1,8 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
+import src.utils.data_operations
+import numpy as np
 
 """Unified Data Loader for Step1_5 Data.
 from src.utils.logger import system_logger
@@ -35,7 +37,7 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
-    from src.utils.data_operations import (
+
         guard_dataframe_nulls, 
         secure_file_path, 
         validate_dataframe_schema, 

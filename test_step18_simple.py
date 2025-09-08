@@ -19,6 +19,8 @@ async def test_basic_functionality():
     try:
         # Test imports - direct import to avoid module issues
         import importlib.util
+import time
+
         spec = importlib.util.spec_from_file_location(
             "step18_module",
             "/Users/remyroche/Documents/Ares/src/training/steps/backtesting/step18_walk_forward_validation_per_regime.py"

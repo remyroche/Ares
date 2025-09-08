@@ -7,6 +7,7 @@ import numpy as np
 from typing import Literal, TypedDict
 
 from .base_types import ConfidenceLevel, ModelId, Score, Symbol, Timestamp
+import pandas as pd
 
 # Type aliases for ML data structures
 FeatureArray = np.ndarray

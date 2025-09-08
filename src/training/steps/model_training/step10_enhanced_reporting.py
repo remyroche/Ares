@@ -31,6 +31,9 @@ def get_save_training_report():
     """Get save_training_report function with local import to avoid circular dependencies."""
     try:
         from src.training.reports import save_training_report
+import logging
+import time
+
         return save_training_report
     except ImportError:
         return lambda *args, **kwargs: "fallback_report_saved"

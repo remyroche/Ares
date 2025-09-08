@@ -16,6 +16,7 @@ from datetime import datetime
 
 from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 from training.reports import save_training_report
+import time
 
 def create_comprehensive_test_data():
     """Create comprehensive test data for enhanced reporting."""

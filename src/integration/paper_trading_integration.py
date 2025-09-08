@@ -2,6 +2,7 @@
 
 from ..utils.logger import system_logger
 from .core.decorators import handles_errors
+import numpy as np
 
 """
 Paper Trading Integration Module
@@ -33,6 +34,8 @@ from .paper_trader import PaperTrader, setup_paper_trader
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from .reports.paper_trading_reporter import PaperTradingReporter
+import logging
+import time
 
 class PaperTradingIntegration:
     """

@@ -45,6 +45,8 @@ try:
     from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager, OptimizationProfile, WorkloadType, OptimizationStrategy
     from src.utils.optimized_data_manager import get_optimized_data_manager
+import json
+
     OPTIMIZATION_TOOLS_AVAILABLE = True
 except ImportError as e:
     logger = logging.getLogger(__name__)

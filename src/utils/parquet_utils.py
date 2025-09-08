@@ -7,6 +7,7 @@ import pandas as pd
 from .logger import system_logger
 
 from src.core.decorators import handles_errors
+import logging
 
 # src/utils/parquet_utils.py
 

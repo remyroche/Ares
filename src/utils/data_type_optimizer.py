@@ -9,6 +9,7 @@ and improve computational efficiency in feature engineering.
 import logging
 import numpy as np
 import pandas as pd
+import typing
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,8 @@ import numpy as np
 
 import pandas as pd
 from .core.decorators import handles_errors
+import datetime
+import logging
 
 class MarketRegime:
     """Represents a market regime with specific characteristics."""

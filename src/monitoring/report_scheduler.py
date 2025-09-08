@@ -16,6 +16,7 @@ from ...utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
+import logging
 
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"

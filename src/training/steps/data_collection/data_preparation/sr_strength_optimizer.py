@@ -27,6 +27,9 @@ from src.utils.logger import system_logger
 
 try:
     import numba
+import logging
+import time
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False

@@ -6,6 +6,7 @@ Extract detailed circular calls with actual function names from the interaction 
 import json
 import re
 from pathlib import Path
+import numpy as np
 
 def extract_detailed_circular_calls():
     """Extract circular calls with actual function names and file locations"""

@@ -14,6 +14,7 @@ from src.training.steps.data_collection.data_preparation.step02_5_sr_optimizatio
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
+import logging
 
 async def main():
     """Run step02_5_sr_optimization directly."""

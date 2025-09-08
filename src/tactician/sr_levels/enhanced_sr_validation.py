@@ -1,4 +1,8 @@
 from ..core.decorators import handles_errors
+import numpy as np
+import pandas as pd
+import warnings
+
 """Enhanced S/R Validation and Backtesting Module.
 from ...utils.logger import system_logger
 
@@ -7,9 +11,6 @@ for S/R level detection with advanced performance metrics.
 """
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
-import numpy as np
-import pandas as pd
-import warnings
 
 warnings.filterwarnings('ignore')
 , traced

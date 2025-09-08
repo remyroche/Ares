@@ -371,6 +371,8 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+import collections
+import json
 
 # Common utilities
 from src.utils.common_operations import ensure_directory, safe_json_dump, create_fallback_logger, create_fallback_decorator, standardize_price_action_probabilities

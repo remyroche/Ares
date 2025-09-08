@@ -6,6 +6,7 @@ Analyze the interaction mapping pipeline results to identify key issues
 import json
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 def analyze_architecture_issues():
     """Analyze architecture issues from the architecture report"""

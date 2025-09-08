@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
@@ -6,6 +5,8 @@ import scipy.sparse as sp
 # src/training/enhanced_matrix_operations.py
 
 from src.utils.logger import system_logger
+import pandas as pd
+
 from src.training.core.decorators import (
     cached,
     circuit_breaker,
@@ -45,6 +46,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 from src.utils.logger import system_logger
+import logging
 
 try:
 

@@ -13,6 +13,8 @@ from .training.optimized_backtester import OptimizedBacktester
 
 import pandas as pd
 from .core.decorators import handles_errors
+import datetime
+import logging
 
 @dataclass
 class OptimizationMetrics:

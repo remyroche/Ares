@@ -1,6 +1,7 @@
 
 import numpy as np
 import pandas as pd
+import typing
 
 # Improvements for the Fractal Location Classifier
 

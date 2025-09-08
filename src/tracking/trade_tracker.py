@@ -13,6 +13,7 @@ from dataclasses_json import dataclass_json
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
 from ..utils.warning_symbols import missing, failed
+import logging
 
 """
 Comprehensive Trade Tracking System

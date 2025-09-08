@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 '\nEarly Stage Optimization Module\n\nThis module handles optimization that should happen BEFORE ML trading begins:\n1. SR (Stationarity and Randomness) optimization (step2_5)\n2. Regime-specific triple barrier optimization (step04)\n\nThese optimizations happen early in the pipeline to ensure:\n- Proper data preprocessing (SR)\n- Regime-aware trading parameters (triple barrier)\n- Optimal foundation for ML model training\n'
 import json
@@ -20,6 +20,8 @@ except ImportError:
     OPTUNA_AVAILABLE = False
 try:
     from .steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer, create_regime_specific_triple_barrier_optimizer
+import time
+
     REGIME_OPTIMIZER_AVAILABLE = True
 except ImportError:
     REGIME_OPTIMIZER_AVAILABLE = False

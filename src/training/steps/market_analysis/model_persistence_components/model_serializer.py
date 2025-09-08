@@ -13,6 +13,7 @@ from src.utils.logger import system_logger
 import joblib
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
+import logging
 
 try:
     JOBLIB_AVAILABLE = True

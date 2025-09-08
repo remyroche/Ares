@@ -75,6 +75,8 @@ from ....utils.comprehensive_function_logger import (
 # Import XGBoost with fallback
 try:
     import xgboost as xgb
+import time
+
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False

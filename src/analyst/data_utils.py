@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors
+import time
 
 class DataUtils:
     """

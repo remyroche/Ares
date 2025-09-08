@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 #!/usr/bin/env python3
 """Step 9: Enhanced Model Training Pipeline with Comprehensive Validation.
 
@@ -47,6 +50,9 @@ from src.utils.data_utils import (
     safe_float, safe_int, optimize_dataframe_dtypes
 )
 from src.utils.logger import (
+import json
+import logging
+
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from src.training.steps.model_training import run_model_training_pipeline

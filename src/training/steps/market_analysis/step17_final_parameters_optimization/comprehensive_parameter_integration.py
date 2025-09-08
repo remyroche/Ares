@@ -25,6 +25,8 @@ warnings.filterwarnings('ignore')
 
 try:
     import mlflow
+import time
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False

@@ -8,6 +8,8 @@ from collections import deque
 from dataclasses import dataclass
 from ..utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
+import logging
+import time
 
 @dataclass
 class BayesianUpdate:

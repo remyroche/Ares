@@ -3,6 +3,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
 
 """Step 5: Labeling with Standardized Data Quality Management.
 
@@ -48,11 +50,11 @@ import asyncio
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import time
+import logging
+
 from datetime import datetime
 import json
 import hashlib
-import numpy as np
-import pandas as pd
 
 from functools import wraps
 from dataclasses import dataclass, field

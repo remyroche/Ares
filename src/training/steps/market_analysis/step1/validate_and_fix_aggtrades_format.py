@@ -29,6 +29,7 @@ sys.path.insert(0, str(project_root))
 import pandas as pd
 
 import numpy as np
+import logging
 
 logger = system_logger.getChild("AggtradesFormatValidator")
 

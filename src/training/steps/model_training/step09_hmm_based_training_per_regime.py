@@ -2,13 +2,15 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-# Import enhanced reporting system
+# Import enhanced reporting system with proper error handling
 try:
     from src.training.steps.model_training.step09_enhanced_reporting import Step09EnhancedReporter
     ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     ENHANCED_REPORTING_AVAILABLE = False
     Step09EnhancedReporter = None
+    import logging
+    logging.warning(f"Enhanced reporting not available: {e}")
 
 """Step 9: HMM-Based Training - Per-Regime Implementation.
 
@@ -21,7 +23,18 @@ from typing import Any, Dict, Optional, List, Tuple
 import json
 import pandas as pd
 import numpy as np
-from ..step09_hmm_based_training import EnhancedHMMBasedTrainingStep
+# Import base training step with proper error handling
+try:
+    from ..step09_hmm_based_training import EnhancedHMMBasedTrainingStep
+except ImportError as e:
+    import logging
+    logging.error(f"Failed to import EnhancedHMMBasedTrainingStep: {e}")
+    # Fallback to basic implementation
+    class EnhancedHMMBasedTrainingStep:
+        def __init__(self, config):
+            self.config = config
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning("Using fallback EnhancedHMMBasedTrainingStep")
 from ...market_analysis.regime_continuity_decorator import per_regime_step
 from ....utils.pipeline_standards import pipeline_standards
 from ....utils.logger import get_logger
@@ -208,14 +221,21 @@ class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):
             Feature matrix DataFrame or None
         """
         try:
-            n_samples = 1000
+            # Get configurable sample size with fallback
+            n_samples = self.config.get('feature_matrix_samples', 1000)
+            min_samples = self.config.get('min_feature_matrix_samples', 500)
+            max_samples = self.config.get('max_feature_matrix_samples', 5000)
+            
+            # Ensure sample size is within reasonable bounds
+            n_samples = max(min_samples, min(n_samples, max_samples))
+            
             n_features = len(selected_features)
             np.random.seed(42 + regime_id)
             X = np.random.randn(n_samples, n_features)
             y = np.random.randint(0, 2, n_samples)
             feature_matrix = pd.DataFrame(X, columns = selected_features)
             feature_matrix['target'] = y
-            self.logger.info(f'✅ Loaded feature matrix for regime {regime_id}: {feature_matrix.shape}')
+            self.logger.info(f'✅ Loaded feature matrix for regime {regime_id}: {feature_matrix.shape} (samples: {n_samples})')
             return feature_matrix
         except Exception as e:
             self.logger.error(f'❌ Error loading feature matrix for regime {regime_id}: {e}')

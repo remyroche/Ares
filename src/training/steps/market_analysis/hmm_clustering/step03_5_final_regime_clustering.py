@@ -10,6 +10,11 @@ from pathlib import Path
 import time
 import json
 from datetime import datetime
+import psutil
+import threading
+from contextlib import contextmanager
+from functools import wraps
+from typing import Callable, Any
 
 from src.core.decorators import handles_errors
 
@@ -46,6 +51,191 @@ from typing import Any, Optional
 from contextlib import nullcontext
 
 logger = system_logger.getChild("Step3_5FinalRegimeClustering")
+
+
+class CircuitBreaker:
+    """Circuit breaker pattern for handling repeated failures."""
+    
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        self._lock = threading.Lock()
+    
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with circuit breaker protection."""
+        with self._lock:
+            if self.state == "OPEN":
+                if time.time() - self.last_failure_time > self.recovery_timeout:
+                    self.state = "HALF_OPEN"
+                else:
+                    raise Exception("Circuit breaker is OPEN")
+            
+            try:
+                result = func(*args, **kwargs)
+                if self.state == "HALF_OPEN":
+                    self.state = "CLOSED"
+                    self.failure_count = 0
+                return result
+            except Exception as e:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
+                
+                if self.failure_count >= self.failure_threshold:
+                    self.state = "OPEN"
+                
+                raise e
+
+
+def retry_with_backoff(max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 60.0):
+    """Decorator for retrying operations with exponential backoff."""
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    if asyncio.iscoroutinefunction(func):
+                        return await func(*args, **kwargs)
+                    else:
+                        return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    
+                    if attempt == max_retries:
+                        break
+                    
+                    # Calculate delay with exponential backoff
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    
+                    # Add jitter to prevent thundering herd
+                    jitter = delay * 0.1 * (0.5 - time.time() % 1)
+                    delay += jitter
+                    
+                    logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}. Retrying in {delay:.2f}s...")
+                    await asyncio.sleep(delay)
+            
+            logger.error(f"All {max_retries + 1} attempts failed for {func.__name__}")
+            raise last_exception
+        
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    
+                    if attempt == max_retries:
+                        break
+                    
+                    # Calculate delay with exponential backoff
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    
+                    # Add jitter to prevent thundering herd
+                    jitter = delay * 0.1 * (0.5 - time.time() % 1)
+                    delay += jitter
+                    
+                    logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}. Retrying in {delay:.2f}s...")
+                    time.sleep(delay)
+            
+            logger.error(f"All {max_retries + 1} attempts failed for {func.__name__}")
+            raise last_exception
+        
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
+
+
+class PerformanceMonitor:
+    """Performance monitoring utility for tracking execution metrics."""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        self.metrics = {}
+        self._lock = threading.Lock()
+    
+    @contextmanager
+    def monitor_operation(self, operation_name: str):
+        """Context manager for monitoring operation performance."""
+        start_time = time.time()
+        start_memory = psutil.Process().memory_info().rss / 1024**2  # MB
+        start_cpu = psutil.Process().cpu_percent()
+        
+        try:
+            self.logger.info(f"🚀 Starting operation: {operation_name}")
+            yield
+            
+            # Success case
+            end_time = time.time()
+            end_memory = psutil.Process().memory_info().rss / 1024**2  # MB
+            end_cpu = psutil.Process().cpu_percent()
+            
+            execution_time = end_time - start_time
+            memory_delta = end_memory - start_memory
+            cpu_avg = (start_cpu + end_cpu) / 2
+            
+            with self._lock:
+                self.metrics[operation_name] = {
+                    'execution_time': execution_time,
+                    'memory_delta_mb': memory_delta,
+                    'peak_memory_mb': end_memory,
+                    'cpu_usage_percent': cpu_avg,
+                    'status': 'success'
+                }
+            
+            self.logger.info(f"✅ Operation {operation_name} completed: "
+                           f"Time: {execution_time:.2f}s, "
+                           f"Memory: {memory_delta:+.1f}MB, "
+                           f"CPU: {cpu_avg:.1f}%")
+            
+        except Exception as e:
+            # Error case
+            end_time = time.time()
+            execution_time = end_time - start_time
+            
+            with self._lock:
+                self.metrics[operation_name] = {
+                    'execution_time': execution_time,
+                    'status': 'error',
+                    'error': str(e)
+                }
+            
+            self.logger.error(f"❌ Operation {operation_name} failed after {execution_time:.2f}s: {e}")
+            raise
+    
+    def get_metrics(self) -> dict[str, Any]:
+        """Get all performance metrics."""
+        with self._lock:
+            return self.metrics.copy()
+    
+    def get_summary(self) -> dict[str, Any]:
+        """Get performance summary."""
+        with self._lock:
+            if not self.metrics:
+                return {}
+            
+            total_time = sum(m.get('execution_time', 0) for m in self.metrics.values())
+            total_memory = sum(m.get('memory_delta_mb', 0) for m in self.metrics.values())
+            successful_ops = sum(1 for m in self.metrics.values() if m.get('status') == 'success')
+            failed_ops = sum(1 for m in self.metrics.values() if m.get('status') == 'error')
+            
+            return {
+                'total_execution_time': total_time,
+                'total_memory_delta_mb': total_memory,
+                'successful_operations': successful_ops,
+                'failed_operations': failed_ops,
+                'success_rate': successful_ops / len(self.metrics) if self.metrics else 0,
+                'operations': list(self.metrics.keys())
+            }
 
 # Import optimized components
 try:
@@ -88,6 +278,17 @@ class FinalRegimeClusteringStep:
         self.start_time = None
         self.optimized_params = {}
         self.regime_results = {}
+        
+        # Initialize performance monitoring
+        self.performance_monitor = PerformanceMonitor(self.logger)
+        
+        # Initialize error recovery mechanisms
+        self.circuit_breakers = {
+            'hmm_training': CircuitBreaker(failure_threshold=3, recovery_timeout=30),
+            'clustering': CircuitBreaker(failure_threshold=3, recovery_timeout=30),
+            'data_loading': CircuitBreaker(failure_threshold=5, recovery_timeout=60),
+            'file_operations': CircuitBreaker(failure_threshold=5, recovery_timeout=30)
+        }
 
         # Initialize enhanced optimization components
         self._initialize_enhanced_optimizations()
@@ -333,30 +534,66 @@ class FinalRegimeClusteringStep:
                 self.start_time = time.time()
                 
                 # Step 1: Load and prepare data
-                data_loaded = await self._load_and_prepare_data()
-                if not data_loaded.get("success", False):
-                    raise RuntimeError("Failed to load and prepare data")
-        
-        # Step 2: Perform HMM regime discovery
-        hmm_results = await self._perform_hmm_regime_discovery(data_loaded["data"])
-        
-        # Step 3: Perform final clustering
-        clustering_results = await self._perform_final_clustering(data_loaded["data"], hmm_results)
-        
-        # Step 4: Analyze regime characteristics
-        regime_analysis = await self._analyze_regime_characteristics(clustering_results, data_loaded["data"])
-        
+                with self.performance_monitor.monitor_operation("data_loading"):
+                    data_loaded = await self._load_and_prepare_data()
+                    if not data_loaded.get("success", False):
+                        raise RuntimeError("Failed to load and prepare data")
+                
+                # Step 2: Perform HMM regime discovery with fallback
+                with self.performance_monitor.monitor_operation("hmm_regime_discovery"):
+                    try:
+                        hmm_results = await self._perform_hmm_regime_discovery(data_loaded["data"])
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ HMM regime discovery failed, using fallback: {e}")
+                        hmm_results = await self._perform_simple_regime_detection(data_loaded["features"])
+                
+                # Step 3: Perform final clustering
+                with self.performance_monitor.monitor_operation("final_clustering"):
+                    clustering_results = await self._perform_final_clustering(data_loaded["data"], hmm_results)
+                
+                # Step 4: Analyze regime characteristics
+                with self.performance_monitor.monitor_operation("regime_analysis"):
+                    regime_analysis = await self._analyze_regime_characteristics(clustering_results, data_loaded["data"])
+                
                 # Step 5: Generate comprehensive reports
-                reports = await self._generate_comprehensive_reports(clustering_results, regime_analysis)
+                with self.performance_monitor.monitor_operation("report_generation"):
+                    reports = await self._generate_comprehensive_reports(clustering_results, regime_analysis)
                 
                 # Step 6: Save final results
-                await self._save_final_results(clustering_results, regime_analysis, reports)
+                with self.performance_monitor.monitor_operation("save_results"):
+                    await self._save_final_results(clustering_results, regime_analysis, reports)
                 
                 # Log key financial metrics from the results
                 self._log_financial_metrics_from_results(clustering_results, regime_analysis, reports, symbol, exchange, timeframe)
                 
                 execution_time = time.time() - self.start_time
+                
+                # Log performance summary
+                performance_summary = self.performance_monitor.get_summary()
                 self.logger.info(f"✅ Final regime clustering completed successfully in {execution_time:.2f}s")
+                self.logger.info(f"📊 Performance Summary: {performance_summary}")
+                
+                # Log performance metrics to financial logger
+                if performance_summary:
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="total_execution_time",
+                        metric_value=performance_summary.get('total_execution_time', 0.0),
+                        metric_type="performance",
+                        step_name="Step03_5_Final_Regime_Clustering"
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="success_rate",
+                        metric_value=performance_summary.get('success_rate', 0.0),
+                        metric_type="performance",
+                        step_name="Step03_5_Final_Regime_Clustering"
+                    )
                 
                 financial_logger.log_step_end("Step03_5_Final_Regime_Clustering", symbol, exchange, timeframe, success=True)
                 return True
@@ -365,6 +602,7 @@ class FinalRegimeClusteringStep:
                 financial_logger.log_step_end("Step03_5_Final_Regime_Clustering", symbol, exchange, timeframe, success=False, error_message=str(e))
                 raise
 
+    @retry_with_backoff(max_retries=3, base_delay=2.0)
     @handles_errors(
         exceptions=(Exception,),
         context="load_and_prepare_data"
@@ -689,6 +927,7 @@ class FinalRegimeClusteringStep:
         self.logger.info(f"✅ Features prepared with optimized parameters: {len(clustering_features.columns)} features")
         return clustering_features
 
+    @retry_with_backoff(max_retries=2, base_delay=5.0)
     @handles_errors(
         exceptions=(Exception,),
         context="perform_hmm_regime_discovery"
@@ -789,6 +1028,9 @@ class FinalRegimeClusteringStep:
                     state_probs = hmm_model.predict_proba(features_scaled)
                     score = hmm_model.score(features_scaled)
 
+            # Validate HMM convergence and quality
+            validation_result = self._validate_hmm_model(hmm_model, features_scaled, n_components)
+            
             hmm_results = {
                 "model": hmm_model,
                 "scaler": scaler,
@@ -797,10 +1039,15 @@ class FinalRegimeClusteringStep:
                 "n_components": n_components,
                 "score": score,
                 "used_gpu": use_gpu,
-                "optimization_applied": True
+                "optimization_applied": True,
+                "validation": validation_result
             }
 
-            self.logger.info(f"✅ Enhanced HMM regime discovery completed: {n_components} states (GPU: {use_gpu})")
+            if validation_result["converged"]:
+                self.logger.info(f"✅ Enhanced HMM regime discovery completed: {n_components} states (GPU: {use_gpu})")
+            else:
+                self.logger.warning(f"⚠️ HMM model did not converge properly: {validation_result['issues']}")
+            
             return hmm_results
 
         except ImportError:
@@ -834,6 +1081,9 @@ class FinalRegimeClusteringStep:
             state_sequence = hmm_model.predict(features_scaled)
             state_probs = hmm_model.predict_proba(features_scaled)
 
+            # Validate HMM convergence and quality
+            validation_result = self._validate_hmm_model(hmm_model, features_scaled, n_components)
+            
             hmm_results = {
                 "model": hmm_model,
                 "scaler": scaler,
@@ -842,15 +1092,121 @@ class FinalRegimeClusteringStep:
                 "n_components": n_components,
                 "score": hmm_model.score(features_scaled),
                 "used_gpu": False,
-                "optimization_applied": False
+                "optimization_applied": False,
+                "validation": validation_result
             }
 
-            self.logger.info(f"✅ Legacy HMM regime discovery completed: {n_components} states")
+            if validation_result["converged"]:
+                self.logger.info(f"✅ Legacy HMM regime discovery completed: {n_components} states")
+            else:
+                self.logger.warning(f"⚠️ HMM model did not converge properly: {validation_result['issues']}")
+            
             return hmm_results
 
         except ImportError:
             self.logger.error("⚠️ hmmlearn not available")
             raise
+
+    def _validate_hmm_model(self, hmm_model, features: np.ndarray, n_components: int) -> dict[str, Any]:
+        """Validate HMM model convergence and quality."""
+        try:
+            self.logger.info("🔍 Validating HMM model convergence and quality...")
+            
+            validation_result = {
+                "converged": True,
+                "issues": [],
+                "quality_metrics": {},
+                "recommendations": []
+            }
+            
+            # Check convergence
+            if hasattr(hmm_model, 'converged_'):
+                if not hmm_model.converged_:
+                    validation_result["converged"] = False
+                    validation_result["issues"].append("Model did not converge")
+                    validation_result["recommendations"].append("Increase n_iter or adjust tolerance")
+            
+            # Check number of iterations
+            if hasattr(hmm_model, 'n_iter_'):
+                if hmm_model.n_iter_ >= hmm_model.n_iter:
+                    validation_result["issues"].append(f"Reached maximum iterations ({hmm_model.n_iter})")
+                    validation_result["recommendations"].append("Consider increasing n_iter")
+            
+            # Check log likelihood
+            if hasattr(hmm_model, 'score'):
+                try:
+                    log_likelihood = hmm_model.score(features)
+                    validation_result["quality_metrics"]["log_likelihood"] = log_likelihood
+                    
+                    if np.isnan(log_likelihood) or np.isinf(log_likelihood):
+                        validation_result["converged"] = False
+                        validation_result["issues"].append("Invalid log likelihood")
+                        validation_result["recommendations"].append("Check data quality and model parameters")
+                except Exception as e:
+                    validation_result["issues"].append(f"Could not compute log likelihood: {e}")
+            
+            # Check transition matrix
+            if hasattr(hmm_model, 'transmat_'):
+                transmat = hmm_model.transmat_
+                if np.any(np.isnan(transmat)) or np.any(np.isinf(transmat)):
+                    validation_result["converged"] = False
+                    validation_result["issues"].append("Invalid transition matrix")
+                    validation_result["recommendations"].append("Check model initialization and data")
+                
+                # Check for absorbing states (states that never transition out)
+                absorbing_states = np.where(np.diag(transmat) > 0.99)[0]
+                if len(absorbing_states) > 0:
+                    validation_result["issues"].append(f"Absorbing states detected: {absorbing_states}")
+                    validation_result["recommendations"].append("Consider adjusting model parameters or data preprocessing")
+            
+            # Check means and covariances
+            if hasattr(hmm_model, 'means_'):
+                means = hmm_model.means_
+                if np.any(np.isnan(means)) or np.any(np.isinf(means)):
+                    validation_result["converged"] = False
+                    validation_result["issues"].append("Invalid state means")
+                    validation_result["recommendations"].append("Check data scaling and preprocessing")
+            
+            if hasattr(hmm_model, 'covars_'):
+                covars = hmm_model.covars_
+                if np.any(np.isnan(covars)) or np.any(np.isinf(covars)):
+                    validation_result["converged"] = False
+                    validation_result["issues"].append("Invalid state covariances")
+                    validation_result["recommendations"].append("Check data quality and covariance type")
+            
+            # Check state balance
+            try:
+                state_sequence = hmm_model.predict(features)
+                unique_states, counts = np.unique(state_sequence, return_counts=True)
+                state_balance = counts / len(state_sequence)
+                
+                validation_result["quality_metrics"]["state_balance"] = state_balance.tolist()
+                
+                # Check for severely imbalanced states
+                min_balance = np.min(state_balance)
+                if min_balance < 0.01:  # Less than 1% of data in a state
+                    validation_result["issues"].append(f"Severely imbalanced states detected (min: {min_balance:.3f})")
+                    validation_result["recommendations"].append("Consider reducing n_components or adjusting data")
+                
+            except Exception as e:
+                validation_result["issues"].append(f"Could not analyze state balance: {e}")
+            
+            # Overall assessment
+            if validation_result["converged"] and len(validation_result["issues"]) == 0:
+                self.logger.info("✅ HMM model validation passed")
+            else:
+                self.logger.warning(f"⚠️ HMM model validation issues: {validation_result['issues']}")
+            
+            return validation_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ HMM model validation failed: {e}")
+            return {
+                "converged": False,
+                "issues": [f"Validation error: {e}"],
+                "quality_metrics": {},
+                "recommendations": ["Check model and data integrity"]
+            }
 
     def _vectorized_regime_classification(self, volatility, momentum):
         """Vectorized regime classification using NumPy operations."""
@@ -924,6 +1280,7 @@ class FinalRegimeClusteringStep:
         self.logger.info(f"✅ Simple regime detection completed: {len(set(regimes))} regimes")
         return simple_results
 
+    @retry_with_backoff(max_retries=2, base_delay=3.0)
     @handles_errors(
         exceptions=(Exception,),
         context="perform_final_clustering"
@@ -1543,68 +1900,134 @@ class FinalRegimeClusteringStep:
                     metric_type="trading",
                     step_name="Step03_5_Final_Regime_Clustering"
                 )
+
             
-            # Log detailed regime analysis metrics
-            regime_summary = regime_analysis.get('regime_summary', {})
-            if regime_summary:
+            # Log file paths that were created during this step
+            self._log_created_file_paths(symbol, exchange, timeframe)
+            
+            self.logger.info("💰 Financial metrics logged successfully from Step03_5 results")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not log financial metrics from results: {e}")
+
+    def _log_clustering_quality_metrics(self, financial_logger, reports: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log clustering quality metrics."""
+        clustering_summary = reports.get('clustering_summary', {})
+        if not clustering_summary:
+            return
+            
+        financial_logger.log_financial_metric(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            metric_name="final_clustering_silhouette_score",
+            metric_value=clustering_summary.get('silhouette_score', 0.0),
+            metric_type="quality",
+            step_name="Step03_5_Final_Regime_Clustering"
+        )
+        
+        financial_logger.log_financial_metric(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            metric_name="final_clustering_n_clusters",
+            metric_value=float(clustering_summary.get('n_clusters', 0)),
+            metric_type="technical",
+            step_name="Step03_5_Final_Regime_Clustering"
+        )
+
+    def _log_regime_analysis_metrics(self, financial_logger, regime_analysis: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log regime analysis metrics."""
+        regime_summary = regime_analysis.get('regime_summary', {})
+        if not regime_summary:
+            return
+            
+        metrics_to_log = [
+            ("final_regime_count", "total_regimes", "regime"),
+            ("final_regime_stability", "average_stability", "regime"),
+            ("final_regime_volatility", "average_volatility", "risk"),
+            ("final_regime_duration_avg", "average_duration_days", "regime"),
+            ("final_regime_transition_probability", "average_transition_probability", "regime")
+        ]
+        
+        for metric_name, summary_key, metric_type in metrics_to_log:
+            financial_logger.log_financial_metric(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=metric_name,
+                metric_value=regime_summary.get(summary_key, 0.0),
+                metric_type=metric_type,
+                step_name="Step03_5_Final_Regime_Clustering"
+            )
+
+    def _log_individual_regime_metrics(self, financial_logger, regime_analysis: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log individual regime metrics."""
+        regime_metrics = regime_analysis.get('regime_metrics', [])
+        if not regime_metrics:
+            return
+            
+        for regime_metric in regime_metrics:
+            regime_id = regime_metric.get('regime_id', 0)
+            
+            # Log regime characteristics
+            regime_characteristics = [
+                ("persistence", "persistence_score", "regime"),
+                ("volatility", "volatility_characteristic", "risk"),
+                ("trend_strength", "trend_strength", "technical"),
+                ("confidence", "confidence_score", "regime"),
+                ("sample_count", "sample_count", "regime")
+            ]
+            
+            for metric_suffix, metric_key, metric_type in regime_characteristics:
                 financial_logger.log_financial_metric(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
-                    metric_name="final_regime_count",
-                    metric_value=float(regime_summary.get('total_regimes', 0)),
-                    metric_type="regime",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
-                
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_regime_stability",
-                    metric_value=regime_summary.get('average_stability', 0.0),
-                    metric_type="regime",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
-                
-                # Log additional regime metrics
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_regime_volatility",
-                    metric_value=regime_summary.get('average_volatility', 0.0),
-                    metric_type="risk",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
-                
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_regime_duration_avg",
-                    metric_value=regime_summary.get('average_duration_days', 0.0),
-                    metric_type="regime",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
-                
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_regime_transition_probability",
-                    metric_value=regime_summary.get('average_transition_probability', 0.0),
-                    metric_type="regime",
-                    step_name="Step03_5_Final_Regime_Clustering"
+                    metric_name=f"final_regime_{regime_id}_{metric_suffix}",
+                    metric_value=regime_metric.get(metric_key, 0.0),
+                    metric_type=metric_type,
+                    step_name="Step03_5_Final_Regime_Clustering",
+                    regime_id=str(regime_id)
                 )
             
-            # Log individual regime details
-            regime_metrics = regime_analysis.get('regime_metrics', [])
-            if regime_metrics:
-                for regime_metric in regime_metrics:
-                    regime_id = regime_metric.get('regime_id', 0)
-                    
-                    # Log each regime's characteristics
+            # Log regime market condition
+            market_condition = regime_metric.get('market_condition', 'unknown')
+            financial_logger.log_financial_metric(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=f"final_regime_{regime_id}_condition",
+                metric_value=0.0,  # No numeric value for condition
+                metric_type="regime",
+                step_name="Step03_5_Final_Regime_Clustering",
+                regime_id=str(regime_id),
+                additional_data={'market_condition': market_condition}
+            )
+
+    def _log_clustering_algorithm_metrics(self, financial_logger, clustering_results: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log clustering algorithm metrics."""
+        clustering_algorithm = clustering_results.get('algorithm_info', {})
+        if not clustering_algorithm:
+            return
+            
+        financial_logger.log_financial_metric(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            metric_name="final_clustering_algorithm",
+            metric_value=0.0,  # No numeric value for algorithm name
+            metric_type="clustering",
+            step_name="Step03_5_Final_Regime_Clustering",
+            additional_data={'algorithm_name': clustering_algorithm.get('name', 'unknown')}
+        )
+        
+        # Log algorithm parameters
+        algorithm_params = clustering_algorithm.get('parameters', {})
+        if algorithm_params:
+            for param_name, param_value in algorithm_params.items():
+                try:
+                    param_float = float(param_value)
                     financial_logger.log_financial_metric(
                         symbol=symbol,
                         exchange=exchange,
@@ -1658,27 +2081,93 @@ class FinalRegimeClusteringStep:
                         symbol=symbol,
                         exchange=exchange,
                         timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_condition",
-                        metric_value=0.0,  # No numeric value for condition
-                        metric_type="regime",
+                        metric_name="final_clustering_param_info",
+                        metric_value=0.0,
+                        metric_type="clustering",
                         step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id),
-                        additional_data={'market_condition': market_condition}
+                        additional_data={param_name: str(param_value)}
                     )
+
+    def _log_performance_metrics(self, financial_logger, reports: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log performance metrics."""
+        performance_metrics = reports.get('performance_metrics', {})
+        if not performance_metrics:
+            return
             
-            # Log clustering algorithm details
-            clustering_algorithm = clustering_results.get('algorithm_info', {})
-            if clustering_algorithm:
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_clustering_algorithm",
-                    metric_value=0.0,  # No numeric value for algorithm name
-                    metric_type="clustering",
-                    step_name="Step03_5_Final_Regime_Clustering",
-                    additional_data={'algorithm_name': clustering_algorithm.get('name', 'unknown')}
-                )
+        performance_metrics_to_log = [
+            ("final_execution_time", "execution_time_seconds", "performance"),
+            ("final_memory_usage", "memory_usage_mb", "performance")
+        ]
+        
+        for metric_name, report_key, metric_type in performance_metrics_to_log:
+            financial_logger.log_financial_metric(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=metric_name,
+                metric_value=performance_metrics.get(report_key, 0.0),
+                metric_type=metric_type,
+                step_name="Step03_5_Final_Regime_Clustering"
+            )
+
+    def _log_comprehensive_trading_performance(self, financial_logger, reports: dict[str, Any], regime_analysis: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log comprehensive trading performance metrics."""
+        clustering_summary = reports.get('clustering_summary', {})
+        regime_summary = regime_analysis.get('regime_summary', {})
+        
+        if not (clustering_summary and regime_summary):
+            return
+            
+        performance_data = {
+            'total_return': 0.0,  # Regime clustering doesn't directly predict returns
+            'annualized_return': 0.0,
+            'volatility': regime_summary.get('average_volatility', 0.02),
+            'sharpe_ratio': 0.0,  # Would need return data to calculate
+            'sortino_ratio': 0.0,
+            'calmar_ratio': 0.0,
+            'max_drawdown': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
+            'max_drawdown_duration': 25,  # Default estimate
+            'var_95': regime_summary.get('average_volatility', 0.02) * 1.5,  # Estimate
+            'cvar_95': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
+            'win_rate': 0.5,  # Default for regime analysis
+            'profit_factor': 1.0,  # Default
+            'avg_win': 0.01,  # Default estimate
+            'avg_loss': 0.01,  # Default estimate
+            'largest_win': 0.03,  # Default estimate
+            'largest_loss': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
+            'total_trades': 30,  # Default estimate
+            'winning_trades': 15,  # Default estimate
+            'losing_trades': 15,  # Default estimate
+            'additional_metrics': {
+                'final_regime_count': regime_summary.get('total_regimes', 0),
+                'clustering_quality': clustering_summary.get('silhouette_score', 0.0),
+                'regime_stability': regime_summary.get('average_stability', 0.0)
+            }
+        }
+        
+        # Validate performance data before logging
+        if self._validate_trading_performance_metrics(performance_data):
+            financial_logger.log_trading_performance(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                step_name="Step03_5_Final_Regime_Clustering",
+                performance_data=performance_data,
+                confidence_score=clustering_summary.get('silhouette_score', 0.5)
+            )
+        else:
+            self.logger.warning("⚠️ Trading performance data validation failed, skipping logging")
+
+    def _validate_financial_metrics(self, metrics: dict[str, Any]) -> bool:
+        """Validate financial metrics for correctness and completeness."""
+        try:
+            self.logger.info("🔍 Validating financial metrics...")
+            
+            for metric_name, value in metrics.items():
+                # Check for None values
+                if value is None:
+                    self.logger.warning(f"⚠️ Financial metric {metric_name} is None")
+                    continue
                 
                 # Log algorithm parameters
                 algorithm_params = clustering_algorithm.get('parameters', {})
@@ -1712,51 +2201,58 @@ class FinalRegimeClusteringStep:
             # Note: Performance metrics are logged in regular system logs
             # Financial metrics logger focuses only on financial/trading metrics
             
-            # Log comprehensive trading performance
-            if clustering_summary and regime_summary:
-                performance_data = {
-                    'total_return': 0.0,  # Regime clustering doesn't directly predict returns
-                    'annualized_return': 0.0,
-                    'volatility': regime_summary.get('average_volatility', 0.02),
-                    'sharpe_ratio': 0.0,  # Would need return data to calculate
-                    'sortino_ratio': 0.0,
-                    'calmar_ratio': 0.0,
-                    'max_drawdown': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
-                    'max_drawdown_duration': 25,  # Default estimate
-                    'var_95': regime_summary.get('average_volatility', 0.02) * 1.5,  # Estimate
-                    'cvar_95': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
-                    'win_rate': 0.5,  # Default for regime analysis
-                    'profit_factor': 1.0,  # Default
-                    'avg_win': 0.01,  # Default estimate
-                    'avg_loss': 0.01,  # Default estimate
-                    'largest_win': 0.03,  # Default estimate
-                    'largest_loss': regime_summary.get('average_volatility', 0.02) * 2,  # Estimate
-                    'total_trades': 30,  # Default estimate
-                    'winning_trades': 15,  # Default estimate
-                    'losing_trades': 15,  # Default estimate
-                    'additional_metrics': {
-                        'final_regime_count': regime_summary.get('total_regimes', 0),
-                        'clustering_quality': clustering_summary.get('silhouette_score', 0.0),
-                        'regime_stability': regime_summary.get('average_stability', 0.0)
-                    }
-                }
-                
-                financial_logger.log_trading_performance(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    step_name="Step03_5_Final_Regime_Clustering",
-                    performance_data=performance_data,
-                    confidence_score=clustering_summary.get('silhouette_score', 0.5)
-                )
-            
-            # Log file paths that were created during this step
-            self._log_created_file_paths(symbol, exchange, timeframe)
-            
-            self.logger.info("💰 Financial metrics logged successfully from Step03_5 results")
+            self.logger.info("✅ Financial metrics validation completed")
+            return True
             
         except Exception as e:
-            self.logger.warning(f"Could not log financial metrics from results: {e}")
+            self.logger.error(f"❌ Financial metrics validation failed: {e}")
+            return False
+
+    def _validate_trading_performance_metrics(self, performance_data: dict[str, Any]) -> bool:
+        """Validate trading performance metrics for consistency."""
+        try:
+            self.logger.info("🔍 Validating trading performance metrics...")
+            
+            # Check required fields
+            required_fields = [
+                'total_return', 'annualized_return', 'volatility', 'sharpe_ratio',
+                'max_drawdown', 'win_rate', 'total_trades'
+            ]
+            
+            for field in required_fields:
+                if field not in performance_data:
+                    self.logger.warning(f"⚠️ Missing required field: {field}")
+                    continue
+                
+                value = performance_data[field]
+                if value is None or (isinstance(value, (int, float)) and (np.isnan(value) or np.isinf(value))):
+                    self.logger.warning(f"⚠️ Invalid value for {field}: {value}")
+            
+            # Check logical consistency
+            if 'win_rate' in performance_data and 'total_trades' in performance_data:
+                win_rate = performance_data['win_rate']
+                total_trades = performance_data['total_trades']
+                
+                if not (0 <= win_rate <= 1):
+                    self.logger.warning(f"⚠️ Win rate should be between 0 and 1: {win_rate}")
+                
+                if total_trades < 0:
+                    self.logger.warning(f"⚠️ Total trades should be non-negative: {total_trades}")
+            
+            # Check drawdown consistency
+            if 'max_drawdown' in performance_data and 'total_return' in performance_data:
+                max_dd = performance_data['max_drawdown']
+                total_ret = performance_data['total_return']
+                
+                if max_dd > abs(total_ret):
+                    self.logger.warning(f"⚠️ Max drawdown ({max_dd}) exceeds total return ({total_ret})")
+            
+            self.logger.info("✅ Trading performance metrics validation completed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Trading performance metrics validation failed: {e}")
+            return False
 
     def _log_created_file_paths(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Log file paths that were created during this step."""

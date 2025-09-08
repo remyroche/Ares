@@ -12,6 +12,13 @@ from src.training.base_step import BaseStep
 from src.utils.common_operations import validate_dataframe_schema, validate_data_quality
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.pipeline_standards import PipelineStandards
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 from typing import Any, Dict, Tuple
 import pandas as pd
 from src.utils.logger import system_logger
@@ -114,6 +121,11 @@ class DataReadingStep(BaseStep):
         Returns:
             Updated pipeline state
         """
+        # Initialize lookahead bias detector
+        from datetime import datetime
+        current_time = datetime.now()
+        bias_detector = get_global_detector()
+        bias_detector.set_current_timestamp(current_time)
         data_path = pipeline_state.get('unified_data_path') or pipeline_state.get('raw_market_data')
         if not data_path:
             symbol = training_input.get('symbol', '').upper()
@@ -196,6 +208,21 @@ class DataReadingStep(BaseStep):
                 if data is None or data.empty:
                     raise ValueError(f'Failed to read data from {data_path}')
             self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns')
+            
+            # Validate no lookahead bias in loaded data
+            try:
+                if hasattr(data, 'index') and len(data) > 0:
+                    data_time = data.index[-1] if hasattr(data.index, '__getitem__') else None
+                    if data_time:
+                        bias_detector.set_current_timestamp(data_time)
+                        data = validate_no_future_data(data, 'timestamp', data_time)
+                        self.logger.info("✅ Lookahead bias validation passed")
+            except LookaheadBiasError as e:
+                self.logger.error(f"Lookahead bias detected: {e}")
+                raise
+            except Exception as e:
+                self.logger.warning(f"Lookahead bias validation failed: {e}")
+                
         except Exception as e:
             self.logger.error(f'❌ Failed to read data: {e}')
             raise
@@ -277,10 +304,14 @@ class DataReadingStep(BaseStep):
         missing_count = data.isnull().sum().sum()
         total_cells = data.shape[0] * data.shape[1]
         if total_cells > 0:
-            results['missing_data_pct'] = missing_count / total_cells * 100
-            if results['missing_data_pct'] > 0:
-                results['issues'].append(f"Missing data: {results['missing_data_pct']:.2f}%")
-                results['data_quality_score'] -= min(20, results['missing_data_pct'] * 4)
+            try:
+                results['missing_data_pct'] = safe_divide(missing_count, total_cells, 0.0) * 100
+                if results['missing_data_pct'] > 0:
+                    results['issues'].append(f"Missing data: {results['missing_data_pct']:.2f}%")
+                    results['data_quality_score'] -= min(20, results['missing_data_pct'] * 4)
+            except MathValidationError as e:
+                self.logger.warning(f"Mathematical validation error in missing data calculation: {e}")
+                results['missing_data_pct'] = 0.0
         if hasattr(data.index, 'duplicated'):
             duplicate_count = data.index.duplicated().sum()
             if duplicate_count > 0:
@@ -306,10 +337,13 @@ class DataReadingStep(BaseStep):
         if 'volume' in data.columns:
             zero_volume = (data['volume'] == 0).sum()
             if zero_volume > 0:
-                zero_volume_pct = zero_volume / len(data) * 100
-                if zero_volume_pct > 10:
-                    results['issues'].append(f'Zero volume: {zero_volume} rows ({zero_volume_pct:.1f}%)')
-                    results['data_quality_score'] -= min(10, zero_volume_pct)
+                try:
+                    zero_volume_pct = safe_divide(zero_volume, len(data), 0.0) * 100
+                    if zero_volume_pct > 10:
+                        results['issues'].append(f'Zero volume: {zero_volume} rows ({zero_volume_pct:.1f}%)')
+                        results['data_quality_score'] -= min(10, zero_volume_pct)
+                except MathValidationError as e:
+                    self.logger.warning(f"Mathematical validation error in zero volume calculation: {e}")
         try:
             if isinstance(data.index, pd.DatetimeIndex):
                 if not data.index.is_monotonic_increasing:

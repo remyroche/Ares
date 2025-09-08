@@ -102,12 +102,12 @@ enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integ
 pandas = pd
 numpy = np
 
-# Import enhanced reporting system
+# Import financial metrics logging system
 try:
-    from .step04_enhanced_reporting import Step04EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from .step04_financial_logging import Step04FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+    FINANCIAL_LOGGING_AVAILABLE = False
 
 def create_fallback_logger() -> Any:
     logging.basicConfig(level = logging.INFO)
@@ -358,17 +358,17 @@ class RegimeDataSplittingStep:
         self._set_memory_defaults()
         self._validate_environment()
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE:
+        # Initialize financial metrics logging system
+        if FINANCIAL_LOGGING_AVAILABLE:
             try:
-                self.enhanced_reporter = Step04EnhancedReporter()
-                self.logger.info('✅ Enhanced reporting system initialized successfully')
+                self.financial_logger = None  # Will be initialized per execution
+                self.logger.info('✅ Financial metrics logging system available')
             except Exception as e:
-                self.logger.warning(f'⚠️ Enhanced reporting system failed to initialize: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'⚠️ Financial metrics logging system failed to initialize: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('ℹ️ Enhanced reporting system not available, using basic reporting')
-            self.enhanced_reporter = None
+            self.logger.info('ℹ️ Financial metrics logging system not available, using basic reporting')
+            self.financial_logger = None
 
     def _set_memory_defaults(self) -> None:
         """Set default configuration values for memory management."""
@@ -636,62 +636,44 @@ class RegimeDataSplittingStep:
                     execution_time = time.time() - step_start
                 )
 
-            # Generate enhanced comprehensive report if available
-            if self.enhanced_reporter is not None and 'data' in locals() and data is not None:
+            # Generate financial metrics logging if available
+            if FINANCIAL_LOGGING_AVAILABLE and regime_data is not None:
                 try:
-                    self.logger.info('📊 Generating enhanced comprehensive report for Step04...')
+                    self.logger.info('📊 Generating financial metrics logging for Step04...')
 
                     # Prepare data splitting results
                     data_splitting_results = {
                         'success': True,
                         'total_regimes': num_regimes,
                         'regime_ids': regime_ids.tolist(),
-                        'data_shape': data.shape if 'data' in locals() else None,
+                        'data_shape': regime_data.shape,
                         'processing_method': 'streaming' if self.config.get('use_streaming_writer', True) else 'batch',
-                        'memory_usage': memory_summary if 'memory_summary' in locals() else {}
+                        'memory_usage': memory_summary if 'memory_summary' in locals() else {},
+                        'data_retention_rate': 1.0,
+                        'processing_method_efficiency': 1.0
                     }
 
                     # Prepare performance data
                     execution_time_total = time.time() - step_start
                     performance_data = {
-                        'execution_time': execution_time_total,
-                        'memory_usage': current_memory if 'current_memory' in locals() else 0,
-                        'cpu_usage': 0,  # Would need to be measured
-                        'data_processing_rate': len(data) / execution_time_total if 'data' in locals() and execution_time_total > 0 else 0,
-                        'file_processing_rate': 1.0,  # Single file processed
-                        'merging_time': 0,  # Would need to track
-                        'splitting_time': execution_time_total,
-                        'validation_time': 0,  # Would need to track
-                        'total_function_calls': 0,  # Would need to track
-                        'successful_operations': 1 if data is not None else 0,
-                        'failed_operations': 0 if data is not None else 1,
-                        'error_rate': 0.0,
-                        'data_retention_rate': 1.0,
-                        'duplicate_handling_efficiency': 1.0
+                        'execution_time_seconds': execution_time_total,
+                        'memory_usage_mb': current_memory if 'current_memory' in locals() else 0,
+                        'data_processing_rate': len(regime_data) / execution_time_total if execution_time_total > 0 else 0
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
-                        data_splitting_results=data_splitting_results,
-                        triple_barrier_results={},  # No triple barrier results for this step
-                        regime_data=data,
-                        performance_data=performance_data,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        step_type="regime_data_splitting"
+                    # Initialize and use financial logger
+                    financial_logger = Step04FinancialLogger(symbol, exchange, timeframe)
+                    financial_logger.log_step_execution(
+                        regime_data=regime_data,
+                        regime_ids=regime_ids.tolist(),
+                        execution_data=performance_data,
+                        data_splitting_results=data_splitting_results
                     )
 
-                    # Save comprehensive report
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report=comprehensive_report,
-                        base_filename=f"step04_enhanced_{symbol}_{exchange}_{timeframe}"
-                    )
-
-                    self.logger.info(f'✅ Enhanced comprehensive report saved for Step04: {saved_files}')
+                    self.logger.info('✅ Financial metrics logging completed for Step04')
 
                 except Exception as e:
-                    self.logger.warning(f'⚠️ Enhanced reporting failed for Step04, continuing with basic reporting: {e}')
+                    self.logger.warning(f'⚠️ Financial metrics logging failed for Step04, continuing with basic reporting: {e}')
             else:
                 self.logger.error('❌ Failed to create unified regime dataset')
                 return RegimeDataResult.failure_result(

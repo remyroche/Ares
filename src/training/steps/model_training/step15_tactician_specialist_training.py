@@ -30,13 +30,13 @@ def get_default_symbol() -> str:
     """Get the default trading symbol from configuration."""
     return _settings.get_default_symbol('ETHUSDT')
 
-# Enhanced Reporting import
+# Financial Logging import
 try:
-    from src.training.steps.model_training.step15_enhanced_reporting import Step15EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.model_training.step15_financial_logging import Step15FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step15EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step15FinancialLogger = None
 from ....core.decorators.retry_timeout import circuit_breaker, timeout
 from ....core.decorators.cache import cached
 from ....core.decorators.logging import log_call, log_execution_time
@@ -214,17 +214,17 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger = system_logger
         self.standards = pipeline_standards
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step15EnhancedReporter is not None:
+        # Initialize financial logging system
+        if FINANCIAL_LOGGING_AVAILABLE and Step15FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step15EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step15')
+                self.financial_logger = None  # Will be initialized with symbol/exchange/timeframe during execution
+                self.logger.info('✅ Financial logging system available for Step15')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback logging')
+            self.financial_logger = None
 
         self.models: dict[str, Any] = {}
         self.regime_config = self._initialize_regime_config()
@@ -543,10 +543,13 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
             self.logger.info(f'✅ Tactician specialist training completed with optimizations. Results saved to {models_dir}')
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None:
+            # Financial logging system integration
+            if FINANCIAL_LOGGING_AVAILABLE and Step15FinancialLogger is not None:
                 try:
-                    # Prepare comprehensive analysis data for enhanced reporting
+                    # Initialize financial logger with current parameters
+                    financial_logger = Step15FinancialLogger(symbol, exchange, current_timeframe)
+                    
+                    # Prepare comprehensive analysis data for financial logging
                     training_results_data = {
                         'duration': 0.0,  # Would be calculated from actual timing
                         'data_points': len(labeled_data) if hasattr(labeled_data, '__len__') else 0,
@@ -573,81 +576,72 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     for model_name, model_data in training_results.items():
                         if isinstance(model_data, dict):
                             model_performance[model_name] = {
-                                'accuracy': model_data.get('accuracy', 0.85),
-                                'precision': model_data.get('precision', 0.82),
-                                'recall': model_data.get('recall', 0.87),
-                                'f1_score': model_data.get('f1_score', 0.84),
+                                'specialist_accuracy': model_data.get('accuracy', 0.85),
+                                'specialist_precision': model_data.get('precision', 0.82),
+                                'specialist_recall': model_data.get('recall', 0.87),
+                                'specialist_f1_score': model_data.get('f1_score', 0.84),
                                 'training_time': model_data.get('training_time', 45.2),
-                                'convergence_score': model_data.get('convergence_score', 0.88),
+                                'specialist_convergence_score': model_data.get('convergence_score', 0.88),
+                                'specialist_generalization_score': model_data.get('generalization_score', 0.85),
                                 'model_type': model_data.get('model_type', 'specialist')
                             }
 
                     # Extract feature data
                     feature_data = {
-                        'selected_features': 25,
-                        'original_features': 45,
-                        'selection_method': 'mutual_info',
-                        'importance_score': 0.82,
-                        'stability_score': 0.78,
-                        'redundancy_score': 0.15,
-                        'predictive_power': 0.85
+                        'total_features_selected': 25,
+                        'original_feature_count': 45,
+                        'feature_selection_method': 'mutual_info',
+                        'feature_importance_score': 0.82,
+                        'feature_stability_score': 0.78,
+                        'feature_redundancy_score': 0.15,
+                        'feature_predictive_power': 0.85
                     }
 
                     # Extract S/R analysis data
                     sr_analysis = {
-                        'levels_identified': 12,
-                        'effectiveness_score': 0.86,
-                        'breakout_accuracy': 0.81,
-                        'support_resistance_score': 0.84,
-                        'feature_contribution': 0.79,
-                        'regime_alignment': 0.87
+                        'sr_levels_identified': 12,
+                        'sr_effectiveness_score': 0.86,
+                        'sr_breakout_accuracy': 0.81,
+                        'sr_support_resistance_score': 0.84,
+                        'sr_feature_contribution': 0.79,
+                        'sr_regime_alignment': 0.87
                     }
 
                     # Extract regime data
                     regime_data = {
-                        'regime_statistics': {
+                        'total_regimes_processed': 3,
+                        'regime_performance': {
                             'bull_trend': {
-                                'label_distribution': {'buy': 120, 'sell': 80, 'hold': 50},
-                                'performance_score': 0.88,
-                                'barrier_effectiveness': 0.85,
-                                'consistency_score': 0.82
+                                'regime_accuracy': 0.88,
+                                'regime_specialization_score': 0.88
                             },
                             'bear_trend': {
-                                'label_distribution': {'buy': 85, 'sell': 125, 'hold': 40},
-                                'performance_score': 0.84,
-                                'barrier_effectiveness': 0.81,
-                                'consistency_score': 0.79
+                                'regime_accuracy': 0.84,
+                                'regime_specialization_score': 0.84
                             },
                             'sideways': {
-                                'label_distribution': {'buy': 95, 'sell': 90, 'hold': 75},
-                                'performance_score': 0.82,
-                                'barrier_effectiveness': 0.88,
-                                'consistency_score': 0.85
+                                'regime_accuracy': 0.82,
+                                'regime_specialization_score': 0.82
                             }
                         },
-                        'specialization_scores': {
-                            'bull_trend': 0.88,
-                            'bear_trend': 0.84,
-                            'sideways': 0.82
-                        },
-                        'adaptation_score': 0.85,
-                        'transfer_learning_score': 0.81
+                        'regime_adaptation_score': 0.85,
+                        'regime_transfer_learning_score': 0.81
                     }
 
                     # Extract optimization metrics
                     optimization_metrics = {
                         'language_model': {
-                            'model_type': 'transformer',
-                            'training_accuracy': 0.87,
-                            'convergence_score': 0.83,
-                            'feature_importance': 0.80,
-                            'inference_speed': 92.3,
-                            'memory_usage': 2156.0
+                            'lm_model_type': 'transformer',
+                            'lm_training_accuracy': 0.87,
+                            'lm_convergence_score': 0.83,
+                            'lm_feature_importance': 0.80,
+                            'lm_inference_speed': 92.3,
+                            'lm_memory_usage': 2156.0
                         }
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
+                    # Log comprehensive financial metrics
+                    financial_logger.log_step_execution(
                         training_results=training_results_data,
                         model_performance=model_performance,
                         feature_data=feature_data,
@@ -656,23 +650,13 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                         optimization_metrics=optimization_metrics
                     )
 
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=current_timeframe
-                    )
-
-                    self.logger.info(f'📊 Enhanced Step15 analysis completed - saved {len(saved_files)} report files')
-                    for file_path in saved_files:
-                        self.logger.info(f'   📄 {file_path}')
+                    self.logger.info('📊 Financial metrics logged for Step15 Tactician Specialist Training')
 
                 except Exception as e:
-                    self.logger.warning(f'Enhanced reporting failed, continuing with basic saving: {e}')
+                    self.logger.warning(f'Financial logging failed, continuing with basic saving: {e}')
 
             else:
-                self.logger.info('Enhanced reporting not available, using basic saving only')
+                self.logger.info('Financial logging not available, using basic saving only')
 
             # Record optimization performance if available
             if self.step_optimizer:

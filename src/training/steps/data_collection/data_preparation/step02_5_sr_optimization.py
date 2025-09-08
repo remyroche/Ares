@@ -584,12 +584,16 @@ class SROptimizationStep(BaseStep):
                         self.logger.error(f'❌ Could not sample timestamp values: {sample_error}')
                     return fixed_data
         
-        # Remove duplicate timestamps
+        # Remove only exact duplicate rows (identical across all columns). Keep differing rows even if timestamp duplicates.
         if 'timestamp' in fixed_data.columns:
-            duplicate_count = fixed_data['timestamp'].duplicated().sum()
-            if duplicate_count > 0:
-                self.logger.info(f'🗑️ Removing {duplicate_count} duplicate timestamps')
-                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+            exact_dupe_mask = fixed_data.duplicated(subset=fixed_data.columns.tolist(), keep='first')
+            exact_dupe_count = int(exact_dupe_mask.sum())
+            if exact_dupe_count > 0:
+                self.logger.info(f'🗑️ Removing {exact_dupe_count} exact duplicate rows (identical across all columns)')
+                fixed_data = fixed_data.loc[~exact_dupe_mask]
+            remaining_ts_dupes = int(fixed_data['timestamp'].duplicated().sum())
+            if remaining_ts_dupes > 0:
+                self.logger.warning(f'⚠️ Found {remaining_ts_dupes} duplicate timestamps with differing values; retaining all to avoid data loss')
         
         # Sort by timestamp if not monotonic
         if 'timestamp' in fixed_data.columns:

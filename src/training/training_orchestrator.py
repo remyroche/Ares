@@ -696,22 +696,3 @@ class TrainingOrchestrator:
     default_return=None,
     context="training orchestrator setup",
 )
-async def setup_training_orchestrator(
-    config: dict[str, Any] | None = None,
-) -> TrainingOrchestrator | None:
-    """Setup and return a configured TrainingOrchestrator instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        TrainingOrchestrator: Configured training orchestrator instance
-    """
-    try:
-        orchestrator = TrainingOrchestrator(config or {})
-        if await orchestrator.initialize():
-            return orchestrator
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup training orchestrator: {e}")
-        return None

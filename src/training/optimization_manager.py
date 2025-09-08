@@ -659,23 +659,3 @@ class OptimizationManager:
     default_return=None,
     context="optimization manager setup",
 )
-async def setup_optimization_manager(
-    config: dict[str, Any] | None = None,
-) -> OptimizationManager | None:
-    """Setup and return a configured OptimizationManager instance."
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        OptimizationManager: Configured optimization manager instance
-
-    """
-    try:
-        manager = OptimizationManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup optimization manager: {e}")
-        return None

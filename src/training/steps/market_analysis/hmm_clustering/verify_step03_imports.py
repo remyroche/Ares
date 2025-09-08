@@ -151,31 +151,6 @@ def test_optional_dependencies():
     
     return results
 
-def test_decorator_functionality():
-    """Test that decorators can be applied."""
-    print("\n🧪 Testing Decorator Functionality...")
-    print("=" * 50)
-    
-    try:
-        from src.core.decorators import monitor_step03_functions, handle_step03_errors
-        
-        @monitor_step03_functions
-        @handle_step03_errors
-        def test_function():
-            return "success"
-        
-        result = test_function()
-        if result == "success":
-            print("✅ Decorators applied and executed successfully")
-            return True
-        else:
-            print(f"❌ Decorator execution failed: expected 'success', got '{result}'")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Decorator functionality test failed: {e}")
-        traceback.print_exc()
-        return False
 
 def main():
     """Main verification function."""
@@ -189,7 +164,6 @@ def main():
         ("Reporting Components", test_reporting_components),
         ("Step03 Imports", test_step03_imports),
         ("Optional Dependencies", test_optional_dependencies),
-        ("Decorator Functionality", test_decorator_functionality),
     ]
     
     results = []

@@ -313,33 +313,6 @@ class ImprovedDataMerger:
         consistency = 1.0 - (regime_changes / total_periods)
         return max(0.0, consistency)
     
-    def get_retention_recommendations(
-        self, 
-        timeframe: str, 
-        actual_retention: float
-    ) -> List[str]:
-        """Get recommendations for improving retention ratio."""
-        recommendations = []
-        threshold = self.retention_thresholds.get(timeframe, 0.80)
-        
-        if actual_retention < threshold:
-            recommendations.append(
-                f"Consider using 'tolerant' or 'interpolate' alignment strategy "
-                f"instead of 'strict' for {timeframe} data"
-            )
-            
-            if timeframe in ['1m', '5m']:
-                recommendations.append(
-                    "For high-frequency data, consider data preprocessing to "
-                    "align timestamps before merging"
-                )
-            
-            recommendations.append(
-                "Check for data gaps in regime discovery step that might "
-                "cause timestamp misalignment"
-            )
-        
-        return recommendations
 
 
 # Example usage and testing

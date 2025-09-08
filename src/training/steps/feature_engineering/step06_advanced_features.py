@@ -26,13 +26,9 @@ def get_default_symbol() -> str:
     """Get the default trading symbol from configuration."""
     return _settings.get_default_symbol('ETHUSDT')
 
-# Import enhanced reporting system
-try:
-    from src.training.steps.feature_engineering.step06_enhanced_reporting import Step06EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step06EnhancedReporter = None
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
+Step06EnhancedReporter = None
 
 # Import financial metrics logger directly
 try:

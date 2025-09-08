@@ -72,12 +72,8 @@ except Exception:
     _psutil_ok = False
 dependency_status: Dict[str, bool] = {'pandas': True, 'numpy': True, 'psutil': _psutil_ok}
 
-# Import enhanced reporting system
-try:
-    from .step05_enhanced_reporting import Step05EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
 
 # Import financial metrics logger directly
 try:

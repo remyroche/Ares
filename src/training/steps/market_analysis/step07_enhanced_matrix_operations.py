@@ -122,12 +122,8 @@ enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integ
 numpy = PipelineStandards.safe_import('numpy', None)
 pandas = PipelineStandards.safe_import('pandas', None)
 
-# Import enhanced reporting system
-try:
-    from .step07_enhanced_reporting import Step07EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
 
 # Fallback utilities now imported from src.utils.common_operations
 

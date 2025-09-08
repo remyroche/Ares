@@ -559,29 +559,6 @@ class DataUtils:
             self.logger.error('Error stopping data utils: {e}')
 data_utils: DataUtils | None = None
 
-@handles_errors(exceptions=(Exception,), default_return = None, context='data utils setup')
-async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | None:
-    """
-    Setup global data utils.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        DataUtils | None: Global data utils instance
-    """
-    try:
-        global data_utils
-        if config is None:
-            config = {'data_utils': {'processing_interval': 3600, 'max_processing_history': 100, 'enable_data_cleaning': True, 'enable_data_validation': True, 'enable_data_transformation': True, 'enable_data_aggregation': True}}
-        data_utils = DataUtils(config)
-        success = await data_utils.initialize()
-        if success:
-            return data_utils
-        return None
-    except Exception as e:
-        print(f'Error setting up data utils: {e}')
-        return None
 
 def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate klines data quality."""

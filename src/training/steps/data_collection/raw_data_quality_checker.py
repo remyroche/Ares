@@ -762,7 +762,8 @@ class RawDataQualityChecker:
         max_missing_ohlc = self.config['critical_thresholds']['max_missing_ohlc']
         if missing_ohlc_ratio > max_missing_ohlc:
             results['critical_issues'].append(f'Too many missing OHLC values: {missing_ohlc_ratio:.3f} (threshold: {max_missing_ohlc})')
-        return False
+            return False
+        
         try:
             if len(data) == 0:
                 data_span_days = 0
@@ -773,6 +774,7 @@ class RawDataQualityChecker:
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating data span: {e}')
             data_span_days = 0
+        
         min_span_days = self.config['critical_thresholds']['min_data_span_days']
         if data_span_days < min_span_days:
             if data_span_days == 0:
@@ -782,13 +784,15 @@ class RawDataQualityChecker:
                     results['critical_issues'].append(f'All data has the same timestamp: {data.index.min()}')
             else:
                 results['critical_issues'].append(f'Insufficient data span: {data_span_days} days (minimum: {min_span_days})')
-        return False
+            return False
+        
         if self.config['integrity_checks']['check_timestamp_continuity']:
             time_diffs = data.index.to_series().diff().dropna()
             max_gap_hours = self.config['warning_thresholds']['max_gap_hours']
             large_gaps = time_diffs[time_diffs > max_gap_hours]
-        if len(large_gaps) > 0:
-            results['warnings'].append(f'Found {len(large_gaps)} gaps larger than {max_gap_hours} hours')
+            if len(large_gaps) > 0:
+                results['warnings'].append(f'Found {len(large_gaps)} gaps larger than {max_gap_hours} hours')
+        
         results['detailed_analysis']['completeness'] = {'missing_ohlc_ratio': missing_ohlc_ratio, 'data_span_days': data_span_days, 'missing_by_column': missing_ohlc.to_dict(), 'large_gaps_count': len(large_gaps) if 'large_gaps' in locals() else 0}
         return True
     @log_all_calls
@@ -807,16 +811,19 @@ class RawDataQualityChecker:
         max_negative = self.config['critical_thresholds']['max_negative_prices']
         if negative_price_ratio > max_negative:
             results['critical_issues'].append(f'Negative prices found: {negative_price_ratio:.3f} of records')
-        return False
+            return False
+        
         zero_volume_ratio = (data['volume'] <= 0).sum() / len(data)
         max_zero_volume = self.config['critical_thresholds']['max_zero_volume_ratio']
         if zero_volume_ratio > max_zero_volume:
             results['warnings'].append(f'High zero/negative volume: {zero_volume_ratio:.3f} (threshold: {max_zero_volume})')
+        
         price_changes = data['close'].pct_change().abs()
         extreme_moves = price_changes > 0.5
         extreme_move_ratio = extreme_moves.sum() / len(price_changes.dropna())
         if extreme_move_ratio > 0.001:
             results['warnings'].append(f'Extreme price movements detected: {extreme_move_ratio:.3f} of records')
+        
         results['detailed_analysis']['integrity'] = {'ohlc_inconsistent_ratio': ohlc_inconsistent_ratio if 'ohlc_inconsistent_ratio' in locals() else 0, 'negative_price_ratio': negative_price_ratio, 'zero_volume_ratio': zero_volume_ratio, 'extreme_move_ratio': extreme_move_ratio}
         return True
     @log_all_calls
@@ -1176,8 +1183,9 @@ class RawDataQualityChecker:
             preprocessed_data = self.preprocess_irregular_intervals(data, method)
             preprocessed_validation, preprocessed_data = self.validate_raw_data(preprocessed_data, symbol, exchange)
             validation_results['preprocessing_applied'] = {'method': method, 'original_shape': data.shape, 'preprocessed_shape': preprocessed_data.shape, 'preprocessed_quality_score': preprocessed_validation.get('data_quality_score', 0), 'improvement': preprocessed_validation.get('data_quality_score', 0) - validation_results.get('data_quality_score', 0)}
-        self.logger.info(f"✅ Preprocessing completed. Quality improvement: {validation_results['preprocessing_applied']['improvement']:.3f}")
-        return (preprocessed_data, validation_results)
+            self.logger.info(f"✅ Preprocessing completed. Quality improvement: {validation_results['preprocessing_applied']['improvement']:.3f}")
+            return (preprocessed_data, validation_results)
+        
         if needs_preprocessing:
             self.logger.warning('⚠️ Irregular intervals detected but auto_preprocess is disabled')
             validation_results['preprocessing_recommended'] = True

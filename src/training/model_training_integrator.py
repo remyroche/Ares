@@ -347,13 +347,6 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
 model_training_integrator: ModelTrainingIntegrator | None = None
 
-async def setup_model_training_integrator(config: dict[str, Any]) -> ModelTrainingIntegrator:
-    """Setup global model training integrator."""
-    global model_training_integrator
-    if model_training_integrator is None:
-        model_training_integrator = ModelTrainingIntegrator(config)
-        await model_training_integrator.initialize()
-    return model_training_integrator
 
 def get_model_training_integrator() -> ModelTrainingIntegrator | None:
     """Get global model training integrator instance."""

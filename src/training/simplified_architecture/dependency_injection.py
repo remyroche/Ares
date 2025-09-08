@@ -237,11 +237,6 @@ def inject(*service_names: str) -> None:
         return wrapper
     return decorator
 
-    def clear(self) -> None:
-        """Clear all registered services."""
-        self._services.clear()
-        self._resolving.clear()
-
 class ServiceLocator:
     """
     Global service locator pattern (use sparingly).

@@ -660,26 +660,3 @@ class SQLiteManager:
         except Exception:
             self.print(error('Error stopping SQLite manager: {e}'))
 sqlite_manager: SQLiteManager | None = None
-
-async def setup_sqlite_manager(config: dict[str, Any] | None = None) -> SQLiteManager | None:
-    """
-    Setup global SQLite manager.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[SQLiteManager]: Global SQLite manager instance
-    """
-    try:
-        global sqlite_manager
-        if config is None:
-            config = {'sqlite_manager': {'database_path': 'data/ares.db', 'auto_backup': True, 'backup_interval': 3600, 'max_connections': 10, 'enable_foreign_keys': True, 'journal_mode': 'WAL', 'max_recovery_attempts': 3, 'recovery_cooldown': 60}}
-        sqlite_manager = SQLiteManager(config)
-        success = await sqlite_manager.initialize()
-        if success:
-            return sqlite_manager
-        return None
-    except Exception as e:
-        print(f'Error setting up SQLite manager: {e}')
-        return None

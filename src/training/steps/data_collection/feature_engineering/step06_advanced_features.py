@@ -251,18 +251,6 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         # Simplified regime detection - in production, this would use actual market data
         # For now, return 'neutral' to use default parameters
         return 'neutral'
-
-        # Prefer optional component if available; otherwise, implement a simple calculator inline
-        if _TechnicalIndicatorCalculator is not None:
-            self.indicator_calculator = _TechnicalIndicatorCalculator([
-                {"name": "RSI", "params": {"period": 14}},
-                {"name": "SMA", "params": {"period": 20}},
-                {"name": "EMA", "params": {"period": 12}},
-            ])
-        else:
-            self.indicator_calculator = None
-
-        self.logger.info('✅ Enhanced feature engineering components initialized')
     @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:

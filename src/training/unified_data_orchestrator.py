@@ -1564,21 +1564,6 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
     return _unified_data_orchestrator
 
 
-async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
-    """Initialize the global unified data orchestrator."""
-    global _unified_data_orchestrator
-
-    if _unified_data_orchestrator is None:
-        _unified_data_orchestrator = UnifiedDataOrchestrator(config)
-
-    success = await _unified_data_orchestrator.initialize()
-
-    if success:
-        _unified_data_orchestrator.stats["initialized_at"] = datetime.now()
-    else:
-        system_logger.getChild("UnifiedDataOrchestrator").error("Initialization failed")
-
-    return success
 
 
 async def cleanup_unified_data_orchestrator() -> None:

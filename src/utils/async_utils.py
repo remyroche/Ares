@@ -485,49 +485,6 @@ async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
 
 
-async def setup_async_utils(
-    config: dict[str, Any] | None = None,
-) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:
-    """
-    Setup global async utilities.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Tuple[Optional[AsyncFileManager], Optional[AsyncTaskManager]]: Global instances
-    """
-    global async_file_manager, async_task_manager
-
-    if config is None:
-        # Fallback implementation for config
-        config = {
-            "async_file_manager": {
-                "max_cache_size": 100,
-                "cache_enabled": True,
-                "default_encoding": "utf-8",
-                "chunk_size": 8192,
-                "timeout": 30,
-            },
-            "async_task_manager": {
-                "max_concurrent_tasks": 10,
-                "task_timeout": 300,
-                "enable_task_monitoring": True,
-                "auto_cleanup_failed_tasks": True,
-            },
-        }
-
-    # Create async file manager
-    async_file_manager = AsyncFileManager(config)
-    file_success = await async_file_manager.initialize()
-
-    # Create async task manager
-    async_task_manager = AsyncTaskManager(config)
-    task_success = await async_task_manager.initialize()
-
-    if file_success and task_success:
-        return async_file_manager, async_task_manager
-    return None, None
 
 
 class AsyncProcessesManager:

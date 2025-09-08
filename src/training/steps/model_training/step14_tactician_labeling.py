@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 14: Regime-Aware Tactician Labeling with Regime-Specific Barriers."""
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -677,11 +678,11 @@ class TacticianLabelingStep:
         Path(labeled_data_dir).mkdir(parents = True, exist_ok = True)
         labeled_file_parquet = f'{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet'
         try:
-            labeled_data.to_parquet(labeled_file_parquet, compression='snappy', index = False)
+            standardized_parquet_handler.write_parquet_standardized(labeled_data, labeled_file_parquet, compression='snappy', index = False)
         except Exception:
             try:
                 with log_io_operation(self.logger, 'to_parquet', labeled_file_parquet, compression='snappy'):
-                    labeled_data.to_parquet(labeled_file_parquet, compression='snappy', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(labeled_data, labeled_file_parquet, compression='snappy', index = False)
                 with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, labeled_data, name='labeled_data')
             except Exception:
@@ -691,11 +692,11 @@ class TacticianLabelingStep:
         signals_file_parquet = f'{data_dir}/{exchange}_{symbol}_strategic_signals.parquet'
         try:
             _signals_df = signals.to_frame(name='signal').reset_index()
-            _signals_df.to_parquet(signals_file_parquet, compression='snappy', index = False)
+            standardized_parquet_handler.write_parquet_standardized(_signals_df, signals_file_parquet, compression='snappy', index = False)
         except Exception:
             try:
                 with log_io_operation(self.logger, 'to_parquet', signals_file_parquet, compression='snappy'):
-                    _signals_df.to_parquet(signals_file_parquet, compression='snappy', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(_signals_df, signals_file_parquet, compression='snappy', index = False)
                 with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, _signals_df, name='signals_df')
             except Exception:

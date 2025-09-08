@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Market Impact and Liquidity Enhancement for Step09
 

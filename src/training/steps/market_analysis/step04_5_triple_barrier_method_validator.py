@@ -1,4 +1,5 @@
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 4: Triple Barrier Method.
 from src.utils.logger import system_logger
 

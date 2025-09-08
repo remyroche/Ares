@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Ensemble aggregation component for analyst ensemble creation."""
 

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Common types and result structures for Step 4 implementations.
 
 This module provides standardized return types and result structures

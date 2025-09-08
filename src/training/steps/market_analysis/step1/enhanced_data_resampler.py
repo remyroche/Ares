@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """
 Enhanced Data Resampler for Step1 with Comprehensive Stability Features.
@@ -465,7 +466,7 @@ class EnhancedDataResampler:
 
                 # Load file
                 if file_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 else:
                     df = pd.read_csv(file_path, parse_dates=['timestamp'])
 
@@ -506,7 +507,7 @@ class EnhancedDataResampler:
         for file_path in files:
             try:
                 if file_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 else:
                     df = pd.read_csv(file_path, parse_dates=['timestamp'])
 
@@ -794,7 +795,7 @@ class EnhancedDataResampler:
 
             # Save file
             if output_format.lower() == "parquet":
-                df.to_parquet(output_path, compression="zstd", index=False)
+                standardized_parquet_handler.write_parquet_standardized(df, output_path, compression="zstd", index=False)
             else:
                 df.to_csv(output_path, index=False)
 

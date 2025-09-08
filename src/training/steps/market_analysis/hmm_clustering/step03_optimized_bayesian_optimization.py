@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Optimized Bayesian Parameter Optimization for Enhanced Computational Efficiency.\n\nThis module implements several optimization strategies:\n1. Parallel trial execution with multiprocessing\n2. Early pruning with adaptive thresholds\n3. Smart parameter space reduction\n4. Caching and memoization\n5. Progressive parameter refinement\n'
 import asyncio

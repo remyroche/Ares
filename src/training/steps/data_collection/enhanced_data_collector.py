@@ -2,6 +2,7 @@
 import src.utils.enhanced_data_validation
 import numpy as np
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Data Collector with Real-time Validation

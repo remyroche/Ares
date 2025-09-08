@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Error Handling System.
 
 This module provides comprehensive error handling with detailed function-level error reporting.

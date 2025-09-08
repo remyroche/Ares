@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Pipeline Orchestrator with Fail-Fast Behavior
 

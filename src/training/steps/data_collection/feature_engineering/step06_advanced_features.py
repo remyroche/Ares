@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Optional scipy sparse support
 try:
@@ -275,7 +276,7 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                         'engine': 'pyarrow' if hasattr(pd, 'ArrowDtype') else 'fastparquet',
                         'columns': ['open', 'high', 'low', 'close', 'volume']
                     }
-                    sample = pd.read_parquet(data_path, **read_options)
+                    sample = standardized_parquet_handler.read_parquet_standardized(data_path, **read_options)
                     required_cols = ['open', 'high', 'low', 'close', 'volume']
                     missing = set(required_cols) - set(sample.columns)
                     if missing:
@@ -307,7 +308,7 @@ class AdvancedFeatureEngineeringStep(BaseStep):
             'engine': 'pyarrow' if hasattr(pd, 'ArrowDtype') else 'fastparquet',
             'use_threads': True  # Enable multi-threading for faster reads
         }
-        data = pd.read_parquet(labeled_data_path, **read_options)
+        data = standardized_parquet_handler.read_parquet_standardized(labeled_data_path, **read_options)
 
         # Advanced NumPy optimizations for memory and performance
         data = self._optimize_dataframe_for_numpy(data)
@@ -420,8 +421,8 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         except ImportError:
             pass
 
-        train_features.to_parquet(train_path, **parquet_options)
-        val_features.to_parquet(val_path, **parquet_options)
+        standardized_parquet_handler.write_parquet_standardized(train_features, train_path, **parquet_options)
+        standardized_parquet_handler.write_parquet_standardized(val_features, val_path, **parquet_options)
         self.logger.info(f'✅ Saved features - Train: {len(train_features)} rows, Val: {len(val_features)} rows, Features: {len(train_features.columns)} columns')
         pipeline_state['advanced_features'] = {
             'train': str(train_path),

@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 17: Final Parameters Optimization - Per-Regime Implementation with Hardware Acceleration.
 
@@ -1043,7 +1044,7 @@ async def run_per_regime_step(
         
     if data_dir is None:
         if pipeline_standards:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         else:
             # Fallback if pipeline_standards is not available
             data_dir = f'data_cache/{exchange}_{symbol}'

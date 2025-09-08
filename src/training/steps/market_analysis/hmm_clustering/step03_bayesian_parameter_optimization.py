@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 3: Bayesian Parameter Optimization for HMM Regime Discovery using Optuna.
 
@@ -451,7 +452,7 @@ class BayesianParameterOptimizationStep:
                 }
             
             # Load data
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             
             if df.empty:
                 self.logger.error("❌ Data is empty")

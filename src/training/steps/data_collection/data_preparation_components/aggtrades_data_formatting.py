@@ -6,6 +6,7 @@ import os
 import shutil
 from pathlib import Path
 import typing
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 def check_file_format(file_path: Union[str, Path]) -> bool | None:
     """Check if a CSV file follows the correct format.

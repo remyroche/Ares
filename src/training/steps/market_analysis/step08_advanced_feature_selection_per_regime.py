@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 8: Advanced Feature Selection - Per-Regime Implementation.
 
 This module provides per-HMM regime feature selection functionality, ensuring that
@@ -374,7 +375,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     config['per_regime_feature_selection'] = True
     step = PerRegimeAdvancedFeatureSelectionStep(config)
     success = await step.execute_per_regime_feature_selection(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """BaseStep wrapper for Step 08 Advanced Feature Selection.
 
 This adapter wraps the heavy Step08 implementation so it fits the BaseStep

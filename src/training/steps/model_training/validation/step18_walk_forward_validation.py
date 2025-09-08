@@ -17,6 +17,28 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 from functools import lru_cache
 import hashlib
 
+# Import enhanced components
+from src.utils.common_operations import (
+    format_datetime, get_current_datetime, safe_file_exists,
+    ensure_directory, safe_json_dump, safe_json_load,
+    validate_file_path, get_file_size, check_disk_space,
+    create_directory_if_not_exists, get_timestamp
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_numeric_range, is_finite_number
+)
+from src.utils.parquet_utils import ParquetUtils
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, 
+    timeout, error_boundary, compose, validate_data_quality, 
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
+
 try:
     from src.training.steps.model_training.validation.core.domain import ParquetDatasetManager
 except ImportError:
@@ -29,14 +51,16 @@ except ImportError:
         def write_partitioned_dataset(self, **kwargs) -> None:
             self.logger.warning('ParquetDatasetManager not available, skipping persistence')
 
+@handles_errors(default_return=None, context="FileCache")
 class FileCache:
-    """Simple file-based cache for expensive operations."""
+    """Simple file-based cache for expensive operations with parquet utils integration."""
     
     def __init__(self, cache_dir: str = "cache", max_size: int = 100):
         self.cache_dir = cache_dir
         self.max_size = max_size
         self.cache_metadata = {}
-        os.makedirs(cache_dir, exist_ok=True)
+        self.parquet_utils = ParquetUtils()
+        create_directory_if_not_exists(cache_dir)
     
     def _get_cache_key(self, *args, **kwargs) -> str:
         """Generate cache key from arguments."""
@@ -44,41 +68,39 @@ class FileCache:
         return hashlib.md5(key_data.encode()).hexdigest()
     
     def get(self, key: str) -> Optional[Any]:
-        """Get cached data."""
+        """Get cached data using safe operations."""
         cache_file = os.path.join(self.cache_dir, f"{key}.json")
-        if os.path.exists(cache_file):
+        if safe_file_exists(cache_file):
             try:
-                with open(cache_file, 'r') as f:
-                    return json.load(f)
+                cache_data = safe_json_load(cache_file)
+                return cache_data.get('data') if isinstance(cache_data, dict) else cache_data
             except Exception:
                 return None
         return None
     
     def set(self, key: str, data: Any, ttl: int = 3600) -> None:
-        """Set cached data with TTL."""
+        """Set cached data with TTL using safe operations."""
         cache_file = os.path.join(self.cache_dir, f"{key}.json")
         try:
             cache_data = {
                 'data': data,
-                'timestamp': time.time(),
+                'timestamp': get_timestamp(),
                 'ttl': ttl
             }
-            with open(cache_file, 'w') as f:
-                json.dump(cache_data, f)
+            safe_json_dump(cache_data, cache_file)
         except Exception as e:
             logger.warning(f"Failed to cache data: {e}")
     
     def is_valid(self, key: str) -> bool:
-        """Check if cached data is still valid."""
+        """Check if cached data is still valid using safe operations."""
         cache_file = os.path.join(self.cache_dir, f"{key}.json")
-        if not os.path.exists(cache_file):
+        if not safe_file_exists(cache_file):
             return False
         
         try:
-            with open(cache_file, 'r') as f:
-                cache_data = json.load(f)
+            cache_data = safe_json_load(cache_file)
             
-            if time.time() - cache_data['timestamp'] > cache_data['ttl']:
+            if get_timestamp() - cache_data['timestamp'] > cache_data['ttl']:
                 os.remove(cache_file)
                 return False
             return True

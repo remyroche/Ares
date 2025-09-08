@@ -2,6 +2,28 @@ from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
 
+# Import enhanced components
+from src.utils.common_operations import (
+    format_datetime, get_current_datetime, safe_file_exists,
+    ensure_directory, safe_json_dump, safe_json_load,
+    validate_file_path, get_file_size, check_disk_space,
+    create_directory_if_not_exists, get_timestamp
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_numeric_range, is_finite_number
+)
+from src.utils.parquet_utils import ParquetUtils
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, 
+    timeout, error_boundary, compose, validate_data_quality, 
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
+
 """Step 18: Walk Forward Validation - Per-Regime Implementation.
 
 This module provides per-HMM regime walk forward validation functionality, ensuring that
@@ -964,8 +986,9 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             self.logger.error(f'❌ Error calculating real performance metrics for regime {regime_id}: {e}')
             return self._get_fallback_metrics()
 
+    @handles_errors(default_return=self._get_fallback_metrics(), context="calculate_vectorized_metrics")
     async def _calculate_vectorized_metrics(self, test_returns: np.ndarray, regime_id: int) -> Dict[str, Any]:
-        """Calculate performance metrics using vectorized operations for optimal performance."""
+        """Calculate performance metrics using vectorized operations with math validation."""
         try:
             if len(test_returns) == 0:
                 return self._get_fallback_metrics()
@@ -983,37 +1006,37 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             avg_win = np.mean(positive_returns) if len(positive_returns) > 0 else 0.0
             avg_loss = abs(np.mean(negative_returns)) if len(negative_returns) > 0 else 0.0
             
-            # Vectorized Sharpe ratio calculation
+            # Vectorized Sharpe ratio calculation with safe division
             if len(test_returns) > 1:
                 mean_return = np.mean(test_returns)
                 std_return = np.std(test_returns)
-                sharpe_ratio = (mean_return / std_return * np.sqrt(252)) if std_return > 0 else 0.0
+                sharpe_ratio = safe_divide(mean_return, std_return) * safe_sqrt(252) if std_return > 0 else 0.0
                 sharpe_ratio = np.clip(sharpe_ratio, -5, 5)  # Clipped for stability
             else:
                 sharpe_ratio = 0.0
             
-            # Vectorized Sortino ratio calculation
+            # Vectorized Sortino ratio calculation with safe division
             if len(negative_returns) > 0:
                 downside_std = np.std(negative_returns)
-                sortino_ratio = (np.mean(test_returns) / downside_std * np.sqrt(252)) if downside_std > 0 else 0.0
+                sortino_ratio = safe_divide(np.mean(test_returns), downside_std) * safe_sqrt(252) if downside_std > 0 else 0.0
                 sortino_ratio = np.clip(sortino_ratio, -5, 5)
             else:
                 sortino_ratio = sharpe_ratio
             
-            # Vectorized drawdown calculation
+            # Vectorized drawdown calculation with safe division
             cumulative_returns = np.cumprod(1 + test_returns)
             running_max = np.maximum.accumulate(cumulative_returns)
-            drawdowns = (running_max - cumulative_returns) / running_max
+            drawdowns = safe_divide(running_max - cumulative_returns, running_max)
             max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
             
-            # Vectorized profit factor calculation
+            # Vectorized profit factor calculation with safe division
             gross_profit = np.sum(positive_returns) if len(positive_returns) > 0 else 0.0
             gross_loss = abs(np.sum(negative_returns)) if len(negative_returns) > 0 else 0.0
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+            profit_factor = safe_divide(gross_profit, gross_loss) if gross_loss > 0 else float('inf')
             
-            # Calmar ratio
+            # Calmar ratio with safe division
             total_return = (cumulative_returns[-1] - 1) if len(cumulative_returns) > 0 else 0.0
-            calmar_ratio = total_return / max_drawdown if max_drawdown > 0 else 0.0
+            calmar_ratio = safe_divide(total_return, max_drawdown) if max_drawdown > 0 else 0.0
             
             # Regime-specific performance adjustment
             performance_multiplier = self._get_regime_performance_multiplier(regime_id)

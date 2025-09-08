@@ -11,6 +11,27 @@ import pandas as pd
 from typing import Dict, Any, Optional, List, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
+
+# Import enhanced components
+from src.utils.common_operations import (
+    format_datetime, get_current_datetime, safe_file_exists,
+    ensure_directory, safe_json_dump, safe_json_load,
+    validate_file_path, get_file_size, check_disk_space,
+    create_directory_if_not_exists, get_timestamp
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_numeric_range, is_finite_number
+)
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, 
+    timeout, error_boundary, compose, validate_data_quality, 
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 
     financial_metrics_context,
@@ -47,43 +68,47 @@ class ValidationResult:
     message: str
     details: Optional[Dict[str, Any]] = None
 
+@handles_errors(default_return=ValidationResult(ValidationStatus.FAILED, "Validation failed"), context="validate_financial_logger_inputs")
 def _validate_financial_logger_inputs(symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool) -> ValidationResult:
-    """Validate inputs for financial logger initialization."""
+    """Validate inputs for financial logger initialization using enhanced validation."""
     try:
-        # Validate symbol
+        # Validate symbol using common operations
         if not symbol or not isinstance(symbol, str):
-            return ValidationResult(ValidationStatus.ERROR, "Symbol must be a non-empty string")
+            raise ValidationError("Symbol must be a non-empty string")
         
         if not symbol.isupper() or len(symbol) < 3:
-            return ValidationResult(ValidationStatus.ERROR, f"Invalid symbol format: {symbol}")
+            raise ValidationError(f"Invalid symbol format: {symbol}")
         
         # Validate exchange
         valid_exchanges = {'BINANCE', 'MEXC', 'GATEIO', 'KUCOIN', 'OKX'}
         if exchange not in valid_exchanges:
-            return ValidationResult(ValidationStatus.ERROR, f"Invalid exchange: {exchange}")
+            raise ValidationError(f"Invalid exchange: {exchange}")
         
         # Validate timeframe
         valid_timeframes = {'1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d'}
         if timeframe not in valid_timeframes:
-            return ValidationResult(ValidationStatus.ERROR, f"Invalid timeframe: {timeframe}")
+            raise ValidationError(f"Invalid timeframe: {timeframe}")
         
         # Validate enhanced logging flag
         if not isinstance(enable_enhanced_logging, bool):
-            return ValidationResult(ValidationStatus.ERROR, "enable_enhanced_logging must be a boolean")
+            raise ValidationError("enable_enhanced_logging must be a boolean")
         
         return ValidationResult(ValidationStatus.SUCCESS, "All inputs valid")
         
+    except ValidationError as e:
+        return ValidationResult(ValidationStatus.ERROR, str(e))
     except Exception as e:
         return ValidationResult(ValidationStatus.ERROR, f"Validation error: {e}")
 
+@handles_errors(default_return=ValidationResult(ValidationStatus.FAILED, "DataFrame validation failed"), context="validate_dataframe_input")
 def _validate_dataframe_input(data: Optional[pd.DataFrame], required_columns: Optional[List[str]] = None) -> ValidationResult:
-    """Validate DataFrame input for financial logging."""
+    """Validate DataFrame input for financial logging using enhanced validation."""
     try:
         if data is None:
             return ValidationResult(ValidationStatus.WARNING, "No data provided, using fallback logging")
         
         if not isinstance(data, pd.DataFrame):
-            return ValidationResult(ValidationStatus.ERROR, "Data must be a pandas DataFrame")
+            raise ValidationError("Data must be a pandas DataFrame")
         
         if data.empty:
             return ValidationResult(ValidationStatus.WARNING, "Empty DataFrame provided")
@@ -92,10 +117,12 @@ def _validate_dataframe_input(data: Optional[pd.DataFrame], required_columns: Op
         if required_columns:
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
-                return ValidationResult(ValidationStatus.ERROR, f"Missing required columns: {missing_columns}")
+                raise ValidationError(f"Missing required columns: {missing_columns}")
         
         return ValidationResult(ValidationStatus.SUCCESS, "DataFrame validation passed")
         
+    except ValidationError as e:
+        return ValidationResult(ValidationStatus.ERROR, str(e))
     except Exception as e:
         return ValidationResult(ValidationStatus.ERROR, f"DataFrame validation error: {e}")
 

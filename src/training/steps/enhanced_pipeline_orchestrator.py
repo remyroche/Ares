@@ -20,6 +20,9 @@ from enum import Enum
 
 from src.utils.logger import system_logger
 from .enhanced_error_handling import (
+import logging
+import sys
+
     EnhancedErrorHandler, 
     CriticalProcessError, 
     ErrorSeverity, 

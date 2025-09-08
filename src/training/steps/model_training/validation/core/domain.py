@@ -24,3 +24,4 @@ class ParquetDatasetManager:
 """Domain classes for validation."""
 
 import pandas as pd
+import json

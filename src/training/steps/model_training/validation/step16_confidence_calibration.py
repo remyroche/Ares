@@ -30,6 +30,9 @@ except Exception:
 # Decorator imports with fallbacks
 try:
     from src.utils.decorators import deterministic_seed, idempotent_step, timeout, validates, log_execution_time, cached, log_call, circuit_breaker
+import collections
+import logging
+
 except ImportError:
     def deterministic_seed(seed: Any) -> None:
         def decorator(func: Any) -> Any:

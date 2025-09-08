@@ -25,6 +25,8 @@ from src.core.errors import (
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
 
 """Step 14: Enhanced Tactician Labeling - Per-Regime Implementation with M1 Optimizations.
 
@@ -53,6 +55,7 @@ try:
     from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
     from src.utils.optimized_data_manager import get_optimized_data_manager
+import logging
 
     # Initialize optimization managers
     m1_gpu_manager = get_m1_gpu_manager()
@@ -77,9 +80,7 @@ except ImportError as e:
     step_optimizer = None
     data_manager = None
 
-import numpy as np
 
-import pandas as pd
 
 logger = get_logger('Step14TacticianLabelingPerRegime')
 

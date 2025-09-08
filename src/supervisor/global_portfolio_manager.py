@@ -14,6 +14,7 @@ from typing import Any
 from src.utils.compat import handle_specific_errors
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid
+import time
 
 # src/supervisor/global_portfolio_manager.py
 

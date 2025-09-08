@@ -36,6 +36,8 @@ from src.config.sr_config_loader import get_sr_config, SROptimizationConfig
 from src.core.sr_error_handlers import sr_error_handler, SROptimizationError, SRDataError, SRConfigurationError, validate_sr_data, validate_sr_parameters, handle_sr_error
 if TYPE_CHECKING:
     from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple
+import logging
+import time
 
 @dataclass
 class OptimizationResult:

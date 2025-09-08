@@ -21,6 +21,7 @@ import pywt
 
 from ..utils.logger import system_logger
 from .utils.warning_symbols import warning, initialization_error
+import logging
 
 @dataclass
 class WaveletSignal:

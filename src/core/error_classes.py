@@ -9,6 +9,8 @@ import logging
 # Import existing error infrastructure
 try:
     from .errors.base import AppError as BaseAppError, ErrorCode
+import datetime
+
     # Use existing AppError as base
     AppError = BaseAppError
 except ImportError:

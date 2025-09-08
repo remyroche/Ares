@@ -13,6 +13,7 @@ from .core.domain import (
     validate_data_quality
 )
 from ..utils.logger import system_logger
+import logging
 
 """
 Data manager for pipeline data operations (minimal scaffold).

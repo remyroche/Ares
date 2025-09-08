@@ -11,6 +11,9 @@ from matplotlib.figure import Figure
 from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
+import logging
+import time
+import typing
 
 class MonitoringVisualization:
     """

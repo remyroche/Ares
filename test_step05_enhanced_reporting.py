@@ -16,6 +16,7 @@ import os
 sys.path.append('src')
 
 from src.training.steps.step05_enhanced_reporting import Step05EnhancedReporter
+import time
 
 
 def create_sample_labeled_data():

@@ -28,6 +28,7 @@ from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.vectorized_processing_core import get_vectorized_processing_core
 from src.utils.optimized_data_manager import get_optimized_data_manager
 from src.utils.enhanced_step_optimizations import get_step_optimization_manager, create_optimization_profile, WorkloadType, OptimizationStrategy
+import logging
 
 logger = get_logger('Step13AnalystEnsembleCreationPerRegime')
 

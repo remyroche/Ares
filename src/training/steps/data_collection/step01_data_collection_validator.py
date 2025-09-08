@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """Validator for Step 1: Data Collection."""
 
 import asyncio
@@ -15,6 +17,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
+import datetime
+import logging
 
 class Step1DataCollectionValidator:
     """Validator for Step 1: Data Collection."""

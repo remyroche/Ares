@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
+
 """
 Step 12 Modular: Hyperparameter Optimization
 
@@ -14,7 +16,6 @@ from typing import Dict, Any, Tuple, Optional
 
 try:
     import optuna
-    import pandas as pd
     from sklearn.metrics import accuracy_score, log_loss
     OPTUNA_AVAILABLE = True
 except ImportError:
@@ -22,6 +23,7 @@ except ImportError:
 
 from ..base.logger import setup_step12_logger
 from ..base.utils import error, failed, timeout, warning
+import logging
 
 logger = setup_step12_logger()
 

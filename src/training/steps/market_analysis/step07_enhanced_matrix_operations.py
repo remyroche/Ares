@@ -4,6 +4,8 @@ import logging
 import torch
 from ....utils.logger import get_system_logger_with_comprehensive_integration
 from ....core.decorators import handles_errors, log_execution_time, cached, CachePolicy, log_call, circuit_breaker, validates
+import numpy as np
+
 from ..enhanced_error_handling import (
 from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
@@ -2356,7 +2358,6 @@ class Step7EnhancedMatrixOperations:
     def _find_high_correlations(self, correlation_matrix: pd.DataFrame, threshold: float) -> list[dict[str, Any]]:
         """Find high correlation pairs using vectorized operations for better performance."""
         try:
-            import numpy as np
 
             # Convert to numpy array for vectorized operations
             corr_array = correlation_matrix.values
@@ -2405,7 +2406,6 @@ class Step7EnhancedMatrixOperations:
     def _compute_correlation_matrix_optimized(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute correlation matrix using optimized chunked approach for large datasets."""
         try:
-            import numpy as np
 
             n_features = len(df.columns)
             self.logger.info(f'🔢 Computing correlation matrix for {n_features} features using optimized approach')

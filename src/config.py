@@ -26,6 +26,8 @@ def get_complete_config() -> dict[str, Any]:
 def get_environment_config() -> dict[str, Any]:
     """Get environment configuration."""
     from . import get_environment_settings
+import logging
+
     try:
         env_settings = get_environment_settings()
         return {

@@ -41,6 +41,8 @@ from src.utils.decorators import traced, validates
 # Financial Metrics Logging import
 try:
     from src.training.steps.backtesting.step20_financial_logging import Step20FinancialLogger
+import logging
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

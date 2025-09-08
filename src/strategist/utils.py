@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 import pandas as pd
+import logging
 
 """Strategist utilities."""
 

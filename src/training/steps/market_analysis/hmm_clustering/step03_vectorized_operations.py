@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 #!/usr/bin/env python3
 """Vectorized Operations and Numba JIT Optimizations for Step03.
 
@@ -668,8 +671,6 @@ def get_vectorized_operations_manager() -> VectorizedOperationsManager:
 
 if __name__ == "__main__":
     # Example usage
-    import pandas as pd
-    import numpy as np
 
     # Create sample data
     np.random.seed(42)

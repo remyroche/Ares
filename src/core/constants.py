@@ -4,6 +4,7 @@ Core constants for the Ares project.
 
 import os
 from typing import List, Dict, Any
+import pandas as pd
 
 # Database constants
 DEFAULT_DATABASE_PATH = os.path.join(os.getcwd(), "data", "ares.db")
@@ -33,6 +34,7 @@ TYPE_CHECKING = False
 TORCH_AVAILABLE = False
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     pass

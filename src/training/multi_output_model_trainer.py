@@ -44,6 +44,8 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit
 try:
     from src.training.steps.step06_labeling_components.profit_based_feature_engineering import ProfitBasedFeatureEngineering
+import logging
+
     PROFIT_FEATURES_AVAILABLE = True
 except ImportError:
     PROFIT_FEATURES_AVAILABLE = False

@@ -1,6 +1,8 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
 
 """Step 17: Final Parameters Optimization - Per-Regime Implementation with Hardware Acceleration.
 
@@ -44,7 +46,8 @@ except ImportError:
     RegimeProcessingContext = None
     per_regime_step = None
     pipeline_standards = None
-import numpy as np
+import logging
+import typing
 
 logger = get_logger('Step17FinalParametersOptimizationPerRegime')
 

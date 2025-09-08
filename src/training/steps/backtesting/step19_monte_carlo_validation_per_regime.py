@@ -32,6 +32,8 @@ from src.core.errors import (
 # Financial Metrics Logging import
 try:
     from src.training.steps.backtesting.step19_financial_logging import Step19FinancialLogger
+import logging
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

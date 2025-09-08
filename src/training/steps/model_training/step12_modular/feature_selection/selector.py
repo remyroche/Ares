@@ -20,6 +20,7 @@ except ImportError:
 
 from ..base.logger import setup_step12_logger
 from ..base.utils import error, failed, timeout, warning
+import logging
 
 logger = setup_step12_logger()
 

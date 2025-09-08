@@ -9,6 +9,7 @@ from dataclasses_json import dataclass_json
 from ...utils.logger import system_logger
 if TYPE_CHECKING:
     import asyncio
+import logging
 
 class ModelDriftType(Enum):
     """Model drift types."""

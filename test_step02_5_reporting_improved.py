@@ -11,6 +11,8 @@ import numpy as np
 from datetime import datetime, timedelta
 from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 from src.training.reports import save_training_report
+import sys
+import time
 
 def create_test_data():
     """Create test data for reporting."""

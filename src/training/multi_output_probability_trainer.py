@@ -25,6 +25,9 @@ except ImportError:
 
 try:
     from catboost import CatBoostClassifier
+import logging
+import time
+
     CATBOOST_AVAILABLE = True
 except ImportError:
     CatBoostClassifier = None

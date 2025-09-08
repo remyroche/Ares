@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+import logging
 
 class ExchangeType(Enum):
     """Supported exchange types."""

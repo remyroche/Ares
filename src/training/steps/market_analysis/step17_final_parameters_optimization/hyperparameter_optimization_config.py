@@ -11,6 +11,7 @@ metrics for Step 12: Final Parameters Optimization.
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+import numpy as np
 
 class OptimizationStrategy(Enum):
     """Optimization strategies for different parameter categories."""

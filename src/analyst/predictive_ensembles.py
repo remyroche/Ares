@@ -12,6 +12,7 @@ from src.utils.warning_symbols import (
     missing,
 )
 from ..core.decorators import handles_errors
+import time
 
 # Model imports - uncomment when models are available
 # Note: These imports are commented out to avoid import errors

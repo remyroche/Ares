@@ -22,6 +22,8 @@ import warnings
 # Avoid circular import - import these functions when needed
 # from src.training.reports import save_training_report, CentralizedReportManager
 from src.utils.logger import system_logger
+import logging
+import time
 
 logger = system_logger.getChild('Step04EnhancedReporting')
 

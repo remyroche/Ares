@@ -7,6 +7,7 @@ import asyncio
 import signal
 from .logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing, warning
+import logging
 
 class SignalHandler:
     """

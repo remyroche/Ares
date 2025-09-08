@@ -18,6 +18,7 @@ import torch
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
 import numpy as np
+import logging
 
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""

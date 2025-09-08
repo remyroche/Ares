@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import pandas as pd
 import numpy as np
+import time
 
 class ReportFormat(Enum):
     """Report output formats."""

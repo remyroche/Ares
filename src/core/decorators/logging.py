@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from typing import Any, Callable
 
 from .compose import P, R, uniform_wrapper
+import numpy as np
 
 # Context variable for correlation ID
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default = None)

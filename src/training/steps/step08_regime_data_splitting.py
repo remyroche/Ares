@@ -42,6 +42,10 @@ else:
         raise ImportError('unified_data_loader module not available')
 
 import pandas as pd
+import collections
+import logging
+import numpy as np
+import time
 
 # Fallback utilities now imported from src.utils.common_operations
 if system_logger is None:

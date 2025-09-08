@@ -11,6 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import os
 from src.utils.decorators import handles_errors
+import warnings
+
 from ..enhanced_error_handling import (
 from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
@@ -75,7 +77,6 @@ multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
 import os
-import warnings
 
 from src.utils.decorators import validates, traced
 

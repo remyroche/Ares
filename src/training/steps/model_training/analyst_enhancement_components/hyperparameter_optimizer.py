@@ -10,6 +10,8 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 import optuna
 from sklearn.model_selection import cross_val_score
 from src.utils.logger import system_logger
+import logging
+import numpy as np
 
 class HyperparameterOptimizer:
     """Handles hyperparameter optimization for analyst models."""

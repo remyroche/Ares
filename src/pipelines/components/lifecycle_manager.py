@@ -10,6 +10,7 @@ from .core.domain import (
     performance_monitor
 )
 from ..utils.logger import system_logger
+import logging
 
 """
 Lifecycle manager for pipeline components (minimal scaffold).

@@ -18,6 +18,7 @@ def handles_errors(*args, **kwargs) -> Callable:
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
                         from src.utils.logger import system_logger
+import logging
                         
                         # If it's already an AppError, re-raise it
                         if isinstance(e, AppError):

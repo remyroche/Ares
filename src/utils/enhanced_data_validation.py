@@ -27,6 +27,7 @@ from src.core.domain import (
 )
 from src.utils.base_validator import BaseValidator
 import pandas as pd
+import typing
 
 logger = logging.getLogger(__name__)
 

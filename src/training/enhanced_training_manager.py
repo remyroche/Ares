@@ -34,6 +34,7 @@ from ..utils.model_performance_monitor import ModelPerformanceMonitor
 from ..utils.step_dependency_validator import StepDependencyValidator
 from .steps.market_analysis.multi_timeframe_training.multi_timeframe_training_manager import MultiTimeframeTrainingManager
 from .enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized
+import logging
 
 class ComputationalOptimizationManager:
     """Computational optimization manager for advanced parameter optimization."""

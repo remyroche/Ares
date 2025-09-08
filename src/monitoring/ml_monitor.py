@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any
 
 from ..utils.logger import system_logger
+import logging
 
 class DriftType(Enum):
     """Drift types for model monitoring."""

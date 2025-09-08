@@ -12,6 +12,7 @@ from ..utils.warning_symbols import connection_error, error, failed, invalid, mi
 from src.core.error_classes import execution_error, initialization_error
 from ..core.decorators import handles_errors
 from ..core.constants import DEFAULT_DATABASE_PATH, DEFAULT_MAX_RECOVERY_ATTEMPTS
+import logging
 
 class ConnectionPool:
     """Async connection pool for database operations."""

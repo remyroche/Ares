@@ -13,6 +13,8 @@ from src.core.errors import ValidationError, register_exception_mapping
 
 import pandas as pd
 import random
+import logging
+import numpy as np
 
 @validates(strict = True)
 @handles_errors(ValueError, TypeError, map_to = ValidationError)

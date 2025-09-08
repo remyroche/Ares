@@ -564,12 +564,12 @@ class FeatureInteractionEngine:
                 self.logger.info(f'   Using dynamic periods: {bool(self.dynamic_lookback_periods)}')
 
             # Fail-fast validation: Check if we have enough data (except for first few rows)
-            min_required_rows = 100  # Minimum rows needed for reliable indicators
+            min_required_rows = 500  # Minimum rows needed for reliable indicators
             if len(market_data) < min_required_rows:
                 self.logger.warning(f'⚠️ Data has only {len(market_data)} rows, minimum {min_required_rows} recommended')
-                if len(market_data) < 20:  # Critical threshold
+                if len(market_data) < 500:  # Critical threshold
                     raise CriticalProcessError(
-                        f"Insufficient data for feature extraction: {len(market_data)} rows (minimum 20 required)",
+                        f"Insufficient data for feature extraction: {len(market_data)} rows (minimum 500 required)",
                         severity=ErrorSeverity.CRITICAL,
                         category=ErrorCategory.DATA_VALIDATION
                     )

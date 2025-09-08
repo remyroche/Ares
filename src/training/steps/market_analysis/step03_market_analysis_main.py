@@ -31,29 +31,53 @@ from src.core.decorators import handles_errors
 from src.training.reports import save_training_report
 import logging
 
-def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
-    """Analyze HMM clustering results and return comprehensive summary."""
+async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
+    """Analyze HMM clustering results and return comprehensive summary with optimizations."""
     try:
-        # Load HMM composite metadata
+        # Import optimization components
+        from src.training.steps.market_analysis.hmm_clustering.step03_fast_fail_validation import get_fast_fail_validator
+        from src.training.steps.market_analysis.hmm_clustering.step03_parallel_io_operations import get_parallel_io_operations
+        from src.training.steps.market_analysis.hmm_clustering.step03_intelligent_caching import get_intelligent_cache
+        
+        # Get optimization components
+        validator = get_fast_fail_validator()
+        io_ops = get_parallel_io_operations()
+        cache = get_intelligent_cache()
+        
+        # Check cache first
+        cache_key = f"hmm_analysis_{symbol}_{exchange}_{timeframe}"
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            enhanced_logger.logger.info("📦 Using cached HMM clustering analysis results")
+            return cached_result
+        
+        # Fast fail validation for file existence
         meta_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
-        if not meta_file.exists():
-            raise FileNotFoundError(f"HMM metadata file not found: {meta_file}")
+        file_validation = await validator.validate_data_file(meta_file)
+        if not file_validation.passed:
+            raise FileNotFoundError(f"HMM metadata file validation failed: {file_validation.message}")
 
-        with open(meta_file, 'r') as f:
-            meta_data = json.load(f)
+        # Load HMM composite metadata with async I/O
+        meta_data = await io_ops.load_file_async(meta_file, 'json')
 
-        # Load HMM block states
+        # Load HMM block states and clusters in parallel
         block_states_file = Path("data/training") / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
+        clusters_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+        
+        # Prepare files for parallel loading
+        files_to_load = []
         if block_states_file.exists():
-            block_states_df = pd.read_parquet(block_states_file)
+            files_to_load.append(block_states_file)
+        if clusters_file.exists():
+            files_to_load.append(clusters_file)
+        
+        # Load files in parallel
+        if files_to_load:
+            loaded_dataframes = await io_ops.load_files_parallel(files_to_load)
+            block_states_df = loaded_dataframes[0] if block_states_file.exists() else None
+            clusters_df = loaded_dataframes[1] if clusters_file.exists() and len(loaded_dataframes) > 1 else loaded_dataframes[0] if clusters_file.exists() else None
         else:
             block_states_df = None
-
-        # Load HMM composite clusters
-        clusters_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
-        if clusters_file.exists():
-            clusters_df = pd.read_parquet(clusters_file)
-        else:
             clusters_df = None
 
         # Analyze HMM blocks
@@ -84,7 +108,7 @@ def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -
         combinations = meta_data.get("combination_counts", {})
         top_combinations = sorted(combinations.items(), key=lambda x: x[1], reverse=True)[:10]
 
-        return {
+        result = {
             "blocks_analysis": blocks_analysis,
             "cluster_analysis": cluster_analysis,
             "regime_combinations": {
@@ -103,6 +127,11 @@ def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -
                 "total_regime_combinations": len(combinations)
             }
         }
+        
+        # Cache the result
+        cache.set(cache_key, result, ttl_seconds=3600, tags=['hmm_analysis'])
+        
+        return result
 
     except Exception as e:
         raise RuntimeError(f"Failed to analyze HMM clustering results: {str(e)}") from e
@@ -357,7 +386,7 @@ def generate_recommendations(hmm_results, regime_results, feature_results, matri
     return recommendations
 
 async def main():
-    """Main function to run market analysis pipeline with enhanced logging."""
+    """Main function to run market analysis pipeline with enhanced logging and optimizations."""
     # Configuration
     symbol = "ETHUSDT"
     exchange = "BINANCE"
@@ -374,6 +403,67 @@ async def main():
         'feature_selection': True,
         'random_state': 42,
     }
+    
+    # Check if optimized version should be used
+    use_optimized = True  # Set to True to use optimized version
+    
+    if use_optimized:
+        enhanced_logger.logger.info("🚀 Using OPTIMIZED Step03 with comprehensive optimizations")
+        enhanced_logger.logger.info("=" * 80)
+        
+        # Import and run optimized version
+        from src.training.steps.market_analysis.hmm_clustering.step03_enhanced_optimized import run_optimized_step03, OptimizedStep03Config
+        
+        # Create optimized configuration
+        optimized_config = OptimizedStep03Config(
+            max_memory_usage_percent=80.0,
+            chunk_size_mb=100,
+            enable_memory_monitoring=True,
+            max_concurrent_files=10,
+            max_workers=4,
+            enable_compression=True,
+            max_memory_cache_size_mb=500,
+            max_disk_cache_size_mb=2000,
+            cache_ttl_seconds=3600,
+            min_available_memory_gb=2.0,
+            min_disk_space_gb=5.0,
+            enable_extensive_logging=True,
+            enable_performance_monitoring=True,
+            enable_parallel_processing=True,
+            enable_chunked_processing=True
+        )
+        
+        try:
+            # Run optimized Step03
+            results = await run_optimized_step03(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=config['force_rerun'],
+                config=optimized_config
+            )
+            
+            enhanced_logger.logger.info("🎉 OPTIMIZED MARKET ANALYSIS COMPLETED SUCCESSFULLY!")
+            enhanced_logger.logger.info("=" * 80)
+            enhanced_logger.logger.info(f"⏱️ Total execution time: {results['execution_time']:.2f} seconds")
+            enhanced_logger.logger.info(f"✅ Success: {results['success']}")
+            
+            # Log performance metrics
+            if 'performance_report' in results:
+                perf = results['performance_report']
+                enhanced_logger.logger.info("📊 Performance Metrics:")
+                enhanced_logger.logger.info(f"   🧠 Memory usage: {perf.get('memory_performance', {}).get('process_memory', {}).get('current_mb', 0):.1f}MB")
+                enhanced_logger.logger.info(f"   💾 Cache hit rate: {perf.get('cache_performance', {}).get('performance', {}).get('hit_rate', 0):.1%}")
+                enhanced_logger.logger.info(f"   📁 I/O throughput: {perf.get('io_performance', {}).get('io_performance', {}).get('average_throughput_mbps', 0):.1f} MB/s")
+            
+            enhanced_logger.logger.info("=" * 80)
+            return
+            
+        except Exception as e:
+            enhanced_logger.logger.error(f"❌ Optimized Step03 failed: {e}")
+            enhanced_logger.logger.info("🔄 Falling back to standard Step03...")
+            # Fall through to standard implementation
     
     # Start enhanced logging
     correlation_id = f"market_analysis_{symbol}_{exchange}_{int(time.time())}"

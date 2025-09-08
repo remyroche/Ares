@@ -2,12 +2,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
-import numpy as np
-import pandas as pd
-import numpy as np
-import pandas as pd
-import numpy as np
-import pandas as pd
 
 """
 Common Operations Utility Module with Comprehensive Error Handling
@@ -30,22 +24,28 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+# Import validation with proper error handling
 try:
-except Exception:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"NumPy not available: {e}")
     np = None
+    NUMPY_AVAILABLE = False
 
 try:
-except Exception:
-    pd = None
-
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Pandas not available: {e}")
+    
     class _PDStub:
-
         class DataFrame:
             pass
-
         class Series:
             pass
     pd = _PDStub()
+    PANDAS_AVAILABLE = False
 
 import os
 

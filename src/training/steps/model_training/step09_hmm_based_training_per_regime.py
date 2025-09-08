@@ -2,15 +2,15 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-# Import enhanced reporting system with proper error handling
+# Import financial metrics logger
 try:
-    from src.training.steps.model_training.step09_enhanced_reporting import Step09EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.model_training.step09_financial_logging import Step09FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError as e:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step09EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step09FinancialLogger = None
     import logging
-    logging.warning(f"Enhanced reporting not available: {e}")
+    logging.warning(f"Financial logging not available: {e}")
 
 """Step 9: HMM-Based Training - Per-Regime Implementation.
 
@@ -52,17 +52,17 @@ class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):
         self.regime_specific_configs = config.get('regime_specific_training_configs', {})
         self.adaptive_training_parameters = config.get('adaptive_training_parameters_per_regime', True)
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step09EnhancedReporter is not None:
+        # Initialize financial metrics logger
+        if FINANCIAL_LOGGING_AVAILABLE and Step09FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step09EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step09')
+                self.financial_logger = Step09FinancialLogger(symbol="", exchange="", timeframe="")
+                self.logger.info('✅ Financial metrics logger initialized for Step09')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback reporting')
+            self.financial_logger = None
 
     @traced(span_name='execute_per_regime_hmm_training')
     @per_regime_step('step09_hmm_based_training')
@@ -506,68 +506,51 @@ class PerRegimeHMMBasedTrainingStep(EnhancedHMMBasedTrainingStep):
                 json.dump(training_results, f, indent = 2, default = str)
             self.logger.info(f'✅ Saved HMM training results for regime {regime_id}: {training_path}')
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None:
+            # Financial metrics logging integration
+            if self.financial_logger is not None:
                 try:
-                    # Prepare comprehensive training data for enhanced reporting
-                    feature_data = {
-                        'selected_features': training_results.get('selected_features', []),
-                        'feature_importance': training_results.get('feature_importance', {}),
-                        'data_completeness': 0.95,
-                        'feature_correlation_score': 0.8,
-                        'class_balance_score': 0.7,
-                        'temporal_stability': 0.85,
-                        'noise_level': 0.1,
-                        'outlier_percentage': 0.05,
-                        'data_leakage_score': 0.02
+                    # Update financial logger with current symbol/exchange/timeframe
+                    self.financial_logger.symbol = symbol
+                    self.financial_logger.exchange = exchange
+                    self.financial_logger.timeframe = timeframe
+                    
+                    # Prepare data for financial logging
+                    model_performance = {
+                        'overall_accuracy': training_results.get('overall_accuracy', 0.0),
+                        'overall_precision': training_results.get('overall_precision', 0.0),
+                        'overall_recall': training_results.get('overall_recall', 0.0),
+                        'overall_f1_score': training_results.get('overall_f1_score', 0.0),
+                        'model_stability_score': training_results.get('model_stability_score', 0.0),
+                        'ensemble_performance': training_results.get('ensemble_performance', {})
                     }
-
-                    regime_configs = {regime_id: self.regime_specific_configs.get(regime_id, {})}
-
-                    execution_metadata = {
+                    
+                    execution_data = {
                         'total_training_time': training_results.get('total_training_time', 0),
                         'parallel_efficiency': 0.85,
                         'memory_utilization': 0.75,
-                        'gpu_acceleration': 0.8,
-                        'hp_tuning_efficiency': 0.75,
-                        'early_stopping_effectiveness': 0.9,
-                        'cv_folds': 5
+                        'gpu_acceleration': 0.8
                     }
-
-                    performance_data = {
-                        'evaluation_metrics': training_results.get('evaluation_metrics', {}),
-                        'model_comparison': training_results.get('model_comparison', {})
-                    }
-
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
+                    
+                    regime_models = {regime_id: training_results.get('regime_models', {}).get(regime_id, {})}
+                    
+                    # Log financial metrics
+                    self.financial_logger.log_step_execution(
                         training_results=training_results,
-                        feature_data=feature_data,
-                        regime_configs=regime_configs,
-                        execution_metadata=execution_metadata,
-                        performance_data=performance_data
-                    )
-
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe
+                        model_performance=model_performance,
+                        execution_data=execution_data,
+                        regime_models=regime_models
                     )
 
                     if self.logger:
-                        self.logger.info(f'📊 Enhanced Step09 analysis completed - saved {len(saved_files)} report files')
-                        for file_path in saved_files:
-                            self.logger.info(f'   📄 {file_path}')
+                        self.logger.info(f'💰 Financial metrics logged for Step09 regime {regime_id}')
 
                 except Exception as e:
                     if self.logger:
-                        self.logger.warning(f'Enhanced reporting failed, continuing with basic reporting: {e}')
+                        self.logger.warning(f'Financial logging failed, continuing with basic reporting: {e}')
 
             else:
                 if self.logger:
-                    self.logger.info('Enhanced reporting not available, using basic reporting only')
+                    self.logger.info('Financial logging not available, using basic reporting only')
 
             return True
         except Exception as e:

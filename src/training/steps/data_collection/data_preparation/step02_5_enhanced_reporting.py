@@ -481,8 +481,8 @@ class Step02_5EnhancedReporter:
                     'export_ready_data': self._prepare_export_data(sr_levels, ml_results, execution_data)
                 }
 
-                # Log key financial metrics from the report
-                self._log_financial_metrics_from_report(report, self.symbol, self.exchange, self.timeframe)
+                # Log key financial metrics directly from step results
+                self._log_financial_metrics_from_results(sr_levels, ml_results, execution_data, data)
 
                 financial_logger.log_step_end("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe, success=True)
                 return report
@@ -501,196 +501,199 @@ class Step02_5EnhancedReporter:
                     }
                 }
 
-    def _log_financial_metrics_from_report(self, report: Dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
-        """Log key financial metrics from the comprehensive report."""
+    def _log_financial_metrics_from_results(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any], execution_data: Dict[str, Any], data: Optional[pd.DataFrame]) -> None:
+        """Log key financial metrics directly from step results."""
         try:
             # Log ML model performance metrics
-            ml_insights = report.get('ml_model_insights', {})
-            if ml_insights:
+            if ml_results:
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="ml_direction_accuracy",
-                    metric_value=ml_insights.get('direction_accuracy', 0.0),
+                    metric_value=ml_results.get('direction_accuracy', 0.0),
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="ml_volatility_mae",
-                    metric_value=ml_insights.get('volatility_mae', 0.0),
+                    metric_value=ml_results.get('volatility_mae', 0.0),
                     metric_type="risk",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="ml_f1_score",
-                    metric_value=ml_insights.get('f1_score', 0.0),
+                    metric_value=ml_results.get('f1_score', 0.0),
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
             
             # Log S/R level metrics
-            sr_analysis = report.get('sr_level_analysis', {})
-            if sr_analysis:
-                support_analysis = sr_analysis.get('support_analysis', {})
-                resistance_analysis = sr_analysis.get('resistance_analysis', {})
+            if sr_levels:
+                support_levels = sr_levels.get('support_levels', [])
+                resistance_levels = sr_levels.get('resistance_levels', [])
                 
-                if support_analysis:
+                if support_levels:
+                    support_strengths = [level.get('strength', 0) for level in support_levels]
                     financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
                         metric_name="support_levels_count",
-                        metric_value=float(support_analysis.get('total_levels', 0)),
+                        metric_value=float(len(support_levels)),
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
                     
                     financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
                         metric_name="support_average_strength",
-                        metric_value=support_analysis.get('average_strength', 0.0),
+                        metric_value=np.mean(support_strengths) if support_strengths else 0.0,
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
                 
-                if resistance_analysis:
+                if resistance_levels:
+                    resistance_strengths = [level.get('strength', 0) for level in resistance_levels]
                     financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
                         metric_name="resistance_levels_count",
-                        metric_value=float(resistance_analysis.get('total_levels', 0)),
+                        metric_value=float(len(resistance_levels)),
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
                     
                     financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
                         metric_name="resistance_average_strength",
-                        metric_value=resistance_analysis.get('average_strength', 0.0),
+                        metric_value=np.mean(resistance_strengths) if resistance_strengths else 0.0,
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
             
             # Log data quality metrics
-            data_quality = report.get('data_quality_assessment', {})
-            if data_quality:
+            if data is not None and not data.empty:
+                total_rows, total_columns = data.shape
+                missing_values = data.isnull().sum().sum()
+                missing_values_percent = (missing_values / (total_rows * total_columns)) * 100 if total_rows > 0 else 0
+                completeness_score = (1 - missing_values_percent/100) * 100
+                
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="data_completeness_score",
-                    metric_value=data_quality.get('data_completeness_score', 0.0),
+                    metric_value=completeness_score,
                     metric_type="quality",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="missing_values_percent",
-                    metric_value=data_quality.get('missing_values_percent', 0.0),
+                    metric_value=missing_values_percent,
                     metric_type="quality",
                     step_name="Step02_5_SR_Optimization"
                 )
             
             # Log performance metrics
-            performance_metrics = report.get('performance_metrics', {})
-            if performance_metrics:
+            if execution_data:
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="execution_time_seconds",
-                    metric_value=performance_metrics.get('execution_time_seconds', 0.0),
+                    metric_value=execution_data.get('execution_time', 0.0),
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="memory_usage_mb",
-                    metric_value=performance_metrics.get('memory_usage_mb', 0.0),
+                    metric_value=execution_data.get('memory_usage', 0.0),
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
             
-            # Log trading recommendations as financial metrics
-            trading_recs = report.get('trading_recommendations', {})
-            if trading_recs:
-                # Convert signal to numeric value
+            # Log trading signal based on ML results
+            if ml_results:
+                direction_accuracy = ml_results.get('direction_accuracy', 0.5)
                 signal_value = 0.0
-                signal = trading_recs.get('primary_signal', 'NEUTRAL')
-                if signal == 'BULLISH':
-                    signal_value = 1.0
-                elif signal == 'BEARISH':
-                    signal_value = -1.0
+                if direction_accuracy > 0.6:
+                    signal_value = 1.0  # Bullish
+                elif direction_accuracy < 0.4:
+                    signal_value = -1.0  # Bearish
                 
                 financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     metric_name="trading_signal",
                     metric_value=signal_value,
                     metric_type="signal",
                     step_name="Step02_5_SR_Optimization",
-                    additional_data={'signal_text': signal}
+                    additional_data={'accuracy': direction_accuracy}
                 )
             
             # Log comprehensive trading performance if we have enough data
-            if ml_insights and sr_analysis:
-                # Create performance data dictionary for comprehensive logging
+            if ml_results and sr_levels:
+                direction_accuracy = ml_results.get('direction_accuracy', 0.5)
+                volatility_mae = ml_results.get('volatility_mae', 0.02)
+                
                 performance_data = {
-                    'total_return': ml_insights.get('direction_accuracy', 0.5) * 0.1 - 0.05,  # Estimate based on accuracy
-                    'annualized_return': ml_insights.get('direction_accuracy', 0.5) * 0.12 - 0.06,  # Estimate
-                    'volatility': ml_insights.get('volatility_mae', 0.02) * 10,  # Convert MAE to volatility estimate
-                    'sharpe_ratio': (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 2,  # Estimate Sharpe
-                    'sortino_ratio': (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 2.5,  # Estimate Sortino
-                    'calmar_ratio': ml_insights.get('direction_accuracy', 0.5) / max(ml_insights.get('volatility_mae', 0.02) * 5, 0.01),
-                    'max_drawdown': ml_insights.get('volatility_mae', 0.02) * 5,  # Estimate max drawdown
+                    'total_return': direction_accuracy * 0.1 - 0.05,  # Estimate based on accuracy
+                    'annualized_return': direction_accuracy * 0.12 - 0.06,  # Estimate
+                    'volatility': volatility_mae * 10,  # Convert MAE to volatility estimate
+                    'sharpe_ratio': (direction_accuracy - 0.5) * 2,  # Estimate Sharpe
+                    'sortino_ratio': (direction_accuracy - 0.5) * 2.5,  # Estimate Sortino
+                    'calmar_ratio': direction_accuracy / max(volatility_mae * 5, 0.01),
+                    'max_drawdown': volatility_mae * 5,  # Estimate max drawdown
                     'max_drawdown_duration': 20,  # Default estimate
-                    'var_95': ml_insights.get('volatility_mae', 0.02) * 3,  # Estimate VaR
-                    'cvar_95': ml_insights.get('volatility_mae', 0.02) * 4,  # Estimate CVaR
-                    'win_rate': ml_insights.get('direction_accuracy', 0.5),
-                    'profit_factor': 1.0 + (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 0.5,  # Estimate
+                    'var_95': volatility_mae * 3,  # Estimate VaR
+                    'cvar_95': volatility_mae * 4,  # Estimate CVaR
+                    'win_rate': direction_accuracy,
+                    'profit_factor': 1.0 + (direction_accuracy - 0.5) * 0.5,  # Estimate
                     'avg_win': 0.02,  # Default estimate
                     'avg_loss': 0.015,  # Default estimate
                     'largest_win': 0.05,  # Default estimate
-                    'largest_loss': ml_insights.get('volatility_mae', 0.02) * 3,  # Estimate
+                    'largest_loss': volatility_mae * 3,  # Estimate
                     'total_trades': 50,  # Default estimate
-                    'winning_trades': int(ml_insights.get('direction_accuracy', 0.5) * 50),
-                    'losing_trades': int((1 - ml_insights.get('direction_accuracy', 0.5)) * 50)
+                    'winning_trades': int(direction_accuracy * 50),
+                    'losing_trades': int((1 - direction_accuracy) * 50)
                 }
                 
                 financial_logger.log_trading_performance(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
                     step_name="Step02_5_SR_Optimization",
                     performance_data=performance_data,
-                    confidence_score=ml_insights.get('direction_accuracy', 0.5)
+                    confidence_score=direction_accuracy
                 )
             
-            logger.info("💰 Financial metrics logged successfully from Step02_5 report")
+            logger.info("💰 Financial metrics logged successfully from Step02_5 results")
             
         except Exception as e:
-            logger.warning(f"Could not log financial metrics from report: {e}")
+            logger.warning(f"Could not log financial metrics from results: {e}")
 
     def _generate_trading_recommendations(self,
                                          sr_analysis: Dict[str, Any],

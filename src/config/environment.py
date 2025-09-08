@@ -57,6 +57,15 @@ class EnvironmentSettings(BaseSettings):
     email_recipient_address: str | None = Field(default = None, env='EMAIL_RECIPIENT_ADDRESS')
     mlflow_tracking_uri: str | None = Field(default='file:./mlruns', env='MLFLOW_TRACKING_URI')
     mlflow_experiment_name: str | None = Field(default='Ares_Trading_Models', env='MLFLOW_EXPERIMENT_NAME')
+    
+    # Enhanced Monitoring Configuration
+    enable_enhanced_monitoring: bool = Field(default=True, env='ENABLE_ENHANCED_MONITORING')
+    monitoring_export_directory: str = Field(default='monitoring_exports', env='MONITORING_EXPORT_DIRECTORY')
+    monitoring_csv_export_interval_days: int = Field(default=30, env='MONITORING_CSV_EXPORT_INTERVAL_DAYS')
+    monitoring_max_decisions_in_memory: int = Field(default=10000, env='MONITORING_MAX_DECISIONS_IN_MEMORY')
+    monitoring_enable_real_time_updates: bool = Field(default=True, env='MONITORING_ENABLE_REAL_TIME_UPDATES')
+    monitoring_enable_shap: bool = Field(default=True, env='MONITORING_ENABLE_SHAP')
+    monitoring_enable_lime: bool = Field(default=True, env='MONITORING_ENABLE_LIME')
 
     @property
     def is_live_mode(self) -> bool:
@@ -140,6 +149,23 @@ class EnvironmentSettings(BaseSettings):
 
         """
         return {'tracking_uri': self.mlflow_tracking_uri, 'experiment_name': self.mlflow_experiment_name}
+
+    def get_enhanced_monitoring_config(self) -> dict[str, Any]:
+        """Get enhanced monitoring configuration.
+
+        Returns:
+            dict: Enhanced monitoring configuration
+        """
+        return {
+            'enable_enhanced_monitoring': self.enable_enhanced_monitoring,
+            'monitoring_export_directory': self.monitoring_export_directory,
+            'monitoring_csv_export_interval_days': self.monitoring_csv_export_interval_days,
+            'monitoring_max_decisions_in_memory': self.monitoring_max_decisions_in_memory,
+            'monitoring_enable_real_time_updates': self.monitoring_enable_real_time_updates,
+            'monitoring_enable_shap': self.monitoring_enable_shap,
+            'monitoring_enable_lime': self.monitoring_enable_lime,
+            'trading_mode': self.trading_environment
+        }
 
     def get_symbol_config(self) -> dict[str, Any]:
         """Get symbol configuration.

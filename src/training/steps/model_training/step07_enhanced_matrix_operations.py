@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 7: Enhanced Matrix Operations with Advanced Performance Optimizations.
 
@@ -1057,7 +1058,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                     if 'train' in advanced_features:
                         train_path = advanced_features['train']
                         if isinstance(train_path, str) and Path(train_path).exists():
-                            data_any = pd.read_parquet(train_path)
+                            data_any = standardized_parquet_handler.read_parquet_standardized(train_path)
                 else:
                     for split in ['train', 'val', 'test']:
                         if f'{split}_data' in pipeline_state:
@@ -1290,12 +1291,12 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 if 'train' in advanced_features:
                     train_path = advanced_features['train']
                     if isinstance(train_path, str) and Path(train_path).exists():
-                        data_dict['train'] = pd.read_parquet(train_path)
+                        data_dict['train'] = standardized_parquet_handler.read_parquet_standardized(train_path)
                         self.logger.info(f'✅ Loaded train data from {train_path}')
                 if 'val' in advanced_features:
                     val_path = advanced_features['val']
                     if isinstance(val_path, str) and Path(val_path).exists():
-                        data_dict['val'] = pd.read_parquet(val_path)
+                        data_dict['val'] = standardized_parquet_handler.read_parquet_standardized(val_path)
                         self.logger.info(f'✅ Loaded val data from {val_path}')
                 if data_dict:
                     return data_dict
@@ -1741,7 +1742,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                     df_to_save = df
                 out_path = features_dir / f'{exchange}_{symbol}_{timeframe}_features_filtered_{split_name}.parquet'
                 try:
-                    df_to_save.to_parquet(out_path)
+                    standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
                     self.logger.info(f'💾 Saved filtered features: {out_path}')
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to save filtered {split_name} features: {e}')

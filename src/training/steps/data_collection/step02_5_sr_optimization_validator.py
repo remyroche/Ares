@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 2.5: S/R Detection Optimization Validator with Comprehensive Function Call Monitoring.
 

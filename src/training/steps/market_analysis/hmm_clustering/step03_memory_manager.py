@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step03 Memory Management Utility.
 
@@ -166,7 +167,7 @@ class MemoryManager:
             with open(temp_file, 'wb') as f:
                 pickle.dump(data, f)
         elif suffix == '.parquet' and isinstance(data, pd.DataFrame):
-            data.to_parquet(temp_file)
+            standardized_parquet_handler.write_parquet_standardized(data, temp_file)
         elif suffix == '.npy' and isinstance(data, np.ndarray):
             np.save(temp_file, data)
         else:
@@ -180,7 +181,7 @@ class MemoryManager:
             with open(filepath, 'rb') as f:
                 return pickle.load(f)
         elif filepath.suffix == '.parquet':
-            return pd.read_parquet(filepath)
+            return standardized_parquet_handler.read_parquet_standardized(filepath)
         elif filepath.suffix == '.npy':
             return np.load(filepath)
         else:

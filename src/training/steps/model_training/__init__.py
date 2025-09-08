@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Model Training Package for Trading Pipeline.
 

@@ -1,4 +1,5 @@
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """BaseStep wrapper for Step 17 Parameter Optimization.
 
 Bridges existing parameter optimization implementations to the BaseStep interface.

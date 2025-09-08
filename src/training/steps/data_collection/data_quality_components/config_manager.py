@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Configuration Manager Component
 
 Manages configuration for quality checks and data processing.

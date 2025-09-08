@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step 9: Enhanced Model Training Pipeline with Comprehensive Validation.
 

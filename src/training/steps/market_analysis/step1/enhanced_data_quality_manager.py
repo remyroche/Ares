@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced, validates
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Data Quality Manager for Step1 and Step1_5.
 
 This module provides comprehensive data quality management including:
@@ -273,7 +274,7 @@ class EnhancedDataQualityManager:
             
             for file_path in klines_files:
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     metrics[f"klines_{file_path.name}"] = {
                         "file_size": file_path.stat().st_size,
                         "row_count": len(df),
@@ -374,7 +375,7 @@ class EnhancedDataQualityManager:
             return False
         
         try:
-            df = pd.read_parquet(klines_file)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_file)
             
             # Check minimum data requirements
             if len(df) < 10000:

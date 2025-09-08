@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from src.core.decorators import traced, validates, handles_errors
 from ..enhanced_error_handling import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,
@@ -173,7 +174,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                     raise ValueError("Feature aggregation produced no results")
                 
                 output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
-                aggregated.to_parquet(output_path, index=False)
+                standardized_parquet_handler.write_parquet_standardized(aggregated, output_path, index=False)
                 self.logger.info(f'✅ Saved aggregated feature data: {output_path}')
                 
                 # Validate expected outputs were created
@@ -427,7 +428,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             if not labeled_path.exists():
                 labeled_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_labeled.parquet'
             if labeled_path.exists():
-                data = pd.read_parquet(labeled_path)
+                data = standardized_parquet_handler.read_parquet_standardized(labeled_path)
                 self.logger.info(f'✅ Loaded labeled data: {len(data)} rows')
                 return data
             else:
@@ -611,7 +612,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     except Exception as e:
         logger.warning(f'⚠️ Error loading per-regime config: {e}, using defaults')
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     config['per_regime_feature_engineering'] = True
     step = PerRegimeFeatureEngineeringStep(config)
     await step.initialize()

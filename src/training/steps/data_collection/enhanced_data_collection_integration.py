@@ -3,6 +3,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Data Collection Integration
@@ -201,7 +202,7 @@ async def validate_existing_data(
         
         if os.path.exists(klines_path):
             logger.info(f"📖 Validating klines data: {klines_file}")
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             
             # Convert to validation format
             rows = df.to_dict('records')
@@ -232,7 +233,7 @@ async def validate_existing_data(
         
         if os.path.exists(aggtrades_path):
             logger.info(f"📖 Validating aggtrades data: {aggtrades_file}")
-            df = pd.read_parquet(aggtrades_path)
+            df = standardized_parquet_handler.read_parquet_standardized(aggtrades_path)
             
             # Convert to validation format
             rows = df.to_dict('records')
@@ -263,7 +264,7 @@ async def validate_existing_data(
         
         if os.path.exists(futures_path):
             logger.info(f"📖 Validating futures data: {futures_file}")
-            df = pd.read_parquet(futures_path)
+            df = standardized_parquet_handler.read_parquet_standardized(futures_path)
             
             # Convert to validation format
             rows = df.to_dict('records')

@@ -1,4 +1,5 @@
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 14: Monte Carlo Validation."""
 
 import asyncio

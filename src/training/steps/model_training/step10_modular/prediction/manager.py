@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Prediction Manager.
 
 This module handles prediction orchestration for the unified regime intelligence system.

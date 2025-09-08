@@ -11,6 +11,7 @@ from src.utils.decorators import handles_errors, traced, validates
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Removed unavailable decorator imports
 
@@ -538,7 +539,7 @@ class UnifiedRegimeIntelligenceStep:
             for tf in self.timeframes:
                 hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
-                    hmm_data = pd.read_parquet(hmm_file)
+                    hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     if hmm_data.empty:
                         self.logger.error(f"❌ Empty HMM data file: {hmm_file}")
                         return False
@@ -703,7 +704,7 @@ class UnifiedRegimeIntelligenceStep:
             for tf in self.timeframes:
                 hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
-                    hmm_data[tf] = pd.read_parquet(hmm_file)
+                    hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     self.logger.info(
                         f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows",
                     )
@@ -764,10 +765,10 @@ class UnifiedRegimeIntelligenceStep:
                         self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows (optimized)")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Optimized loading failed for {tf}, falling back to pandas: {e}")
-                        hmm_data[tf] = pd.read_parquet(hmm_file)
+                        hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                         self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows (fallback)")
                 elif os.path.exists(hmm_file):
-                    hmm_data[tf] = pd.read_parquet(hmm_file)
+                    hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows")
 
             if not hmm_data:
@@ -817,10 +818,10 @@ class UnifiedRegimeIntelligenceStep:
                         self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows (optimized)")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Optimized loading failed for {tf} intensity, falling back to pandas: {e}")
-                        intensity_data[tf] = pd.read_parquet(intensity_file)
+                        intensity_data[tf] = standardized_parquet_handler.read_parquet_standardized(intensity_file)
                         self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows (fallback)")
                 elif os.path.exists(intensity_file):
-                    intensity_data[tf] = pd.read_parquet(intensity_file)
+                    intensity_data[tf] = standardized_parquet_handler.read_parquet_standardized(intensity_file)
                     self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows")
                 else:
                     self.logger.warning(

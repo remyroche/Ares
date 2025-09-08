@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Performance Monitoring System.
 
 This module provides comprehensive performance monitoring for function calls.

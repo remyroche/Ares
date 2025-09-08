@@ -1,4 +1,5 @@
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Preparation for Step1_5.
 from src.utils.logger import system_logger
 
@@ -134,7 +135,7 @@ class DataPreparation:
                 if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
                 # Apply date filters if specified
                 if start_date:
@@ -225,7 +226,7 @@ class DataPreparation:
                 if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
                 # Check columns
                 if list(df.columns) != self.EXPECTED_KLINES_COLUMNS:
@@ -323,7 +324,7 @@ class DataPreparation:
         # Save file
         try:
             if output_format.lower() == "parquet":
-                df.to_parquet(output_path, compression="zstd", index=False)
+                standardized_parquet_handler.write_parquet_standardized(df, output_path, compression="zstd", index=False)
             else:
                 df.to_csv(output_path, index=False)
 
@@ -373,7 +374,7 @@ class DataPreparation:
 
         # Save as partitioned dataset
         try:
-            df_partitioned.to_parquet(
+            standardized_parquet_handler.write_parquet_standardized(df_partitioned, 
                 dataset_dir,
                 partition_cols=["year", "month", "day"],
                 compression="zstd",
@@ -583,7 +584,7 @@ class DataPreparation:
 
         try:
             # Load and validate data
-            df = pd.read_parquet(file_path)
+            df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
             validation_result = {
                 "valid": True,
@@ -806,7 +807,7 @@ class DataPreparation:
 
             if file_path.exists():
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
                 except:
                     report += f"• {timeframe}: ❌ Corrupted\n"
@@ -903,7 +904,7 @@ class DataPreparation:
             )
 
             # Save consolidated data
-            klines_df.to_parquet(output_path, compression="zstd", index=False)
+            standardized_parquet_handler.write_parquet_standardized(klines_df, output_path, compression="zstd", index=False)
 
             consolidation_result["success"] = True
             consolidation_result["file_path"] = str(output_path)

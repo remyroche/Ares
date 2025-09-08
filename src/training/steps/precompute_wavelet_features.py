@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Wavelet feature precomputation utilities with high-performance optimizations.
 

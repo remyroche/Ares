@@ -17,6 +17,7 @@ import pandas as pd
 import warnings
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -952,7 +953,7 @@ class UnifiedDataConverter:
             dfs: list[pd.DataFrame] = []
             for fp in date_files:
                 with contextlib.suppress(Exception):
-                    dfs.append(pd.read_parquet(fp))
+                    dfs.append(standardized_parquet_handler.read_parquet_standardized(fp))
             if dfs:
                 combined = pd.concat(dfs, ignore_index = True)
                 combined = combined.drop_duplicates(subset=['timestamp', 'price', 'quantity'], keep='first')
@@ -986,7 +987,7 @@ class UnifiedDataConverter:
             dfs: list[pd.DataFrame] = []
             for fp in date_files:
                 with contextlib.suppress(Exception):
-                    dfs.append(pd.read_parquet(fp))
+                    dfs.append(standardized_parquet_handler.read_parquet_standardized(fp))
             if dfs:
                 combined = pd.concat(dfs, ignore_index = True)
                 combined = combined.sort_values('timestamp').reset_index(drop = True)
@@ -1155,7 +1156,7 @@ class UnifiedDataConverter:
                 file_path = os.path.join(base_path, partition_rel, 'part-0.parquet')
                 if os.path.exists(file_path):
                     with contextlib.suppress(Exception):
-                        df = pd.read_parquet(file_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
                         klines_present = all((c in df.columns for c in ['open', 'high', 'low', 'close', 'volume']))
                         aggtrades_present = all((c in df.columns for c in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']))
                         futures_present = 'funding_rate' in df.columns
@@ -1194,7 +1195,7 @@ class UnifiedDataConverter:
             parquet_path = os.path.join(data_cache_dir, parquet_file)
             if os.path.exists(parquet_path):
                 self.logger.info(f'📊 Loading klines from parquet: {parquet_path}')
-                df = pd.read_parquet(parquet_path)
+                df = standardized_parquet_handler.read_parquet_standardized(parquet_path)
                 df = self.standards.standardize_timestamp(df, 'timestamp')
                 df = self.standards.enforce_schema(df, 'klines')
                 validation_result = self.standards.validate_data_quality(df, 'klines')
@@ -1275,7 +1276,7 @@ class UnifiedDataConverter:
                     self.logger.warning(f'   - {issue.message}')
             out_file = self.standards.generate_file_name('klines', exchange, symbol, timeframe)
             out_path = os.path.join(self.data_cache_dir, out_file)
-            combined.to_parquet(out_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(combined, out_path, index=False)
             self.logger.info(f'💾 Saved consolidated klines to: {out_path}')
             return combined
         except Exception as e:

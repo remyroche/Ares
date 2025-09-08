@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Logging Setup.
 
 This module provides logging configuration and utilities for the

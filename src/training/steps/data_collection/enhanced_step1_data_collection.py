@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -179,7 +180,7 @@ class EnhancedStep1DataCollection:
         chunks = []
         chunk_count = 0
         try:
-            for chunk in pd.read_parquet(file_path, chunksize = self.config.chunk_size):
+            for chunk in standardized_parquet_handler.read_parquet_standardized(file_path, chunksize = self.config.chunk_size):
                 chunk_count += 1
                 self.logger.debug(f'Processing chunk {chunk_count}')
                 quality_result = await self.quality_validator.validate_dataframe_quality(chunk, f'chunk_{chunk_count}')
@@ -231,7 +232,7 @@ class EnhancedStep1DataCollection:
                 if os.path.exists(file_path):
                     try:
                         file_size = os.path.getsize(file_path) / (1024 * 1024)
-                        df_info = pd.read_parquet(file_path, nrows = 1)
+                        df_info = standardized_parquet_handler.read_parquet_standardized(file_path, nrows = 1)
                         columns = list(df_info.columns)
                         files_info.append({'type': file_type, 'path': file_path, 'size_mb': file_size, 'columns': columns})
                         self.logger.info(f'📁 {file_type}: {file_size:.1f}MB, {len(columns)} columns')

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step10 Unified Regime Intelligence.
 Independent logging module that can be used without the reporting system.

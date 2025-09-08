@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Domain classes for validation."""
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -14,11 +15,11 @@ class ParquetDatasetManager:
     
     def load(self) -> pd.DataFrame:
         """Load parquet dataset."""
-        return pd.read_parquet(self.path)
+        return standardized_parquet_handler.read_parquet_standardized(self.path)
     
     def save(self, data: pd.DataFrame) -> None:
         """Save parquet dataset."""
-        data.to_parquet(self.path)
+        standardized_parquet_handler.write_parquet_standardized(data, self.path)
 
 """Domain classes for validation."""
 

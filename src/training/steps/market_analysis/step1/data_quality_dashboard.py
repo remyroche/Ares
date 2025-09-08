@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Quality Dashboard Web Interface.
 from src.utils.logger import system_logger
 

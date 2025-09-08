@@ -1247,8 +1247,3 @@ class PredictiveEnsembles:
 predictive_ensembles: PredictiveEnsembles | None = None
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="predictive ensembles setup",
-)

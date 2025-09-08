@@ -695,8 +695,3 @@ class EnsembleManager:
             self.print(failed(error_msg))
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="ensemble manager setup",
-)

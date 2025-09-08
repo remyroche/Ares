@@ -654,8 +654,3 @@ class OptimizationManager:
             self.print_message(failed(f"❌ Failed to stop Optimization Manager: {e}"))
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="optimization manager setup",
-)

@@ -1033,5 +1033,3 @@ class TrainingManager:
 
 # Global training manager instance
 training_manager: TrainingManager | None = None
-
-@handles_errors(fallback = None)

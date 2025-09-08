@@ -1,5 +1,5 @@
 """
-Enhanced Step06 Feature Engineering with Advanced Optimizations
+Enhanced Step06 Feature Engineering with Advanced Optimizations and Utility Integration
 
 This module implements comprehensive feature engineering with:
 - Vectorized batch processing for indicator extraction
@@ -7,12 +7,15 @@ This module implements comprehensive feature engineering with:
 - Strict temporal validation to prevent lookahead bias
 - Memory-efficient chunking for large datasets
 - Mathematical safety with validation utilities
+- Extensive utility integration with dependency injection
+- M1 optimization for performance
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+import time
 from pathlib import Path
 from contextlib import nullcontext
 import asyncio
@@ -23,6 +26,12 @@ import warnings
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, 
     validate_positive, validate_range, MathValidationError
+)
+
+# Import utility integration
+from .step06_utility_container import (
+    Step06UtilityContainer, UtilityConfig, get_utility_container, 
+    utility_container_context, inject_utilities
 )
 from src.utils.comprehensive_function_logger import (
     log_step_functions, log_important_calls, log_all_calls, 
@@ -99,11 +108,29 @@ class EnhancedFeatureEngineering:
     Enhanced feature engineering with advanced optimizations and safety measures.
     """
     
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize enhanced feature engineering."""
+    def __init__(self, config: Dict[str, Any], utility_config: Optional[UtilityConfig] = None):
+        """Initialize enhanced feature engineering with utility integration."""
         self.config = config
         self.logger = logger
         self.feature_config = config.get('step06_feature_engineering', {})
+        
+        # Initialize utility configuration
+        self.utility_config = utility_config or UtilityConfig(
+            enable_common_operations=True,
+            enable_data_processing=True,
+            enable_math_validation=True,
+            enable_parquet_utils=True,
+            enable_serialization=True,
+            enable_m1_gpu=True,
+            enable_m1_memory=True,
+            enable_m1_cpu=True,
+            data_processing_chunk_size=10000,
+            m1_memory_limit_gb=8.0,
+            m1_max_workers=8
+        )
+        
+        # Utility services will be initialized when needed
+        self.utility_container = None
         
         # Configuration parameters
         self.chunk_size = self.feature_config.get('chunk_size', 10000)
@@ -118,20 +145,82 @@ class EnhancedFeatureEngineering:
         self.feature_selector = None
         self.pca = None
         
-        # Performance tracking
+        # Enhanced performance tracking with utility metrics
         self.processing_stats = {
             'total_samples_processed': 0,
             'total_features_created': 0,
             'processing_time': 0.0,
+            'utility_initialization_time': 0.0,
+            'data_processing_time': 0.0,
             'memory_usage_mb': 0.0,
-            'chunks_processed': 0
+            'gpu_utilization': 0.0,
+            'cpu_utilization': 0.0,
+            'chunks_processed': 0,
+            'utility_operations_count': 0,
+            'utility_errors': 0
         }
         
-        self.logger.info("🚀 Enhanced Feature Engineering initialized")
+        self.logger.info("🚀 Enhanced Feature Engineering with Utility Integration initialized")
         self.logger.info(f"   Chunk size: {self.chunk_size}")
         self.logger.info(f"   Max features: {self.max_features}")
         self.logger.info(f"   Polynomial degree: {self.polynomial_degree}")
         self.logger.info(f"   Memory limit: {self.memory_limit_mb}MB")
+        self.logger.info("   ✅ Utility integration enabled")
+        self.logger.info("   ✅ M1 optimization enabled")
+
+    async def initialize_utilities(self) -> None:
+        """Initialize utility services for feature engineering."""
+        start_time = time.time()
+        
+        try:
+            self.logger.info("🔧 Initializing utility services for feature engineering...")
+            self.utility_container = await get_utility_container(self.utility_config)
+            
+            # Test utility services
+            if self.utility_config.enable_common_operations:
+                common_ops = self.utility_container.get_common_operations()
+                self.logger.debug("✅ Common operations service initialized")
+                
+            if self.utility_config.enable_data_processing:
+                data_proc = self.utility_container.get_data_processing()
+                self.logger.debug("✅ Data processing service initialized")
+                
+            if self.utility_config.enable_math_validation:
+                math_val = self.utility_container.get_math_validation()
+                self.logger.debug("✅ Math validation service initialized")
+                
+            if self.utility_config.enable_parquet_utils:
+                parquet = self.utility_container.get_parquet()
+                self.logger.debug("✅ Parquet utilities service initialized")
+                
+            if self.utility_config.enable_serialization:
+                serialization = self.utility_container.get_serialization()
+                self.logger.debug("✅ Serialization service initialized")
+                
+            if self.utility_config.enable_m1_gpu:
+                m1_gpu = self.utility_container.get_m1_gpu()
+                self.logger.debug("✅ M1 GPU service initialized")
+                
+            if self.utility_config.enable_m1_memory:
+                m1_memory = self.utility_container.get_m1_memory()
+                self.logger.debug("✅ M1 memory service initialized")
+                
+            if self.utility_config.enable_m1_cpu:
+                m1_cpu = self.utility_container.get_m1_cpu()
+                self.logger.debug("✅ M1 CPU service initialized")
+            
+            # Get health report
+            health_report = self.utility_container.get_health_report()
+            self.logger.info(f"🏥 Utility health status: {health_report['status']}")
+            self.logger.info(f"   Healthy services: {health_report['healthy_services']}/{health_report['total_services']}")
+            
+            self.processing_stats['utility_initialization_time'] = time.time() - start_time
+            self.logger.info(f"✅ Utility services initialized in {self.processing_stats['utility_initialization_time']:.2f}s")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize utility services: {e}")
+            self.processing_stats['utility_errors'] += 1
+            raise
 
     def _validate_temporal_consistency(self, data: pd.DataFrame, current_idx: int) -> pd.DataFrame:
         """
@@ -837,6 +926,138 @@ class EnhancedFeatureEngineering:
             'total_samples_processed': 0,
             'total_features_created': 0,
             'processing_time': 0.0,
+            'utility_initialization_time': 0.0,
+            'data_processing_time': 0.0,
             'memory_usage_mb': 0.0,
-            'chunks_processed': 0
+            'gpu_utilization': 0.0,
+            'cpu_utilization': 0.0,
+            'chunks_processed': 0,
+            'utility_operations_count': 0,
+            'utility_errors': 0
         }
+
+    @inject_utilities('common_ops', 'data_proc', 'math_val', 'm1_memory', 'm1_cpu')
+    async def create_enhanced_features_with_utilities(self, market_data: pd.DataFrame,
+                                                    common_ops, data_proc, math_val, m1_memory, m1_cpu) -> pd.DataFrame:
+        """Create enhanced features using utility services."""
+        self.logger.info("🔧 Creating enhanced features with utility integration...")
+        
+        try:
+            # Use common operations for data validation
+            if common_ops:
+                validation_result = common_ops.get_operation('validation', 'validate_dataframe')(market_data, ['open', 'high', 'low', 'close'])
+                if not validation_result:
+                    raise ValueError("Data validation failed")
+            
+            # Use data processing utilities for feature creation
+            enhanced_features = market_data.copy()
+            
+            if data_proc and data_proc.validator:
+                # Validate data quality before feature engineering
+                quality_report = data_proc.validator.validate_dataframe(enhanced_features)
+                self.logger.info(f"Data quality score: {quality_report.summary.get('data_quality_score', 0)}")
+            
+            # Create features using math validation for safety
+            if math_val:
+                # Price-based features with safe mathematical operations
+                enhanced_features['price_range'] = enhanced_features['high'] - enhanced_features['low']
+                enhanced_features['price_range_pct'] = math_val.safe_divide(
+                    enhanced_features['price_range'], 
+                    enhanced_features['close'], 
+                    default=0.0
+                )
+                
+                # Volatility features
+                enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
+                enhanced_features['volatility_pct'] = math_val.safe_divide(
+                    enhanced_features['volatility'],
+                    enhanced_features['close'],
+                    default=0.0
+                )
+                
+                # Momentum features
+                enhanced_features['momentum_5'] = enhanced_features['close'].pct_change(5)
+                enhanced_features['momentum_10'] = enhanced_features['close'].pct_change(10)
+                enhanced_features['momentum_20'] = enhanced_features['close'].pct_change(20)
+                
+                # Technical indicators with safe math
+                enhanced_features['rsi_14'] = self._calculate_rsi_safe(enhanced_features['close'], 14, math_val)
+                enhanced_features['sma_20'] = enhanced_features['close'].rolling(20).mean()
+                enhanced_features['ema_12'] = enhanced_features['close'].ewm(span=12).mean()
+            
+            # Use M1 memory optimizer for chunked processing if needed
+            if m1_memory and m1_memory.optimizer and len(enhanced_features) > self.chunk_size:
+                self.logger.info("Using M1 memory optimizer for chunked processing...")
+                chunk_size = self.utility_config.data_processing_chunk_size
+                
+                # Process features in chunks
+                feature_chunks = list(m1_memory.optimizer.chunked_dataframe_processor(enhanced_features, chunk_size))
+                self.logger.info(f"Features processed in {len(feature_chunks)} chunks")
+                
+                # Optimize memory usage
+                m1_memory.optimizer.optimize_memory()
+            
+            # Use M1 CPU optimizer for parallel processing
+            if m1_cpu and m1_cpu.optimizer:
+                self.logger.info("Using M1 CPU optimizer for parallel processing...")
+                # Calculate optimal workers
+                optimal_workers = m1_cpu.optimizer.calculate_optimal_workers()
+                self.logger.info(f"Optimal workers: {optimal_workers}")
+            
+            # Use data processing utilities for feature transformation
+            if data_proc and data_proc.transformer:
+                # Add more technical indicators
+                enhanced_features = data_proc.transformer.add_column(
+                    enhanced_features, 
+                    'bb_upper_20', 
+                    enhanced_features['close'].rolling(20).mean() + (enhanced_features['close'].rolling(20).std() * 2)
+                )
+                enhanced_features = data_proc.transformer.add_column(
+                    enhanced_features,
+                    'bb_lower_20',
+                    enhanced_features['close'].rolling(20).mean() - (enhanced_features['close'].rolling(20).std() * 2)
+                )
+                enhanced_features = data_proc.transformer.add_column(
+                    enhanced_features,
+                    'macd_line',
+                    enhanced_features['close'].ewm(span=12).mean() - enhanced_features['close'].ewm(span=26).mean()
+                )
+            
+            self.processing_stats['utility_operations_count'] += 1
+            self.processing_stats['total_features_created'] = len(enhanced_features.columns)
+            self.logger.info(f"✅ Enhanced features created with utilities: {len(enhanced_features.columns)} features")
+            
+            return enhanced_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature engineering with utilities failed: {e}")
+            self.processing_stats['utility_errors'] += 1
+            raise
+
+    def _calculate_rsi_safe(self, prices: pd.Series, period: int, math_val) -> pd.Series:
+        """Calculate RSI indicator with safe mathematical operations."""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        
+        # Use safe division
+        rs = math_val.safe_divide(gain, loss, default=1.0)
+        rsi = 100 - math_val.safe_divide(100, 1 + rs, default=50.0)
+        
+        return rsi
+
+    async def cleanup(self) -> None:
+        """Clean up utility services and resources."""
+        self.logger.info("🧹 Cleaning up utility services...")
+        
+        try:
+            if self.utility_container:
+                await self.utility_container.cleanup()
+                self.utility_container = None
+                self.logger.info("✅ Utility services cleaned up")
+            
+            # Reset performance metrics
+            self.reset_stats()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Cleanup failed: {e}")

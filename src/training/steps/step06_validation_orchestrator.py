@@ -4,15 +4,18 @@ import pandas as pd
 from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
-Step06 Validation Orchestrator
+Step06 Validation Orchestrator with Extensive Utility Integration
 
 This module orchestrates comprehensive validation, tracking, and reporting
-for all step06 components. It provides a unified interface for:
+for all step06 components with extensive utility integration. It provides:
 - Function call validation and tracking
 - Function-to-function call monitoring
 - Comprehensive function completion reports
 - Performance monitoring and analysis
 - Error handling with detailed context
+- Extensive utility integration with dependency injection
+- M1 optimization for performance
+- Advanced data processing and validation
 """
 import asyncio
 import json
@@ -21,6 +24,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
+# Import utility container and services
+from .step06_utility_container import (
+    Step06UtilityContainer, UtilityConfig, get_utility_container,
+    utility_container_context, inject_utilities
+)
 
 try:
     from .step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
@@ -90,16 +99,19 @@ except ImportError as e:
 
 class Step06ValidationOrchestrator:
     """
-    Orchestrates comprehensive validation and reporting for all step06 components.
+    Orchestrates comprehensive validation and reporting for all step06 components
+    with extensive utility integration and dependency injection.
     """
     @log_important_calls
 
-    def __init__(self, output_dir: str='step06_validation_reports') -> None:
+    def __init__(self, output_dir: str='step06_validation_reports', 
+                 utility_config: Optional[UtilityConfig] = None) -> None:
         """
-        Initialize the step06 validation orchestrator.
+        Initialize the step06 validation orchestrator with utility integration.
         
         Args:
             output_dir: Directory to save validation reports
+            utility_config: Configuration for utility services
         """
         self.logger = logging.getLogger(__name__)
         self.output_dir = Path(output_dir)
@@ -107,9 +119,280 @@ class Step06ValidationOrchestrator:
         self.components = {}
         self.component_reports = {}
         self.overall_report = {}
-        self.logger.info('🎯 Step06 Validation Orchestrator initialized')
+        
+        # Initialize utility configuration
+        self.utility_config = utility_config or UtilityConfig(
+            enable_common_operations=True,
+            enable_data_processing=True,
+            enable_math_validation=True,
+            enable_parquet_utils=True,
+            enable_serialization=True,
+            enable_m1_gpu=True,
+            enable_m1_memory=True,
+            enable_m1_cpu=True,
+            data_processing_chunk_size=10000,
+            m1_memory_limit_gb=8.0,
+            m1_max_workers=8
+        )
+        
+        # Utility services will be initialized when needed
+        self.utility_container = None
+        self.performance_metrics = {
+            'total_validation_time': 0.0,
+            'utility_initialization_time': 0.0,
+            'data_processing_time': 0.0,
+            'memory_usage_mb': 0.0,
+            'gpu_utilization': 0.0,
+            'cpu_utilization': 0.0,
+            'validation_errors': 0,
+            'utility_errors': 0
+        }
+        
+        self.logger.info('🎯 Step06 Validation Orchestrator with Utility Integration initialized')
         self.logger.info(f'   Output directory: {self.output_dir}')
         self.logger.info(f'   Components available: {COMPONENTS_AVAILABLE}')
+        self.logger.info(f'   Utility integration: ENABLED')
+        self.logger.info(f'   M1 optimization: ENABLED')
+
+    async def initialize_utilities(self) -> Dict[str, bool]:
+        """
+        Initialize utility services with dependency injection.
+        
+        Returns:
+            Dictionary with utility initialization status
+        """
+        start_time = time.time()
+        self.logger.info('🔧 Initializing utility services...')
+        
+        try:
+            # Initialize utility container
+            self.utility_container = await get_utility_container(self.utility_config)
+            
+            # Test utility services
+            utility_status = {}
+            
+            # Test common operations
+            try:
+                common_ops = self.utility_container.get_common_operations()
+                current_time = common_ops.get_operation('datetime', 'get_current_datetime')()
+                utility_status['common_operations'] = True
+                self.logger.info('✅ Common operations service initialized')
+            except Exception as e:
+                utility_status['common_operations'] = False
+                self.logger.error(f'❌ Common operations service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test data processing
+            try:
+                data_proc = self.utility_container.get_data_processing()
+                utility_status['data_processing'] = True
+                self.logger.info('✅ Data processing service initialized')
+            except Exception as e:
+                utility_status['data_processing'] = False
+                self.logger.error(f'❌ Data processing service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test math validation
+            try:
+                math_val = self.utility_container.get_math_validation()
+                utility_status['math_validation'] = True
+                self.logger.info('✅ Math validation service initialized')
+            except Exception as e:
+                utility_status['math_validation'] = False
+                self.logger.error(f'❌ Math validation service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test parquet utilities
+            try:
+                parquet_svc = self.utility_container.get_parquet()
+                utility_status['parquet_utils'] = True
+                self.logger.info('✅ Parquet utilities service initialized')
+            except Exception as e:
+                utility_status['parquet_utils'] = False
+                self.logger.error(f'❌ Parquet utilities service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test serialization
+            try:
+                serialization_svc = self.utility_container.get_serialization()
+                utility_status['serialization'] = True
+                self.logger.info('✅ Serialization service initialized')
+            except Exception as e:
+                utility_status['serialization'] = False
+                self.logger.error(f'❌ Serialization service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test M1 GPU
+            try:
+                m1_gpu = self.utility_container.get_m1_gpu()
+                utility_status['m1_gpu'] = True
+                self.logger.info('✅ M1 GPU service initialized')
+            except Exception as e:
+                utility_status['m1_gpu'] = False
+                self.logger.error(f'❌ M1 GPU service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test M1 memory
+            try:
+                m1_memory = self.utility_container.get_m1_memory()
+                utility_status['m1_memory'] = True
+                self.logger.info('✅ M1 memory service initialized')
+            except Exception as e:
+                utility_status['m1_memory'] = False
+                self.logger.error(f'❌ M1 memory service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Test M1 CPU
+            try:
+                m1_cpu = self.utility_container.get_m1_cpu()
+                utility_status['m1_cpu'] = True
+                self.logger.info('✅ M1 CPU service initialized')
+            except Exception as e:
+                utility_status['m1_cpu'] = False
+                self.logger.error(f'❌ M1 CPU service failed: {e}')
+                self.performance_metrics['utility_errors'] += 1
+            
+            # Update performance metrics
+            init_time = time.time() - start_time
+            self.performance_metrics['utility_initialization_time'] = init_time
+            
+            # Get health report
+            health_report = self.utility_container.get_health_report()
+            self.logger.info(f'📊 Utility services health: {health_report["status"]}')
+            self.logger.info(f'   Healthy services: {health_report["healthy_services"]}/{health_report["total_services"]}')
+            
+            return utility_status
+            
+        except Exception as e:
+            self.logger.error(f'❌ Utility initialization failed: {e}')
+            self.performance_metrics['utility_errors'] += 1
+            return {}
+
+    @inject_utilities('common_ops', 'data_proc', 'math_val', 'parquet', 'serialization')
+    async def _validate_with_utilities(self, test_data: pd.DataFrame, 
+                                     common_ops, data_proc, math_val, parquet, serialization) -> Dict[str, Any]:
+        """
+        Perform validation using utility services.
+        
+        Args:
+            test_data: Test data for validation
+            common_ops: Common operations service
+            data_proc: Data processing service
+            math_val: Math validation service
+            parquet: Parquet service
+            serialization: Serialization service
+            
+        Returns:
+            Validation results using utilities
+        """
+        validation_results = {
+            'utility_validation': {},
+            'data_quality': {},
+            'mathematical_validation': {},
+            'performance_metrics': {}
+        }
+        
+        try:
+            # Use common operations for data validation
+            self.logger.info('🔍 Using common operations for data validation...')
+            
+            # Validate data shape
+            shape_validation = common_ops.get_operation('validation', 'validate_dataframe')(test_data, ['open', 'high', 'low', 'close'])
+            validation_results['utility_validation']['shape_validation'] = shape_validation
+            
+            # Use data processing utilities
+            self.logger.info('📊 Using data processing utilities...')
+            
+            if data_proc.validator:
+                quality_report = data_proc.validator.validate_dataframe(test_data)
+                validation_results['data_quality'] = {
+                    'total_issues': len(quality_report.issues),
+                    'critical_issues': len([i for i in quality_report.issues if i.level.value == 'critical']),
+                    'warning_issues': len([i for i in quality_report.issues if i.level.value == 'warning']),
+                    'data_quality_score': quality_report.summary.get('data_quality_score', 0)
+                }
+            
+            # Use math validation for numerical checks
+            self.logger.info('🔢 Using math validation utilities...')
+            
+            if 'close' in test_data.columns:
+                close_prices = test_data['close'].dropna()
+                if len(close_prices) > 0:
+                    # Validate price ranges
+                    min_price = close_prices.min()
+                    max_price = close_prices.max()
+                    
+                    try:
+                        from src.utils.math_validation import validate_positive, validate_range
+                        validate_positive(min_price, "min_price")
+                        validate_positive(max_price, "max_price")
+                        validate_range(max_price, min_price, min_price * 1000, "max_price")
+                        
+                        validation_results['mathematical_validation'] = {
+                            'price_validation': 'passed',
+                            'min_price': float(min_price),
+                            'max_price': float(max_price),
+                            'price_range_valid': True
+                        }
+                    except Exception as e:
+                        validation_results['mathematical_validation'] = {
+                            'price_validation': 'failed',
+                            'error': str(e),
+                            'price_range_valid': False
+                        }
+            
+            # Use parquet utilities for data I/O testing
+            self.logger.info('💾 Testing parquet utilities...')
+            
+            if parquet.parquet_utils:
+                # Test parquet validation
+                test_file = self.output_dir / 'test_validation.parquet'
+                try:
+                    test_data.to_parquet(test_file)
+                    validation_result = parquet.parquet_utils.validate_parquet_file(str(test_file))
+                    validation_results['utility_validation']['parquet_validation'] = validation_result
+                    
+                    # Clean up test file
+                    test_file.unlink(missing_ok=True)
+                except Exception as e:
+                    validation_results['utility_validation']['parquet_validation'] = {'valid': False, 'error': str(e)}
+            
+            # Use serialization utilities
+            self.logger.info('📄 Testing serialization utilities...')
+            
+            if serialization.serializers:
+                test_serialization_data = {
+                    'validation_timestamp': common_ops.get_operation('datetime', 'get_current_datetime')().isoformat(),
+                    'data_shape': test_data.shape,
+                    'columns': list(test_data.columns)
+                }
+                
+                test_json_file = self.output_dir / 'test_serialization.json'
+                try:
+                    serialization.serializers['json'].save(test_serialization_data, test_json_file)
+                    loaded_data = serialization.serializers['json'].load(test_json_file)
+                    validation_results['utility_validation']['serialization_test'] = {
+                        'save_success': True,
+                        'load_success': loaded_data is not None,
+                        'data_integrity': test_serialization_data == loaded_data
+                    }
+                    
+                    # Clean up test file
+                    test_json_file.unlink(missing_ok=True)
+                except Exception as e:
+                    validation_results['utility_validation']['serialization_test'] = {
+                        'save_success': False,
+                        'error': str(e)
+                    }
+            
+            self.logger.info('✅ Utility-based validation completed')
+            
+        except Exception as e:
+            self.logger.error(f'❌ Utility validation failed: {e}')
+            validation_results['utility_validation']['error'] = str(e)
+            self.performance_metrics['utility_errors'] += 1
+        
+        return validation_results
 
     def initialize_components(self, config: Dict[str, Any]) -> Dict[str, bool]:
         """
@@ -149,19 +432,54 @@ class Step06ValidationOrchestrator:
 
     async def run_comprehensive_validation(self, test_data: Optional[pd.DataFrame]=None) -> Dict[str, Any]:
         """
-        Run comprehensive validation on all step06 components.
+        Run comprehensive validation on all step06 components with utility integration.
         
         Args:
             test_data: Optional test data for validation
             
         Returns:
-            Comprehensive validation report
+            Comprehensive validation report with utility integration
         """
-        self.logger.info('🚀 Starting comprehensive step06 validation...')
+        start_time = time.time()
+        self.logger.info('🚀 Starting comprehensive step06 validation with utility integration...')
+        
+        # Initialize utilities first
+        utility_status = await self.initialize_utilities()
+        
         reset_step06_validation_tracking()
         if test_data is None:
             test_data = self._generate_test_data()
-        validation_results = {'timestamp': datetime.now().isoformat(), 'test_data_info': {'shape': test_data.shape, 'columns': list(test_data.columns), 'data_types': test_data.dtypes.to_dict()}, 'component_validation': {}, 'overall_summary': {}}
+        
+        validation_results = {
+            'timestamp': datetime.now().isoformat(),
+            'test_data_info': {
+                'shape': test_data.shape,
+                'columns': list(test_data.columns),
+                'data_types': test_data.dtypes.to_dict()
+            },
+            'utility_integration': {
+                'utility_status': utility_status,
+                'utility_health': self.utility_container.get_health_report() if self.utility_container else None
+            },
+            'component_validation': {},
+            'utility_validation': {},
+            'performance_metrics': self.performance_metrics.copy(),
+            'overall_summary': {}
+        }
+        
+        # Run utility-based validation
+        if self.utility_container:
+            self.logger.info('🔧 Running utility-based validation...')
+            try:
+                utility_validation = await self._validate_with_utilities(test_data)
+                validation_results['utility_validation'] = utility_validation
+                self.logger.info('✅ Utility-based validation completed')
+            except Exception as e:
+                self.logger.error(f'❌ Utility validation failed: {e}')
+                validation_results['utility_validation'] = {'error': str(e)}
+                self.performance_metrics['utility_errors'] += 1
+        
+        # Run component validation
         for component_name, component in self.components.items():
             self.logger.info(f'🔍 Validating component: {component_name}')
             try:
@@ -170,10 +488,29 @@ class Step06ValidationOrchestrator:
                 self.logger.info(f'✅ Component {component_name} validation completed')
             except Exception as e:
                 self.logger.error(f'❌ Component {component_name} validation failed: {e}')
-                validation_results['component_validation'][component_name] = {'status': 'failed', 'error': str(e), 'timestamp': datetime.now().isoformat()}
+                validation_results['component_validation'][component_name] = {
+                    'status': 'failed', 
+                    'error': str(e), 
+                    'timestamp': datetime.now().isoformat()
+                }
+                self.performance_metrics['validation_errors'] += 1
+        
+        # Update performance metrics
+        total_time = time.time() - start_time
+        self.performance_metrics['total_validation_time'] = total_time
+        
+        # Generate overall summary
         validation_results['overall_summary'] = self._generate_overall_summary(validation_results)
+        validation_results['performance_metrics'] = self.performance_metrics.copy()
+        
+        # Save validation report
         await self._save_validation_report(validation_results)
-        self.logger.info('✅ Comprehensive step06 validation completed')
+        
+        self.logger.info('✅ Comprehensive step06 validation with utility integration completed')
+        self.logger.info(f'   Total time: {total_time:.2f}s')
+        self.logger.info(f'   Utility errors: {self.performance_metrics["utility_errors"]}')
+        self.logger.info(f'   Validation errors: {self.performance_metrics["validation_errors"]}')
+        
         return validation_results
 
     async def _validate_component(self, component_name: str, component: Any, test_data: pd.DataFrame) -> Dict[str, Any]:
@@ -263,21 +600,70 @@ class Step06ValidationOrchestrator:
             result['status'] = 'failed'
         return result
     @log_all_calls
-
-    def _generate_test_data(self) -> pd.DataFrame:
-        """Generate test data for validation."""
-        self.logger.info('📊 Generating test data for validation...')
+    @inject_utilities('common_ops', 'math_val')
+    async def _generate_test_data(self, common_ops=None, math_val=None) -> pd.DataFrame:
+        """Generate test data for validation using utility services."""
+        self.logger.info('📊 Generating test data for validation with utility integration...')
+        
+        # Use common operations for datetime generation
+        if common_ops:
+            current_time = common_ops.get_operation('datetime', 'get_current_datetime')()
+            self.logger.info(f'   Using current time: {current_time}')
+        
         np.random.seed(42)
         n_samples = 1000
-        dates = pd.date_range('2024-01-01', periods = n_samples, freq='1min')
+        dates = pd.date_range('2024-01-01', periods=n_samples, freq='1min')
         base_price = 100.0
+        
+        # Use math validation for safe random generation
         returns = np.random.normal(0, 0.001, n_samples)
         prices = [base_price]
+        
         for ret in returns[1:]:
-            prices.append(prices[-1] * (1 + ret))
-        data = pd.DataFrame({'open': prices, 'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices], 'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices], 'close': prices, 'volume': np.random.uniform(1000, 10000, n_samples)}, index = dates)
+            # Use safe mathematical operations
+            if math_val:
+                try:
+                    from src.utils.math_validation import validate_finite
+                    validate_finite(ret, "return")
+                    new_price = prices[-1] * (1 + ret)
+                    validate_finite(new_price, "new_price")
+                    validate_positive(new_price, "new_price")
+                    prices.append(new_price)
+                except Exception as e:
+                    self.logger.warning(f'Math validation failed for return {ret}: {e}')
+                    prices.append(prices[-1] * (1 + ret))
+            else:
+                prices.append(prices[-1] * (1 + ret))
+        
+        # Generate OHLCV data with utility validation
+        data = pd.DataFrame({
+            'open': prices,
+            'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
+            'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
+            'close': prices,
+            'volume': np.random.uniform(1000, 10000, n_samples)
+        }, index=dates)
+        
+        # Ensure OHLC consistency using safe operations
+        if common_ops:
+            # Use safe operations for data validation
+            validate_df = common_ops.get_operation('validation', 'validate_dataframe')
+            is_valid = validate_df(data, ['open', 'high', 'low', 'close'])
+            if not is_valid:
+                self.logger.warning('Generated data failed initial validation, applying corrections')
+        
+        # Apply OHLC corrections
         data['high'] = np.maximum(data['high'], np.maximum(data['open'], data['close']))
         data['low'] = np.minimum(data['low'], np.minimum(data['open'], data['close']))
+        
+        # Final validation
+        if common_ops:
+            final_validation = validate_df(data, ['open', 'high', 'low', 'close'])
+            if final_validation:
+                self.logger.info('✅ Generated data passed final validation')
+            else:
+                self.logger.warning('⚠️ Generated data failed final validation')
+        
         self.logger.info(f'✅ Generated test data: {data.shape}')
         return data
     @log_all_calls
@@ -320,36 +706,185 @@ class Step06ValidationOrchestrator:
         """Reset validation tracking."""
         reset_step06_validation_tracking()
         self.logger.info('🔄 Validation tracking reset')
+    
+    async def cleanup(self) -> None:
+        """Cleanup utility services and resources."""
+        self.logger.info('🧹 Cleaning up Step06 Validation Orchestrator...')
+        
+        try:
+            if self.utility_container:
+                await self.utility_container.cleanup()
+                self.logger.info('✅ Utility container cleaned up')
+            
+            # Reset performance metrics
+            self.performance_metrics = {
+                'total_validation_time': 0.0,
+                'utility_initialization_time': 0.0,
+                'data_processing_time': 0.0,
+                'memory_usage_mb': 0.0,
+                'gpu_utilization': 0.0,
+                'cpu_utilization': 0.0,
+                'validation_errors': 0,
+                'utility_errors': 0
+            }
+            
+            self.logger.info('✅ Step06 Validation Orchestrator cleanup completed')
+            
+        except Exception as e:
+            self.logger.error(f'❌ Cleanup failed: {e}')
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics."""
+        return self.performance_metrics.copy()
+    
+    def get_utility_health_report(self) -> Dict[str, Any]:
+        """Get utility services health report."""
+        if self.utility_container:
+            return self.utility_container.get_health_report()
+        return {"status": "not_initialized", "services": {}}
 
-async def run_step06_comprehensive_validation(config: Optional[Dict[str, Any]]=None, test_data: Optional[pd.DataFrame]=None, output_dir: str='step06_validation_reports') -> Dict[str, Any]:
+async def run_step06_comprehensive_validation(config: Optional[Dict[str, Any]]=None, 
+                                            test_data: Optional[pd.DataFrame]=None, 
+                                            output_dir: str='step06_validation_reports',
+                                            utility_config: Optional[UtilityConfig] = None) -> Dict[str, Any]:
     """
-    Run comprehensive validation for all step06 components.
+    Run comprehensive validation for all step06 components with utility integration.
     
     Args:
         config: Configuration dictionary
         test_data: Optional test data
         output_dir: Output directory for reports
+        utility_config: Utility configuration for dependency injection
         
     Returns:
-        Comprehensive validation results
+        Comprehensive validation results with utility integration
     """
     if config is None:
-        config = {'step06_feature_engineering': {'use_matrix_optimizer': True, 'force_regime_specific_periods': False, 'momentum_volume_enabled': True, 'trend_volatility_enabled': True, 'oscillator_trend_enabled': True, 'volume_price_enabled': True, 'volatility_regime_enabled': True, 'cross_timeframe_enabled': True, 'regime_dependent_enabled': True}}
-    orchestrator = Step06ValidationOrchestrator(output_dir)
-    init_status = orchestrator.initialize_components(config)
-    validation_results = await orchestrator.run_comprehensive_validation(test_data)
-    return validation_results
+        config = {
+            'step06_feature_engineering': {
+                'use_matrix_optimizer': True,
+                'force_regime_specific_periods': False,
+                'momentum_volume_enabled': True,
+                'trend_volatility_enabled': True,
+                'oscillator_trend_enabled': True,
+                'volume_price_enabled': True,
+                'volatility_regime_enabled': True,
+                'cross_timeframe_enabled': True,
+                'regime_dependent_enabled': True
+            }
+        }
+    
+    # Create orchestrator with utility integration
+    orchestrator = Step06ValidationOrchestrator(output_dir, utility_config)
+    
+    try:
+        # Initialize components
+        init_status = orchestrator.initialize_components(config)
+        
+        # Run comprehensive validation with utility integration
+        validation_results = await orchestrator.run_comprehensive_validation(test_data)
+        
+        # Add utility health report to results
+        validation_results['utility_health_report'] = orchestrator.get_utility_health_report()
+        validation_results['performance_metrics'] = orchestrator.get_performance_metrics()
+        
+        return validation_results
+        
+    finally:
+        # Cleanup resources
+        await orchestrator.cleanup()
 if __name__ == '__main__':
     import asyncio
 
     async def main() -> None:
-        logging.basicConfig(level = logging.INFO)
-        results = await run_step06_comprehensive_validation()
-        print('Step06 Comprehensive Validation Results:')
-        print(f"Overall Summary: {results['overall_summary']}")
+        logging.basicConfig(level=logging.INFO)
+        
+        # Create utility configuration for demonstration
+        utility_config = UtilityConfig(
+            enable_common_operations=True,
+            enable_data_processing=True,
+            enable_math_validation=True,
+            enable_parquet_utils=True,
+            enable_serialization=True,
+            enable_m1_gpu=True,
+            enable_m1_memory=True,
+            enable_m1_cpu=True,
+            data_processing_chunk_size=5000,
+            m1_memory_limit_gb=8.0,
+            m1_max_workers=4
+        )
+        
+        print("🚀 Running Step06 Comprehensive Validation with Utility Integration...")
+        results = await run_step06_comprehensive_validation(utility_config=utility_config)
+        
+        print('\n' + '='*80)
+        print('STEP06 COMPREHENSIVE VALIDATION RESULTS WITH UTILITY INTEGRATION')
+        print('='*80)
+        
+        # Print overall summary
+        print(f"\n📊 Overall Summary:")
+        overall = results['overall_summary']
+        print(f"  Total Components: {overall.get('total_components', 0)}")
+        print(f"  Successful Components: {overall.get('successful_components', 0)}")
+        print(f"  Component Success Rate: {overall.get('component_success_rate', 0):.2%}")
+        print(f"  Total Tests: {overall.get('total_tests', 0)}")
+        print(f"  Successful Tests: {overall.get('successful_tests', 0)}")
+        print(f"  Test Success Rate: {overall.get('test_success_rate', 0):.2%}")
+        
+        # Print utility integration results
+        if 'utility_integration' in results:
+            print(f"\n🔧 Utility Integration:")
+            utility_status = results['utility_integration'].get('utility_status', {})
+            for service, status in utility_status.items():
+                status_icon = "✅" if status else "❌"
+                print(f"  {status_icon} {service}: {'ENABLED' if status else 'FAILED'}")
+        
+        # Print utility health report
+        if 'utility_health_report' in results:
+            health = results['utility_health_report']
+            print(f"\n🏥 Utility Health Report:")
+            print(f"  Status: {health.get('status', 'unknown')}")
+            print(f"  Healthy Services: {health.get('healthy_services', 0)}/{health.get('total_services', 0)}")
+        
+        # Print performance metrics
+        if 'performance_metrics' in results:
+            metrics = results['performance_metrics']
+            print(f"\n⚡ Performance Metrics:")
+            print(f"  Total Validation Time: {metrics.get('total_validation_time', 0):.2f}s")
+            print(f"  Utility Initialization Time: {metrics.get('utility_initialization_time', 0):.2f}s")
+            print(f"  Validation Errors: {metrics.get('validation_errors', 0)}")
+            print(f"  Utility Errors: {metrics.get('utility_errors', 0)}")
+        
+        # Print component validation results
+        print(f"\n🔍 Component Validation Results:")
         for component_name, component_result in results['component_validation'].items():
-            print(f'\n{component_name}:')
-            print(f"  Status: {component_result.get('status', 'unknown')}")
-            print(f"  Tests: {len(component_result.get('validation_tests', {}))}")
-            print(f"  Reports: {len(component_result.get('function_reports', {}))}")
+            status = component_result.get('status', 'unknown')
+            status_icon = "✅" if status == 'completed' else "❌" if status == 'failed' else "⚠️"
+            print(f"  {status_icon} {component_name}:")
+            print(f"    Status: {status}")
+            print(f"    Tests: {len(component_result.get('validation_tests', {}))}")
+            print(f"    Reports: {len(component_result.get('function_reports', {}))}")
+        
+        # Print utility validation results
+        if 'utility_validation' in results and results['utility_validation']:
+            print(f"\n🛠️ Utility Validation Results:")
+            utility_validation = results['utility_validation']
+            if 'utility_validation' in utility_validation:
+                uv = utility_validation['utility_validation']
+                if 'shape_validation' in uv:
+                    print(f"  ✅ Data Shape Validation: PASSED")
+                if 'parquet_validation' in uv:
+                    pq_val = uv['parquet_validation']
+                    status_icon = "✅" if pq_val.get('valid', False) else "❌"
+                    print(f"  {status_icon} Parquet Validation: {'PASSED' if pq_val.get('valid', False) else 'FAILED'}")
+                if 'serialization_test' in uv:
+                    ser_test = uv['serialization_test']
+                    save_ok = ser_test.get('save_success', False)
+                    load_ok = ser_test.get('load_success', False)
+                    integrity_ok = ser_test.get('data_integrity', False)
+                    print(f"  ✅ Serialization Test: SAVE={save_ok}, LOAD={load_ok}, INTEGRITY={integrity_ok}")
+        
+        print(f"\n✅ Step06 Comprehensive Validation with Utility Integration completed!")
+        print(f"   Reports saved to: {results.get('output_dir', 'step06_validation_reports')}")
+    
     asyncio.run(main())

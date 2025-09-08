@@ -2,8 +2,32 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
-from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+
+# Required utility modules
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, safe_read_parquet, 
+    ensure_directory, create_fallback_logger
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_positive, 
+    validate_range, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+# Core decorators and errors
+from src.core.decorators import handles_errors, error_boundary, converts_errors
+from src.core.errors import (
+    AppError, ValidationError, DataIntegrityError, 
+    NotFoundError, BusinessRuleError
+)
+
+# Optional imports
+try:
+    from ..standardized_parquet_handler import standardized_parquet_handler
+    STANDARDIZED_PARQUET_AVAILABLE = True
+except ImportError:
+    standardized_parquet_handler = None
+    STANDARDIZED_PARQUET_AVAILABLE = False
 
 """Step 2.5: S/R Detection Optimization Validator with Comprehensive Function Call Monitoring.
 
@@ -57,13 +81,7 @@ except ImportError:
 
     system_logger = logging.getLogger(__name__)
 
-def safe_json_load(file_path: Union[str, Path]) -> None:
-    """Safe JSON loading with fallback."""
-    try:
-        with open(file_path, 'r') as f:
-            return json.load(f)
-    except Exception:
-        return {}
+# Use the safe_json_load from common_operations instead of local implementation
 logger = system_logger.getChild('Step2_5SROptimizationValidator')
 validator_function_tracker = {'call_count': 0, 'call_history': [], 'performance_metrics': {}, 'error_count': 0, 'success_count': 0}
 
@@ -333,7 +351,7 @@ class SROptimizationValidator:
     @validate_validator_inputs
     @handles_errors(default_return={'valid': False, 'errors': ['Validation failed']}, context='optimization_results_validation')
     async def _validate_optimization_results(self) -> Dict[str, Any]:
-        """Validate optimization results file with detailed monitoring."""
+        """Validate optimization results file with detailed monitoring using common_operations."""
         try:
             self.logger.info('📊 Validating optimization results file with detailed checks...')
             validation_start = time.time()
@@ -359,11 +377,16 @@ class SROptimizationValidator:
                 return {'valid': False, 'errors': errors, 'details': validation_details}
             else:
                 self.logger.info(f'✅ Found SR predictor results file: {sr_results_file}')
-            self.logger.info('🔍 Validating JSON format...')
+            self.logger.info('🔍 Validating JSON format using common_operations...')
             try:
                 results_data = safe_json_load(results_file)
+                if not results_data:
+                    error_msg = 'Failed to load optimization results data'
+                    errors.append(error_msg)
+                    self.logger.error(f'❌ {error_msg}')
+                    return {'valid': False, 'errors': errors, 'details': validation_details}
                 self.logger.info(f'✅ JSON format valid, loaded {len(results_data)} top-level keys')
-            except json.JSONDecodeError as e:
+            except Exception as e:
                 error_msg = f'Invalid JSON format in optimization results: {e}'
                 errors.append(error_msg)
                 self.logger.error(f'❌ {error_msg}')
@@ -428,7 +451,7 @@ class SROptimizationValidator:
                 return {'valid': False, 'errors': [error_msg], 'details': validation_details}
             results_data = safe_json_load(results_file)
             self.logger.info(f'✅ Loaded optimization results with {len(results_data)} keys')
-            self.logger.info('🔍 Validating method weights...')
+            self.logger.info('🔍 Validating method weights using math validation...')
             validation_details['parameters_checked'].append('method_weights')
             method_weights = results_data.get('method_weights', {})
             if not isinstance(method_weights, dict):
@@ -438,7 +461,8 @@ class SROptimizationValidator:
             else:
                 self.logger.info(f'✅ Method weights is a dictionary with {len(method_weights)} entries')
                 for method, weight in method_weights.items():
-                    if not isinstance(weight, (int, float)) or weight < 0:
+                    # Use math validation utilities for weight validation
+                    if not validate_positive(weight, name=f'method_weight_{method}'):
                         error_msg = f'Invalid method weight for {method}: {weight}'
                         errors.append(error_msg)
                         self.logger.error(f'❌ {error_msg}')

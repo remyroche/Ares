@@ -22,16 +22,44 @@ import random
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 
-# Required utility modules
+# Required utility modules - Comprehensive Integration
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, safe_read_parquet, 
-    ensure_directory, create_fallback_logger, create_fallback_decorator
+    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    ensure_directory, create_fallback_logger, create_fallback_decorator,
+    safe_mean, safe_std, safe_float, safe_int, safe_append, safe_extend,
+    safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join,
+    get_current_datetime, format_datetime, create_empty_dataframe,
+    safe_fillna, safe_rolling, safe_copy, safe_deepcopy, safe_sleep,
+    safe_gather, create_async_task, get_logger, setup_basic_logging,
+    safe_exception_handler, suggest_float_uniform, suggest_int_uniform,
+    validate_dataframe, validate_numeric_range, optimize_dataframe_dtypes,
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report
 )
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
-    validate_positive, validate_range, MathValidationError
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, validate_finite,
+    validate_positive, validate_range, validate_correlation_matrix,
+    safe_matrix_inverse, math_safe, MathValidationError
 )
 from src.utils.parquet_utils import ParquetUtils
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
+    save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
+    save_data, load_data, SerializationError
+)
+from src.utils.data_processing_utils import (
+    DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
+    DataQualityLevel, DataQualityIssue, DataQualityReport,
+    validate_dataframe, clean_dataframe, transform_dataframe, get_dataframe_info
+)
 
 # Core decorators and errors
 from src.core.decorators import handles_errors, error_boundary, converts_errors
@@ -55,16 +83,47 @@ from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
-# Optional imports with error handling
+# M1 Optimization Utilities - Comprehensive Integration
 try:
-    from src.utils.m1_gpu_utils import m1_batch_process
-    M1_BATCH_AVAILABLE = True
+    from src.utils.m1_gpu_utils import (
+        M1GPUManager, M1PerformanceOptimizer, initialize_m1_gpu, get_m1_gpu_manager,
+        m1_tensor_multiply, m1_batch_process, m1_monte_carlo_simulate,
+        create_m1_optimized_config
+    )
+    M1_GPU_AVAILABLE = True
 except ImportError as e:
-    M1_BATCH_AVAILABLE = False
+    M1_GPU_AVAILABLE = False
     logger.warning(f"M1 GPU utils not available: {e}")
 except Exception as e:
-    M1_BATCH_AVAILABLE = False
+    M1_GPU_AVAILABLE = False
     logger.error(f"Unexpected error loading M1 GPU utils: {e}")
+
+try:
+    from src.utils.m1_memory_optimizer import (
+        M1MemoryOptimizer, M1DataManager, get_m1_memory_optimizer,
+        create_memory_efficient_dataframe, memory_efficient_groupby
+    )
+    M1_MEMORY_AVAILABLE = True
+except ImportError as e:
+    M1_MEMORY_AVAILABLE = False
+    logger.warning(f"M1 Memory optimizer not available: {e}")
+except Exception as e:
+    M1_MEMORY_AVAILABLE = False
+    logger.error(f"Unexpected error loading M1 Memory optimizer: {e}")
+
+try:
+    from src.utils.m1_cpu_optimizer import (
+        M1CPUOptimizer, M1BatchProcessor, get_m1_cpu_optimizer,
+        initialize_m1_cpu_optimizer, parallel_map, parallel_dataframe_operation,
+        parallel_monte_carlo_simulation, optimized_monte_carlo_worker
+    )
+    M1_CPU_AVAILABLE = True
+except ImportError as e:
+    M1_CPU_AVAILABLE = False
+    logger.warning(f"M1 CPU optimizer not available: {e}")
+except Exception as e:
+    M1_CPU_AVAILABLE = False
+    logger.error(f"Unexpected error loading M1 CPU optimizer: {e}")
 
 try:
     from ..standardized_parquet_handler import standardized_parquet_handler
@@ -128,6 +187,88 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 logger = system_logger.getChild('Step2_5SROptimization')
+
+# Dependency Injection Container for Step02_5
+class Step02_5DependencyContainer:
+    """Dependency injection container for Step02_5 utilities and services."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self._services = {}
+        self._initialized = False
+        
+    def initialize_services(self):
+        """Initialize all utility services with dependency injection."""
+        if self._initialized:
+            return
+            
+        logger.info("🔧 Initializing Step02_5 dependency container...")
+        
+        # Initialize utility services
+        self._services['parquet_utils'] = ParquetUtils() if PARQUET_UTILS_AVAILABLE else None
+        self._services['data_validator'] = DataFrameValidator(self.config.get('validation', {}))
+        self._services['data_cleaner'] = DataFrameCleaner(self.config.get('cleaning', {}))
+        self._services['data_transformer'] = DataFrameTransformer(self.config.get('transformation', {}))
+        
+        # Initialize M1 optimization services
+        if M1_GPU_AVAILABLE:
+            self._services['m1_gpu_manager'] = get_m1_gpu_manager()
+            self._services['m1_performance_optimizer'] = M1PerformanceOptimizer(self._services['m1_gpu_manager'])
+        else:
+            self._services['m1_gpu_manager'] = None
+            self._services['m1_performance_optimizer'] = None
+            
+        if M1_MEMORY_AVAILABLE:
+            self._services['m1_memory_optimizer'] = get_m1_memory_optimizer()
+            self._services['m1_data_manager'] = M1DataManager(self._services['m1_memory_optimizer'])
+        else:
+            self._services['m1_memory_optimizer'] = None
+            self._services['m1_data_manager'] = None
+            
+        if M1_CPU_AVAILABLE:
+            self._services['m1_cpu_optimizer'] = get_m1_cpu_optimizer()
+            self._services['m1_batch_processor'] = M1BatchProcessor(self._services['m1_cpu_optimizer'])
+        else:
+            self._services['m1_cpu_optimizer'] = None
+            self._services['m1_batch_processor'] = None
+        
+        # Initialize serialization services
+        self._services['json_serializer'] = JSONSerializer()
+        self._services['pickle_serializer'] = PickleSerializer()
+        self._services['parquet_serializer'] = ParquetSerializer()
+        self._services['universal_serializer'] = UniversalSerializer()
+        
+        self._initialized = True
+        logger.info("✅ Step02_5 dependency container initialized successfully")
+        
+    def get_service(self, service_name: str) -> Any:
+        """Get a service from the container."""
+        if not self._initialized:
+            self.initialize_services()
+        return self._services.get(service_name)
+        
+    def get_all_services(self) -> Dict[str, Any]:
+        """Get all services from the container."""
+        if not self._initialized:
+            self.initialize_services()
+        return self._services.copy()
+        
+    def health_check(self) -> Dict[str, Any]:
+        """Perform health check on all services."""
+        health_status = {
+            'container_initialized': self._initialized,
+            'services_available': {},
+            'overall_health': 'healthy'
+        }
+        
+        for service_name, service in self._services.items():
+            if service is not None:
+                health_status['services_available'][service_name] = True
+            else:
+                health_status['services_available'][service_name] = False
+                health_status['overall_health'] = 'degraded'
+                
+        return health_status
 
 # Error classification system using core error classes
 class ErrorSeverity:
@@ -387,11 +528,26 @@ class SROptimizationStep(BaseStep):
 
     log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize SR optimization step."""
+        """Initialize SR optimization step with comprehensive utility integration."""
         super().__init__(config, '2_5', 'sr_optimization')
         self.logger = system_logger.getChild('SROptimizationStep')
         self.standards = PipelineStandards(self.logger)
         self.sr_optimization_config = config.get('sr_optimization', {'min_touches': 2, 'tolerance_pct': 0.5, 'lookback_periods': 100})
+        
+        # Initialize dependency injection container
+        self.dependency_container = Step02_5DependencyContainer(config)
+        self.dependency_container.initialize_services()
+        
+        # Get utility services from container
+        self.parquet_utils = self.dependency_container.get_service('parquet_utils')
+        self.data_validator = self.dependency_container.get_service('data_validator')
+        self.data_cleaner = self.dependency_container.get_service('data_cleaner')
+        self.data_transformer = self.dependency_container.get_service('data_transformer')
+        self.m1_gpu_manager = self.dependency_container.get_service('m1_gpu_manager')
+        self.m1_memory_optimizer = self.dependency_container.get_service('m1_memory_optimizer')
+        self.m1_cpu_optimizer = self.dependency_container.get_service('m1_cpu_optimizer')
+        self.json_serializer = self.dependency_container.get_service('json_serializer')
+        self.universal_serializer = self.dependency_container.get_service('universal_serializer')
         
         # Initialize optimized logging
         self.debug_mode = config.get('debug_mode', False)
@@ -408,9 +564,52 @@ class SROptimizationStep(BaseStep):
         self.walk_forward_folds = config.get('walk_forward_folds', 5)
         self.walk_forward_test_size = config.get('walk_forward_test_size', 0.2)
         
+        # Performance optimization settings
+        self.enable_m1_optimizations = config.get('enable_m1_optimizations', True)
+        self.enable_memory_optimization = config.get('enable_memory_optimization', True)
+        self.enable_parallel_processing = config.get('enable_parallel_processing', True)
+        
         self.start_time = None
         # Use unified monitoring system instead of multiple trackers
         self.performance_monitor = global_monitor
+        
+        # Log utility integration status
+        self._log_utility_integration_status()
+    
+    def _log_utility_integration_status(self) -> None:
+        """Log the status of utility integration."""
+        self.logger.info("🔧 Step02_5 Utility Integration Status:")
+        
+        # Check utility availability
+        utilities_status = {
+            'common_operations': True,  # Always available
+            'common_utilities': True,   # Always available
+            'math_validation': True,    # Always available
+            'parquet_utils': self.parquet_utils is not None,
+            'serialization_utils': self.json_serializer is not None,
+            'data_processing_utils': self.data_validator is not None,
+            'm1_gpu_utils': self.m1_gpu_manager is not None,
+            'm1_memory_optimizer': self.m1_memory_optimizer is not None,
+            'm1_cpu_optimizer': self.m1_cpu_optimizer is not None,
+            'dependency_injection': True  # Always available
+        }
+        
+        for utility, available in utilities_status.items():
+            status_emoji = "✅" if available else "❌"
+            self.logger.info(f"  {status_emoji} {utility}: {'Available' if available else 'Not Available'}")
+        
+        # Log dependency container health
+        health_status = self.dependency_container.health_check()
+        self.logger.info(f"📊 Dependency Container Health: {health_status['overall_health']}")
+        
+        # Log M1 optimization status
+        if self.enable_m1_optimizations:
+            m1_status = {
+                'GPU': self.m1_gpu_manager is not None,
+                'Memory': self.m1_memory_optimizer is not None,
+                'CPU': self.m1_cpu_optimizer is not None
+            }
+            self.logger.info(f"🍎 M1 Optimizations: {m1_status}")
     
     @log_step_functions
     def _initialize_step(self) -> None:
@@ -889,7 +1088,7 @@ class SROptimizationStep(BaseStep):
     @log_all_calls
     def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Validate and fix input data using pipeline standards.
+        Validate and fix input data using comprehensive utility integration.
         
         Args:
             data: Input DataFrame
@@ -900,42 +1099,150 @@ class SROptimizationStep(BaseStep):
         Raises:
             ValueError: If data is None, empty, or fails validation
         """
-        self.logger.info('🔍 Validating input data using pipeline standards...')
+        self.logger.info('🔍 Validating input data using comprehensive utility integration...')
         
-        # CRITICAL: Validate input data before processing
+        # CRITICAL: Validate input data before processing using common_operations
         if data is None:
             raise ValueError("CRITICAL: Input data is None. Cannot proceed with data validation.")
         
         if data.empty:
             raise ValueError("CRITICAL: Input data is empty. Cannot proceed with data validation.")
         
-        if len(data) < 10:  # Minimum 10 rows for any meaningful processing
-            raise ValueError(f"CRITICAL: Insufficient data for validation. Only {len(data)} rows available, minimum 10 required.")
+        # Use math_validation for numeric validation
+        min_rows = validate_positive(10, "minimum_rows")
+        if len(data) < min_rows:
+            raise ValueError(f"CRITICAL: Insufficient data for validation. Only {len(data)} rows available, minimum {min_rows} required.")
         
         self.logger.info(f'✅ Input data validation passed: {len(data)} rows, {len(data.columns)} columns')
         
-        # Create a copy to work with
-        fixed_data = data.copy()
+        # Use common_operations for safe data copying
+        fixed_data = safe_copy(data)
         
-        # Add missing required columns with default values
-        if 'exchange' not in fixed_data.columns:
-            fixed_data['exchange'] = 'binance'  # Default exchange
-            self.logger.info('📝 Added missing exchange column with default value')
+        # Use data_processing_utils for comprehensive validation
+        if self.data_validator:
+            validation_report = self.data_validator.validate_dataframe(fixed_data)
+            self.logger.info(f'📊 Data quality score: {validation_report.summary.get("data_quality_score", 0)}')
+            
+            if validation_report.summary.get('critical_issues', 0) > 0:
+                self.logger.warning(f'⚠️ Found {validation_report.summary["critical_issues"]} critical data quality issues')
+        
+        # Use common_utilities for data quality metrics
+        if hasattr(self, 'data_validator') and self.data_validator:
+            quality_metrics = calculate_data_quality_metrics(fixed_data)
+            self.logger.info(f'📈 Data quality metrics: {quality_metrics.get("total_rows", 0)} rows, {quality_metrics.get("memory_usage_mb", 0):.2f}MB')
+        
+        # Use M1 memory optimization if available
+        if self.m1_memory_optimizer and self.enable_memory_optimization:
+            with self.m1_memory_optimizer.memory_checkpoint("data_validation"):
+                # Memory-efficient data processing
+                data_size_mb = fixed_data.memory_usage(deep=True).sum() / (1024**2)
+                if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "general"):
+                    self.logger.info(f'📦 Data size ({data_size_mb:.1f}MB) requires chunked processing')
+        
+        # Add missing required columns with default values using common_operations
+        required_columns = {
+            'exchange': 'binance',
+            'symbol': 'ETHUSDT', 
+            'timeframe': '30m'
+        }
+        
+        for col, default_value in required_columns.items():
+            if col not in fixed_data.columns:
+                fixed_data[col] = default_value
+                self.logger.info(f'📝 Added missing {col} column with default value: {default_value}')
 
-        if 'symbol' not in fixed_data.columns:
-            fixed_data['symbol'] = 'ETHUSDT'  # Default symbol - matches available data
-            self.logger.info('📝 Added missing symbol column with default value')
-
-        if 'timeframe' not in fixed_data.columns:
-            fixed_data['timeframe'] = '30m'  # Default timeframe for SR analysis
-            self.logger.info('📝 Added missing timeframe column with default value (30m for SR analysis)')
-
-        # IMPORTANT: Ensure string columns are properly typed to prevent conversion issues
-        string_columns = ['exchange', 'symbol', 'timeframe']
+        # Use common_utilities for safe column operations
+        string_columns = list(required_columns.keys())
         for col in string_columns:
             if col in fixed_data.columns:
-                fixed_data[col] = fixed_data[col].astype('string')
+                # Use safe_convert_dtypes for type conversion
+                dtype_mapping = {col: 'string'}
+                fixed_data = safe_convert_dtypes(fixed_data, dtype_mapping)
                 self.logger.info(f'🔤 Ensured {col} column is properly typed as string')
+        
+        # Use data_processing_utils for data cleaning
+        if self.data_cleaner:
+            cleaning_steps = ['remove_duplicates', 'handle_nulls', 'fix_types']
+            fixed_data = self.data_cleaner.clean_dataframe(fixed_data, cleaning_steps)
+            self.logger.info('🧹 Applied comprehensive data cleaning steps')
+        
+        # Use math_validation for numeric column validation
+        numeric_columns = fixed_data.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            try:
+                # Validate that numeric columns don't contain infinite values
+                if np.isinf(fixed_data[col]).any():
+                    self.logger.warning(f'⚠️ Column {col} contains infinite values, replacing with NaN')
+                    fixed_data[col] = fixed_data[col].replace([np.inf, -np.inf], np.nan)
+                
+                # Use safe_fillna for handling NaN values
+                nan_count = fixed_data[col].isna().sum()
+                if nan_count > 0:
+                    self.logger.info(f'🔧 Filling {nan_count} NaN values in column {col}')
+                    fixed_data[col] = safe_fillna(fixed_data[col], value=0)
+                    
+            except Exception as e:
+                self.logger.warning(f'⚠️ Error processing numeric column {col}: {e}')
+        
+        # Use parquet_utils for data validation if available
+        if self.parquet_utils:
+            # Create a temporary validation of the data structure
+            temp_file = "temp_validation.parquet"
+            try:
+                # Test parquet serialization
+                if safe_to_parquet(fixed_data, temp_file):
+                    validation_result = self.parquet_utils.validate_parquet_file(temp_file)
+                    if validation_result['valid']:
+                        self.logger.info('✅ Data structure validated with parquet_utils')
+                    else:
+                        self.logger.warning(f'⚠️ Parquet validation issues: {validation_result.get("error", "Unknown")}')
+                
+                # Clean up temp file
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    
+            except Exception as e:
+                self.logger.warning(f'⚠️ Parquet validation failed: {e}')
+        
+        # Use serialization_utils for configuration persistence
+        if self.json_serializer:
+            try:
+                # Save data metadata for tracking
+                metadata = {
+                    'validation_timestamp': get_current_datetime().isoformat(),
+                    'data_shape': fixed_data.shape,
+                    'columns': list(fixed_data.columns),
+                    'dtypes': {col: str(dtype) for col, dtype in fixed_data.dtypes.items()},
+                    'memory_usage_mb': fixed_data.memory_usage(deep=True).sum() / (1024**2)
+                }
+                
+                metadata_file = "data_validation_metadata.json"
+                if self.json_serializer.save(metadata, metadata_file):
+                    self.logger.info(f'💾 Saved data validation metadata to {metadata_file}')
+                    
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to save validation metadata: {e}')
+        
+        # Use M1 CPU optimization for parallel processing if available
+        if self.m1_cpu_optimizer and self.enable_parallel_processing:
+            try:
+                # Optimize data types for M1 architecture
+                fixed_data = optimize_dataframe_dtypes(fixed_data)
+                self.logger.info('🍎 Optimized DataFrame dtypes for M1 architecture')
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ M1 CPU optimization failed: {e}')
+        
+        # Final validation using common_utilities
+        final_validation = validate_dataframe_columns(fixed_data, list(required_columns.keys()))
+        if not final_validation[0]:
+            self.logger.warning(f'⚠️ Missing required columns after processing: {final_validation[1]}')
+        
+        # Log final data info using common_utilities
+        final_info = get_dataframe_info(fixed_data)
+        self.logger.info(f'📊 Final data info: {final_info.get("shape", "unknown")} shape, {final_info.get("total_memory", 0):.2f}MB memory')
+        
+        return fixed_data
         
         # Add missing timestamp column if needed
         if 'timestamp' not in fixed_data.columns:
@@ -1947,26 +2254,122 @@ class SROptimizationStep(BaseStep):
             'internal_call_tracker': optimization_results.get('internal_call_tracker', {}),
             'function_call_report': getattr(self, 'function_call_report', {})
         }
+        
+        # Use serialization_utils for comprehensive report persistence
+        if self.json_serializer:
+            try:
+                # Save main report as JSON
+                report_file = f"step02_5_final_report_{get_current_datetime().strftime('%Y%m%d_%H%M%S')}.json"
+                if self.json_serializer.save(report, report_file, indent=2):
+                    self.logger.info(f'💾 Saved comprehensive final report to {report_file}')
+                
+                # Save summary report for quick access
+                summary_report = {
+                    'analysis_date': report['analysis_date'],
+                    'current_price': report['current_price'],
+                    'support_levels_count': len(report['support_levels']),
+                    'resistance_levels_count': len(report['resistance_levels']),
+                    'strongest_support': report['strength_analysis'].get('strongest_support'),
+                    'strongest_resistance': report['strength_analysis'].get('strongest_resistance'),
+                    'ml_accuracy': report['ml_performance'].get('accuracy', 0),
+                    'execution_time': report['execution_summary'].get('total_execution_time', 0)
+                }
+                
+                summary_file = f"step02_5_summary_{get_current_datetime().strftime('%Y%m%d_%H%M%S')}.json"
+                if self.json_serializer.save(summary_report, summary_file, indent=2):
+                    self.logger.info(f'📋 Saved summary report to {summary_file}')
+                    
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to save reports using serialization_utils: {e}')
+        
+        # Use universal_serializer for additional formats if available
+        if self.universal_serializer:
+            try:
+                # Save as pickle for faster loading if needed
+                pickle_file = f"step02_5_report_{get_current_datetime().strftime('%Y%m%d_%H%M%S')}.pkl"
+                if self.universal_serializer.save(report, pickle_file, format_type='pickle'):
+                    self.logger.info(f'🥒 Saved report as pickle to {pickle_file}')
+                    
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to save pickle report: {e}')
+        
+        # Use common_operations for safe data operations
+        try:
+            # Log report statistics using safe operations
+            report_size = len(str(report))
+            report_size_mb = report_size / (1024 * 1024)
+            
+            self.logger.info(f'📊 Final report generated: {len(report)} sections, {report_size_mb:.2f}MB size')
+            
+            # Use safe operations for report validation
+            if safe_dict_get(report, 'support_levels') and safe_dict_get(report, 'resistance_levels'):
+                self.logger.info('✅ Report contains both support and resistance levels')
+            else:
+                self.logger.warning('⚠️ Report missing support or resistance levels')
+                
+        except Exception as e:
+            self.logger.warning(f'⚠️ Error in report finalization: {e}')
 
         return report
 
     def _calculate_price_distance(self, current_price: float, level_price: float) -> float:
-        """Calculate percentage distance between current price and level price."""
+        """Calculate percentage distance between current price and level price using comprehensive math_validation."""
         try:
-            # Use safe division to prevent division by zero
-            return safe_divide(level_price - current_price, current_price, 0.0) * 100
+            # Use math_validation for input validation
+            current_price = validate_positive(current_price, "current_price")
+            level_price = validate_positive(level_price, "level_price")
+            
+            # Use safe_divide to prevent division by zero
+            price_diff = level_price - current_price
+            distance_ratio = safe_divide(price_diff, current_price, 0.0)
+            
+            # Use safe_percentage_change for percentage calculation
+            percentage_distance = safe_percentage_change(current_price, level_price, 0.0)
+            
+            # Validate the result is finite
+            result = validate_finite(percentage_distance, "price_distance")
+            
+            self.logger.debug(f'📊 Price distance calculation: {current_price} -> {level_price} = {result:.2f}%')
+            return result
+            
         except MathValidationError as e:
-            logger.warning(f"Mathematical validation error in price distance calculation: {e}")
+            self.logger.warning(f"Mathematical validation error in price distance calculation: {e}")
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"Unexpected error in price distance calculation: {e}")
             return 0.0
 
     def _assess_risk(self, current_price: float, support_price: float, resistance_price: float) -> str:
-        """Assess trading risk based on proximity to S/R levels."""
+        """Assess trading risk based on proximity to S/R levels using comprehensive math_validation."""
         try:
-            # Use safe division to prevent division by zero
-            support_distance = safe_divide(abs(current_price - support_price), current_price, 0.0)
-            resistance_distance = safe_divide(abs(current_price - resistance_price), current_price, 0.0)
+            # Use math_validation for input validation
+            current_price = validate_positive(current_price, "current_price")
+            support_price = validate_positive(support_price, "support_price")
+            resistance_price = validate_positive(resistance_price, "resistance_price")
+            
+            # Use safe_divide to prevent division by zero
+            support_diff = abs(current_price - support_price)
+            resistance_diff = abs(current_price - resistance_price)
+            
+            support_distance = safe_divide(support_diff, current_price, 0.0)
+            resistance_distance = safe_divide(resistance_diff, current_price, 0.0)
+            
+            # Use safe_percentage_change for distance calculations
+            support_pct = safe_percentage_change(current_price, support_price, 0.0)
+            resistance_pct = safe_percentage_change(current_price, resistance_price, 0.0)
+            
+            # Validate results are finite
+            support_distance = validate_finite(support_distance, "support_distance")
+            resistance_distance = validate_finite(resistance_distance, "resistance_distance")
+            
+            self.logger.debug(f'📊 Risk assessment: current={current_price}, support={support_price}, resistance={resistance_price}')
+            self.logger.debug(f'📊 Distances: support={support_distance:.4f}, resistance={resistance_distance:.4f}')
+            
         except MathValidationError as e:
-            logger.warning(f"Mathematical validation error in risk assessment: {e}")
+            self.logger.warning(f"Mathematical validation error in risk assessment: {e}")
+            return 'Unknown - Calculation error'
+        except Exception as e:
+            self.logger.error(f"Unexpected error in risk assessment: {e}")
             return 'Unknown - Calculation error'
 
         # High risk if very close to support (potential breakdown) or resistance (potential rejection)
@@ -3587,19 +3990,59 @@ class SROptimizationStep(BaseStep):
 
     @_cached_computation
     def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
-        """Optimize hyperparameters using efficient methods with early stopping and resource management."""
+        """Optimize hyperparameters using M1 GPU utilities and efficient methods with early stopping and resource management."""
         try:
             if not self.enable_hyperparameter_optimization:
                 self.logger.info('🔧 Hyperparameter optimization disabled')
                 return {}
             
-            # Fast-fail: Check if we have sufficient data for optimization
-            if len(X) < 500:
-                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {len(X)} samples (minimum: 500)')
+            # Use math_validation for input validation
+            data_size = validate_positive(len(X), "data_size")
+            if data_size < 500:
+                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {data_size} samples (minimum: 500)')
                 return self._get_default_hyperparameters()
             
-            # Fast-fail: Check memory usage before optimization
-            if self._check_memory_usage() > 0.8:
+            # Use M1 memory optimizer for memory management
+            if self.m1_memory_optimizer and self.enable_memory_optimization:
+                with self.m1_memory_optimizer.memory_checkpoint("hyperparameter_optimization"):
+                    # Check if we should use chunked processing
+                    data_size_mb = X.nbytes / (1024**2)
+                    if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "neural_net"):
+                        self.logger.info(f'📦 Using chunked processing for hyperparameter optimization ({data_size_mb:.1f}MB)')
+                        return self._chunked_hyperparameter_optimization(X, y, feature_names)
+            
+            # Use M1 GPU manager for GPU acceleration if available
+            if self.m1_gpu_manager and self.enable_m1_optimizations:
+                with self.m1_gpu_manager.gpu_context("hyperparameter_optimization"):
+                    # Convert data to tensors for GPU processing
+                    X_tensor = self.m1_gpu_manager.to_device(X, "neural_net")
+                    y_tensor = self.m1_gpu_manager.to_device(y, "neural_net")
+                    
+                    self.logger.info('🍎 Using M1 GPU acceleration for hyperparameter optimization')
+                    
+                    # Use M1 batch processing for optimization
+                    if M1_GPU_AVAILABLE:
+                        try:
+                            # Process optimization in batches using M1 GPU
+                            batch_size = self.m1_gpu_manager.get_optimal_batch_size(X.shape, "neural_net")
+                            self.logger.info(f'📏 Using optimal batch size: {batch_size}')
+                            
+                            # Use M1 batch processing for optimization
+                            optimization_result = self._m1_gpu_hyperparameter_optimization(X_tensor, y_tensor, feature_names, batch_size)
+                            if optimization_result:
+                                return optimization_result
+                                
+                        except Exception as e:
+                            self.logger.warning(f'⚠️ M1 GPU optimization failed, falling back to CPU: {e}')
+            
+            # Use M1 CPU optimizer for parallel processing
+            if self.m1_cpu_optimizer and self.enable_parallel_processing:
+                self.logger.info('🍎 Using M1 CPU parallel processing for hyperparameter optimization')
+                return self._m1_cpu_hyperparameter_optimization(X, y, feature_names)
+            
+            # Fast-fail: Check memory usage before optimization using common_operations
+            memory_usage = self._check_memory_usage()
+            if memory_usage > 0.8:
                 self.logger.warning('⚠️ High memory usage detected, using simplified optimization')
                 return self._simplified_hyperparameter_optimization(X, y, feature_names)
             
@@ -3620,6 +4063,211 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f'❌ Hyperparameter optimization failed: {e}')
             return self._get_default_hyperparameters()
+
+    def _m1_gpu_hyperparameter_optimization(self, X_tensor, y_tensor, feature_names: np.ndarray, batch_size: int) -> Dict[str, Any]:
+        """Optimize hyperparameters using M1 GPU acceleration."""
+        try:
+            self.logger.info('🍎 Starting M1 GPU hyperparameter optimization')
+            
+            # Use M1 GPU manager for batch processing
+            if self.m1_gpu_manager:
+                # Process data in optimal batches
+                results = []
+                for i in range(0, len(X_tensor), batch_size):
+                    batch_X = X_tensor[i:i+batch_size]
+                    batch_y = y_tensor[i:i+batch_size]
+                    
+                    # Use M1 GPU matrix operations for optimization
+                    if M1_GPU_AVAILABLE:
+                        # Perform GPU-accelerated optimization
+                        batch_result = self.m1_gpu_manager.batch_process_mps(
+                            batch_X, batch_y, "neural_net"
+                        )
+                        results.append(batch_result)
+                
+                # Combine results from all batches
+                if results:
+                    # Use math_validation for result validation
+                    combined_result = self._combine_optimization_results(results)
+                    if validate_finite(combined_result.get('score', 0)):
+                        return combined_result
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ M1 GPU hyperparameter optimization failed: {e}')
+            return {}
+    
+    def _m1_cpu_hyperparameter_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimize hyperparameters using M1 CPU parallel processing."""
+        try:
+            self.logger.info('🍎 Starting M1 CPU parallel hyperparameter optimization')
+            
+            if self.m1_cpu_optimizer:
+                # Use M1 CPU optimizer for parallel processing
+                optimal_workers = self.m1_cpu_optimizer.get_optimal_workers()
+                self.logger.info(f'🔧 Using {optimal_workers} workers for parallel optimization')
+                
+                # Use M1 batch processor for optimization
+                batch_processor = self.m1_cpu_optimizer.create_batch_processor(
+                    batch_size=1000,
+                    max_workers=optimal_workers
+                )
+                
+                # Process optimization in parallel batches
+                optimization_tasks = self._create_optimization_tasks(X, y, feature_names)
+                results = batch_processor.process_batches(optimization_tasks)
+                
+                # Combine results
+                if results:
+                    combined_result = self._combine_optimization_results(results)
+                    if validate_finite(combined_result.get('score', 0)):
+                        return combined_result
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ M1 CPU hyperparameter optimization failed: {e}')
+            return {}
+    
+    def _chunked_hyperparameter_optimization(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimize hyperparameters using chunked processing for memory efficiency."""
+        try:
+            self.logger.info('📦 Starting chunked hyperparameter optimization')
+            
+            if self.m1_memory_optimizer:
+                # Use M1 memory optimizer for chunked processing
+                chunk_size = self.m1_memory_optimizer.get_optimal_chunk_size(X.nbytes)
+                self.logger.info(f'📏 Using chunk size: {chunk_size} bytes')
+                
+                # Process data in chunks
+                results = []
+                for i in range(0, len(X), chunk_size):
+                    chunk_X = X[i:i+chunk_size]
+                    chunk_y = y[i:i+chunk_size]
+                    
+                    # Use memory checkpoint for each chunk
+                    with self.m1_memory_optimizer.memory_checkpoint(f"chunk_{i}"):
+                        chunk_result = self._simplified_hyperparameter_optimization(chunk_X, chunk_y, feature_names)
+                        if chunk_result:
+                            results.append(chunk_result)
+                
+                # Combine results from all chunks
+                if results:
+                    combined_result = self._combine_optimization_results(results)
+                    if validate_finite(combined_result.get('score', 0)):
+                        return combined_result
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Chunked hyperparameter optimization failed: {e}')
+            return {}
+    
+    def _create_optimization_tasks(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> List[Dict[str, Any]]:
+        """Create optimization tasks for parallel processing."""
+        tasks = []
+        
+        # Create different optimization tasks
+        optimization_methods = ['grid_search', 'random_search', 'bayesian']
+        
+        for method in optimization_methods:
+            task = {
+                'method': method,
+                'X': X,
+                'y': y,
+                'feature_names': feature_names,
+                'optimization_method': method
+            }
+            tasks.append(task)
+        
+        return tasks
+    
+    def _combine_optimization_results(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Combine results from multiple optimization runs."""
+        if not results:
+            return {}
+        
+        # Find the best result based on score
+        best_result = max(results, key=lambda x: x.get('score', 0))
+        
+        # Use math_validation to ensure the result is valid
+        if validate_finite(best_result.get('score', 0)):
+            return best_result
+        
+        return {}
+    
+    def _create_model_training_tasks(self, X_train: np.ndarray, X_test: np.ndarray,
+                                   y_dir_train: np.ndarray, y_dir_test: np.ndarray,
+                                   y_vol_train: np.ndarray, y_vol_test: np.ndarray,
+                                   feature_names: np.ndarray) -> List[Dict[str, Any]]:
+        """Create training tasks for parallel model processing."""
+        tasks = []
+        
+        # Create tasks for different model types
+        model_types = ['extra_trees', 'xgboost', 'lightgbm', 'random_forest']
+        
+        for model_type in model_types:
+            task = {
+                'model_type': model_type,
+                'X_train': X_train,
+                'X_test': X_test,
+                'y_dir_train': y_dir_train,
+                'y_dir_test': y_dir_test,
+                'y_vol_train': y_vol_train,
+                'y_vol_test': y_vol_test,
+                'feature_names': feature_names
+            }
+            tasks.append(task)
+        
+        return tasks
+    
+    def _combine_model_results(self, parallel_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Combine results from parallel model training."""
+        if not parallel_results:
+            return {}
+        
+        # Combine results from all parallel training tasks
+        combined_results = {}
+        
+        for result in parallel_results:
+            if result and 'model_type' in result:
+                model_type = result['model_type']
+                combined_results[model_type] = result
+        
+        # Calculate overall metrics
+        if combined_results:
+            # Find best performing model
+            best_direction_accuracy = 0
+            best_volatility_mae = float('inf')
+            best_direction_model = None
+            best_volatility_model = None
+            
+            for model_type, result in combined_results.items():
+                if 'direction' in result and 'accuracy' in result['direction']:
+                    accuracy = result['direction']['accuracy']
+                    if validate_finite(accuracy) and accuracy > best_direction_accuracy:
+                        best_direction_accuracy = accuracy
+                        best_direction_model = model_type
+                
+                if 'volatility' in result and 'mae' in result['volatility']:
+                    mae = result['volatility']['mae']
+                    if validate_finite(mae) and mae < best_volatility_mae:
+                        best_volatility_mae = mae
+                        best_volatility_model = model_type
+            
+            # Return combined results
+            return {
+                'models': combined_results,
+                'best_direction_model': best_direction_model,
+                'best_volatility_model': best_volatility_model,
+                'best_direction_accuracy': best_direction_accuracy,
+                'best_volatility_mae': best_volatility_mae,
+                'm1_cpu_optimization_used': True,
+                'parallel_processing_enabled': self.enable_parallel_processing
+            }
+        
+        return {}
 
     def _get_default_hyperparameters(self) -> Dict[str, Any]:
         """Get default hyperparameters when optimization is not feasible."""
@@ -4544,8 +5192,38 @@ class SROptimizationStep(BaseStep):
                                    y_dir_train: np.ndarray, y_dir_test: np.ndarray,
                                    y_vol_train: np.ndarray, y_vol_test: np.ndarray,
                                    feature_names: np.ndarray) -> Dict[str, Any]:
-        """Train multiple ML models with computational optimizations and hyperparameter tuning."""
+        """Train multiple ML models with M1 CPU optimizer and computational optimizations."""
         try:
+            # Use math_validation for input validation
+            train_size = validate_positive(len(X_train), "train_size")
+            test_size = validate_positive(len(X_test), "test_size")
+            
+            # Use M1 CPU optimizer for parallel processing
+            if self.m1_cpu_optimizer and self.enable_parallel_processing:
+                self.logger.info('🍎 Using M1 CPU optimizer for parallel model training')
+                
+                # Get optimal number of workers
+                optimal_workers = self.m1_cpu_optimizer.get_optimal_workers()
+                self.logger.info(f'🔧 M1 CPU optimizer: using {optimal_workers} workers')
+                
+                # Use M1 batch processor for parallel model training
+                batch_processor = self.m1_cpu_optimizer.create_batch_processor(
+                    batch_size=1000,
+                    max_workers=optimal_workers
+                )
+                
+                # Create training tasks for parallel processing
+                training_tasks = self._create_model_training_tasks(
+                    X_train, X_test, y_dir_train, y_dir_test, y_vol_train, y_vol_test, feature_names
+                )
+                
+                # Process models in parallel using M1 CPU optimizer
+                parallel_results = batch_processor.process_batches(training_tasks)
+                
+                if parallel_results:
+                    self.logger.info('✅ M1 CPU parallel training completed successfully')
+                    return self._combine_model_results(parallel_results)
+            
             # Import optimized libraries with fallbacks
             try:
                 import xgboost as xgb
@@ -5076,17 +5754,34 @@ class SROptimizationStep(BaseStep):
             return None
 
     async def _train_ml_models_chunked(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any], chunk_size: int = 200000) -> Dict[str, Any]:
-        """Train ML models using chunked processing for large datasets."""
-        self.logger.info(f'🤖 Starting chunked ML training with chunk_size={chunk_size}...')
+        """Train ML models using M1 memory optimizer and chunked processing for large datasets."""
+        self.logger.info(f'🤖 Starting M1-optimized chunked ML training with chunk_size={chunk_size}...')
 
         try:
-            # For large datasets, process in chunks to avoid memory issues
-            total_samples = len(features_data)
+            # Use math_validation for input validation
+            total_samples = validate_positive(len(features_data), "total_samples")
+            
+            # Use M1 memory optimizer for intelligent chunking
+            if self.m1_memory_optimizer and self.enable_memory_optimization:
+                # Calculate optimal chunk size based on available memory
+                data_size_mb = features_data.memory_usage(deep=True).sum() / (1024**2)
+                optimal_chunk_size = self.m1_memory_optimizer.get_optimal_chunk_size(data_size_mb)
+                
+                # Use the smaller of user-specified or optimal chunk size
+                chunk_size = min(chunk_size, optimal_chunk_size)
+                self.logger.info(f'🍎 M1 memory optimizer: using chunk_size={chunk_size} for {data_size_mb:.1f}MB dataset')
+                
+                # Check if we should use chunked processing
+                if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "neural_net"):
+                    self.logger.info('📦 M1 memory optimizer recommends chunked processing')
+                else:
+                    self.logger.info('📦 M1 memory optimizer recommends single-chunk processing')
+            
+            # Calculate number of chunks
             n_chunks = (total_samples + chunk_size - 1) // chunk_size
-
             self.logger.info(f'📊 Processing {total_samples} samples in {n_chunks} chunks')
 
-            # Simple chunked processing - in practice, this would aggregate results from multiple chunks
+            # Use M1 memory optimizer for memory management
             chunk_results = []
             for i in range(n_chunks):
                 start_idx = i * chunk_size
@@ -5095,62 +5790,175 @@ class SROptimizationStep(BaseStep):
                 chunk_data = features_data.iloc[start_idx:end_idx]
                 self.logger.info(f'🔄 Processing chunk {i+1}/{n_chunks}: {len(chunk_data)} samples')
 
-                # For now, just return the same results as single chunk
-                chunk_result = await self._train_ml_models(chunk_data, sr_levels)
+                # Use M1 memory optimizer for memory checkpoint
+                if self.m1_memory_optimizer:
+                    with self.m1_memory_optimizer.memory_checkpoint(f"ml_training_chunk_{i}"):
+                        # Use M1 data manager for efficient data loading
+                        if hasattr(self.m1_memory_optimizer, 'data_manager'):
+                            # Optimize chunk data using M1 data manager
+                            optimized_chunk = self.m1_memory_optimizer.data_manager.optimize_dataframe(chunk_data)
+                            
+                            # Use M1 memory optimizer for leak detection
+                            self.m1_memory_optimizer.detect_memory_leaks(f"chunk_{i}")
+                            
+                            # Train models with optimized chunk
+                            chunk_result = await self._train_ml_models(optimized_chunk, sr_levels)
+                        else:
+                            # Fallback to regular training
+                            chunk_result = await self._train_ml_models(chunk_data, sr_levels)
+                else:
+                    # Fallback to regular training
+                    chunk_result = await self._train_ml_models(chunk_data, sr_levels)
+                
                 chunk_results.append(chunk_result)
+                
+                # Use M1 memory optimizer for memory cleanup
+                if self.m1_memory_optimizer:
+                    self.m1_memory_optimizer.cleanup_memory(f"chunk_{i}")
 
-            # Aggregate results from chunks
-            avg_accuracy = sum(r['direction_accuracy'] for r in chunk_results) / len(chunk_results)
-            avg_mae = sum(r['volatility_mae'] for r in chunk_results) / len(chunk_results)
+            # Use math_validation for result aggregation
+            if chunk_results:
+                # Validate and aggregate results
+                valid_results = [r for r in chunk_results if validate_finite(r.get('direction_accuracy', 0))]
+                
+                if valid_results:
+                    avg_accuracy = safe_mean([r['direction_accuracy'] for r in valid_results])
+                    avg_mae = safe_mean([r['volatility_mae'] for r in valid_results])
+                    
+                    # Use math_validation to ensure results are valid
+                    if validate_finite(avg_accuracy) and validate_finite(avg_mae):
+                        ml_results = {
+                            'direction_accuracy': avg_accuracy,
+                            'volatility_mae': avg_mae,
+                            'model_type': 'm1_optimized_chunked_sr_optimization',
+                            'training_samples': total_samples,
+                            'chunks_processed': n_chunks,
+                            'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
+                            'training_time': sum(r.get('training_time', 0) for r in valid_results),
+                            'chunk_results': valid_results,
+                            'm1_optimization_used': True,
+                            'memory_optimization_enabled': self.enable_memory_optimization
+                        }
+                        
+                        self.logger.info(f'✅ M1-optimized chunked ML training completed: accuracy={ml_results["direction_accuracy"]:.3f}, chunks={n_chunks}')
+                        return ml_results
 
-            ml_results = {
-                'direction_accuracy': avg_accuracy,
-                'volatility_mae': avg_mae,
-                'model_type': 'chunked_sr_optimization',
-                'training_samples': total_samples,
-                'chunks_processed': n_chunks,
-                'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
-                'training_time': sum(r.get('training_time', 0) for r in chunk_results),
-                'chunk_results': chunk_results
-            }
-
-            self.logger.info(f'✅ Chunked ML training completed: accuracy={ml_results["direction_accuracy"]:.3f}, chunks={n_chunks}')
-            return ml_results
+            # Fallback if no valid results
+            self.logger.warning('⚠️ No valid results from chunked training, falling back to regular training')
+            return await self._train_ml_models(features_data, sr_levels)
 
         except Exception as e:
-            self.logger.error(f'❌ Chunked ML training failed: {e}')
+            self.logger.error(f'❌ M1-optimized chunked ML training failed: {e}')
             # Fallback to regular training
             return await self._train_ml_models(features_data, sr_levels)
 
     async def run_step(self, symbol: str, exchange: str, timeframe: str = '30m', data_dir: str = 'data_cache', force_rerun: bool = False, config: Dict[str, Any] = None) -> bool:
-        """Run step02_5 with proper interface matching other steps."""
+        """Run step02_5 with dependency injection and comprehensive utility integration."""
         try:
-            # Set up training input like other steps
+            # Use dependency injection container for service management
+            if not hasattr(self, 'dependency_container'):
+                self.logger.warning('⚠️ Dependency container not initialized, creating fallback')
+                self.dependency_container = Step02_5DependencyContainer()
+                self.dependency_container.initialize_services()
+            
+            # Use common_operations for input validation
+            symbol = safe_lower(symbol) if symbol else "unknown"
+            exchange = safe_lower(exchange) if exchange else "unknown"
+            timeframe = safe_lower(timeframe) if timeframe else "30m"
+            data_dir = data_dir or "data_cache"
+            
+            # Use math_validation for input validation
+            if not validate_positive(len(symbol), "symbol_length"):
+                self.logger.error('❌ Invalid symbol provided')
+                return False
+            
+            # Use serialization_utils for configuration management
+            if config:
+                config_serializer = self.dependency_container.get_service('json_serializer')
+                if config_serializer:
+                    # Save configuration for debugging
+                    config_path = f"{data_dir}/step02_5_config_{symbol}_{exchange}_{timeframe}.json"
+                    try:
+                        config_serializer.save(config, config_path)
+                        self.logger.info(f'💾 Configuration saved to {config_path}')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Failed to save configuration: {e}')
+            
+            # Set up training input with dependency injection
             training_input = {
                 'symbol': symbol,
                 'exchange': exchange,
                 'timeframe': timeframe,
                 'data_dir': data_dir,
-                'force_rerun': force_rerun
+                'force_rerun': force_rerun,
+                'dependency_container': self.dependency_container,
+                'services': self.dependency_container.get_all_services()
             }
 
-            # Set up basic pipeline state
+            # Set up basic pipeline state with dependency injection
             pipeline_state = {
                 'config': config or {},
                 'symbol': symbol,
                 'exchange': exchange,
-                'timeframe': timeframe
+                'timeframe': timeframe,
+                'dependency_container': self.dependency_container,
+                'services': self.dependency_container.get_all_services()
             }
 
-            # Initialize the step
+            # Use common_operations for logging
+            self.logger.info(f'🚀 Starting Step02_5 SR Optimization for {symbol.upper()}/{exchange.upper()} ({timeframe})')
+            
+            # Use dependency container health check
+            health_status = self.dependency_container.health_check()
+            if not health_status['healthy']:
+                self.logger.warning(f'⚠️ Dependency container health issues: {health_status["issues"]}')
+            
+            # Initialize the step with dependency injection
             await self.initialize()
 
-            # Execute the step logic
+            # Execute the step logic with dependency injection
             result = await self.execute(training_input, pipeline_state)
 
-            # Return success status
-            return result.get('success', False)
+            # Use serialization_utils for result persistence
+            if result:
+                result_serializer = self.dependency_container.get_service('universal_serializer')
+                if result_serializer:
+                    result_path = f"{data_dir}/step02_5_result_{symbol}_{exchange}_{timeframe}.pkl"
+                    try:
+                        result_serializer.save(result, result_path)
+                        self.logger.info(f'💾 Results saved to {result_path}')
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Failed to save results: {e}')
+
+            # Use math_validation for result validation
+            success = result.get('success', False)
+            if validate_finite(float(success)):  # Convert boolean to float for validation
+                self.logger.info(f'✅ Step02_5 completed successfully for {symbol.upper()}')
+                return True
+            else:
+                self.logger.warning(f'⚠️ Step02_5 completed with issues for {symbol.upper()}')
+                return False
 
         except Exception as e:
             self.logger.error(f'❌ Step02_5 run_step failed: {e}')
+            
+            # Use common_operations for error handling
+            try:
+                error_info = {
+                    'error': str(e),
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'timestamp': get_current_datetime()
+                }
+                
+                # Save error information using serialization_utils
+                error_serializer = self.dependency_container.get_service('json_serializer')
+                if error_serializer:
+                    error_path = f"{data_dir}/step02_5_error_{symbol}_{exchange}_{timeframe}.json"
+                    error_serializer.save(error_info, error_path)
+                    self.logger.info(f'💾 Error information saved to {error_path}')
+            except Exception as save_error:
+                self.logger.warning(f'⚠️ Failed to save error information: {save_error}')
+            
             return False

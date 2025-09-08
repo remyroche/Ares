@@ -235,10 +235,3 @@ class QualityDashboard:
 def create_alert_config(slack_webhook: Optional[str]=None, email_config: Optional[Dict[str, Any]]=None, webhook_url: Optional[str]=None) -> AlertConfig:
     """Create alert configuration."""
     return AlertConfig(slack_webhook = slack_webhook, email_config = email_config, webhook_url = webhook_url)
-
-def setup_quality_monitoring(alert_config: AlertConfig, validation_rules: Optional[List[Any]]=None) -> Tuple[QualityAlertManager, StreamingQualityValidator, QualityDashboard]:
-    """Set up complete quality monitoring system."""
-    alert_manager = QualityAlertManager(alert_config)
-    streaming_validator = StreamingQualityValidator(validation_rules or [], alert_manager)
-    dashboard = QualityDashboard(alert_manager)
-    return (alert_manager, streaming_validator, dashboard)

@@ -568,12 +568,6 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
             return getattr(self.base_logger, name)
     return ComprehensiveIntegratedLogger(system_logger)
 
-def initialize_comprehensive_integration() -> None:
-    """Initialize comprehensive logging integration."""
-    global system_logger
-    if system_logger is None:
-        system_logger = setup_logging()
-    system_logger = get_system_logger_with_comprehensive_integration()
 
 def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""

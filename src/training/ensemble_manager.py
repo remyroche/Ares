@@ -695,28 +695,3 @@ class EnsembleManager:
             self.print(failed(error_msg))
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="ensemble manager setup",
-)
-async def setup_ensemble_manager(
-    config: dict[str, Any] | None = None,
-) -> EnsembleManager | None:
-    """Setup and return a configured EnsembleManager instance."
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        EnsembleManager: Configured ensemble manager instance
-
-    """
-    try:
-        manager = EnsembleManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup ensemble manager: {e}")
-        return None

@@ -409,24 +409,3 @@ class ConfigurationManager:
     def get_complete_config(self) -> dict[str, Any]:
         """Get complete configuration."""
         return get_complete_config()
-
-async def setup_configuration_manager(config: dict[str, Any] | None = None) -> ConfigurationManager | None:
-    """
-    Setup and return a configured ConfigurationManager instance.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        ConfigurationManager: Configured configuration manager instance
-    """
-    try:
-        if config is None:
-            config = get_complete_config()
-        manager = ConfigurationManager(config)
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f'Failed to setup configuration manager: {e}')
-        return None

@@ -598,27 +598,3 @@ class BinanceExchange:
         except Exception:
             self.print(error('Error stopping Binance exchange: {e}'))
 binance_exchange: BinanceExchange | None = None
-
-@handles_errors(Exception, fallback = None, context='Binance exchange setup')
-async def setup_binance_exchange(config: dict[str, Any] | None = None) -> BinanceExchange | None:
-    """
-    Setup global Binance exchange.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[BinanceExchange]: Global Binance exchange instance
-    """
-    try:
-        global binance_exchange
-        if config is None:
-            config = {'binance_exchange': {'use_testnet': True, 'timeout': 30, 'max_retries': 3, 'rate_limit_enabled': True, 'rate_limit_requests': 1200, 'rate_limit_window': 60}}
-        binance_exchange = BinanceExchange(config)
-        success = await binance_exchange.initialize()
-        if success:
-            return binance_exchange
-        return None
-    except Exception as e:
-        print(f'Error setting up Binance exchange: {e}')
-        return None

@@ -1703,26 +1703,3 @@ class MLConfidencePredictor:
             for label, val in confs.items():
                 all_conf[f'{tf}_{label}'] = float(val)
         return all_conf
-
-@handles_errors(exceptions=(Exception,), default_return = None, context='ML confidence predictor setup')
-async def setup_ml_confidence_predictor(config: dict[str, Any] | None = None) -> MLConfidencePredictor | None:
-    """
-    Setup ML Confidence Predictor.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Optional[MLConfidencePredictor]: Initialized predictor or None
-    """
-    try:
-        if config is None:
-            config = {}
-        predictor = MLConfidencePredictor(config)
-        if await predictor.initialize():
-            return predictor
-        return None
-    except (AttributeError, TypeError) as e:
-        system_logger.debug(f'Error in setup_ml_confidence_predictor: {e}')
-        system_logger.exception(failed('Failed to setup ML Confidence Predictor: {e}'))
-        return None

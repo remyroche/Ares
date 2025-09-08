@@ -287,6 +287,7 @@ async def stop_all_processes() -> Dict:
     return await launcher_integration.stop_all_processes()
 
 
+async def get_process_status() -> Dict:
     """Get process status"""
     return await launcher_integration.get_process_status()
 

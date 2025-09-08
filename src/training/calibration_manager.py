@@ -576,28 +576,3 @@ class CalibrationManager:
         except Exception:
             self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="calibration manager setup",
-)
-async def setup_calibration_manager(
-    config: dict[str, Any] | None = None,
-) -> CalibrationManager | None:
-    """Setup and return a configured CalibrationManager instance."
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        CalibrationManager: Configured calibration manager instance
-
-    """
-    try:
-        manager = CalibrationManager(config or {})
-        if await manager.initialize():
-            return manager
-        return None
-    except Exception as e:
-        system_logger.exception(f"Failed to setup calibration manager: {e}")
-        return None

@@ -584,6 +584,76 @@ class VectorizedProcessingCore:
 
             return df
 
+    def calculate_autocorrelation_vectorized(self, series: np.ndarray,
+                                           lag: int = 1,
+                                           window: int = 50) -> np.ndarray:
+        """Vectorized autocorrelation calculation for time series analysis.
+
+        Args:
+            series: Input time series data
+            lag: Lag for autocorrelation calculation
+            window: Rolling window size
+
+        Returns:
+            Array of autocorrelation values
+        """
+        with self.memory_checkpoint("autocorrelation_calc"):
+            if len(series) < window + lag:
+                # Return zeros if insufficient data
+                return np.zeros(len(series))
+
+            # Ensure series is 1D
+            series = np.asarray(series).flatten()
+
+            # Use GPU acceleration if available
+            if self.m1_gpu_manager and self.enable_gpu:
+                try:
+                    # Convert to tensor
+                    series_tensor = torch.from_numpy(series.astype(np.float32))
+
+                    # Use GPU-accelerated correlation calculation
+                    autocorr_values = []
+
+                    for i in range(window, len(series) - lag + 1):
+                        window_data = series_tensor[i-window:i]
+                        lagged_data = series_tensor[i-lag:i-lag+window]
+
+                        # Compute correlation coefficient
+                        corr = torch.corrcoef(window_data, lagged_data)[0, 1]
+                        autocorr_values.append(corr.item())
+
+                    # Pad with zeros for initial values
+                    result = np.zeros(len(series))
+                    result[window-1:window-1+len(autocorr_values)] = autocorr_values
+
+                    return result
+
+                except Exception as e:
+                    self.logger.warning(f"GPU autocorrelation failed: {e}, falling back to CPU")
+                    # Fall through to CPU implementation
+
+            # CPU implementation
+            result = np.zeros(len(series))
+
+            for i in range(window, len(series) - lag + 1):
+                # Extract windows
+                window_data = series[i-window:i]
+                lagged_data = series[i-lag:i-lag+window]
+
+                # Calculate correlation coefficient
+                if len(window_data) > 1 and len(lagged_data) > 1:
+                    # Avoid division by zero
+                    window_std = np.std(window_data)
+                    lagged_std = np.std(lagged_data)
+
+                    if window_std > 0 and lagged_std > 0:
+                        corr = np.corrcoef(window_data, lagged_data)[0, 1]
+                        result[i] = corr
+                    else:
+                        result[i] = 0.0
+
+            return result
+
     def vectorized_rolling_features(self, data: pd.DataFrame,
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> pd.DataFrame:

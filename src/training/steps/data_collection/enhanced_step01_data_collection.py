@@ -4,7 +4,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 """

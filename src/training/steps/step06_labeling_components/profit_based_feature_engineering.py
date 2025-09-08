@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Tuple, Optional, List, Dict, Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 """Profit-Based Feature Engineering System.
@@ -25,7 +25,7 @@ from src.utils.logger import system_logger
 
 try:
     from numba import jit
-import logging
+    import logging
 
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -101,11 +101,10 @@ else:
 class ProfitBasedFeatureEngineering:
     """
     Comprehensive profit-based feature engineering system.
-    
+
     This class provides extensive feature engineering capabilities based on profit
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
-    @log_important_calls
     """
     def __init__(
         self,

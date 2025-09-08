@@ -10,6 +10,7 @@ import sys
 import sys as _sys
 import threading
 import time
+import concurrent.futures
 from contextlib import contextmanager
 
 from datetime import datetime
@@ -19,16 +20,16 @@ import numpy as np
 import pandas as pd
 
 try:
-    from src.utils.pipeline_standards import PipelineStandards
-import collections
+    from ..utils.pipeline_standards import PipelineStandards
+    import collections
 
 except ImportError:
     PipelineStandards = None
-REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']
+REQUIRED_MODULES = ['structured_logging', 'warning_symbols']
 if PipelineStandards is not None:
     dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-    structured_logging = PipelineStandards.safe_import('src.utils.structured_logging', None)
-    warning_symbols = PipelineStandards.safe_import('src.utils.warning_symbols', None)
+    structured_logging = PipelineStandards.safe_import('structured_logging', None)
+    warning_symbols = PipelineStandards.safe_import('warning_symbols', None)
 else:
     dependency_status = {module: False for module in REQUIRED_MODULES}
     structured_logging = None
@@ -487,10 +488,6 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
         return system_logger
 if system_logger is None:
     system_logger = setup_logging()
-import logging
-logging.getLogger().setLevel(logging.INFO)
-for handler in logging.getLogger().handlers:
-    handler.setLevel(logging.INFO)
 
 def ensure_logging_setup() -> logging.Logger | None:
     """

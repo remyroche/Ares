@@ -10,9 +10,31 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Optional
-from core.config import AnalysisConfig, get_default_config
-from utils.file_utils import find_python_files
 import logging
+
+# Simple configuration and utilities
+def get_default_config():
+    """Get default configuration for analysis."""
+    return {
+        'analysis_config': {
+            'exclude_patterns': ['__pycache__', '.git', 'node_modules', '*.pyc', '.pytest_cache']
+        }
+    }
+
+def find_python_files(directory_path, exclude_patterns=None):
+    """Find all Python files in directory."""
+    if exclude_patterns is None:
+        exclude_patterns = ['__pycache__', '.git', 'node_modules', '*.pyc', '.pytest_cache']
+
+    python_files = []
+    for root, dirs, files in os.walk(directory_path):
+        # Skip excluded directories
+        dirs[:] = [d for d in dirs if d not in exclude_patterns and not any(d.endswith(pat.strip('*')) for pat in exclude_patterns)]
+
+        for file in files:
+            if file.endswith('.py'):
+                python_files.append(str(Path(root) / file))
+    return python_files
 
 
 class ScopeContext:
@@ -442,7 +464,7 @@ class UndefinedNameError:
 class UndefinedNamesAnalyzer:
     """
     Enhanced analyzer for detecting undefined names, variables, and imports in Python code.
-    
+
     This analyzer uses AST parsing with proper scope tracking to identify:
     - Undefined variables
     - Undefined function names
@@ -450,7 +472,7 @@ class UndefinedNamesAnalyzer:
     - Missing imports
     - Unused imports
     - Import conflicts
-    
+
     Key improvements:
     - Proper scope stack management
     - File isolation for directory analysis
@@ -458,12 +480,12 @@ class UndefinedNamesAnalyzer:
     - Context-aware error reporting
     """
 
-    def __init__(self, config: AnalysisConfig | None = None):
-        self.config = config or AnalysisConfig()
+    def __init__(self, config: Dict[str, Any] | None = None):
+        self.config = config or get_default_config()
         self.errors: List[UndefinedNameError] = []
         self.builtin_names: Set[str] = set()
         self._init_builtin_names()
-        
+
         # Per-file state to ensure proper isolation
         self._current_file_path: Optional[str] = None
         self._scope_stack: Optional[ScopeStack] = None
@@ -642,7 +664,8 @@ class UndefinedNamesAnalyzer:
         print(f"Analyzing undefined names in directory: {directory_path}")
         
         # Find all Python files
-        python_files = find_python_files(directory_path, self.config.analysis_config.exclude_patterns)
+        exclude_patterns = self.config.get('analysis_config', {}).get('exclude_patterns', [])
+        python_files = find_python_files(directory_path, exclude_patterns)
         
         if not python_files:
             return {
@@ -675,7 +698,7 @@ class UndefinedNamesAnalyzer:
         for file_path in python_files:
             # Each file gets its own fresh analyzer instance to ensure complete isolation
             file_analyzer = UndefinedNamesAnalyzer(self.config)
-            file_result = file_analyzer.analyze_file(file_path)
+            file_result = file_analyzer.analyze_file(str(file_path))
             files_results[str(file_path)] = file_result
             
             if file_result["status"] == "success":
@@ -827,11 +850,7 @@ def main():
     args = parser.parse_args()
 
     # Load configuration
-    if args.config:
-        from core.config import load_config
-        config = load_config(args.config)
-    else:
-        config = get_default_config()
+    config = get_default_config()
 
     # Create analyzer
     analyzer = UndefinedNamesAnalyzer(config)

@@ -1,12 +1,9 @@
-from typing import Optional
-from typing import Any
-from typing import Dict
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Optional, Any, Dict, List, Union, Tuple
 import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Step 3: HMM Regime Discovery with Standardized Data Quality Management.\n\nThis module performs Hidden Markov Model (HMM) regime discovery with standardized\ndata quality checks and automatic data preparation using step01/step1_5 components.\n'
 import asyncio
@@ -32,7 +29,6 @@ from src.utils.lookahead_bias_detector import (
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Get dynamic symbol configuration
@@ -647,8 +643,10 @@ class HMMRegimeDiscoveryStep:
                 artifact_name = log_step_dataframe_with_standardized_name(config = self.config, step_name='step03_hmm_regime_discovery', df = intensity_df, artifact_type='intensity_clusters', additional_metadata={'artifact_type': 'intensity_clusters', 'dataframe_shape': list(intensity_df.shape), 'intensity_features': [col for col in intensity_df.columns if 'intensity' in col], 'timeframe': timeframe})
                 self.logger.info(f'✅ Logged intensity clusters: {artifact_name}')
             if 'metrics' in regime_results and 'reports' in regime_results:
-                report_data = {'metrics': regime_results['metrics'], 'reports': regime_results['reports'], 'training_input': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}, 'execution_timestamp': datetime.now().isoformat()}
-                report_name = log_step_report(config = self.config, step_name='step03_hmm_regime_discovery', report_data = report_data, report_type='regime_discovery_report', additional_metadata={'hmm_states': regime_results['metrics'].get('hmm_states', 0), 'composite_clusters': regime_results['metrics'].get('composite_clusters', 0), 'reports_generated': list(regime_results['reports'].keys()) if 'reports' in regime_results else []})
+                metrics = regime_results.get('metrics', {})
+                reports = regime_results.get('reports', {})
+                report_data = {'metrics': metrics, 'reports': reports, 'training_input': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}, 'execution_timestamp': datetime.now().isoformat()}
+                report_name = log_step_report(config = self.config, step_name='step03_hmm_regime_discovery', report_data = report_data, report_type='regime_discovery_report', additional_metadata={'hmm_states': metrics.get('hmm_states', 0), 'composite_clusters': metrics.get('composite_clusters', 0), 'reports_generated': list(reports.keys()) if isinstance(reports, dict) else []})
                 self.logger.info(f'✅ Logged regime discovery report: {report_name}')
 
             # Generate enhanced comprehensive report if available
@@ -2060,7 +2058,6 @@ class HMMRegimeDiscoveryStep:
             from hmmlearn import hmm
             from sklearn.preprocessing import StandardScaler
             from sklearn.cluster import KMeans
-            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
             self.logger.info('🧠 Using hmmlearn with 20-cluster composite approach...')
 
             # Memory monitoring and warnings
@@ -2147,40 +2144,50 @@ class HMMRegimeDiscoveryStep:
             # Try GPU acceleration if available
             gpu_accelerated = False
             features_gpu = None
-            try:
-                if CUPY_AVAILABLE and cp is not None:
-                    # Check if GPU is available and data is suitable for GPU processing
-                    if cp.cuda.runtime.getDeviceCount() > 0 and features_init.shape[0] > 10000:
-                        self.logger.info("🚀 Using GPU acceleration for HMM training")
-                        gpu_accelerated = True
-                        # Move data to GPU
-                        features_gpu = cp.asarray(features_init)
-                        hmm_model = hmm.GaussianHMM(n_components = n_hmm_states, n_iter = min(n_iter, int(self.config.get('hmm', {}).get('max_iterations', 100))), random_state = random_state, covariance_type='full', init_params='stmc', params='stmc', tol = float(self.config.get('hmm', {}).get('tol', 0.001)))
-                        # HMM fitting will automatically use GPU if available
-                        hmm_model.fit(features_init)  # Keep CPU version for now due to hmmlearn limitations
 
-                        # Clean up GPU memory immediately after use
-                        if features_gpu is not None:
-                            del features_gpu
-                            features_gpu = None
-                            # Force GPU memory cleanup
-                            if cp.cuda.runtime.getDeviceCount() > 0:
-                                cp.cuda.runtime.deviceSynchronize()
-                                cp.cuda.runtime.free(0)  # Free all GPU memory
-                        self.logger.info("🧹 GPU memory cleaned up after HMM training")
-                    else:
-                        hmm_model = hmm.GaussianHMM(n_components = n_hmm_states, n_iter = min(n_iter, int(self.config.get('hmm', {}).get('max_iterations', 100))), random_state = random_state, covariance_type='full', init_params='stmc', params='stmc', tol = float(self.config.get('hmm', {}).get('tol', 0.001)))
+            # Helper function to create HMM model with consistent parameters
+            def _create_hmm_model():
+                hmm_config = self.config.get('hmm', {})
+                return hmm.GaussianHMM(
+                    n_components=n_hmm_states,
+                    n_iter=min(n_iter, int(hmm_config.get('max_iterations', 100))),
+                    random_state=random_state,
+                    covariance_type=hmm_config.get('covariance_type', 'full'),
+                    init_params=hmm_config.get('init_params', 'stmc'),
+                    params=hmm_config.get('params', 'stmc'),
+                    tol=float(hmm_config.get('tol', 0.001))
+                )
+
+            try:
+                if CUPY_AVAILABLE and cp.cuda.runtime.getDeviceCount() > 0 and features_init.shape[0] > 10000:
+                    self.logger.info("🚀 Using GPU acceleration for HMM training")
+                    gpu_accelerated = True
+                    # Move data to GPU
+                    features_gpu = cp.asarray(features_init)
+                    hmm_model = _create_hmm_model()
+                    # HMM fitting will automatically use GPU if available
+                    hmm_model.fit(features_init)  # Keep CPU version for now due to hmmlearn limitations
+
+                    # Clean up GPU memory immediately after use
+                    if features_gpu is not None:
+                        del features_gpu
+                        features_gpu = None
+                        # Force GPU memory cleanup
+                        if cp.cuda.runtime.getDeviceCount() > 0:
+                            cp.cuda.runtime.deviceSynchronize()
+                            cp.cuda.runtime.free(0)  # Free all GPU memory
+                    self.logger.info("🧹 GPU memory cleaned up after HMM training")
                 else:
-                    self.logger.debug("CuPy not available or GPU not suitable, using CPU for HMM training")
-                    hmm_model = hmm.GaussianHMM(n_components = n_hmm_states, n_iter = min(n_iter, int(self.config.get('hmm', {}).get('max_iterations', 100))), random_state = random_state, covariance_type='full', init_params='stmc', params='stmc', tol = float(self.config.get('hmm', {}).get('tol', 0.001)))
+                    if CUPY_AVAILABLE:
+                        self.logger.debug("CuPy not available or GPU not suitable, using CPU for HMM training")
+                    hmm_model = _create_hmm_model()
             except Exception as gpu_error:
                 self.logger.warning(f"GPU acceleration failed: {gpu_error}, falling back to CPU")
                 gpu_accelerated = False
                 # Clean up GPU memory in case of error
-                if features_gpu is not None:
+                if 'features_gpu' in locals() and features_gpu is not None:
                     del features_gpu
-                    features_gpu = None
-                hmm_model = hmm.GaussianHMM(n_components = n_hmm_states, n_iter = min(n_iter, int(self.config.get('hmm', {}).get('max_iterations', 100))), random_state = random_state, covariance_type='full', init_params='stmc', params='stmc', tol = float(self.config.get('hmm', {}).get('tol', 0.001)))
+                hmm_model = _create_hmm_model()
 
             model_ckpt_dir = Path(self.config.get('hmm', {}).get('checkpoint_dir', 'data/hmm_ckpts'))
             model_ckpt_dir.mkdir(parents = True, exist_ok = True)
@@ -3510,7 +3517,10 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         try:
             self.logger.info('🚀 Starting automatic parameter optimization...')
             try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+                import sys
+                from pathlib import Path
+                project_root = Path(__file__).parent.parent.parent.parent.parent.parent
+                sys.path.insert(0, str(project_root))
                 from optimize_hmm_regime_parameters import HMMRegimeOptimizer, identify_market_condition_columns
             except ImportError as e:
                 self.logger.error(f'❌ Could not import optimizer: {e}')

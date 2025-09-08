@@ -1,23 +1,30 @@
-# src/training/di_training_manager.py
-
-from src.core.error_classes import execution_error, initialization_error
-from .training.training_manager import TrainingManager
-from .core.decorators import handles_errors
-
-"""Dependency injection-aware training manager."
+"""
+Dependency injection-aware training manager.
 
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
 """
+
+# Standard library imports
+import logging
 from typing import Any
 
-from .core.dependency_injection import DependencyContainer
-from .core.injectable_base import InjectableBase
-from .interfaces.base_interfaces import IExchangeClient, IStateManager
+# Local imports
+from ..core.decorators import handles_errors
+from ..core.dependency_injection import DependencyContainer
+from ..core.error_classes import execution_error, initialization_error
+from ..core.injectable_base import InjectableBase
+from ..interfaces.base_interfaces import IExchangeClient, IStateManager
+from ..utils.warning_symbols import (
+    failed,
+    initialization_error,
+    invalid,
+    missing,
+    warning,
+)
+from .training_manager import TrainingManager
 
-from src.utils.warning_symbols import (
-import logging
-
+from ..utils.warning_symbols import (
     failed,
     initialization_error,
     invalid,
@@ -98,7 +105,7 @@ class DITrainingManager(InjectableBase):
         try:
             # Create training pipeline
             if self.container:
-                from .training.core.pipeline_base import TrainingPipeline
+                from ..training.core.pipeline_base import TrainingPipeline
 
                 # Register training manager instance
                 self.container.register_instance(DITrainingManager, self)
@@ -107,7 +114,7 @@ class DITrainingManager(InjectableBase):
                 self.training_pipeline = self.container.resolve(TrainingPipeline)
             else:
                 # Fallback to manual creation
-                from .training.core.pipeline_base import TrainingPipeline
+                from ..training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
         self.training_pipeline = TrainingPipeline(self.training_config)

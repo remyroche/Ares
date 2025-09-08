@@ -1,4 +1,3 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step04.5_5.
 Independent logging module that can be used without the reporting system.
@@ -17,11 +16,11 @@ from src.utils.financial_metrics_logger import (
 )
 from src.utils.logger import system_logger
 
+import logging
+
 # Import enhanced functionality if available
 try:
     from src.utils.enhanced_financial_metrics_logger import (
-import logging
-
         get_enhanced_financial_metrics_logger,
         validate_and_log_regime_data
     )
@@ -33,7 +32,7 @@ except ImportError:
 
 logger = system_logger.getChild('Step045Financiallogging')
 
-class Step045FinancialloggingFinancialLogger:
+class Step04_5FinancialLogger:
     """Independent financial metrics logger for Step04.5_5 with enhanced regime logging."""
     
     def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
@@ -243,9 +242,9 @@ class Step045FinancialloggingFinancialLogger:
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
 
-# Enhanced Step045Financiallogging Financial Logger with Regime-Aware Decorator Support
-class EnhancedStep045FinancialloggingFinancialLogger(Step045FinancialloggingFinancialLogger):
-    """Enhanced Step045Financiallogging Financial Logger with automatic regime-aware logging decorator support."""
+# Enhanced Step04_5 Financial Logger with Regime-Aware Decorator Support
+class EnhancedStep04_5FinancialLogger(Step04_5FinancialLogger):
+    """Enhanced Step04_5 Financial Logger with automatic regime-aware logging decorator support."""
     
     def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)

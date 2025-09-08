@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code_quality'))
 from analyzers.architecture_analyzer import ArchitectureAnalyzer
 
 def test_architecture_analyzer():
-def test_architecture_analyzer():
     """Test the architecture analyzer on a few files."""
     print("🧪 Testing Fixed Architecture Analyzer...")
     print("=" * 50)

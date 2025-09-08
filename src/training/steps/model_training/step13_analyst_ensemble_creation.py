@@ -18,7 +18,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import datetime
 import logging
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 # Enhanced Reporting import
@@ -30,7 +30,7 @@ except ImportError:
     Step13EnhancedReporter = None
 
 # Financial Logging import
-from src.training.steps.model_training.step13_financial_logging import Step13FinancialLogger
+from src.training.steps.model_training.step13_financial_logging import Step13FinancialloggingFinancialLogger
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
@@ -51,7 +51,7 @@ try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
     from src.utils.optimized_data_manager import get_optimized_data_manager
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
-import json
+    import json
 
     OPTIMIZATION_AVAILABLE = True
 except ImportError as e:

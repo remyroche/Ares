@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Reporting System for Step 4 Regime Data Splitting & Triple Barrier Method
 

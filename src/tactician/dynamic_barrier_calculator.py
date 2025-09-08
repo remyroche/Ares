@@ -12,8 +12,8 @@ import numpy as np
 
 try:
     from src.core.decorators import traced
-import json
-import logging
+    import json
+    import logging
 
 except ImportError:
     # Fallback decorator if traced is not available

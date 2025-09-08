@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Feature Engineer.
 
 This module handles feature engineering for the unified regime intelligence system.

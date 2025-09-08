@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
 """Progress Manager for Training Steps.
 
 This module handles saving and loading progress for each training step,
@@ -13,12 +13,11 @@ import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-from src.utils.warning_symbols import (
 import logging
 import numpy as np
 import time
 
+from ..utils.warning_symbols import (
     failed,
 )
 

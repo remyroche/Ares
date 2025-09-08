@@ -7,7 +7,7 @@ from src.utils.logger import system_logger
 # Import StepDependencyValidator for step dependency validation
 from .utils.step_dependency_validator import step_dependency_validator
 from src.utils.warning_symbols import (
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     error,
     invalid,
     validation_error,

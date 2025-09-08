@@ -467,7 +467,15 @@ class Step04UtilityProvider(UtilityProvider):
         """Get a specific utility function."""
         utility = self.get_utility(utility_type)
         if utility and isinstance(utility, dict):
-            return utility.get(function_name)
+            # First try direct lookup
+            if function_name in utility:
+                return utility[function_name]
+
+            # If not found directly, search through nested dictionaries
+            for category, functions in utility.items():
+                if isinstance(functions, dict) and function_name in functions:
+                    return functions[function_name]
+
         return None
     
     def get_all_utilities(self) -> Dict[str, Any]:

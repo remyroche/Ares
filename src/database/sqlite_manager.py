@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 from ..utils.logger import system_logger
-from ..utils.warning_symbols import connection_error, error, failed, invalid, missing
+from ..utils.warning_symbols import error_symbol as connection_error, error, failed, invalid, missing
 
 from src.core.error_classes import execution_error, initialization_error
 from ..core.decorators import handles_errors

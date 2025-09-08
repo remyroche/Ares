@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Step 8: Advanced Feature Selection - Refactored to use BaseStep.\n\nThis step performs sophisticated feature selection using:\n- Phase 1: mRMR and Random Forest to select top 150 features\n- Phase 2: Boruta to generate multiple feature sets (100, 80, 60)\nwith regime-aware selection, time-series validation, and interpretability analysis.\n'
 import asyncio

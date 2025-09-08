@@ -1,0 +1,31 @@
+{
+  "success": false,
+  "error_type": "UNKNOWN_ERROR",
+  "error_severity": "HIGH",
+  "error_message": "'UnifiedPerformanceMonitor' object has no attribute 'get_summary'",
+  "execution_time": 1011.7866339683533,
+  "step_name": "step02_5_sr_optimization",
+  "timestamp": "2025-09-08T21:36:40.681233",
+  "symbol": "ETHUSDT",
+  "exchange": "BINANCE",
+  "timeframe": "1m",
+  "data_availability": false,
+  "recommendations": [
+    "Check system logs for detailed error information",
+    "Verify all dependencies are installed correctly",
+    "Ensure system resources are available",
+    "Contact support if the issue persists"
+  ],
+  "troubleshooting_steps": [
+    "1. Check system logs for detailed errors",
+    "2. Verify all dependencies",
+    "3. Check system resources",
+    "4. Review configuration settings"
+  ],
+  "next_actions": [
+    "Review error logs",
+    "Check system configuration",
+    "Verify all dependencies",
+    "Contact support if needed"
+  ]
+}

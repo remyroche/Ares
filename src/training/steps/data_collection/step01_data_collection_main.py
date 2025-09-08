@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 1: Data Collection Pipeline.
 
 This module provides the main interface for data collection with:

@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Data Cleaner Component
 from .exceptions import (
 from src.utils.logger import system_logger

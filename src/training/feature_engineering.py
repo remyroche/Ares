@@ -2,9 +2,9 @@ from collections.abc import Callable
 import pandas as pd
 
 import typing
-import src.utils.decorators
 import numpy as np
 
+from src.utils.decorators import (
     traced,
     validates,
 )

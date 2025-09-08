@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 8: Advanced Feature Selection - Per-Regime Implementation.
 
 This module provides per-HMM regime feature selection functionality, ensuring that

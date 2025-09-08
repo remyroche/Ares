@@ -58,7 +58,7 @@ class StepUpdater:
                     break
             
             # Add the import
-            import_line = "from ..standardized_parquet_handler import standardized_parquet_handler"
+            import_line = "from src.training.steps.standardized_parquet_handler import standardized_parquet_handler"
             lines.insert(import_section_end, import_line)
             
             # Write back

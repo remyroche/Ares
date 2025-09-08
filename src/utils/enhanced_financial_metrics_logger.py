@@ -40,7 +40,7 @@ except ImportError:
 # Import the main logger for fallback
 try:
     from src.utils.logger import system_logger, get_logger
-import time
+    import time
 
 except ImportError:
     system_logger = None

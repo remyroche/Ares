@@ -1,0 +1,39 @@
+{
+  "timestamp": "/Users/remyroche/Documents/Ares",
+  "total_errors": 0,
+  "errors_by_type": {
+    "syntax_error": [
+      {
+        "file_path": "/Users/remyroche/Documents/Ares/src/interfaces/enhanced_event_bus.py",
+        "line": 26,
+        "column": 1,
+        "name": "<syntax_error>",
+        "error_type": "syntax_error",
+        "context": "Syntax error: invalid syntax",
+        "severity": "error"
+      }
+    ]
+  },
+  "errors_by_file": {
+    "/Users/remyroche/Documents/Ares/src/interfaces/enhanced_event_bus.py": [
+      {
+        "file_path": "/Users/remyroche/Documents/Ares/src/interfaces/enhanced_event_bus.py",
+        "line": 26,
+        "column": 1,
+        "name": "<syntax_error>",
+        "error_type": "syntax_error",
+        "context": "Syntax error: invalid syntax",
+        "severity": "error"
+      }
+    ]
+  },
+  "summary": {
+    "total_files_analyzed": 4,
+    "total_errors": 1,
+    "files_with_errors": 1,
+    "undefined_names": 0,
+    "undefined_imports": 0,
+    "unused_imports": 0,
+    "import_conflicts": 0
+  }
+}

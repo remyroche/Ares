@@ -34,8 +34,8 @@ def check_python_environment():
     # Check for venv
     try:
         import venv
-import logging
-import typing
+        import logging
+        import typing
 
         print("✅ venv module available")
     except ImportError:

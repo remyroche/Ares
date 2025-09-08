@@ -28,20 +28,11 @@ from src.utils.lookahead_bias_detector import validate_no_future_data
 from src.utils.warning_symbols import failed
 from src.utils.warning_symbols import initialization_error
 
-    TYPE_CHECKING,
-    Any,
-)
-
 try:
 except Exception:  # pragma: no cover - optional at runtime
     MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
-    failed,
-    initialization_error,
-)
-    get_global_detector, validate_no_future_data, LookaheadBiasError
-)
 
 # Placeholder implementations for missing decorators and classes
 def validate_data_quality(validation_level: str = "WARNING"):

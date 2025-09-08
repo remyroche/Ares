@@ -1,7 +1,105 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Methods Implementation - Part 3
 """
+
+# Import existing SHAP and LIME analyzers
+try:
+    from src.training.model_interpretability.shap_analyzer import SHAPAnalyzer
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    SHAPAnalyzer = None
+
+try:
+    from src.training.model_interpretability.lime_analyzer import LIMEAnalyzer
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+    LIMEAnalyzer = None
+
+# Import existing walk-forward validation from step18
+try:
+    from src.training.steps.backtesting.step18_walk_forward_validation_per_regime import Step18WalkForwardValidationPerRegime
+    WALK_FORWARD_AVAILABLE = True
+except ImportError:
+    WALK_FORWARD_AVAILABLE = False
+    Step18WalkForwardValidationPerRegime = None
+
+# Import required classes
+try:
+    from .step08_unified_complete import (
+        FinancialMetrics, RiskMetrics, RegimeBalanceMetrics,
+        FeatureSelectionValidation, Step08Results
+    )
+except ImportError:
+    # Fallback definitions
+    from typing import Dict, List, Any
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class FinancialMetrics:
+        returns: Dict[str, float] = field(default_factory=dict)
+        volatility: Dict[str, float] = field(default_factory=dict)
+        sharpe_ratio: Dict[str, float] = field(default_factory=dict)
+        var_95: Dict[str, float] = field(default_factory=dict)
+        var_99: Dict[str, float] = field(default_factory=dict)
+        max_drawdown: Dict[str, float] = field(default_factory=dict)
+        calmar_ratio: Dict[str, float] = field(default_factory=dict)
+        sortino_ratio: Dict[str, float] = field(default_factory=dict)
+        information_ratio: Dict[str, float] = field(default_factory=dict)
+        beta: Dict[str, float] = field(default_factory=dict)
+        alpha: Dict[str, float] = field(default_factory=dict)
+
+    @dataclass
+    class RiskMetrics:
+        portfolio_var: float = 0.0
+        portfolio_es: float = 0.0
+        concentration_risk: float = 0.0
+        liquidity_risk: float = 0.0
+        model_risk: float = 0.0
+        regime_risk: float = 0.0
+        feature_stability_risk: float = 0.0
+        overfitting_risk: float = 0.0
+        data_quality_risk: float = 0.0
+        operational_risk: float = 0.0
+        overall_risk_score: float = 0.0
+
+    @dataclass
+    class RegimeBalanceMetrics:
+        regime_counts: Dict[str, int] = field(default_factory=dict)
+        regime_percentages: Dict[str, float] = field(default_factory=dict)
+        balance_score: float = 0.0
+        imbalance_severity: str = "none"
+        rebalancing_applied: bool = False
+        rebalancing_method: str = ""
+        min_samples_per_regime: int = 100
+        target_balance_ratio: float = 0.8
+
+    @dataclass
+    class FeatureSelectionValidation:
+        selection_bias_score: float = 0.0
+        temporal_stability: float = 0.0
+        regime_consistency: float = 0.0
+        correlation_stability: float = 0.0
+        importance_stability: float = 0.0
+        overfitting_indicators: Dict[str, float] = field(default_factory=dict)
+        validation_passed: bool = False
+        warnings: List[str] = field(default_factory=list)
+
+    @dataclass
+    class Step08Results:
+        regime_data: Any = None
+        selected_features: Dict[str, List[str]] = field(default_factory=dict)
+        financial_metrics: FinancialMetrics = field(default_factory=FinancialMetrics)
+        risk_metrics: RiskMetrics = field(default_factory=RiskMetrics)
+        regime_balance: RegimeBalanceMetrics = field(default_factory=RegimeBalanceMetrics)
+        feature_validation: FeatureSelectionValidation = field(default_factory=FeatureSelectionValidation)
+        execution_metadata: Dict[str, Any] = field(default_factory=dict)
+        artifacts_generated: List[str] = field(default_factory=list)
+        success: bool = False
+        errors: List[str] = field(default_factory=list)
+        warnings: List[str] = field(default_factory=list)
 
     async def _advanced_feature_selection(self, data: pd.DataFrame) -> Dict[str, List[str]]:
         """Advanced feature selection with bias prevention."""
@@ -580,3 +678,397 @@ Unified Step08 Methods Implementation - Part 3
         except Exception as e:
             self.logger.warning(f'Failed to calculate regime-specific metrics: {e}')
             return {}
+
+    async def _perform_interpretability_analysis(self, data: pd.DataFrame, selected_features: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Perform model interpretability analysis using SHAP and LIME."""
+        try:
+            self.logger.info('🧠 Performing model interpretability analysis...')
+
+            interpretability_results = {
+                'shap_available': SHAP_AVAILABLE,
+                'lime_available': LIME_AVAILABLE,
+                'analysis_performed': False,
+                'shap_results': {},
+                'lime_results': {},
+                'feature_importance_summary': {},
+                'interpretability_warnings': []
+            }
+
+            if not selected_features or 'final' not in selected_features:
+                interpretability_results['interpretability_warnings'].append('No final features available for analysis')
+                return interpretability_results
+
+            final_features = selected_features['final']
+            if not final_features:
+                interpretability_results['interpretability_warnings'].append('Empty final features list')
+                return interpretability_results
+
+            # Prepare data for analysis
+            X = data[final_features]
+            y = data['composite_cluster_id'].astype(int)
+
+            # Create train/test split for analysis
+            from sklearn.model_selection import train_test_split
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+
+            # Train a simple model for interpretability analysis
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10)
+            model.fit(X_train, y_train)
+
+            # SHAP Analysis
+            if SHAP_AVAILABLE and SHAPAnalyzer:
+                try:
+                    self.logger.info('🔍 Running SHAP analysis...')
+                    shap_config = {
+                        'max_evals': 100,
+                        'batch_size': 50,
+                        'output_dir': self.output_dir
+                    }
+                    shap_analyzer = SHAPAnalyzer(shap_config)
+
+                    shap_results = await shap_analyzer.analyze_model(
+                        model=model,
+                        X_train=X_train,
+                        X_test=X_test,
+                        feature_names=final_features,
+                        model_name='step08_feature_selection_model'
+                    )
+
+                    interpretability_results['shap_results'] = shap_results
+                    interpretability_results['analysis_performed'] = True
+
+                    # Extract feature importance from SHAP
+                    if 'feature_importance' in shap_results:
+                        interpretability_results['feature_importance_summary']['shap'] = shap_results['feature_importance']
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ SHAP analysis failed: {e}')
+                    interpretability_results['interpretability_warnings'].append(f'SHAP analysis failed: {str(e)}')
+
+            # LIME Analysis
+            if LIME_AVAILABLE and LIMEAnalyzer:
+                try:
+                    self.logger.info('🔍 Running LIME analysis...')
+                    lime_config = {
+                        'num_samples': 100,
+                        'num_features': min(10, len(final_features)),
+                        'output_dir': self.output_dir
+                    }
+                    lime_analyzer = LIMEAnalyzer(lime_config)
+
+                    lime_results = await lime_analyzer.analyze_model(
+                        model=model,
+                        X_test=X_test,
+                        feature_names=final_features,
+                        model_name='step08_feature_selection_model',
+                        output_dir=self.output_dir
+                    )
+
+                    interpretability_results['lime_results'] = lime_results
+                    interpretability_results['analysis_performed'] = True
+
+                    # Extract feature importance from LIME
+                    if 'feature_importance' in lime_results:
+                        interpretability_results['feature_importance_summary']['lime'] = lime_results['feature_importance']
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ LIME analysis failed: {e}')
+                    interpretability_results['interpretability_warnings'].append(f'LIME analysis failed: {str(e)}')
+
+            # Generate unified feature importance summary
+            if interpretability_results['analysis_performed']:
+                interpretability_results['feature_importance_summary'] = self._generate_unified_feature_importance(
+                    interpretability_results['feature_importance_summary'],
+                    final_features
+                )
+
+            self.logger.info('✅ Model interpretability analysis completed')
+            return interpretability_results
+
+        except Exception as e:
+            self.logger.error(f'Failed to perform interpretability analysis: {e}')
+            return {
+                'analysis_performed': False,
+                'error': str(e),
+                'shap_available': SHAP_AVAILABLE,
+                'lime_available': LIME_AVAILABLE
+            }
+
+    def _generate_unified_feature_importance(self, importance_dict: Dict[str, Dict], feature_names: List[str]) -> Dict[str, Any]:
+        """Generate unified feature importance summary from multiple methods."""
+        try:
+            unified_importance = {}
+
+            # Collect importance scores from all methods
+            all_scores = {}
+            for method, scores in importance_dict.items():
+                if isinstance(scores, dict):
+                    for feature, score in scores.items():
+                        if feature not in all_scores:
+                            all_scores[feature] = []
+                        all_scores[feature].append(score)
+
+            # Calculate average importance and ranking
+            feature_ranking = []
+            for feature in feature_names:
+                if feature in all_scores:
+                    scores = all_scores[feature]
+                    avg_score = sum(scores) / len(scores)
+                    unified_importance[feature] = {
+                        'average_importance': avg_score,
+                        'methods_count': len(scores),
+                        'individual_scores': dict(zip(importance_dict.keys(), scores))
+                    }
+                    feature_ranking.append((feature, avg_score))
+
+            # Sort by importance
+            feature_ranking.sort(key=lambda x: x[1], reverse=True)
+
+            return {
+                'unified_importance': unified_importance,
+                'feature_ranking': feature_ranking,
+                'top_features': [f[0] for f in feature_ranking[:10]],
+                'methods_used': list(importance_dict.keys())
+            }
+
+        except Exception as e:
+            self.logger.warning(f'Failed to generate unified feature importance: {e}')
+            return {}
+
+    async def _perform_walk_forward_validation(self, data: pd.DataFrame, selected_features: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Perform walk-forward validation on selected features using step18 framework."""
+        try:
+            self.logger.info('🔄 Performing walk-forward validation on selected features...')
+
+            validation_results = {
+                'walk_forward_available': WALK_FORWARD_AVAILABLE,
+                'validation_performed': False,
+                'feature_stability_scores': {},
+                'regime_validation_results': {},
+                'temporal_stability': {},
+                'validation_warnings': []
+            }
+
+            if not WALK_FORWARD_AVAILABLE or not Step18WalkForwardValidationPerRegime:
+                validation_results['validation_warnings'].append('Walk-forward validation from step18 not available')
+                return validation_results
+
+            if not selected_features or 'final' not in selected_features:
+                validation_results['validation_warnings'].append('No final features available for validation')
+                return validation_results
+
+            final_features = selected_features['final']
+            if not final_features:
+                validation_results['validation_warnings'].append('Empty final features list')
+                return validation_results
+
+            # Initialize walk-forward validator
+            try:
+                validator = Step18WalkForwardValidationPerRegime()
+                self.logger.info('✅ Walk-forward validator initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to initialize walk-forward validator: {e}')
+                validation_results['validation_warnings'].append(f'Validator initialization failed: {str(e)}')
+                return validation_results
+
+            # Get unique regimes from data
+            regimes = data['composite_cluster_id'].unique() if 'composite_cluster_id' in data.columns else [0]
+            self.logger.info(f'📊 Validating features across {len(regimes)} regimes')
+
+            # Perform validation for each regime
+            regime_results = {}
+            feature_stability = {}
+
+            for regime_id in regimes:
+                try:
+                    self.logger.info(f'🔍 Validating features for regime {regime_id}')
+
+                    # Filter data for this regime
+                    regime_data = data[data['composite_cluster_id'] == regime_id] if 'composite_cluster_id' in data.columns else data
+
+                    if len(regime_data) < 100:  # Minimum samples for validation
+                        self.logger.warning(f'⚠️ Insufficient data for regime {regime_id}: {len(regime_data)} samples')
+                        continue
+
+                    # Create a simple model for validation
+                    X_regime = regime_data[final_features]
+                    y_regime = regime_data['composite_cluster_id'].astype(int) if 'composite_cluster_id' in data.columns else pd.Series([0] * len(regime_data))
+
+                    # Perform simplified walk-forward validation
+                    regime_validation = await self._validate_features_walk_forward(
+                        X_regime, y_regime, final_features, regime_id
+                    )
+
+                    if regime_validation:
+                        regime_results[str(regime_id)] = regime_validation
+                        validation_results['validation_performed'] = True
+
+                        # Track feature stability across regimes
+                        for feature in final_features:
+                            if feature not in feature_stability:
+                                feature_stability[feature] = []
+                            if 'feature_importance' in regime_validation:
+                                stability_score = regime_validation['feature_importance'].get(feature, 0)
+                                feature_stability[feature].append(stability_score)
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Validation failed for regime {regime_id}: {e}')
+                    validation_results['validation_warnings'].append(f'Regime {regime_id} validation failed: {str(e)}')
+
+            # Calculate feature stability scores
+            if feature_stability:
+                validation_results['feature_stability_scores'] = self._calculate_feature_stability_scores(feature_stability)
+                validation_results['temporal_stability'] = self._assess_temporal_stability(feature_stability)
+
+            validation_results['regime_validation_results'] = regime_results
+
+            self.logger.info('✅ Walk-forward validation completed')
+            return validation_results
+
+        except Exception as e:
+            self.logger.error(f'Failed to perform walk-forward validation: {e}')
+            return {
+                'validation_performed': False,
+                'error': str(e),
+                'walk_forward_available': WALK_FORWARD_AVAILABLE
+            }
+
+    async def _validate_features_walk_forward(self, X: pd.DataFrame, y: pd.Series, feature_names: List[str], regime_id: int) -> Dict[str, Any]:
+        """Perform simplified walk-forward validation for feature selection."""
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import accuracy_score, classification_report
+            import numpy as np
+
+            # Use time series split for walk-forward validation
+            tscv = TimeSeriesSplit(n_splits=min(5, len(X) // 50))  # Adaptive splits based on data size
+
+            fold_results = []
+            feature_importance_accumulator = {}
+
+            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                try:
+                    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+                    if len(X_train) < 10 or len(X_test) < 5:
+                        continue  # Skip folds with insufficient data
+
+                    # Train model
+                    model = RandomForestClassifier(n_estimators=50, random_state=42, max_depth=10)
+                    model.fit(X_train, y_train)
+
+                    # Make predictions
+                    y_pred = model.predict(X_test)
+                    accuracy = accuracy_score(y_test, y_pred)
+
+                    # Get feature importance
+                    importance_dict = dict(zip(feature_names, model.feature_importances_))
+
+                    # Accumulate feature importance across folds
+                    for feature, importance in importance_dict.items():
+                        if feature not in feature_importance_accumulator:
+                            feature_importance_accumulator[feature] = []
+                        feature_importance_accumulator[feature].append(importance)
+
+                    fold_results.append({
+                        'fold': fold_idx,
+                        'accuracy': accuracy,
+                        'train_size': len(X_train),
+                        'test_size': len(X_test),
+                        'feature_importance': importance_dict
+                    })
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Fold {fold_idx} validation failed: {e}')
+                    continue
+
+            if not fold_results:
+                return None
+
+            # Calculate average metrics
+            avg_accuracy = np.mean([r['accuracy'] for r in fold_results])
+
+            # Calculate average feature importance across folds
+            avg_feature_importance = {}
+            for feature in feature_names:
+                if feature in feature_importance_accumulator:
+                    scores = feature_importance_accumulator[feature]
+                    avg_feature_importance[feature] = np.mean(scores) if scores else 0
+
+            return {
+                'regime_id': regime_id,
+                'n_folds': len(fold_results),
+                'average_accuracy': avg_accuracy,
+                'fold_results': fold_results,
+                'feature_importance': avg_feature_importance,
+                'validation_method': 'walk_forward_time_series'
+            }
+
+        except Exception as e:
+            self.logger.warning(f'Failed to validate features for regime {regime_id}: {e}')
+            return None
+
+    def _calculate_feature_stability_scores(self, feature_stability: Dict[str, List[float]]) -> Dict[str, float]:
+        """Calculate feature stability scores across regimes."""
+        try:
+            stability_scores = {}
+
+            for feature, scores in feature_stability.items():
+                if len(scores) > 1:
+                    # Calculate coefficient of variation (lower is more stable)
+                    mean_score = np.mean(scores)
+                    std_score = np.std(scores)
+
+                    if mean_score > 0:
+                        cv = std_score / mean_score  # Coefficient of variation
+                        stability_score = 1 / (1 + cv)  # Convert to 0-1 scale (higher is more stable)
+                    else:
+                        stability_score = 0.0
+                else:
+                    stability_score = 0.5  # Neutral score for single regime
+
+                stability_scores[feature] = stability_score
+
+            return stability_scores
+
+        except Exception as e:
+            self.logger.warning(f'Failed to calculate feature stability scores: {e}')
+            return {}
+
+    def _assess_temporal_stability(self, feature_stability: Dict[str, List[float]]) -> Dict[str, Any]:
+        """Assess temporal stability of features."""
+        try:
+            temporal_assessment = {
+                'stable_features': [],
+                'unstable_features': [],
+                'stability_threshold': 0.7,
+                'temporal_consistency_score': 0.0
+            }
+
+            if not feature_stability:
+                return temporal_assessment
+
+            stability_scores = self._calculate_feature_stability_scores(feature_stability)
+
+            # Classify features by stability
+            for feature, score in stability_scores.items():
+                if score >= temporal_assessment['stability_threshold']:
+                    temporal_assessment['stable_features'].append(feature)
+                else:
+                    temporal_assessment['unstable_features'].append(feature)
+
+            # Calculate overall temporal consistency
+            if stability_scores:
+                avg_stability = np.mean(list(stability_scores.values()))
+                temporal_assessment['temporal_consistency_score'] = avg_stability
+
+            return temporal_assessment
+
+        except Exception as e:
+            self.logger.warning(f'Failed to assess temporal stability: {e}')
+            return {'error': str(e)}

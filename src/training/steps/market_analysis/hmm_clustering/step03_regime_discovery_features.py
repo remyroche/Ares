@@ -4,7 +4,7 @@ import numpy as np
 
 import warnings
 import pandas as pd
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import logging
 import typing
 import numpy as np

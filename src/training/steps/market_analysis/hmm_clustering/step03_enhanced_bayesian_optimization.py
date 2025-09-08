@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Enhanced Bayesian Parameter Optimization with Expanded Search Space and Performance Optimizations.
 

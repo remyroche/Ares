@@ -6,6 +6,7 @@ including intelligent parallel processing, thread optimization, and CPU-specific
 """
 
 import multiprocessing
+import concurrent.futures
 
 import logging
 
@@ -15,7 +16,6 @@ import psutil
 import os
 import platform
 
-import numpy as np
 import numpy as np
 import pandas as pd
 

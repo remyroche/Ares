@@ -1,7 +1,7 @@
 # src/training/steps/step21_saving.py
 
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from src.utils.mlflow_utils import (
-from ..standardized_parquet_handler import standardized_parquet_handler
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
     log_metrics_with_metadata,

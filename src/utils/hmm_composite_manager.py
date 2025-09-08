@@ -1,7 +1,7 @@
 
 import pandas as pd
 from .logger import system_logger
-from .core.decorators import handles_errors
+from ..core.decorators import handles_errors
 #!/usr/bin/env python3
 """
 HMM Composite Cluster Manager

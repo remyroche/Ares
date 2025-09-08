@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Comprehensive Optimisation Pipeline Validator.
 
 This module provides comprehensive validation for the optimisation pipeline including:

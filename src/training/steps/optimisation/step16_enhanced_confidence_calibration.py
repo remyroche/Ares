@@ -53,7 +53,7 @@ from .step16_enhanced_calibration_methods import (
     EnhancedPlattScaling, EnhancedIsotonicRegression, EnhancedTemperatureScaling
 )
 
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 logger = get_logger(__name__)
 

@@ -54,9 +54,6 @@ from utils.warning_symbols import error
 from utils.warning_symbols import failed
 from utils.warning_symbols import warning
 
-    RegimeTransitionHandler, set_global_handler, handle_regime_transition
-)
-
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))

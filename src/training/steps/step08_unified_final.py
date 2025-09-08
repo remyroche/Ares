@@ -1,7 +1,82 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Final Methods - Part 5
 """
+
+# Import required classes
+try:
+    from .step08_unified_complete import (
+        FinancialMetrics, RiskMetrics, RegimeBalanceMetrics,
+        FeatureSelectionValidation, Step08Results
+    )
+except ImportError:
+    # Fallback definitions
+    from typing import Dict, List, Any
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class FinancialMetrics:
+        returns: Dict[str, float] = field(default_factory=dict)
+        volatility: Dict[str, float] = field(default_factory=dict)
+        sharpe_ratio: Dict[str, float] = field(default_factory=dict)
+        var_95: Dict[str, float] = field(default_factory=dict)
+        var_99: Dict[str, float] = field(default_factory=dict)
+        max_drawdown: Dict[str, float] = field(default_factory=dict)
+        calmar_ratio: Dict[str, float] = field(default_factory=dict)
+        sortino_ratio: Dict[str, float] = field(default_factory=dict)
+        information_ratio: Dict[str, float] = field(default_factory=dict)
+        beta: Dict[str, float] = field(default_factory=dict)
+        alpha: Dict[str, float] = field(default_factory=dict)
+
+    @dataclass
+    class RiskMetrics:
+        portfolio_var: float = 0.0
+        portfolio_es: float = 0.0
+        concentration_risk: float = 0.0
+        liquidity_risk: float = 0.0
+        model_risk: float = 0.0
+        regime_risk: float = 0.0
+        feature_stability_risk: float = 0.0
+        overfitting_risk: float = 0.0
+        data_quality_risk: float = 0.0
+        operational_risk: float = 0.0
+        overall_risk_score: float = 0.0
+
+    @dataclass
+    class RegimeBalanceMetrics:
+        regime_counts: Dict[str, int] = field(default_factory=dict)
+        regime_percentages: Dict[str, float] = field(default_factory=dict)
+        balance_score: float = 0.0
+        imbalance_severity: str = "none"
+        rebalancing_applied: bool = False
+        rebalancing_method: str = ""
+        min_samples_per_regime: int = 100
+        target_balance_ratio: float = 0.8
+
+    @dataclass
+    class FeatureSelectionValidation:
+        selection_bias_score: float = 0.0
+        temporal_stability: float = 0.0
+        regime_consistency: float = 0.0
+        correlation_stability: float = 0.0
+        importance_stability: float = 0.0
+        overfitting_indicators: Dict[str, float] = field(default_factory=dict)
+        validation_passed: bool = False
+        warnings: List[str] = field(default_factory=list)
+
+    @dataclass
+    class Step08Results:
+        regime_data: Any = None
+        selected_features: Dict[str, List[str]] = field(default_factory=dict)
+        financial_metrics: FinancialMetrics = field(default_factory=FinancialMetrics)
+        risk_metrics: RiskMetrics = field(default_factory=RiskMetrics)
+        regime_balance: RegimeBalanceMetrics = field(default_factory=RegimeBalanceMetrics)
+        feature_validation: FeatureSelectionValidation = field(default_factory=FeatureSelectionValidation)
+        execution_metadata: Dict[str, Any] = field(default_factory=dict)
+        artifacts_generated: List[str] = field(default_factory=list)
+        success: bool = False
+        errors: List[str] = field(default_factory=list)
+        warnings: List[str] = field(default_factory=list)
 
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
@@ -11,9 +86,10 @@ from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
-    async def _generate_comprehensive_results(self, data: pd.DataFrame, selected_features: Dict[str, List[str]], 
+    async def _generate_comprehensive_results(self, data: pd.DataFrame, selected_features: Dict[str, List[str]],
                                             financial_metrics: FinancialMetrics, risk_metrics: RiskMetrics,
-                                            feature_validation: FeatureSelectionValidation, start_time: datetime) -> Step08Results:
+                                            feature_validation: FeatureSelectionValidation, interpretability_results: Dict[str, Any],
+                                            validation_results: Dict[str, Any], start_time: datetime) -> Step08Results:
         """Generate comprehensive results from all analysis components."""
         try:
             self.logger.info('📋 Generating comprehensive results...')
@@ -27,6 +103,14 @@ from src.utils.lookahead_bias_detector import (
             results.risk_metrics = risk_metrics
             results.regime_balance = self.regime_balance
             results.feature_validation = feature_validation
+
+            # Add interpretability results
+            if interpretability_results:
+                results.execution_metadata['interpretability_analysis'] = interpretability_results
+
+            # Add validation results
+            if validation_results:
+                results.execution_metadata['walk_forward_validation'] = validation_results
             
             # Execution metadata
             end_time = datetime.now()
@@ -44,7 +128,8 @@ from src.utils.lookahead_bias_detector import (
                     'shap': SHAP_AVAILABLE,
                     'lime': LIME_AVAILABLE,
                     'numba': NUMBA_AVAILABLE,
-                    'joblib': JOBLIB_AVAILABLE
+                    'joblib': JOBLIB_AVAILABLE,
+                    'walk_forward_validation': WALK_FORWARD_AVAILABLE
                 }
             }
             

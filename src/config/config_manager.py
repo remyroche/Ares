@@ -35,6 +35,14 @@ class ConfigManager:
 
     def get_static_config(self) -> dict[str, Any]:
         """Get static (non-optimizable) configuration."""
+        if self._static_config is None:
+            # Import here to avoid circular imports
+            from ..config import get_system_config_section, get_trading_config_section, get_training_config_section
+            self._static_config = {
+                'system': get_system_config_section(),
+                'trading': get_trading_config_section(),
+                'training': get_training_config_section()
+            }
         return self._static_config
 
     def get_optimizable_config(self, category: str) -> Any:

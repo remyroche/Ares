@@ -11,12 +11,10 @@ from src.core.decorators import handles_errors
 warnings.filterwarnings("ignore")
 
 # Import the new RegularizationManager
-from src.utils.logger import system_logger
-
-from ..utils.warning_symbols import (
 import logging
 import time
 
+from ..utils.warning_symbols import (
     error,
     failed,
     invalid,

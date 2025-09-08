@@ -41,7 +41,7 @@ from src.utils.optimized_data_manager import OptimizedDataManager
 from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_monte_carlo_simulate
 from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, parallel_monte_carlo_simulation, optimized_monte_carlo_worker
 from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 class OptimizedMonteCarloEngine:
     """Optimized Monte Carlo engine with M1 hardware acceleration and vectorized processing."""

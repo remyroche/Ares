@@ -1,6 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import src.utils.data_operations
 import numpy as np
 
@@ -37,12 +37,12 @@ except ImportError:
 
 # Import core domain functions with fallbacks
 try:
-
-        guard_dataframe_nulls, 
-        secure_file_path, 
-        validate_dataframe_schema, 
-        validate_file_size, 
-        with_tracing_span, 
+    from src.utils.common_operations import (
+        guard_dataframe_nulls,
+        secure_file_path,
+        validate_dataframe_schema,
+        validate_file_size,
+        with_tracing_span,
         sanitize_string
     )
 except ImportError:

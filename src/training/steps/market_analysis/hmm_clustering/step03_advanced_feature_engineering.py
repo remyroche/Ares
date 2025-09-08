@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Advanced Feature Engineering for ML Transition Detection.
 

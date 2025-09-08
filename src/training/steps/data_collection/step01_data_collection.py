@@ -19,7 +19,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_collection.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)

@@ -63,7 +63,7 @@ from src.utils.comprehensive_function_logger import (
 )
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Import our optimized components with utility integration
 from .step17_optimized_with_utils import (

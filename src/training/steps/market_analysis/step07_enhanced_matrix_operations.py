@@ -7,7 +7,7 @@ from ....core.decorators import handles_errors, log_execution_time, cached, Cach
 import numpy as np
 
 from ..enhanced_error_handling import (
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,

@@ -9,7 +9,7 @@ from src.utils.math_validation import (
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Step 5: Labeling (Enhanced Implementation with M1 Optimizations).
 

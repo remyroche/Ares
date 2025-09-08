@@ -18,7 +18,7 @@ from functools import lru_cache
 from datetime import datetime
 import logging
 import random
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from ....utils.logger import system_logger
 from ....core.decorators import handles_errors
 from ....config.environment import get_environment_settings
@@ -43,11 +43,11 @@ from ....core.decorators.cache import cached
 from ....core.decorators.logging import log_call, log_execution_time
 from ....core.decorators.validate import validates
 from ....core.decorators.retry_timeout import circuit_breaker, timeout
-from ....core.decorators.enhanced_error_handling import enhanced_error_handling
+from ....core.decorators.enhanced_error_handling import handle_errors_enhanced
 
 # Import core errors
-from ....core.errors.base import BaseError, ValidationError, ProcessingError
-from ....core.errors.mapping import ErrorMapping
+from ....core.errors.base import AppError, ValidationError
+from ....core.errors.mapping import ErrorMapper
 
 # Get dynamic symbol configuration
 _settings = get_environment_settings()
@@ -75,7 +75,7 @@ from ....utils.comprehensive_function_logger import (
 # Import XGBoost with fallback
 try:
     import xgboost as xgb
-import time
+    import time
 
     XGBOOST_AVAILABLE = True
 except ImportError:
@@ -785,7 +785,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return=None, context='S/R context enhancement')
     @log_execution_time()
     @validates()
-    @enhanced_error_handling
+    @handle_errors_enhanced
     async def _enhance_training_data_with_sr_context(self, labeled_data: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
         """Enhance training data with S/R context and outcomes using vectorized HMM-aware analysis."""
         try:
@@ -856,7 +856,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     @log_execution_time()
     @validates()
     @circuit_breaker(failure_threshold=3, recovery_timeout=60)
-    @enhanced_error_handling
+    @handle_errors_enhanced
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute regime-aware tactician specialist models training with optimization tools."""
         # Use step optimization manager if available
@@ -1119,7 +1119,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return={}, context='tactician model training')
     @log_execution_time()
     @validates()
-    @enhanced_error_handling
+    @handle_errors_enhanced
     async def _train_tactician_models(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
         """Train tactician specialist models with optimization tools."""
         try:
@@ -1546,7 +1546,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 @log_execution_time()
 @validates()
 @circuit_breaker(failure_threshold=2, recovery_timeout=120)
-@enhanced_error_handling
+@handle_errors_enhanced
 async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str=None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the tactician specialist training step."
 

@@ -1,6 +1,7 @@
 import pandas as pd
 from src.utils.logger import system_logger
 import numpy as np
+import lightgbm as lgb
 
 # src/training/enhanced_lm_optimizer.py
 
@@ -40,8 +41,8 @@ from src.utils.logger import system_logger
 # Import Pydantic configuration
 
 try:
+    import logging
     from src.training.enhanced_lm_config import (
-import logging
 
         DEFAULT_CONFIG,
         EnhancedLMOptimizerConfig,
@@ -820,7 +821,7 @@ class EnhancedLMOptimizer:
             if hasattr(self, "mlflow_available") and self.mlflow_available:
                 try:
                     import mlflow
-                    from .utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
+                    from src.utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
                     
                     # Extract metadata from config
                     config = getattr(self, 'config', {})
@@ -1608,7 +1609,7 @@ class EnhancedRegularizationManager:
                 try:
                     # Convert to tensors
                     X_tensor = torch.FloatTensor(features_df.values)
-                    y_tensor = torch.LongTensor(target.values) if model_type == "classification" else torch.FloatTensor(target.values).unsqueeze(1)
+                    y_tensor = torch.LongTensor(target.values) if "classification" == "classification" else torch.FloatTensor(target.values).unsqueeze(1)
 
                     # Create data loader
                     dataset = TensorDataset(X_tensor, y_tensor)
@@ -1617,7 +1618,7 @@ class EnhancedRegularizationManager:
                     # Training loop
                     model.train()
                     optimizer = optim.Adam(model.parameters(), lr = 0.001, weight_decay = weight_decay)
-                    criterion = nn.CrossEntropyLoss() if model_type == "classification" else nn.MSELoss()
+                    criterion = nn.CrossEntropyLoss() if "classification" == "classification" else nn.MSELoss()
 
                     for _epoch in range(10):  # Short training for optimization
                         for batch_X, batch_y in dataloader:
@@ -1631,7 +1632,7 @@ class EnhancedRegularizationManager:
                     model.eval()
                     with torch.no_grad():
                         outputs = model(X_tensor)
-                        if model_type == "classification":
+                        if "classification" == "classification":
                             _, predictions = torch.max(outputs, 1)
                             return (predictions == y_tensor).float().mean().item()
                         mse = criterion(outputs, y_tensor).item()

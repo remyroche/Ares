@@ -23,6 +23,16 @@ from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, safe_pow
 from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
 from src.core.errors import AppError, ValidationError, DataIntegrityError, BusinessRuleError, NotFoundError, ConflictError, RateLimitError, TimeoutError, ServiceUnavailableError, ErrorCode
 
+# Import new optimization modules
+try:
+    from .step05_adaptive_chunk_sizer import AdaptiveChunkSizer, AdaptiveChunkConfig
+    from .step05_gpu_memory_pool import GPUMemoryPoolManager, MemoryPoolConfig
+    from .step05_multi_level_cache import MultiLevelCache, CacheConfig
+    OPTIMIZATION_MODULES_AVAILABLE = True
+except ImportError as e:
+    system_logger.warning(f"⚠️ Optimization modules not available: {e}")
+    OPTIMIZATION_MODULES_AVAILABLE = False
+
 logger = system_logger.getChild('Step05StreamingProcessor')
 
 
@@ -61,13 +71,22 @@ class Step05StreamingProcessor:
         self.streaming_config = StreamingConfig()
         self.processing_stats = ChunkProcessingStats()
         self._load_streaming_config()
-        
+
+        # Initialize optimization modules
+        self.adaptive_sizer = None
+        self.gpu_memory_pool = None
+        self.multi_level_cache = None
+        self._initialize_optimization_modules()
+
         self.logger.info("🚀 Initializing Step05 Streaming Processor")
         self.logger.info(f"📊 Chunk size: {self.streaming_config.chunk_size:,} rows")
         self.logger.info(f"💾 Max memory: {self.streaming_config.max_memory_mb:.0f} MB")
         self.logger.info(f"🔄 Overlap rows: {self.streaming_config.overlap_rows}")
         self.logger.info(f"🗜️ Compression: {'Enabled' if self.streaming_config.enable_compression else 'Disabled'}")
         self.logger.info(f"⚡ Parallel processing: {'Enabled' if self.streaming_config.enable_parallel_processing else 'Disabled'}")
+        self.logger.info(f"🎯 Adaptive chunk sizing: {'Enabled' if self.adaptive_sizer else 'Disabled'}")
+        self.logger.info(f"🎮 GPU memory pool: {'Enabled' if self.gpu_memory_pool else 'Disabled'}")
+        self.logger.info(f"💾 Multi-level cache: {'Enabled' if self.multi_level_cache else 'Disabled'}")
     
     def _load_streaming_config(self):
         """Load streaming configuration from config."""
@@ -83,7 +102,56 @@ class Step05StreamingProcessor:
                 progress_reporting_interval=stream_config.get('progress_reporting_interval', 10)
             )
             self.logger.info("✅ Streaming configuration loaded")
-    
+
+    def _initialize_optimization_modules(self):
+        """Initialize the new optimization modules if available."""
+        if not OPTIMIZATION_MODULES_AVAILABLE:
+            self.logger.info("ℹ️ Optimization modules not available, using standard processing")
+            return
+
+        try:
+            # Initialize adaptive chunk sizer
+            if self.config.get('enable_adaptive_chunk_sizing', True):
+                adaptive_config = AdaptiveChunkConfig(
+                    base_chunk_size=self.streaming_config.chunk_size,
+                    min_chunk_size=self.config.get('min_chunk_size', 1000),
+                    max_chunk_size=self.config.get('max_chunk_size', 100000),
+                    memory_safety_factor=self.config.get('memory_safety_factor', 0.7),
+                    enable_memory_adaptation=self.config.get('enable_memory_adaptation', True),
+                    enable_complexity_adaptation=self.config.get('enable_complexity_adaptation', True),
+                    enable_performance_learning=self.config.get('enable_performance_learning', True)
+                )
+                self.adaptive_sizer = AdaptiveChunkSizer(adaptive_config)
+                self.logger.info("✅ Adaptive chunk sizer initialized")
+
+            # Initialize GPU memory pool
+            if self.config.get('enable_gpu_memory_pool', True):
+                memory_config = MemoryPoolConfig(
+                    max_pool_size_gb=self.config.get('gpu_memory_pool_size_gb', 4.0),
+                    enable_memory_reuse=self.config.get('enable_memory_reuse', True),
+                    enable_automatic_defragmentation=self.config.get('enable_defragmentation', True),
+                    memory_pressure_threshold=self.config.get('memory_pressure_threshold', 0.8)
+                )
+                self.gpu_memory_pool = GPUMemoryPoolManager(memory_config)
+                self.logger.info("✅ GPU memory pool initialized")
+
+            # Initialize multi-level cache
+            if self.config.get('enable_multi_level_cache', True):
+                cache_config = CacheConfig(
+                    enable_l1_cache=self.config.get('enable_l1_cache', True),
+                    enable_l2_cache=self.config.get('enable_l2_cache', True),
+                    l1_max_size_mb=self.config.get('l1_cache_size_mb', 512.0),
+                    l2_max_size_mb=self.config.get('l2_cache_size_mb', 2048.0),
+                    l2_cache_dir=self.config.get('cache_directory', 'data_cache/step05_cache'),
+                    enable_compression=self.config.get('enable_cache_compression', True)
+                )
+                self.multi_level_cache = MultiLevelCache(cache_config)
+                self.logger.info("✅ Multi-level cache initialized")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize optimization modules: {e}")
+            self.logger.info("🔄 Falling back to standard processing")
+
     def _log_memory_usage(self, operation_name: str):
         """Log current memory usage."""
         try:
@@ -103,7 +171,55 @@ class Step05StreamingProcessor:
             
         except Exception as e:
             self.logger.warning(f"⚠️ Could not log memory usage: {e}")
-    
+
+    def _calculate_chunk_complexity(self, chunk: pd.DataFrame) -> float:
+        """Calculate complexity score for a chunk of data."""
+        try:
+            if len(chunk) == 0:
+                return 0.0
+
+            complexity_score = 0.0
+
+            # Factor 1: Data type diversity
+            dtypes = chunk.dtypes
+            numeric_count = sum(pd.api.types.is_numeric_dtype(dt) for dt in dtypes)
+            dtype_ratio = numeric_count / len(dtypes)
+            complexity_score += (1 - dtype_ratio) * 0.3
+
+            # Factor 2: Null value percentage
+            null_percentage = chunk.isnull().mean().mean()
+            complexity_score += null_percentage * 0.2
+
+            # Factor 3: Column count
+            column_factor = min(len(chunk.columns) / 20.0, 1.0)  # Normalize to ~20 columns
+            complexity_score += column_factor * 0.2
+
+            # Factor 4: Value range diversity (for numeric columns)
+            numeric_cols = chunk.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                cv_scores = []
+                for col in numeric_cols[:3]:  # Sample first 3 numeric columns
+                    try:
+                        values = chunk[col].dropna()
+                        if len(values) > 1:
+                            mean_val = values.mean()
+                            std_val = values.std()
+                            if mean_val != 0:
+                                cv = abs(std_val / mean_val)
+                                cv_scores.append(min(cv, 5.0))  # Cap at 5
+                    except:
+                        pass
+
+                if cv_scores:
+                    avg_cv = np.mean(cv_scores)
+                    complexity_score += min(avg_cv / 3.0, 1.0) * 0.3
+
+            return min(complexity_score, 1.0)
+
+        except Exception as e:
+            self.logger.debug(f"⚠️ Complexity calculation failed: {e}")
+            return 0.5  # Default medium complexity
+
     def _check_memory_availability(self) -> bool:
         """Check if sufficient memory is available for processing."""
         try:
@@ -154,14 +270,37 @@ class Step05StreamingProcessor:
             if not self._check_memory_availability():
                 return
             
-            # Determine chunk size
-            effective_chunk_size = chunk_size or self.streaming_config.chunk_size
-            
-            # Adjust chunk size based on file size
+            # Determine chunk size - use adaptive sizer if available
+            if self.adaptive_sizer and chunk_size is None:
+                # Get a sample of the data for complexity analysis
+                try:
+                    # Quick sample read to analyze data complexity
+                    if file_path.suffix.lower() == '.parquet':
+                        sample_df = pd.read_parquet(file_path, nrows=1000)
+                    else:
+                        sample_df = pd.read_csv(file_path, nrows=1000)
+
+                    # Get current system load
+                    system_load = psutil.cpu_percent(interval=0.1) / 100.0
+
+                    # Calculate optimal chunk size
+                    effective_chunk_size = self.adaptive_sizer.get_optimal_chunk_size(
+                        data_sample=sample_df,
+                        system_load=system_load
+                    )
+                    self.logger.info(f"🎯 Adaptive chunk sizing: {effective_chunk_size:,} rows")
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Adaptive sizing failed, using default: {e}")
+                    effective_chunk_size = self.streaming_config.chunk_size
+            else:
+                effective_chunk_size = chunk_size or self.streaming_config.chunk_size
+
+            # Legacy file size adjustment (kept for compatibility)
             if file_size_mb > 1000:  # Large file
                 effective_chunk_size = min(effective_chunk_size, 5000)
                 self.logger.info(f"📊 Large file detected, reducing chunk size to {effective_chunk_size:,}")
-            
+
             self.logger.info(f"🔄 Processing with chunk size: {effective_chunk_size:,} rows")
             
             # Load data in chunks
@@ -188,13 +327,52 @@ class Step05StreamingProcessor:
                     # Log chunk memory usage
                     chunk_memory = chunk.memory_usage(deep=True).sum() / (1024**2)
                     self.logger.info(f"💾 Chunk memory usage: {chunk_memory:.1f} MB")
-                    
+
                     # Update processing stats
                     self.processing_stats.total_chunks += 1
                     self.processing_stats.total_rows += chunk_rows
-                    
+
                     self._log_memory_usage(f"chunk_{chunk_count}")
-                    
+
+                    # Record performance for adaptive chunk sizer
+                    if self.adaptive_sizer:
+                        try:
+                            # Calculate data complexity score for learning
+                            complexity_score = self._calculate_chunk_complexity(chunk)
+
+                            # Record the chunk performance (will be updated with processing time later)
+                            self.adaptive_sizer.record_chunk_performance(
+                                chunk_size=chunk_rows,
+                                processing_time=0.0,  # Placeholder, will be updated
+                                memory_usage_mb=chunk_memory,
+                                data_complexity_score=complexity_score,
+                                success=True
+                            )
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Performance recording failed: {e}")
+
+                    # Use GPU memory pool for tensor allocation if available
+                    if self.gpu_memory_pool and hasattr(chunk, '_gpu_tensors'):
+                        try:
+                            # Convert chunk to GPU tensors using memory pool
+                            chunk_tensors = {}
+                            for col in chunk.select_dtypes(include=[np.number]).columns[:5]:  # Limit to first 5 numeric columns
+                                tensor_data = chunk[col].values.astype(np.float32)
+                                tensor = self.gpu_memory_pool.allocate_tensor(
+                                    shape=tensor_data.shape,
+                                    dtype=torch.float32,
+                                    operation_type="data_processing"
+                                )
+                                tensor.copy_(torch.from_numpy(tensor_data))
+                                chunk_tensors[col] = tensor
+
+                            # Attach tensors to chunk for processing
+                            chunk._gpu_tensors = chunk_tensors
+                            self.logger.debug(f"🎮 Allocated GPU tensors for {len(chunk_tensors)} columns")
+
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ GPU tensor allocation failed: {e}")
+
                     # Yield chunk for processing
                     yield chunk
                     
@@ -289,6 +467,20 @@ class Step05StreamingProcessor:
                     elif hasattr(chunk_result, 'shape'):
                         self.logger.info(f"📊 Chunk result shape: {chunk_result.shape}")
                     
+                    # Cache result if cache is available
+                    if self.multi_level_cache and self.config.get('enable_result_caching', True):
+                        try:
+                            cache_key = f"chunk_result_{chunk_count}_{hash(str(chunk_result)[:100])}"
+                            self.multi_level_cache.put(
+                                key=cache_key,
+                                data=chunk_result,
+                                operation_type="chunk_processing",
+                                ttl_seconds=3600  # Cache for 1 hour
+                            )
+                            self.logger.debug(f"💾 Cached chunk result: {cache_key}")
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Result caching failed: {e}")
+
                     # Store result
                     result = {
                         'chunk_id': chunk_count,
@@ -298,6 +490,28 @@ class Step05StreamingProcessor:
                         'timestamp': datetime.now().isoformat()
                     }
                     results.append(result)
+
+                    # Update adaptive sizer with final processing time
+                    if self.adaptive_sizer and hasattr(chunk, '_complexity_score'):
+                        try:
+                            self.adaptive_sizer.record_chunk_performance(
+                                chunk_size=len(chunk),
+                                processing_time=chunk_time,
+                                memory_usage_mb=chunk.memory_usage(deep=True).sum() / (1024**2),
+                                data_complexity_score=chunk._complexity_score,
+                                success=True
+                            )
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ Final performance recording failed: {e}")
+
+                    # Free GPU tensors if they were allocated
+                    if self.gpu_memory_pool and hasattr(chunk, '_gpu_tensors'):
+                        try:
+                            for tensor in chunk._gpu_tensors.values():
+                                self.gpu_memory_pool.free_tensor(tensor)
+                            self.logger.debug(f"🗑️ Freed GPU tensors for chunk {chunk_count}")
+                        except Exception as e:
+                            self.logger.debug(f"⚠️ GPU tensor cleanup failed: {e}")
                     
                     # Save chunk if output path provided
                     if output_path:

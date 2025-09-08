@@ -3,7 +3,7 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Optional
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 'Regime Continuity Validator for Pipeline Steps.\n\nThis module validates that regime continuity is maintained throughout the pipeline,\nensuring that regime information flows correctly between steps.\n'
 from pathlib import Path
 import json

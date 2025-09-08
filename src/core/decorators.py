@@ -18,13 +18,12 @@ def handles_errors(*args, **kwargs) -> Callable:
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
                         from src.utils.logger import system_logger
-import logging
-                        
+
                         # If it's already an AppError, re-raise it
                         if isinstance(e, AppError):
                             system_logger.error(f"AppError in {func.__name__}: {e.message}")
                             raise
-                        
+
                         # Convert generic exceptions to appropriate AppError types
                         if 'validation' in str(e).lower() or 'invalid' in str(e).lower():
                             error = ValidationError(f"Validation failed in {func.__name__}: {str(e)}")
@@ -32,12 +31,12 @@ import logging
                             error = initialization_error(f"Initialization failed in {func.__name__}: {str(e)}")
                         else:
                             error = execution_error(f"Execution failed in {func.__name__}: {str(e)}")
-                        
+
                         system_logger.error(f"Error in {func.__name__}: {error.message}")
                         raise error
-                        
-                    except ImportError:
-                        # Fallback to simple logging if error classes not available
+
+                    except (ImportError, AttributeError):
+                        # Fallback to simple logging if error classes not available or circular import
                         print(f'Error in {func.__name__}: {e}')
                         raise
             return async_wrapper
@@ -52,12 +51,12 @@ import logging
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
                         from src.utils.logger import system_logger
-                        
+
                         # If it's already an AppError, re-raise it
                         if isinstance(e, AppError):
                             system_logger.error(f"AppError in {func.__name__}: {e.message}")
                             raise
-                        
+
                         # Convert generic exceptions to appropriate AppError types
                         if 'validation' in str(e).lower() or 'invalid' in str(e).lower():
                             error = ValidationError(f"Validation failed in {func.__name__}: {str(e)}")
@@ -65,12 +64,12 @@ import logging
                             error = initialization_error(f"Initialization failed in {func.__name__}: {str(e)}")
                         else:
                             error = execution_error(f"Execution failed in {func.__name__}: {str(e)}")
-                        
+
                         system_logger.error(f"Error in {func.__name__}: {error.message}")
                         raise error
-                        
-                    except ImportError:
-                        # Fallback to simple logging if error classes not available
+
+                    except (ImportError, AttributeError):
+                        # Fallback to simple logging if error classes not available or circular import
                         print(f'Error in {func.__name__}: {e}')
                         raise
             return sync_wrapper
@@ -97,7 +96,7 @@ def validates(*args, **kwargs) -> Callable:
                 try:
                     from .errors.base import AppError, ValidationError
                     from src.utils.logger import system_logger
-                    
+
                     # Convert to ValidationError if not already
                     if not isinstance(e, (ValidationError, AppError)):
                         error = ValidationError(f"Validation failed in {func.__name__}: {str(e)}")
@@ -106,13 +105,19 @@ def validates(*args, **kwargs) -> Callable:
                     else:
                         system_logger.error(f"Validation error in {func.__name__}: {e.message}")
                         raise
-                        
-                except ImportError:
-                    # Fallback to simple error handling
+
+                except (ImportError, AttributeError):
+                    # Fallback to simple error handling if imports fail or circular dependency
                     print(f'Validation error in {func.__name__}: {e}')
                     raise
         return wrapper
-    return decorator
+
+    # If called as @validates (without parentheses), args[0] will be the function
+    if args and callable(args[0]):
+        return decorator(args[0])
+    # If called as @validates() or @validates(param=value), return the decorator
+    else:
+        return decorator
 
 def cached(*args, **kwargs) -> None:
     """Caching decorator."""

@@ -1,4 +1,3 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
 """Feature interaction engine for creating polynomial feature interactions."""
 
 from typing import Dict, List, Optional, Union, Any, Tuple

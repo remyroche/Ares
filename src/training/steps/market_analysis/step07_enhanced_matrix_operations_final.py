@@ -82,7 +82,7 @@ except ImportError:
 
 # Import parquet handler
 try:
-    from ..standardized_parquet_handler import standardized_parquet_handler
+    from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     PARQUET_HANDLER_AVAILABLE = True
 except ImportError:
     PARQUET_HANDLER_AVAILABLE = False

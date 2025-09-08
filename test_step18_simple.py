@@ -19,7 +19,7 @@ async def test_basic_functionality():
     try:
         # Test imports - direct import to avoid module issues
         import importlib.util
-import time
+        import time
 
         spec = importlib.util.spec_from_file_location(
             "step18_module",

@@ -1,5 +1,3 @@
-from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 4: Triple Barrier Method.
 
 This module applies the triple barrier method to create trading signals and labels.
@@ -58,7 +56,8 @@ from src.core.decorators import (
     cached,
     error_boundary,
     timeout,
-    retry
+    retry,
+    memory_efficient
 )
 # Core errors imports
 from src.core.errors import (
@@ -796,22 +795,6 @@ class TripleBarrierMethodStep:
                 
             # Fallback to basic implementation
             return self._apply_basic_triple_barrier_sync(data)
-            close_prices = data['close'].values
-            high_prices = data['high'].values
-            low_prices = data['low'].values
-            labels = np.zeros(len(close_prices), dtype=np.int8)
-            for i in range(len(close_prices) - 1):
-                entry_price = close_prices[i]
-                profit_barrier = entry_price * (1 + profit_target)
-                stop_barrier = entry_price * (1 - stop_loss)
-                for j in range(i + 1, min(i + max_holding, len(close_prices))):
-                    if high_prices[j] >= profit_barrier:
-                        labels[i] = 1
-                        break
-                    elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1
-                        break
-            return pd.DataFrame({'label': labels})
         except Exception as e:
             self.logger.exception(f'❌ Error applying triple barrier: {e}')
             return None
@@ -883,6 +866,9 @@ class TripleBarrierMethodStep:
                                 'memory_usage_mb': 0,  # Would need to be measured
                                 'signal_generation_rate': len(labeled_data) / execution_time_total if execution_time_total > 0 else 0
                             }
+
+                            # Calculate label statistics for logging
+                            label_stats = self._calculate_label_statistics(labeled_data)
 
                             # Initialize and use financial logger
                             financial_logger = Step04_5FinancialLogger(symbol, exchange, timeframe)
@@ -1226,66 +1212,6 @@ class TripleBarrierMethodStep:
             self.logger.warning(f'⚠️ Risk management controls failed: {e}')
             return labeled_data
 
-@traced(span_name='run_step04_5_triple_barrier')
-@handles_errors()
-@log_execution_time()
-async def run_step(
-    symbol: str, 
-    exchange: str, 
-    timeframe: str, 
-    data_dir: str = 'data_cache', 
-    force_rerun: bool = False, 
-    config: Optional[Dict[str, Any]] = None
-) -> bool:
-    """Run the triple barrier method step with enhanced configuration."""
-    if config is None:
-        config = {}
-    
-    # Create step configuration with safe defaults
-    step_config = {
-        'SYMBOL': symbol,
-        'EXCHANGE': exchange,
-        'TIMEFRAME': timeframe,
-        'DATA_DIR': data_dir,
-        'triple_barrier': {
-            'profit_take_multiplier': safe_float(
-                safe_dict_get(config, 'profit_take_multiplier', 0.002), 
-                0.002
-            ),
-            'stop_loss_multiplier': safe_float(
-                safe_dict_get(config, 'stop_loss_multiplier', 0.001), 
-                0.001
-            ),
-            'time_barrier_minutes': safe_int(
-                safe_dict_get(config, 'time_barrier_minutes', 30), 
-                30
-            ),
-            'max_lookahead': safe_int(
-                safe_dict_get(config, 'max_lookahead', 100), 
-                100
-            )
-        },
-        'max_memory_mb': safe_float(
-            safe_dict_get(config, 'max_memory_mb', 2048.0), 
-            2048.0
-        ),
-        'chunk_size': safe_int(
-            safe_dict_get(config, 'chunk_size', 10000), 
-            10000
-        ),
-        **config
-    }
-    
-    step = TripleBarrierMethodStep(step_config)
-    await step.initialize()
-    
-    return await step.execute_triple_barrier_method(
-        symbol=symbol, 
-        exchange=exchange, 
-        timeframe=timeframe, 
-        data_dir=data_dir, 
-        force_rerun=force_rerun
-    )
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
     """Run Step 4: Triple Barrier Method with standardized return types.

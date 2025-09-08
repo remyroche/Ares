@@ -16,7 +16,7 @@ import pandas as pd
 import warnings
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -37,8 +37,8 @@ pyarrow = PipelineStandards.safe_import('pyarrow', None)
 
 # Import decorators directly
 try:
+    import json
     from src.core.decorators import (
-import json
 
         handles_errors, handle_file_operations, secure_klines_download_operation,
         validate_data_quality, secure_data_processing, prevent_data_leakage,

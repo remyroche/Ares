@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """
 Comprehensive Step Decorators for Data Collection Pipeline
@@ -25,9 +25,9 @@ from src.core.decorators import (
 )
 import pandas as pd
 
-from src.utils.common_operations import (
 import typing
 
+from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
     safe_file_exists,

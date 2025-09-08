@@ -1,7 +1,7 @@
 from src.core.decorators import handles_errors, traced, validates
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Step 13: Analyst Ensemble Creation - Per-Regime Implementation with Full Optimization.
 

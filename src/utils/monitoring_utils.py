@@ -100,7 +100,7 @@ class UnifiedPerformanceMonitor:
         """Get comprehensive performance summary."""
         with self._lock:
             uptime = time.time() - self.start_time
-            
+
             return {
                 'total_calls': self.call_count,
                 'successful_calls': self.success_count,
@@ -110,6 +110,30 @@ class UnifiedPerformanceMonitor:
                 'calls_per_second': self.call_count / max(uptime, 1),
                 'function_metrics': dict(self.performance_metrics),
                 'recent_calls': list(self.call_history)[-10:] if self.call_history else []
+            }
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get performance summary compatible with PerformanceMonitor interface."""
+        with self._lock:
+            # Calculate total execution time from all function metrics
+            total_execution_time = sum(
+                metrics.get('total_time', 0)
+                for metrics in self.performance_metrics.values()
+            )
+
+            # Calculate memory usage (approximate from recent calls)
+            total_memory_usage = sum(
+                call.memory_usage for call in self.call_history
+                if call.memory_usage > 0
+            )
+
+            return {
+                'total_execution_time': total_execution_time,
+                'total_memory_delta_mb': total_memory_usage,
+                'successful_operations': self.success_count,
+                'failed_operations': self.error_count,
+                'success_rate': self.success_count / max(self.call_count, 1),
+                'operations': list(self.performance_metrics.keys())
             }
 
     def get_function_metrics(self, function_name: str) -> Dict[str, Any]:

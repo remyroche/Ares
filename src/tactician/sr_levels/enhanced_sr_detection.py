@@ -1,4 +1,4 @@
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any, Tuple, Union
 import pandas as pd
 from dataclasses import dataclass
 from scipy.signal import find_peaks
@@ -551,15 +551,23 @@ class EnhancedSRDetector:
                     future_data = data.iloc[i+1:i+1+self.breakout_lookforward]
                     if len(future_data) > 0:
                         if level_price > data['close'].iloc[i]:  # Support level
-                            if future_data['low'].min() < (level_price - tolerance):
+                            future_lows = future_data['low'].values
+                            min_future_low = float(future_lows.min())
+                            if min_future_low < (level_price - tolerance):
                                 breakouts += 1
                         else:  # Resistance level
-                            if future_data['high'].max() > (level_price + tolerance):
+                            future_highs = future_data['high'].values
+                            max_future_high = float(future_highs.max())
+                            if max_future_high > (level_price + tolerance):
                                 breakouts += 1
             
             return breakouts / max(total_touches, 1)
         except Exception as e:
-            self.logger.warning(f'Break success rate calculation failed: {e}')
+            # Reduce logging verbosity for expected calculation failures
+            if 'numpy.float64' in str(e) or 'Series' in str(e):
+                self.logger.debug(f'Break success rate calculation failed (expected): {type(e).__name__}')
+            else:
+                self.logger.warning(f'Break success rate calculation failed: {e}')
             return 0.0
 
     def _calculate_persistence_score(self, level_price: float, data: pd.DataFrame, 
@@ -799,26 +807,32 @@ class EnhancedSRDetector:
             self.logger.warning(f'Multi-timeframe support calculation failed: {e}')
             return 1
 
-    def _calculate_enhanced_persistence_score(self, level: SRLevel, data: pd.DataFrame, atr: float) -> float:
+    def _calculate_enhanced_persistence_score(self, level: SRLevel, data: pd.DataFrame, atr: Union[float, pd.Series]) -> float:
         """Calculate enhanced persistence score for a level."""
         try:
             if len(data) < self.min_persistence_bars:
                 return 0.0
-            
+
+            # Handle both scalar and series ATR values
+            if isinstance(atr, pd.Series):
+                current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            else:
+                current_atr = atr
+
             # Calculate multiple persistence metrics
             time_persistence = self._calculate_time_persistence(level, data)
-            price_persistence = self._calculate_price_persistence(level, data, atr)
+            price_persistence = self._calculate_price_persistence(level, data, current_atr)
             volume_persistence = self._calculate_volume_persistence(level, data)
-            
+
             # Weighted combination of persistence metrics
             persistence_score = (
                 time_persistence * 0.4 +
                 price_persistence * 0.4 +
                 volume_persistence * 0.2
             )
-            
+
             return min(1.0, max(0.0, persistence_score))
-            
+
         except Exception as e:
             self.logger.warning(f'Enhanced persistence score calculation failed: {e}')
             return 0.0
@@ -827,16 +841,20 @@ class EnhancedSRDetector:
         """Calculate time-based persistence score."""
         try:
             # Time since formation
-            if level.formation_time:
-                time_since_formation = (data.index[-1] - level.formation_time).total_seconds() / 3600  # Hours
+            if level.formation_time is not None and hasattr(level.formation_time, '__sub__'):
+                # Ensure data.index[-1] is a proper timestamp
+                current_time = pd.Timestamp(data.index[-1])
+                # Ensure level.formation_time is a scalar timestamp, not a Series
+                formation_time = pd.Timestamp(level.formation_time) if not isinstance(level.formation_time, pd.Timestamp) else level.formation_time
+                time_since_formation = (current_time - formation_time).total_seconds() / 3600  # Hours
                 # Normalize: 1.0 for 24+ hours, 0.0 for <1 hour
                 time_persistence = min(1.0, time_since_formation / 24.0)
             else:
                 # Use age_bars as proxy
                 time_persistence = min(1.0, level.age_bars / 100.0)
-            
+
             return time_persistence
-            
+
         except Exception as e:
             self.logger.warning(f'Time persistence calculation failed: {e}')
             return 0.0
@@ -862,23 +880,41 @@ class EnhancedSRDetector:
                     # Check if price bounced off the level
                     if i < len(data) - 5:
                         future_prices = data['close'].iloc[i:i+5]
+                        # Ensure we're working with scalar values, not Series
+                        # Convert to numpy array first to avoid Series ambiguity
+                        future_prices_array = future_prices.values
+
+                        # Get max and min as scalars
+                        max_future_price = float(future_prices_array.max())
+                        min_future_price = float(future_prices_array.min())
+
                         if level.type == 'support':
                             # For support, check if price went up after touching
-                            if future_prices.max() > current_price + tolerance:
+                            if max_future_price > current_price + tolerance:
                                 respect_count += 1
                         else:  # resistance
                             # For resistance, check if price went down after touching
-                            if future_prices.min() < current_price - tolerance:
+                            if min_future_price < current_price - tolerance:
                                 respect_count += 1
             
+            # Ensure total_opportunities is a scalar value
+            if isinstance(total_opportunities, pd.Series):
+                total_opportunities = total_opportunities.iloc[0] if len(total_opportunities) > 0 else 0
+            elif hasattr(total_opportunities, 'item'):
+                total_opportunities = total_opportunities.item()
+
             if total_opportunities == 0:
                 return 0.0
-            
+
             respect_ratio = respect_count / total_opportunities
             return respect_ratio
             
         except Exception as e:
-            self.logger.warning(f'Price persistence calculation failed: {e}')
+            # Reduce logging verbosity for expected calculation failures
+            if 'Series' in str(e) or 'truth value' in str(e):
+                self.logger.debug(f'Price persistence calculation failed (expected): {type(e).__name__}')
+            else:
+                self.logger.warning(f'Price persistence calculation failed: {e}')
             return 0.0
 
     def _calculate_volume_persistence(self, level: SRLevel, data: pd.DataFrame) -> float:
@@ -911,7 +947,7 @@ class EnhancedSRDetector:
                 level.break_success_rate = self._calculate_break_success_rate(
                     level.price, data, atr, self.breakout_tolerance
                 )
-                
+
                 # Calculate persistence score
                 level.persistence_score = self._calculate_persistence_score(
                     level.price, data, atr, self.breakout_tolerance
@@ -919,7 +955,11 @@ class EnhancedSRDetector:
                 
                 # Calculate time since last touch
                 if hasattr(level, 'last_touch_time') and level.last_touch_time:
-                    time_diff = data.index[-1] - level.last_touch_time
+                    # Ensure data.index[-1] is a proper timestamp
+                    current_time = pd.Timestamp(data.index[-1])
+                    # Ensure last_touch_time is also a timestamp
+                    last_touch_time = pd.Timestamp(level.last_touch_time)
+                    time_diff = current_time - last_touch_time
                     level.time_since_last_touch = int(time_diff.total_seconds() / 60)  # Convert to minutes
                 
                 # Set formation time if not set
@@ -1002,18 +1042,10 @@ class EnhancedSRDetector:
                     market_data = market_data.tail(max_rows)  # Use last max_rows rows (legacy behavior)
                     self.logger.info(f'🔧 Memory optimization: Simple sampling completed, final dataset: {len(market_data)} rows')
 
-            # Add timeout mechanism to prevent hanging
-            timeout_seconds = 300  # 5 minutes timeout
-            self.logger.info(f'⏰ Setting timeout: {timeout_seconds} seconds')
             
             # Detect fractal levels with multiple periods for more levels
             fractal_levels = []
             for period in [3, 5, 7]:  # Multiple periods instead of single
-                # Check timeout
-                if time.time() - start_time > timeout_seconds:
-                    self.logger.warning(f'⏰ Timeout reached during fractal detection, using partial results')
-                    break
-
                 temp_config = self.config.copy()
                 temp_config['fractal_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
@@ -1026,11 +1058,6 @@ class EnhancedSRDetector:
             # Detect pivot levels with multiple periods for more levels
             pivot_levels = []
             for period in [5, 7, 10]:  # Multiple periods instead of single
-                # Check timeout
-                if time.time() - start_time > timeout_seconds:
-                    self.logger.warning(f'⏰ Timeout reached during pivot detection, using partial results')
-                    break
-
                 temp_config = self.config.copy()
                 temp_config['pivot_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
@@ -1040,93 +1067,39 @@ class EnhancedSRDetector:
             pivot_levels = self._deduplicate_levels(pivot_levels, tolerance=0.001)
             self.logger.info(f'📊 Pivot levels: {len(pivot_levels)}')
 
-            # Check timeout before volume detection
-            if time.time() - start_time > timeout_seconds:
-                self.logger.warning(f'⏰ Timeout reached before volume detection, skipping remaining detections')
-                volume_levels = []
-                statistical_levels = []
-                psychological_levels = []
-                fibonacci_levels = []
-                trendline_levels = []
-                channel_levels = []
-                volume_profile_levels = []
-                market_structure_levels = []
-            else:
-                volume_levels = self._detect_volume_levels(market_data)
-                self.logger.info(f'📊 Volume levels: {len(volume_levels)}')
+            volume_levels = self._detect_volume_levels(market_data)
+            self.logger.info(f'📊 Volume levels: {len(volume_levels)}')
 
-                statistical_levels = self._detect_statistical_levels(market_data)
-                self.logger.info(f'📊 Statistical levels: {len(statistical_levels)}')
+            statistical_levels = self._detect_statistical_levels(market_data)
+            self.logger.info(f'📊 Statistical levels: {len(statistical_levels)}')
 
-                psychological_levels = self._detect_psychological_levels(market_data)
-                self.logger.info(f'📊 Psychological levels: {len(psychological_levels)}')
+            psychological_levels = self._detect_psychological_levels(market_data)
+            self.logger.info(f'📊 Psychological levels: {len(psychological_levels)}')
 
-                fibonacci_levels = self._detect_fibonacci_levels(market_data)
-                self.logger.info(f'📊 Fibonacci levels: {len(fibonacci_levels)}')
+            fibonacci_levels = self._detect_fibonacci_levels(market_data)
+            self.logger.info(f'📊 Fibonacci levels: {len(fibonacci_levels)}')
 
-                trendline_levels = self._detect_trendline_levels(market_data)
-                self.logger.info(f'📊 Trendline levels: {len(trendline_levels)}')
+            trendline_levels = self._detect_trendline_levels(market_data)
+            self.logger.info(f'📊 Trendline levels: {len(trendline_levels)}')
 
-                # Check timeout before channel detection
-                if time.time() - start_time > timeout_seconds:
-                    self.logger.warning(f'⏰ Timeout reached before channel detection, skipping remaining detections')
-                    channel_levels = []
-                    volume_profile_levels = []
-                    market_structure_levels = []
-                else:
-                    self.logger.info('🔍 Starting channel level detection...')
-                    channel_levels = self._detect_channel_levels(market_data)
-                    self.logger.info(f'📊 Channel levels: {len(channel_levels)}')
+            self.logger.info('🔍 Starting channel level detection...')
+            channel_levels = self._detect_channel_levels(market_data)
+            self.logger.info(f'📊 Channel levels: {len(channel_levels)}')
 
-                    # Check timeout before volume profile detection
-                    if time.time() - start_time > timeout_seconds:
-                        self.logger.warning(f'⏰ Timeout reached before volume profile detection, skipping remaining detections')
-                        volume_profile_levels = []
-                        market_structure_levels = []
-                    else:
-                        self.logger.info('🔍 Starting volume profile detection...')
-                        volume_profile_levels = self._detect_volume_profile_levels(market_data)
-                        self.logger.info(f'📊 Volume profile levels: {len(volume_profile_levels)}')
+            self.logger.info('🔍 Starting volume profile detection...')
+            volume_profile_levels = self._detect_volume_profile_levels(market_data)
+            self.logger.info(f'📊 Volume profile levels: {len(volume_profile_levels)}')
 
-                        # Check timeout before market structure detection
-                        if time.time() - start_time > timeout_seconds:
-                            self.logger.warning(f'⏰ Timeout reached before market structure detection, skipping detection')
-                            market_structure_levels = []
-                        else:
-                            self.logger.info('🔍 Starting market structure detection...')
-                            market_structure_levels = self._detect_market_structure_levels(market_data)
-                            self.logger.info(f'📊 Market structure levels: {len(market_structure_levels)}')
+            self.logger.info('🔍 Starting market structure detection...')
+            market_structure_levels = self._detect_market_structure_levels(market_data)
+            self.logger.info(f'📊 Market structure levels: {len(market_structure_levels)}')
 
             all_levels = volume_levels + psychological_levels + pivot_levels + fractal_levels + statistical_levels + fibonacci_levels + trendline_levels + channel_levels + volume_profile_levels + market_structure_levels
             self.logger.info(f'📊 Total levels before validation: {len(all_levels)}')
 
-            # Final timeout check before validation/merging
-            if time.time() - start_time > timeout_seconds:
-                self.logger.warning(f'⏰ TIMEOUT: Reached before validation/merging, returning partial results')
-                # Return partial results with basic processing
-                final_levels = []
-                for level in all_levels:
-                    # Create basic SRLevel objects for unprocessed levels
-                    if hasattr(level, 'price'):
-                        final_levels.append(level)
-                    else:
-                        # Handle any non-SRLevel objects
-                        continue
 
-                elapsed_time = time.time() - start_time
-                support_count = len([level for level in final_levels if hasattr(level, 'type') and level.type == 'support'])
-                resistance_count = len([level for level in final_levels if hasattr(level, 'type') and level.type == 'resistance'])
-                self.logger.info(f'✅ Returned {len(final_levels)} partial S/R levels due to timeout ({support_count} support, {resistance_count} resistance) in {elapsed_time:.2f}s')
-                return final_levels
-
-            # Check timeout before validation/merging (most time-consuming step)
-            if time.time() - start_time > timeout_seconds:
-                self.logger.warning(f'⏰ Timeout reached before validation/merging, using unvalidated levels')
-                validated_levels = all_levels
-                self.logger.info(f'📊 Using {len(validated_levels)} unvalidated levels due to timeout')
-            else:
-                validated_levels = self._validate_and_merge_levels(all_levels, market_data)
-                self.logger.info(f'📊 Levels after validation: {len(validated_levels)}')
+            validated_levels = self._validate_and_merge_levels(all_levels, market_data)
+            self.logger.info(f'📊 Levels after validation: {len(validated_levels)}')
 
             enhanced_levels = self._calculate_enhanced_metrics(validated_levels, market_data)
 
@@ -3339,8 +3312,8 @@ class EnhancedSRDetector:
 
                 return merged_levels
             else:
-                # For very large datasets, skip merging to avoid timeout
-                self.logger.warning(f'📊 Very large level set ({len(levels)}), skipping merging to avoid timeout')
+                # For very large datasets, skip merging for performance
+                self.logger.warning(f'📊 Very large level set ({len(levels)}), skipping merging for performance')
                 return levels
 
         except Exception as e:
@@ -3946,6 +3919,7 @@ class EnhancedSRDetector:
         """Optimize DBSCAN parameters using scikit-optimize."""
         from skopt import gp_minimize
         from skopt.space import Real, Integer
+        from skopt.utils import use_named_args
 
         level_data = np.array([[level.price, level.strength] for level in levels])
         avg_price = data['close'].mean()
@@ -4014,6 +3988,7 @@ class EnhancedSRDetector:
         try:
             from skopt import gp_minimize
             from skopt.space import Real, Integer
+            from skopt.utils import use_named_args
             
             level_data = np.array([[level.price, level.strength] for level in levels])
             avg_price = data['close'].mean()

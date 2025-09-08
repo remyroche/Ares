@@ -1,18 +1,16 @@
 
 import os
 import logging
+import json
+import time
 from typing import Any
 
 import joblib
-
-from .utils.hmm_composite_manager import get_hmm_composite_manager
-from ...utils.logger import system_logger
 import numpy as np
 import pandas as pd
 
-import logging
-import json
-import time
+from ..utils.hmm_composite_manager import get_hmm_composite_manager
+from ..utils.logger import system_logger
 
 # src/analyst/regime_runtime.py
 
@@ -59,7 +57,7 @@ def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
 
 def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
     labels = sorted([int(x) for x in np.unique(cluster_ids.values) if int(x) >= 0])
-    p_cols: dict[str, pd.Series] = {}
+    p_cols = {}
     for k in labels:
         ind = (cluster_ids == k).astype(float)
         p_cols[f"p_k_{k}"] = _ewm_prob(ind, span = 3)
@@ -163,7 +161,7 @@ def get_current_regime_info(
     # Cluster id
     cid = int(last_row["composite_cluster_id"].iloc[0]) if not last_row.empty else -1
     # Intensities (optional)
-    intensities: dict[int, float] = {}
+    intensities = {}
     if int_df is not None and not int_df.empty:
         row_int = _align_last(int_df, ts)
         if not row_int.empty:
@@ -176,7 +174,7 @@ def get_current_regime_info(
                         logging.debug(f"Failed to parse intensity cluster {c}: {e}")
                         continue
     # Forecasting features
-    p_emerge: dict[int, float] = {}
+    p_emerge = {}
     exit_hazard: float | None = None
     try:
         if blk_df is not None and not blk_df.empty:

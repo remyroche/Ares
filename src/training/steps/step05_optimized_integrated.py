@@ -46,7 +46,16 @@ from .step05_memory_manager import Step05MemoryManager, MemoryOptimizationResult
 from .step05_error_handling import Step05ErrorHandler, ErrorSeverity, ErrorCategory, step05_async_error_handler
 from .step05_reporting import Step05Reporter
 import json
-import logging
+
+# Import new optimization modules
+try:
+    from .step05_adaptive_chunk_sizer import AdaptiveChunkSizer, AdaptiveChunkConfig
+    from .step05_gpu_memory_pool import GPUMemoryPoolManager, MemoryPoolConfig
+    from .step05_multi_level_cache import MultiLevelCache, CacheConfig
+    OPTIMIZATION_MODULES_AVAILABLE = True
+except ImportError as e:
+    system_logger.warning(f"⚠️ Optimization modules not available: {e}")
+    OPTIMIZATION_MODULES_AVAILABLE = False
 
 logger = system_logger.getChild('Step05OptimizedIntegrated')
 
@@ -122,6 +131,12 @@ class Step05OptimizedIntegrated:
         # Initialize existing components
         self.error_handler = Step05ErrorHandler(config)
         self.reporter = Step05Reporter(config)
+
+        # Initialize new optimization modules
+        self.adaptive_sizer = None
+        self.gpu_memory_pool = None
+        self.multi_level_cache = None
+        self._initialize_optimization_modules()
         
         # Performance tracking
         self.performance_metrics = {
@@ -161,7 +176,60 @@ class Step05OptimizedIntegrated:
         self.logger.info("   ✅ Statistical label validation")
         self.logger.info("   ✅ Sophisticated bias detection")
         self.logger.info("   ✅ Intelligent memory management")
-    
+        self.logger.info("🎯 New optimizations:")
+        self.logger.info(f"   ✅ Adaptive chunk sizing: {'Enabled' if self.adaptive_sizer else 'Disabled'}")
+        self.logger.info(f"   ✅ GPU memory pool: {'Enabled' if self.gpu_memory_pool else 'Disabled'}")
+        self.logger.info(f"   ✅ Multi-level cache: {'Enabled' if self.multi_level_cache else 'Disabled'}")
+
+    def _initialize_optimization_modules(self):
+        """Initialize the new optimization modules if available."""
+        if not OPTIMIZATION_MODULES_AVAILABLE:
+            self.logger.info("ℹ️ Optimization modules not available, using standard processing")
+            return
+
+        try:
+            # Initialize adaptive chunk sizer
+            if self.config.get('enable_adaptive_chunk_sizing', True):
+                adaptive_config = AdaptiveChunkConfig(
+                    base_chunk_size=self.config.get('base_chunk_size', 10000),
+                    min_chunk_size=self.config.get('min_chunk_size', 1000),
+                    max_chunk_size=self.config.get('max_chunk_size', 100000),
+                    memory_safety_factor=self.config.get('memory_safety_factor', 0.7),
+                    enable_memory_adaptation=self.config.get('enable_memory_adaptation', True),
+                    enable_complexity_adaptation=self.config.get('enable_complexity_adaptation', True),
+                    enable_performance_learning=self.config.get('enable_performance_learning', True)
+                )
+                self.adaptive_sizer = AdaptiveChunkSizer(adaptive_config)
+                self.logger.info("✅ Adaptive chunk sizer initialized")
+
+            # Initialize GPU memory pool
+            if self.config.get('enable_gpu_memory_pool', True):
+                memory_config = MemoryPoolConfig(
+                    max_pool_size_gb=self.config.get('gpu_memory_pool_size_gb', 4.0),
+                    enable_memory_reuse=self.config.get('enable_memory_reuse', True),
+                    enable_automatic_defragmentation=self.config.get('enable_defragmentation', True),
+                    memory_pressure_threshold=self.config.get('memory_pressure_threshold', 0.8)
+                )
+                self.gpu_memory_pool = GPUMemoryPoolManager(memory_config)
+                self.logger.info("✅ GPU memory pool initialized")
+
+            # Initialize multi-level cache
+            if self.config.get('enable_multi_level_cache', True):
+                cache_config = CacheConfig(
+                    enable_l1_cache=self.config.get('enable_l1_cache', True),
+                    enable_l2_cache=self.config.get('enable_l2_cache', True),
+                    l1_max_size_mb=self.config.get('l1_cache_size_mb', 512.0),
+                    l2_max_size_mb=self.config.get('l2_cache_size_mb', 2048.0),
+                    l2_cache_dir=self.config.get('cache_directory', 'data_cache/step05_cache'),
+                    enable_compression=self.config.get('enable_cache_compression', True)
+                )
+                self.multi_level_cache = MultiLevelCache(cache_config)
+                self.logger.info("✅ Multi-level cache initialized")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize optimization modules: {e}")
+            self.logger.info("🔄 Falling back to standard processing")
+
     @traced(span_name='initialize_step05_optimized')
     @validates()
     @handles_errors()
@@ -998,6 +1066,11 @@ class Step05OptimizedIntegrated:
                 'cpu_optimizer': cpu_report,
                 'gpu_manager': gpu_info
             },
+            'advanced_optimizations': {
+                'adaptive_chunk_sizer': self.adaptive_sizer.get_performance_summary() if self.adaptive_sizer else None,
+                'gpu_memory_pool': self.gpu_memory_pool.get_memory_stats() if self.gpu_memory_pool else None,
+                'multi_level_cache': self.multi_level_cache.get_performance_stats() if self.multi_level_cache else None
+            },
             'utility_usage_metrics': {
                 'gpu_operations': self.performance_metrics.get('gpu_operations', 0),
                 'cpu_parallel_operations': self.performance_metrics.get('cpu_parallel_operations', 0),
@@ -1085,6 +1158,22 @@ async def run_step05_optimized_integrated(symbol: str, exchange: str, timeframe:
         'max_workers': 4,
         'gpu_memory_threshold': 0.8,
         'log_level': 'INFO',
+        # Advanced optimization configuration
+        'enable_adaptive_chunk_sizing': True,
+        'enable_gpu_memory_pool': True,
+        'enable_multi_level_cache': True,
+        'base_chunk_size': 10000,
+        'min_chunk_size': 1000,
+        'max_chunk_size': 100000,
+        'memory_safety_factor': 0.7,
+        'gpu_memory_pool_size_gb': 4.0,
+        'enable_memory_reuse': True,
+        'enable_defragmentation': True,
+        'memory_pressure_threshold': 0.8,
+        'l1_cache_size_mb': 512.0,
+        'l2_cache_size_mb': 2048.0,
+        'cache_directory': 'data_cache/step05_cache',
+        'enable_cache_compression': True,
         **config
     }
     
@@ -1129,7 +1218,15 @@ if __name__ == '__main__':
                 'memory_limit_gb': 4.0,
                 'max_workers': 2,
                 'gpu_memory_threshold': 0.7,
-                'log_level': 'DEBUG'
+                'log_level': 'DEBUG',
+                # Test advanced optimizations
+                'enable_adaptive_chunk_sizing': True,
+                'enable_gpu_memory_pool': True,
+                'enable_multi_level_cache': True,
+                'base_chunk_size': 5000,
+                'gpu_memory_pool_size_gb': 2.0,
+                'l1_cache_size_mb': 256.0,
+                'l2_cache_size_mb': 1024.0
             }
         )
         print(f'Step05 Optimized Integrated with utility integration result: {success}')

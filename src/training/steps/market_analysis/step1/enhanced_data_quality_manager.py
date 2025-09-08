@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced, validates
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Data Quality Manager for Step1 and Step1_5.
 
 This module provides comprehensive data quality management including:

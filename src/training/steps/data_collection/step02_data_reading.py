@@ -717,7 +717,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.common_operations import safe_read_parquet
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 

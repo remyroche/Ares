@@ -3213,8 +3213,8 @@ class SROptimizationStep(BaseStep):
 
         try:
             # Fast-fail: Check if we have sufficient data for ML training
-            if len(features_data) < 10000:
-                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 10,000)')
+            if len(features_data) < 200:
+                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 200)')
                 return self._get_fallback_ml_result(features_data, sr_levels)
             
             # Fast-fail: Check if we have SR levels

@@ -10,13 +10,14 @@ This module integrates all the improvements:
 3. Economic significance validation
 4. Ensemble clustering (HMM + K-means + DBSCAN)
 5. ML-based transition detection with Random Forest + LGBM
+6. Comprehensive utility integration with dependency injection
 """
 
 import asyncio
 import sys
 from pathlib import Path
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 # Required dependencies
 import pandas as pd
@@ -25,6 +26,17 @@ import numpy as np
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Import utility modules with dependency injection
+from src.utils.common_operations import CommonOperations
+from src.utils.common_utilities import CommonUtilities
+from src.utils.math_validation import MathValidation
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.serialization_utils import SerializationUtils
+from src.utils.data_processing_utils import DataProcessingUtils
+from src.utils.m1_gpu_utils import M1GPUManager
+from src.utils.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.m1_cpu_optimizer import M1CPUOptimizer
 
 # Import centralized systems
 from .step03_imports import get_import_manager, safe_import, check_feature_availability
@@ -101,12 +113,32 @@ class EnhancedHMMRegimeDiscoveryStep:
         self.start_time = None
         self.step_timings = {}
         
+        # Initialize utility modules with dependency injection
+        self._initialize_utilities()
+        
         # Initialize centralized systems
         self.technical_indicators = get_technical_indicators(self.config.feature_engineering.__dict__)
         self.memory_manager = get_memory_manager(self.config.memory.__dict__)
         
         # Initialize components
         self._initialize_components()
+
+    def _initialize_utilities(self) -> None:
+        """Initialize all utility modules with dependency injection."""
+        self.logger.info('🔧 Initializing utility modules with dependency injection...')
+        
+        # Initialize utility modules
+        self.common_ops = CommonOperations()
+        self.common_utils = CommonUtilities()
+        self.math_validation = MathValidation()
+        self.parquet_utils = ParquetUtils()
+        self.serialization_utils = SerializationUtils()
+        self.data_processing_utils = DataProcessingUtils()
+        self.m1_gpu_manager = M1GPUManager()
+        self.m1_memory_optimizer = M1MemoryOptimizer()
+        self.m1_cpu_optimizer = M1CPUOptimizer()
+        
+        self.logger.info('✅ All utility modules initialized successfully')
 
     def _initialize_components(self) -> None:
         """Initialize all enhanced components."""
@@ -297,7 +329,7 @@ class EnhancedHMMRegimeDiscoveryStep:
     @traced(span_name='load_and_prepare_data')
     @handles_errors(fallback={'success': False, 'error': 'Data loading failed'})
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
-        """Load and prepare data for enhanced HMM regime discovery."""
+        """Load and prepare data for enhanced HMM regime discovery with utility integration."""
         try:
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
@@ -307,30 +339,44 @@ class EnhancedHMMRegimeDiscoveryStep:
             if data_dir is None:
                 data_dir = 'data_cache'
             
-            self.logger.info(f'📊 Loading data for enhanced HMM regime discovery...')
-            self.logger.info(f'   Symbol: {symbol}')
-            self.logger.info(f'   Exchange: {exchange}')
-            self.logger.info(f'   Timeframe: {timeframe}')
-            self.logger.info(f'   Data directory: {data_dir}')
+            # Use common operations for logging and validation
+            self.common_ops.log_info(f'📊 Loading data for enhanced HMM regime discovery...')
+            self.common_ops.log_info(f'   Symbol: {symbol}')
+            self.common_ops.log_info(f'   Exchange: {exchange}')
+            self.common_ops.log_info(f'   Timeframe: {timeframe}')
+            self.common_ops.log_info(f'   Data directory: {data_dir}')
             
-            # Load klines data
-            klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            # Use common operations for file path handling
+            klines_path = self.common_ops.join_paths(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
             
-            if not klines_path.exists():
-                self.logger.error(f'❌ Klines file not found: {klines_path}')
-                return {'success': False, 'error': f'Klines file not found: {klines_path}'}
+            # Use parquet utils for safe file validation and loading
+            if not self.parquet_utils.validate_parquet_file(klines_path):
+                self.logger.error(f'❌ Klines file validation failed: {klines_path}')
+                return {'success': False, 'error': f'Klines file validation failed: {klines_path}'}
             
-            # Load data
-            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
+            # Use parquet utils for safe data loading with fallback
+            df = self.parquet_utils.safe_read_parquet(klines_path)
             
             if df.empty:
                 self.logger.error('❌ Data is empty')
                 return {'success': False, 'error': 'Data is empty'}
             
-            # Prepare basic features
+            # Use data processing utils for DataFrame validation
+            validator = self.data_processing_utils.DataFrameValidator()
+            validation_result = validator.validate_structure(df)
+            
+            if not validation_result.is_valid:
+                self.logger.warning(f'⚠️ DataFrame validation issues: {validation_result.issues}')
+                # Use data processing utils for cleaning
+                cleaner = self.data_processing_utils.DataFrameCleaner()
+                df = cleaner.clean_dataframe(df)
+            
+            # Prepare basic features with utility integration
             features = await self._prepare_basic_features(df)
             
-            self.logger.info(f'✅ Data loaded and prepared: {len(df):,} rows, {len(features.columns)} basic features')
+            # Use common operations for data info logging
+            data_info = self.common_ops.get_dataframe_info(df)
+            self.common_ops.log_info(f'✅ Data loaded and prepared: {len(df):,} rows, {len(features.columns)} basic features')
             
             return {
                 'success': True,
@@ -353,38 +399,45 @@ class EnhancedHMMRegimeDiscoveryStep:
     @handles_errors(fallback = pd.DataFrame())
     @validates()
     async def _prepare_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare basic features for regime discovery."""
+        """Prepare basic features for regime discovery with utility integration."""
         try:
-            self.logger.info('🔧 Preparing basic features...')
+            self.logger.info('🔧 Preparing basic features with utility integration...')
             
-            # Ensure timestamp is datetime
-            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Use common utilities for timestamp conversion
+            df = self.common_utils.safe_timestamp_conversion(df, 'timestamp')
             
-            # Sort by timestamp
-            df = df.sort_values('timestamp').reset_index(drop = True)
+            # Use common utilities for DataFrame operations
+            df = self.common_utils.safe_dataframe_operation(df, 'sort_values', by='timestamp')
+            df = self.common_utils.safe_dataframe_operation(df, 'reset_index', drop=True)
             
             # Create basic feature set
             features = pd.DataFrame()
             features['timestamp'] = df['timestamp']
             
-            # Price-based features
-            features['price_momentum_5'] = df['close'].pct_change(5)
-            features['price_momentum_10'] = df['close'].pct_change(10)
-            features['price_momentum_20'] = df['close'].pct_change(20)
+            # Price-based features with math validation
+            features['price_momentum_5'] = self.math_validation.safe_percentage_change(df['close'], 5)
+            features['price_momentum_10'] = self.math_validation.safe_percentage_change(df['close'], 10)
+            features['price_momentum_20'] = self.math_validation.safe_percentage_change(df['close'], 20)
             
-            # Volume features
-            features['volume_momentum_5'] = df['volume'].pct_change(5)
-            features['volume_momentum_10'] = df['volume'].pct_change(10)
-            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(window = 5).mean()
-            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(window = 10).mean()
-            features['volume_ratio_20'] = df['volume'] / df['volume'].rolling(window = 20).mean()
+            # Volume features with safe operations
+            features['volume_momentum_5'] = self.math_validation.safe_percentage_change(df['volume'], 5)
+            features['volume_momentum_10'] = self.math_validation.safe_percentage_change(df['volume'], 10)
             
-            # Volatility features
-            features['volatility_5'] = df['close'].pct_change().rolling(window = 5).std()
-            features['volatility_10'] = df['close'].pct_change().rolling(window = 10).std()
-            features['volatility_20'] = df['close'].pct_change().rolling(window = 20).std()
-            features['ewma_volatility_20'] = df['close'].pct_change().ewm(span = 20).std()
+            # Use common operations for rolling calculations
+            volume_ma_5 = self.common_ops.rolling_mean(df['volume'], 5)
+            volume_ma_10 = self.common_ops.rolling_mean(df['volume'], 10)
+            volume_ma_20 = self.common_ops.rolling_mean(df['volume'], 20)
+            
+            features['volume_ratio_5'] = self.math_validation.safe_divide(df['volume'], volume_ma_5)
+            features['volume_ratio_10'] = self.math_validation.safe_divide(df['volume'], volume_ma_10)
+            features['volume_ratio_20'] = self.math_validation.safe_divide(df['volume'], volume_ma_20)
+            
+            # Volatility features with safe operations
+            price_changes = df['close'].pct_change()
+            features['volatility_5'] = self.common_ops.rolling_std(price_changes, 5)
+            features['volatility_10'] = self.common_ops.rolling_std(price_changes, 10)
+            features['volatility_20'] = self.common_ops.rolling_std(price_changes, 20)
+            features['ewma_volatility_20'] = price_changes.ewm(span=20).std()
             
             # Technical indicators using centralized system
             features['rsi'] = self.technical_indicators.calculate_rsi(df['close'])
@@ -397,24 +450,47 @@ class EnhancedHMMRegimeDiscoveryStep:
             bb_features = self.technical_indicators.calculate_bollinger_bands(df['close'])
             features = pd.concat([features, pd.DataFrame(bb_features)], axis = 1)
             
-            # Moving averages
-            features['sma_20'] = df['close'].rolling(window = 20).mean()
-            features['sma_50'] = df['close'].rolling(window = 50).mean()
+            # Moving averages with safe operations
+            features['sma_20'] = self.common_ops.rolling_mean(df['close'], 20)
+            features['sma_50'] = self.common_ops.rolling_mean(df['close'], 50)
             features['ema_12'] = df['close'].ewm(span = 12).mean()
             features['ema_26'] = df['close'].ewm(span = 26).mean()
             
-            # Price position relative to MAs
-            features['price_vs_sma20'] = (df['close'] - features['sma_20']) / features['sma_20']
-            features['price_vs_sma50'] = (df['close'] - features['sma_50']) / features['sma_50']
+            # Price position relative to MAs with safe division
+            features['price_vs_sma20'] = self.math_validation.safe_divide(
+                df['close'] - features['sma_20'], features['sma_20']
+            )
+            features['price_vs_sma50'] = self.math_validation.safe_divide(
+                df['close'] - features['sma_50'], features['sma_50']
+            )
             
-            # Feature interactions
-            features['momentum_volume_interaction'] = features['price_momentum_10'] * features['volume_ratio_10']
-            features['volatility_volume_interaction'] = features['volatility_20'] * features['volume_ratio_20']
-            features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_10']
+            # Feature interactions with safe multiplication
+            features['momentum_volume_interaction'] = self.math_validation.safe_multiply(
+                features['price_momentum_10'], features['volume_ratio_10']
+            )
+            features['volatility_volume_interaction'] = self.math_validation.safe_multiply(
+                features['volatility_20'], features['volume_ratio_20']
+            )
+            features['rsi_momentum_interaction'] = self.math_validation.safe_multiply(
+                features['rsi'], features['price_momentum_10']
+            )
             
-            # Clean features
+            # Clean features using data processing utils
             hmm_features = features.drop('timestamp', axis = 1)
-            hmm_features = hmm_features.fillna(0)
+            
+            # Use data processing utils for cleaning
+            cleaner = self.data_processing_utils.DataFrameCleaner()
+            hmm_features = cleaner.handle_nulls(hmm_features, strategy='fill_zero')
+            
+            # Use M1 memory optimizer for memory-efficient processing
+            with self.m1_memory_optimizer.memory_checkpoint('feature_preparation'):
+                # Validate final features
+                validator = self.data_processing_utils.DataFrameValidator()
+                validation_result = validator.validate_structure(hmm_features)
+                
+                if not validation_result.is_valid:
+                    self.logger.warning(f'⚠️ Feature validation issues: {validation_result.issues}')
+                    hmm_features = cleaner.clean_dataframe(hmm_features)
             
             self.logger.info(f'✅ Basic features prepared: {len(hmm_features.columns)} features, {len(hmm_features)} samples')
             
@@ -484,20 +560,39 @@ class EnhancedHMMRegimeDiscoveryStep:
 
     @handles_errors(fallback={'success': False, 'error': 'Ensemble clustering failed'})
     async def _run_ensemble_clustering(self, features: pd.DataFrame) -> dict[str, Any]:
-        """Run ensemble clustering with HMM + K-means + DBSCAN."""
+        """Run ensemble clustering with HMM + K-means + DBSCAN with utility integration."""
         try:
-            self.logger.info('🔍 Running ensemble clustering...')
+            self.logger.info('🔍 Running ensemble clustering with utility integration...')
             
-            # Convert to numpy array
-            features_array = features.values
+            # Use M1 GPU manager for GPU-accelerated operations if available
+            if self.m1_gpu_manager.should_use_gpu(features.values, 'clustering'):
+                self.logger.info('🚀 Using GPU acceleration for ensemble clustering')
+                with self.m1_gpu_manager.gpu_context('ensemble_clustering'):
+                    # Convert to numpy array with GPU optimization
+                    features_array = self.m1_gpu_manager.to_device(features.values)
+                    
+                    # Run ensemble clustering with GPU acceleration
+                    consensus_regimes, ensemble_results = self.ensemble_detector.ensemble_regime_detection(features_array)
+            else:
+                # Use M1 CPU optimizer for parallel processing
+                self.logger.info('⚡ Using CPU optimization for ensemble clustering')
+                with self.m1_cpu_optimizer.parallel_context('ensemble_clustering'):
+                    # Convert to numpy array
+                    features_array = features.values
+                    
+                    # Run ensemble clustering with CPU optimization
+                    consensus_regimes, ensemble_results = self.ensemble_detector.ensemble_regime_detection(features_array)
             
-            # Run ensemble clustering
-            consensus_regimes, ensemble_results = self.ensemble_detector.ensemble_regime_detection(features_array)
+            # Use math validation for result validation
+            if not self.math_validation.validate_finite(consensus_regimes):
+                self.logger.warning('⚠️ Ensemble clustering produced non-finite values')
+                consensus_regimes = np.nan_to_num(consensus_regimes, nan=0, posinf=0, neginf=0)
             
-            self.logger.info(f'✅ Ensemble clustering completed successfully')
-            self.logger.info(f'   - Number of regimes: {ensemble_results["n_regimes"]}')
-            self.logger.info(f'   - Ensemble quality: {ensemble_results["ensemble_quality"]}')
-            self.logger.info(f'   - Quality weights: {ensemble_results["quality_weights"]}')
+            # Use common operations for logging
+            self.common_ops.log_info(f'✅ Ensemble clustering completed successfully')
+            self.common_ops.log_info(f'   - Number of regimes: {ensemble_results["n_regimes"]}')
+            self.common_ops.log_info(f'   - Ensemble quality: {ensemble_results["ensemble_quality"]}')
+            self.common_ops.log_info(f'   - Quality weights: {ensemble_results["quality_weights"]}')
             
             return {
                 'success': True,
@@ -681,13 +776,17 @@ class EnhancedHMMRegimeDiscoveryStep:
 
     @handles_errors(fallback = False)
     async def _log_enhanced_artifacts_to_mlflow(self, final_results: dict[str, Any], training_input: dict[str, Any]) -> None:
-        """Log enhanced artifacts to MLflow."""
+        """Log enhanced artifacts to MLflow with utility integration."""
         try:
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
             
-            # Log regime states
+            # Use serialization utils for artifact persistence
+            artifacts_dir = self.common_ops.join_paths('artifacts', 'step03', symbol, exchange, timeframe)
+            self.common_ops.ensure_directory(artifacts_dir)
+            
+            # Log regime states with serialization
             regime_states = final_results.get('regime_states', [])
             if regime_states:
                 regime_df = pd.DataFrame({
@@ -695,23 +794,47 @@ class EnhancedHMMRegimeDiscoveryStep:
                     'regime_state': regime_states
                 })
                 
-                # Log to MLflow (placeholder - would use actual MLflow logging)
+                # Use parquet utils for efficient regime states storage
+                regime_file = self.common_ops.join_paths(artifacts_dir, 'regime_states.parquet')
+                self.parquet_utils.safe_write_parquet(regime_df, regime_file)
+                
+                # Use serialization utils for metadata
+                regime_meta = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'n_periods': len(regime_states),
+                    'unique_regimes': len(set(regime_states)),
+                    'timestamp': self.common_ops.get_current_timestamp()
+                }
+                meta_file = self.common_ops.join_paths(artifacts_dir, 'regime_metadata.json')
+                self.serialization_utils.save_json(regime_meta, meta_file)
+                
                 self.logger.info(f'✅ Logged regime states: {len(regime_states)} periods')
             
-            # Log ensemble results
+            # Log ensemble results with serialization
             ensemble_quality = final_results.get('ensemble_quality', {})
             if ensemble_quality:
+                ensemble_file = self.common_ops.join_paths(artifacts_dir, 'ensemble_quality.json')
+                self.serialization_utils.save_json(ensemble_quality, ensemble_file)
                 self.logger.info(f'✅ Logged ensemble quality metrics')
             
-            # Log economic validation
+            # Log economic validation with serialization
             economic_validation = final_results.get('economic_validation', {})
             if economic_validation:
+                economic_file = self.common_ops.join_paths(artifacts_dir, 'economic_validation.json')
+                self.serialization_utils.save_json(economic_validation, economic_file)
                 self.logger.info(f'✅ Logged economic validation results')
             
-            # Log enhanced ML transition results
+            # Log enhanced ML transition results with serialization
             transition_models = final_results.get('transition_models', {})
             if transition_models:
+                transition_file = self.common_ops.join_paths(artifacts_dir, 'transition_models.json')
+                self.serialization_utils.save_json(transition_models, transition_file)
                 self.logger.info(f'✅ Logged enhanced ML transition detection results')
+            
+            # Use M1 memory optimizer for memory cleanup after logging
+            self.m1_memory_optimizer.optimize_memory()
             
             self.logger.info('✅ Enhanced artifacts logged to MLflow successfully')
             

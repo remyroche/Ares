@@ -726,7 +726,7 @@ class SROptimizationStep(BaseStep):
                     data_path = self.standards.build_path('unified_partitioned', exchange, symbol, timeframe=timeframe)
                     self.logger.info(f'📖 Constructed data path: {data_path}')
                 
-                # Load data from the data path
+                # Load data from the data path; if missing, auto-trigger re-collection and retry once
                 try:
                     if not PARQUET_UTILS_AVAILABLE:
                         raise ImportError("ParquetUtils not available")
@@ -737,6 +737,21 @@ class SROptimizationStep(BaseStep):
                     elif data_path_obj.is_dir():
                         parquet_files = list(data_path_obj.glob('**/*.parquet'))
                         if not parquet_files:
+                            # Attempt centralized auto re-collection
+                            self.logger.warning(f"⚠️ No parquet files found in directory: {data_path}. Attempting auto re-collection...")
+                            try:
+                                from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                                _qm = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                                symbol_q = training_input.get('symbol', symbol if 'symbol' in locals() else 'ETHUSDT')
+                                exchange_q = training_input.get('exchange', exchange if 'exchange' in locals() else 'BINANCE')
+                                timeframe_q = training_input.get('timeframe', timeframe)
+                                import asyncio as _asyncio
+                                _asyncio.get_event_loop()
+                                _asyncio.run(_qm.get_data_for_step3_step4(symbol_q, exchange_q, timeframe_q))
+                                parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                            except Exception as _qe:
+                                self.logger.warning(f"Auto re-collection failed: {_qe}")
+                        if not parquet_files:
                             raise ValueError(f'No parquet files found in directory: {data_path}')
                         self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
                         dataframes = []
@@ -744,6 +759,11 @@ class SROptimizationStep(BaseStep):
                             self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
                             df = parquet_utils.safe_read_parquet(str(file_path))
                             if df is not None and (not df.empty):
+                                # Enforce schema immediately to avoid drift
+                                try:
+                                    df = self.standards.enforce_schema(df, 'unified')
+                                except Exception as _se:
+                                    self.logger.warning(f"Schema enforcement failed for {file_path.name}: {_se}")
                                 dataframes.append(df)
                         if not dataframes:
                             raise ValueError(f'Failed to read any data from parquet files in {data_path}')
@@ -760,7 +780,37 @@ class SROptimizationStep(BaseStep):
                         raise ValueError(f'Path does not exist: {data_path}')
                     
                     if data is None or data.empty:
-                        raise ValueError(f'Failed to read data from {data_path}')
+                        # Attempt centralized auto re-collection and one retry
+                        self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")
+                        try:
+                            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                            _qm2 = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                            symbol_q2 = training_input.get('symbol', symbol if 'symbol' in locals() else 'ETHUSDT')
+                            exchange_q2 = training_input.get('exchange', exchange if 'exchange' in locals() else 'BINANCE')
+                            timeframe_q2 = training_input.get('timeframe', timeframe)
+                            import asyncio as _asyncio
+                            _asyncio.get_event_loop()
+                            _asyncio.run(_qm2.get_data_for_step3_step4(symbol_q2, exchange_q2, timeframe_q2))
+                            # Retry read quickly
+                            if data_path_obj.is_dir():
+                                parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                                if parquet_files:
+                                    dataframes = []
+                                    for file_path in parquet_files:
+                                        df = parquet_utils.safe_read_parquet(str(file_path))
+                                        if df is not None and (not df.empty):
+                                            try:
+                                                df = self.standards.enforce_schema(df, 'unified')
+                                            except Exception as _se2:
+                                                self.logger.warning(f"Schema enforcement failed for retry {file_path.name}: {_se2}")
+                                            dataframes.append(df)
+                                    if dataframes:
+                                        data = pd.concat(dataframes, ignore_index=False)
+                        except Exception as _qe2:
+                            self.logger.warning(f"Auto re-collection retry failed: {_qe2}")
+                        if data is None or data.empty:
+                            raise ValueError(f'Failed to read data from {data_path}')
+                    
                     self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns from data files')
                     self.logger.info(f'📊 Data sample: {data.head(2).to_dict() if len(data) > 0 else "No data"}')
                 except Exception as e:

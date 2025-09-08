@@ -1637,10 +1637,42 @@ class FinalRegimeClusteringStep:
                     confidence_score=clustering_summary.get('silhouette_score', 0.5)
                 )
             
+            # Log file paths that were created during this step
+            self._log_created_file_paths(symbol, exchange, timeframe)
+            
             self.logger.info("💰 Financial metrics logged successfully from Step03_5 results")
             
         except Exception as e:
             self.logger.warning(f"Could not log financial metrics from results: {e}")
+
+    def _log_created_file_paths(self, symbol: str, exchange: str, timeframe: str) -> None:
+        """Log file paths that were created during this step."""
+        try:
+            # Get the financial logger to access its file paths
+            financial_logger = get_financial_metrics_logger()
+            
+            # Log the main financial metrics file path
+            if hasattr(financial_logger, 'current_file_path') and financial_logger.current_file_path:
+                self.logger.info(f"📁 Financial metrics file created: {financial_logger.current_file_path}")
+                
+                # Log this as a financial metric for tracking
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="metrics_file_path",
+                    metric_value=0.0,  # No numeric value for file path
+                    metric_type="file_path",
+                    step_name="Step03_5_Final_Regime_Clustering",
+                    additional_data={'file_path': str(financial_logger.current_file_path)}
+                )
+            
+            # Log any other files that might have been created
+            # (This would be expanded based on what files are actually created in the step)
+            self.logger.info("📁 File paths logged for Step03_5")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not log file paths: {e}")
 
     async def _save_final_results(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any], reports: dict[str, Any]) -> bool:
         """Save final regime clustering results."""

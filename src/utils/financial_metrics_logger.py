@@ -142,6 +142,9 @@ class FinancialMetricsLogger:
         # Session tracking
         self.session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
         
+        # Track current file path for logging
+        self.current_file_path = None
+        
         # Fallback to main logger if available
         self.fallback_logger = system_logger.getChild('FinancialMetrics') if system_logger else None
     
@@ -387,6 +390,11 @@ class FinancialMetricsLogger:
             # Check if file exists to determine if we need headers
             file_exists = csv_file.exists()
             
+            # Track file path for logging
+            if not file_exists:
+                self.current_file_path = csv_file
+                self.logger.info(f"📁 Creating new financial metrics CSV file: {csv_file}")
+            
             with open(csv_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 
@@ -425,6 +433,9 @@ class FinancialMetricsLogger:
                     data = json.load(f)
             else:
                 data = []
+                # Track file path for logging
+                self.current_file_path = json_file
+                self.logger.info(f"📁 Creating new financial metrics JSON file: {json_file}")
             
             # Add new metric
             data.append(asdict(metric))
@@ -443,6 +454,11 @@ class FinancialMetricsLogger:
             
             # Check if file exists to determine if we need headers
             file_exists = csv_file.exists()
+            
+            # Track file path for logging
+            if not file_exists:
+                self.current_file_path = csv_file
+                self.logger.info(f"📁 Creating new performance metrics CSV file: {csv_file}")
             
             with open(csv_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -505,6 +521,9 @@ class FinancialMetricsLogger:
                     data = json.load(f)
             else:
                 data = []
+                # Track file path for logging
+                self.current_file_path = json_file
+                self.logger.info(f"📁 Creating new performance metrics JSON file: {json_file}")
             
             # Add new metrics
             data.append(asdict(metrics))

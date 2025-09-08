@@ -409,10 +409,42 @@ class Step03EnhancedReporter:
                     confidence_score=silhouette_score
                 )
             
+            # Log file paths that were created during this step
+            self._log_created_file_paths(symbol, exchange, timeframe)
+            
             self.logger.info("💰 Financial metrics logged successfully from Step03 results")
             
         except Exception as e:
             self.logger.warning(f"Could not log financial metrics from results: {e}")
+
+    def _log_created_file_paths(self, symbol: str, exchange: str, timeframe: str) -> None:
+        """Log file paths that were created during this step."""
+        try:
+            # Get the financial logger to access its file paths
+            financial_logger = get_financial_metrics_logger()
+            
+            # Log the main financial metrics file path
+            if hasattr(financial_logger, 'current_file_path') and financial_logger.current_file_path:
+                self.logger.info(f"📁 Financial metrics file created: {financial_logger.current_file_path}")
+                
+                # Log this as a financial metric for tracking
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="metrics_file_path",
+                    metric_value=0.0,  # No numeric value for file path
+                    metric_type="file_path",
+                    step_name="Step03_HMM_Regime_Discovery",
+                    additional_data={'file_path': str(financial_logger.current_file_path)}
+                )
+            
+            # Log any other files that might have been created
+            # (This would be expanded based on what files are actually created in the step)
+            self.logger.info("📁 File paths logged for Step03")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not log file paths: {e}")
 
     def _generate_performance_metrics(self, performance_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive performance metrics."""

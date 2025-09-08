@@ -455,10 +455,32 @@ class FeatureInteractionEngine:
 
     def _validate_lookback_periods(self) -> None:
         """
-        Validate that the selected lookback periods are not too correlated.
+        Validate that the selected lookback periods are not too correlated using vectorized operations.
         """
         self.logger.info('🔍 Validating lookback periods for non-correlation...')
         periods_to_validate = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        
+        # Vectorized validation using np.vectorize
+        def validate_period_ratios(periods_array):
+            """Vectorized function to validate period ratios."""
+            if len(periods_array) < 2:
+                return True, []
+            
+            # Create all pairwise combinations using broadcasting
+            periods_matrix = np.array(periods_array)
+            periods_i = periods_matrix[:, np.newaxis]  # Shape: (n, 1)
+            periods_j = periods_matrix[np.newaxis, :]  # Shape: (1, n)
+            
+            # Calculate ratios for upper triangle only
+            ratios = np.maximum(periods_i, periods_j) / np.minimum(periods_i, periods_j)
+            upper_triangle_mask = np.triu(np.ones_like(ratios, dtype=bool), k=1)
+            upper_ratios = ratios[upper_triangle_mask]
+            
+            # Check for problematic ratios
+            problematic_ratios = upper_ratios[upper_ratios < 1.5]
+            return len(problematic_ratios) == 0, problematic_ratios.tolist()
+        
+        # Apply vectorized validation to each indicator
         for indicator, config in periods_to_validate.items():
             if isinstance(config, dict) and 'periods' in config:
                 periods = config['periods']
@@ -467,16 +489,17 @@ class FeatureInteractionEngine:
                 periods = config
             else:
                 continue
-            for i in range(len(periods)):
-                for j in range(i + 1, len(periods)):
-                    period1, period2 = (periods[i], periods[j])
-                    ratio = max(period1, period2) / min(period1, period2)
-                    if ratio < 1.5:
-                        self.logger.warning(f'⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})')
-                    if isinstance(config, dict) and 'description' in config:
-                        self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
-                    else:
-                        self.logger.info(f'✅ {indicator}: Selected periods {periods}')
+                
+            # Use vectorized validation
+            is_valid, problematic_ratios = validate_period_ratios(periods)
+            
+            if not is_valid:
+                self.logger.warning(f'⚠️ {indicator}: Found {len(problematic_ratios)} problematic period ratios: {problematic_ratios}')
+            
+            if isinstance(config, dict) and 'description' in config:
+                self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
+            else:
+                self.logger.info(f'✅ {indicator}: Selected periods {periods}')
 
     @step06_function_validator(function_type='feature_engineering', validation_level = ValidationLevel.COMPREHENSIVE)
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
@@ -833,12 +856,35 @@ class FeatureInteractionEngine:
             self.logger.info(f'   Data types: {features.dtypes.value_counts().to_dict()}')
         self.logger.info('🔍 Analyzing feature correlations to ensure non-correlation...')
         correlation_matrix = features.corr()
-        high_correlations = []
-        for i in range(len(correlation_matrix.columns)):
-            for j in range(i + 1, len(correlation_matrix.columns)):
-                corr_value = correlation_matrix.iloc[i, j]
-                if abs(corr_value) > 0.8:
-                    high_correlations.append({'feature1': correlation_matrix.columns[i], 'feature2': correlation_matrix.columns[j], 'correlation': corr_value})
+        
+        # Vectorized correlation analysis using advanced NumPy operations
+        def find_high_correlations_vectorized(corr_matrix):
+            """Vectorized function to find high correlations using np.apply_along_axis."""
+            # Get upper triangle indices
+            upper_triangle_mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+            upper_triangle_values = corr_matrix.values[upper_triangle_mask]
+            upper_triangle_indices = np.where(upper_triangle_mask)
+            
+            # Find high correlations using vectorized operations
+            high_corr_mask = np.abs(upper_triangle_values) > 0.8
+            high_corr_indices = (upper_triangle_indices[0][high_corr_mask], 
+                               upper_triangle_indices[1][high_corr_mask])
+            high_corr_values = upper_triangle_values[high_corr_mask]
+            
+            # Create correlation dictionaries
+            high_correlations = []
+            feature_names = corr_matrix.columns
+            for row_idx, col_idx, corr_value in zip(high_corr_indices[0], high_corr_indices[1], high_corr_values):
+                high_correlations.append({
+                    'feature1': feature_names[row_idx],
+                    'feature2': feature_names[col_idx], 
+                    'correlation': corr_value
+                })
+            
+            return high_correlations
+        
+        # Apply vectorized analysis
+        high_correlations = find_high_correlations_vectorized(correlation_matrix)
         correlation_groups = {}
         for corr in high_correlations:
             indicator_type = corr['feature1'].split('_')[0]
@@ -897,21 +943,44 @@ class FeatureInteractionEngine:
     @step06_function_tracker
     def _create_basic_interactions(self, features: np.ndarray, feature_names: list[str]) -> np.ndarray:
         """
-        Create basic pairwise interactions between features.
+        Create basic pairwise interactions between features using advanced vectorized operations.
         """
         self.logger.debug(f'🔗 Creating basic interactions for {features.shape[0]} samples, {len(feature_names)} features')
+        
+        # Vectorized interaction functions using np.vectorize
+        @np.vectorize
+        def safe_ratio(a, b, epsilon=1e-8):
+            """Vectorized safe division with epsilon."""
+            return a / (b + epsilon)
+        
+        @np.vectorize
+        def interaction_product(a, b):
+            """Vectorized product interaction."""
+            return a * b
+        
+        @np.vectorize
+        def interaction_diff(a, b):
+            """Vectorized difference interaction."""
+            return a - b
+        
         interactions = []
         feature_map = {name: i for i, name in enumerate(feature_names)}
-        important_pairs = [('RSI', 'MACD'), ('RSI', 'Volume_Ratio'), ('MACD', 'Volume_Ratio'), ('BB_Position', 'ATR_Normalized'), ('SMA_Ratio', 'EMA_Ratio'), ('Price_Momentum', 'Volume_Ratio'), ('OBV_Normalized', 'Price_Momentum'), ('Stochastic', 'RSI'), ('Williams_R', 'RSI'), ('CCI', 'RSI')]
+        important_pairs = [('RSI', 'MACD'), ('RSI', 'Volume_Ratio'), ('MACD', 'Volume_Ratio'), 
+                          ('BB_Position', 'ATR_Normalized'), ('SMA_Ratio', 'EMA_Ratio'), 
+                          ('Price_Momentum', 'Volume_Ratio'), ('OBV_Normalized', 'Price_Momentum'), 
+                          ('Stochastic', 'RSI'), ('Williams_R', 'RSI'), ('CCI', 'RSI')]
+        
         for feature1, feature2 in important_pairs:
             if feature1 in feature_map and feature2 in feature_map:
                 idx1, idx2 = (feature_map[feature1], feature_map[feature2])
-                interaction = features[:, idx1] * features[:, idx2]
-                interactions.append(interaction)
-                ratio_interaction = features[:, idx1] / (features[:, idx2] + 1e-08)
-                interactions.append(ratio_interaction)
-                diff_interaction = features[:, idx1] - features[:, idx2]
-                interactions.append(diff_interaction)
+                feat1_data = features[:, idx1]
+                feat2_data = features[:, idx2]
+                
+                # Create interaction terms using vectorized functions
+                interactions.append(interaction_product(feat1_data, feat2_data))
+                interactions.append(safe_ratio(feat1_data, feat2_data))
+                interactions.append(interaction_diff(feat1_data, feat2_data))
+        
         return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
 
     @log_all_calls

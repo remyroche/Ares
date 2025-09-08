@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Reporting System for Step10: Unified Regime Intelligence
 
@@ -6,18 +7,14 @@ including multi-timeframe HMM analysis, intensity-based predictions, TPSL integr
 position logic, and S/R analysis integration.
 """
 
-import logging
-import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union, Tuple
 from dataclasses import dataclass, field
-from collections import defaultdict
-import warnings
 
 from src.utils.logger import system_logger
 

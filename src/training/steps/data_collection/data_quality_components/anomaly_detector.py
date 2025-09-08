@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Anomaly Detector Component
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -7,9 +8,8 @@ Extracted from raw_data_quality_checker.py
 """
 from src.utils.logger import system_logger
 import numpy as np
-import logging
+
 import pandas as pd
-import typing
 
 class AnomalyDetector:
     """Detects anomalies in market data using multiple detection methods.

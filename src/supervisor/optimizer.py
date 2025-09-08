@@ -1,17 +1,13 @@
 
-
 import pandas as pd
 # src/supervisor/optimizer.py
 import asyncio
 from datetime import datetime
 from typing import Any
 
-
 from ..utils.logger import system_logger
-import logging
-import time
-from src.core.decorators import handles_errors
 
+from src.core.decorators import handles_errors
 
 class Optimizer:
     """
@@ -261,9 +257,7 @@ class Optimizer:
             self.logger.exception(f"Error calculating SR levels: {e}")
             return []
 
-
 optimizer: Optimizer | None = None
-
 
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
     try:

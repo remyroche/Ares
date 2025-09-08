@@ -10,20 +10,18 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from .utils.logger import setup_logging
 
-
 import pandas as pd
 import numpy as np
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/optimized_optuna_optimization.py
-
 
 setup_logging()
 
 # --- Configuration ---
 # Configure logging for Optuna to provide clear output without being overly verbose.
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-
 
 class AdvancedOptunaManager:
     """Manages Optuna hyperparameter optimization with advanced features for
@@ -266,7 +264,6 @@ class AdvancedOptunaManager:
         self.logger.info(f"Optimization finished in {elapsed_time:.2f} seconds.")
 
         return self._summarize_study(study)
-
 
 if __name__ == "__main__":
     # --- Example Usage ---

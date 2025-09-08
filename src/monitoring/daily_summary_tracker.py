@@ -8,7 +8,6 @@ Tracks daily trading statistics including trades, shorts vs longs, HMM regime,
 PnL, win rate, and other key metrics for ongoing monitoring.
 """
 
-
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, date
 
@@ -17,11 +16,6 @@ from pathlib import Path
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import collections
-import logging
-import time
-import typing
-
 
 @dataclass
 class DailyTradeSummary:
@@ -73,7 +67,6 @@ class DailyTradeSummary:
     last_trade_time: Optional[datetime] = None
     summary_generated_at: datetime = None
 
-
 @dataclass
 class RegimePerformance:
     """Performance metrics by HMM regime."""
@@ -87,7 +80,6 @@ class RegimePerformance:
     sharpe_ratio: float
     avg_confidence: float
     avg_risk_score: float
-
 
 class DailySummaryTracker:
     """

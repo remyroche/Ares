@@ -15,11 +15,8 @@ from src.utils.warning_symbols import (
     invalid,
     missing,
 )
-import logging
-import time
 
 # src/interfaces/event_bus.py
-
 
 class EventType(Enum):
     """Event types for the trading system"""
@@ -36,7 +33,6 @@ class EventType(Enum):
     COMPONENT_STARTED = "component_started"
     COMPONENT_STOPPED = "component_stopped"
 
-
 @dataclass
 class Event:
     """Event structure"""
@@ -46,7 +42,6 @@ class Event:
     timestamp: datetime
     source: str
     correlation_id: str | None = None
-
 
 class EventBus:
     """
@@ -288,10 +283,8 @@ class EventBus:
     def get_subscribers(self) -> dict[str, list[Callable]]:
         return dict(self.subscribers)
 
-
 # Global instance
 event_bus: EventBus | None = None
-
 
 @handles_errors(fallback = None)
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:

@@ -13,8 +13,6 @@ from sklearn.ensemble import RandomForestClassifier
 import torch
 from sklearn.preprocessing import StandardScaler
 import asyncio
-import json
-
 
 class IDataSource(ABC):
     """Interface for data sources."""
@@ -475,7 +473,6 @@ class ModelWrapper(IModel):
 
 class LightGBMTrainer(BaseModelTrainer):
     """LightGBM model trainer."""
-
 
     @property
     def model_type(self) -> str:

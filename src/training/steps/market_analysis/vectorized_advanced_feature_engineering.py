@@ -1,6 +1,7 @@
 
 import pandas as pd
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 '\nRefactored VectorizedAdvancedFeatureEngineering with reduced complexity and type hints.\nThis refactored version breaks down the massive engineer_features method into smaller,\nfocused methods with proper type annotations.\n'
 import asyncio
@@ -9,7 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 import numpy as np
-import datetime
 
 class FeatureCategory(Enum):
     """Enumeration of feature categories"""

@@ -1,6 +1,6 @@
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 4: Triple Barrier Method.
-from src.utils.logger import system_logger
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
@@ -13,7 +13,7 @@ from src.training.steps.model_training.step04_common_types import (
 import asyncio
 import sys
 import time
-from datetime import datetime
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -49,7 +49,6 @@ from src.utils.enhanced_memory_management import (
     chunk_dataframe
 )
 from src.utils.data_streaming_manager import DataStreamingManager
-from src.utils.logger import system_logger
 
 # Project setup
 project_root = Path(__file__).parent.parent.parent
@@ -206,6 +205,9 @@ class TripleBarrierMethodStep:
             
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
             
+            # Store data for volatility-based parameter calculation
+            self._last_data = data
+            
             # Check if data should be processed in chunks
             if self.streaming_manager.should_chunk_data(data):
                 self.logger.info('📊 Large dataset detected, using streaming processing')
@@ -330,8 +332,8 @@ class TripleBarrierMethodStep:
             profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
             result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
             
-            # Calculate net profit after fees
-            fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+            # Calculate net profit after fees (corrected fee: 0.04% per side)
+            fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0004))  # 0.04% per side
             result_data['potential_profit_net_pct'] = (
                 result_data['potential_profit_pct'] - (2.0 * fee_per_side)
             ).astype(np.float64)
@@ -451,15 +453,15 @@ class TripleBarrierMethodStep:
             return None
     
     def _validate_input_data(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Validate input data for triple barrier processing."""
+        """Validate input data for triple barrier processing with fast fail checks."""
         try:
-            # Check if data is empty
+            # Fast fail checks for immediate error detection
+            if data is None:
+                return {'valid': False, 'error': 'Data is None'}
             if data.empty:
                 return {'valid': False, 'error': 'Data is empty'}
-            
-            # Check minimum data size
-            if len(data) < 2:
-                return {'valid': False, 'error': f'Insufficient data points: {len(data)} (minimum 2 required)'}
+            if len(data) < 100:  # Increased minimum for meaningful analysis
+                return {'valid': False, 'error': f'Insufficient data points: {len(data)} (minimum 100 required)'}
             
             # Check for required OHLC columns
             required_columns = ['open', 'high', 'low', 'close']
@@ -698,20 +700,38 @@ class TripleBarrierMethodStep:
             labels = np.zeros(len(close_prices), dtype=np.int8)
             profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
             
+            # FIXED: Prevent lookahead bias by using proper forward-looking validation
             for i in range(len(close_prices) - 1):
                 entry_price = close_prices[i]
                 profit_barrier = entry_price * (1 + profit_take_multiplier)
                 stop_barrier = entry_price * (1 - stop_loss_multiplier)
                 
-                for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
-                    if high_prices[j] >= profit_barrier:
-                        labels[i] = 1
-                        profit_pcts[i] = profit_take_multiplier
-                        break
-                    elif low_prices[j] <= stop_barrier:
-                        labels[i] = -1
-                        profit_pcts[i] = -stop_loss_multiplier
-                        break
+                # Look ahead window (preventing lookahead bias by using only future data)
+                lookahead_end = min(i + max_lookahead + 1, len(close_prices))
+                future_highs = high_prices[i+1:lookahead_end]
+                future_lows = low_prices[i+1:lookahead_end]
+                
+                if len(future_highs) == 0:
+                    continue
+                
+                # Vectorized barrier hit detection
+                profit_hits = future_highs >= profit_barrier
+                stop_hits = future_lows <= stop_barrier
+                
+                # Find first hit
+                profit_hit_idx = np.argmax(profit_hits) if np.any(profit_hits) else len(profit_hits)
+                stop_hit_idx = np.argmax(stop_hits) if np.any(stop_hits) else len(stop_hits)
+                
+                # Determine outcome
+                if profit_hit_idx < stop_hit_idx and np.any(profit_hits):
+                    # Profit target hit first
+                    labels[i] = 1
+                    profit_pcts[i] = profit_take_multiplier
+                elif stop_hit_idx < profit_hit_idx and np.any(stop_hits):
+                    # Stop loss hit first
+                    labels[i] = -1
+                    profit_pcts[i] = -stop_loss_multiplier
+                # If neither hit, label remains 0 (no action)
             
             result_data = pd.DataFrame({
                 'label': labels,
@@ -870,10 +890,18 @@ class TripleBarrierMethodStep:
                 'execution_time': time.time() - step_start
             }
 
-
     def _get_triple_barrier_config(self) -> Dict[str, Union[float, int]]:
-        """Extract triple barrier configuration parameters with safe defaults and validation."""
+        """Extract triple barrier configuration parameters with safe defaults, validation, and volatility-based suggestions."""
         triple_barrier_config = safe_dict_get(self.config, 'triple_barrier', {})
+        
+        # Check if volatility-based parameters should be used
+        use_volatility_based = self.config.get('use_volatility_based_params', False)
+        
+        if use_volatility_based and hasattr(self, '_last_data') and self._last_data is not None:
+            # Calculate volatility-based parameters
+            volatility_params = self._calculate_volatility_based_parameters(self._last_data)
+            triple_barrier_config.update(volatility_params)
+            self.logger.info('📊 Using volatility-based parameters')
         
         # Extract parameters with validation
         profit_take_multiplier = safe_float(
@@ -904,6 +932,81 @@ class TripleBarrierMethodStep:
             'stop_loss_multiplier': stop_loss_multiplier,
             'time_barrier_minutes': time_barrier_minutes,
             'max_lookahead': max_lookahead
+        }
+    
+    def _calculate_volatility_based_parameters(self, data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate optimal triple barrier parameters based on market volatility."""
+        try:
+            if len(data) < 30:
+                return self._get_default_parameters()
+            
+            # Calculate rolling volatility
+            returns = data['close'].pct_change().dropna()
+            volatility = returns.rolling(window=30).std().iloc[-1]
+            
+            # Calculate ATR (Average True Range) for volatility measure
+            high_low = data['high'] - data['low']
+            high_close = np.abs(data['high'] - data['close'].shift())
+            low_close = np.abs(data['low'] - data['close'].shift())
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(window=30).mean().iloc[-1]
+            
+            # Calculate current price level
+            current_price = data['close'].iloc[-1]
+            
+            # Volatility-based parameter calculation
+            volatility_multiplier = min(max(volatility * 100, 0.5), 5.0)  # Clamp between 0.5% and 5%
+            atr_multiplier = min(max(atr / current_price * 100, 0.1), 2.0)  # Clamp between 0.1% and 2%
+            
+            # Calculate optimal parameters
+            profit_take_multiplier = max(volatility_multiplier * 0.8, 0.001)  # 80% of volatility
+            stop_loss_multiplier = max(volatility_multiplier * 0.4, 0.0005)   # 40% of volatility
+            
+            # Time barrier based on volatility (higher volatility = shorter time barrier)
+            base_time_minutes = 30
+            volatility_time_factor = max(0.5, min(2.0, 1.0 / (volatility * 100 + 0.1)))
+            time_barrier_minutes = int(base_time_minutes * volatility_time_factor)
+            
+            # Max lookahead based on volatility
+            base_lookahead = 100
+            volatility_lookahead_factor = max(0.5, min(2.0, 1.0 / (volatility * 100 + 0.1)))
+            max_lookahead = int(base_lookahead * volatility_lookahead_factor)
+            
+            parameters = {
+                'profit_take_multiplier': round(profit_take_multiplier, 6),
+                'stop_loss_multiplier': round(stop_loss_multiplier, 6),
+                'time_barrier_minutes': time_barrier_minutes,
+                'max_lookahead': max_lookahead,
+                'volatility': round(volatility, 6),
+                'atr': round(atr, 6),
+                'volatility_multiplier': round(volatility_multiplier, 6),
+                'parameter_source': 'volatility_based'
+            }
+            
+            self.logger.info(f'📊 Volatility-based parameters calculated:')
+            self.logger.info(f'   Volatility: {volatility:.4f} ({volatility*100:.2f}%)')
+            self.logger.info(f'   Profit Take: {profit_take_multiplier:.4f} ({profit_take_multiplier*100:.2f}%)')
+            self.logger.info(f'   Stop Loss: {stop_loss_multiplier:.4f} ({stop_loss_multiplier*100:.2f}%)')
+            self.logger.info(f'   Time Barrier: {time_barrier_minutes} minutes')
+            self.logger.info(f'   Max Lookahead: {max_lookahead} periods')
+            
+            return parameters
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to calculate volatility-based parameters: {e}')
+            return self._get_default_parameters()
+    
+    def _get_default_parameters(self) -> Dict[str, float]:
+        """Get default parameters when volatility calculation fails."""
+        return {
+            'profit_take_multiplier': 0.002,  # 0.2%
+            'stop_loss_multiplier': 0.001,    # 0.1%
+            'time_barrier_minutes': 30,
+            'max_lookahead': 100,
+            'volatility': 0.0,
+            'atr': 0.0,
+            'volatility_multiplier': 1.0,
+            'parameter_source': 'default'
         }
     
     def _validate_triple_barrier_parameters(
@@ -1155,7 +1258,6 @@ async def run_step(
         data_dir=data_dir, 
         force_rerun=force_rerun
     )
-
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
     """Run Step 4: Triple Barrier Method with standardized return types.

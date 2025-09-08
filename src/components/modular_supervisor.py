@@ -11,11 +11,8 @@ from src.utils.warning_symbols import (
     missing,
 )
 from src.core.decorators import handles_errors
-import logging
-import time
 
 # src/components/modular_supervisor.py
-
 
 class ModularSupervisor:
     """
@@ -1082,8 +1079,5 @@ class ModularSupervisor:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular supervisor: {e}"))
 
-
 # Global modular supervisor instance
 modular_supervisor: ModularSupervisor | None = None
-
-

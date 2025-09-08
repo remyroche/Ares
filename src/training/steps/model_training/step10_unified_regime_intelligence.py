@@ -9,8 +9,16 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 from src.utils.decorators import handles_errors, traced, validates
 from src.utils.logger import system_logger
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 import numpy as np
 import pandas as pd
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Removed unavailable decorator imports
 
@@ -32,9 +40,6 @@ Key Features:
 - No TPSL calculations (handled by separate trading execution layer)
 """
 import os
-import collections
-import json
-import typing
 
 import pickle
 import re
@@ -179,7 +184,6 @@ if pandas is None:
     logger.error("❌ Pandas is required but not available")
     raise ImportError("Pandas is required for step10_unified_regime_intelligence")
 
-
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
     @log_important_calls
@@ -305,7 +309,6 @@ class MultiTimeframeHMMEncoder(nn.Module):
             "confidence_logits": confidence_logits,
             "hidden_states": transformed,
         }
-
 
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
@@ -538,7 +541,7 @@ class UnifiedRegimeIntelligenceStep:
             for tf in self.timeframes:
                 hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
-                    hmm_data = pd.read_parquet(hmm_file)
+                    hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     if hmm_data.empty:
                         self.logger.error(f"❌ Empty HMM data file: {hmm_file}")
                         return False
@@ -703,7 +706,7 @@ class UnifiedRegimeIntelligenceStep:
             for tf in self.timeframes:
                 hmm_file = f"{self.data_dir}/{self.exchange}_{self.symbol}_hmm_composite_clusters_{tf}.parquet"
                 if os.path.exists(hmm_file):
-                    hmm_data[tf] = pd.read_parquet(hmm_file)
+                    hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     self.logger.info(
                         f"📦 Loaded HMM data for optimization: {tf}: {len(hmm_data[tf])} rows",
                     )
@@ -764,10 +767,10 @@ class UnifiedRegimeIntelligenceStep:
                         self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows (optimized)")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Optimized loading failed for {tf}, falling back to pandas: {e}")
-                        hmm_data[tf] = pd.read_parquet(hmm_file)
+                        hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                         self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows (fallback)")
                 elif os.path.exists(hmm_file):
-                    hmm_data[tf] = pd.read_parquet(hmm_file)
+                    hmm_data[tf] = standardized_parquet_handler.read_parquet_standardized(hmm_file)
                     self.logger.info(f"📦 Loaded HMM data for {tf}: {len(hmm_data[tf])} rows")
 
             if not hmm_data:
@@ -817,10 +820,10 @@ class UnifiedRegimeIntelligenceStep:
                         self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows (optimized)")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Optimized loading failed for {tf} intensity, falling back to pandas: {e}")
-                        intensity_data[tf] = pd.read_parquet(intensity_file)
+                        intensity_data[tf] = standardized_parquet_handler.read_parquet_standardized(intensity_file)
                         self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows (fallback)")
                 elif os.path.exists(intensity_file):
-                    intensity_data[tf] = pd.read_parquet(intensity_file)
+                    intensity_data[tf] = standardized_parquet_handler.read_parquet_standardized(intensity_file)
                     self.logger.info(f"📦 Loaded intensity data for {tf}: {len(intensity_data[tf])} rows")
                 else:
                     self.logger.warning(
@@ -1507,7 +1510,6 @@ class UnifiedRegimeIntelligenceStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
             return 0  # no transition as fallback
-
 
     async def _train_model(self, train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
@@ -2386,7 +2388,6 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-
 # @deterministic_seed(42)  # decorator not available
 # @idempotent_step(step_key="step5_5_unified_regime_intelligence")  # decorator not available
 # @artifact_write_lock() - removed, handled by file system
@@ -2447,6 +2448,12 @@ async def run_step(
     - Regime transition prediction
     - Support/Resistance level detection
     - Expert activation logic
+    
+    # Initialize lookahead bias detector
+    from datetime import datetime
+    current_time = datetime.now()
+    bias_detector = get_global_detector()
+    bias_detector.set_current_timestamp(current_time)
 
     Replaces step9_5 and step10 with a single, efficient model.
     """

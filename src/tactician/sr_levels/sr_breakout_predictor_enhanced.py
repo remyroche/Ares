@@ -7,7 +7,7 @@ from src.core.decorators import handles_errors
 'Enhanced S/R Breakout Predictor.\n\nThis module provides advanced breakout prediction capabilities with ML integration,\nreal-time monitoring, and comprehensive validation.\n'
 from dataclasses import dataclass
 from enum import Enum
-import logging
+
 import time
 import psutil
 from dataclasses import dataclass

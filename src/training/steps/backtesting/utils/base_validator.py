@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Base validator class for backtesting pipeline."""
 
 from typing import Dict, Any, Optional
@@ -5,7 +6,6 @@ from abc import ABC, abstractmethod
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 class BaseValidator(ABC):
     """Base class for all validators in the backtesting pipeline."""

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Vectorized Operations and Numba JIT Optimizations for Step03.
 
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional, Union
 import logging
-from pathlib import Path
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 # Performance optimization imports
@@ -38,10 +39,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
-# =============================================================================
 # NUMBA JIT-COMPILED FUNCTIONS
-# =============================================================================
 
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
@@ -54,7 +52,6 @@ def vectorized_rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
 
     return result
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_rolling_std(values: np.ndarray, window: int) -> np.ndarray:
     """Compute rolling standard deviation using vectorized operations."""
@@ -66,7 +63,6 @@ def vectorized_rolling_std(values: np.ndarray, window: int) -> np.ndarray:
         result[i] = np.std(window_data)
 
     return result
-
 
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_rolling_skewness(values: np.ndarray, window: int) -> np.ndarray:
@@ -85,7 +81,6 @@ def vectorized_rolling_skewness(values: np.ndarray, window: int) -> np.ndarray:
 
     return result
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_rolling_kurtosis(values: np.ndarray, window: int) -> np.ndarray:
     """Compute rolling kurtosis using vectorized operations."""
@@ -102,7 +97,6 @@ def vectorized_rolling_kurtosis(values: np.ndarray, window: int) -> np.ndarray:
             result[i] = kurtosis
 
     return result
-
 
 @jit(nopython=True, cache=True)
 def vectorized_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
@@ -148,7 +142,6 @@ def vectorized_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
 
     return rsi
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_macd(prices: np.ndarray, fast_period: int = 12,
                    slow_period: int = 26, signal_period: int = 9) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -169,7 +162,6 @@ def vectorized_macd(prices: np.ndarray, fast_period: int = 12,
     histogram = macd_line - signal_line
 
     return macd_line, signal_line, histogram
-
 
 @jit(nopython=True, cache=True)
 def vectorized_ema(values: np.ndarray, period: int) -> np.ndarray:
@@ -192,7 +184,6 @@ def vectorized_ema(values: np.ndarray, period: int) -> np.ndarray:
 
     return ema
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_bollinger_bands(prices: np.ndarray, window: int = 20,
                               num_std: float = 2.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -213,7 +204,6 @@ def vectorized_bollinger_bands(prices: np.ndarray, window: int = 20,
         lower_band[i] = mean_val - num_std * std_val
 
     return upper_band, middle_band, lower_band
-
 
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray,
@@ -244,7 +234,6 @@ def vectorized_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray,
 
     return atr
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_correlation_matrix(data: np.ndarray) -> np.ndarray:
     """Compute correlation matrix using vectorized operations."""
@@ -272,7 +261,6 @@ def vectorized_correlation_matrix(data: np.ndarray) -> np.ndarray:
 
     return corr_matrix
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_distance_matrix(data: np.ndarray, metric: str = 'euclidean') -> np.ndarray:
     """Compute distance matrix using vectorized operations."""
@@ -295,7 +283,6 @@ def vectorized_distance_matrix(data: np.ndarray, metric: str = 'euclidean') -> n
                 dist_matrix[j, i] = dist
 
     return dist_matrix
-
 
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_zscore_normalization(data: np.ndarray) -> np.ndarray:
@@ -324,7 +311,6 @@ def vectorized_zscore_normalization(data: np.ndarray) -> np.ndarray:
 
     return normalized_data
 
-
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_robust_scaling(data: np.ndarray) -> np.ndarray:
     """Perform robust scaling using vectorized operations."""
@@ -352,10 +338,7 @@ def vectorized_robust_scaling(data: np.ndarray) -> np.ndarray:
 
     return scaled_data
 
-
-# =============================================================================
 # VECTORIZED FEATURE ENGINEERING FUNCTIONS
-# =============================================================================
 
 class VectorizedFeatureEngineer:
     """Vectorized feature engineering with Numba optimization."""
@@ -504,10 +487,7 @@ class VectorizedFeatureEngineer:
 
         return dist_stats
 
-
-# =============================================================================
 # PERFORMANCE UTILITIES
-# =============================================================================
 
 class PerformanceProfiler:
     """Performance profiler for vectorized operations."""
@@ -574,10 +554,7 @@ class PerformanceProfiler:
             self.logger.info(f"    Std: {func_stats['std_time']:.4f}s")
             self.logger.info(f"    Calls: {func_stats['call_count']}")
 
-
-# =============================================================================
 # MAIN INTERFACE
-# =============================================================================
 
 class VectorizedOperationsManager:
     """Main interface for vectorized operations."""
@@ -642,10 +619,7 @@ class VectorizedOperationsManager:
         """Get performance statistics."""
         return self.profiler.get_performance_stats()
 
-
-# =============================================================================
 # UTILITY FUNCTIONS
-# =============================================================================
 
 def create_vectorized_config(**kwargs) -> Dict[str, Any]:
     """Create configuration for vectorized operations."""
@@ -682,7 +656,6 @@ def create_vectorized_config(**kwargs) -> Dict[str, Any]:
     default_config.update(kwargs)
     return default_config
 
-
 # Global instance for easy access
 _vectorized_manager = None
 
@@ -692,7 +665,6 @@ def get_vectorized_operations_manager() -> VectorizedOperationsManager:
     if _vectorized_manager is None:
         _vectorized_manager = VectorizedOperationsManager()
     return _vectorized_manager
-
 
 if __name__ == "__main__":
     # Example usage

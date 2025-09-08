@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """
 Import Verification Script for Step03 Enhanced Monitoring System.
@@ -150,7 +151,6 @@ def test_optional_dependencies():
         results.append(test_import(module, description))
     
     return results
-
 
 def main():
     """Main verification function."""

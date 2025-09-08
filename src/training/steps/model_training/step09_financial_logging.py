@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step09 HMM-Based Training Per Regime.
 Independent logging module that can be used without the reporting system.
@@ -6,7 +7,7 @@ Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
-import numpy as np
+
 from typing import Dict, Any, Optional, List
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 
@@ -29,7 +30,6 @@ except ImportError:
     validate_and_log_regime_data = None
 
 logger = system_logger.getChild('Step09FinancialLogging')
-
 
 class Step09FinancialLogger:
     """Independent financial metrics logger for Step09 HMM-Based Training Per Regime with enhanced regime logging."""
@@ -547,7 +547,6 @@ class Step09FinancialLogger:
             logger.info("📁 File paths logged for Step09")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
-
 
 # Enhanced Step09 Financial Logger with Regime-Aware Decorator Support
 class EnhancedStep09FinancialLogger(Step09FinancialLogger):

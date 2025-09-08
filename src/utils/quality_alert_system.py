@@ -23,11 +23,6 @@ from .logger import system_logger
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import logging
-import time
-import typing
-
-
 
 class QualityAlertManager:
     """Manages quality alerts and notifications."""

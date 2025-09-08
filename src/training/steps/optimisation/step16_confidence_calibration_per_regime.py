@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 16: Enhanced Confidence Calibration - Per-Regime Implementation.
 
 This module provides per-HMM regime confidence calibration functionality with comprehensive
@@ -8,10 +9,9 @@ performed specifically for each regime's characteristics and market behavior.
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import asyncio
-import contextlib
+
 import json
-import os
-import pickle
+
 import sys
 import time
 from datetime import datetime
@@ -27,7 +27,7 @@ from sklearn.isotonic import IsotonicRegression
 
 # Project imports
 from src.utils.logger import get_logger
-from src.utils.warning_symbols import error
+
 from ...core.decorators import handles_errors
 
 # M1 Hardware Optimizations
@@ -351,7 +351,7 @@ class PerRegimeConfidenceCalibrationStep(Step16ConfidenceCalibration):
                 if self.data_manager:
                     tactician_data = await self.data_manager.load_parquet_async(file_path)
                 else:
-                    tactician_data = pd.read_parquet(file_path)
+                    tactician_data = standardized_parquet_handler.read_parquet_standardized(file_path)
                 self.logger.info(f'✅ Loaded tactician data: {tactician_data.shape}')
             except Exception as e:
                 self.logger.error(f'❌ Failed to load tactician data from {file_path}: {e}')
@@ -1863,7 +1863,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
         config = {}
     if data_dir is None:
         if pipeline_standards:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         else:
             data_dir = f'data_cache/{exchange}_{symbol}'
     config['per_regime_confidence_calibration'] = True
@@ -1880,7 +1880,7 @@ async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir
     """Enhanced entry point for Step 16: Per-Regime Confidence Calibration."""
     if data_dir is None:
         if pipeline_standards:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         else:
             data_dir = f'data_cache/{exchange}_{symbol}'
     logger.info('🚀 Starting Step 16: Per-Regime Confidence Calibration (Enhanced)')

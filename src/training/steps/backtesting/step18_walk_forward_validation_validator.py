@@ -1,4 +1,5 @@
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 13: Walk Forward Validation."""
 
 import asyncio
@@ -6,7 +7,6 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Tuple
-
 
 from src.utils.warning_symbols import (
     error,
@@ -24,14 +24,8 @@ if str(project_root) not in sys.path:
 from .training.steps.config import CONFIG
 from .training.steps.utils.base_validator import BaseValidator
 
-import json
 import asyncio as _asyncio
 from src.training.steps.core.decorators.errors import handles_errors
-import logging
-import time
-
-
-
 
 import numpy as np
 

@@ -5,7 +5,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 'BaseValidationStep wrapper for Step 20 A/B Testing.'
 from .base_validation_step import BaseValidationStep
-import logging
 
 class ABTestingStep(BaseValidationStep):
     """Step 20: A/B Testing using BaseValidationStep contract."""

@@ -1,10 +1,8 @@
 
 import logging
 from typing import Any
-import numpy as np
+
 import pandas as pd
-
-
 
 def handle_missing_data(
     df: pd.DataFrame,

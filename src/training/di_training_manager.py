@@ -15,8 +15,6 @@ from .core.dependency_injection import DependencyContainer
 from .core.injectable_base import InjectableBase
 from .interfaces.base_interfaces import IExchangeClient, IStateManager
 
-import logging
-
 from src.utils.warning_symbols import (
     failed,
     initialization_error,

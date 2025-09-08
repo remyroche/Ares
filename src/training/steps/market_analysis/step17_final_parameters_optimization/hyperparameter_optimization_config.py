@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 # src/training/steps/step17_final_parameters_optimization/
 # hyperparameter_optimization_config.py
 
@@ -7,12 +8,9 @@ This module defines comprehensive search spaces, optimization strategies, and ev
 metrics for Step 12: Final Parameters Optimization.
 """
 
-
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-import numpy as np
-
 
 class OptimizationStrategy(Enum):
     """Optimization strategies for different parameter categories."""
@@ -23,7 +21,6 @@ class OptimizationStrategy(Enum):
     GRID_SEARCH = "grid_search"
     RANDOM_SEARCH = "random_search"
     EVOLUTIONARY = "evolutionary"
-
 
 class EvaluationMetric(Enum):
     """Evaluation metrics for optimization."""
@@ -41,7 +38,6 @@ class EvaluationMetric(Enum):
     AVERAGE_WIN = "average_win"
     AVERAGE_LOSS = "average_loss"
 
-
 @dataclass
 class SearchSpace:
     """Defines the search space for a parameter category."""
@@ -56,7 +52,6 @@ class SearchSpace:
     constraints: dict[str, Any] = field(default_factory = dict)
     warm_start: bool = True
     parallel_trials: int = 1
-
 
 @dataclass
 class ConfidenceThresholdsSearchSpace(SearchSpace):
@@ -141,7 +136,6 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
             "ensemble_confidence_threshold": {"min": 0.65, "max": 0.9},
         }
 
-
 @dataclass
 class VolatilityParametersSearchSpace(SearchSpace):
     """Search space for volatility parameters optimization."""
@@ -209,7 +203,6 @@ class VolatilityParametersSearchSpace(SearchSpace):
                 "choices": [True, False],
             },
         }
-
 
 @dataclass
 class PositionSizingSearchSpace(SearchSpace):
@@ -294,7 +287,6 @@ class PositionSizingSearchSpace(SearchSpace):
             "kelly_multiplier": {"min": 0.15, "max": 0.4},
         }
 
-
 @dataclass
 class RiskManagementSearchSpace(SearchSpace):
     """Search space for risk management parameters optimization."""
@@ -366,7 +358,6 @@ class RiskManagementSearchSpace(SearchSpace):
             },
         }
 
-
 @dataclass
 class EnsembleParametersSearchSpace(SearchSpace):
     """Search space for ensemble parameters optimization."""
@@ -427,7 +418,6 @@ class EnsembleParametersSearchSpace(SearchSpace):
             },
             "ensemble_minimum_models": {"type": "int", "min": 2, "max": 5, "step": 1},
         }
-
 
 @dataclass
 class RegimeSpecificSearchSpace(SearchSpace):
@@ -504,7 +494,6 @@ class RegimeSpecificSearchSpace(SearchSpace):
             },
         }
 
-
 @dataclass
 class TimingParametersSearchSpace(SearchSpace):
     """Search space for timing parameters optimization."""
@@ -532,7 +521,6 @@ class TimingParametersSearchSpace(SearchSpace):
             "sideways_cooldown": {"type": "int", "min": 30, "max": 90, "step": 10},
             "high_impact_cooldown": {"type": "int", "min": 60, "max": 180, "step": 15},
         }
-
 
 class HyperparameterOptimizationConfig:
     """Main configuration class for hyperparameter optimization."""
@@ -644,15 +632,12 @@ class HyperparameterOptimizationConfig:
 
         return summary
 
-
 # Global configuration instance
 HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
-
 
 def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
     """Get the global hyperparameter optimization configuration."""
     return HYPERPARAMETER_CONFIG
-
 
 def validate_hyperparameter_config() -> list[str]:
     """Validate the entire hyperparameter optimization configuration."""
@@ -673,7 +658,6 @@ def validate_hyperparameter_config() -> list[str]:
         errors.append("Global config missing study_name_prefix")
 
     return errors
-
 
 def get_optimization_plan() -> dict[str, Any]:
     """Get a detailed optimization plan."""
@@ -699,7 +683,6 @@ def get_optimization_plan() -> dict[str, Any]:
         },
         "summary": summary,
     }
-
 
 if __name__ == "__main__":
     # Test the configuration

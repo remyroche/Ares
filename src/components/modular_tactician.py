@@ -1,7 +1,7 @@
 
 from datetime import datetime
 from typing import Any
-import time
+
 from logging import error
 
 from ..utils.logger import system_logger
@@ -9,7 +9,6 @@ from ..utils.warning_symbols import initialization_error, invalid, missing
 from ..core.decorators import handles_errors
 
 # src/components/modular_tactician.py
-
 
 class ModularTactician:
     """
@@ -983,8 +982,5 @@ class ModularTactician:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular tactician: {e}"))
 
-
 # Global modular tactician instance
 modular_tactician: ModularTactician | None = None
-
-

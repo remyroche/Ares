@@ -2,13 +2,11 @@
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml
 # Uncomment when TPSL optimization is re-enabled
 
-
 import numba
 import optuna
 import pandas as pd
 import numpy as np
 # src/training/tpsl_optimizer.py
-
 
 try:
     import pandas_ta as ta
@@ -26,14 +24,12 @@ from sklearn.linear_model import LogisticRegression
 
 from ..database.sqlite_manager import SQLiteManager
 from src.utils.logger import get_logger
-import logging
 
 # Component logger
 logger = get_logger("TpSlOptimizer")
 
 # Suppress Optuna's informational messages for a cleaner log
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-
 
 @numba.jit(nopython = True, cache = True)
 def _numba_backtest(
@@ -108,7 +104,6 @@ def _numba_backtest(
     if not trades:
         return np.empty((0, 2), dtype = np.float64)
     return np.array(trades, dtype = np.float64)
-
 
 class TpSlOptimizer:
     """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds

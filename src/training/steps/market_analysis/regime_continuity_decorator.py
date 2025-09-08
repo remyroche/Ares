@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Regime Continuity Decorator for Pipeline Steps.
 
 This decorator ensures that all pipeline steps maintain regime continuity
@@ -10,8 +11,6 @@ from typing import Callable, Dict, Any
 from .regime_continuity_manager import regime_continuity_manager, RegimeStatus, StepRegimeContext
 from src.utils.logger import get_logger
 import pandas as pd
-import logging
-import time
 
 logger = get_logger('RegimeContinuityDecorator')
 
@@ -166,7 +165,7 @@ async def _aggregate_regime_results(step_name: str, regime_results: Dict[int, An
             if dfs:
                 aggregated_df = pd.concat(dfs, ignore_index = True)
                 aggregated_df = aggregated_df.sort_values('timestamp').reset_index(drop = True)
-                aggregated_df.to_parquet(aggregated_path, index=False)
+                standardized_parquet_handler.write_parquet_standardized(aggregated_df, aggregated_path, index=False)
                 logger.info(f'✅ Aggregated {len(dfs)} regime DataFrames: {aggregated_path}')
         elif all((isinstance(result, dict) for result in regime_results.values())):
             aggregated_dict = {'step_name': step_name, 'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'aggregated_at': datetime.now().isoformat(), 'regime_results': regime_results, 'total_regimes': len(regime_results), 'successful_regimes': len([r for r in regime_results.values() if r is not None])}

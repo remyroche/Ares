@@ -9,7 +9,6 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional
 
-
 class FeatureCalculator:
     """Utility class for calculating various technical indicators."""
     
@@ -214,7 +213,6 @@ class FeatureCalculator:
         """Calculate price to VWAP spread with specific period."""
         vwap = FeatureCalculator.calculate_vwap(data, period)
         return data['close'] - vwap
-
 
 class FeatureCalculatorRegistry:
     """Registry for feature calculation methods."""

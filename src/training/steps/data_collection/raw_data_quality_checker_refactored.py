@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Refactored Raw Data Quality Checker
 This is a refactored version of raw_data_quality_checker.py that uses the extracted components.
@@ -13,8 +14,6 @@ from src.training.steps.data_quality_components import QualityMetricsCalculator,
 import numpy as np
 import pandas as pd
 import datetime
-import logging
-import time
 
 class RawDataQualityChecker:
     """Refactored raw data quality checker using extracted components.

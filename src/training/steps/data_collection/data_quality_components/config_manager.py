@@ -1,12 +1,12 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Configuration Manager Component
 
 Manages configuration for quality checks and data processing.
 Extracted from raw_data_quality_checker.py
 """
 from typing import Any, Optional
-import numpy as np
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 class QualityCheckConfig:
     """Manages configuration for quality checks and data processing.

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Quality Dashboard Web Interface.
 from src.utils.logger import system_logger
 
@@ -24,8 +25,6 @@ from pydantic import BaseModel
 import uvicorn
 from .enhanced_data_quality_manager import EnhancedDataQualityManager
 from .data_quality_monitor import DataQualityMonitor
-import logging
-import time
 
 logger = system_logger.getChild('DataQualityDashboard')
 try:

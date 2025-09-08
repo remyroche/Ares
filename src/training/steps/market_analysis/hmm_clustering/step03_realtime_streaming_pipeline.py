@@ -5,14 +5,13 @@ from typing import Optional
 from datetime import datetime
 import numpy as np
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Real-time Streaming Pipeline for Regime Discovery.\n\nThis module implements a real-time streaming pipeline for processing live market data\nwith an agnostic approach that can work with different exchanges (Binance, Gate.io, etc.).\n'
 import asyncio
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import warnings
-import logging
-import time
 
 warnings.filterwarnings('ignore')
 

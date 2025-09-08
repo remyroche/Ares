@@ -1,6 +1,15 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Final Methods - Part 5
 """
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
     async def _generate_comprehensive_results(self, data: pd.DataFrame, selected_features: Dict[str, List[str]], 
                                             financial_metrics: FinancialMetrics, risk_metrics: RiskMetrics,
@@ -77,7 +86,7 @@ Unified Step08 Final Methods - Part 5
             # Save regime data
             if results.regime_data is not None:
                 regime_file = os.path.join(self.artifacts_dir, 'regime_data.parquet')
-                results.regime_data.to_parquet(regime_file)
+                results.standardized_parquet_handler.write_parquet_standardized(regime_data, regime_file)
                 results.artifacts_generated.append(regime_file)
             
             # Save selected features
@@ -404,6 +413,12 @@ Unified Step08 Final Methods - Part 5
 async def run_step(symbol: str, exchange: str, data_dir: str, timeframe: str = '1m', force_rerun: bool = False, **kwargs) -> bool:
     """Run unified Step08 with comprehensive analysis."""
     try:
+        # Initialize lookahead bias detector
+        from datetime import datetime
+        current_time = datetime.now()
+        bias_detector = get_global_detector()
+        bias_detector.set_current_timestamp(current_time)
+        
         config = {
             'symbol': symbol,
             'exchange': exchange,

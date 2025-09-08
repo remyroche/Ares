@@ -1,5 +1,6 @@
 import numpy as np
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/fractional_feature_selector.py
 
@@ -19,14 +20,11 @@ from sklearn.ensemble import RandomForestRegressor
 
 from .utils.logger import get_logger
 import pandas as pd
-import datetime
-import logging
-import typing
+
 from .utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )
-
 
 class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""
@@ -680,7 +678,6 @@ class FractionalFeatureSelector:
         except Exception as e:
             self.logger.error(f"Failed to export feature selection report: {e}")
             return ""
-
 
 # Configuration helper
 def get_fractional_feature_selector_config(

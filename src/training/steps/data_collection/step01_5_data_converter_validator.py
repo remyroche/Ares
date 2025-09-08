@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring.
 from src.utils.logger import system_logger
 
@@ -14,7 +15,6 @@ Features:
 - Health check mechanisms for system and data integrity
 
 Dependencies:
-=============
 Standard Library:
 - asyncio: Asynchronous programming support
 - functools: Function utilities (wraps decorator)
@@ -41,7 +41,6 @@ Local Dependencies:
 - .utils.logger: Logging system
 
 Installation Requirements:
-=========================
 pip install pandas psutil
 
 Optional Dependencies (for enhanced functionality):
@@ -49,19 +48,18 @@ Optional Dependencies (for enhanced functionality):
 - pyarrow: Fast columnar data processing (for parquet files)
 
 Version Requirements:
-====================
 - Python >= 3.8
 - pandas >= 1.3.0
 - psutil >= 5.8.0
 """
-import collections
+
 import logging
 
 import asyncio
 import functools
 import glob
 import inspect
-import json
+
 import os
 import sys
 import threading
@@ -71,7 +69,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Union
 import psutil
-import numpy as np
+
 import pandas as pd
 import warnings
 
@@ -417,7 +415,7 @@ class HealthCheckSystem:
                             if file.endswith('.parquet'):
                                 file_path = os.path.join(root, file)
                                 try:
-                                    df = pd.read_parquet(file_path, nrows = 1)
+                                    df = standardized_parquet_handler.read_parquet_standardized(file_path, nrows = 1)
                                     if df.empty:
                                         issues.append(f'Empty parquet file: {file_path}')
                                 except Exception as e:
@@ -852,7 +850,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             self.logger.info(f'   ✅ File exists, size: {file_size:,} bytes')
             self.logger.info(f'   📋 CHECK 2: Loading parquet file')
             try:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 validation_results['checks_passed'].append('file_load_success')
                 validation_results['data_quality_metrics']['total_records'] = len(df)
                 validation_results['data_quality_metrics']['total_columns'] = len(df.columns)

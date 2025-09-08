@@ -1,6 +1,6 @@
 
 import pandas as pd
-import numpy as np
+
 from ...utils.logger import system_logger
 
 """
@@ -19,9 +19,6 @@ from typing import Any, Dict, List, Optional
 warnings.filterwarnings('ignore')
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-import logging
-import time
 
 try:
     from .config.constants import DEFAULT_LOOKBACK_DAYS

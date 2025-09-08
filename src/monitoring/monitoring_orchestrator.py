@@ -8,7 +8,6 @@ Orchestrates all monitoring components and provides a unified interface
 for comprehensive ML model and ensemble monitoring across all trading modes.
 """
 
-
 from dataclasses import dataclass, asdict
 import time
 
@@ -30,12 +29,10 @@ from .monitoring.ensemble_monitor import EnsembleMonitor, ModelContribution
 from .monitoring.csv_export_manager import CSVExportManager
 from .monitoring.trading_integration import TradingSystemIntegrator
 from .monitoring.daily_summary_tracker import DailySummaryTracker
-import collections
-import datetime
-import logging
-import numpy as np
-import typing
 
+import datetime
+
+import numpy as np
 
 @dataclass
 class MonitoringConfig:
@@ -73,7 +70,6 @@ class MonitoringConfig:
     enable_backtesting_integration: bool = True
     enable_paper_trading_integration: bool = True
     enable_live_trading_integration: bool = True
-
 
 class MonitoringOrchestrator:
     """
@@ -445,7 +441,6 @@ class MonitoringOrchestrator:
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
             return False
-
 
 # Factory function for easy initialization
 @handles_errors(default_return = None, context="monitoring_orchestrator.create_monitoring_orchestrator")

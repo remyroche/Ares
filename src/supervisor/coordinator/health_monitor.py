@@ -7,7 +7,6 @@ This module monitors overall system health, including resource usage,
 performance metrics, and system stability.
 """
 
-
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -15,10 +14,6 @@ import psutil
 
 from ...utils.logger import system_logger
 from .utils.warning_symbols import error
-import numpy as np
-import logging
-import time
-
 
 class HealthMonitor:
     """Monitors overall system health and performance."""

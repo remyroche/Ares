@@ -1,7 +1,6 @@
 
 """Validator for Step 20: Extended A/B Testing."""
 
-import asyncio
 import sys
 import time
 from pathlib import Path
@@ -14,8 +13,6 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger, get_logger
 from src.utils.common_operations import safe_json_load
-import json
-import logging
 
 logger = get_logger('Step20ABTestingValidator')
 
@@ -71,7 +68,6 @@ class Step20ABTestingValidator:
             self.logger.error(f"❌ Error validating A/B testing results: {e}")
             self.validation_results["ab_results"] = {"exists": True, "valid": False, "error": str(e)}
             return False
-
 
 async def run_validator(
     training_input: Dict[str, Any],

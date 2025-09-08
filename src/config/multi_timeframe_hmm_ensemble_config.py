@@ -10,8 +10,6 @@ that combines predictions from HMM clusters across multiple timeframes.
 
 from dataclasses import dataclass
 from typing import Any
-import numpy as np
-
 
 @dataclass
 class TimeframeConfig:
@@ -25,7 +23,6 @@ class TimeframeConfig:
         False  # Hazard models are for regime transitions only
     )
 
-
 @dataclass
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
@@ -38,7 +35,6 @@ class EnsembleConfig:
     ensemble_method: str = (
         "meta_learner"  # "weighted_average", "meta_learner", "stacking"
     )
-
 
 def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
     """
@@ -125,7 +121,6 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
         },
     }
 
-
 def get_default_timeframe_configs() -> list[TimeframeConfig]:
     """
     Get default timeframe configurations.
@@ -164,7 +159,6 @@ def get_default_timeframe_configs() -> list[TimeframeConfig]:
         ),
     ]
 
-
 def get_default_ensemble_config() -> EnsembleConfig:
     """
     Get default ensemble configuration.
@@ -179,7 +173,6 @@ def get_default_ensemble_config() -> EnsembleConfig:
         min_confidence_threshold = 0.6,
         ensemble_method="meta_learner",
     )
-
 
 def validate_ensemble_config(config: dict[str, Any]) -> bool:
     """
@@ -222,7 +215,6 @@ def validate_ensemble_config(config: dict[str, Any]) -> bool:
     except Exception:
         return False
 
-
 def get_optimized_timeframe_weights() -> dict[str, float]:
     """
     Get optimized timeframe weights based on typical market behavior.
@@ -236,7 +228,6 @@ def get_optimized_timeframe_weights() -> dict[str, float]:
         "15m": 0.30,  # Higher weight for medium-term trends
         "30m": 0.25,  # Good for longer-term regime changes
     }
-
 
 def get_adaptive_weighting_config() -> dict[str, Any]:
     """

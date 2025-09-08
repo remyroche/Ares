@@ -7,17 +7,14 @@ from src.utils.logger import system_logger
 # Import StepDependencyValidator for step dependency validation
 from .utils.step_dependency_validator import step_dependency_validator
 from src.utils.warning_symbols import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     error,
     invalid,
     validation_error,
 )
 from ....core.decorators import handles_errors
-import logging
-import pandas as pd
-import time
 
 # src/training/multi_timeframe_training_manager.py
-
 
 class MultiTimeframeTrainingManager:
     """Multi-timeframe training manager with comprehensive error handling and type safety."""
@@ -1290,8 +1287,5 @@ class MultiTimeframeTrainingManager:
             )
             return False
 
-
 # Global multi-timeframe training manager instance
 multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
-
-

@@ -35,7 +35,6 @@ except ImportError:
 from ..database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from .utils.warning_symbols import error, failed, warning
-import logging
 
 class EnhancedCoarseOptimizer:
     """Enhanced coarse optimization with multi-model approach, advanced feature pruning,"

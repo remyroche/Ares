@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Error Handling System for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -8,9 +9,6 @@ recovery mechanisms, and error pattern tracking.
 import traceback
 from datetime import datetime
 from typing import Any, Dict, List
-import logging
-import time
-
 
 class EnhancedErrorHandler:
     """Enhanced error handling with detailed context and recovery mechanisms."""
@@ -95,6 +93,5 @@ class EnhancedErrorHandler:
             'recovery_attempts': self.recovery_attempts,
             'recent_errors': self.error_history[-5:] if self.error_history else []
         }
-
 
 __all__ = ['EnhancedErrorHandler']

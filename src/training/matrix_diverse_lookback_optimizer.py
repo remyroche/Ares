@@ -14,8 +14,7 @@ from src.utils.logger import system_logger
 from .utils.feature_calculators import FeatureCalculatorRegistry
 import pandas as pd
 import numpy as np
-import logging
-import time
+
 import itertools
 
 class MatrixDiverseLookbackOptimizer:
@@ -570,7 +569,6 @@ class MatrixDiverseLookbackOptimizer:
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating {feature_name} with period {period}: {e}')
             return None
-
 
     async def _analyze_matrix_optimization(self, data: pd.DataFrame, target: pd.Series, diverse_periods: dict[str, Any]) -> dict[str, Any]:
         """Analyze matrix optimization results."""

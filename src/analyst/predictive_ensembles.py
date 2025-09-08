@@ -12,14 +12,12 @@ from src.utils.warning_symbols import (
     missing,
 )
 from ..core.decorators import handles_errors
-import time
 
 # Model imports - uncomment when models are available
 # Note: These imports are commented out to avoid import errors
 # Uncomment the following lines when the respective libraries are installed:
 # from tensorflow.keras.models import load_model
 # from lightgbm import LGBMClassifier
-
 
 class PredictiveEnsembles:
     """
@@ -1242,8 +1240,5 @@ class PredictiveEnsembles:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error stopping predictive ensembles: {e}")
 
-
 # Global predictive ensembles instance
 predictive_ensembles: PredictiveEnsembles | None = None
-
-

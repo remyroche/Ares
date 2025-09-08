@@ -2,8 +2,6 @@
 from ...utils.logger import system_logger
 from ..core.decorators import handles_errors
 
-
-
 """
 ML Target Updater for continuously updating ML targets based on real-time conditions.
 """
@@ -12,7 +10,6 @@ import asyncio
 import contextlib
 from datetime import datetime
 from typing import Any
-
 
 from .analyst.ml_dynamic_target_predictor import MLDynamicTargetPredictor
 from ...utils.logger import system_logger
@@ -26,9 +23,6 @@ from ...utils.warning_symbols import (
 from ...core.decorators.validate import validate_dataframe
 import numpy as np
 import pandas as pd
-import logging
-import time
-
 
 class MLTargetUpdater:
     """

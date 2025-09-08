@@ -3,6 +3,7 @@ from typing import Dict
 from typing import Any
 import pandas as pd
 from typing import Optional
+from ..standardized_parquet_handler import standardized_parquet_handler
 'Regime Continuity Validator for Pipeline Steps.\n\nThis module validates that regime continuity is maintained throughout the pipeline,\nensuring that regime information flows correctly between steps.\n'
 from pathlib import Path
 import json
@@ -10,9 +11,6 @@ from datetime import datetime
 from dataclasses import dataclass
 from .utils.pipeline_standards import pipeline_standards
 from .training.steps.regime_continuity_manager import regime_continuity_manager, RegimeStatus
-import numpy as np
-import logging
-import time
 
 logger = get_logger('RegimeContinuityValidator')
 
@@ -144,7 +142,7 @@ class RegimeContinuityValidator:
             aggregated_file = training_dir / f'{exchange}_{symbol}_{timeframe}_{step_name}_aggregated.parquet'
             if not aggregated_file.exists():
                 return {'is_valid': False, 'issues': [f'No aggregated output found for {step_name}'], 'continuity_rate': 0.0}
-            aggregated_data = pd.read_parquet(aggregated_file)
+            aggregated_data = standardized_parquet_handler.read_parquet_standardized(aggregated_file)
             regime_files = list(training_dir.glob(f'{exchange}_{symbol}_{timeframe}_{step_name}_regime_*.parquet'))
             regime_files.extend(list(training_dir.glob(f'{exchange}_{symbol}_{timeframe}_{step_name}_regime_*.json')))
             if not regime_files:
@@ -153,7 +151,7 @@ class RegimeContinuityValidator:
             for regime_file in regime_files:
                 try:
                     if regime_file.suffix == '.parquet':
-                        regime_data = pd.read_parquet(regime_file)
+                        regime_data = standardized_parquet_handler.read_parquet_standardized(regime_file)
                         total_regime_data_points += len(regime_data)
                     elif regime_file.suffix == '.json':
                         with open(regime_file, 'r') as f:
@@ -191,7 +189,7 @@ class RegimeContinuityValidator:
             aggregated_file = training_dir / f'{exchange}_{symbol}_{timeframe}_{step_name}_aggregated.parquet'
             if not aggregated_file.exists():
                 return {'is_valid': True, 'warnings': [], 'temporal_gaps': 0.0}
-            aggregated_data = pd.read_parquet(aggregated_file)
+            aggregated_data = standardized_parquet_handler.read_parquet_standardized(aggregated_file)
             if 'timestamp' not in aggregated_data.columns:
                 return {'is_valid': True, 'warnings': [], 'temporal_gaps': 0.0}
             timestamps = pd.to_datetime(aggregated_data['timestamp']).sort_values()

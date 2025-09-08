@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Feature interaction engine for creating polynomial feature interactions."""
 
 from typing import Dict, List, Optional, Union, Any, Tuple
@@ -6,7 +7,6 @@ import numpy as np
 from itertools import combinations
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls
-
 
 class FeatureInteractionEngine:
     """Engine for creating feature interactions and polynomial features."""

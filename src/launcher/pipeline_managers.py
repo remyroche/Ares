@@ -7,17 +7,16 @@ of different types of pipelines, reducing complexity in the main launcher class.
 """
 
 import asyncio
-import logging
+
 import os
 import subprocess
 import sys
-import time
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from src.utils.common_operations import format_datetime, get_current_datetime
-
 
 class BasePipelineManager(ABC):
     """Base class for all pipeline managers."""
@@ -59,7 +58,6 @@ class BasePipelineManager(ABC):
         except Exception as e:
             self.logger.exception(f"Failed to run subprocess: {e}")
             return False
-
 
 class DataCollectionPipelineManager(BasePipelineManager):
     """Manages data collection pipeline execution."""
@@ -124,7 +122,6 @@ class DataCollectionPipelineManager(BasePipelineManager):
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
-
 
 class ModelTrainingPipelineManager(BasePipelineManager):
     """Manages model training pipeline execution."""
@@ -211,7 +208,6 @@ class ModelTrainingPipelineManager(BasePipelineManager):
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
 
-
 class OptimisationPipelineManager(BasePipelineManager):
     """Manages optimisation pipeline execution."""
     
@@ -296,7 +292,6 @@ class OptimisationPipelineManager(BasePipelineManager):
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
-
 
 class BacktestingPipelineManager(BasePipelineManager):
     """Manages backtesting pipeline execution."""
@@ -415,7 +410,6 @@ class BacktestingPipelineManager(BasePipelineManager):
         # For now, return True as a placeholder
         return True
 
-
 class AllPipelinesManager(BasePipelineManager):
     """Manages execution of all pipelines in sequence."""
     
@@ -452,7 +446,6 @@ class AllPipelinesManager(BasePipelineManager):
         cmd = [sys.executable, "src/training/steps/run_all_pipelines.py"]
         
         return self._run_subprocess_with_monitoring(cmd, env)
-
 
 class PipelineManagerFactory:
     """Factory for creating pipeline managers."""

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Step 3: HMM Regime Discovery with Integrated Improvements.
 
 This module integrates all the improvements:
@@ -320,7 +321,7 @@ class EnhancedHMMRegimeDiscoveryStep:
                 return {'success': False, 'error': f'Klines file not found: {klines_path}'}
             
             # Load data
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             
             if df.empty:
                 self.logger.error('❌ Data is empty')
@@ -792,7 +793,6 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         return bb_features
 
-
 @monitor_step03_functions
 @handle_step03_errors
 @enhanced_validates()
@@ -935,7 +935,6 @@ async def run_enhanced_step(symbol: str, exchange: str, timeframe: str = "1m",
         logger.info('=' * 80)
         
         return False
-
 
 if __name__ == "__main__":
     # Example usage

@@ -8,8 +8,7 @@ from typing import Any
 from src.utils.logger import system_logger
 
 import numpy as np
-import logging
-import time
+
 from src.core.decorators import handles_errors
 
 class AdvancedReportingEngine:
@@ -346,7 +345,6 @@ class AdvancedReportingEngine:
 
         except Exception as e:
             self.logger.exception(f"Error caching report: {e}")
-
 
 class PerformanceReporter:
     """
@@ -998,9 +996,7 @@ class PerformanceReporter:
             self.logger.exception(f"Error calculating tail risk: {e}")
             return 0.0
 
-
 performance_reporter: PerformanceReporter | None = None
-
 
 async def setup_performance_reporter(
     config: dict[str, Any] | None = None,

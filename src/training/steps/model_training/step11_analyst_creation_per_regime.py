@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 11: Analyst Creation - Per-Regime Implementation.
 
@@ -19,12 +20,8 @@ from .training.steps.regime_processing_utils import (
 )
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
-import logging
-import typing
-
 
 logger = get_logger('Step11AnalystCreationPerRegime')
-
 
 class PerRegimeAnalystCreationStep(Step11AnalystCreation):
     """Analyst creation step that processes each regime separately."""
@@ -810,7 +807,6 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
             self.logger.error(f"❌ Error saving analyst creation results for regime {regime_id}: {e}")
             return False
 
-
 @traced(span_name='run_per_regime_analyst_creation_step')
 @validates()
 @handles_errors
@@ -841,7 +837,7 @@ async def run_per_regime_step(
         config = {}
         
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     # Enable per-regime processing
     config['per_regime_analyst_creation'] = True
@@ -863,7 +859,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 11: Per-Regime Analyst Creation failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step 9: Enhanced Model Training Pipeline with Comprehensive Validation.
 
@@ -19,6 +20,13 @@ from typing import Any, Dict
 from src.utils.logger import system_logger
 from src.training.core.decorators import (
     handles_errors, validates, log_call, traced
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
 # Add project root to path
@@ -42,11 +50,6 @@ from src.utils.logger import (
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from src.training.steps.model_training import run_model_training_pipeline
-import json
-import logging
-import numpy as np
-import pandas as pd
-import typing
 
 @handles_errors(Exception, fallback = False, log_level="ERROR")
 @validates(strict = True)
@@ -341,6 +344,12 @@ async def create_training_summary(config: Dict[str, Any], execution_time: float,
 async def main():
     """Enhanced main function with comprehensive validation and error handling."""
     logger = system_logger.getChild("ModelTrainingMain")
+    
+    # Initialize lookahead bias detector
+    from datetime import datetime
+    current_time = datetime.now()
+    bias_detector = get_global_detector()
+    bias_detector.set_current_timestamp(current_time)
     
     print("🚀 Enhanced Step 9: Model Training Pipeline")
     print("=" * 80)

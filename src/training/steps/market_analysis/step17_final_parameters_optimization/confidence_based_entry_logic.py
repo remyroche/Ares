@@ -1,5 +1,6 @@
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Confidence-Based Position Entry Logic for Step 17 Optimization.
 from src.utils.logger import system_logger
@@ -17,9 +18,6 @@ from src.utils.logger import system_logger
 import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
-import logging
-
-
 
 @dataclass
 class BarrierPrediction:
@@ -31,7 +29,6 @@ class BarrierPrediction:
     expected_profit: float
     risk_score: float
 
-
 @dataclass
 class EntryDecision:
     """Container for position entry decision."""
@@ -42,7 +39,6 @@ class EntryDecision:
     confidence_score: float
     risk_adjusted_confidence: float
     reasoning: str
-
 
 class ConfidenceBasedEntryLogic:
     """Implements confidence-based position entry logic with optimized barrier selection."""

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Function Call Tracking System for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -12,8 +13,6 @@ import inspect
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
-import logging
-
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""
@@ -136,7 +135,6 @@ class FunctionCallTracker:
             'session_duration_seconds': time.time() - self.start_time
         }
 
-
 def comprehensive_function_tracker(logger):
     """Decorator for comprehensive function call tracking."""
     def decorator(func):
@@ -208,6 +206,5 @@ def comprehensive_function_tracker(logger):
         
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
     return decorator
-
 
 __all__ = ['FunctionCallTracker', 'comprehensive_function_tracker']

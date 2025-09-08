@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-import src.utils.pipeline_standards
+
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 from src.utils.logger import system_logger
@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 import os
 from src.utils.decorators import handles_errors
 from ..enhanced_error_handling import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,
@@ -23,7 +24,6 @@ from ..enhanced_monitoring_system import monitor_critical_process
 
 # Enhanced optimization imports for full M1 hardware acceleration
 from pathlib import Path
-from contextlib import nullcontext
 
 # Import optimization utilities for enhanced performance
 try:
@@ -114,10 +114,9 @@ except ImportError as e:
     MARKET_IMPACT_AVAILABLE = False
     import logging
     logging.warning(f"Market impact enhancement not available: {e}")
-import json
+
 import logging
 import time
-import typing
 
 # from src.utils.performance_optimization import (
 #     PerformanceLevel,
@@ -2306,7 +2305,6 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
             self.logger.error(f"❌ Feature selection failed for regime {regime}: {e}")
             return features_df
-
 
 @critical_async_process('ml_model_training')
 @monitor_critical_process('ml_model_training')

@@ -3,17 +3,16 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 from typing import Dict
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
-import numpy as np
+
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Metadata tracker component for model persistence.'
 import hashlib
 import json
 from datetime import datetime
 from src.utils.logger import system_logger
-import logging
-import time
 
 class MetadataTracker:
     """Handles comprehensive metadata tracking for models."""

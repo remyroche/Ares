@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 7: Enhanced Matrix Operations with Advanced Performance Optimizations.
 
@@ -13,19 +14,18 @@ after feature engineering, with GPU/MPS acceleration support and async processin
 """
 
 from typing import List, Dict, Any, Tuple, Optional, Union, Callable
-import asyncio
+
 import time
 import traceback
 import functools
 import inspect
 import gc
-import os
+
 from pathlib import Path
 import json
-import collections
+
 import logging
 import warnings
-import sys
 
 # Enhanced dependency management with fallbacks
 try:
@@ -203,7 +203,6 @@ if not PSUTIL_AVAILABLE:
 logger = system_logger.getChild('Step07Dependencies')
 logger.info(f"Dependency status: NumPy={NUMPY_AVAILABLE}, Pandas={PANDAS_AVAILABLE}, Numba={NUMBA_AVAILABLE}, PyTorch={TORCH_AVAILABLE}, psutil={PSUTIL_AVAILABLE}")
 
-
 def check_step07_dependencies() -> Dict[str, bool]:
     """Check Step07 dependency status - all dependencies are required."""
     return {
@@ -238,7 +237,6 @@ def get_step07_capabilities() -> Dict[str, Any]:
     capabilities['status'] = 'full'
     
     return capabilities
-
 
 # Numba-optimized matrix operation functions
 @jit(nopython=True, parallel=True, fastmath=True)
@@ -294,7 +292,6 @@ def numba_batch_matmul(a_batch: np.ndarray, b_batch: np.ndarray) -> np.ndarray:
 
     return result
 
-
 def _select_compute_dtype_for_device(device_type: str):
     """Select a safe mixed-precision dtype for the given device type.
 
@@ -312,7 +309,6 @@ def _select_compute_dtype_for_device(device_type: str):
     if device_type == 'mps':
         return torch.float16
     return torch.float32
-
 
 @log_all_calls
 def tiled_matmul(
@@ -525,7 +521,6 @@ def tiled_matmul(
     else:
         return C_torch
 
-
 # Async Matrix Processing Functions
 async def async_tiled_matmul(
     a: "np.ndarray | 'pd.DataFrame' | 'torch.Tensor'",
@@ -631,7 +626,6 @@ async def async_tiled_matmul(
 
     return result
 
-
 def _compute_matrix_tile(a: np.ndarray, b: np.ndarray, i_start: int, i_end: int,
                         j_start: int, j_end: int, K: int, tile_k: int) -> Tuple[int, int, np.ndarray]:
     """Compute a single tile of the matrix multiplication."""
@@ -645,7 +639,6 @@ def _compute_matrix_tile(a: np.ndarray, b: np.ndarray, i_start: int, i_end: int,
         tile_result = numba_tiled_matmul_kernel(a_block, b_block, tile_result)
 
     return (i_start, j_start, tile_result)
-
 
 # Additional Numba-optimized matrix utilities
 @jit(nopython=True, parallel=True)
@@ -683,7 +676,6 @@ def numba_matrix_log(matrix: np.ndarray, eps: float = 1e-10) -> np.ndarray:
         for j in prange(matrix.shape[1]):
             result[i, j] = np.log(max(eps, matrix[i, j]))
     return result
-
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""
@@ -1057,7 +1049,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                     if 'train' in advanced_features:
                         train_path = advanced_features['train']
                         if isinstance(train_path, str) and Path(train_path).exists():
-                            data_any = pd.read_parquet(train_path)
+                            data_any = standardized_parquet_handler.read_parquet_standardized(train_path)
                 else:
                     for split in ['train', 'val', 'test']:
                         if f'{split}_data' in pipeline_state:
@@ -1290,12 +1282,12 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 if 'train' in advanced_features:
                     train_path = advanced_features['train']
                     if isinstance(train_path, str) and Path(train_path).exists():
-                        data_dict['train'] = pd.read_parquet(train_path)
+                        data_dict['train'] = standardized_parquet_handler.read_parquet_standardized(train_path)
                         self.logger.info(f'✅ Loaded train data from {train_path}')
                 if 'val' in advanced_features:
                     val_path = advanced_features['val']
                     if isinstance(val_path, str) and Path(val_path).exists():
-                        data_dict['val'] = pd.read_parquet(val_path)
+                        data_dict['val'] = standardized_parquet_handler.read_parquet_standardized(val_path)
                         self.logger.info(f'✅ Loaded val data from {val_path}')
                 if data_dict:
                     return data_dict
@@ -1741,7 +1733,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
                     df_to_save = df
                 out_path = features_dir / f'{exchange}_{symbol}_{timeframe}_features_filtered_{split_name}.parquet'
                 try:
-                    df_to_save.to_parquet(out_path)
+                    standardized_parquet_handler.write_parquet_standardized(df_to_save, out_path)
                     self.logger.info(f'💾 Saved filtered features: {out_path}')
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to save filtered {split_name} features: {e}')

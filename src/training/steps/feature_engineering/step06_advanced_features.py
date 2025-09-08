@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Step 06: Advanced Feature Engineering with Hardware Acceleration (standard path for orchestrator).
 
@@ -17,6 +16,7 @@ from datetime import datetime
 from src.training.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.config.environment import get_environment_settings
+from ..standardized_parquet_handler import standardized_parquet_handler
 import logging
 
 # Get dynamic symbol configuration
@@ -47,7 +47,6 @@ try:
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
-
 
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Advanced feature engineering using the standardized BaseStep."""
@@ -252,8 +251,8 @@ class AdvancedFeatureEngineeringStep(BaseStep):
 
         train_path = data_dir / f"{exchange}_{symbol}_{base_timeframe}_features_train.parquet"
         val_path = data_dir / f"{exchange}_{symbol}_{base_timeframe}_features_val.parquet"
-        train_features.to_parquet(train_path, compression="snappy")
-        val_features.to_parquet(val_path, compression="snappy")
+        standardized_parquet_handler.write_parquet_standardized(train_features, train_path, compression="snappy")
+        standardized_parquet_handler.write_parquet_standardized(val_features, val_path, compression="snappy")
 
         if self.logger:
             self.logger.info(

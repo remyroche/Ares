@@ -56,7 +56,6 @@ from src.utils.warning_symbols import error as error_src_utils_warning_symbols, 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-
 class TrainingCLI:
     """Command-line interface for training operations."""
 
@@ -214,9 +213,7 @@ class TrainingCLI:
         self.logger.info(f"Exchange: {exchange_name}")
         self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        print("\n========================================================")
         print(f"🚀 Initiating FULL TEST RUN for {symbol} on {exchange_name}")
-        print("========================================================\n")
 
         # --- Step 1: Run Full Training ---
         self.logger.info("📋 STEP 1/2: Running Full Training Pipeline")
@@ -385,9 +382,7 @@ class TrainingCLI:
         self.logger.info(f"Training duration: {training_duration:.2f} seconds")
         self.logger.info(f"Backtesting duration: {backtest_duration:.2f} seconds")
 
-        print("\n========================================================")
         print(f"🎉 FULL TEST RUN COMPLETE for {symbol} on {exchange_name}!")
-        print("========================================================\n")
         print("Your models have been trained, optimized, and backtested.")
         print(
             "The new 'candidate' model is ready for live evaluation in paper trading mode.",
@@ -400,7 +395,6 @@ class TrainingCLI:
             "\nMonitor the logs. The Supervisor component will automatically detect and promote the new model for paper trading.",
         )
         print("It may take a few minutes for the Supervisor to pick up the new model.")
-        print("========================================================\n")
 
     # Removed show_regularization_config and validate_regularization_policy from here
     # as they are now in src/training/regularization.py
@@ -497,7 +491,6 @@ class TrainingCLI:
 
         self.logger.info("✅ Training configuration display completed")
 
-
 def print_usage() -> None:
     """Print usage information."""
     print(__doc__)
@@ -538,7 +531,6 @@ def print_usage() -> None:
     )
     print("  python src/training/regularization.py validate")
 
-
 def get_symbols_to_process(argv: list[str]) -> list[tuple[str, str]]:
     """
     Determines which symbols and exchanges to process based on command-line arguments.
@@ -563,7 +555,6 @@ def get_symbols_to_process(argv: list[str]) -> list[tuple[str, str]]:
     if not symbols_list:
         print(warning("No supported tokens found in configuration."))
     return symbols_list
-
 
 async def main() -> None:
     """Main function."""
@@ -676,7 +667,6 @@ async def main() -> None:
         logger.info(f"Total duration: {total_duration:.2f} seconds")
         logger.info(f"Command: {command}")
         logger.info(f"Status: {'SUCCESS' if 'success' in locals() else 'ERROR'}")
-
 
 if __name__== "__main__":
     try:

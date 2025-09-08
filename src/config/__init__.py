@@ -3,7 +3,6 @@ from typing import Any
 
 # src/config/__init__.py
 
-
 # Version information
 ARES_VERSION = "0.1.0"
 
@@ -14,9 +13,6 @@ from .training import get_training_config
 from .validation import validate_complete_config
 
 from ..utils.logger import system_logger
-import logging
-
-
 
 def get_complete_config() -> dict[str, Any]:
     """Get the complete configuration by combining all domain-specific configurations.
@@ -73,7 +69,6 @@ def get_complete_config() -> dict[str, Any]:
 
     return complete_config
 
-
 def get_config_section(section_name: str) -> dict[str, Any]:
     """Get a specific configuration section.
 
@@ -87,7 +82,6 @@ def get_config_section(section_name: str) -> dict[str, Any]:
     complete_config = get_complete_config()
     return complete_config.get(section_name, {})
 
-
 def get_environment_config() -> dict[str, Any]:
     """Get environment configuration.
 
@@ -96,7 +90,6 @@ def get_environment_config() -> dict[str, Any]:
 
     """
     return get_config_section("environment")
-
 
 def get_system_config_section() -> dict[str, Any]:
     """Get system configuration.
@@ -107,7 +100,6 @@ def get_system_config_section() -> dict[str, Any]:
     """
     return get_config_section("system")
 
-
 def get_trading_config_section() -> dict[str, Any]:
     """Get trading configuration.
 
@@ -117,7 +109,6 @@ def get_trading_config_section() -> dict[str, Any]:
     """
     return get_config_section("trading")
 
-
 def get_training_config_section() -> dict[str, Any]:
     """Get training configuration.
 
@@ -126,7 +117,6 @@ def get_training_config_section() -> dict[str, Any]:
 
     """
     return get_config_section("training")
-
 
 # Create the main CONFIG object for backward compatibility
 CONFIG = get_complete_config()

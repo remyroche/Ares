@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 7: Enhanced Matrix Operations - Per-Regime Implementation.
 
@@ -22,12 +23,8 @@ from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 import numpy as np
 import pandas as pd
-import logging
-import typing
-
 
 logger = get_logger('Step7EnhancedMatrixOperationsPerRegime')
-
 
 class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
     """Enhanced matrix operations step that processes each regime separately."""
@@ -136,7 +133,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
                 feature_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
                 
                 if feature_path.exists():
-                    data = pd.read_parquet(feature_path)
+                    data = standardized_parquet_handler.read_parquet_standardized(feature_path)
                     # Filter by regime
                     if 'feature_regime_id' in data.columns:
                         data = data[data['feature_regime_id'] == regime_id]
@@ -147,7 +144,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
                 feature_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features.parquet'
             
             if feature_path.exists():
-                data = pd.read_parquet(feature_path)
+                data = standardized_parquet_handler.read_parquet_standardized(feature_path)
                 self.logger.info(f"✅ Loaded feature data for regime {regime_id}: {len(data)} rows")
                 return data
             else:
@@ -619,7 +616,6 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             'converged': gmm.converged_
         }
 
-
 @traced(span_name='run_per_regime_matrix_operations_step')
 @validates()
 @handles_errors
@@ -650,7 +646,7 @@ async def run_per_regime_step(
         config = {}
         
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     # Enable per-regime processing
     config['per_regime_matrix_operations'] = True
@@ -672,7 +668,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 7: Per-Regime Enhanced Matrix Operations failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

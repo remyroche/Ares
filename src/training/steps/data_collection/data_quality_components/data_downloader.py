@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Downloader Component
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -13,10 +14,6 @@ from typing import Any, Optional
 import pandas as pd
 
 from src.utils.logger import system_logger
-import numpy as np
-import json
-import logging
-
 
 class DataDownloader:
     """Handles all data downloading operations for market data.
@@ -205,7 +202,7 @@ class DataDownloader:
                     if latest_file.endswith('.csv'):
                         data = pd.read_csv(latest_file, index_col = 0, parse_dates = True)
                     elif latest_file.endswith('.parquet'):
-                        data = pd.read_parquet(latest_file)
+                        data = standardized_parquet_handler.read_parquet_standardized(latest_file)
                     else:
                         continue
                         

@@ -8,8 +8,6 @@ profit-based feature engineering.
 """
 
 from typing import Any
-import pandas as pd
-
 
 def get_multi_output_config() -> dict[str, Any]:
     """Get configuration for multi-output prediction features.
@@ -200,7 +198,6 @@ def get_multi_output_config() -> dict[str, Any]:
         },
     }
 
-
 def get_multi_output_model_config(model_type: str = "LightGBM") -> dict[str, Any]:
     """Get specific configuration for multi-output model type.
 
@@ -248,7 +245,6 @@ def get_multi_output_model_config(model_type: str = "LightGBM") -> dict[str, Any
     base_config = get_multi_output_config()
     return {**base_config, "model_config": model_config}
 
-
 def get_enhanced_training_pipeline_config() -> dict[str, Any]:
     """Get configuration for the enhanced training pipeline with multi-output support.
 
@@ -290,7 +286,6 @@ def get_enhanced_training_pipeline_config() -> dict[str, Any]:
         **get_multi_output_config(),
     }
 
-
 def validate_multi_output_config(config: dict[str, Any]) -> bool:
     """Validate multi-output configuration.
 
@@ -328,7 +323,6 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
 
     print("✅ Multi-output configuration validation passed")
     return True
-
 
 # Example usage and testing
 if __name__ == "__main__":

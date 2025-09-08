@@ -2,11 +2,11 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd
 import json
 from pathlib import Path
-import numpy as np
 
 from src.core.decorators.logging import log_execution_time, log_call
-from src.core.decorators.cache import cached
+
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 def smart_validation_cache(*args, **kwargs):
     def decorator(func: Callable):
@@ -81,7 +81,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             file_exists, file_metrics = self.validate_file_exists(str(feature_file), 'feature file')
             if not file_exists:
                 return False
-            df = pd.read_parquet(feature_file)
+            df = standardized_parquet_handler.read_parquet_standardized(feature_file)
             df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {feature_file.name}')
@@ -149,7 +149,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 if feature_files:
                     sample_file = feature_files[0]
                     try:
-                        df = pd.read_parquet(sample_file)
+                        df = standardized_parquet_handler.read_parquet_standardized(sample_file)
                         df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)
                         validation_result['details'][f'{regime_dir.name}_sample_valid'] = df_valid
                         validation_result['details'][f'{regime_dir.name}_sample_rows'] = len(df)

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 8: Tactician Labeling."""
 
 import asyncio
@@ -8,7 +9,6 @@ import pickle
 import sys
 from pathlib import Path
 from typing import Any
-
 
 from src.utils.warning_symbols import (
     error,
@@ -24,12 +24,9 @@ sys.path.insert(0, str(project_root))
 from .training.steps.config import CONFIG  # noqa: E402
 from .training.steps.utils.base_validator import BaseValidator  # noqa: E402
 
-
-import logging
 import pandas as pd
-import time
-import numpy as np
 
+import numpy as np
 
 class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
@@ -227,7 +224,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 signals_parquet,
                                 columns = True,
                             ):
-                                signals_data = pd.read_parquet(
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],
                                 )
@@ -240,7 +237,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         with log_io_operation(
                             self.logger, "read_parquet", signals_parquet,
                         ):
-                            signals_data = pd.read_parquet(signals_parquet)
+                            signals_data = standardized_parquet_handler.read_parquet_standardized(signals_parquet)
                 else:
                     with open(signals_pickle, "rb") as f:
                         signals_data = pickle.load(f)
@@ -390,7 +387,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 labels_parquet,
                                 columns = True,
                             ):
-                                labels_data = pd.read_parquet(
+                                labels_data = standardized_parquet_handler.read_parquet_standardized(
                                     labels_parquet, columns=["timestamp", "label"],
                                 )
                             with contextlib.suppress(Exception):
@@ -402,7 +399,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         with log_io_operation(
                             self.logger, "read_parquet", labels_parquet,
                         ):
-                            labels_data = pd.read_parquet(labels_parquet)
+                            labels_data = standardized_parquet_handler.read_parquet_standardized(labels_parquet)
                 else:
                     with open(labels_pickle, "rb") as f:
                         labels_data = pickle.load(f)
@@ -441,7 +438,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 signals_parquet,
                                 columns = True,
                             ):
-                                signals_data = pd.read_parquet(
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],
                                 )
@@ -450,7 +447,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             with log_io_operation(
                                 self.logger, "read_parquet", signals_parquet,
                             ):
-                                signals_data = pd.read_parquet(signals_parquet)
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(signals_parquet)
                     else:
                         with open(signals_pickle, "rb") as f:
                             signals_data = pickle.load(f)
@@ -645,7 +642,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
             )
             return False
 
-
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
@@ -669,7 +665,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
     import asyncio as _asyncio

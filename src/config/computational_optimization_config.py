@@ -6,7 +6,6 @@ Based on the computational_optimization_strategies.md document.
 """
 
 from typing import Any
-import pandas as pd
 
 # Default computational optimization configuration
 COMPUTATIONAL_OPTIMIZATION_CONFIG = {
@@ -111,7 +110,6 @@ COMPUTATIONAL_OPTIMIZATION_CONFIG = {
     },
 }
 
-
 def get_optimization_config(
     custom_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -132,7 +130,6 @@ def get_optimization_config(
 
     return config
 
-
 def _deep_merge_config(
     base_config: dict[str, Any],
     custom_config: dict[str, Any],
@@ -148,31 +145,25 @@ def _deep_merge_config(
 
     return result
 
-
 def get_memory_optimization_config() -> dict[str, Any]:
     """Get memory-specific optimization configuration."""
     return COMPUTATIONAL_OPTIMIZATION_CONFIG["memory_management"]
-
 
 def get_parallelization_config() -> dict[str, Any]:
     """Get parallelization-specific configuration."""
     return COMPUTATIONAL_OPTIMIZATION_CONFIG["parallelization"]
 
-
 def get_caching_config() -> dict[str, Any]:
     """Get caching-specific configuration."""
     return COMPUTATIONAL_OPTIMIZATION_CONFIG["caching"]
-
 
 def get_early_stopping_config() -> dict[str, Any]:
     """Get early stopping configuration."""
     return COMPUTATIONAL_OPTIMIZATION_CONFIG["early_stopping"]
 
-
 def get_adaptive_sampling_config() -> dict[str, Any]:
     """Get adaptive sampling configuration."""
     return COMPUTATIONAL_OPTIMIZATION_CONFIG["adaptive_sampling"]
-
 
 def is_optimization_enabled(optimization_type: str) -> bool:
     """Check if a specific optimization is enabled.
@@ -211,7 +202,6 @@ def is_optimization_enabled(optimization_type: str) -> bool:
 
     return optimization_map.get(optimization_type, False)
 
-
 # Performance expectations based on the optimization strategies document
 EXPECTED_PERFORMANCE_IMPROVEMENTS = {
     "computational_time_reduction": {
@@ -232,14 +222,11 @@ EXPECTED_PERFORMANCE_IMPROVEMENTS = {
     },
 }
 
-
 def get_performance_expectations() -> dict[str, Any]:
     """Get expected performance improvements."""
     return EXPECTED_PERFORMANCE_IMPROVEMENTS
 
-
 # Configuration validation
-
 
 def validate_optimization_config(config: dict[str, Any]) -> dict[str, Any]:
     """Validate optimization configuration.

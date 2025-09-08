@@ -4,6 +4,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Step 1: Data Collection with Real-time Validation
@@ -16,7 +17,6 @@ This module provides enhanced data collection with:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 from datetime import datetime
@@ -28,14 +28,8 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
-import collections
-import json
-import logging
-import time
-import typing
 
 logger = system_logger.getChild("EnhancedStep01DataCollection")
-
 
 class EnhancedDataCollectionStep:
     """Enhanced Step 1: Data Collection with real-time validation."""
@@ -224,7 +218,7 @@ class EnhancedDataCollectionStep:
             
             if os.path.exists(klines_path):
                 self.logger.info(f'📖 Loading klines data from {klines_path}')
-                df = pd.read_parquet(klines_path)
+                df = standardized_parquet_handler.read_parquet_standardized(klines_path)
                 
                 # Convert to list of dictionaries for validation
                 klines_batch = df.to_dict('records')
@@ -238,7 +232,7 @@ class EnhancedDataCollectionStep:
             
             if os.path.exists(aggtrades_path):
                 self.logger.info(f'📖 Loading aggtrades data from {aggtrades_path}')
-                df = pd.read_parquet(aggtrades_path)
+                df = standardized_parquet_handler.read_parquet_standardized(aggtrades_path)
                 
                 # Convert to list of dictionaries for validation
                 aggtrades_batch = df.to_dict('records')
@@ -252,7 +246,7 @@ class EnhancedDataCollectionStep:
             
             if os.path.exists(futures_path):
                 self.logger.info(f'📖 Loading futures data from {futures_path}')
-                df = pd.read_parquet(futures_path)
+                df = standardized_parquet_handler.read_parquet_standardized(futures_path)
                 
                 # Convert to list of dictionaries for validation
                 futures_batch = df.to_dict('records')
@@ -390,7 +384,7 @@ class EnhancedDataCollectionStep:
                 filepath = os.path.join(data_dir, filename)
                 
                 # Save to parquet
-                df.to_parquet(filepath, index=False)
+                standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
                 
                 self.logger.info(f'✅ Saved {len(df)} validated {data_type} rows to {filename}')
             
@@ -424,7 +418,7 @@ class EnhancedDataCollectionStep:
                 self.logger.info(f'🔍 Validating {data_type} file: {os.path.basename(filepath)}')
                 
                 try:
-                    df = pd.read_parquet(filepath)
+                    df = standardized_parquet_handler.read_parquet_standardized(filepath)
                     
                     # Basic quality checks
                     quality_score = self._calculate_quality_score(df, data_type)
@@ -536,7 +530,6 @@ class EnhancedDataCollectionStep:
         except Exception as e:
             self.logger.exception(f'❌ Failed to log enhanced step 1 artifacts and reports: {e}')
 
-
 # Main execution function
 async def run_enhanced_step01_data_collection(
     symbol: str,
@@ -592,7 +585,6 @@ async def run_enhanced_step01_data_collection(
     except Exception as e:
         logger.exception(f"❌ Enhanced Step 1 failed with exception: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Example usage

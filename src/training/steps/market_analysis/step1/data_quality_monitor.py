@@ -5,6 +5,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Data Quality Monitor for Real-time Monitoring and Alerting.
 
@@ -21,7 +22,6 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 
 from .enhanced_data_quality_manager import EnhancedDataQualityManager
-import time
 
 logger = system_logger.getChild('DataQualityMonitor')
 
@@ -193,7 +193,7 @@ class DataQualityMonitor:
         try:
             klines_file = self.data_cache_path / f'klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet'
             if klines_file.exists():
-                df = pd.read_parquet(klines_file)
+                df = standardized_parquet_handler.read_parquet_standardized(klines_file)
                 if 'timestamp' in df.columns:
                     latest_timestamp = pd.to_datetime(df['timestamp'].max())
                     hours_old = (datetime.now() - latest_timestamp).total_seconds() / 3600

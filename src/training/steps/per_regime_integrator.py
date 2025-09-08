@@ -1,9 +1,9 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Per-regime integrator for processing regime-specific data."""
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 from typing import Any, Dict, List
-import asyncio
 
 class RegimeProcessingContext:
     """Context for regime processing."""

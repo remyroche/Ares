@@ -1,8 +1,7 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import contextlib
-import queue
-import threading
+
 import asyncio
 import json
 import os
@@ -17,6 +16,7 @@ import pandas as pd
 import warnings
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Enhanced Reporting import
 try:
@@ -159,7 +159,6 @@ from src.utils.enhanced_step_optimizations import StepOptimizationManager
 
 # Import data management optimizations
 from src.utils.optimized_data_manager import OptimizedDataManager
-
 
 def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
 
@@ -759,10 +758,10 @@ class RegimeAwareAnalystEnhancementStep:
             exchange = str(self.config.get('exchange', 'BINANCE'))
             hmm_data_path = os.path.join(data_dir, f'{exchange}_{symbol}_hmm_composite_clusters_{timeframe_name}.parquet')
             if os.path.exists(hmm_data_path):
-                hmm_data: pd.DataFrame = pd.read_parquet(hmm_data_path)
+                hmm_data: pd.DataFrame = standardized_parquet_handler.read_parquet_standardized(hmm_data_path)
                 intensity_path = os.path.join(data_dir, f'{exchange}_{symbol}_hmm_composite_intensity_{timeframe_name}.parquet')
                 if os.path.exists(intensity_path):
-                    intensity_data: pd.DataFrame = pd.read_parquet(intensity_path)
+                    intensity_data: pd.DataFrame = standardized_parquet_handler.read_parquet_standardized(intensity_path)
                     data = hmm_data.merge(intensity_data, on='timestamp', how='inner')
                 else:
                     data = hmm_data

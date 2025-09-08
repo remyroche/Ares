@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Integration script for per-regime processing in Steps 5-7."""
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -7,9 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from .utils.common_operations import ensure_directory
 from src.utils.logger import system_logger
-import logging
-import time
-import typing
 
 logger = system_logger.getChild('RegimeIntegration')
 

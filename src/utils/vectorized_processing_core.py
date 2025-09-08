@@ -13,11 +13,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, I
 from contextlib import contextmanager
 import gc
 import logging
-from pathlib import Path
+
 import psutil
 import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from functools import partial
+
 import multiprocessing as mp
 from collections import deque
 import asyncio
@@ -28,14 +28,12 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
-
 class PipelineExecutionMode(Enum):
     """Pipeline execution modes."""
     SEQUENTIAL = "sequential"
     PARALLEL = "parallel"
     ASYNC = "async"
     HYBRID = "hybrid"
-
 
 class PipelineStageStatus(Enum):
     """Pipeline stage execution status."""
@@ -44,7 +42,6 @@ class PipelineStageStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
-
 
 @dataclass
 class PipelineStage:
@@ -66,7 +63,6 @@ class PipelineStage:
         if not self.name:
             raise ValueError("Stage name cannot be empty")
 
-
 @dataclass
 class PipelineExecutionResult:
     """Result of pipeline execution."""
@@ -78,7 +74,6 @@ class PipelineExecutionResult:
     stage_results: Dict[str, Any] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-
 
 class OptimizedPipelineExecutor:
     """Optimized pipeline executor with intelligent scheduling and resource management."""
@@ -462,7 +457,6 @@ class OptimizedPipelineExecutor:
         self.completed_stages.clear()
         self.failed_stages.clear()
         self.execution_queue.clear()
-
 
 class VectorizedProcessingCore:
     """Core class for vectorized processing operations with memory optimization."""
@@ -1102,7 +1096,6 @@ class VectorizedProcessingCore:
 
         return analysis
 
-
 # Global instance for easy access
 _vectorized_core = None
 
@@ -1113,13 +1106,11 @@ def get_vectorized_processing_core() -> VectorizedProcessingCore:
         _vectorized_core = VectorizedProcessingCore()
     return _vectorized_core
 
-
 # Convenience functions
 def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame for processing."""
     core = get_vectorized_processing_core()
     return core.optimize_dataframe_for_processing(df)
-
 
 def vectorized_rolling_features(data: pd.DataFrame,
                               windows: List[int] = None,
@@ -1130,13 +1121,11 @@ def vectorized_rolling_features(data: pd.DataFrame,
     core = get_vectorized_processing_core()
     return core.vectorized_rolling_features(data, windows, features)
 
-
 def matrix_correlation_analysis(data: pd.DataFrame,
                               method: str = 'pearson') -> Tuple[np.ndarray, pd.DataFrame]:
     """Compute matrix-based correlation analysis."""
     core = get_vectorized_processing_core()
     return core.matrix_correlation_analysis(data, method)
-
 
 def parallel_feature_engineering(data: pd.DataFrame,
                                feature_functions: List[Callable[[pd.DataFrame], pd.Series]],
@@ -1145,18 +1134,15 @@ def parallel_feature_engineering(data: pd.DataFrame,
     core = get_vectorized_processing_core()
     return core.parallel_feature_engineering(data, feature_functions, max_workers)
 
-
 def gpu_matrix_multiply(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """GPU-accelerated matrix multiplication."""
     core = get_vectorized_processing_core()
     return core.gpu_accelerated_matrix_ops(a, b, "multiply")
 
-
 def create_ml_pipeline(stages_config: List[Dict[str, Any]]) -> OptimizedPipelineExecutor:
     """Create an optimized ML processing pipeline."""
     core = get_vectorized_processing_core()
     return core.create_optimized_pipeline(stages_config)
-
 
 def execute_ml_pipeline(data: pd.DataFrame,
                        pipeline_config: List[Dict[str, Any]],
@@ -1165,13 +1151,11 @@ def execute_ml_pipeline(data: pd.DataFrame,
     core = get_vectorized_processing_core()
     return core.execute_ml_pipeline(data, pipeline_config, execution_mode)
 
-
 def optimize_pipeline_config(pipeline_config: List[Dict[str, Any]],
                            data_sample: pd.DataFrame) -> Dict[str, Any]:
     """Analyze and optimize pipeline execution strategy."""
     core = get_vectorized_processing_core()
     return core.optimize_pipeline_execution(pipeline_config, data_sample)
-
 
 def get_pipeline_executor() -> OptimizedPipelineExecutor:
     """Get the global pipeline executor instance."""

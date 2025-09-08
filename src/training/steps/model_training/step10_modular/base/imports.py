@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Safe Imports Management.
 
 This module provides safe import management for all Step 10 dependencies,
@@ -30,7 +31,6 @@ OPTIONAL_MODULES = [
     "lightgbm",
     "xgboost",
 ]
-
 
 class SafeImportManager:
     """Safe import manager for Step 10 dependencies."""
@@ -129,7 +129,6 @@ class SafeImportManager:
             "failed_modules": [name for name, _ in self.failed_imports]
         }
 
-
 # Global import manager instance
 safe_import_manager = SafeImportManager()
 
@@ -183,7 +182,6 @@ else:
     TensorDataset = None
     prune = None
 
-
 def validate_step10_imports() -> bool:
     """Validate all Step 10 imports and dependencies.
 
@@ -200,7 +198,6 @@ def validate_step10_imports() -> bool:
         for warning in validation["warnings"]:
             logger.warning(f"  {warning}")
         return False
-
 
 def get_import_summary() -> Dict[str, Any]:
     """Get summary of import status.

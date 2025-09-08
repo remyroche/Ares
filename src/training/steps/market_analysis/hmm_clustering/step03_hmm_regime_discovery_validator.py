@@ -1,8 +1,8 @@
 
-
 import pandas as pd
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 # src/training/steps/step3_hmm_regime_discovery_validator.py
 
 """Validator for Step 3: HMM Regime Discovery.
@@ -17,11 +17,8 @@ from typing import Any
 
 from .utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
-import json
-import logging
 
 logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
-
 
 @handles_errors(default_return={"validation_passed": False, "error": "Validator execution failed", "validation_results": {}})
 async def run_validator(
@@ -93,7 +90,7 @@ async def run_validator(
                 # Validate file content for parquet files
                 if artifact.endswith(".parquet"):
                     try:
-                        df = pd.read_parquet(artifact_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(artifact_path)
                         artifact_info[artifact]["rows"] = len(df)
                         artifact_info[artifact]["columns"] = list(df.columns)
 
@@ -214,7 +211,6 @@ async def run_validator(
             "validation_results": {},
             "validation_time": time.time() - start_time,
         }
-
 
 # Legacy function for backward compatibility
 @handles_errors(default_return={"validation_passed": False, "error": "Validator execution failed", "validation_results": {}})

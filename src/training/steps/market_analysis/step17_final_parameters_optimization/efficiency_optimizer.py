@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Efficiency Optimizer for Hyperparameter Optimization.
 
@@ -19,8 +20,6 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
 from src.utils.logger import system_logger
-import json
-import logging
 
 @dataclass
 class EfficiencyConfig:

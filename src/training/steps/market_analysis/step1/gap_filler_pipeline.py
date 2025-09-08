@@ -3,6 +3,7 @@ from typing import Any
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n'
 import asyncio
@@ -15,9 +16,6 @@ from pathlib import Path
 import aiohttp
 import certifi
 from src.utils.logger import system_logger
-import numpy as np
-import logging
-import time
 
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -48,7 +46,7 @@ class GapFillerPipeline:
         """Detect gaps in a single aggtrades file."""
         try:
             if file_path.suffix.lower() == '.parquet':
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             elif file_path.suffix.lower() == '.csv':
                 df = pd.read_csv(file_path)
             else:
@@ -154,7 +152,7 @@ class GapFillerPipeline:
             file_path = self.data_cache_path / file_name
             if file_path.exists():
                 if file_path.suffix.lower() == '.parquet':
-                    df_existing = pd.read_parquet(file_path)
+                    df_existing = standardized_parquet_handler.read_parquet_standardized(file_path)
                 elif file_path.suffix.lower() == '.csv':
                     df_existing = pd.read_csv(file_path)
                 else:
@@ -162,7 +160,7 @@ class GapFillerPipeline:
                 df_combined = pd.concat([df_existing, df_missing], ignore_index = True)
                 df_combined = df_combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
                 if file_path.suffix.lower() == '.parquet':
-                    df_combined.to_parquet(file_path, compression='zstd', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(df_combined, file_path, compression='zstd', index = False)
                 elif file_path.suffix.lower() == '.csv':
                     df_combined.to_csv(file_path, index = False)
                 return {'success': True, 'rows_added': len(df_missing), 'api_calls_made': call_num, 'successful_calls': successful_calls}

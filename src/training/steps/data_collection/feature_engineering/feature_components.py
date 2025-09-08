@@ -2,6 +2,7 @@
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Feature engineering components.
 
@@ -9,8 +10,7 @@ This module contains specialized components for feature engineering
 including technical indicators, interactions, regime-aware features, and S/R features.
 """
 import numpy as np
-import logging
-import typing
+
 from typing import Dict, List, Any, Optional, Tuple
 
 class TechnicalIndicatorEngine:
@@ -694,7 +694,6 @@ class TechnicalIndicatorEngine:
 
         return series.rolling(window).apply(multiscale_entropy_calc, raw=False)
 
-
 class EntropyFeatureEngine:
     """
     Engine for creating entropy-based features for market complexity analysis.
@@ -1097,7 +1096,6 @@ class EntropyFeatureEngine:
 
         return series.rolling(window).apply(multiscale_entropy_calc, raw=False)
 
-
 class FeatureInteractionEngine:
     """Engine for creating feature interactions."""
 
@@ -1236,7 +1234,6 @@ class RegimeAwareFeatureEngine:
         data['feature_regime_concentration'] = regime_counts
         return data
 
-
 class DataResampler:
     """Engine for resampling data to multiple timeframes."""
 
@@ -1318,7 +1315,6 @@ class DataResampler:
         }).dropna()
 
         return resampled
-
 
 class WaveletAnalyzer:
     """Engine for wavelet-based feature extraction."""
@@ -1440,7 +1436,6 @@ class WaveletAnalyzer:
             return pd.Series([entropy] * len(data))
         except:
             return pd.Series([1.0] * len(data))
-
 
 class EnhancedFeatureInteractionEngine:
     """Enhanced engine for creating sophisticated feature interactions."""
@@ -1631,7 +1626,6 @@ class EnhancedFeatureInteractionEngine:
 
         return data
 
-
 class EnhancedRegimeAwareFeatureEngine:
     """Enhanced engine for creating advanced regime-aware features."""
 
@@ -1787,7 +1781,6 @@ class EnhancedRegimeAwareFeatureEngine:
 
         return data
 
-
 class MarketProfileFeatureEngine:
     """Engine for creating market profile features including POC, Value Area, and Volume Profile."""
 
@@ -1941,7 +1934,6 @@ class MarketProfileFeatureEngine:
 
         return data
 
-
 class IchimokuFeatureEngine:
     """Engine for creating Ichimoku Cloud features."""
 
@@ -2048,7 +2040,6 @@ class IchimokuFeatureEngine:
 
         return data
 
-
 class HarmonicPatternFeatureEngine:
     """Engine for creating harmonic pattern features."""
 
@@ -2150,7 +2141,6 @@ class HarmonicPatternFeatureEngine:
                 data[f'harmonic_wave_ratio_{period}'] = short_wave / (wave_length + 1e-10)
 
         return data
-
 
 class SentimentFeatureEngine:
     """Engine for creating sentiment-based features including Greed/Fear Index and Momentum Crowding."""
@@ -2270,7 +2260,6 @@ class SentimentFeatureEngine:
         data['sentiment_extreme_pessimism'] = (sentiment_score < sentiment_score.quantile(0.1)).astype(int)
 
         return data
-
 
 class SupportResistanceFeatureEngine:
     """Engine for creating Support/Resistance (S/R) features with ML-optimized encoding."""

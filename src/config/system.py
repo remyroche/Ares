@@ -3,10 +3,8 @@ import os
 from typing import Any
 
 from .environment import get_environment_settings
-import logging
 
 # src/config/system.py
-
 
 def get_system_config() -> dict[str, Any]:
     """Get the complete system configuration.
@@ -98,7 +96,6 @@ def get_system_config() -> dict[str, Any]:
         },
     }
 
-
 def get_logging_config() -> dict[str, Any]:
     """Get logging configuration.
 
@@ -108,7 +105,6 @@ def get_logging_config() -> dict[str, Any]:
     """
     system_config = get_system_config()
     return system_config.get("logging", {})
-
 
 def get_database_config() -> dict[str, Any]:
     """Get database configuration.
@@ -120,7 +116,6 @@ def get_database_config() -> dict[str, Any]:
     system_config = get_system_config()
     return system_config.get("database", {})
 
-
 def get_checkpointing_config() -> dict[str, Any]:
     """Get checkpointing configuration.
 
@@ -130,7 +125,6 @@ def get_checkpointing_config() -> dict[str, Any]:
     """
     system_config = get_system_config()
     return system_config.get("checkpointing", {})
-
 
 def get_reporting_config() -> dict[str, Any]:
     """Get reporting configuration.
@@ -142,7 +136,6 @@ def get_reporting_config() -> dict[str, Any]:
     system_config = get_system_config()
     return system_config.get("reporting", {})
 
-
 def get_mlflow_config() -> dict[str, Any]:
     """Get MLflow configuration.
 
@@ -152,7 +145,6 @@ def get_mlflow_config() -> dict[str, Any]:
     """
     system_config = get_system_config()
     return system_config.get("mlflow", {})
-
 
 def get_version_info() -> dict[str, Any]:
     """Get version information.

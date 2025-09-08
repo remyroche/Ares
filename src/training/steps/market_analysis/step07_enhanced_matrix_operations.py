@@ -5,6 +5,7 @@ import torch
 from ....utils.logger import get_system_logger_with_comprehensive_integration
 from ....core.decorators import handles_errors, log_execution_time, cached, CachePolicy, log_call, circuit_breaker, validates
 from ..enhanced_error_handling import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,
@@ -30,6 +31,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
 from ....utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ....utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from ....utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 try:
     import psutil
@@ -112,8 +120,6 @@ except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False
 project_root = Path(__file__).parent.parent.parent
 import sys
-import collections
-import json
 
 sys.path.insert(0, str(project_root))
 # Import the correct PipelineStandards to avoid conflicts
@@ -698,7 +704,12 @@ class Step7EnhancedMatrixOperations:
             if self.step_optimizer_enabled and self.step_optimizer:
                 try:
                     # Estimate data size for optimization profile
-                    data_size_mb = (features_df.memory_usage(deep=True).sum() / (1024 * 1024))
+                    try:
+                        memory_usage_sum = features_df.memory_usage(deep=True).sum()
+                        data_size_mb = safe_divide(memory_usage_sum, (1024 * 1024), 0.0)
+                    except MathValidationError as e:
+                        self.logger.warning(f"Error calculating data size: {e}")
+                        data_size_mb = 0.0
 
                     # Create optimization profile
                     optimization_profile = create_optimization_profile(
@@ -742,17 +753,28 @@ class Step7EnhancedMatrixOperations:
 
                     def calculate_regime_importance(regime):
                         regime_mask = regime_labels == regime
-                        if regime_mask.sum() < 100:
+                        regime_count = regime_mask.sum()
+                        if regime_count < 100:
                             return None
 
                         X_regime = features_df[regime_mask]
                         y_regime = y[regime_mask]
 
                         if SKLEARN_AVAILABLE:
-                            mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                            try:
+                                mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                            except Exception as e:
+                                self.logger.warning(f"Error calculating mutual information: {e}")
+                                mi_scores = np.zeros(X_regime.shape[1])
                         else:
                             self.logger.warning('⚠️ sklearn not available, using variance-based importance')
-                            mi_scores = X_regime.var().values
+                            try:
+                                variance_scores = X_regime.var()
+                                # Handle NaN values in variance calculation
+                                mi_scores = variance_scores.fillna(0).values
+                            except Exception as e:
+                                self.logger.warning(f"Error calculating variance: {e}")
+                                mi_scores = np.zeros(X_regime.shape[1])
 
                         return f'regime_{regime}', mi_scores
 
@@ -854,6 +876,11 @@ class Step7EnhancedMatrixOperations:
         """
         try:
             start_time = datetime.now()
+
+            # Set current timestamp for lookahead bias detection
+            current_time = datetime.now()
+            bias_detector = get_global_detector()
+            bias_detector.set_current_timestamp(current_time)
 
             # Intelligent optimization selection for this workload
             if self.step_optimizer_enabled and self.step_optimizer:
@@ -1044,8 +1071,8 @@ class Step7EnhancedMatrixOperations:
             raise ValueError(f'Features validation file not found: {features_val_path}')
         
         self.logger.info(f'📊 Loading engineered features from: {features_train_path}')
-        df_train = pd.read_parquet(features_train_path)
-        df_val = pd.read_parquet(features_val_path)
+        df_train = standardized_parquet_handler.read_parquet_standardized(features_train_path)
+        df_val = standardized_parquet_handler.read_parquet_standardized(features_val_path)
         
         # Optimize memory usage by converting float64 to float32
         for d in (df_train, df_val):
@@ -1067,7 +1094,7 @@ class Step7EnhancedMatrixOperations:
         
         if hmm_path:
             self.logger.info(f'🎭 Loading HMM regimes from: {hmm_path}')
-            hmm_data = pd.read_parquet(hmm_path)
+            hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_path)
             if 'composite_cluster_id' in hmm_data.columns:
                 return hmm_data['composite_cluster_id']
             elif 'hmm_regime' in hmm_data.columns:
@@ -1131,7 +1158,7 @@ class Step7EnhancedMatrixOperations:
         for tf in ['1m', '5m', '15m', '30m', '1h']:
             tf_path = os.path.join(self.standards.build_path('training', exchange, symbol), f'{exchange}_{symbol}_{tf}_features_train.parquet')
             if os.path.exists(tf_path):
-                tf_data = pd.read_parquet(tf_path)
+                tf_data = standardized_parquet_handler.read_parquet_standardized(tf_path)
                 timeframe_data[tf] = tf_data
         
         if timeframe_data and timeframe_analyzer is not None:
@@ -1180,8 +1207,8 @@ class Step7EnhancedMatrixOperations:
         train_size = len(df_train)
         df_filtered_train = df_filtered.iloc[:train_size]
         df_filtered_val = df_filtered.iloc[train_size:]
-        df_filtered_train.to_parquet(filtered_train_path)
-        df_filtered_val.to_parquet(filtered_val_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_train, filtered_train_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_val, filtered_val_path)
         self.logger.info(f'💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}')
         
         return df_filtered, filtering_metadata
@@ -1493,54 +1520,194 @@ class Step7EnhancedMatrixOperations:
 
     @comprehensive_function_tracker(system_logger)
     async def _execute_matrix_operations(self, df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
-        """Execute matrix operations on the data."""
+        """Execute matrix operations on the data with fail-fast validation."""
         results = {}
+        
+        # Fail-fast validation: Check data requirements
+        if len(df) < 500:  # Minimum rows for matrix operations
+            raise CriticalProcessError(
+                f"Insufficient data for matrix operations: {len(df)} rows (minimum 500 required)",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
         numeric_df = df.select_dtypes(include=[np.number])
         if len(numeric_df.columns) == 0:
-            self.logger.warning('⚠️ No numeric columns found for matrix operations')
-            return {'error': 'No numeric columns available'}
+            raise CriticalProcessError(
+                "No numeric columns found for matrix operations",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
+        # Fail-fast validation: Check for sufficient numeric data
+        if numeric_df.isnull().all().any():
+            null_columns = numeric_df.columns[numeric_df.isnull().all()].tolist()
+            raise CriticalProcessError(
+                f"Columns with all null values found: {null_columns}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
         self.logger.info(f'🔢 Performing matrix operations on {len(numeric_df.columns)} numeric columns')
-        results.update(await self._execute_standard_matrix_operations(numeric_df, config))
+        
+        try:
+            results.update(await self._execute_standard_matrix_operations(numeric_df, config))
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Standard matrix operations failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         if config.get('enable_sr_analysis', False) and config.get('sr_features'):
             self.logger.info('🎯 Performing SR-specific matrix operations...')
-            results['sr_analysis'] = await self._execute_sr_matrix_operations(df, config)
-            results['sr_enhanced_analysis'] = await self._execute_enhanced_sr_analysis(df, config)
-            results['sr_optimization_analysis'] = await self._execute_sr_optimization_analysis(df, config)
+            try:
+                results['sr_analysis'] = await self._execute_sr_matrix_operations(df, config)
+                results['sr_enhanced_analysis'] = await self._execute_enhanced_sr_analysis(df, config)
+                results['sr_optimization_analysis'] = await self._execute_sr_optimization_analysis(df, config)
+            except Exception as e:
+                raise CriticalProcessError(
+                    f"SR-specific matrix operations failed: {e}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                ) from e
+        
         return results
 
     @comprehensive_function_tracker(system_logger)
     async def _execute_standard_matrix_operations(self, numeric_df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
-        """Execute standard matrix operations."""
+        """Execute standard matrix operations with fail-fast validation."""
         results = {}
+        
+        # Fail-fast validation: Check matrix dimensions
+        if numeric_df.shape[0] < numeric_df.shape[1]:
+            raise CriticalProcessError(
+                f"Matrix is underdetermined: {numeric_df.shape[0]} rows < {numeric_df.shape[1]} columns",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            )
+        
         self.logger.info('📊 Performing correlation analysis...')
-        # Optimize correlation matrix computation for large datasets
-        if len(numeric_df.columns) > 100:
-            self.logger.info(f'📊 Large feature set ({len(numeric_df.columns)} features), using optimized correlation computation')
-            correlation_matrix = self._compute_correlation_matrix_optimized(numeric_df)
-        else:
-            correlation_matrix = numeric_df.corr()
-
-        results['correlation_analysis'] = {'correlation_matrix': correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])}
+        try:
+            # Optimize correlation matrix computation for large datasets
+            if len(numeric_df.columns) > 100:
+                self.logger.info(f'📊 Large feature set ({len(numeric_df.columns)} features), using optimized correlation computation')
+                correlation_matrix = self._compute_correlation_matrix_optimized(numeric_df)
+            else:
+                correlation_matrix = numeric_df.corr()
+            
+            # Fail-fast validation: Check correlation matrix
+            if correlation_matrix.isnull().all().all():
+                raise CriticalProcessError(
+                    "Correlation matrix computation failed: all values are NaN",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            
+            # Store correlation matrix efficiently - avoid converting large matrices to dict
+            high_correlations = self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
+            results['correlation_analysis'] = {
+                'correlation_matrix_shape': correlation_matrix.shape,
+                'correlation_matrix_dtype': str(correlation_matrix.dtypes.iloc[0]) if len(correlation_matrix.columns) > 0 else 'unknown',
+                'high_correlations': high_correlations,
+                'correlation_summary': {
+                    'mean_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].max()),
+                    'min_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].min())
+                }
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Correlation analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('🔍 Checking condition number...')
-        condition_number = np.linalg.cond(numeric_df.values)
-        results['condition_number_check'] = {'condition_number': float(condition_number), 'is_well_conditioned': condition_number < config['condition_number_threshold']}
+        try:
+            condition_number = np.linalg.cond(numeric_df.values)
+            if np.isinf(condition_number) or np.isnan(condition_number):
+                raise CriticalProcessError(
+                    f"Matrix is singular or ill-conditioned: condition number = {condition_number}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['condition_number_check'] = {
+                'condition_number': float(condition_number), 
+                'is_well_conditioned': condition_number < config['condition_number_threshold']
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Condition number calculation failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('📈 Performing eigenvalue analysis...')
-        eigenvalues = np.linalg.eigvals(numeric_df.values)
-        results['eigenvalue_analysis'] = {'eigenvalues': eigenvalues.tolist(), 'min_eigenvalue': float(np.min(eigenvalues)), 'max_eigenvalue': float(np.max(eigenvalues)), 'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)), 'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))}
+        try:
+            eigenvalues = np.linalg.eigvals(numeric_df.values)
+            if np.any(np.isnan(eigenvalues)) or np.any(np.isinf(eigenvalues)):
+                raise CriticalProcessError(
+                    "Eigenvalue calculation failed: NaN or infinite values found",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['eigenvalue_analysis'] = {
+                'eigenvalues': eigenvalues.tolist(), 
+                'min_eigenvalue': float(np.min(eigenvalues)), 
+                'max_eigenvalue': float(np.max(eigenvalues)), 
+                'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)), 
+                'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Eigenvalue analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('🔧 Performing SVD analysis...')
         try:
-            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
-            results['singular_value_decomposition'] = {'singular_values': s.tolist(), 'rank': int(np.sum(s > config['min_eigenvalue_threshold'])), 'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')}
+            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
+            if np.any(np.isnan(s)) or np.any(np.isinf(s)):
+                raise CriticalProcessError(
+                    "SVD calculation failed: NaN or infinite singular values found",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['singular_value_decomposition'] = {
+                'singular_values': s.tolist(), 
+                'rank': int(np.sum(s > config['min_eigenvalue_threshold'])), 
+                'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+            }
         except Exception as e:
-            self.logger.warning(f'⚠️ SVD failed: {str(e)}')
-            results['singular_value_decomposition'] = {'error': str(e)}
+            raise CriticalProcessError(
+                f"SVD analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('📊 Analyzing matrix rank...')
         try:
             rank = np.linalg.matrix_rank(numeric_df.values)
-            results['matrix_rank_analysis'] = {'rank': int(rank), 'full_rank': rank == min(numeric_df.shape), 'rank_deficiency': min(numeric_df.shape) - rank}
+            if rank == 0:
+                raise CriticalProcessError(
+                    "Matrix has zero rank - all rows are linearly dependent",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['matrix_rank_analysis'] = {
+                'rank': int(rank), 
+                'full_rank': rank == min(numeric_df.shape), 
+                'rank_deficiency': min(numeric_df.shape) - rank
+            }
         except Exception as e:
-            self.logger.warning(f'⚠️ Rank analysis failed: {str(e)}')
-            results['matrix_rank_analysis'] = {'error': str(e)}
+            raise CriticalProcessError(
+                f"Matrix rank analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         return results
 
     async def _execute_sr_matrix_operations(self, df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
@@ -1556,7 +1723,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing SR feature correlation analysis...')
             sr_correlation_matrix = sr_df.corr()
-            results['sr_correlation_analysis'] = {'correlation_matrix': sr_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(sr_correlation_matrix, config['sr_correlation_threshold']), 'sr_feature_count': len(sr_df.columns)}
+            # Store SR correlation matrix efficiently
+            sr_high_correlations = self._find_high_correlations(sr_correlation_matrix, config['sr_correlation_threshold'])
+            results['sr_correlation_analysis'] = {
+                'correlation_matrix_shape': sr_correlation_matrix.shape,
+                'high_correlations': sr_high_correlations, 
+                'sr_feature_count': len(sr_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(sr_correlation_matrix.values[np.triu_indices_from(sr_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(sr_correlation_matrix.values[np.triu_indices_from(sr_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔍 Checking SR feature condition number...')
             sr_condition_number = np.linalg.cond(sr_df.values)
             results['sr_condition_number'] = {'condition_number': float(sr_condition_number), 'is_well_conditioned': sr_condition_number < config['sr_condition_number_threshold']}
@@ -1587,7 +1764,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing enhanced SR feature correlation analysis...')
             enhanced_correlation_matrix = enhanced_sr_df.corr()
-            results['enhanced_sr_correlation_analysis'] = {'correlation_matrix': enhanced_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(enhanced_correlation_matrix, config['sr_correlation_threshold']), 'enhanced_sr_feature_count': len(enhanced_sr_df.columns)}
+            # Store enhanced SR correlation matrix efficiently
+            enhanced_high_correlations = self._find_high_correlations(enhanced_correlation_matrix, config['sr_correlation_threshold'])
+            results['enhanced_sr_correlation_analysis'] = {
+                'correlation_matrix_shape': enhanced_correlation_matrix.shape,
+                'high_correlations': enhanced_high_correlations, 
+                'enhanced_sr_feature_count': len(enhanced_sr_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(enhanced_correlation_matrix.values[np.triu_indices_from(enhanced_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(enhanced_correlation_matrix.values[np.triu_indices_from(enhanced_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔧 Performing enhanced SR feature clustering analysis...')
             results['enhanced_sr_clustering_analysis'] = self._analyze_enhanced_sr_feature_clusters(enhanced_sr_df)
             self.logger.info('📊 Analyzing enhanced SR feature stability...')
@@ -1612,7 +1799,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing SR optimization feature correlation analysis...')
             optimization_correlation_matrix = optimization_df.corr()
-            results['sr_optimization_correlation_analysis'] = {'correlation_matrix': optimization_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(optimization_correlation_matrix, config['sr_correlation_threshold']), 'optimization_feature_count': len(optimization_df.columns)}
+            # Store optimization correlation matrix efficiently
+            optimization_high_correlations = self._find_high_correlations(optimization_correlation_matrix, config['sr_correlation_threshold'])
+            results['sr_optimization_correlation_analysis'] = {
+                'correlation_matrix_shape': optimization_correlation_matrix.shape,
+                'high_correlations': optimization_high_correlations, 
+                'optimization_feature_count': len(optimization_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(optimization_correlation_matrix.values[np.triu_indices_from(optimization_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(optimization_correlation_matrix.values[np.triu_indices_from(optimization_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔧 Analyzing SR optimization parameters...')
             results['sr_optimization_parameter_analysis'] = self._analyze_sr_optimization_parameters(optimization_df)
             return results
@@ -1700,7 +1897,26 @@ class Step7EnhancedMatrixOperations:
                     feature_importance_by_type['momentum'].append((feature, importance))
             for feature_type in feature_importance_by_type:
                 feature_importance_by_type[feature_type].sort(key = lambda x: x[1], reverse = True)
-            return {'variance_importance': variance_importance.to_dict(), 'correlation_importance': correlation_importance.to_dict(), 'combined_importance': combined_importance.to_dict(), 'importance_by_type': feature_importance_by_type, 'top_features': combined_importance.head(10).index.tolist()}
+            # Store importance data efficiently - avoid converting large Series to dict
+            return {
+                'variance_importance_summary': {
+                    'mean': float(variance_importance.mean()),
+                    'std': float(variance_importance.std()),
+                    'top_10': variance_importance.head(10).to_dict()
+                },
+                'correlation_importance_summary': {
+                    'mean': float(correlation_importance.mean()),
+                    'std': float(correlation_importance.std()),
+                    'top_10': correlation_importance.head(10).to_dict()
+                },
+                'combined_importance_summary': {
+                    'mean': float(combined_importance.mean()),
+                    'std': float(combined_importance.std()),
+                    'top_10': combined_importance.head(10).to_dict()
+                },
+                'importance_by_type': feature_importance_by_type, 
+                'top_features': combined_importance.head(10).index.tolist()
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1718,7 +1934,18 @@ class Step7EnhancedMatrixOperations:
                 if len(values) > 0:
                     parameter_stats[col] = {'mean': float(values.mean()), 'std': float(values.std()), 'min': float(values.min()), 'max': float(values.max()), 'median': float(values.median())}
             parameter_groups = {'weights': [col for col in parameter_features if 'weights' in col], 'dbscan': [col for col in parameter_features if 'dbscan' in col], 'advanced': [col for col in parameter_features if any((adv in col for adv in ['fibonacci', 'elliott', 'order_flow']))], 'timeframe': [col for col in parameter_features if 'tf_' in col]}
-            return {'parameter_features': parameter_features, 'parameter_statistics': parameter_stats, 'parameter_groups': parameter_groups, 'parameter_correlations': parameter_data.corr().to_dict()}
+            # Store parameter correlations efficiently
+            param_corr = parameter_data.corr()
+            return {
+                'parameter_features': parameter_features, 
+                'parameter_statistics': parameter_stats, 
+                'parameter_groups': parameter_groups, 
+                'parameter_correlations_summary': {
+                    'shape': param_corr.shape,
+                    'mean_correlation': float(param_corr.values[np.triu_indices_from(param_corr.values, k=1)].mean()),
+                    'max_correlation': float(param_corr.values[np.triu_indices_from(param_corr.values, k=1)].max())
+                }
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1790,7 +2017,25 @@ class Step7EnhancedMatrixOperations:
             correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending = False)
             combined_importance = (variance_importance + correlation_importance) / 2
             combined_importance = combined_importance.sort_values(ascending = False)
-            return {'variance_importance': variance_importance.to_dict(), 'correlation_importance': correlation_importance.to_dict(), 'combined_importance': combined_importance.to_dict(), 'top_features': combined_importance.head(10).index.tolist()}
+            # Store importance data efficiently - avoid converting large Series to dict
+            return {
+                'variance_importance_summary': {
+                    'mean': float(variance_importance.mean()),
+                    'std': float(variance_importance.std()),
+                    'top_10': variance_importance.head(10).to_dict()
+                },
+                'correlation_importance_summary': {
+                    'mean': float(correlation_importance.mean()),
+                    'std': float(correlation_importance.std()),
+                    'top_10': correlation_importance.head(10).to_dict()
+                },
+                'combined_importance_summary': {
+                    'mean': float(combined_importance.mean()),
+                    'std': float(combined_importance.std()),
+                    'top_10': combined_importance.head(10).to_dict()
+                },
+                'top_features': combined_importance.head(10).index.tolist()
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1815,7 +2060,16 @@ class Step7EnhancedMatrixOperations:
                 quality_metrics['dimensionality'] = {'matrix_rank': matrix_results['matrix_rank_analysis']['rank'], 'full_rank': matrix_results['matrix_rank_analysis']['full_rank'], 'rank_deficiency': matrix_results['matrix_rank_analysis']['rank_deficiency'], 'effective_dimensions': matrix_results['matrix_rank_analysis']['rank']}
             quality_metrics['distribution'] = {'skewness_mean': float(numeric_df.skew().mean()), 'skewness_std': float(numeric_df.skew().std()), 'kurtosis_mean': float(numeric_df.kurtosis().mean()), 'kurtosis_std': float(numeric_df.kurtosis().std()), 'high_skew_features': int((abs(numeric_df.skew()) > 3).sum()), 'high_kurtosis_features': int((numeric_df.kurtosis() > 10).sum())}
             quality_metrics['outliers'] = self._calculate_outlier_metrics(numeric_df)
-            quality_metrics['memory'] = {'memory_usage_mb': float(numeric_df.memory_usage(deep = True).sum() / 1024 / 1024), 'memory_per_feature_kb': float(numeric_df.memory_usage(deep = True).sum() / len(numeric_df.columns) / 1024), 'data_types': numeric_df.dtypes.value_counts().to_dict()}
+            # Store memory metrics efficiently
+            memory_usage_mb = float(numeric_df.memory_usage(deep=True).sum() / 1024 / 1024)
+            quality_metrics['memory'] = {
+                'memory_usage_mb': memory_usage_mb, 
+                'memory_per_feature_kb': float(memory_usage_mb * 1024 / len(numeric_df.columns)) if len(numeric_df.columns) > 0 else 0, 
+                'data_types_summary': {
+                    'total_columns': len(numeric_df.columns),
+                    'dtype_counts': numeric_df.dtypes.value_counts().to_dict()
+                }
+            }
             quality_metrics['overall_score'] = self._calculate_overall_quality_score(quality_metrics)
             self.logger.info(f"✅ Quality metrics calculated. Overall score: {quality_metrics['overall_score']:.2f}")
             return quality_metrics
@@ -2337,7 +2591,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         
         if not data_dir:
             from src.utils.pipeline_standards import pipeline_standards
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         
         # Validate data directory exists
         data_path = Path(data_dir)
@@ -2468,11 +2722,10 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             )
         )
 
-
 async def _execute_step07_with_optimizations(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Execute step07 with enhanced optimizations."""
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
     from src.config.training import get_training_config
     config = get_training_config()
@@ -2487,14 +2740,13 @@ async def _execute_step07_with_optimizations(symbol: str, exchange: str, timefra
         system_logger.error(f'❌ Step 7 failed: {str(e)}')
         return False
 
-
 async def _execute_step07_standard(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Execute step07 with standard implementation (fallback)."""
     logger.info('📊 Using standard Step 7 execution (enhanced optimizations not available)')
 
     try:
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
         from src.config.training import get_training_config
         config = get_training_config()

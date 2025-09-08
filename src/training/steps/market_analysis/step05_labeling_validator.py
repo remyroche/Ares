@@ -3,6 +3,7 @@ from typing import Dict
 import pandas as pd
 from typing import Any
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Validator for Step 5: Labeling.
 
@@ -14,18 +15,13 @@ from src.core.decorators import validates
 import json
 from pathlib import Path
 
-
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 from src.utils.common_operations import safe_json_load
 
 import asyncio
-import datetime
-import logging
-
 
 logger = system_logger.getChild("Step5LabelingValidator")
-
 
 class Step5LabelingValidator(BaseValidator):
     """Validator for Step 5: Labeling."""
@@ -109,7 +105,7 @@ class Step5LabelingValidator(BaseValidator):
                 return False
 
             # Load and validate the labeled file
-            df = pd.read_parquet(labeled_file)
+            df = standardized_parquet_handler.read_parquet_standardized(labeled_file)
 
             # Use BaseValidator's DataFrame validation
             df_valid, df_metrics = self.validate_dataframe_quality(
@@ -279,7 +275,7 @@ class Step5LabelingValidator(BaseValidator):
                 for file_path in existing_files:
                     if file_path.endswith(".parquet"):
                         try:
-                            df = pd.read_parquet(file_path)
+                            df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             # Use BaseValidator's DataFrame validation
                             df_valid, df_metrics = self.validate_dataframe_quality(
                                 df, min_rows = 100, check_data_types = True
@@ -295,7 +291,6 @@ class Step5LabelingValidator(BaseValidator):
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
-
 
 async def run_validator(
     training_input: Dict[str, Any],
@@ -367,7 +362,6 @@ async def run_validator(
             "error": str(e),
             "error_context": error_context
         }
-
 
 if __name__ == "__main__":
     # Test the validator

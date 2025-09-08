@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step03 Execution Report Generator.
 
@@ -9,10 +10,10 @@ This module provides comprehensive execution reporting for step03 with:
 5. Quality metrics assessment
 6. Recommendations and insights
 """
-import asyncio
+
 import json
 import logging
-import time
+
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path

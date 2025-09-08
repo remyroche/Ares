@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Tuple, Optional, List, Dict, Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Profit-Based Feature Engineering System.
 
@@ -16,13 +17,10 @@ triple barrier labeling to create rich feature sets for machine learning models.
 
 import time
 
-
 # Import essential decorators
 from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
-import logging
-import typing
 
 try:
     from numba import jit
@@ -96,7 +94,6 @@ else:
         rolling_max = series.rolling(window=window, min_periods=1).max().values
         rolling_min = series.rolling(window=window, min_periods=1).min().values
         return rolling_mean, rolling_std, rolling_max, rolling_min
-
 
 class ProfitBasedFeatureEngineering:
     """
@@ -677,7 +674,6 @@ class ProfitBasedFeatureEngineering:
         
         return selected
 
-
 @handles_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
     """Benchmark profit-based feature engineering performance.
@@ -709,7 +705,6 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
         "numba_features": numba_features,
         "python_features": python_features
     }
-
 
 if __name__ == "__main__":
     # Example usage

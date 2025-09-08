@@ -2,6 +2,7 @@
 import pandas as pd
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced API-Agnostic Data Collector
@@ -19,13 +20,11 @@ Features:
 - Integration with enhanced validation framework
 """
 
-
 import asyncio
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -36,12 +35,8 @@ from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, ValidationSeverity
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-import logging
-import numpy as np
-import typing
 
 logger = system_logger.getChild("EnhancedAPIAgnosticDataCollector")
-
 
 class DataGapDetector:
     """Comprehensive data gap detection and analysis."""
@@ -140,7 +135,6 @@ class DataGapDetector:
         
         return summary
 
-
 class IncrementalDataDownloader:
     """Incremental data downloader with gap detection and batch management."""
     @log_important_calls
@@ -191,7 +185,7 @@ class IncrementalDataDownloader:
             self.logger.info(f"📖 Reading latest file: {os.path.basename(latest_file)}")
             
             # Read the file and get the last timestamp
-            df = pd.read_parquet(latest_file)
+            df = standardized_parquet_handler.read_parquet_standardized(latest_file)
             if df.empty or 'timestamp' not in df.columns:
                 self.logger.warning(f"⚠️ No data or timestamp column in {latest_file}")
                 return None
@@ -439,7 +433,6 @@ class IncrementalDataDownloader:
         self.logger.info(f"   ⏱️ Duration: {summary['total_duration']:.2f}s")
         
         return summary
-
 
 class EnhancedAPIAgnosticDataCollector:
     """Enhanced API-agnostic data collector with comprehensive features."""
@@ -814,7 +807,7 @@ class EnhancedAPIAgnosticDataCollector:
             # Load and combine all files
             dataframes = []
             for file in files:
-                df = pd.read_parquet(file)
+                df = standardized_parquet_handler.read_parquet_standardized(file)
                 dataframes.append(df)
             
             if dataframes:
@@ -851,7 +844,7 @@ class EnhancedAPIAgnosticDataCollector:
             
             # Convert to DataFrame and save
             df = pd.DataFrame(data)
-            df.to_parquet(filepath, index=False)
+            standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
             
             self.logger.info(f"💾 Saved {len(data)} {data_type} rows to {filename}")
             
@@ -887,7 +880,6 @@ class EnhancedAPIAgnosticDataCollector:
         
         return summary
 
-
 # Convenience functions
 @handles_errors(fallback = False, context="collect_data_for_period")
 @traced(span_name="collect_data_for_period", log_args = False, log_result_len_only = True)
@@ -904,7 +896,6 @@ async def collect_data_for_period(
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.collect_data_for_period(start_time, end_time, data_types, data_dir)
 
-
 @handles_errors(fallback = False, context="collect_incremental_data")
 @traced(span_name="collect_incremental_data", log_args = False, log_result_len_only = True)
 async def collect_incremental_data(
@@ -919,7 +910,6 @@ async def collect_incremental_data(
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.collect_incremental_data(data_types, data_dir, max_batches)
 
-
 @handles_errors(fallback = False, context="detect_and_fill_gaps")
 @traced(span_name="detect_and_fill_gaps", log_args = False, log_result_len_only = True)
 async def detect_and_fill_gaps(
@@ -932,7 +922,6 @@ async def detect_and_fill_gaps(
     """Detect and fill gaps in existing data."""
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.detect_and_fill_gaps(data_dir, data_types)
-
 
 if __name__ == "__main__":
     # Example usage

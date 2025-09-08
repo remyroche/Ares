@@ -2,7 +2,6 @@
 
 Provide both string symbols and callable helpers expected by logger and other modules.
 """
-import logging
 
 # Symbol constants
 warning_symbol = "⚠️"

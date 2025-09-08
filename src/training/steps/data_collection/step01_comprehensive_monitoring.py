@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Step01 Comprehensive Monitoring Integration
@@ -21,10 +22,6 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-import collections
-import json
-import logging
-import time
 
 try:
     PANDAS_AVAILABLE = True
@@ -257,7 +254,7 @@ class Step01ComprehensiveMonitoring:
         """Validate a single file with comprehensive monitoring."""
         try:
             self.logger.info(f'🔍 Comprehensive validation of {file_name}...')
-            df = pd.read_parquet(file_path)
+            df = standardized_parquet_handler.read_parquet_standardized(file_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
             schema_name = self._determine_schema_name(file_name)
             validation_result = self.standards.validate_data_quality(df, schema_name)
@@ -384,7 +381,7 @@ class Step01ComprehensiveMonitoring:
             klines_df = self.standards.enforce_schema(klines_df, 'klines')
             klines_file = self.standards.generate_file_name('klines', exchange, symbol, timeframe)
             klines_path = os.path.join(data_dir, klines_file)
-            klines_df.to_parquet(klines_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(klines_df, klines_path, index=False)
             self.logger.info(f'✅ Created mock klines data: {len(klines_df)} rows')
             self.logger.info(f'💾 Saved to: {klines_path}')
             aggtrades_data = []
@@ -401,7 +398,7 @@ class Step01ComprehensiveMonitoring:
             aggtrades_df = self.standards.enforce_schema(aggtrades_df, 'aggtrades')
             aggtrades_file = self.standards.generate_file_name('aggtrades', exchange, symbol)
             aggtrades_path = os.path.join(data_dir, aggtrades_file)
-            aggtrades_df.to_parquet(aggtrades_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(aggtrades_df, aggtrades_path, index=False)
             self.logger.info(f'✅ Created mock aggtrades data: {len(aggtrades_df)} rows')
             self.logger.info(f'💾 Saved to: {aggtrades_path}')
             return True
@@ -437,7 +434,7 @@ class Step01ComprehensiveMonitoring:
                 self.logger.info(f'🔍 Comprehensive analysis of {data_type} data: {os.path.basename(file_path)}')
                 if os.path.exists(file_path):
                     try:
-                        df = pd.read_parquet(file_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
                         self.logger.info(f'   📊 Shape: {df.shape}')
                         self.logger.info(f'   📁 File size: {os.path.getsize(file_path):,} bytes')
                         self.logger.info(f'   🗂️ Columns ({len(df.columns)}): {list(df.columns)}')

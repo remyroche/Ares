@@ -1,6 +1,5 @@
 # src/training/steps/hmm_feature_enhancer.py
 
-
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 from .core.decorators import traced, validates
@@ -8,6 +7,7 @@ from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 
 class HMMFeatureEnhancer:
@@ -356,6 +356,5 @@ class HMMFeatureEnhancer:
         return tr.rolling(period).mean()
 
 # src/training/steps/hmm_feature_enhancer.py
-
 
 from .core.decorators import traced, validates

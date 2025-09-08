@@ -3,6 +3,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Step 1.5: Data Converter with Real-time Validation
@@ -15,12 +16,10 @@ This module provides enhanced data conversion with:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -28,14 +27,12 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
-import collections
+
 import datetime
-import logging
+
 import numpy as np
-import time
 
 logger = system_logger.getChild("EnhancedStep01_5DataConverter")
-
 
 class EnhancedUnifiedDataConverter:
     """Enhanced unified data converter with real-time validation."""
@@ -203,7 +200,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(klines_path):
                 self.logger.info(f'📖 Loading klines data from {klines_path}')
-                df = pd.read_parquet(klines_path)
+                df = standardized_parquet_handler.read_parquet_standardized(klines_path)
                 
                 # Validate klines data
                 validated_klines = self._validate_dataframe(df, DataType.KLINES, "klines")
@@ -221,7 +218,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(aggtrades_path):
                 self.logger.info(f'📖 Loading aggtrades data from {aggtrades_path}')
-                df = pd.read_parquet(aggtrades_path)
+                df = standardized_parquet_handler.read_parquet_standardized(aggtrades_path)
                 
                 # Validate aggtrades data
                 validated_aggtrades = self._validate_dataframe(df, DataType.AGGTRADES, "aggtrades")
@@ -239,7 +236,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(futures_path):
                 self.logger.info(f'📖 Loading futures data from {futures_path}')
-                df = pd.read_parquet(futures_path)
+                df = standardized_parquet_handler.read_parquet_standardized(futures_path)
                 
                 # Validate futures data
                 validated_futures = self._validate_dataframe(df, DataType.FUTURES, "futures")
@@ -511,7 +508,7 @@ class EnhancedUnifiedDataConverter:
             filename = f"unified_{exchange}_{symbol}_{timeframe}_validated.parquet"
             filepath = os.path.join(unified_path, filename)
             
-            df.to_parquet(filepath, index=False)
+            standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
             
             self.logger.info(f'✅ Saved {len(df)} unified rows to {filename}')
             
@@ -554,7 +551,7 @@ class EnhancedUnifiedDataConverter:
                 return False
             
             # Load and validate unified data
-            df = pd.read_parquet(unified_filepath)
+            df = standardized_parquet_handler.read_parquet_standardized(unified_filepath)
             
             # Basic quality checks
             quality_score = self._calculate_unified_quality_score(df)
@@ -660,7 +657,6 @@ class EnhancedUnifiedDataConverter:
         except Exception as e:
             self.logger.exception(f'❌ Failed to log enhanced step 1.5 artifacts and reports: {e}')
 
-
 # Main execution function
 async def run_enhanced_step01_5_data_converter(
     symbol: str,
@@ -716,7 +712,6 @@ async def run_enhanced_step01_5_data_converter(
     except Exception as e:
         logger.exception(f"❌ Enhanced Step 1.5 failed with exception: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Example usage

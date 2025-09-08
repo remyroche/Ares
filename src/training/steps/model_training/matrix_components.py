@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Matrix operation components for enhanced matrix operations step.
 
@@ -5,7 +6,6 @@ This module contains specialized components for matrix computations,
 GPU acceleration, and optimization with advanced performance features.
 
 🚀 ADVANCED OPTIMIZATION FEATURES:
-==================================
 
 1. **Numba JIT Compilation**: Automatic acceleration of compute-intensive operations
    - Matrix multiplication: ~10-50x speedup
@@ -30,7 +30,6 @@ GPU acceleration, and optimization with advanced performance features.
    - Optimization status reporting
 
 USAGE EXAMPLES:
-===============
 
 # Basic optimized matrix computation
 optimizer = MatrixOptimizer('high')
@@ -51,7 +50,6 @@ correlation = optimizer.numba_correlation_matrix(data)
 rolling_mean = optimizer.numba_rolling_statistics(data, window=20, stat_type=0)
 
 PERFORMANCE OPTIMIZATION LEVELS:
-===============================
 
 - **low**: Basic optimizations, minimal memory usage
 - **medium**: Balanced performance and memory usage
@@ -62,17 +60,15 @@ All optimizations include automatic fallback mechanisms for reliability.
 
 from typing import List, Dict, Any, Tuple, Optional, Callable
 import asyncio
-import concurrent.futures
-import logging
+
 import time
 import os
 from dataclasses import dataclass
-from functools import wraps
 
 import pandas as pd
 import numpy as np
 import torch
-import torch.nn as nn
+
 from torch.utils.data import DataLoader, TensorDataset
 
 # Try to import Numba for JIT compilation
@@ -105,7 +101,6 @@ from ....utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from ....training.diverse_lookback_optimizer import DiverseLookbackOptimizer
-
 
 # Numba-optimized functions for performance-critical operations
 if NUMBA_AVAILABLE:
@@ -219,7 +214,6 @@ if NUMBA_AVAILABLE:
 
         return corr_matrix
 
-
 @dataclass
 class AsyncTask:
     """Represents an async matrix computation task."""
@@ -228,7 +222,6 @@ class AsyncTask:
     kwargs: Dict[str, Any]
     task_id: str
     priority: int = 1
-
 
 class AsyncMatrixProcessor:
     """Handles async matrix processing with concurrent operations."""
@@ -359,7 +352,6 @@ class AsyncMatrixProcessor:
         # Shutdown executor
         self.executor.shutdown(wait=True)
         self.logger.info("✅ Async matrix processor shut down")
-
 
 class MatrixProcessor:
     """Handles matrix computations with GPU acceleration support."""

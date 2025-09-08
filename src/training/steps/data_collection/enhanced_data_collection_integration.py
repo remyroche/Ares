@@ -3,6 +3,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Data Collection Integration
@@ -18,7 +19,6 @@ Features:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 import time
@@ -32,11 +32,8 @@ sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from .enhanced_step01_data_collection import run_enhanced_step01_data_collection
 from .enhanced_step01_5_data_converter import run_enhanced_step01_5_data_converter
-import numpy as np
-import logging
 
 logger = system_logger.getChild("EnhancedDataCollectionIntegration")
-
 
 class EnhancedDataCollectionPipeline:
     """Enhanced data collection pipeline with comprehensive validation."""
@@ -144,7 +141,6 @@ class EnhancedDataCollectionPipeline:
             'timestamp': datetime.now().isoformat()
         }
 
-
 async def run_enhanced_data_collection_pipeline(
     symbol: str,
     exchange: str,
@@ -166,7 +162,6 @@ async def run_enhanced_data_collection_pipeline(
     
     pipeline = EnhancedDataCollectionPipeline(exchange, symbol, timeframe)
     return await pipeline.run_complete_pipeline(force_rerun)
-
 
 async def validate_existing_data(
     symbol: str,
@@ -201,7 +196,7 @@ async def validate_existing_data(
         
         if os.path.exists(klines_path):
             logger.info(f"📖 Validating klines data: {klines_file}")
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             
             # Convert to validation format
             rows = df.to_dict('records')
@@ -232,7 +227,7 @@ async def validate_existing_data(
         
         if os.path.exists(aggtrades_path):
             logger.info(f"📖 Validating aggtrades data: {aggtrades_file}")
-            df = pd.read_parquet(aggtrades_path)
+            df = standardized_parquet_handler.read_parquet_standardized(aggtrades_path)
             
             # Convert to validation format
             rows = df.to_dict('records')
@@ -263,7 +258,7 @@ async def validate_existing_data(
         
         if os.path.exists(futures_path):
             logger.info(f"📖 Validating futures data: {futures_file}")
-            df = pd.read_parquet(futures_path)
+            df = standardized_parquet_handler.read_parquet_standardized(futures_path)
             
             # Convert to validation format
             rows = df.to_dict('records')
@@ -326,7 +321,6 @@ async def validate_existing_data(
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }
-
 
 async def demonstrate_enhanced_validation():
     """Demonstrate the enhanced validation framework."""
@@ -408,7 +402,6 @@ def test_klines_validation():
     logger.info("=" * 80)
     logger.info("🎉 Enhanced validation framework demonstration completed")
     logger.info("=" * 80)
-
 
 if __name__ == "__main__":
     # Run demonstration

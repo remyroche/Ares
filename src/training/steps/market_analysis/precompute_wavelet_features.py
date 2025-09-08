@@ -1,5 +1,6 @@
 import numpy as np
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/precompute_wavelet_features.py
 
@@ -12,7 +13,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
@@ -27,7 +27,6 @@ from .utils.status import (
     failed,
     initialization_error,
 )
-
 
 class WaveletFeaturePrecomputer:
     """Pre-computation system for wavelet features.
@@ -146,12 +145,12 @@ class WaveletFeaturePrecomputer:
                         from src.utils.logger import system_logger
 
                         self.logger.info(f"Reading parquet file: {data_path}")
-                        dataset = pd.read_parquet(data_path, columns = columns)
+                        dataset = standardized_parquet_handler.read_parquet_standardized(data_path, columns = columns)
                 except Exception:
                     from src.utils.logger import system_logger
 
                     self.logger.info(f"Reading parquet file: {data_path}")
-                    dataset = pd.read_parquet(data_path)
+                    dataset = standardized_parquet_handler.read_parquet_standardized(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import system_logger
                 
@@ -422,7 +421,6 @@ class WaveletFeaturePrecomputer:
             self.logger.error(f"Error clearing cache: {e}")
             return False
 
-
 async def main() -> None:
     """Main function for pre-computation script."""
     try:
@@ -487,7 +485,6 @@ async def main() -> None:
 
     except Exception as e:
         print(f"Error in main: {e}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

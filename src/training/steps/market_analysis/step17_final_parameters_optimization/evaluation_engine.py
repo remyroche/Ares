@@ -1,8 +1,8 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-import src.utils.warning_symbols
 import numpy as np
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/step17_final_parameters_optimization/evaluation_engine.py
 
@@ -16,10 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 from src.utils.logger import system_logger
-import logging
-import pandas as pd
-import time
 
+import pandas as pd
 
 @dataclass
 class PerformanceMetrics:
@@ -85,7 +83,6 @@ class PerformanceMetrics:
             "profit_factor_ratio": self.profit_factor_ratio,
             "risk_reward_ratio": self.risk_reward_ratio,
         }
-
 
 class AdvancedEvaluationEngine:
     """Advanced evaluation engine for hyperparameter optimization."""
@@ -664,11 +661,9 @@ class AdvancedEvaluationEngine:
             self.print(error("Error generating evaluation report: {e}"))
             return {"error": str(e)}
 
-
 def create_evaluation_engine(config: dict[str, Any]) -> AdvancedEvaluationEngine:
     """Create an evaluation engine instance."""
     return AdvancedEvaluationEngine(config)
-
 
 if __name__ == "__main__":
     # Test the evaluation engine
@@ -715,5 +710,3 @@ if __name__ == "__main__":
                 pass
         else:
             pass
-
-import src.utils.warning_symbols

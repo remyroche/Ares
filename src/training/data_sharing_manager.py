@@ -3,7 +3,6 @@ import gc
 import time
 from typing import Any
 
-
 from src.utils.logger import system_logger
 from src.core.decorators import (
     cached,
@@ -14,10 +13,8 @@ from src.core.domain import quality_gate, secure_data_processing
 from src.training.steps.unified_data_loader import get_unified_data_loader
 import pandas as pd
 import numpy as np
-import logging
 
 # src/training/data_sharing_manager.py
-
 
 class DataSharingManager:
     """Manages data sharing between training steps to eliminate redundant data loading."
@@ -434,10 +431,8 @@ class DataSharingManager:
         self.logger.info(f"   Memory saved: {stats['memory_saved_gb']:.2f}GB")
         self.logger.info(f"   Cached entries: {stats['cached_entries']}")
 
-
 # Global instance for easy access
 _data_sharing_manager: DataSharingManager | None = None
-
 
 def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     """Get or create the global data sharing manager instance."""
@@ -445,7 +440,6 @@ def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     if _data_sharing_manager is None:
         _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
-
 
 def reset_data_sharing_manager() -> None:
     """Reset the global data sharing manager instance."""

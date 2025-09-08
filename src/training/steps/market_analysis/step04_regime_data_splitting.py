@@ -31,11 +31,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
+    from pyarrow import compute as pc
     PYARROW_AVAILABLE = True
 except ImportError:
     PYARROW_AVAILABLE = False
     pa = None
     pq = None
+    pc = None
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -354,6 +356,9 @@ class RegimeDataSplittingStep:
         # Initialize M1 Hardware Optimizations
         self._init_m1_optimizations()
 
+        # Initialize Parquet optimizations
+        self._init_parquet_optimizations()
+
         # Set default memory management configuration
         self._set_memory_defaults()
         self._validate_environment()
@@ -447,6 +452,38 @@ class RegimeDataSplittingStep:
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
+
+    def _init_parquet_optimizations(self) -> None:
+        """Initialize Parquet optimizations including metadata caching and partitioning."""
+        try:
+            if PYARROW_AVAILABLE:
+                # Parquet metadata cache for frequently accessed files
+                self.parquet_metadata_cache = {}
+                self.parquet_cache_max_size = self.config.get('parquet_cache_max_size', 100)
+                
+                # Partitioning configuration
+                self.enable_parquet_partitioning = self.config.get('enable_parquet_partitioning', True)
+                self.partition_columns = self.config.get('partition_columns', ['composite_cluster_id', 'year', 'month'])
+                self.partition_size_threshold = self.config.get('partition_size_threshold', 1_000_000)  # 1M rows
+                
+                # Columnar storage optimization
+                self.columnar_optimization = self.config.get('columnar_optimization', True)
+                self.optimize_column_order = self.config.get('optimize_column_order', True)
+                
+                self.logger.info("📊 Parquet optimizations initialized")
+                self.logger.info(f"   🗂️ Partitioning enabled: {self.enable_parquet_partitioning}")
+                self.logger.info(f"   📋 Partition columns: {self.partition_columns}")
+                self.logger.info(f"   💾 Metadata cache size: {self.parquet_cache_max_size}")
+            else:
+                self.parquet_metadata_cache = {}
+                self.enable_parquet_partitioning = False
+                self.columnar_optimization = False
+                self.logger.warning("⚠️ PyArrow not available - Parquet optimizations disabled")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parquet optimization initialization failed: {e}")
+            self.parquet_metadata_cache = {}
+            self.enable_parquet_partitioning = False
+            self.columnar_optimization = False
 
     @comprehensive_function_monitor
     async def initialize(self) -> None:
@@ -728,15 +765,15 @@ class RegimeDataSplittingStep:
             else:
                 self.logger.info(f'📊 Processing dataset normally ({total_estimated_size:.1f}MB)')
 
-                # Load regime data once and sort
-                regime_df = pandas.read_parquet(regime_file)
+                # Load regime data once and sort with metadata caching
+                regime_df = self._read_parquet_with_cache(regime_file)
                 regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
                 regime_df = regime_df.sort_values('timestamp')
                 total_input_rows = 0
                 total_merged_rows = 0
 
                 for file_path in sorted(unified_files):
-                    df = pandas.read_parquet(file_path)
+                    df = self._read_parquet_with_cache(file_path)
                     df = self.standards.standardize_timestamp(df, 'timestamp')
                     df = self.standards.enforce_schema(df, 'unified')
                     df = df.sort_values('timestamp')
@@ -797,8 +834,8 @@ class RegimeDataSplittingStep:
         try:
             self.logger.info('🔄 Starting streaming processing for large dataset')
 
-            # Load regime data once
-            regime_df = pandas.read_parquet(regime_file)
+            # Load regime data once with metadata caching
+            regime_df = self._read_parquet_with_cache(regime_file)
             regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
             regime_df = regime_df.sort_values('timestamp')
 
@@ -813,8 +850,8 @@ class RegimeDataSplittingStep:
                 batch_chunks = []
                 for file_path in batch_files:
                     try:
-                        # Load file with memory-efficient reading
-                        df = pandas.read_parquet(file_path)
+                        # Load file with memory-efficient reading and metadata caching
+                        df = self._read_parquet_with_cache(file_path)
                         df = self.standards.standardize_timestamp(df, 'timestamp')
                         df = self.standards.enforce_schema(df, 'unified')
                         df = df.sort_values('timestamp')
@@ -876,8 +913,23 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     def _save_unified_dataset(self, data: pd.DataFrame, training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
-        """Save the unified regime dataset to parquet file with memory-efficient streaming for large datasets."""
+        """Save the unified regime dataset to parquet file with advanced optimizations including partitioning and metadata caching."""
         try:
+            # Apply columnar storage optimization
+            if self.columnar_optimization and PYARROW_AVAILABLE:
+                data = self._optimize_columnar_storage(data)
+            
+            # Determine if partitioning should be used
+            use_partitioning = (
+                self.enable_parquet_partitioning and 
+                len(data) > self.partition_size_threshold and 
+                PYARROW_AVAILABLE
+            )
+            
+            if use_partitioning:
+                return self._save_partitioned_dataset(data, training_dir, exchange, symbol, timeframe)
+            
+            # Standard save with metadata caching
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
             data_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
 
@@ -974,6 +1026,147 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.error(f'❌ Error saving regime labels: {e}')
             return False
+
+    def _optimize_columnar_storage(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize columnar storage by reordering columns for better compression and access patterns."""
+        try:
+            if not self.optimize_column_order:
+                return data
+            
+            # Define optimal column order for time-series data
+            timestamp_cols = [col for col in data.columns if 'timestamp' in col.lower() or 'time' in col.lower()]
+            regime_cols = [col for col in data.columns if 'regime' in col.lower() or 'cluster' in col.lower()]
+            price_cols = [col for col in data.columns if col in ['open', 'high', 'low', 'close', 'volume']]
+            feature_cols = [col for col in data.columns if col not in timestamp_cols + regime_cols + price_cols]
+            
+            # Reorder columns for optimal columnar storage
+            optimal_order = timestamp_cols + regime_cols + price_cols + feature_cols
+            existing_cols = [col for col in optimal_order if col in data.columns]
+            
+            if existing_cols != list(data.columns):
+                data = data[existing_cols]
+                self.logger.info(f"🔄 Optimized column order for columnar storage: {len(existing_cols)} columns")
+            
+            return data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Columnar optimization failed: {e}")
+            return data
+
+    def _save_partitioned_dataset(self, data: pd.DataFrame, training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:
+        """Save dataset using Parquet partitioning for better query performance."""
+        try:
+            if not PYARROW_AVAILABLE:
+                self.logger.warning("⚠️ PyArrow not available for partitioning, falling back to standard save")
+                return self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe)
+            
+            # Create partitioned directory structure
+            partitioned_dir = training_dir / f'{exchange}_{symbol}_{timeframe}_partitioned_data'
+            partitioned_dir.mkdir(exist_ok=True)
+            
+            # Add partitioning columns if they don't exist
+            data = self._add_partitioning_columns(data)
+            
+            # Convert to PyArrow table
+            table = pa.Table.from_pandas(data)
+            
+            # Write partitioned dataset
+            pq.write_to_dataset(
+                table,
+                root_path=str(partitioned_dir),
+                partition_cols=self.partition_columns,
+                compression='snappy',
+                use_dictionary=True,  # Better compression for categorical data
+                write_statistics=True  # Enable statistics for better query performance
+            )
+            
+            # Cache metadata for future reads
+            self._cache_parquet_metadata(str(partitioned_dir), data.shape)
+            
+            self.logger.info(f"✅ Saved partitioned dataset: {len(data):,} rows -> {partitioned_dir}")
+            self.logger.info(f"   📁 Partition columns: {self.partition_columns}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error saving partitioned dataset: {e}")
+            return False
+
+    def _add_partitioning_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Add partitioning columns for time-series data."""
+        try:
+            data = data.copy()
+            
+            # Add year and month columns for time-based partitioning
+            if 'timestamp' in data.columns:
+                timestamp_series = pd.to_datetime(data['timestamp'])
+                data['year'] = timestamp_series.dt.year
+                data['month'] = timestamp_series.dt.month
+                
+                # Add to partition columns if not already present
+                for col in ['year', 'month']:
+                    if col not in self.partition_columns:
+                        self.partition_columns.append(col)
+            
+            return data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to add partitioning columns: {e}")
+            return data
+
+    def _cache_parquet_metadata(self, file_path: str, data_shape: tuple) -> None:
+        """Cache Parquet metadata for frequently accessed files."""
+        try:
+            if len(self.parquet_metadata_cache) >= self.parquet_cache_max_size:
+                # Remove oldest entries
+                oldest_key = min(self.parquet_metadata_cache.keys())
+                del self.parquet_metadata_cache[oldest_key]
+            
+            # Cache metadata
+            self.parquet_metadata_cache[file_path] = {
+                'shape': data_shape,
+                'timestamp': time.time(),
+                'access_count': 0
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to cache Parquet metadata: {e}")
+
+    def _get_cached_parquet_metadata(self, file_path: str) -> Optional[dict]:
+        """Get cached Parquet metadata if available."""
+        try:
+            if file_path in self.parquet_metadata_cache:
+                metadata = self.parquet_metadata_cache[file_path]
+                metadata['access_count'] += 1
+                return metadata
+            return None
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to get cached metadata: {e}")
+            return None
+
+    def _read_parquet_with_cache(self, file_path: str, **kwargs) -> pd.DataFrame:
+        """Read Parquet file with metadata caching for better performance."""
+        try:
+            # Check if metadata is cached
+            cached_metadata = self._get_cached_parquet_metadata(file_path)
+            
+            if cached_metadata:
+                self.logger.debug(f"📋 Using cached metadata for {file_path}")
+                # Use cached metadata to optimize read
+                if PYARROW_AVAILABLE:
+                    # Use PyArrow for optimized reading with cached metadata
+                    table = pq.read_table(file_path, **kwargs)
+                    df = table.to_pandas()
+                else:
+                    df = pd.read_parquet(file_path, **kwargs)
+            else:
+                # Standard read and cache metadata
+                df = pd.read_parquet(file_path, **kwargs)
+                self._cache_parquet_metadata(file_path, df.shape)
+            
+            return df
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cached read failed for {file_path}: {e}")
+            # Fallback to standard read
+            return pd.read_parquet(file_path, **kwargs)
 
     @comprehensive_function_monitor
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:

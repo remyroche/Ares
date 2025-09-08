@@ -7,6 +7,7 @@ import pandas as pd
 import contextlib
 from src.utils.decorators import handles_errors, traced
 from src.utils.logger import system_logger, get_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Regime-Aware Triple Barrier Labeling

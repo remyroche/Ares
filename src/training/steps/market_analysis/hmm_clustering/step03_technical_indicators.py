@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step03 Technical Indicators Utility.
 

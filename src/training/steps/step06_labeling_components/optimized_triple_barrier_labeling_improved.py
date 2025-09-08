@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from typing import Callable
 import numpy as np
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 steps_dir = os.path.join(current_dir, '..')

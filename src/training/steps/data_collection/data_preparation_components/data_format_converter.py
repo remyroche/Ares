@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Format Converter Component
 
 Handles conversion between different data formats, particularly focusing on Parquet operations.

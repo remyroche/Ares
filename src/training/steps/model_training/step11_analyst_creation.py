@@ -3,6 +3,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls, log_step_functions, log_step_progress, log_data_operation
 from src.training.steps.model_training.step11_financial_logging import Step11FinancialLogger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 11: Analyst Creation - Creates base analyst models for each regime.
 
@@ -377,7 +378,7 @@ class AnalystCreationStep:
         """Save a trained model to disk."""
         try:
             # Create models directory
-            models_dir = Path(pipeline_standards.build_path("models", self.exchange, self.symbol))
+            models_dir = Path(standardized_parquet_handler.get_standardized_path("models", self.exchange, self.symbol))
             models_dir.mkdir(parents=True, exist_ok=True)
             
             # Generate filename

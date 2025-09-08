@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 '\nEnhanced Step17 Multi-Objective Optimization with Block-Based Approach\n\nThis implementation addresses:\n1. Curse of dimensionality through parameter block optimization\n2. Logical block ordering for efficient optimization\n3. Multi-objective optimization (PnL, win rate, Sharpe ratio, etc.)\n4. Computational efficiency through hierarchical optimization\n'
 from datetime import datetime

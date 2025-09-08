@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Comprehensive Reporting System for Backtesting Pipeline.
 
@@ -438,7 +439,7 @@ class ComprehensiveReporter:
             file_path = self.data_dir / file_name
             if safe_file_exists(file_path):
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     quality_metrics = {'total_records': len(df), 'missing_values': df.isnull().sum().sum(), 'duplicate_records': df.duplicated().sum(), 'data_types': df.dtypes.to_dict(), 'memory_usage_mb': df.memory_usage(deep = True).sum() / 1024 / 1024}
                     quality_report['data_files_status'][file_name] = 'AVAILABLE'
                     quality_report['data_quality_metrics'][file_name] = quality_metrics

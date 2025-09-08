@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step09 HMM-Based Training Per Regime.
 Independent logging module that can be used without the reporting system.

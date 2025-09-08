@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 2: Data Reading - Refactored to use BaseStep with Hardware Optimizations.
 from src.utils.logger import system_logger
@@ -126,57 +127,74 @@ class DataReadingStep(BaseStep):
         current_time = datetime.now()
         bias_detector = get_global_detector()
         bias_detector.set_current_timestamp(current_time)
+        # Get data path - prefer partitioned data
         data_path = pipeline_state.get('unified_data_path') or pipeline_state.get('raw_market_data')
         if not data_path:
             symbol = training_input.get('symbol', '').upper()
             exchange = training_input.get('exchange', '').upper()
             timeframe = training_input.get('timeframe', '1m')
-            standards = PipelineStandards(self.logger)
-            data_path = standards.build_path('unified_partitioned', exchange, symbol, timeframe=timeframe)
-            self.logger.info(f'📖 Constructed data path: {data_path}')
+            
+            # Try partitioned data first
+            partitioned_path = standardized_parquet_handler.get_partitioned_path('unified_partitioned', exchange, symbol, timeframe)
+            if os.path.exists(partitioned_path):
+                self.logger.info(f'📊 Reading partitioned data from: {partitioned_path}')
+                data = standardized_parquet_handler.read_partitioned_parquet(
+                    base_path=partitioned_path,
+                    schema_name='unified'
+                )
+                if data is not None and not data.empty:
+                    self.logger.info(f'✅ Successfully loaded partitioned data: {len(data)} rows')
+                else:
+                    self.logger.warning('⚠️ Partitioned data directory exists but is empty or invalid')
+                    data = None
+            else:
+                self.logger.warning(f'⚠️ Partitioned data directory not found at: {partitioned_path}')
+                data = None
+            
+            # Fallback to single file if partitioned data not available
+            if data is None or data.empty:
+                standards = PipelineStandards(self.logger)
+                data_path = standards.build_path('unified', exchange, symbol, timeframe=timeframe)
+                self.logger.info(f'📖 Fallback: Reading unified data from: {data_path}')
+                if os.path.exists(data_path):
+                    data = standardized_parquet_handler.read_parquet_standardized(data_path, schema_name='unified')
+                    if data is not None and not data.empty:
+                        self.logger.info(f'✅ Successfully loaded unified data: {len(data)} rows')
+                    else:
+                        self.logger.warning('⚠️ Unified data file exists but is empty or invalid')
+                else:
+                    self.logger.warning(f'⚠️ Unified data file not found at: {data_path}')
         else:
-            self.logger.info(f'📖 Reading data from: {data_path}')
-        try:
-            parquet_utils = ParquetUtils()
+            self.logger.info(f'📖 Reading data from provided path: {data_path}')
             data_path_obj = Path(data_path)
             if data_path_obj.is_file():
-                data = parquet_utils.safe_read_parquet(data_path)
+                data = standardized_parquet_handler.read_parquet_standardized(data_path, schema_name='unified')
             elif data_path_obj.is_dir():
-                parquet_files = list(data_path_obj.glob('**/*.parquet'))
-                if not parquet_files:
-                    # Attempt centralized auto re-collection
-                    self.logger.warning(f"⚠️ No parquet files found in directory: {data_path}. Attempting auto re-collection...")
-                    try:
-                        from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-                        _qm = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
-                        symbol_q = training_input.get('symbol', symbol)
-                        exchange_q = training_input.get('exchange', exchange)
-                        timeframe_q = training_input.get('timeframe', timeframe)
-                        import asyncio as _asyncio
-                        _asyncio.get_event_loop()
-                        _asyncio.run(_qm.get_data_for_step3_step4(symbol_q, exchange_q, timeframe_q))
-                        parquet_files = list(data_path_obj.glob('**/*.parquet'))
-                    except Exception as _qe:
-                        self.logger.warning(f"Auto re-collection failed: {_qe}")
-                if not parquet_files:
-                    raise ValueError(f'No parquet files found in directory: {data_path}')
-                self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
-                dataframes = []
-                for i, file_path in enumerate(parquet_files):
-                    self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
-                    df = parquet_utils.safe_read_parquet(str(file_path))
-                    if df is not None and (not df.empty):
-                        try:
-                            df = PipelineStandards(self.logger).enforce_schema(df, 'unified')
-                        except Exception as _se:
-                            self.logger.warning(f"Schema enforcement failed for {file_path.name}: {_se}")
-                        dataframes.append(df)
-                if not dataframes:
-                    raise ValueError(f'Failed to read any data from parquet files in {data_path}')
-                data = pd.concat(dataframes, ignore_index = True)
-                self.logger.info(f'📊 Concatenated {len(dataframes)} dataframes')
+                # Try partitioned reading first
+                data = standardized_parquet_handler.read_partitioned_parquet(
+                    base_path=data_path,
+                    schema_name='unified'
+                )
+                if data is None or data.empty:
+                    # Fallback to individual file reading
+                    parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                    if not parquet_files:
+                        raise ValueError(f'No parquet files found in directory: {data_path}')
+                    self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
+                    dataframes = []
+                    for i, file_path in enumerate(parquet_files):
+                        self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
+                        df = standardized_parquet_handler.read_parquet_standardized(str(file_path), schema_name='unified')
+                        if df is not None and (not df.empty):
+                            dataframes.append(df)
+                    if not dataframes:
+                        raise ValueError(f'Failed to read any data from parquet files in {data_path}')
+                    data = pd.concat(dataframes, ignore_index = True)
+                    self.logger.info(f'📊 Concatenated {len(dataframes)} dataframes')
             else:
                 raise ValueError(f'Path does not exist: {data_path}')
+        
+        try:
             if data is None or data.empty:
                 # Attempt centralized auto re-collection and one retry
                 self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step05 Labeling - Refactored with Modular Architecture
 
@@ -255,7 +256,7 @@ class Step05LabelingRefactored:
             if self.data_manager:
                 data = await self._load_data_optimized(triple_barrier_path)
             else:
-                data = pd.read_parquet(triple_barrier_path)
+                data = standardized_parquet_handler.read_parquet_standardized(triple_barrier_path)
             
             # Ensure regime labels are available
             try:
@@ -289,7 +290,7 @@ class Step05LabelingRefactored:
             
         except Exception as e:
             self.logger.warning(f"⚠️ Optimized loading failed, using standard loading: {e}")
-            return pd.read_parquet(file_path)
+            return standardized_parquet_handler.read_parquet_standardized(file_path)
     
     @step05_async_error_handler(ErrorSeverity.MEDIUM, ErrorCategory.VALIDATION)
     async def _perform_comprehensive_validation(self, data: pd.DataFrame) -> Dict[str, Any]:
@@ -505,7 +506,7 @@ class Step05LabelingRefactored:
             if self.data_manager:
                 await self._save_data_optimized(labeled_data, output_path)
             else:
-                labeled_data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(labeled_data, output_path)
             
             # Save report
             report_dir = ensure_directory(Path(data_dir) / 'reports' / 'step05')
@@ -544,7 +545,7 @@ class Step05LabelingRefactored:
             await session.save_data_async(data_id, data, output_path)
         except Exception as e:
             self.logger.warning(f"⚠️ Optimized saving failed, using standard saving: {e}")
-            data.to_parquet(output_path)
+            standardized_parquet_handler.write_parquet_standardized(data, output_path)
     
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
         """Log timing information for a step."""
@@ -572,7 +573,7 @@ async def run_step05_refactored(symbol: str, exchange: str, timeframe: str,
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     # Merge with default configuration
     step_config = {

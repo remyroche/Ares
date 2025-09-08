@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Compatibility shim for step05_labeling.
 
 This module re-exports `LabelingStep` so both `step5_labeling` (tests)

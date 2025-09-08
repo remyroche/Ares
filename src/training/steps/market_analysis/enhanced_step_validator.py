@@ -1,4 +1,5 @@
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """
 Enhanced Step Validator
@@ -332,7 +333,7 @@ class EnhancedStepValidator:
             
             # Read the file
             if file_path.endswith('.parquet'):
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             else:
                 # Skip non-parquet files for now
                 return quality_result

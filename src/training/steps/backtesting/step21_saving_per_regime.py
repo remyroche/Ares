@@ -1,5 +1,6 @@
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 21: Saving - Per-Regime Implementation.
 
@@ -631,7 +632,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     config['per_regime_saving'] = True
     step = PerRegimeSavingStep(config)
     success = await step.execute_per_regime_saving(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)

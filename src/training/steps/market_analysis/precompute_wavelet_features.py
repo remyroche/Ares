@@ -1,5 +1,6 @@
 import numpy as np
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/precompute_wavelet_features.py
 
@@ -144,12 +145,12 @@ class WaveletFeaturePrecomputer:
                         from src.utils.logger import system_logger
 
                         self.logger.info(f"Reading parquet file: {data_path}")
-                        dataset = pd.read_parquet(data_path, columns = columns)
+                        dataset = standardized_parquet_handler.read_parquet_standardized(data_path, columns = columns)
                 except Exception:
                     from src.utils.logger import system_logger
 
                     self.logger.info(f"Reading parquet file: {data_path}")
-                    dataset = pd.read_parquet(data_path)
+                    dataset = standardized_parquet_handler.read_parquet_standardized(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import system_logger
                 

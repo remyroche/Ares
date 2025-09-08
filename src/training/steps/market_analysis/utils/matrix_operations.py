@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Matrix Operations Module for Step 7 Enhanced Matrix Operations.
 
 This module provides comprehensive matrix operations including standard operations,

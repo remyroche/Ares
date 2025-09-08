@@ -7,6 +7,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, success, warning, error
 
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/step13_*.py
 

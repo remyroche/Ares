@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Class Implementation - Part 2
 """

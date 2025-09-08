@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd  # noqa: F401
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validator for Step 4: Regime Data Splitting.
 
@@ -156,7 +157,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             file_exists, file_metrics = self.validate_file_exists(str(regime_file), 'regime file')
             if not file_exists:
                 return False
-            df = pd.read_parquet(regime_file)
+            df = standardized_parquet_handler.read_parquet_standardized(regime_file)
             df_valid, df_metrics = self.validate_dataframe_quality(df = df, min_rows = 100, required_columns=['timestamp', 'composite_cluster_id'], check_data_types = True, check_value_ranges = True, check_duplicates = True, check_temporal_consistency = True)
             if not df_valid:
                 self.logger.warning(f'⚠️ DataFrame validation failed for {regime_file.name}')
@@ -262,7 +263,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 for file_path in existing_files:
                     if file_path.endswith('.parquet'):
                         try:
-                            df = pd.read_parquet(file_path)
+                            df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             try:
                                 df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows = 100, check_data_types = True)
                             except Exception:

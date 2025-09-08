@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Final Methods - Part 5
 """
@@ -85,7 +86,7 @@ from src.utils.lookahead_bias_detector import (
             # Save regime data
             if results.regime_data is not None:
                 regime_file = os.path.join(self.artifacts_dir, 'regime_data.parquet')
-                results.regime_data.to_parquet(regime_file)
+                results.standardized_parquet_handler.write_parquet_standardized(regime_data, regime_file)
                 results.artifacts_generated.append(regime_file)
             
             # Save selected features

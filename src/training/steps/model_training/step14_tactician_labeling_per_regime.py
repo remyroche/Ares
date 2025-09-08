@@ -1,5 +1,6 @@
 from src.core.decorators import handles_errors, validates
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 14: Enhanced Tactician Labeling - Per-Regime Implementation with M1 Optimizations.
 
@@ -1238,7 +1239,7 @@ async def run_per_regime_step(
         config = {}
 
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
     # Create enhanced configuration
     if enable_enhanced_optimizations:

@@ -10,6 +10,8 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import datetime
+import logging
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Enhanced Reporting import
 try:
@@ -536,8 +538,8 @@ class AnalystEnsembleCreationStep:
             labels_file = f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
 
             if os.path.exists(features_file) and os.path.exists(labels_file):
-                features_df = pd.read_parquet(features_file)
-                labels_df = pd.read_parquet(labels_file)
+                features_df = standardized_parquet_handler.read_parquet_standardized(features_file)
+                labels_df = standardized_parquet_handler.read_parquet_standardized(labels_file)
 
                 # Align and extract target series
                 # This assumes 'target' is the target column and they share an index (e.g., timestamp)

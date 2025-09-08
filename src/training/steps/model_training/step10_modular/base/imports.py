@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Safe Imports Management.
 
 This module provides safe import management for all Step 10 dependencies,

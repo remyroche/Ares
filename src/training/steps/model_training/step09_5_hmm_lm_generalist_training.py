@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 
 import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Import financial metrics logger
 try:

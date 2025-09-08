@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Metadata tracker component for model persistence.'
 import hashlib

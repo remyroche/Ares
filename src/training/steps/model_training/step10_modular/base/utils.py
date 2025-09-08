@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Base Utilities.
 
 This module contains common utility functions used throughout the

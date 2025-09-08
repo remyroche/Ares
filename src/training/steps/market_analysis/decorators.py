@@ -1,4 +1,5 @@
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Decorator System for Step05 Labeling.
 
 This module provides a centralized decorator system with fallback mechanisms

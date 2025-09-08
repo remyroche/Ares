@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from src.core.errors.base import ValidationError
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Data Collection Pipeline

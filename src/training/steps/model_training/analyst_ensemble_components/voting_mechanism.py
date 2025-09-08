@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Voting mechanism component for analyst ensemble creation."""
 

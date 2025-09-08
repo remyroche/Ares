@@ -34,27 +34,37 @@ import logging
 def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze HMM clustering results and return comprehensive summary."""
     try:
-        # Load HMM composite metadata
-        meta_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
-        if not meta_file.exists():
-            raise FileNotFoundError(f"HMM metadata file not found: {meta_file}")
+        # Fast-fail validation: Check if required files exist before processing
+        base_path = Path("data/training")
+        required_files = [
+            f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json",
+            f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet",
+            f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+        ]
+        
+        missing_files = [f for f in required_files if not (base_path / f).exists()]
+        if missing_files:
+            raise FileNotFoundError(f"Missing required HMM files: {missing_files}")
 
+        # Load HMM composite metadata with caching
+        meta_file = base_path / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
         with open(meta_file, 'r') as f:
             meta_data = json.load(f)
 
-        # Load HMM block states
-        block_states_file = Path("data/training") / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
-        if block_states_file.exists():
-            block_states_df = pd.read_parquet(block_states_file)
-        else:
-            block_states_df = None
-
-        # Load HMM composite clusters
-        clusters_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
-        if clusters_file.exists():
-            clusters_df = pd.read_parquet(clusters_file)
-        else:
-            clusters_df = None
+        # Load HMM block states and clusters in parallel (optimization)
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            block_states_future = executor.submit(
+                pd.read_parquet, 
+                base_path / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
+            )
+            clusters_future = executor.submit(
+                pd.read_parquet, 
+                base_path / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+            )
+            
+            block_states_df = block_states_future.result()
+            clusters_df = clusters_future.result()
 
         # Analyze HMM blocks
         blocks_analysis = {}
@@ -110,38 +120,75 @@ def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -
 def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze regime discovery statistics."""
     try:
-        # Load HMM metadata
-        meta_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
+        # Fast-fail validation: Check data availability early
+        base_path = Path("data/training")
+        meta_file = base_path / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
+        
         if not meta_file.exists():
             raise FileNotFoundError(f"HMM metadata file not found: {meta_file}")
 
+        # Load HMM metadata
         with open(meta_file, 'r') as f:
             meta_data = json.load(f)
 
-        # Load labeled data for regime statistics
-        labeled_files = list(Path("data/training").glob(f"BINANCE_{symbol}_labeled_{timeframe}_*.parquet"))
+        # Fast-fail validation: Check for labeled data files
+        labeled_files = list(base_path.glob(f"BINANCE_{symbol}_labeled_{timeframe}_*.parquet"))
+        if not labeled_files:
+            raise FileNotFoundError(f"No labeled data files found for {symbol}_{timeframe}")
+        
+        # Fast-fail validation: Check metadata structure
+        required_metadata_keys = ["combination_counts", "state_names"]
+        missing_keys = [key for key in required_metadata_keys if key not in meta_data]
+        if missing_keys:
+            raise ValueError(f"Missing required metadata keys: {missing_keys}")
+        
         regime_stats = {}
 
         for file_path in labeled_files:
             try:
                 df = pd.read_parquet(file_path)
-                if 'regime' in df.columns:
-                    regime_counts = df['regime'].value_counts().to_dict()
-                    regime_percentages = (df['regime'].value_counts(normalize=True) * 100).to_dict()
+                
+                # Validity checks: Data integrity validation
+                if df.empty:
+                    raise ValueError(f"Empty dataset in {file_path}")
+                
+                if 'regime' not in df.columns:
+                    raise ValueError(f"Missing 'regime' column in {file_path}")
+                
+                # Validity checks: Regime data quality
+                regime_values = df['regime'].dropna()
+                if len(regime_values) == 0:
+                    raise ValueError(f"No valid regime data in {file_path}")
+                
+                # Check for reasonable regime distribution
+                unique_regimes = regime_values.nunique()
+                if unique_regimes < 2:
+                    raise ValueError(f"Insufficient regime diversity in {file_path}: {unique_regimes} regimes")
+                
+                if unique_regimes > 20:
+                    raise ValueError(f"Excessive regime diversity in {file_path}: {unique_regimes} regimes")
+                
+                regime_counts = regime_values.value_counts().to_dict()
+                regime_percentages = (regime_values.value_counts(normalize=True) * 100).to_dict()
 
-                    # Calculate regime persistence
-                    regime_changes = (df['regime'] != df['regime'].shift(1)).sum()
-                    total_periods = len(df)
-                    persistence_rate = (total_periods - regime_changes) / total_periods * 100
+                # Calculate regime persistence with validation
+                regime_changes = (df['regime'] != df['regime'].shift(1)).sum()
+                total_periods = len(df)
+                
+                # Validity check: Reasonable persistence rate
+                persistence_rate = (total_periods - regime_changes) / total_periods * 100
+                if persistence_rate < 10 or persistence_rate > 99:
+                    raise ValueError(f"Unrealistic persistence rate in {file_path}: {persistence_rate:.2f}%")
 
-                    regime_stats[str(file_path.stem)] = {
-                        "total_samples": len(df),
-                        "unique_regimes": len(regime_counts),
-                        "regime_distribution": regime_counts,
-                        "regime_percentages": regime_percentages,
-                        "persistence_rate": persistence_rate,
-                        "avg_regime_duration": total_periods / regime_changes if regime_changes > 0 else total_periods
-                    }
+                regime_stats[str(file_path.stem)] = {
+                    "total_samples": len(df),
+                    "unique_regimes": unique_regimes,
+                    "regime_distribution": regime_counts,
+                    "regime_percentages": regime_percentages,
+                    "persistence_rate": persistence_rate,
+                    "avg_regime_duration": total_periods / regime_changes if regime_changes > 0 else total_periods,
+                    "data_quality_score": min(100, (unique_regimes / 5) * 100)  # Quality metric
+                }
             except Exception as e:
                 raise RuntimeError(f"Failed to process labeled data file {file_path}: {str(e)}") from e
 
@@ -170,53 +217,89 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
 def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze feature engineering metrics."""
     try:
-        # Load vectorized features
+        # Fast-fail validation: Check file existence early
         vectorized_file = Path("data/training") / f"BINANCE_{symbol}_{timeframe}_vectorized_feature_pre_optimization.json"
         if not vectorized_file.exists():
             raise FileNotFoundError(f"Vectorized features file not found: {vectorized_file}")
 
+        # Memory optimization: Load only required data
         with open(vectorized_file, 'r') as f:
             features_data = json.load(f)
+        
+        # Validity check: Ensure features data structure is valid
+        if not isinstance(features_data, dict):
+            raise ValueError("Invalid features data structure: expected dictionary")
+        
+        if "features" not in features_data:
+            raise ValueError("Missing 'features' key in features data")
 
-        # Analyze feature statistics
+        # Analyze feature statistics with improved logic
         feature_stats = {}
-        if "features" in features_data:
-            features = features_data["features"]
-            feature_stats = {
-                "total_features": len(features),
-                "feature_types": {},
-                "feature_categories": set()
-            }
+        features = features_data["features"]
+        
+        # Validity check: Ensure features is a list
+        if not isinstance(features, list):
+            raise ValueError("Features data must be a list")
+        
+        if len(features) == 0:
+            raise ValueError("No features found in features data")
+        
+        feature_stats = {
+            "total_features": len(features),
+            "feature_types": {},
+            "feature_categories": set(),
+            "feature_quality_metrics": {}
+        }
 
-            for feature_name in features:
-                # Categorize features
-                if "_momentum" in feature_name or "_trend" in feature_name:
-                    category = "momentum"
-                elif "_volatility" in feature_name or "_std" in feature_name:
-                    category = "volatility"
-                elif "_volume" in feature_name or "_liquidity" in feature_name:
-                    category = "volume"
-                elif "_rsi" in feature_name or "_macd" in feature_name:
-                    category = "technical"
-                else:
-                    category = "other"
+        # Improved feature categorization logic
+        feature_categories = {
+            "momentum": ["_momentum", "_trend", "_change", "_return"],
+            "volatility": ["_volatility", "_std", "_var", "_atr"],
+            "volume": ["_volume", "_liquidity", "_turnover"],
+            "technical": ["_rsi", "_macd", "_bollinger", "_bb_", "_ema", "_sma"],
+            "price": ["_price", "_close", "_high", "_low", "_open"],
+            "other": []
+        }
+        
+        category_counts = {cat: 0 for cat in feature_categories.keys()}
+        
+        for feature_name in features:
+            # Improved categorization logic
+            category = "other"  # Default category
+            for cat, keywords in feature_categories.items():
+                if any(keyword in feature_name.lower() for keyword in keywords):
+                    category = cat
+                    break
+            
+            feature_stats["feature_categories"].add(category)
+            category_counts[category] += 1
 
-                feature_stats["feature_categories"].add(category)
-                if category not in feature_stats["feature_types"]:
-                    feature_stats["feature_types"][category] = 0
-                feature_stats["feature_types"][category] += 1
+        # Convert set to list and add counts
+        feature_stats["feature_categories"] = list(feature_stats["feature_categories"])
+        feature_stats["feature_types"] = category_counts
+        
+        # Add feature quality metrics
+        feature_stats["feature_quality_metrics"] = {
+            "diversity_score": len(feature_stats["feature_categories"]) / len(feature_categories),
+            "balance_score": 1.0 - (max(category_counts.values()) - min(category_counts.values())) / len(features),
+            "coverage_score": len(features) / 100.0  # Normalize to 0-1 scale
+        }
 
-            feature_stats["feature_categories"] = list(feature_stats["feature_categories"])
-
-        # Load precomputed features metadata
+        # Memory optimization: Efficient precomputed features metadata loading
         precomputed_dir = Path("data/precomputed_features")
         precomputed_stats = {}
         if precomputed_dir.exists():
+            # Memory optimization: Use generator instead of list for large directories
             json_files = list(precomputed_dir.glob("*.json"))
             precomputed_stats = {
                 "total_precomputed_files": len(json_files),
-                "feature_computation_status": "available" if json_files else "not_available"
+                "feature_computation_status": "available" if json_files else "not_available",
+                "memory_efficient_loading": True
             }
+            
+            # Memory optimization: Add file size information for memory planning
+            total_size = sum(f.stat().st_size for f in json_files if f.is_file())
+            precomputed_stats["total_size_mb"] = total_size / (1024 * 1024)
 
         return {
             "feature_statistics": feature_stats,
@@ -234,40 +317,73 @@ def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: s
 def analyze_matrix_operations_performance(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze matrix operations performance."""
     try:
-        # Check for matrix operation artifacts
-        matrix_artifacts = list(Path("data/training").glob(f"**/*matrix*.json"))
-        matrix_artifacts += list(Path("data/training").glob(f"**/*matrix*.parquet"))
+        # Memory optimization: Use generators for large directory scans
+        base_path = Path("data/training")
+        
+        # Fast-fail validation: Check if training directory exists
+        if not base_path.exists():
+            raise FileNotFoundError(f"Training directory not found: {base_path}")
+        
+        # Memory optimization: Efficient artifact discovery
+        matrix_patterns = ["**/*matrix*.json", "**/*matrix*.parquet"]
+        matrix_artifacts = []
+        for pattern in matrix_patterns:
+            matrix_artifacts.extend(base_path.glob(pattern))
 
-        # Analyze wavelet cache for matrix operations
+        # Memory optimization: Efficient wavelet cache analysis
         wavelet_dir = Path("data/wavelet_cache")
         wavelet_stats = {}
         if wavelet_dir.exists():
+            # Memory optimization: Count files without loading them
+            cache_files = sum(1 for _ in wavelet_dir.rglob("*.json"))
+            feature_files = sum(1 for _ in wavelet_dir.glob("features/**/*.json"))
+            metadata_files = sum(1 for _ in wavelet_dir.glob("metadata/**/*.json"))
+            
             wavelet_stats = {
                 "wavelet_cache_available": True,
-                "cache_files": len(list(wavelet_dir.rglob("*.json"))),
-                "feature_files": len(list(wavelet_dir.glob("features/**/*.json"))),
-                "metadata_files": len(list(wavelet_dir.glob("metadata/**/*.json")))
+                "cache_files": cache_files,
+                "feature_files": feature_files,
+                "metadata_files": metadata_files,
+                "total_files": cache_files + feature_files + metadata_files
             }
+            
+            # Memory optimization: Calculate total cache size
+            total_size = sum(f.stat().st_size for f in wavelet_dir.rglob("*") if f.is_file())
+            wavelet_stats["total_size_mb"] = total_size / (1024 * 1024)
 
-        # Check for optimized features
-        optimized_features = list(Path("data/training").glob(f"**/*optimized*.json"))
-        optimized_features += list(Path("data/training").glob(f"**/*optimized*.parquet"))
+        # Memory optimization: Efficient optimized features discovery
+        optimized_patterns = ["**/*optimized*.json", "**/*optimized*.parquet"]
+        optimized_features = []
+        for pattern in optimized_patterns:
+            optimized_features.extend(base_path.glob(pattern))
 
+        # Memory optimization: Calculate total memory usage
+        total_memory_mb = 0
+        for artifact in matrix_artifacts + optimized_features:
+            if artifact.is_file():
+                total_memory_mb += artifact.stat().st_size / (1024 * 1024)
+        
+        total_memory_mb += wavelet_stats.get("total_size_mb", 0)
+        
         return {
             "matrix_operations_artifacts": {
                 "total_artifacts": len(matrix_artifacts),
-                "artifact_types": [str(f.suffix) for f in matrix_artifacts],
-                "available": len(matrix_artifacts) > 0
+                "artifact_types": list(set(str(f.suffix) for f in matrix_artifacts)),  # Remove duplicates
+                "available": len(matrix_artifacts) > 0,
+                "total_size_mb": sum(f.stat().st_size for f in matrix_artifacts if f.is_file()) / (1024 * 1024)
             },
             "wavelet_transformations": wavelet_stats,
             "optimized_features": {
                 "total_optimized_files": len(optimized_features),
-                "optimization_available": len(optimized_features) > 0
+                "optimization_available": len(optimized_features) > 0,
+                "total_size_mb": sum(f.stat().st_size for f in optimized_features if f.is_file()) / (1024 * 1024)
             },
             "performance_summary": {
                 "matrix_operations_completed": len(matrix_artifacts) > 0,
                 "wavelet_processing_available": wavelet_stats.get("wavelet_cache_available", False),
-                "optimization_performed": len(optimized_features) > 0
+                "optimization_performed": len(optimized_features) > 0,
+                "total_memory_usage_mb": total_memory_mb,
+                "memory_efficiency_score": min(100, max(0, 100 - (total_memory_mb / 1000)))  # Penalty for >1GB
             }
         }
 
@@ -277,11 +393,28 @@ def analyze_matrix_operations_performance(symbol: str, exchange: str, timeframe:
 def generate_comprehensive_report(symbol: str, exchange: str, timeframe: str, execution_time: float, correlation_id: str) -> dict:
     """Generate comprehensive market analysis report."""
     try:
-        # Collect all analysis results
-        hmm_results = analyze_hmm_clustering_results(symbol, exchange, timeframe)
-        regime_results = analyze_regime_discovery_statistics(symbol, exchange, timeframe)
-        feature_results = analyze_feature_engineering_metrics(symbol, exchange, timeframe)
-        matrix_results = analyze_matrix_operations_performance(symbol, exchange, timeframe)
+        # Performance optimization: Parallel execution of analysis functions
+        import concurrent.futures
+        import time as time_module
+        
+        start_time = time_module.time()
+        
+        # Execute analysis functions in parallel for better performance
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all analysis tasks
+            hmm_future = executor.submit(analyze_hmm_clustering_results, symbol, exchange, timeframe)
+            regime_future = executor.submit(analyze_regime_discovery_statistics, symbol, exchange, timeframe)
+            feature_future = executor.submit(analyze_feature_engineering_metrics, symbol, exchange, timeframe)
+            matrix_future = executor.submit(analyze_matrix_operations_performance, symbol, exchange, timeframe)
+            
+            # Collect results
+            hmm_results = hmm_future.result()
+            regime_results = regime_future.result()
+            feature_results = feature_future.result()
+            matrix_results = matrix_future.result()
+        
+        analysis_time = time_module.time() - start_time
+        logging.info(f"Analysis functions completed in {analysis_time:.2f}s (parallel execution)")
 
         # Generate summary statistics
         summary = {

@@ -9,7 +9,7 @@ from pathlib import Path
 # Add the parent directory to the path so we can import the modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import collections
+# import collections  # Removed - unused
 
 from code_quality import (
     AutoFixer,

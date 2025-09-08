@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 try:
     import matplotlib.pyplot as plt
-    import seaborn as sns
+    # import seaborn as sns  # Removed - unused
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False

@@ -15,7 +15,7 @@ It distinguishes between:
 """
 
 import ast
-import compileall
+# import compileall  # Removed - unused
 import os
 import py_compile
 import sys
@@ -149,7 +149,7 @@ class ComprehensiveSyntaxValidator:
         # Test 4: Import test (only if syntax is valid)
         if result["syntax_valid"]:
             try:
-                import importlib.util
+                # import importlib.util  # Removed - unused
                 spec = importlib.util.spec_from_file_location('test_module', file_path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)

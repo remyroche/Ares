@@ -18,7 +18,7 @@ from src.training.steps.market_analysis.step07_enhanced_matrix_operations import
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 try:
-    from src.utils.m1_gpu_utils import m1_batch_process  # Streaming batch processing with MPS gating
+    # from src.utils.m1_gpu_utils import m1_batch_process  # Streaming batch processing with MPS gating
     M1_BATCH_AVAILABLE = True
 except ImportError as e:
     M1_BATCH_AVAILABLE = False
@@ -36,9 +36,7 @@ from src.utils.logger import system_logger
 # Import the correct PipelineStandards to avoid conflicts
 from src.utils.pipeline_standards import PipelineStandards
 from src.utils.step02_5_utilities import (
-    global_monitor,
-    function_tracker,
-    logging_patterns
+    global_monitor
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.reports import save_training_report
@@ -85,8 +83,7 @@ except ImportError:
 # For parameter optimization
 try:
     from skopt import gp_minimize
-    from skopt.space import Real, Integer, Categorical
-    from skopt.utils import use_named_args
+    from skopt.space import Real, Integer
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -2446,7 +2443,7 @@ class SROptimizationStep(BaseStep):
     def _optimize_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Optimize feature selection for best model performance."""
         try:
-            from sklearn.feature_selection import SelectFromModel, RFECV, mutual_info_classif
+            from sklearn.feature_selection import RFECV, mutual_info_classif
             from sklearn.ensemble import RandomForestClassifier
 
             feature_selection_info = {
@@ -2663,11 +2660,8 @@ class SROptimizationStep(BaseStep):
             except ImportError:
                 XGB_AVAILABLE = False
 
-            try:
-                import lightgbm as lgb
-                LGBM_AVAILABLE = True
-            except ImportError:
-                LGBM_AVAILABLE = False
+            # LightGBM import removed - was unused
+            LGBM_AVAILABLE = False
 
             from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor, ExtraTreesClassifier, ExtraTreesRegressor, RandomForestClassifier
             from sklearn.linear_model import LogisticRegression

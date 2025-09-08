@@ -35,29 +35,23 @@ import tempfile
 import shutil
 
 # Try to import optional dependencies
-try:
-    import pycg
-    PYCG_AVAILABLE = True
-except ImportError:
-    PYCG_AVAILABLE = False
-    print("Warning: PyCG not available. Install with: pip install pycg")
-    
-    # Create a mock pycg module to prevent import errors
-    class MockPyCG:
-        def __init__(self, *args, **kwargs):
-            pass
-        
-        def analyze(self, *args, **kwargs):
-            return {}
-    
-    pycg = MockPyCG()
+# pycg import removed - was unused
+PYCG_AVAILABLE = False
+# print("Warning: PyCG not available. Install with: pip install pycg")
 
-try:
-    import deadcode
-    DEADCODE_AVAILABLE = True
-except ImportError:
-    DEADCODE_AVAILABLE = False
-    print("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
+# Create a mock pycg module to prevent import errors
+class MockPyCG:
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    def analyze(self, *args, **kwargs):
+        return {}
+
+pycg = MockPyCG()
+
+# deadcode import removed - was unused
+DEADCODE_AVAILABLE = False
+# print("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
 
 try:
     import networkx as nx

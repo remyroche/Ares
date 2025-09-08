@@ -29,7 +29,7 @@ def check_python_environment():
     
     # Check for venv
     try:
-        import venv
+        # import venv  # Removed - unused
         print("✅ venv module available")
     except ImportError:
         print("❌ venv module not available")

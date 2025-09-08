@@ -9,8 +9,8 @@ from .code_visualizer import CodeVisualizer
 import numpy as np
 
 try:
-    import networkx as nx
-    import matplotlib.pyplot as plt
+    # import networkx as nx  # Removed - unused
+    # import matplotlib.pyplot as plt  # Removed - unused
 
     NETWORKX_AVAILABLE = True
     MATPLOTLIB_AVAILABLE = True

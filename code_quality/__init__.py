@@ -18,14 +18,14 @@ def _lazy_import_analyzers():
     from .analyzers.complexity_analyzer import (
         ComplexityAnalyzer,  # noqa: F401
         ClassComplexity,
-        ComplexityMetrics,
+        # ComplexityMetrics,  # Removed - unused
         FunctionComplexity,
         ModuleComplexity,
     )
     from .analyzers.dead_code_analyzer import (
         DeadCodeAnalyzer,  # noqa: F401
-        DeadCodeIssue,
-        DeadCodeReport,
+        # DeadCodeIssue,  # Removed - unused
+        # DeadCodeReport,  # Removed - unused
     )
     from .analyzers.signature_analyzer import (
         SignatureAnalyzer,  # noqa: F401
@@ -56,9 +56,9 @@ from .utils.file_utils import (
     find_python_files,
     read_file_safely,
     parse_ast_safely,
-    extract_function_name_from_issue,
-    get_module_from_file_path,
-    is_documentation_file,
+    # extract_function_name_from_issue,  # Removed - unused
+    # get_module_from_file_path,  # Removed - unused
+    # is_documentation_file,  # Removed - unused
 )
 
 __version__ = "1.0.0"
@@ -71,8 +71,8 @@ __all__ = [
     "find_python_files",
     "read_file_safely",
     "parse_ast_safely",
-    "extract_function_name_from_issue",
-    "get_module_from_file_path",
-    "is_documentation_file",
+    # "extract_function_name_from_issue",  # Removed - unused
+    # "get_module_from_file_path",  # Removed - unused
+    # "is_documentation_file",  # Removed - unused
 ]
 

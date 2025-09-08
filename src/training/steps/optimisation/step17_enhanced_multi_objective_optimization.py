@@ -18,13 +18,13 @@ import numpy as np
 import logging
 import time
 
-# Enhanced Reporting import
+# Financial Metrics Logging import
 try:
-    from src.training.steps.optimisation.step17_enhanced_reporting import Step17EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.optimisation.step17_financial_logging import Step17FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step17EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step17FinancialLogger = None
 
 class OptimizationBlock(Enum):
     """Logical blocks for parameter optimization to avoid curse of dimensionality."""
@@ -82,17 +82,18 @@ class EnhancedStep17Optimizer:
         self.global_best_score = float('-inf')
         self.optimization_history: List[Dict[str, Any]] = []
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step17EnhancedReporter is not None:
+        # Initialize financial metrics logging system
+        if FINANCIAL_LOGGING_AVAILABLE and Step17FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step17EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step17')
+                # Will be initialized with symbol, exchange, timeframe when needed
+                self.financial_logger = None
+                self.logger.info('✅ Financial metrics logging system available for Step17')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback reporting')
+            self.financial_logger = None
     @log_all_calls
 
     def _setup_objectives(self) -> List[OptimizationObjective]:
@@ -140,13 +141,16 @@ class EnhancedStep17Optimizer:
             await self._save_optimization_results(optimization_results, final_results)
             self.logger.info('✅ Enhanced Step17 Optimization completed successfully')
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None:
+            # Financial metrics logging system integration
+            if FINANCIAL_LOGGING_AVAILABLE and Step17FinancialLogger is not None:
                 try:
-                    # Prepare comprehensive analysis data for enhanced reporting
+                    # Prepare comprehensive analysis data for financial logging
                     symbol = training_input.get('symbol', 'BTCUSDT')
                     exchange = training_input.get('exchange', 'BINANCE')
                     timeframe = training_input.get('timeframe', '1m')
+
+                    # Initialize financial logger
+                    self.financial_logger = Step17FinancialLogger(symbol, exchange, timeframe)
 
                     optimization_results_data = {
                         'total_duration': (datetime.now() - start_time).total_seconds(),
@@ -211,8 +215,8 @@ class EnhancedStep17Optimizer:
                         'trajectory': final_results.get('optimization_trajectory', [])
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
+                    # Log comprehensive financial metrics
+                    self.financial_logger.log_step_execution(
                         optimization_results=optimization_results_data,
                         block_results=block_results,
                         parameter_analysis=parameter_analysis,
@@ -220,20 +224,10 @@ class EnhancedStep17Optimizer:
                         global_results=global_results
                     )
 
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe
-                    )
-
-                    self.logger.info(f'📊 Enhanced Step17 analysis completed - saved {len(saved_files)} report files')
-                    for file_path in saved_files:
-                        self.logger.info(f'   📄 {file_path}')
+                    self.logger.info(f'💰 Financial metrics logged for Step17 optimization')
 
                 except Exception as e:
-                    self.logger.warning(f'Enhanced reporting failed, continuing with basic saving: {e}')
+                    self.logger.warning(f'Financial logging failed, continuing with basic saving: {e}')
 
             else:
                 self.logger.info('Enhanced reporting not available, using basic saving only')

@@ -34,15 +34,41 @@ from src.utils.common_operations import (
     parallel_map,
     safe_dict_get,
     safe_float,
-    safe_int
+    safe_int,
+    safe_json_dump,
+    safe_json_load,
+    optimize_dataframe_dtypes,
+    validate_dataframe_schema,
+    validate_data_quality
 )
-from src.utils.decorators import (
+from src.utils.math_validation import (
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_kelly_calculation,
+    validate_positive,
+    validate_range,
+    MathValidationError
+)
+from src.utils.parquet_utils import get_parquet_utils
+# Core decorators imports
+from src.core.decorators import (
     handles_errors,
     traced,
     validates,
     log_execution_time,
-    memory_efficient,
-    cached
+    cached,
+    error_boundary,
+    timeout,
+    retry
+)
+# Core errors imports
+from src.core.errors import (
+    AppError,
+    ValidationError,
+    DataIntegrityError,
+    NotFoundError,
+    TimeoutError
 )
 from src.utils.enhanced_memory_management import (
 import logging

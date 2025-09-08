@@ -26,14 +26,25 @@ sys.path.insert(0, str(project_root))
 # Import enhanced components
 from src.utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists,
-    ensure_directory, safe_json_dump, safe_json_load
+    ensure_directory, safe_json_dump, safe_json_load,
+    validate_file_path, get_file_size, check_disk_space,
+    create_directory_if_not_exists, get_timestamp
 )
-from src.training.reports import save_training_report
-from .utils.trading_decorators import (
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_numeric_range, is_finite_number
+)
+from src.utils.parquet_utils import ParquetUtils
+from src.core.decorators import (
     handles_errors, validates, traced, log_execution_time, 
     timeout, error_boundary, compose, validate_data_quality, 
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
+from src.core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
+from src.training.reports import save_training_report
 
 # Financial Metrics Logging import
 try:
@@ -193,26 +204,32 @@ def _validate_inputs(symbol: str, exchange: str, timeframe: str, data_dir: str) 
         logger.error(f"❌ Input validation error: {e}")
         return False
 
+@handles_errors(default_return=False, context="validate_data_quality")
 def _validate_data_quality(symbol: str, exchange: str, data_dir: str, main_logger) -> bool:
-    """Validate data quality with fast-fail checks."""
+    """Validate data quality with fast-fail checks using common operations."""
     try:
+        # Use common operations for path validation
+        if not validate_file_path(data_dir):
+            main_logger.log_error(ValidationError(f"Invalid data directory path: {data_dir}"), "VALIDATION")
+            main_logger.log_quality_flag("INVALID_DATA_PATH", f"Invalid data directory path: {data_dir}", "ERROR")
+            return False
+        
         data_path = Path(data_dir)
         
         # Check if data directory exists and is accessible
         if not data_path.exists():
-            main_logger.log_error(Exception(f"Data directory does not exist: {data_dir}"), "VALIDATION")
+            main_logger.log_error(DataIntegrityError(f"Data directory does not exist: {data_dir}"), "VALIDATION")
             main_logger.log_quality_flag("DATA_DIRECTORY_MISSING", f"Data directory does not exist: {data_dir}", "ERROR")
             return False
         
         if not data_path.is_dir():
-            main_logger.log_error(Exception(f"Data path is not a directory: {data_dir}"), "VALIDATION")
+            main_logger.log_error(DataIntegrityError(f"Data path is not a directory: {data_dir}"), "VALIDATION")
             main_logger.log_quality_flag("INVALID_DATA_PATH", f"Data path is not a directory: {data_dir}", "ERROR")
             return False
         
-        # Check available disk space (fast-fail if < 1GB)
+        # Check available disk space using common operations
         try:
-            import shutil
-            free_space = shutil.disk_usage(data_path).free
+            free_space = check_disk_space(data_dir)
             if free_space < 1024**3:  # 1GB
                 main_logger.log_warning(f"⚠️ Low disk space: {free_space / 1024**3:.1f}GB available", "VALIDATION")
                 main_logger.log_quality_flag("LOW_DISK_SPACE", f"Low disk space: {free_space / 1024**3:.1f}GB", "WARNING")
@@ -223,13 +240,15 @@ def _validate_data_quality(symbol: str, exchange: str, data_dir: str, main_logge
         return True
         
     except Exception as e:
-        main_logger.log_error(Exception(f"Data quality validation failed: {e}"), "VALIDATION")
+        main_logger.log_error(ValidationError(f"Data quality validation failed: {e}"), "VALIDATION")
         return False
 
+@handles_errors(default_return=False, context="validate_required_files")
 def _validate_required_files(symbol: str, exchange: str, data_dir: str, main_logger) -> bool:
-    """Validate required data files with enhanced checks."""
+    """Validate required data files with enhanced checks using parquet utils."""
     try:
         data_path = Path(data_dir)
+        parquet_utils = ParquetUtils()
         
         # Core required files
         required_files = [
@@ -252,45 +271,59 @@ def _validate_required_files(symbol: str, exchange: str, data_dir: str, main_log
                 missing_files.append(file_name)
             else:
                 try:
-                    file_size = file_path.stat().st_size
-                    file_sizes[file_name] = file_size
+                    # Use parquet utils for parquet files
+                    if file_name.endswith('.parquet'):
+                        validation_result = parquet_utils.validate_parquet_file(str(file_path))
+                        if not validation_result.get('valid', False):
+                            main_logger.log_warning(f"⚠️ Invalid parquet file: {file_name} - {validation_result.get('error', 'Unknown error')}", "VALIDATION")
+                            main_logger.log_quality_flag("INVALID_PARQUET_FILE", f"Invalid parquet file: {file_name}", "WARNING")
+                        else:
+                            file_size = validation_result.get('file_size', 0)
+                            file_sizes[file_name] = file_size
+                            main_logger.log_success(f"Valid parquet file: {file_name} ({file_size / 1024:.1f}KB, {validation_result.get('shape', 'Unknown shape')})", "VALIDATION")
+                    else:
+                        # Use common operations for other files
+                        file_size = get_file_size(str(file_path))
+                        file_sizes[file_name] = file_size
+                        main_logger.log_success(f"Required file found: {file_name} ({file_size / 1024:.1f}KB)", "VALIDATION")
                     
                     # Check for minimum file size (fast-fail if too small)
                     if file_size < 1024:  # 1KB minimum
                         main_logger.log_warning(f"⚠️ File too small: {file_name} ({file_size} bytes)", "VALIDATION")
                         main_logger.log_quality_flag("SMALL_FILE_SIZE", f"File too small: {file_name}", "WARNING")
                     
-                    main_logger.log_success(f"Required file found: {file_name} ({file_size / 1024:.1f}KB)", "VALIDATION")
                 except Exception as e:
-                    main_logger.log_warning(f"⚠️ Could not check file size for {file_name}: {e}", "VALIDATION")
+                    main_logger.log_warning(f"⚠️ Could not validate file {file_name}: {e}", "VALIDATION")
         
         # Check optional files
         for file_name in optional_files:
             file_path = data_path / file_name
             if safe_file_exists(file_path):
                 try:
-                    file_size = file_path.stat().st_size
+                    file_size = get_file_size(str(file_path))
                     main_logger.log_info(f"Optional file found: {file_name} ({file_size / 1024:.1f}KB)", "VALIDATION")
                 except Exception:
                     pass
         
         if missing_files:
-            main_logger.log_error(Exception(f"Missing required data files: {missing_files}"), "VALIDATION")
+            main_logger.log_error(FileOperationError(f"Missing required data files: {missing_files}"), "VALIDATION")
             main_logger.log_quality_flag("MISSING_DATA_FILES", f"Missing required data files: {missing_files}", "ERROR")
             main_logger.log_info("💡 Please run data collection first: python ares_launcher.py load --symbol ETHUSDT --exchange BINANCE", "VALIDATION")
             return False
         
-        main_logger.log_success("All required data files found", "VALIDATION")
+        main_logger.log_success("All required data files found and validated", "VALIDATION")
         return True
         
     except Exception as e:
-        main_logger.log_error(Exception(f"Required files validation failed: {e}"), "VALIDATION")
+        main_logger.log_error(FileOperationError(f"Required files validation failed: {e}"), "VALIDATION")
         return False
 
+@handles_errors(default_return=False, context="validate_data_integrity")
 def _validate_data_integrity(symbol: str, exchange: str, data_dir: str, main_logger) -> bool:
-    """Validate data integrity and consistency."""
+    """Validate data integrity and consistency using parquet utils."""
     try:
         data_path = Path(data_dir)
+        parquet_utils = ParquetUtils()
         
         # Check for corrupted or incomplete files
         parquet_files = list(data_path.glob("*.parquet"))
@@ -298,22 +331,22 @@ def _validate_data_integrity(symbol: str, exchange: str, data_dir: str, main_log
         
         for parquet_file in parquet_files[:3]:  # Check first 3 parquet files
             try:
-                import pandas as pd
-                # Quick read test (first 100 rows)
-                df = pd.read_parquet(parquet_file, nrows=100)
+                # Use parquet utils for comprehensive validation
+                validation_result = parquet_utils.validate_parquet_file(str(parquet_file))
                 
-                # Basic integrity checks
-                if df.empty:
-                    main_logger.log_warning(f"⚠️ Empty parquet file: {parquet_file.name}", "VALIDATION")
-                    main_logger.log_quality_flag("EMPTY_FILE", f"Empty file: {parquet_file.name}", "WARNING")
+                if not validation_result.get('valid', False):
+                    corrupted_files.append(parquet_file.name)
+                    main_logger.log_warning(f"⚠️ Invalid parquet file: {parquet_file.name} - {validation_result.get('error', 'Unknown error')}", "VALIDATION")
+                    continue
                 
-                # Check for excessive null values
-                null_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
-                if null_ratio > 0.5:  # More than 50% null values
-                    main_logger.log_warning(f"⚠️ High null ratio in {parquet_file.name}: {null_ratio:.1%}", "VALIDATION")
-                    main_logger.log_quality_flag("HIGH_NULL_RATIO", f"High null ratio: {parquet_file.name}", "WARNING")
+                # Additional integrity checks using parquet utils
+                integrity_result = parquet_utils.check_data_integrity(str(parquet_file))
                 
-                main_logger.log_success(f"Data integrity check passed: {parquet_file.name}", "VALIDATION")
+                if not integrity_result.get('valid', False):
+                    main_logger.log_warning(f"⚠️ Data integrity issues in {parquet_file.name}: {integrity_result.get('issues', [])}", "VALIDATION")
+                    main_logger.log_quality_flag("DATA_INTEGRITY_ISSUES", f"Data integrity issues: {parquet_file.name}", "WARNING")
+                else:
+                    main_logger.log_success(f"Data integrity check passed: {parquet_file.name}", "VALIDATION")
                 
             except Exception as e:
                 corrupted_files.append(parquet_file.name)
@@ -326,7 +359,7 @@ def _validate_data_integrity(symbol: str, exchange: str, data_dir: str, main_log
         return True
         
     except Exception as e:
-        main_logger.log_error(Exception(f"Data integrity validation failed: {e}"), "VALIDATION")
+        main_logger.log_error(DataIntegrityError(f"Data integrity validation failed: {e}"), "VALIDATION")
         return False
 
 @compose(

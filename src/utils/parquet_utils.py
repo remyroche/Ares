@@ -74,7 +74,6 @@ class ParquetUtils:
         return result
 
     @handles_errors(default_return = None, context="ParquetUtils.safe_read_parquet")
-    @handles_errors(default_return = None, context="ParquetUtils.safe_read_parquet")
     def safe_read_parquet(
         self,
         file_path: str,
@@ -96,8 +95,8 @@ class ParquetUtils:
         """
         self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
 
-        # Attempt strategies in order: default engine, pyarrow, fastparquet
-        engines: list[str | None] = [None, "pyarrow", "fastparquet"]
+        # Attempt strategies in order: prefer pyarrow, then fastparquet, then pandas default
+        engines: list[str | None] = ["pyarrow", "fastparquet", None]
         for idx, engine in enumerate(engines, start = 1):
             try:
                 strategy_msg = f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"

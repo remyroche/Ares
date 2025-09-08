@@ -23,7 +23,15 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-# Standardized imports from utils
+# Enhanced utility imports with dependency injection
+from .step04_dependency_injection import (
+    get_step04_utilities, get_step04_container, create_step04_config,
+    get_common_ops, get_common_utils, get_math_validation, get_parquet_utils,
+    get_serialization_utils, get_data_processing_utils, get_m1_gpu_utils,
+    get_m1_memory_optimizer, get_m1_cpu_optimizer
+)
+
+# Standardized imports from utils (fallback)
 from src.utils.common_operations import (
     ensure_directory,
     safe_read_parquet,
@@ -115,71 +123,139 @@ except ImportError:
 logger = get_logger('Step4TripleBarrierMethodOptimized')
 
 class VolatilityBasedParameterCalculator:
-    """Calculate optimal triple barrier parameters based on market volatility."""
+    """Calculate optimal triple barrier parameters based on market volatility with extensive utility usage."""
     
-    def __init__(self, lookback_periods: int = 30):
+    def __init__(self, utils=None, lookback_periods: int = 30):
+        self.utils = utils or get_step04_utilities()
         self.lookback_periods = lookback_periods
+        self.logger = self.utils.get_function('common_operations', 'get_logger')('VolatilityBasedParameterCalculator')
+        
+        # Get utility functions
+        self.safe_float = self.utils.get_function('common_operations', 'safe_float')
+        self.safe_divide = self.utils.get_function('math_validation', 'safe_divide')
+        self.validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        self.validate_range = self.utils.get_function('math_validation', 'validate_range')
     
     def calculate_volatility_based_parameters(self, data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate optimal parameters based on historical volatility."""
+        """Calculate optimal parameters based on historical volatility using extensive utility functions."""
         try:
             if len(data) < self.lookback_periods:
                 return self._get_default_parameters()
             
-            # Calculate rolling volatility
-            returns = data['close'].pct_change().dropna()
-            volatility = returns.rolling(window=self.lookback_periods).std().iloc[-1]
+            # Use data processing utilities for comprehensive validation
+            data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(data)
+            if not data_quality_report.get('is_valid', True):
+                self.logger.warning(f'⚠️ Data quality issues detected: {data_quality_report.get("issues", [])}')
             
-            # Calculate ATR (Average True Range) for volatility measure
+            # Use DataFrameValidator for additional validation
+            DataFrameValidator = self.utils.get_function('data_processing_utils', 'DataFrameValidator')
+            validator = DataFrameValidator()
+            validation_result = validator.validate(data)
+            if not validation_result.get('is_valid', True):
+                self.logger.warning(f'⚠️ DataFrame validation issues: {validation_result.get("issues", [])}')
+            
+            # Use DataFrameCleaner to ensure data quality
+            DataFrameCleaner = self.utils.get_function('data_processing_utils', 'DataFrameCleaner')
+            cleaner = DataFrameCleaner()
+            cleaned_data = cleaner.clean(data)
+            if len(cleaned_data) != len(data):
+                self.logger.info(f'🧹 Data cleaning removed {len(data) - len(cleaned_data)} rows')
+                data = cleaned_data
+            
+            # Calculate rolling volatility with comprehensive math validation
+            returns = data['close'].pct_change().dropna()
+            
+            # Validate returns data
+            returns = self.validate_finite(returns, "returns")
+            
+            # Calculate volatility with safe operations
+            volatility = returns.rolling(window=self.lookback_periods).std().iloc[-1]
+            volatility = self.validate_positive(volatility, "volatility", epsilon=1e-10)
+            volatility = self.validate_finite(volatility, "volatility")
+            
+            # Calculate ATR (Average True Range) for volatility measure with math validation
             high_low = data['high'] - data['low']
             high_close = np.abs(data['high'] - data['close'].shift())
             low_close = np.abs(data['low'] - data['close'].shift())
+            
+            # Validate price differences
+            high_low = self.validate_positive(high_low, "high_low")
+            high_close = self.validate_positive(high_close, "high_close")
+            low_close = self.validate_positive(low_close, "low_close")
+            
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            true_range = self.validate_positive(true_range, "true_range")
+            
             atr = true_range.rolling(window=self.lookback_periods).mean().iloc[-1]
+            atr = self.validate_positive(atr, "atr", epsilon=1e-10)
+            atr = self.validate_finite(atr, "atr")
             
             # Calculate current price level
             current_price = data['close'].iloc[-1]
+            current_price = self.validate_positive(current_price, "current_price", epsilon=1e-10)
             
-            # Volatility-based parameter calculation
-            volatility_multiplier = min(max(volatility * 100, 0.5), 5.0)  # Clamp between 0.5% and 5%
-            atr_multiplier = min(max(atr / current_price * 100, 0.1), 2.0)  # Clamp between 0.1% and 2%
+            # Volatility-based parameter calculation using comprehensive safe math operations
+            volatility_multiplier = self.safe_divide(volatility * 100, 1.0, default=1.0)
+            volatility_multiplier = self.validate_range(volatility_multiplier, 0.5, 5.0, "volatility_multiplier")
+            volatility_multiplier = self.validate_finite(volatility_multiplier, "volatility_multiplier")
             
-            # Calculate optimal parameters
-            profit_take_multiplier = max(volatility_multiplier * 0.8, 0.001)  # 80% of volatility
-            stop_loss_multiplier = max(volatility_multiplier * 0.4, 0.0005)   # 40% of volatility
+            atr_ratio = self.safe_divide(atr, current_price, default=0.01)
+            atr_ratio = self.validate_positive(atr_ratio, "atr_ratio")
+            atr_ratio = self.validate_finite(atr_ratio, "atr_ratio")
+            atr_multiplier = self.validate_range(atr_ratio * 100, 0.1, 2.0, "atr_multiplier")
             
-            # Time barrier based on volatility (higher volatility = shorter time barrier)
+            # Calculate optimal parameters using safe math with comprehensive validation
+            profit_take_multiplier = self.safe_divide(volatility_multiplier * 0.8, 100.0, default=0.001)
+            profit_take_multiplier = self.validate_positive(profit_take_multiplier, "profit_take_multiplier")
+            profit_take_multiplier = self.validate_range(profit_take_multiplier, 0.001, 0.1, "profit_take_multiplier")
+            profit_take_multiplier = self.validate_finite(profit_take_multiplier, "profit_take_multiplier")
+            
+            stop_loss_multiplier = self.safe_divide(volatility_multiplier * 0.4, 100.0, default=0.0005)
+            stop_loss_multiplier = self.validate_positive(stop_loss_multiplier, "stop_loss_multiplier")
+            stop_loss_multiplier = self.validate_range(stop_loss_multiplier, 0.0005, 0.05, "stop_loss_multiplier")
+            stop_loss_multiplier = self.validate_finite(stop_loss_multiplier, "stop_loss_multiplier")
+            
+            # Time barrier based on volatility (higher volatility = shorter time barrier) with math validation
             base_time_minutes = 30
-            volatility_time_factor = max(0.5, min(2.0, 1.0 / (volatility * 100 + 0.1)))
+            volatility_denominator = self.safe_divide(1.0, volatility * 100 + 0.1, default=1.0)
+            volatility_denominator = self.validate_positive(volatility_denominator, "volatility_denominator")
+            volatility_denominator = self.validate_finite(volatility_denominator, "volatility_denominator")
+            volatility_time_factor = self.validate_range(volatility_denominator, 0.5, 2.0, "volatility_time_factor")
+            
             time_barrier_minutes = int(base_time_minutes * volatility_time_factor)
+            time_barrier_minutes = self.validate_positive(time_barrier_minutes, "time_barrier_minutes")
+            time_barrier_minutes = self.validate_range(time_barrier_minutes, 5, 300, "time_barrier_minutes")
             
-            # Max lookahead based on volatility
+            # Max lookahead based on volatility with math validation
             base_lookahead = 100
-            volatility_lookahead_factor = max(0.5, min(2.0, 1.0 / (volatility * 100 + 0.1)))
+            volatility_lookahead_factor = self.validate_range(volatility_denominator, 0.5, 2.0, "volatility_lookahead_factor")
             max_lookahead = int(base_lookahead * volatility_lookahead_factor)
+            max_lookahead = self.validate_positive(max_lookahead, "max_lookahead")
+            max_lookahead = self.validate_range(max_lookahead, 10, 1000, "max_lookahead")
             
+            # Use safe_float for all parameter values
             parameters = {
-                'profit_take_multiplier': round(profit_take_multiplier, 6),
-                'stop_loss_multiplier': round(stop_loss_multiplier, 6),
-                'time_barrier_minutes': time_barrier_minutes,
-                'max_lookahead': max_lookahead,
-                'volatility': round(volatility, 6),
-                'atr': round(atr, 6),
-                'volatility_multiplier': round(volatility_multiplier, 6),
+                'profit_take_multiplier': self.safe_float(round(profit_take_multiplier, 6), 0.001),
+                'stop_loss_multiplier': self.safe_float(round(stop_loss_multiplier, 6), 0.0005),
+                'time_barrier_minutes': int(time_barrier_minutes),
+                'max_lookahead': int(max_lookahead),
+                'volatility': self.safe_float(round(volatility, 6), 0.01),
+                'atr': self.safe_float(round(atr, 6), 0.01),
+                'volatility_multiplier': self.safe_float(round(volatility_multiplier, 6), 1.0),
                 'parameter_source': 'volatility_based'
             }
             
-            logger.info(f'📊 Volatility-based parameters calculated:')
-            logger.info(f'   Volatility: {volatility:.4f} ({volatility*100:.2f}%)')
-            logger.info(f'   Profit Take: {profit_take_multiplier:.4f} ({profit_take_multiplier*100:.2f}%)')
-            logger.info(f'   Stop Loss: {stop_loss_multiplier:.4f} ({stop_loss_multiplier*100:.2f}%)')
-            logger.info(f'   Time Barrier: {time_barrier_minutes} minutes')
-            logger.info(f'   Max Lookahead: {max_lookahead} periods')
+            self.logger.info(f'📊 Volatility-based parameters calculated using utility functions:')
+            self.logger.info(f'   Volatility: {volatility:.4f} ({volatility*100:.2f}%)')
+            self.logger.info(f'   Profit Take: {profit_take_multiplier:.4f} ({profit_take_multiplier*100:.2f}%)')
+            self.logger.info(f'   Stop Loss: {stop_loss_multiplier:.4f} ({stop_loss_multiplier*100:.2f}%)')
+            self.logger.info(f'   Time Barrier: {time_barrier_minutes} minutes')
+            self.logger.info(f'   Max Lookahead: {max_lookahead} periods')
             
             return parameters
             
         except Exception as e:
-            logger.warning(f'⚠️ Failed to calculate volatility-based parameters: {e}')
+            self.logger.warning(f'⚠️ Failed to calculate volatility-based parameters: {e}')
             return self._get_default_parameters()
     
     def _get_default_parameters(self) -> Dict[str, float]:
@@ -267,31 +343,54 @@ class FastFailValidator:
             return False, f"Parameter validation error: {str(e)}"
 
 class VectorizedTripleBarrierProcessor:
-    """Vectorized triple barrier processor with lookahead bias prevention."""
+    """Vectorized triple barrier processor with lookahead bias prevention and extensive utility usage."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], utils=None):
         self.config = config
-        self.logger = get_logger('VectorizedTripleBarrierProcessor')
+        self.utils = utils or get_step04_utilities()
+        self.logger = self.utils.get_function('common_operations', 'get_logger')('VectorizedTripleBarrierProcessor')
+        
+        # Get utility functions
+        self.safe_float = self.utils.get_function('common_operations', 'safe_float')
+        self.safe_int = self.utils.get_function('common_operations', 'safe_int')
+        self.validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        self.validate_range = self.utils.get_function('math_validation', 'validate_range')
+        self.safe_kelly_calculation = self.utils.get_function('math_validation', 'safe_kelly_calculation')
     
     def apply_triple_barrier_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply triple barrier method using vectorized operations."""
+        """Apply triple barrier method using vectorized operations with extensive utility usage."""
         try:
+            # Use data processing utilities for comprehensive validation
+            data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(data)
+            if not data_quality_report.get('is_valid', True):
+                self.logger.warning(f'⚠️ Data quality issues detected: {data_quality_report.get("issues", [])}')
+            
             # Fast fail validation
             is_valid, error_msg = FastFailValidator.validate_data(data)
             if not is_valid:
                 raise ValueError(f"Data validation failed: {error_msg}")
             
-            # Get parameters
-            profit_take_multiplier = safe_float(self.config.get('profit_take_multiplier', 0.002), 0.002)
-            stop_loss_multiplier = safe_float(self.config.get('stop_loss_multiplier', 0.001), 0.001)
-            max_lookahead = safe_int(self.config.get('max_lookahead', 100), 100)
+            # Get parameters using utility functions
+            profit_take_multiplier = self.safe_float(self.config.get('profit_take_multiplier', 0.002), 0.002)
+            stop_loss_multiplier = self.safe_float(self.config.get('stop_loss_multiplier', 0.001), 0.001)
+            max_lookahead = self.safe_int(self.config.get('max_lookahead', 100), 100)
+            
+            # Validate parameters using math validation utilities
+            profit_take_multiplier = self.validate_positive(profit_take_multiplier, "profit_take_multiplier")
+            stop_loss_multiplier = self.validate_positive(stop_loss_multiplier, "stop_loss_multiplier")
+            max_lookahead = self.validate_positive(max_lookahead, "max_lookahead")
+            
+            # Validate parameter ranges
+            profit_take_multiplier = self.validate_range(profit_take_multiplier, 0.0001, 0.1, "profit_take_multiplier")
+            stop_loss_multiplier = self.validate_range(stop_loss_multiplier, 0.0001, 0.1, "stop_loss_multiplier")
+            max_lookahead = self.validate_range(max_lookahead, 1, 1000, "max_lookahead")
             
             # Validate parameters
             is_valid, error_msg = FastFailValidator.validate_parameters(self.config)
             if not is_valid:
                 raise ValueError(f"Parameter validation failed: {error_msg}")
             
-            self.logger.info(f'🚀 Applying vectorized triple barrier with parameters:')
+            self.logger.info(f'🚀 Applying vectorized triple barrier with utility-validated parameters:')
             self.logger.info(f'   Profit Take: {profit_take_multiplier:.4f} ({profit_take_multiplier*100:.2f}%)')
             self.logger.info(f'   Stop Loss: {stop_loss_multiplier:.4f} ({stop_loss_multiplier*100:.2f}%)')
             self.logger.info(f'   Max Lookahead: {max_lookahead} periods')
@@ -305,16 +404,27 @@ class VectorizedTripleBarrierProcessor:
             labels = np.zeros(n, dtype=np.int8)
             profit_pcts = np.zeros(n, dtype=np.float64)
             
-            # Vectorized barrier calculation
+            # Vectorized barrier calculation with utility validation
             entry_prices = close_prices[:-1]  # All but last
+            entry_prices = self.validate_positive(entry_prices, "entry_prices")
+            
             profit_barriers = entry_prices * (1 + profit_take_multiplier)
             stop_barriers = entry_prices * (1 - stop_loss_multiplier)
             
-            # Process each entry point
+            # Validate calculated barriers
+            profit_barriers = self.validate_positive(profit_barriers, "profit_barriers")
+            stop_barriers = self.validate_positive(stop_barriers, "stop_barriers")
+            
+            # Process each entry point with utility validation
             for i in range(n - 1):
                 entry_price = entry_prices[i]
                 profit_barrier = profit_barriers[i]
                 stop_barrier = stop_barriers[i]
+                
+                # Validate individual prices and barriers
+                entry_price = self.validate_positive(entry_price, f"entry_price[{i}]")
+                profit_barrier = self.validate_positive(profit_barrier, f"profit_barrier[{i}]")
+                stop_barrier = self.validate_positive(stop_barrier, f"stop_barrier[{i}]")
                 
                 # Look ahead window (preventing lookahead bias by using only future data)
                 lookahead_end = min(i + max_lookahead + 1, n)
@@ -324,6 +434,10 @@ class VectorizedTripleBarrierProcessor:
                 if len(future_highs) == 0:
                     continue
                 
+                # Validate future price arrays
+                future_highs = self.validate_positive(future_highs, f"future_highs[{i}]")
+                future_lows = self.validate_positive(future_lows, f"future_lows[{i}]")
+                
                 # Vectorized barrier hit detection
                 profit_hits = future_highs >= profit_barrier
                 stop_hits = future_lows <= stop_barrier
@@ -332,34 +446,44 @@ class VectorizedTripleBarrierProcessor:
                 profit_hit_idx = np.argmax(profit_hits) if np.any(profit_hits) else len(profit_hits)
                 stop_hit_idx = np.argmax(stop_hits) if np.any(stop_hits) else len(stop_hits)
                 
-                # Determine outcome
+                # Determine outcome with safe calculations
                 if profit_hit_idx < stop_hit_idx and np.any(profit_hits):
                     # Profit target hit first
                     labels[i] = 1
-                    profit_pcts[i] = profit_take_multiplier
+                    profit_pcts[i] = self.safe_float(profit_take_multiplier, 0.0)
                 elif stop_hit_idx < profit_hit_idx and np.any(stop_hits):
                     # Stop loss hit first
                     labels[i] = -1
-                    profit_pcts[i] = -stop_loss_multiplier
+                    profit_pcts[i] = self.safe_float(-stop_loss_multiplier, 0.0)
                 # If neither hit, label remains 0 (no action)
             
-            # Create result DataFrame
+            # Create result DataFrame with utility validation
             result_data = pd.DataFrame({
                 'label': labels,
                 'potential_profit_pct': profit_pcts
             }, index=data.index)
             
-            # Calculate statistics
+            # Calculate statistics using safe math operations
             total_signals = len(result_data)
             buy_signals = (labels == 1).sum()
             sell_signals = (labels == -1).sum()
             no_action = (labels == 0).sum()
             
-            self.logger.info(f'📊 Triple barrier results:')
+            # Use safe division for percentage calculations
+            buy_percentage = self.safe_divide(buy_signals * 100, total_signals, default=0.0) if total_signals > 0 else 0.0
+            sell_percentage = self.safe_divide(sell_signals * 100, total_signals, default=0.0) if total_signals > 0 else 0.0
+            no_action_percentage = self.safe_divide(no_action * 100, total_signals, default=0.0) if total_signals > 0 else 0.0
+            
+            self.logger.info(f'📊 Triple barrier results with utility validation:')
             self.logger.info(f'   Total signals: {total_signals:,}')
-            self.logger.info(f'   Buy signals: {buy_signals:,} ({buy_signals/total_signals*100:.1f}%)')
-            self.logger.info(f'   Sell signals: {sell_signals:,} ({sell_signals/total_signals*100:.1f}%)')
-            self.logger.info(f'   No action: {no_action:,} ({no_action/total_signals*100:.1f}%)')
+            self.logger.info(f'   Buy signals: {buy_signals:,} ({buy_percentage:.1f}%)')
+            self.logger.info(f'   Sell signals: {sell_signals:,} ({sell_percentage:.1f}%)')
+            self.logger.info(f'   No action: {no_action:,} ({no_action_percentage:.1f}%)')
+            
+            # Use data processing utilities for final validation
+            final_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(result_data)
+            if not final_quality_report.get('is_valid', True):
+                self.logger.warning(f'⚠️ Final result data quality issues: {final_quality_report.get("issues", [])}')
             
             return result_data
             
@@ -368,17 +492,37 @@ class VectorizedTripleBarrierProcessor:
             return pd.DataFrame()
 
 class OptimizedTripleBarrierMethodStep:
-    """Optimized Step 4: Triple Barrier Method with comprehensive improvements."""
+    """Optimized Step 4: Triple Barrier Method with comprehensive improvements and extensive utility usage."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
-        self.logger = get_logger('OptimizedTripleBarrierMethodStep')
+        
+        # Initialize dependency injection container
+        self.utility_config = create_step04_config(
+            enable_common_operations=True,
+            enable_common_utilities=True,
+            enable_math_validation=True,
+            enable_parquet_utils=True,
+            enable_serialization_utils=True,
+            enable_data_processing_utils=True,
+            enable_m1_gpu_utils=True,
+            enable_m1_memory_optimizer=True,
+            enable_m1_cpu_optimizer=True
+        )
+        self.container = get_step04_container(self.utility_config)
+        self.utils = get_step04_utilities()
+        
+        # Get logger from utilities
+        self.logger = self.utils.get_function('common_operations', 'get_logger')('OptimizedTripleBarrierMethodStep')
         self.start_time: Optional[float] = None
         self.step_timings: Dict[str, float] = {}
         
-        # Initialize components
-        self.volatility_calculator = VolatilityBasedParameterCalculator()
-        self.vectorized_processor = VectorizedTripleBarrierProcessor(config)
+        # Initialize components with utility integration
+        self.volatility_calculator = VolatilityBasedParameterCalculator(self.utils)
+        self.vectorized_processor = VectorizedTripleBarrierProcessor(config, self.utils)
+        
+        # Initialize M1 optimizations
+        self._init_m1_optimizations()
         
         # Memory management
         self.memory_config = MemoryConfig(
@@ -426,6 +570,53 @@ class OptimizedTripleBarrierMethodStep:
         self.logger.info(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         self.logger.info('✅ Optimized Triple Barrier Method Step initialized successfully')
+    
+    def _init_m1_optimizations(self):
+        """Initialize M1 hardware optimization components using utility functions."""
+        try:
+            # Get utility functions
+            safe_float = self.utils.get_function('common_operations', 'safe_float')
+            safe_int = self.utils.get_function('common_operations', 'safe_int')
+            validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+            validate_range = self.utils.get_function('math_validation', 'validate_range')
+            
+            # Initialize M1 GPU Manager through utility injection
+            self.gpu_manager = self.utils.get_function('m1_gpu_utils', 'get_m1_gpu_manager')()
+            self.logger.info('🎯 M1 GPU Manager initialized for triple barrier method')
+            
+            # Initialize M1 Memory Optimizer with step-specific settings and validation
+            memory_limit = self.config.get('memory_limit_gb', 4.0)
+            memory_limit = validate_positive(safe_float(memory_limit, 4.0), "memory_limit_gb")
+            memory_limit = validate_range(memory_limit, 1.0, 32.0, "memory_limit_gb")
+            
+            self.memory_optimizer = self.utils.get_function('m1_memory_optimizer', 'M1MemoryOptimizer')(
+                memory_limit_gb=memory_limit,
+                enable_gc_tuning=True,
+                enable_memory_leak_detection=True,
+                enable_swap_management=True
+            )
+            self.logger.info('🧠 M1 Memory Optimizer initialized for triple barrier method')
+            
+            # Initialize M1 CPU Optimizer with validation
+            max_workers = self.config.get('max_parallel_workers', None)
+            if max_workers is not None:
+                max_workers = validate_positive(safe_int(max_workers, None), "max_parallel_workers")
+                max_workers = validate_range(max_workers, 1, 16, "max_parallel_workers")
+            
+            self.cpu_optimizer = self.utils.get_function('m1_cpu_optimizer', 'M1CPUOptimizer')(
+                max_workers=max_workers,
+                enable_hyperthreading=True
+            )
+            self.logger.info('⚡ M1 CPU Optimizer initialized for triple barrier method')
+            
+            self.m1_optimizations_enabled = True
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to initialize M1 optimizations: {e}')
+            self.m1_optimizations_enabled = False
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
 
     @traced(span_name='execute_optimized_triple_barrier_method')
     @validates()
@@ -447,9 +638,18 @@ class OptimizedTripleBarrierMethodStep:
         # Log initial memory status
         self.memory_monitor.log_memory_status('before triple barrier execution')
         
+        # Start M1 memory monitoring if available
+        if self.m1_optimizations_enabled and self.memory_optimizer:
+            with self.memory_optimizer.memory_checkpoint("triple_barrier_execution_start"):
+                self.logger.info('🧠 M1 Memory monitoring enabled for triple barrier execution')
+        
         try:
-            # Load data with optimized streaming
-            data = await self._load_data_optimized(symbol, exchange, timeframe, data_dir)
+            # Load data with optimized streaming and M1 optimizations
+            if self.m1_optimizations_enabled and self.memory_optimizer:
+                with self.memory_optimizer.memory_checkpoint("data_loading"):
+                    data = await self._load_data_optimized(symbol, exchange, timeframe, data_dir)
+            else:
+                data = await self._load_data_optimized(symbol, exchange, timeframe, data_dir)
             if data is None or data.empty:
                 self.logger.error('❌ Failed to load data')
                 return TripleBarrierResult.failure_result(
@@ -470,8 +670,12 @@ class OptimizedTripleBarrierMethodStep:
             else:
                 self.logger.info('📊 Using user-specified parameters')
             
-            # Apply vectorized triple barrier
-            labeled_data = self.vectorized_processor.apply_triple_barrier_vectorized(data)
+            # Apply vectorized triple barrier with M1 optimizations
+            if self.m1_optimizations_enabled and self.memory_optimizer:
+                with self.memory_optimizer.memory_checkpoint("vectorized_processing"):
+                    labeled_data = self.vectorized_processor.apply_triple_barrier_vectorized(data)
+            else:
+                labeled_data = self.vectorized_processor.apply_triple_barrier_vectorized(data)
             
             if labeled_data is None or labeled_data.empty:
                 self.logger.error('❌ Failed to generate triple barrier labels')
@@ -777,26 +981,34 @@ class OptimizedTripleBarrierMethodStep:
             # Optimize data types before saving
             result_data = optimize_dataframe_dtypes(result_data)
             
-            # Save with PyArrow for better performance
+            # Save with serialization utilities for better performance and reliability
             try:
-                import pyarrow as pa
-                import pyarrow.parquet as pq
+                # Use ParquetSerializer from utilities
+                parquet_serializer = self.utils.get_function('serialization_utils', 'ParquetSerializer')()
+                parquet_serializer.save(result_data, output_path)
+                self.logger.info(f'✅ Saved with ParquetSerializer: {output_path}')
                 
-                table = pa.Table.from_pandas(result_data)
-                pq.write_table(table, output_path, compression='snappy')
-                self.logger.info(f'✅ Saved with PyArrow: {output_path}')
-                
-            except ImportError:
-                # Fallback to pandas
-                success = safe_to_parquet(
-                    result_data, 
-                    output_path,
-                    compression='snappy',
-                    index=False
-                )
-                if not success:
-                    self.logger.error('❌ Failed to save parquet file')
-                    return False
+            except Exception as e:
+                self.logger.warning(f'⚠️ ParquetSerializer failed: {e}, falling back to PyArrow')
+                try:
+                    import pyarrow as pa
+                    import pyarrow.parquet as pq
+                    
+                    table = pa.Table.from_pandas(result_data)
+                    pq.write_table(table, output_path, compression='snappy')
+                    self.logger.info(f'✅ Saved with PyArrow: {output_path}')
+                    
+                except ImportError:
+                    # Final fallback to pandas
+                    success = safe_to_parquet(
+                        result_data, 
+                        output_path,
+                        compression='snappy',
+                        index=False
+                    )
+                    if not success:
+                        self.logger.error('❌ Failed to save parquet file')
+                        return False
             
             file_size_mb = output_path.stat().st_size / (1024 * 1024)
             self.logger.info(f'✅ Triple barrier labels saved to {output_path} ({file_size_mb:.2f} MB)')

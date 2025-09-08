@@ -396,7 +396,7 @@ if NUMBA_AVAILABLE:
 
 @dataclass
 class SRLevel:
-    """Enhanced S/R level definition with comprehensive metadata."""
+    """Enhanced S/R level definition with comprehensive metadata and ML-optimized features."""
     price: float
     strength: float
     type: str
@@ -415,6 +415,21 @@ class SRLevel:
     pivot_level: bool = False
     psychological_level: bool = False
     metadata: Dict[str, Any] = None
+    
+    # NEW: ML-optimized features from proposed approach
+    dist_to_level_atr: float = 0.0  # Normalized distance by ATR
+    break_success_rate: float = 0.0  # Fraction of touches that led to breakouts
+    persistence_score: float = 0.0  # Time since formation without breach
+    multi_tf_support: int = 0  # Number of timeframes confirming this level
+    avg_reaction_atr: float = 0.0  # Mean reaction normalized by ATR
+    time_since_last_touch: int = 0  # Bars since last touch
+    prominence_score: float = 0.0  # Prominence from scipy.signal.find_peaks
+    width_score: float = 0.0  # Width from scipy.signal.find_peaks
+    volume_at_level: float = 0.0  # Liquidity measure at this level
+    cluster_density: float = 0.0  # DBSCAN cluster density
+    formation_time: pd.Timestamp = None  # When this level was first formed
+    last_breach_time: pd.Timestamp = None  # When this level was last breached
+    breach_count: int = 0  # Number of times this level has been breached
 
 class EnhancedSRDetector:
     """Enhanced S/R detector with advanced algorithms and performance optimizations."""
@@ -466,6 +481,474 @@ class EnhancedSRDetector:
         self.dbscan_eps_multiplier = config.get('dbscan_eps_multiplier', 1.0)  # Original eps multiplier
         self.dbscan_min_samples_multiplier = config.get('dbscan_min_samples_multiplier', 1.0)  # Original min_samples multiplier
         self.disable_dbscan_clustering = config.get('disable_dbscan_clustering', False)  # Option to disable clustering
+        
+        # NEW: ATR and normalization parameters
+        self.atr_period = config.get('atr_period', 14)  # ATR calculation period
+        self.atr_multiplier = config.get('atr_multiplier', 1.0)  # ATR multiplier for normalization
+        self.breakout_lookforward = config.get('breakout_lookforward', 5)  # Bars to look forward for breakout validation
+        self.breakout_tolerance = config.get('breakout_tolerance', 0.5)  # ATR multiplier for breakout tolerance
+        
+        # NEW: Prominence filtering parameters
+        self.prominence_threshold = config.get('prominence_threshold', 0.5)  # Minimum prominence (ATR multiplier)
+        self.width_threshold = config.get('width_threshold', 1)  # Minimum width in bars
+        self.use_prominence_filtering = config.get('use_prominence_filtering', True)
+        
+        # NEW: Multi-timeframe support
+        self.multi_tf_enabled = config.get('multi_tf_enabled', True)
+        self.multi_tf_timeframes = config.get('multi_tf_timeframes', ['5m', '15m', '1h', '4h'])
+        
+        # NEW: Persistence scoring
+        self.persistence_lookback = config.get('persistence_lookback', 100)  # Bars to look back for persistence
+        self.min_persistence_bars = config.get('min_persistence_bars', 10)  # Minimum bars for persistence score
+
+    def _calculate_atr(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate Average True Range (ATR) for normalization."""
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Calculate ATR as rolling mean of True Range
+            atr = true_range.rolling(window=self.atr_period).mean()
+            
+            return atr
+        except Exception as e:
+            self.logger.warning(f'ATR calculation failed: {e}')
+            # Fallback to simple price range
+            return (data['high'] - data['low']).rolling(window=self.atr_period).mean()
+
+    def _normalize_distance_by_atr(self, distance: float, atr: float) -> float:
+        """Normalize distance by ATR for consistent scaling across assets."""
+        if atr == 0 or pd.isna(atr):
+            return 0.0
+        return distance / (atr * self.atr_multiplier)
+
+    def _calculate_break_success_rate(self, level_price: float, data: pd.DataFrame, 
+                                    atr: pd.Series, tolerance_atr: float = 0.5) -> float:
+        """Calculate the success rate of breakouts from this level."""
+        try:
+            if len(data) < self.breakout_lookforward:
+                return 0.0
+            
+            touches = []
+            breakouts = 0
+            total_touches = 0
+            
+            for i in range(len(data) - self.breakout_lookforward):
+                current_atr = atr.iloc[i] if not pd.isna(atr.iloc[i]) else atr.mean()
+                tolerance = current_atr * tolerance_atr
+                
+                # Check if price touched the level
+                if (abs(data['low'].iloc[i] - level_price) <= tolerance or 
+                    abs(data['high'].iloc[i] - level_price) <= tolerance):
+                    total_touches += 1
+                    touches.append(i)
+                    
+                    # Check for breakout in next N bars
+                    future_data = data.iloc[i+1:i+1+self.breakout_lookforward]
+                    if len(future_data) > 0:
+                        if level_price > data['close'].iloc[i]:  # Support level
+                            if future_data['low'].min() < (level_price - tolerance):
+                                breakouts += 1
+                        else:  # Resistance level
+                            if future_data['high'].max() > (level_price + tolerance):
+                                breakouts += 1
+            
+            return breakouts / max(total_touches, 1)
+        except Exception as e:
+            self.logger.warning(f'Break success rate calculation failed: {e}')
+            return 0.0
+
+    def _calculate_persistence_score(self, level_price: float, data: pd.DataFrame, 
+                                   atr: pd.Series, tolerance_atr: float = 0.5) -> float:
+        """Calculate how long the level has survived without being breached."""
+        try:
+            if len(data) < self.min_persistence_bars:
+                return 0.0
+            
+            # Look back from the end to find when level was last breached
+            lookback_data = data.tail(self.persistence_lookback)
+            lookback_atr = atr.tail(self.persistence_lookback)
+            
+            for i in range(len(lookback_data) - 1, -1, -1):
+                current_atr = lookback_atr.iloc[i] if not pd.isna(lookback_atr.iloc[i]) else lookback_atr.mean()
+                tolerance = current_atr * tolerance_atr
+                
+                # Check if level was breached
+                if level_price > data['close'].iloc[0]:  # Support level
+                    if lookback_data['low'].iloc[i] < (level_price - tolerance):
+                        return (len(lookback_data) - i) / self.persistence_lookback
+                else:  # Resistance level
+                    if lookback_data['high'].iloc[i] > (level_price + tolerance):
+                        return (len(lookback_data) - i) / self.persistence_lookback
+            
+            # Level was never breached in lookback period
+            return 1.0
+        except Exception as e:
+            self.logger.warning(f'Persistence score calculation failed: {e}')
+            return 0.0
+
+    def _apply_prominence_filtering(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
+        """Apply prominence and width filtering using scipy.signal.find_peaks."""
+        if not self.use_prominence_filtering or not levels:
+            return levels
+        
+        try:
+            filtered_levels = []
+            atr = self._calculate_atr(data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            
+            # Separate support and resistance levels for independent filtering
+            support_levels = [level for level in levels if level.type == 'support']
+            resistance_levels = [level for level in levels if level.type == 'resistance']
+            
+            # Filter support levels using prominence
+            filtered_support = self._filter_levels_with_prominence(support_levels, data, 'support', current_atr)
+            
+            # Filter resistance levels using prominence
+            filtered_resistance = self._filter_levels_with_prominence(resistance_levels, data, 'resistance', current_atr)
+            
+            # Combine filtered levels
+            filtered_levels = filtered_support + filtered_resistance
+            
+            self.logger.info(f'Prominence filtering: {len(levels)} -> {len(filtered_levels)} levels ({len(filtered_support)} support, {len(filtered_resistance)} resistance)')
+            return filtered_levels
+        except Exception as e:
+            self.logger.warning(f'Prominence filtering failed: {e}')
+            return levels
+
+    def _filter_levels_with_prominence(self, levels: List[SRLevel], data: pd.DataFrame, level_type: str, atr: float) -> List[SRLevel]:
+        """Filter levels using scipy.signal.find_peaks with prominence and width parameters."""
+        try:
+            if not levels:
+                return levels
+            
+            # Extract price data for prominence calculation
+            if level_type == 'support':
+                price_data = data['low'].values
+            else:  # resistance
+                price_data = data['high'].values
+            
+            # Calculate prominence and width thresholds
+            prominence_threshold = atr * self.prominence_threshold
+            width_threshold = self.width_threshold
+            
+            # Use scipy.signal.find_peaks to find significant peaks/valleys
+            from scipy.signal import find_peaks
+            
+            if level_type == 'support':
+                # For support levels, find valleys (invert the signal)
+                peaks, properties = find_peaks(
+                    -price_data,  # Invert for valleys
+                    prominence=prominence_threshold,
+                    width=width_threshold,
+                    distance=5  # Minimum distance between peaks
+                )
+            else:  # resistance
+                # For resistance levels, find peaks
+                peaks, properties = find_peaks(
+                    price_data,
+                    prominence=prominence_threshold,
+                    width=width_threshold,
+                    distance=5  # Minimum distance between peaks
+                )
+            
+            # Create a mapping of significant price levels
+            significant_levels = set()
+            if len(peaks) > 0:
+                for peak_idx in peaks:
+                    if level_type == 'support':
+                        significant_levels.add(price_data[peak_idx])
+                    else:
+                        significant_levels.add(price_data[peak_idx])
+            
+            # Filter levels based on prominence
+            filtered_levels = []
+            for level in levels:
+                # Check if this level is close to a significant peak/valley
+                is_significant = False
+                for sig_level in significant_levels:
+                    if abs(level.price - sig_level) <= atr * 0.1:  # Within 0.1 ATR
+                        is_significant = True
+                        break
+                
+                if is_significant:
+                    # Calculate actual prominence and width scores
+                    level.prominence_score = self._calculate_level_prominence(level, data, level_type, atr)
+                    level.width_score = self._calculate_level_width(level, data, level_type)
+                    filtered_levels.append(level)
+                else:
+                    # Check if level has high strength as fallback
+                    if level.strength >= self.prominence_threshold:
+                        level.prominence_score = level.strength
+                        level.width_score = 1.0
+                        filtered_levels.append(level)
+            
+            return filtered_levels
+            
+        except Exception as e:
+            self.logger.warning(f'Prominence filtering for {level_type} failed: {e}')
+            # Fallback to strength-based filtering
+            return [level for level in levels if level.strength >= self.prominence_threshold]
+
+    def _calculate_level_prominence(self, level: SRLevel, data: pd.DataFrame, level_type: str, atr: float) -> float:
+        """Calculate the prominence of a specific level."""
+        try:
+            # Find the closest price point to this level
+            if level_type == 'support':
+                price_data = data['low'].values
+            else:
+                price_data = data['high'].values
+            
+            # Find the closest index to this level
+            closest_idx = np.argmin(np.abs(price_data - level.price))
+            
+            # Calculate prominence using scipy.signal.peak_prominences
+            from scipy.signal import peak_prominences
+            
+            if level_type == 'support':
+                # For support, we need to find the prominence of the valley
+                # This is a simplified calculation
+                prominence = level.strength * atr
+            else:
+                # For resistance, calculate actual prominence
+                try:
+                    prominences, left_bases, right_bases = peak_prominences(
+                        price_data, [closest_idx], wlen=20
+                    )
+                    prominence = prominences[0] if len(prominences) > 0 else level.strength * atr
+                except:
+                    prominence = level.strength * atr
+            
+            return prominence / atr  # Normalize by ATR
+            
+        except Exception as e:
+            self.logger.warning(f'Prominence calculation failed: {e}')
+            return level.strength
+
+    def _calculate_level_width(self, level: SRLevel, data: pd.DataFrame, level_type: str) -> float:
+        """Calculate the width of a specific level."""
+        try:
+            # Find the closest price point to this level
+            if level_type == 'support':
+                price_data = data['low'].values
+            else:
+                price_data = data['high'].values
+            
+            # Find the closest index to this level
+            closest_idx = np.argmin(np.abs(price_data - level.price))
+            
+            # Calculate width using scipy.signal.peak_widths
+            from scipy.signal import peak_widths
+            
+            try:
+                widths, width_heights, left_ips, right_ips = peak_widths(
+                    price_data, [closest_idx], rel_height=0.5
+                )
+                width = widths[0] if len(widths) > 0 else 1.0
+            except:
+                width = 1.0
+            
+            return width
+            
+        except Exception as e:
+            self.logger.warning(f'Width calculation failed: {e}')
+            return 1.0
+
+    def _calculate_multi_tf_support(self, level: SRLevel, data: pd.DataFrame) -> int:
+        """Calculate multi-timeframe support for a level."""
+        try:
+            if not self.multi_tf_enabled:
+                return 1
+            
+            # For now, simulate multi-timeframe support based on level strength and age
+            # In a full implementation, you would analyze multiple timeframes
+            support_score = 0
+            
+            # Base support from current timeframe
+            if level.strength > 0.7:
+                support_score += 1
+            elif level.strength > 0.5:
+                support_score += 0.5
+            
+            # Age-based support (older levels are more significant)
+            if level.age_bars > 100:
+                support_score += 1
+            elif level.age_bars > 50:
+                support_score += 0.5
+            
+            # Touch count support
+            if level.touch_count > 3:
+                support_score += 1
+            elif level.touch_count > 1:
+                support_score += 0.5
+            
+            # Volume confirmation support
+            if level.volume_confirmation_score > 0.7:
+                support_score += 1
+            elif level.volume_confirmation_score > 0.5:
+                support_score += 0.5
+            
+            # Convert to integer (1-4 timeframes)
+            return min(4, max(1, int(support_score)))
+            
+        except Exception as e:
+            self.logger.warning(f'Multi-timeframe support calculation failed: {e}')
+            return 1
+
+    def _calculate_enhanced_persistence_score(self, level: SRLevel, data: pd.DataFrame, atr: float) -> float:
+        """Calculate enhanced persistence score for a level."""
+        try:
+            if len(data) < self.min_persistence_bars:
+                return 0.0
+            
+            # Calculate multiple persistence metrics
+            time_persistence = self._calculate_time_persistence(level, data)
+            price_persistence = self._calculate_price_persistence(level, data, atr)
+            volume_persistence = self._calculate_volume_persistence(level, data)
+            
+            # Weighted combination of persistence metrics
+            persistence_score = (
+                time_persistence * 0.4 +
+                price_persistence * 0.4 +
+                volume_persistence * 0.2
+            )
+            
+            return min(1.0, max(0.0, persistence_score))
+            
+        except Exception as e:
+            self.logger.warning(f'Enhanced persistence score calculation failed: {e}')
+            return 0.0
+
+    def _calculate_time_persistence(self, level: SRLevel, data: pd.DataFrame) -> float:
+        """Calculate time-based persistence score."""
+        try:
+            # Time since formation
+            if level.formation_time:
+                time_since_formation = (data.index[-1] - level.formation_time).total_seconds() / 3600  # Hours
+                # Normalize: 1.0 for 24+ hours, 0.0 for <1 hour
+                time_persistence = min(1.0, time_since_formation / 24.0)
+            else:
+                # Use age_bars as proxy
+                time_persistence = min(1.0, level.age_bars / 100.0)
+            
+            return time_persistence
+            
+        except Exception as e:
+            self.logger.warning(f'Time persistence calculation failed: {e}')
+            return 0.0
+
+    def _calculate_price_persistence(self, level: SRLevel, data: pd.DataFrame, atr: float) -> float:
+        """Calculate price-based persistence score."""
+        try:
+            # Look back through data to see how often level was respected
+            tolerance = atr * 0.5
+            respect_count = 0
+            total_opportunities = 0
+            
+            # Sample every 10th bar to avoid over-counting
+            for i in range(0, len(data), 10):
+                if i >= len(data):
+                    break
+                    
+                current_price = data['close'].iloc[i]
+                distance_to_level = abs(current_price - level.price)
+                
+                if distance_to_level <= tolerance:
+                    total_opportunities += 1
+                    # Check if price bounced off the level
+                    if i < len(data) - 5:
+                        future_prices = data['close'].iloc[i:i+5]
+                        if level.type == 'support':
+                            # For support, check if price went up after touching
+                            if future_prices.max() > current_price + tolerance:
+                                respect_count += 1
+                        else:  # resistance
+                            # For resistance, check if price went down after touching
+                            if future_prices.min() < current_price - tolerance:
+                                respect_count += 1
+            
+            if total_opportunities == 0:
+                return 0.0
+            
+            respect_ratio = respect_count / total_opportunities
+            return respect_ratio
+            
+        except Exception as e:
+            self.logger.warning(f'Price persistence calculation failed: {e}')
+            return 0.0
+
+    def _calculate_volume_persistence(self, level: SRLevel, data: pd.DataFrame) -> float:
+        """Calculate volume-based persistence score."""
+        try:
+            # Use volume confirmation score as proxy for volume persistence
+            if hasattr(level, 'volume_confirmation_score'):
+                return level.volume_confirmation_score
+            else:
+                return 0.5  # Default moderate persistence
+            
+        except Exception as e:
+            self.logger.warning(f'Volume persistence calculation failed: {e}')
+            return 0.0
+
+    def _enhance_levels_with_ml_features(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
+        """Enhance levels with ML-optimized features."""
+        try:
+            atr = self._calculate_atr(data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            current_price = data['close'].iloc[-1]
+            
+            enhanced_levels = []
+            for level in levels:
+                # Calculate ATR-normalized distance
+                distance = abs(level.price - current_price)
+                level.dist_to_level_atr = self._normalize_distance_by_atr(distance, current_atr)
+                
+                # Calculate break success rate
+                level.break_success_rate = self._calculate_break_success_rate(
+                    level.price, data, atr, self.breakout_tolerance
+                )
+                
+                # Calculate persistence score
+                level.persistence_score = self._calculate_persistence_score(
+                    level.price, data, atr, self.breakout_tolerance
+                )
+                
+                # Calculate time since last touch
+                if hasattr(level, 'last_touch_time') and level.last_touch_time:
+                    time_diff = data.index[-1] - level.last_touch_time
+                    level.time_since_last_touch = int(time_diff.total_seconds() / 60)  # Convert to minutes
+                
+                # Set formation time if not set
+                if not level.formation_time:
+                    level.formation_time = level.first_touch_time
+                
+                # Calculate average reaction normalized by ATR
+                if level.avg_bounce_ratio > 0:
+                    level.avg_reaction_atr = level.avg_bounce_ratio / current_atr
+                
+                # Multi-timeframe support
+                level.multi_tf_support = self._calculate_multi_tf_support(level, data)
+                
+                # Volume at level (placeholder - would need volume data)
+                level.volume_at_level = level.volume_confirmation_score
+                
+                # Enhanced persistence scoring
+                level.persistence_score = self._calculate_enhanced_persistence_score(level, data, atr)
+                
+                enhanced_levels.append(level)
+            
+            return enhanced_levels
+        except Exception as e:
+            self.logger.warning(f'ML feature enhancement failed: {e}')
+            return levels
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=[], context='detect enhanced SR levels')
     @traced(span_name='EnhancedSR.detect_levels')
@@ -656,6 +1139,12 @@ class EnhancedSRDetector:
             enhanced_levels = self._apply_ml_optimized_filtering(enhanced_levels, market_data)
             filtered_count = len(enhanced_levels)
 
+            # Apply prominence filtering first
+            enhanced_levels = self._apply_prominence_filtering(enhanced_levels, market_data)
+            
+            # Enhance levels with ML-optimized features
+            enhanced_levels = self._enhance_levels_with_ml_features(enhanced_levels, market_data)
+            
             # Apply DBSCAN clustering to avoid nearby levels (unless disabled)
             pre_clustering_count = len(enhanced_levels)
 
@@ -3532,6 +4021,133 @@ class EnhancedSRDetector:
         self.logger.info(f'🔧 Heuristic DBSCAN params - eps: {eps:.6f}, min_samples: {min_samples}')
 
         return eps, min_samples
+
+    def _optimize_dbscan_enhanced(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
+        """Enhanced DBSCAN parameter optimization with ATR-based constraints."""
+        try:
+            from skopt import gp_minimize
+            from skopt.space import Real, Integer
+            
+            level_data = np.array([[level.price, level.strength] for level in levels])
+            avg_price = data['close'].mean()
+            
+            # Calculate ATR for better parameter optimization
+            atr = self._calculate_atr(data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            
+            # ATR-based parameter space
+            eps_min = current_atr * 0.1  # 0.1 ATR minimum
+            eps_max = current_atr * 2.0  # 2.0 ATR maximum
+            min_samples_min = max(2, len(levels) // 20)  # Adaptive minimum
+            min_samples_max = min(10, len(levels) // 3)  # Adaptive maximum
+            
+            space = [
+                Real(eps_min, eps_max, name='eps'),
+                Integer(min_samples_min, min_samples_max, name='min_samples')
+            ]
+            
+            @use_named_args(space)
+            def objective(**params):
+                eps = params['eps']
+                min_samples = params['min_samples']
+                
+                try:
+                    from sklearn.cluster import DBSCAN
+                    clustering = DBSCAN(eps=eps, min_samples=min_samples, metric=self._strength_aware_distance)
+                    labels = clustering.fit_predict(level_data)
+                    
+                    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+                    n_noise = list(labels).count(-1)
+                    
+                    if n_clusters == 0:
+                        return -1.0  # Penalty for no clusters
+                    
+                    # Enhanced quality metrics
+                    silhouette_score = self._calculate_silhouette_score(level_data, labels)
+                    cluster_balance = self._calculate_cluster_balance(labels)
+                    noise_ratio = n_noise / len(levels)
+                    
+                    # Combined score (higher is better)
+                    score = (silhouette_score * 0.4 + 
+                            cluster_balance * 0.3 + 
+                            (1 - noise_ratio) * 0.3)
+                    
+                    return -score  # Minimize negative score
+                    
+                except Exception:
+                    return -1.0
+            
+            result = gp_minimize(objective, space, n_calls=50, random_state=42)
+            best_eps = result.x[0]
+            best_min_samples = int(result.x[1])
+            
+            self.logger.info(f'🔧 Enhanced DBSCAN optimization - eps: {best_eps:.6f}, min_samples: {best_min_samples}, score: {-result.fun:.3f}')
+            
+            return best_eps, best_min_samples
+            
+        except Exception as e:
+            self.logger.warning(f'Enhanced DBSCAN optimization failed: {e}')
+            return self._get_enhanced_heuristic_dbscan_params(levels, data)
+
+    def _calculate_silhouette_score(self, data: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate silhouette score for clustering quality."""
+        try:
+            from sklearn.metrics import silhouette_score
+            if len(set(labels)) > 1 and -1 not in labels:
+                return silhouette_score(data, labels)
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _calculate_cluster_balance(self, labels: np.ndarray) -> float:
+        """Calculate cluster balance score (higher is better)."""
+        try:
+            unique_labels = [label for label in set(labels) if label != -1]
+            if len(unique_labels) <= 1:
+                return 0.0
+            
+            cluster_sizes = [list(labels).count(label) for label in unique_labels]
+            min_size = min(cluster_sizes)
+            max_size = max(cluster_sizes)
+            
+            # Balance score: 1.0 for perfectly balanced, 0.0 for highly imbalanced
+            return min_size / max_size if max_size > 0 else 0.0
+        except Exception:
+            return 0.0
+
+    def _get_enhanced_heuristic_dbscan_params(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
+        """Enhanced heuristic DBSCAN parameters with ATR-based optimization."""
+        try:
+            avg_price = data['close'].mean()
+            price_volatility = data['close'].pct_change().std()
+            
+            # Calculate ATR for better parameter optimization
+            atr = self._calculate_atr(data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            
+            # ATR-based epsilon calculation
+            base_eps_atr = 0.5  # 0.5 ATR base
+            volatility_factor = min(2.0, max(0.5, price_volatility * 100))  # Scale volatility
+            level_density_factor = min(2.0, max(0.5, len(levels) / 50))  # Scale by level count
+            
+            eps = current_atr * base_eps_atr * volatility_factor / level_density_factor
+            
+            # Adaptive min_samples based on level count and quality
+            base_min_samples = max(2, min(8, len(levels) // 10))
+            quality_factor = np.mean([level.strength for level in levels])
+            min_samples = int(base_min_samples * (2 - quality_factor))  # Higher quality = fewer samples needed
+            
+            # Apply multipliers from config
+            eps *= self.dbscan_eps_multiplier
+            min_samples = int(min_samples * self.dbscan_min_samples_multiplier)
+            
+            self.logger.info(f'🔧 Enhanced heuristic DBSCAN params - eps: {eps:.6f} ({eps/current_atr:.2f} ATR), min_samples: {min_samples}')
+            
+            return eps, min_samples
+            
+        except Exception as e:
+            self.logger.warning(f'Enhanced heuristic DBSCAN params failed: {e}')
+            return self._get_heuristic_dbscan_params(levels, data)
 
     def _cluster_levels_by_price(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
         """Fallback clustering method when DBSCAN is not available."""

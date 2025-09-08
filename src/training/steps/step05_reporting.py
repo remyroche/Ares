@@ -418,10 +418,9 @@ class Step05Reporter:
             
             saved_files = {}
             
-            # Save JSON report
+            # Save JSON report using safe operations
             json_path = output_path / f"{base_filename}.json"
-            with open(json_path, 'w') as f:
-                json.dump(report, f, indent=2, default=str)
+            safe_json_dump(report, json_path, indent=2, default=str)
             saved_files['json'] = str(json_path)
             
             # Save Markdown report

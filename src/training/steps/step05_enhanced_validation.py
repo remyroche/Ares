@@ -154,13 +154,15 @@ class Step05EnhancedValidator:
             if len(price_changes) > 30:  # Minimum sample size for statistical tests
                 # Normality test
                 shapiro_stat, shapiro_p = stats.shapiro(price_changes.sample(min(5000, len(price_changes))))
+                # Use safe math operations for p-value validation
+                shapiro_p_safe = validate_finite(shapiro_p, "shapiro_p_value")
                 statistical_tests['normality'] = {
-                    'shapiro_statistic': shapiro_stat,
-                    'shapiro_p_value': shapiro_p,
-                    'is_normal': shapiro_p > 0.05
+                    'shapiro_statistic': validate_finite(shapiro_stat, "shapiro_statistic"),
+                    'shapiro_p_value': shapiro_p_safe,
+                    'is_normal': shapiro_p_safe > 0.05
                 }
                 
-                if shapiro_p <= 0.05:
+                if shapiro_p_safe <= 0.05:
                     warnings.append("Price changes are not normally distributed")
                     recommendations.append("Consider using robust statistical methods")
                 
@@ -169,12 +171,14 @@ class Step05EnhancedValidator:
                 try:
                     ljungbox_result = acorr_ljungbox(price_changes, lags=10, return_df=True)
                     autocorr_p = ljungbox_result['lb_pvalue'].iloc[-1]
+                    # Use safe math operations for p-value validation
+                    autocorr_p_safe = validate_finite(autocorr_p, "autocorr_p_value")
                     statistical_tests['autocorrelation'] = {
-                        'ljungbox_p_value': autocorr_p,
-                        'has_autocorrelation': autocorr_p <= 0.05
+                        'ljungbox_p_value': autocorr_p_safe,
+                        'has_autocorrelation': autocorr_p_safe <= 0.05
                     }
                     
-                    if autocorr_p <= 0.05:
+                    if autocorr_p_safe <= 0.05:
                         warnings.append("Significant autocorrelation detected in price changes")
                         recommendations.append("Consider modeling autocorrelation in trading strategy")
                 
@@ -187,9 +191,11 @@ class Step05EnhancedValidator:
                 self.logger.info("📊 Analyzing volume-price relationships...")
                 
                 volume_price_corr = data['volume'].corr(data['close'].pct_change().abs())
-                details['volume_price_correlation'] = float(volume_price_corr) if not pd.isna(volume_price_corr) else 0.0
+                # Use safe math operations for correlation validation
+                volume_price_corr_safe = validate_finite(volume_price_corr, "volume_price_correlation") if not pd.isna(volume_price_corr) else 0.0
+                details['volume_price_correlation'] = float(volume_price_corr_safe)
                 
-                if volume_price_corr < 0.3:
+                if volume_price_corr_safe < 0.3:
                     warnings.append("Low volume-price correlation detected")
                     recommendations.append("Review volume data quality")
                 
@@ -198,17 +204,21 @@ class Step05EnhancedValidator:
                 volume_skewness = volume_changes.skew()
                 volume_kurtosis = volume_changes.kurtosis()
                 
+                # Use safe math operations for volume statistics
+                volume_skewness_safe = validate_finite(volume_skewness, "volume_skewness")
+                volume_kurtosis_safe = validate_finite(volume_kurtosis, "volume_kurtosis")
+                
                 details['volume_statistics'] = {
-                    'correlation': float(volume_price_corr),
-                    'skewness': float(volume_skewness),
-                    'kurtosis': float(volume_kurtosis)
+                    'correlation': float(volume_price_corr_safe),
+                    'skewness': float(volume_skewness_safe),
+                    'kurtosis': float(volume_kurtosis_safe)
                 }
                 
-                if abs(volume_skewness) > 2:
-                    warnings.append(f"High volume skewness: {volume_skewness:.2f}")
+                if abs(volume_skewness_safe) > 2:
+                    warnings.append(f"High volume skewness: {volume_skewness_safe:.2f}")
                 
-                if volume_kurtosis > 5:
-                    warnings.append(f"High volume kurtosis: {volume_kurtosis:.2f}")
+                if volume_kurtosis_safe > 5:
+                    warnings.append(f"High volume kurtosis: {volume_kurtosis_safe:.2f}")
             
             # 4. Price level validation
             self.logger.info("📊 Validating price levels...")

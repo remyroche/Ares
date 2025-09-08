@@ -207,11 +207,11 @@ class Step05OptimizedFinancialCalculator:
             transaction_costs = pd.Series(0.0, index=data.index)
             transaction_costs[valid_trades_mask] = total_costs[valid_trades_mask]
             
-            # Calculate statistics
-            total_costs_sum = transaction_costs.sum()
-            avg_cost_per_trade = transaction_costs[valid_trades_mask].mean()
-            max_cost = transaction_costs.max()
-            min_cost = transaction_costs[transaction_costs > 0].min() if (transaction_costs > 0).any() else 0
+            # Calculate statistics using safe math operations
+            total_costs_sum = validate_finite(transaction_costs.sum(), "total_costs_sum")
+            avg_cost_per_trade = validate_finite(transaction_costs[valid_trades_mask].mean(), "avg_cost_per_trade")
+            max_cost = validate_finite(transaction_costs.max(), "max_cost")
+            min_cost = validate_finite(transaction_costs[transaction_costs > 0].min(), "min_cost") if (transaction_costs > 0).any() else 0.0
             
             computation_time = time.time() - start_time
             
@@ -221,10 +221,21 @@ class Step05OptimizedFinancialCalculator:
             self.logger.info(f"📊 Average cost per trade: ${avg_cost_per_trade:.2f}")
             self.logger.info(f"📈 Cost range: ${min_cost:.2f} - ${max_cost:.2f}")
             self.logger.info(f"🔢 Cost breakdown:")
-            self.logger.info(f"   Trading fees: ${trading_fees.sum():.2f} ({trading_fees.sum()/total_costs_sum*100:.1f}%)")
-            self.logger.info(f"   Slippage: ${slippage_costs.sum():.2f} ({slippage_costs.sum()/total_costs_sum*100:.1f}%)")
-            self.logger.info(f"   Funding: ${funding_costs.sum():.2f} ({funding_costs.sum()/total_costs_sum*100:.1f}%)")
-            self.logger.info(f"   Market impact: ${market_impact_costs.sum():.2f} ({market_impact_costs.sum()/total_costs_sum*100:.1f}%)")
+            # Use safe math operations for percentage calculations
+            trading_fees_sum = validate_finite(trading_fees.sum(), "trading_fees_sum")
+            slippage_costs_sum = validate_finite(slippage_costs.sum(), "slippage_costs_sum")
+            funding_costs_sum = validate_finite(funding_costs.sum(), "funding_costs_sum")
+            market_impact_costs_sum = validate_finite(market_impact_costs.sum(), "market_impact_costs_sum")
+            
+            trading_fees_pct = safe_divide(trading_fees_sum, total_costs_sum, 0.0) * 100
+            slippage_pct = safe_divide(slippage_costs_sum, total_costs_sum, 0.0) * 100
+            funding_pct = safe_divide(funding_costs_sum, total_costs_sum, 0.0) * 100
+            market_impact_pct = safe_divide(market_impact_costs_sum, total_costs_sum, 0.0) * 100
+            
+            self.logger.info(f"   Trading fees: ${trading_fees_sum:.2f} ({trading_fees_pct:.1f}%)")
+            self.logger.info(f"   Slippage: ${slippage_costs_sum:.2f} ({slippage_pct:.1f}%)")
+            self.logger.info(f"   Funding: ${funding_costs_sum:.2f} ({funding_pct:.1f}%)")
+            self.logger.info(f"   Market impact: ${market_impact_costs_sum:.2f} ({market_impact_pct:.1f}%)")
             
             # Update performance stats
             self.performance_stats['total_calculations'] += 1

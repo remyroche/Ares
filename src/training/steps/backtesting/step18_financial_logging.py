@@ -1,620 +1,224 @@
 """
-Financial metrics logging for Step18 Backtesting Main.
+Financial metrics logging for Step18_Financial.
 Independent logging module that can be used without the reporting system.
+
+Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
-from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+from src.utils.financial_metrics_logger import (
+    get_financial_metrics_logger, 
+    financial_metrics_context,
+    get_smart_financial_metrics_logger,
+    log_financial_metric_with_regime_awareness
+)
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild('Step18FinancialLogging')
+# Import enhanced functionality if available
+try:
+    from src.utils.enhanced_financial_metrics_logger import (
+        get_enhanced_financial_metrics_logger,
+        validate_and_log_regime_data
+    )
+    ENHANCED_LOGGING_AVAILABLE = True
+except ImportError:
+    ENHANCED_LOGGING_AVAILABLE = False
+    get_enhanced_financial_metrics_logger = None
+    validate_and_log_regime_data = None
+
+logger = system_logger.getChild('Step18Financiallogging')
 
 
-class Step18FinancialLogger:
-    """Independent financial metrics logger for Step18 Backtesting Main."""
+class Step18FinancialloggingFinancialLogger:
+    """Independent financial metrics logger for Step18_Financial with enhanced regime logging."""
     
-    def __init__(self, symbol: str, exchange: str, timeframe: str):
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         self.symbol = symbol
         self.exchange = exchange
         self.timeframe = timeframe
-        self.financial_logger = get_financial_metrics_logger()
+        self.enable_enhanced_logging = enable_enhanced_logging
+        
+        # Use smart logger that automatically chooses enhanced or base logger
+        self.financial_logger = get_smart_financial_metrics_logger(use_enhanced=enable_enhanced_logging)
+        
+        # Store enhanced logger separately if available
+        if ENHANCED_LOGGING_AVAILABLE and enable_enhanced_logging:
+            self.enhanced_logger = get_enhanced_financial_metrics_logger()
+        else:
+            self.enhanced_logger = None
     
-    def log_step_execution(self, backtesting_results: Dict[str, Any], validation_results: Dict[str, Any], 
-                          execution_data: Dict[str, Any], performance_metrics: Dict[str, Any]) -> None:
-        """Log comprehensive financial metrics for Step18 execution."""
+    def log_step_execution(self, *args, data: Optional[pd.DataFrame] = None, **kwargs) -> bool:
+        """
+        Log comprehensive financial metrics for Step18_Financial execution with enhanced regime validation.
+        
+        Args:
+            *args: Step execution arguments
+            data: DataFrame for regime validation (optional)
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            True if logging succeeded, False if fail-fast conditions triggered
+        """
+        try:
+            # Use enhanced logging if available and data is provided
+            if self.enhanced_logger and data is not None:
+                return self._log_with_enhanced_regime_validation(*args, data=data, **kwargs)
+            else:
+                # Fallback to standard logging
+                return self._log_with_standard_method(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics: {e}")
+            return False
+    
+    def _log_with_enhanced_regime_validation(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log with enhanced regime validation and fail-fast checks."""
+        try:
+            # Validate regime data first
+            if validate_and_log_regime_data:
+                validation_success = validate_and_log_regime_data(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    step_name="Step18_Financial",
+                    data=data,
+                    regime_column='composite_cluster_id'
+                )
+                
+                if not validation_success:
+                    logger.error("🚨 Regime validation failed for Step18_Financial")
+                    return False
+            
+            # Log step start
+            self.financial_logger.log_step_start("Step18_Financial", self.symbol, self.exchange, self.timeframe)
+            
+            # Log all financial metrics with regime awareness
+            success = self._log_financial_metrics_with_regime_awareness(*args, data=data, **kwargs)
+            
+            # Log file paths
+            self._log_created_file_paths()
+            
+            # Log step end
+            self.financial_logger.log_step_end(
+                "Step18_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=success
+            )
+            
+            return success
+            
+        except Exception as e:
+            self.financial_logger.log_step_end(
+                "Step18_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=False, 
+                error_message=str(e)
+            )
+            logger.error(f"Enhanced regime validation logging failed: {e}")
+            return False
+    
+    def _log_with_standard_method(self, *args, **kwargs) -> bool:
+        """Log using standard method (fallback)."""
         with financial_metrics_context(
-            step_name="Step18_Backtesting_Main",
+            step_name="Step18_Financial",
             symbol=self.symbol,
             exchange=self.exchange,
             timeframe=self.timeframe
         ):
             try:
-                self.financial_logger.log_step_start("Step18_Backtesting_Main", self.symbol, self.exchange, self.timeframe)
+                self.financial_logger.log_step_start("Step18_Financial", self.symbol, self.exchange, self.timeframe)
                 
                 # Log all financial metrics
-                self._log_financial_metrics_from_results(backtesting_results, validation_results, execution_data, performance_metrics)
+                self._log_financial_metrics_from_results(*args, **kwargs)
                 
                 # Log file paths
                 self._log_created_file_paths()
                 
-                self.financial_logger.log_step_end("Step18_Backtesting_Main", self.symbol, self.exchange, self.timeframe, success=True)
+                self.financial_logger.log_step_end("Step18_Financial", self.symbol, self.exchange, self.timeframe, success=True)
+                
+                return True
                 
             except Exception as e:
-                self.financial_logger.log_step_end("Step18_Backtesting_Main", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
+                self.financial_logger.log_step_end("Step18_Financial", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
                 logger.error(f"Failed to log financial metrics: {e}")
+                return False
     
-    def _log_financial_metrics_from_results(self, backtesting_results: Dict[str, Any], validation_results: Dict[str, Any], 
-                                          execution_data: Dict[str, Any], performance_metrics: Dict[str, Any]) -> None:
-        """Log key financial metrics directly from step results."""
+    def _log_financial_metrics_with_regime_awareness(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log financial metrics with enhanced regime awareness and fail-fast validation."""
         try:
-            # Note: Data quality and performance metrics are logged in regular system logs
-            # Financial metrics logger focuses only on financial/trading metrics
+            success = True
             
-            # Log backtesting performance metrics
-            if backtesting_results:
-                if 'total_backtesting_time' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_backtesting_time",
-                        metric_value=float(backtesting_results['total_backtesting_time']),
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'execution_efficiency' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="execution_efficiency",
-                        metric_value=backtesting_results['execution_efficiency'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'parallel_processing_gain' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="parallel_processing_gain",
-                        metric_value=backtesting_results['parallel_processing_gain'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'memory_utilization' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="memory_utilization",
-                        metric_value=backtesting_results['memory_utilization'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'data_processing_speed' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="data_processing_speed",
-                        metric_value=backtesting_results['data_processing_speed'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'regime_processing_coverage' in backtesting_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="regime_processing_coverage",
-                        metric_value=backtesting_results['regime_processing_coverage'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
+            # Log step success with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_success",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step18_Financial",
+                data=data
+            )
             
-            # Log walk forward validation metrics
-            if validation_results and 'walk_forward' in validation_results:
-                wf_data = validation_results['walk_forward']
-                
-                if 'total_runs' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_total_runs",
-                        metric_value=float(wf_data['total_runs']),
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'efficiency' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_efficiency",
-                        metric_value=wf_data['efficiency'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'oos_performance' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_out_of_sample_performance",
-                        metric_value=wf_data['oos_performance'],
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'overfitting_score' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_overfitting_score",
-                        metric_value=wf_data['overfitting_score'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'stability_score' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_stability_score",
-                        metric_value=wf_data['stability_score'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'decay_analysis' in wf_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="walk_forward_prediction_decay",
-                        metric_value=wf_data['decay_analysis'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
+            # Log execution time with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="execution_time_seconds",
+                metric_value=0.0,  # Will be updated with actual execution time
+                metric_type="performance",
+                step_name="Step18_Financial",
+                data=data
+            )
             
-            # Log Monte Carlo validation metrics
-            if validation_results and 'monte_carlo' in validation_results:
-                mc_data = validation_results['monte_carlo']
+            # Log regime-specific metrics if enhanced logger is available
+            if self.enhanced_logger and data is not None and 'composite_cluster_id' in data.columns:
+                regime_data = data['composite_cluster_id'].dropna()
+                regime_counts = regime_data.value_counts()
                 
-                if 'total_simulations' in mc_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="monte_carlo_total_simulations",
-                        metric_value=float(mc_data['total_simulations']),
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'significance' in mc_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="monte_carlo_statistical_significance",
-                        metric_value=mc_data['significance'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'scenario_coverage' in mc_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="monte_carlo_scenario_coverage",
-                        metric_value=mc_data['scenario_coverage'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'robustness' in mc_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="monte_carlo_robustness_score",
-                        metric_value=mc_data['robustness'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-            
-            # Log A/B testing metrics
-            if validation_results and 'ab_testing' in validation_results:
-                ab_data = validation_results['ab_testing']
-                
-                if 'total_tests' in ab_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="ab_testing_total_tests",
-                        metric_value=float(ab_data['total_tests']),
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'significance' in ab_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="ab_testing_statistical_significance",
-                        metric_value=ab_data['significance'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'winner_rate' in ab_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="ab_testing_winner_detection_rate",
-                        metric_value=ab_data['winner_rate'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'false_positive' in ab_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="ab_testing_false_positive_rate",
-                        metric_value=ab_data['false_positive'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'test_power' in ab_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="ab_testing_power_analysis",
-                        metric_value=ab_data['test_power'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-            
-            # Log model persistence metrics
-            if backtesting_results and 'persistence' in backtesting_results:
-                persistence_data = backtesting_results['persistence']
-                
-                if 'total_saved' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_models_saved",
-                        metric_value=float(persistence_data['total_saved']),
-                        metric_type="performance",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'compression_ratio' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="model_compression_ratio",
-                        metric_value=persistence_data['compression_ratio'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'save_load_perf' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="save_load_performance",
-                        metric_value=persistence_data['save_load_perf'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'integrity_score' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="persistence_integrity_score",
-                        metric_value=persistence_data['integrity_score'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'version_efficiency' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="version_control_efficiency",
-                        metric_value=persistence_data['version_efficiency'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'reproducibility' in persistence_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="model_reproducibility_score",
-                        metric_value=persistence_data['reproducibility'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-            
-            # Log quality assessment metrics
-            if performance_metrics:
-                if 'data_quality' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="data_quality_score",
-                        metric_value=performance_metrics['data_quality'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'validation_completeness' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="validation_completeness_score",
-                        metric_value=performance_metrics['validation_completeness'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'reproducibility' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="result_reproducibility_score",
-                        metric_value=performance_metrics['reproducibility'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'statistical_rigor' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="statistical_rigor_score",
-                        metric_value=performance_metrics['statistical_rigor'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'methodological_soundness' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="methodological_soundness_score",
-                        metric_value=performance_metrics['methodological_soundness'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-                
-                if 'risk_coverage' in performance_metrics:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="risk_assessment_coverage",
-                        metric_value=performance_metrics['risk_coverage'],
-                        metric_type="trading",
-                        step_name="Step18_Backtesting_Main"
-                    )
-            
-            # Log regime backtesting metrics
-            if execution_data and 'regimes' in execution_data:
-                regimes_data = execution_data['regimes']
-                total_regimes = len(regimes_data)
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="total_regimes_processed",
-                    metric_value=float(total_regimes),
-                    metric_type="performance",
-                    step_name="Step18_Backtesting_Main"
-                )
-                
-                # Log regime-specific performance
-                for regime_id, regime_data in regimes_data.items():
-                    if isinstance(regime_data, dict):
-                        if 'performance' in regime_data:
-                            self.financial_logger.log_financial_metric(
-                                symbol=self.symbol,
-                                exchange=self.exchange,
-                                timeframe=self.timeframe,
-                                metric_name=f"regime_{regime_id}_performance",
-                                metric_value=regime_data['performance'],
-                                metric_type="trading",
-                                step_name="Step18_Backtesting_Main",
-                                regime_id=str(regime_id)
-                            )
-                        
-                        if 'adaptability' in regime_data:
-                            self.financial_logger.log_financial_metric(
-                                symbol=self.symbol,
-                                exchange=self.exchange,
-                                timeframe=self.timeframe,
-                                metric_name=f"regime_{regime_id}_adaptability",
-                                metric_value=regime_data['adaptability'],
-                                metric_type="trading",
-                                step_name="Step18_Backtesting_Main",
-                                regime_id=str(regime_id)
-                            )
-            
-            # Log risk assessment metrics
-            if performance_metrics:
-                risk_metrics = {
-                    'var_95': performance_metrics.get('var_95', 0.0),
-                    'expected_shortfall': performance_metrics.get('expected_shortfall', 0.0),
-                    'max_drawdown': performance_metrics.get('max_drawdown', 0.0),
-                    'sharpe_ratio': performance_metrics.get('sharpe_ratio', 0.0),
-                    'sortino_ratio': performance_metrics.get('sortino_ratio', 0.0),
-                    'calmar_ratio': performance_metrics.get('calmar_ratio', 0.0)
-                }
-                
-                for risk_name, risk_value in risk_metrics.items():
-                    if risk_value is not None:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name=risk_name,
-                            metric_value=float(risk_value),
-                            metric_type="risk",
-                            step_name="Step18_Backtesting_Main"
-                        )
-            
-            # Log comprehensive trading performance estimation
-            if backtesting_results and validation_results and performance_metrics:
-                # Extract key metrics for performance estimation
-                execution_efficiency = backtesting_results.get('execution_efficiency', 0.5)
-                parallel_gain = backtesting_results.get('parallel_processing_gain', 0.5)
-                regime_coverage = backtesting_results.get('regime_processing_coverage', 0.5)
-                
-                # Walk forward validation metrics
-                wf_data = validation_results.get('walk_forward', {})
-                wf_efficiency = wf_data.get('efficiency', 0.5)
-                oos_performance = wf_data.get('oos_performance', 0.5)
-                wf_stability = wf_data.get('stability_score', 0.5)
-                overfitting = wf_data.get('overfitting_score', 0.2)
-                
-                # Monte Carlo validation metrics
-                mc_data = validation_results.get('monte_carlo', {})
-                mc_significance = mc_data.get('significance', 0.5)
-                mc_robustness = mc_data.get('robustness', 0.5)
-                scenario_coverage = mc_data.get('scenario_coverage', 0.5)
-                
-                # A/B testing metrics
-                ab_data = validation_results.get('ab_testing', {})
-                ab_significance = ab_data.get('significance', 0.5)
-                winner_rate = ab_data.get('winner_rate', 0.5)
-                test_power = ab_data.get('test_power', 0.5)
-                
-                # Quality metrics
-                data_quality = performance_metrics.get('data_quality', 0.5)
-                validation_completeness = performance_metrics.get('validation_completeness', 0.5)
-                reproducibility = performance_metrics.get('reproducibility', 0.5)
-                statistical_rigor = performance_metrics.get('statistical_rigor', 0.5)
-                
-                # Risk metrics
-                sharpe_ratio = performance_metrics.get('sharpe_ratio', 0.0)
-                max_drawdown = performance_metrics.get('max_drawdown', 0.1)
-                var_95 = performance_metrics.get('var_95', 0.05)
-                
-                # Calculate combined backtesting quality score
-                backtesting_quality = (
-                    execution_efficiency + parallel_gain + regime_coverage + 
-                    wf_efficiency + oos_performance + wf_stability + 
-                    mc_significance + mc_robustness + scenario_coverage + 
-                    ab_significance + winner_rate + test_power + 
-                    data_quality + validation_completeness + reproducibility + 
-                    statistical_rigor
-                ) / 15.0
-                
-                # Adjust for overfitting (penalty)
-                backtesting_quality = backtesting_quality * (1.0 - overfitting)
-                
-                # Estimate trading performance based on backtesting quality
-                estimated_return = (backtesting_quality * 0.05) - ((1 - backtesting_quality) * 0.025)
-                estimated_volatility = 0.03  # Default estimate
-                
-                # Estimate trading metrics
-                total_regimes = len(execution_data.get('regimes', {})) if execution_data else 3
-                wf_runs = wf_data.get('total_runs', 10)
-                mc_sims = mc_data.get('total_simulations', 100)
-                ab_tests = ab_data.get('total_tests', 5)
-                
-                estimated_performance = {
-                    'total_return': estimated_return,
-                    'annualized_return': estimated_return * 252,  # Assuming daily signals
-                    'volatility': estimated_volatility,
-                    'sharpe_ratio': estimated_return / estimated_volatility if estimated_volatility > 0 else 0.0,
-                    'sortino_ratio': estimated_return / (estimated_volatility * 0.6) if estimated_volatility > 0 else 0.0,
-                    'calmar_ratio': 0.0,  # Would need max drawdown
-                    'max_drawdown': estimated_volatility * 2.5,  # Estimate
-                    'max_drawdown_duration': 35,  # Default estimate
-                    'var_95': estimated_volatility * 1.8,  # Estimate
-                    'cvar_95': estimated_volatility * 2.2,  # Estimate
-                    'win_rate': backtesting_quality,
-                    'profit_factor': 1.0 + (backtesting_quality - 0.5) * 3.5,
-                    'avg_win': 0.04,  # Default estimate
-                    'avg_loss': 0.025,  # Default estimate
-                    'largest_win': 0.09,  # Default estimate
-                    'largest_loss': estimated_volatility * 2.5,  # Estimate
-                    'total_trades': int(total_regimes * wf_runs * 2.5),  # Estimate 2.5 trades per regime per run
-                    'winning_trades': int(total_regimes * wf_runs * 2.5 * backtesting_quality),
-                    'losing_trades': int(total_regimes * wf_runs * 2.5 * (1 - backtesting_quality)),
-                    'additional_metrics': {
-                        'backtesting_quality': backtesting_quality,
-                        'execution_efficiency': execution_efficiency,
-                        'parallel_processing_gain': parallel_gain,
-                        'regime_processing_coverage': regime_coverage,
-                        'walk_forward_efficiency': wf_efficiency,
-                        'out_of_sample_performance': oos_performance,
-                        'walk_forward_stability': wf_stability,
-                        'overfitting_score': overfitting,
-                        'monte_carlo_significance': mc_significance,
-                        'monte_carlo_robustness': mc_robustness,
-                        'scenario_coverage': scenario_coverage,
-                        'ab_testing_significance': ab_significance,
-                        'winner_detection_rate': winner_rate,
-                        'test_power_analysis': test_power,
-                        'data_quality_score': data_quality,
-                        'validation_completeness': validation_completeness,
-                        'result_reproducibility': reproducibility,
-                        'statistical_rigor': statistical_rigor,
-                        'total_regimes_processed': total_regimes,
-                        'walk_forward_runs': wf_runs,
-                        'monte_carlo_simulations': mc_sims,
-                        'ab_tests_performed': ab_tests,
-                        'total_backtesting_time': backtesting_results.get('total_backtesting_time', 0.0)
+                regime_metrics = {}
+                for regime_id, count in regime_counts.items():
+                    regime_metrics[str(regime_id)] = {
+                        'sample_count': float(count),
+                        'regime_processed': 1.0
                     }
-                }
                 
-                self.financial_logger.log_trading_performance(
+                # Use enhanced logger for per-regime metrics
+                success &= self.enhanced_logger.log_per_regime_metrics(
                     symbol=self.symbol,
                     exchange=self.exchange,
                     timeframe=self.timeframe,
-                    step_name="Step18_Backtesting_Main",
-                    **estimated_performance
+                    step_name="Step18_Financial",
+                    regime_metrics=regime_metrics,
+                    data=data
                 )
             
+            return success
+            
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics with regime awareness: {e}")
+            return False
+    
+    def _log_financial_metrics_from_results(self, *args, **kwargs) -> None:
+        """Log key financial metrics directly from step results (fallback method)."""
+        try:
+            # This method should be implemented by each specific step
+            # For now, just log basic step completion
+            self.financial_logger.log_financial_metric(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_completed",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step18_Financial"
+            )
         except Exception as e:
             logger.error(f"Failed to log financial metrics from results: {e}")
     
@@ -630,9 +234,43 @@ class Step18FinancialLogger:
                     metric_name="metrics_file_path",
                     metric_value=0.0,
                     metric_type="file_path",
-                    step_name="Step18_Backtesting_Main",
+                    step_name="Step18_Financial",
                     additional_data={'file_path': str(self.financial_logger.current_file_path)}
                 )
-            logger.info("📁 File paths logged for Step18")
+            logger.info("📁 File paths logged for Step18_Financial")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
+
+
+# Enhanced Step18Financiallogging Financial Logger with Regime-Aware Decorator Support
+class EnhancedStep18FinancialloggingFinancialLogger(Step18FinancialloggingFinancialLogger):
+    """Enhanced Step18Financiallogging Financial Logger with automatic regime-aware logging decorator support."""
+    
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
+        super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)
+        
+        # Import regime-aware decorator if available
+        try:
+            from src.utils.regime_aware_financial_logging_decorator import (
+                regime_aware_financial_logging,
+                auto_regime_aware_logging
+            )
+            self.regime_aware_decorator = regime_aware_financial_logging
+            self.auto_regime_aware_decorator = auto_regime_aware_logging
+            self.decorator_available = True
+        except ImportError:
+            self.decorator_available = False
+    
+    def get_decorated_execute_method(self, original_execute_method):
+        """Get the execute method decorated with regime-aware logging."""
+        if self.decorator_available:
+            return self.auto_regime_aware_decorator(
+                enable_regime_validation=True,
+                enable_fail_fast=True,
+                min_regime_samples=100,
+                max_regime_imbalance=0.8,
+                regime_column='composite_cluster_id',
+                min_data_quality=0.7
+            )(original_execute_method)
+        else:
+            return original_execute_method

@@ -14,6 +14,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
 from ..standardized_parquet_handler import standardized_parquet_handler
+from functools import lru_cache
+import hashlib
 
 try:
     from src.training.steps.model_training.validation.core.domain import ParquetDatasetManager
@@ -26,6 +28,84 @@ except ImportError:
 
         def write_partitioned_dataset(self, **kwargs) -> None:
             self.logger.warning('ParquetDatasetManager not available, skipping persistence')
+
+class FileCache:
+    """Simple file-based cache for expensive operations."""
+    
+    def __init__(self, cache_dir: str = "cache", max_size: int = 100):
+        self.cache_dir = cache_dir
+        self.max_size = max_size
+        self.cache_metadata = {}
+        os.makedirs(cache_dir, exist_ok=True)
+    
+    def _get_cache_key(self, *args, **kwargs) -> str:
+        """Generate cache key from arguments."""
+        key_data = str(args) + str(sorted(kwargs.items()))
+        return hashlib.md5(key_data.encode()).hexdigest()
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached data."""
+        cache_file = os.path.join(self.cache_dir, f"{key}.json")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r') as f:
+                    return json.load(f)
+            except Exception:
+                return None
+        return None
+    
+    def set(self, key: str, data: Any, ttl: int = 3600) -> None:
+        """Set cached data with TTL."""
+        cache_file = os.path.join(self.cache_dir, f"{key}.json")
+        try:
+            cache_data = {
+                'data': data,
+                'timestamp': time.time(),
+                'ttl': ttl
+            }
+            with open(cache_file, 'w') as f:
+                json.dump(cache_data, f)
+        except Exception as e:
+            logger.warning(f"Failed to cache data: {e}")
+    
+    def is_valid(self, key: str) -> bool:
+        """Check if cached data is still valid."""
+        cache_file = os.path.join(self.cache_dir, f"{key}.json")
+        if not os.path.exists(cache_file):
+            return False
+        
+        try:
+            with open(cache_file, 'r') as f:
+                cache_data = json.load(f)
+            
+            if time.time() - cache_data['timestamp'] > cache_data['ttl']:
+                os.remove(cache_file)
+                return False
+            return True
+        except Exception:
+            return False
+
+# Global file cache instance
+file_cache = FileCache()
+
+@lru_cache(maxsize=128)
+def _cached_file_exists(file_path: str) -> bool:
+    """Cached file existence check."""
+    return os.path.exists(file_path)
+
+def _batch_save_json(data_list: List[Dict[str, Any]], base_path: str, batch_size: int = 10) -> None:
+    """Batch save JSON files for better I/O performance."""
+    try:
+        for i in range(0, len(data_list), batch_size):
+            batch = data_list[i:i + batch_size]
+            batch_file = f"{base_path}_batch_{i//batch_size}.json"
+            
+            with open(batch_file, 'w') as f:
+                json.dump(batch, f, indent=2)
+            
+            logger.info(f"✅ Saved batch {i//batch_size + 1} with {len(batch)} items to {batch_file}")
+    except Exception as e:
+        logger.error(f"❌ Failed to save batch: {e}")
 
 class WalkForwardValidationStep:
     """Step 18: Walk-Forward Validation using existing step6_walk_forward_validation."""
@@ -65,7 +145,7 @@ class WalkForwardValidationStep:
             raise
 
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
-        """Execute walk-forward validation.
+        """Execute walk-forward validation with caching and batch processing optimization.
 
         Args:
             training_input: Training input parameters
@@ -75,35 +155,115 @@ class WalkForwardValidationStep:
             Dict containing validation results
         """
         try:
-            self.logger.info('🔄 Executing Walk-Forward Validation...')
+            self.logger.info('🔄 Executing Walk-Forward Validation with optimizations...')
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             data_dir = training_input.get('data_dir', 'data/training')
-            wfv_results_file = f'{data_dir}/{exchange}_{symbol}_walk_forward_results.json'
-            if os.path.exists(wfv_results_file):
-                with open(wfv_results_file) as f:
-                    wfv_results: Dict[str, Any] = json.load(f)
+            
+            # Generate cache key for this validation run
+            cache_key = file_cache._get_cache_key(symbol, exchange, data_dir, 'wfv_results')
+            
+            # Check cache first
+            if file_cache.is_valid(cache_key):
+                self.logger.info('📦 Using cached walk-forward validation results')
+                cached_data = file_cache.get(cache_key)
+                if cached_data and 'data' in cached_data:
+                    wfv_results = cached_data['data']
+                else:
+                    wfv_results = None
             else:
-                wfv_results = {'symbol': symbol, 'exchange': exchange, 'validation_date': datetime.now().isoformat(), 'validation_method': 'walk_forward', 'fold_results': [], 'overall_metrics': {'accuracy': 0.75, 'precision': 0.72, 'recall': 0.68, 'f1_score': 0.7}}
+                wfv_results = None
+            
+            # Load or generate results
+            wfv_results_file = f'{data_dir}/{exchange}_{symbol}_walk_forward_results.json'
+            if wfv_results is None:
+                if _cached_file_exists(wfv_results_file):
+                    with open(wfv_results_file) as f:
+                        wfv_results: Dict[str, Any] = json.load(f)
+                    # Cache the results
+                    file_cache.set(cache_key, wfv_results, ttl=1800)  # 30 minutes TTL
+                else:
+                    wfv_results = {
+                        'symbol': symbol, 
+                        'exchange': exchange, 
+                        'validation_date': datetime.now().isoformat(), 
+                        'validation_method': 'walk_forward', 
+                        'fold_results': [], 
+                        'overall_metrics': {'accuracy': 0.75, 'precision': 0.72, 'recall': 0.68, 'f1_score': 0.7}
+                    }
+            
             with contextlib.suppress(Exception):
                 self.logger.info(f"Walk-forward results prepared: overall_metrics={wfv_results.get('overall_metrics', {})}")
+            
+            # Batch processing for parquet persistence
             try:
-                pdm = ParquetDatasetManager(logger = self.logger)
+                pdm = ParquetDatasetManager(logger=self.logger)
                 wfv_base = os.path.join(data_dir, 'parquet', 'wfv')
-                os.makedirs(os.path.join(wfv_base, 'summary'), exist_ok = True)
-                summary_rows: list[dict[str, Any]] = []
-                for fold_idx, fold in enumerate(wfv_results.get('fold_results', [])):
-                    metrics = fold.get('metrics', {'accuracy': 0.0})
-                    for k, v in metrics.items():
-                        summary_rows.append({'fold': fold_idx, 'metric': k, 'value': v})
-                if summary_rows:
-                    summary_df = pd.DataFrame(summary_rows)
-                    pdm.write_partitioned_dataset(df = summary_df, base_dir = os.path.join(wfv_base, 'summary'), partition_cols=['fold'], schema_name='split', compression='snappy', update_manifest = True, metadata={'schema_version': '1', 'validation_method': 'wfv'})
-                self.logger.info(f'✅ Walk-forward validation metrics persisted to {wfv_base}')
-            except Exception:
-                pass
+                os.makedirs(os.path.join(wfv_base, 'summary'), exist_ok=True)
+                
+                # Batch process fold results
+                fold_results = wfv_results.get('fold_results', [])
+                if fold_results:
+                    # Process in batches for better performance
+                    batch_size = 50
+                    summary_rows: list[dict[str, Any]] = []
+                    
+                    for i in range(0, len(fold_results), batch_size):
+                        batch = fold_results[i:i + batch_size]
+                        batch_summary_rows = []
+                        
+                        for fold_idx, fold in enumerate(batch, start=i):
+                            metrics = fold.get('metrics', {'accuracy': 0.0})
+                            for k, v in metrics.items():
+                                batch_summary_rows.append({'fold': fold_idx, 'metric': k, 'value': v})
+                        
+                        summary_rows.extend(batch_summary_rows)
+                        
+                        # Save batch if we have enough data
+                        if len(summary_rows) >= batch_size * 10:
+                            summary_df = pd.DataFrame(summary_rows)
+                            batch_file = os.path.join(wfv_base, 'summary', f'batch_{i//batch_size}.parquet')
+                            summary_df.to_parquet(batch_file, compression='snappy')
+                            summary_rows = []  # Clear processed data
+                    
+                    # Save remaining data
+                    if summary_rows:
+                        summary_df = pd.DataFrame(summary_rows)
+                        final_batch_file = os.path.join(wfv_base, 'summary', 'final_batch.parquet')
+                        summary_df.to_parquet(final_batch_file, compression='snappy')
+                    
+                    self.logger.info(f'✅ Walk-forward validation metrics persisted in batches to {wfv_base}')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Batch processing failed, using fallback: {e}')
+                # Fallback to original method
+                try:
+                    summary_rows: list[dict[str, Any]] = []
+                    for fold_idx, fold in enumerate(wfv_results.get('fold_results', [])):
+                        metrics = fold.get('metrics', {'accuracy': 0.0})
+                        for k, v in metrics.items():
+                            summary_rows.append({'fold': fold_idx, 'metric': k, 'value': v})
+                    if summary_rows:
+                        summary_df = pd.DataFrame(summary_rows)
+                        pdm.write_partitioned_dataset(
+                            df=summary_df, 
+                            base_dir=os.path.join(wfv_base, 'summary'), 
+                            partition_cols=['fold'], 
+                            schema_name='split', 
+                            compression='snappy', 
+                            update_manifest=True, 
+                            metadata={'schema_version': '1', 'validation_method': 'wfv'}
+                        )
+                except Exception:
+                    pass
+            
             pipeline_state['walk_forward_validation'] = wfv_results
-            return {'walk_forward_validation': wfv_results, 'validation_file': os.path.join(data_dir, 'parquet', 'wfv'), 'duration': 0.0, 'status': 'SUCCESS'}
+            return {
+                'walk_forward_validation': wfv_results, 
+                'validation_file': os.path.join(data_dir, 'parquet', 'wfv'), 
+                'duration': 0.0, 
+                'status': 'SUCCESS',
+                'cache_used': file_cache.is_valid(cache_key)
+            }
         except Exception as e:
             self.logger.exception(validation_error(f'❌ Error in Walk-Forward Validation: {e}'))
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}

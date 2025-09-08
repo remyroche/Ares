@@ -27,282 +27,117 @@ import logging
 import warnings
 import sys
 
-# Enhanced dependency management with fallbacks
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    warnings.warn("NumPy not available - matrix operations will be limited")
-    NUMPY_AVAILABLE = False
-    np = None
+# Required dependencies - no fallbacks
+import numpy as np
+import pandas as pd
+from numba import jit, prange, float64, float32
+import numba as nb
+import psutil
+import torch
+from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_batch_process
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import (
+    log_step_functions, log_important_calls, log_all_calls,
+    log_internal_call, log_step_progress, log_data_operation
+)
+from ...core.decorators import handles_errors
+from src.training.base_step import BaseStep
+from src.training.steps.model_training.matrix_components import (
+    MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
+    AsyncMatrixProcessor, AsyncTask
+)
+from src.training.steps.market_analysis.step07_enhanced_reporting import Step07EnhancedReporter
 
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    warnings.warn("Pandas not available - DataFrame operations will be limited")
-    PANDAS_AVAILABLE = False
-    pd = None
-
-# Try to import Numba for JIT compilation
-try:
-    from numba import jit, prange, float64, float32
-    import numba as nb
-    NUMBA_AVAILABLE = True
-except ImportError:
-    warnings.warn("Numba not available - JIT compilation disabled")
-    NUMBA_AVAILABLE = False
-    jit = lambda *args, **kwargs: lambda func: func  # No-op decorator
-    prange = range  # Fallback to regular range
-
-# Try to import psutil for memory monitoring
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    warnings.warn("psutil not available - memory monitoring disabled")
-    PSUTIL_AVAILABLE = False
-    # Create a mock psutil class
-    class MockPsutil:
-        class Process:
-            def memory_info(self):
-                class MemoryInfo:
-                    rss = 0
-                return MemoryInfo()
-            def cpu_percent(self):
-                return 0.0
-    psutil = MockPsutil()
-
-# Try to import torch for GPU acceleration
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    warnings.warn("PyTorch not available - GPU acceleration disabled")
-    TORCH_AVAILABLE = False
-    torch = None
-
-# Try to import M1 GPU utilities
-try:
-    from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_batch_process
-    M1_GPU_UTILS_AVAILABLE = True
-    M1_BATCH_AVAILABLE = True
-except ImportError:
-    warnings.warn("M1 GPU utilities not available - GPU acceleration disabled")
-    M1_GPU_UTILS_AVAILABLE = False
-    M1_BATCH_AVAILABLE = False
-    get_m1_gpu_manager = None
-    m1_batch_process = None
-
-# Safe imports with fallbacks
-try:
-    from src.utils.logger import system_logger
-    SYSTEM_LOGGER_AVAILABLE = True
-except ImportError:
-    warnings.warn("System logger not available - using basic logging")
-    SYSTEM_LOGGER_AVAILABLE = False
-    system_logger = logging.getLogger('step07_fallback')
-    logging.basicConfig(level=logging.INFO)
-
-try:
-    from src.utils.comprehensive_function_logger import (
-        log_step_functions, log_important_calls, log_all_calls,
-        log_internal_call, log_step_progress, log_data_operation
-    )
-    LOGGING_DECORATORS_AVAILABLE = True
-except ImportError:
-    warnings.warn("Logging decorators not available - using no-op decorators")
-    LOGGING_DECORATORS_AVAILABLE = False
-    log_step_functions = lambda func: func
-    log_important_calls = lambda func: func
-    log_all_calls = lambda func: func
-    log_internal_call = lambda func: func
-    log_step_progress = lambda func: func
-    log_data_operation = lambda func: func
-
-try:
-    from ...core.decorators import handles_errors
-    HANDLES_ERRORS_AVAILABLE = True
-except ImportError:
-    warnings.warn("Error handling decorator not available - using no-op decorator")
-    HANDLES_ERRORS_AVAILABLE = False
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
-try:
-    from src.training.base_step import BaseStep
-    BASE_STEP_AVAILABLE = True
-except ImportError:
-    warnings.warn("BaseStep not available - using fallback implementation")
-    BASE_STEP_AVAILABLE = False
-    class BaseStep:
-        def __init__(self, config, step_id, step_name):
-            self.config = config
-            self.step_id = step_id
-            self.step_name = step_name
-        async def initialize(self): pass
-        async def execute(self, training_input, pipeline_state): return pipeline_state
-
-try:
-    from src.training.steps.model_training.matrix_components import (
-        MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
-        AsyncMatrixProcessor, AsyncTask
-    )
-    MATRIX_COMPONENTS_AVAILABLE = True
-except ImportError:
-    warnings.warn("Matrix components not available - using fallback implementations")
-    MATRIX_COMPONENTS_AVAILABLE = False
-    class MatrixProcessor:
-        def __init__(self, *args, **kwargs): pass
-        async def compute_correlation_matrix(self, data): return data.corr().values if hasattr(data, 'corr') else None
-        async def compute_covariance_matrix(self, data): return data.cov().values if hasattr(data, 'cov') else None
-    class DiverseLookbackIntegrator:
-        def __init__(self, *args, **kwargs): pass
-        async def optimize_lookback_periods(self, *args, **kwargs): return {'optimized_periods': {'short': [5, 10, 20]}}
-    class MatrixOptimizer:
-        def __init__(self, *args, **kwargs): pass
-    class AsyncMatrixProcessor:
-        def __init__(self, *args, **kwargs): pass
-        async def submit_batch(self, tasks): return [task.task_id for task in tasks]
-        async def wait_for_all(self, timeout): return {}
-        async def shutdown(self): pass
-    class AsyncTask:
-        def __init__(self, func, args, kwargs, task_id, priority):
-            self.func = func
-            self.args = args
-            self.kwargs = kwargs
-            self.task_id = task_id
-            self.priority = priority
-
-# Import enhanced reporting system
-try:
-    from src.training.steps.market_analysis.step07_enhanced_reporting import Step07EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    warnings.warn("Enhanced reporting not available - using basic reporting")
-    ENHANCED_REPORTING_AVAILABLE = False
-    class Step07EnhancedReporter:
-        def __init__(self): pass
-        def generate_comprehensive_report(self, *args, **kwargs): return {}
-        def save_comprehensive_report(self, *args, **kwargs): return {}
-
-# Performance optimization flags
-PANDAS_AVAILABLE = PANDAS_AVAILABLE and pd is not None
-NUMPY_AVAILABLE = NUMPY_AVAILABLE and np is not None
-
-# Dependency status logging
-if not NUMPY_AVAILABLE:
-    warnings.warn("NumPy not available - matrix operations will be severely limited")
-if not PANDAS_AVAILABLE:
-    warnings.warn("Pandas not available - DataFrame operations will be severely limited")
-if not NUMBA_AVAILABLE:
-    warnings.warn("Numba not available - JIT compilation disabled, performance will be reduced")
-if not TORCH_AVAILABLE:
-    warnings.warn("PyTorch not available - GPU acceleration disabled")
-if not PSUTIL_AVAILABLE:
-    warnings.warn("psutil not available - memory monitoring disabled")
-
-# Log dependency status
-logger = system_logger.getChild('Step07Dependencies')
-logger.info(f"Dependency status: NumPy={NUMPY_AVAILABLE}, Pandas={PANDAS_AVAILABLE}, Numba={NUMBA_AVAILABLE}, PyTorch={TORCH_AVAILABLE}, psutil={PSUTIL_AVAILABLE}")
-
+# All dependencies are now required and available
 def check_step07_dependencies() -> Dict[str, bool]:
-    """Check Step07 dependency status and return availability."""
+    """Check Step07 dependency status - all dependencies are required."""
     return {
-        'numpy': NUMPY_AVAILABLE,
-        'pandas': PANDAS_AVAILABLE,
-        'numba': NUMBA_AVAILABLE,
-        'torch': TORCH_AVAILABLE,
-        'psutil': PSUTIL_AVAILABLE,
-        'm1_gpu_utils': M1_GPU_UTILS_AVAILABLE,
-        'system_logger': SYSTEM_LOGGER_AVAILABLE,
-        'logging_decorators': LOGGING_DECORATORS_AVAILABLE,
-        'handles_errors': HANDLES_ERRORS_AVAILABLE,
-        'base_step': BASE_STEP_AVAILABLE,
-        'matrix_components': MATRIX_COMPONENTS_AVAILABLE,
-        'enhanced_reporting': ENHANCED_REPORTING_AVAILABLE
+        'numpy': True,
+        'pandas': True,
+        'numba': True,
+        'torch': True,
+        'psutil': True,
+        'm1_gpu_utils': True,
+        'system_logger': True,
+        'logging_decorators': True,
+        'handles_errors': True,
+        'base_step': True,
+        'matrix_components': True,
+        'enhanced_reporting': True
     }
 
 def get_step07_capabilities() -> Dict[str, Any]:
-    """Get Step07 capabilities based on available dependencies."""
+    """Get Step07 capabilities - all features are available."""
     capabilities = {
-        'matrix_operations': NUMPY_AVAILABLE,
-        'dataframe_operations': PANDAS_AVAILABLE,
-        'jit_compilation': NUMBA_AVAILABLE,
-        'gpu_acceleration': TORCH_AVAILABLE and M1_GPU_UTILS_AVAILABLE,
-        'memory_monitoring': PSUTIL_AVAILABLE,
-        'async_processing': True,  # Always available
-        'enhanced_reporting': ENHANCED_REPORTING_AVAILABLE,
-        'performance_optimization': NUMBA_AVAILABLE or TORCH_AVAILABLE
+        'matrix_operations': True,
+        'dataframe_operations': True,
+        'jit_compilation': True,
+        'gpu_acceleration': True,
+        'memory_monitoring': True,
+        'async_processing': True,
+        'enhanced_reporting': True,
+        'performance_optimization': True
     }
     
-    # Calculate overall capability score
-    total_capabilities = len(capabilities)
-    available_capabilities = sum(1 for available in capabilities.values() if available)
-    capability_score = available_capabilities / total_capabilities
-    
-    capabilities['overall_score'] = capability_score
-    capabilities['status'] = 'full' if capability_score >= 0.8 else 'limited' if capability_score >= 0.5 else 'minimal'
+    capabilities['overall_score'] = 1.0
+    capabilities['status'] = 'full'
     
     return capabilities
 
 
 # Numba-optimized matrix operation functions
-if NUMBA_AVAILABLE:
-    @jit(nopython=True, parallel=True, fastmath=True)
-    def numba_tiled_matmul_kernel(a_block: np.ndarray, b_block: np.ndarray, c_tile: np.ndarray) -> np.ndarray:
-        """Numba-optimized tiled matrix multiplication kernel."""
-        m, k = a_block.shape
-        n = b_block.shape[1]
+@jit(nopython=True, parallel=True, fastmath=True)
+def numba_tiled_matmul_kernel(a_block: np.ndarray, b_block: np.ndarray, c_tile: np.ndarray) -> np.ndarray:
+    """Numba-optimized tiled matrix multiplication kernel."""
+    m, k = a_block.shape
+    n = b_block.shape[1]
 
+    for i in prange(m):
+        for j in prange(n):
+            for l in prange(k):
+                c_tile[i, j] += a_block[i, l] * b_block[l, j]
+
+    return c_tile
+
+@jit(nopython=True, parallel=True)
+def numba_matrix_norm(matrix: np.ndarray, norm_type: int = 2) -> float:
+    """Numba-optimized matrix norm calculation.
+    norm_type: 0=Frobenius, 1=L1, 2=L2
+    """
+    if norm_type == 0:  # Frobenius norm
+        return np.sqrt(np.sum(matrix ** 2))
+    elif norm_type == 1:  # L1 norm
+        return np.sum(np.abs(matrix))
+    elif norm_type == 2:  # L2 norm
+        return np.sqrt(np.sum(matrix ** 2))
+    else:
+        return np.sqrt(np.sum(matrix ** 2))
+
+@jit(nopython=True, parallel=True)
+def numba_matrix_trace(matrix: np.ndarray) -> float:
+    """Numba-optimized matrix trace calculation."""
+    n = min(matrix.shape)
+    trace = 0.0
+    for i in prange(n):
+        trace += matrix[i, i]
+    return trace
+
+@jit(nopython=True, parallel=True)
+def numba_batch_matmul(a_batch: np.ndarray, b_batch: np.ndarray) -> np.ndarray:
+    """Numba-optimized batch matrix multiplication."""
+    batch_size = a_batch.shape[0]
+    m, k = a_batch.shape[1], a_batch.shape[2]
+    n = b_batch.shape[2]
+
+    result = np.zeros((batch_size, m, n))
+
+    for batch in prange(batch_size):
         for i in prange(m):
             for j in prange(n):
                 for l in prange(k):
-                    c_tile[i, j] += a_block[i, l] * b_block[l, j]
+                    result[batch, i, j] += a_batch[batch, i, l] * b_batch[batch, l, j]
 
-        return c_tile
-
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_norm(matrix: np.ndarray, norm_type: int = 2) -> float:
-        """Numba-optimized matrix norm calculation.
-        norm_type: 0=Frobenius, 1=L1, 2=L2
-        """
-        if norm_type == 0:  # Frobenius norm
-            return np.sqrt(np.sum(matrix ** 2))
-        elif norm_type == 1:  # L1 norm
-            return np.sum(np.abs(matrix))
-        elif norm_type == 2:  # L2 norm
-            return np.sqrt(np.sum(matrix ** 2))
-        else:
-            return np.sqrt(np.sum(matrix ** 2))
-
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_trace(matrix: np.ndarray) -> float:
-        """Numba-optimized matrix trace calculation."""
-        n = min(matrix.shape)
-        trace = 0.0
-        for i in prange(n):
-            trace += matrix[i, i]
-        return trace
-
-    @jit(nopython=True, parallel=True)
-    def numba_batch_matmul(a_batch: np.ndarray, b_batch: np.ndarray) -> np.ndarray:
-        """Numba-optimized batch matrix multiplication."""
-        batch_size = a_batch.shape[0]
-        m, k = a_batch.shape[1], a_batch.shape[2]
-        n = b_batch.shape[2]
-
-        result = np.zeros((batch_size, m, n))
-
-        for batch in prange(batch_size):
-            for i in prange(m):
-                for j in prange(n):
-                    for l in prange(k):
-                        result[batch, i, j] += a_batch[batch, i, l] * b_batch[batch, l, j]
-
-        return result
+    return result
 
 
 def _select_compute_dtype_for_device(device_type: str):
@@ -312,8 +147,6 @@ def _select_compute_dtype_for_device(device_type: str):
     - cuda: bfloat16 if supported else float16
     - cpu/other: float32 (no mixed precision)
     """
-    if not TORCH_AVAILABLE:
-        return None
     if device_type == 'cuda':
         try:
             if hasattr(torch.cuda, 'is_bf16_supported') and torch.cuda.is_bf16_supported():
@@ -357,17 +190,17 @@ def tiled_matmul(
         Matrix product of shape (M x N) in the requested return type.
     """
     # Resolve inputs to NumPy/Torch as needed and shapes
-    if 'pd' in globals() and isinstance(a, pd.DataFrame):  # type: ignore[name-defined]
+    if isinstance(a, pd.DataFrame):
         a = a.values
-    if 'pd' in globals() and isinstance(b, pd.DataFrame):  # type: ignore[name-defined]
+    if isinstance(b, pd.DataFrame):
         b = b.values
 
-    if TORCH_AVAILABLE and isinstance(a, torch.Tensor):
+    if isinstance(a, torch.Tensor):
         a_np = a.detach().cpu().numpy()
     else:
         a_np = np.asarray(a)
 
-    if TORCH_AVAILABLE and isinstance(b, torch.Tensor):
+    if isinstance(b, torch.Tensor):
         b_np = b.detach().cpu().numpy()
     else:
         b_np = np.asarray(b)
@@ -388,7 +221,7 @@ def tiled_matmul(
     compute_dtype = None
     use_gpu = False
 
-    if prefer_gpu and TORCH_AVAILABLE and M1_GPU_UTILS_AVAILABLE:
+    if prefer_gpu:
         try:
             manager = get_m1_gpu_manager()
             device = manager.device
@@ -405,7 +238,7 @@ def tiled_matmul(
             compute_dtype = None
 
     # Determine bytes per element for tiling estimation
-    input_bytes = 2 if (TORCH_AVAILABLE and compute_dtype in (getattr(torch, 'float16', None), getattr(torch, 'bfloat16', None))) else 4
+    input_bytes = 2 if (compute_dtype in (torch.float16, torch.bfloat16)) else 4
 
     # Initialize default tiles
     default_edge = 1024
@@ -432,7 +265,7 @@ def tiled_matmul(
     logger.debug({'msg': 'Tiled matmul configuration', 'M': M, 'K': K_a, 'N': N, 'tile_m': tile_m_val, 'tile_k': tile_k_val, 'tile_n': tile_n_val, 'device_type': device_type, 'use_gpu': use_gpu, 'compute_dtype': str(compute_dtype) if compute_dtype is not None else 'None'})
 
     # Prepare output container (float32 accumulation for stability)
-    if not return_numpy and TORCH_AVAILABLE and use_gpu:
+    if not return_numpy and use_gpu:
         # Keep result on device as torch tensor
         assert device is not None
         C_torch = torch.zeros((M, N), dtype=torch.float32, device=device)
@@ -442,10 +275,10 @@ def tiled_matmul(
         result_numpy = True
 
     # Compute in tiles
-    if TORCH_AVAILABLE and use_gpu and device is not None:
+    if use_gpu and device is not None:
         # Use GPU context and mixed precision if enabled
         try:
-            manager_ctx = get_m1_gpu_manager().gpu_context('tiled_matmul') if M1_GPU_UTILS_AVAILABLE else None
+            manager_ctx = get_m1_gpu_manager().gpu_context('tiled_matmul')
         except Exception:
             manager_ctx = None
 
@@ -503,51 +336,34 @@ def tiled_matmul(
                         C_torch[i:i_end, j:j_end] = C_torch[i:i_end, j:j_end] + c_tile_acc_t
     else:
         # Enhanced CPU tiled matmul with Numba optimization
-        logger.info(f"🔢 Performing CPU tiled matmul ({M}x{K_a} @ {K_a}x{N}) using {'Numba-optimized' if NUMBA_AVAILABLE else 'standard'} processing")
+        logger.info(f"🔢 Performing CPU tiled matmul ({M}x{K_a} @ {K_a}x{N}) using Numba-optimized processing")
 
         start_time = time.time()
-        start_memory = psutil.Process().memory_info().rss / 1024 / 1024 if PSUTIL_AVAILABLE else 0
+        start_memory = psutil.Process().memory_info().rss / 1024 / 1024
 
-        if NUMBA_AVAILABLE:
-            # Use Numba-optimized tiled matmul
-            for i in range(0, M, tile_m_val):
-                i_end = min(i + tile_m_val, M)
-                for j in range(0, N, tile_n_val):
-                    j_end = min(j + tile_n_val, N)
-                    c_tile_acc = np.zeros((i_end - i, j_end - j), dtype=np.float32)
-                    for k in range(0, K_a, tile_k_val):
-                        k_end = min(k + tile_k_val, K_a)
-                        a_block = a_np[i:i_end, k:k_end].astype(np.float32, copy=False)
-                        b_block = b_np[k:k_end, j:j_end].astype(np.float32, copy=False)
-                        # Use Numba-optimized kernel for the inner computation
-                        c_tile_acc = numba_tiled_matmul_kernel(a_block, b_block, c_tile_acc)
-                    C_np[i:i_end, j:j_end] += c_tile_acc
-        else:
-            # Standard NumPy implementation
-            for i in range(0, M, tile_m_val):
-                i_end = min(i + tile_m_val, M)
-                for j in range(0, N, tile_n_val):
-                    j_end = min(j + tile_n_val, N)
-                    c_tile_acc = np.zeros((i_end - i, j_end - j), dtype=np.float32)
-                    for k in range(0, K_a, tile_k_val):
-                        k_end = min(k + tile_k_val, K_a)
-                        a_block = a_np[i:i_end, k:k_end].astype(np.float32, copy=False)
-                        b_block = b_np[k:k_end, j:j_end].astype(np.float32, copy=False)
-                        c_tile_acc += a_block @ b_block
-                    C_np[i:i_end, j:j_end] += c_tile_acc
+        # Use Numba-optimized tiled matmul
+        for i in range(0, M, tile_m_val):
+            i_end = min(i + tile_m_val, M)
+            for j in range(0, N, tile_n_val):
+                j_end = min(j + tile_n_val, N)
+                c_tile_acc = np.zeros((i_end - i, j_end - j), dtype=np.float32)
+                for k in range(0, K_a, tile_k_val):
+                    k_end = min(k + tile_k_val, K_a)
+                    a_block = a_np[i:i_end, k:k_end].astype(np.float32, copy=False)
+                    b_block = b_np[k:k_end, j:j_end].astype(np.float32, copy=False)
+                    # Use Numba-optimized kernel for the inner computation
+                    c_tile_acc = numba_tiled_matmul_kernel(a_block, b_block, c_tile_acc)
+                C_np[i:i_end, j:j_end] += c_tile_acc
 
         # Performance monitoring
         end_time = time.time()
         execution_time = end_time - start_time
 
-        memory_info = ""
-        if PSUTIL_AVAILABLE:
-            end_memory = psutil.Process().memory_info().rss / 1024 / 1024
-            memory_delta = end_memory - start_memory
-            memory_info = f", memory delta: {memory_delta:+.1f}MB"
+        end_memory = psutil.Process().memory_info().rss / 1024 / 1024
+        memory_delta = end_memory - start_memory
+        memory_info = f", memory delta: {memory_delta:+.1f}MB"
 
-        optimization_info = " (Numba accelerated)" if NUMBA_AVAILABLE else ""
-        logger.info(f"⚡ CPU tiled matmul completed in {execution_time:.3f}s{memory_info}{optimization_info}")
+        logger.info(f"⚡ CPU tiled matmul completed in {execution_time:.3f}s{memory_info} (Numba accelerated)")
 
     if result_numpy:
         return C_np
@@ -585,17 +401,17 @@ async def async_tiled_matmul(
     logger = system_logger.getChild('AsyncTiledMatmul')
 
     # Convert inputs to numpy arrays for processing
-    if 'pd' in globals() and isinstance(a, pd.DataFrame):
+    if isinstance(a, pd.DataFrame):
         a = a.values
-    if 'pd' in globals() and isinstance(b, pd.DataFrame):
+    if isinstance(b, pd.DataFrame):
         b = b.values
 
-    if TORCH_AVAILABLE and isinstance(a, torch.Tensor):
+    if isinstance(a, torch.Tensor):
         a_np = a.detach().cpu().numpy()
     else:
         a_np = np.asarray(a)
 
-    if TORCH_AVAILABLE and isinstance(b, torch.Tensor):
+    if isinstance(b, torch.Tensor):
         b_np = b.detach().cpu().numpy()
     else:
         b_np = np.asarray(b)
@@ -671,51 +487,47 @@ def _compute_matrix_tile(a: np.ndarray, b: np.ndarray, i_start: int, i_end: int,
         a_block = a[i_start:i_end, k:k_end]
         b_block = b[k:k_end, j_start:j_end]
 
-        if NUMBA_AVAILABLE:
-            tile_result = numba_tiled_matmul_kernel(a_block, b_block, tile_result)
-        else:
-            tile_result += a_block @ b_block
+        tile_result = numba_tiled_matmul_kernel(a_block, b_block, tile_result)
 
     return (i_start, j_start, tile_result)
 
 
 # Additional Numba-optimized matrix utilities
-if NUMBA_AVAILABLE:
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_power(matrix: np.ndarray, power: float) -> np.ndarray:
-        """Numba-optimized matrix power computation."""
-        result = np.empty_like(matrix)
-        for i in prange(matrix.shape[0]):
-            for j in prange(matrix.shape[1]):
-                result[i, j] = matrix[i, j] ** power
-        return result
+@jit(nopython=True, parallel=True)
+def numba_matrix_power(matrix: np.ndarray, power: float) -> np.ndarray:
+    """Numba-optimized matrix power computation."""
+    result = np.empty_like(matrix)
+    for i in prange(matrix.shape[0]):
+        for j in prange(matrix.shape[1]):
+            result[i, j] = matrix[i, j] ** power
+    return result
 
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_sqrt(matrix: np.ndarray) -> np.ndarray:
-        """Numba-optimized matrix square root."""
-        result = np.empty_like(matrix)
-        for i in prange(matrix.shape[0]):
-            for j in prange(matrix.shape[1]):
-                result[i, j] = np.sqrt(max(0, matrix[i, j]))
-        return result
+@jit(nopython=True, parallel=True)
+def numba_matrix_sqrt(matrix: np.ndarray) -> np.ndarray:
+    """Numba-optimized matrix square root."""
+    result = np.empty_like(matrix)
+    for i in prange(matrix.shape[0]):
+        for j in prange(matrix.shape[1]):
+            result[i, j] = np.sqrt(max(0, matrix[i, j]))
+    return result
 
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_exp(matrix: np.ndarray) -> np.ndarray:
-        """Numba-optimized matrix exponential."""
-        result = np.empty_like(matrix)
-        for i in prange(matrix.shape[0]):
-            for j in prange(matrix.shape[1]):
-                result[i, j] = np.exp(matrix[i, j])
-        return result
+@jit(nopython=True, parallel=True)
+def numba_matrix_exp(matrix: np.ndarray) -> np.ndarray:
+    """Numba-optimized matrix exponential."""
+    result = np.empty_like(matrix)
+    for i in prange(matrix.shape[0]):
+        for j in prange(matrix.shape[1]):
+            result[i, j] = np.exp(matrix[i, j])
+    return result
 
-    @jit(nopython=True, parallel=True)
-    def numba_matrix_log(matrix: np.ndarray, eps: float = 1e-10) -> np.ndarray:
-        """Numba-optimized matrix logarithm."""
-        result = np.empty_like(matrix)
-        for i in prange(matrix.shape[0]):
-            for j in prange(matrix.shape[1]):
-                result[i, j] = np.log(max(eps, matrix[i, j]))
-        return result
+@jit(nopython=True, parallel=True)
+def numba_matrix_log(matrix: np.ndarray, eps: float = 1e-10) -> np.ndarray:
+    """Numba-optimized matrix logarithm."""
+    result = np.empty_like(matrix)
+    for i in prange(matrix.shape[0]):
+        for j in prange(matrix.shape[1]):
+            result[i, j] = np.log(max(eps, matrix[i, j]))
+    return result
 
 
 class FunctionCallTracker:
@@ -982,13 +794,8 @@ class EnhancedMatrixOperationsStep(BaseStep):
         self.logger.info(f'🔍 Step07 Dependencies: {self.dependencies}')
         self.logger.info(f'📊 Step07 Capabilities: {self.capabilities}')
         
-        # Initialize components based on availability
-        if self.capabilities['status'] == 'full':
-            self.logger.info('🚀 Full Step07 capabilities available')
-        elif self.capabilities['status'] == 'limited':
-            self.logger.warning('⚠️ Limited Step07 capabilities - some features disabled')
-        else:
-            self.logger.warning('⚠️ Minimal Step07 capabilities - using fallback implementations')
+        # All capabilities are available
+        self.logger.info('🚀 Full Step07 capabilities available')
         
         # Initialize tracking systems
         self.call_tracker = FunctionCallTracker(self.logger)
@@ -1025,28 +832,21 @@ class EnhancedMatrixOperationsStep(BaseStep):
         self.matrix_optimizer = None
 
         # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE:
-            try:
-                self.enhanced_reporter = Step07EnhancedReporter()
-                self.logger.info('✅ Enhanced reporting system initialized successfully')
-            except Exception as e:
-                self.logger.warning(f'⚠️ Enhanced reporting system failed to initialize: {e}')
-                self.enhanced_reporter = None
-        else:
-            self.logger.info('ℹ️ Enhanced reporting system not available, using basic reporting')
+        try:
+            self.enhanced_reporter = Step07EnhancedReporter()
+            self.logger.info('✅ Enhanced reporting system initialized successfully')
+        except Exception as e:
+            self.logger.warning(f'⚠️ Enhanced reporting system failed to initialize: {e}')
             self.enhanced_reporter = None
     @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
-        try:
-            self.matrix_processor = MatrixProcessor(use_gpu = self.matrix_config.get('use_gpu', True), batch_size = self.matrix_config.get('batch_size', 1000))
-            if self.matrix_config.get('use_diverse_lookback', True):
-                self.lookback_integrator = DiverseLookbackIntegrator(self.config)
-            self.matrix_optimizer = MatrixOptimizer(optimization_level = self.matrix_config.get('optimization_level', 'high'))
-            self.logger.info('✅ Enhanced matrix operations components initialized')
-        except ImportError as e:
-            self.logger.warning(f'⚠️ Some matrix components not available: {e}')
+        self.matrix_processor = MatrixProcessor(use_gpu = self.matrix_config.get('use_gpu', True), batch_size = self.matrix_config.get('batch_size', 1000))
+        if self.matrix_config.get('use_diverse_lookback', True):
+            self.lookback_integrator = DiverseLookbackIntegrator(self.config)
+        self.matrix_optimizer = MatrixOptimizer(optimization_level = self.matrix_config.get('optimization_level', 'high'))
+        self.logger.info('✅ Enhanced matrix operations components initialized')
 
     async def initialize(self) -> None:
         """Initialize the step (BaseStep contract)."""
@@ -1385,14 +1185,14 @@ class EnhancedMatrixOperationsStep(BaseStep):
         
         try:
             # Handle different data types
-            if PANDAS_AVAILABLE and hasattr(data, 'columns'):
+            if hasattr(data, 'columns'):
                 # Pandas DataFrame
                 if selected_features:
                     feature_data = data[selected_features]
                 else:
                     feature_cols = [col for col in data.columns if col.startswith('feature_')]
                     feature_data = data[feature_cols] if feature_cols else data
-            elif NUMPY_AVAILABLE and hasattr(data, 'shape'):
+            elif hasattr(data, 'shape'):
                 # NumPy array
                 feature_data = data
             else:
@@ -1405,28 +1205,24 @@ class EnhancedMatrixOperationsStep(BaseStep):
             # Compute correlation matrix
             if matrix_computations.get('correlation_matrix', True):
                 try:
-                    if self.matrix_processor and MATRIX_COMPONENTS_AVAILABLE:
+                    if self.matrix_processor:
                         matrices['correlation_matrix'] = await self.matrix_processor.compute_correlation_matrix(feature_data)
-                    elif PANDAS_AVAILABLE and hasattr(feature_data, 'corr'):
+                    elif hasattr(feature_data, 'corr'):
                         matrices['correlation_matrix'] = feature_data.corr().values
-                    elif NUMPY_AVAILABLE:
-                        matrices['correlation_matrix'] = self._compute_correlation_fallback(feature_data)
                     else:
-                        self.logger.warning("⚠️ Cannot compute correlation matrix - no suitable backend available")
+                        matrices['correlation_matrix'] = self._compute_correlation_fallback(feature_data)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to compute correlation matrix: {e}")
             
             # Compute covariance matrix
             if matrix_computations.get('covariance_matrix', True):
                 try:
-                    if self.matrix_processor and MATRIX_COMPONENTS_AVAILABLE:
+                    if self.matrix_processor:
                         matrices['covariance_matrix'] = await self.matrix_processor.compute_covariance_matrix(feature_data)
-                    elif PANDAS_AVAILABLE and hasattr(feature_data, 'cov'):
+                    elif hasattr(feature_data, 'cov'):
                         matrices['covariance_matrix'] = feature_data.cov().values
-                    elif NUMPY_AVAILABLE:
-                        matrices['covariance_matrix'] = self._compute_covariance_fallback(feature_data)
                     else:
-                        self.logger.warning("⚠️ Cannot compute covariance matrix - no suitable backend available")
+                        matrices['covariance_matrix'] = self._compute_covariance_fallback(feature_data)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to compute covariance matrix: {e}")
             
@@ -1440,7 +1236,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
             # Compute regime transition matrix
             if matrix_computations.get('regime_transition_matrix', True):
                 try:
-                    if PANDAS_AVAILABLE and hasattr(data, 'columns') and 'regime_label' in data.columns:
+                    if hasattr(data, 'columns') and 'regime_label' in data.columns:
                         matrices['regime_transition_matrix'] = self._compute_regime_transition_matrix(data['regime_label'])
                     else:
                         self.logger.debug("⚠️ Regime labels not available for transition matrix")
@@ -1525,9 +1321,6 @@ class EnhancedMatrixOperationsStep(BaseStep):
     
     def _compute_correlation_fallback(self, data: Any) -> Any:
         """Fallback correlation computation for NumPy arrays."""
-        if not NUMPY_AVAILABLE:
-            return None
-        
         try:
             # Convert to numpy array if needed
             if not hasattr(data, 'shape'):
@@ -1541,9 +1334,6 @@ class EnhancedMatrixOperationsStep(BaseStep):
     
     def _compute_covariance_fallback(self, data: Any) -> Any:
         """Fallback covariance computation for NumPy arrays."""
-        if not NUMPY_AVAILABLE:
-            return None
-        
         try:
             # Convert to numpy array if needed
             if not hasattr(data, 'shape'):
@@ -1575,7 +1365,6 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 interaction_matrix[j, i] = interaction
         return interaction_matrix
     @log_all_calls
-
     def _compute_regime_transition_matrix(self, regime_labels: pd.Series) -> np.ndarray:
         """Compute regime transition matrix.
         

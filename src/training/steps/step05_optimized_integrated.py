@@ -17,7 +17,10 @@ import time
 from src.utils.logger import system_logger
 from src.core.decorators import traced, validates, cached, log_execution_time, handles_errors
 from src.utils.pipeline_standards import pipeline_standards
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.common_operations import ensure_directory, safe_json_dump, safe_file_exists, safe_json_load, safe_mean, safe_std, safe_float, safe_int, validate_dataframe_schema, validate_data_quality, optimize_dataframe_dtypes, safe_read_parquet, safe_to_parquet, safe_copy, safe_deepcopy, get_current_datetime, format_datetime, create_empty_dataframe, safe_fillna, safe_rolling, safe_append, safe_extend, safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join, get_logger, setup_basic_logging, safe_exception_handler, timed_operation, format_bytes, chunked_iterable, parallel_map, safe_log_metric, safe_log_params, safe_log_artifact
+from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, validate_positive, validate_range, safe_kelly_calculation, safe_weighted_average, safe_percentage_change, validate_correlation_matrix, safe_matrix_inverse, math_safe, MathValidationError
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.errors import AppError, ValidationError, DataIntegrityError, BusinessRuleError, NotFoundError, ConflictError, RateLimitError, TimeoutError, ServiceUnavailableError, ErrorCode
 
 # Import optimized modules
 from .step05_optimized_validation import Step05OptimizedValidator, BatchValidationResult
@@ -281,8 +284,12 @@ class Step05OptimizedIntegrated:
         try:
             self.logger.info("📁 Loading data with standard processing...")
             
-            # Load data
-            data = pd.read_parquet(file_path)
+            # Load data using safe parquet reading
+            parquet_utils = get_parquet_utils()
+            data = parquet_utils.safe_read_parquet(str(file_path))
+            if data is None:
+                self.logger.error(f"❌ Failed to read parquet file: {file_path}")
+                return None
             
             # Optimize memory usage
             optimization_result = self.memory_manager.optimize_dataframe_memory(data, "standard_data_load")
@@ -384,12 +391,17 @@ class Step05OptimizedIntegrated:
             # In practice, this would integrate with the actual labeling components
             labeled_data = data.copy()
             
-            # Add simple labels based on price movements
+            # Add simple labels based on price movements using safe math operations
             price_changes = labeled_data['close'].pct_change()
-            labeled_data['label'] = np.where(price_changes > 0.002, 1,  # Buy
-                                           np.where(price_changes < -0.001, -1, 0))  # Sell, Hold
             
-            # Add confidence scores
+            # Use safe math operations for label generation
+            buy_threshold = safe_float(0.002, 0.002)
+            sell_threshold = safe_float(-0.001, -0.001)
+            
+            labeled_data['label'] = np.where(price_changes > buy_threshold, 1,  # Buy
+                                           np.where(price_changes < sell_threshold, -1, 0))  # Sell, Hold
+            
+            # Add confidence scores using safe math operations
             labeled_data['label_confidence'] = np.abs(price_changes) * 100  # Simple confidence based on price movement
             
             # Validate generated labels
@@ -567,8 +579,11 @@ class Step05OptimizedIntegrated:
             labeled_dir = ensure_directory(Path(data_dir) / 'training' / 'labeled_data')
             output_path = labeled_dir / f'{exchange}_{symbol}_{timeframe}_labeled_data_optimized.parquet'
             
-            # Use optimized saving
-            labeled_data.to_parquet(output_path, compression='snappy')
+            # Use safe parquet saving
+            parquet_utils = get_parquet_utils()
+            if not safe_to_parquet(labeled_data, output_path, compression='snappy'):
+                self.logger.error(f"❌ Failed to save parquet file: {output_path}")
+                return False
             
             # Save report
             report_dir = ensure_directory(Path(data_dir) / 'reports' / 'step05_optimized')

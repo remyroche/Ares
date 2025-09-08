@@ -17,6 +17,10 @@ import logging
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, validates
+from src.utils.common_operations import safe_mean, safe_std, safe_float, safe_int, validate_dataframe_schema, validate_data_quality, safe_copy, safe_deepcopy, get_current_datetime, format_datetime, create_empty_dataframe, safe_fillna, safe_rolling, safe_append, safe_extend, safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join, get_logger, setup_basic_logging, safe_exception_handler, timed_operation, format_bytes, chunked_iterable, parallel_map, safe_log_metric, safe_log_params, safe_log_artifact
+from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, validate_positive, validate_range, safe_kelly_calculation, safe_weighted_average, safe_percentage_change, validate_correlation_matrix, safe_matrix_inverse, math_safe, MathValidationError
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.errors import AppError, ValidationError, DataIntegrityError, BusinessRuleError, NotFoundError, ConflictError, RateLimitError, TimeoutError, ServiceUnavailableError, ErrorCode
 import os
 
 logger = system_logger.getChild('Step05EnhancedValidation')
@@ -150,13 +154,15 @@ class Step05EnhancedValidator:
             if len(price_changes) > 30:  # Minimum sample size for statistical tests
                 # Normality test
                 shapiro_stat, shapiro_p = stats.shapiro(price_changes.sample(min(5000, len(price_changes))))
+                # Use safe math operations for p-value validation
+                shapiro_p_safe = validate_finite(shapiro_p, "shapiro_p_value")
                 statistical_tests['normality'] = {
-                    'shapiro_statistic': shapiro_stat,
-                    'shapiro_p_value': shapiro_p,
-                    'is_normal': shapiro_p > 0.05
+                    'shapiro_statistic': validate_finite(shapiro_stat, "shapiro_statistic"),
+                    'shapiro_p_value': shapiro_p_safe,
+                    'is_normal': shapiro_p_safe > 0.05
                 }
                 
-                if shapiro_p <= 0.05:
+                if shapiro_p_safe <= 0.05:
                     warnings.append("Price changes are not normally distributed")
                     recommendations.append("Consider using robust statistical methods")
                 
@@ -165,12 +171,14 @@ class Step05EnhancedValidator:
                 try:
                     ljungbox_result = acorr_ljungbox(price_changes, lags=10, return_df=True)
                     autocorr_p = ljungbox_result['lb_pvalue'].iloc[-1]
+                    # Use safe math operations for p-value validation
+                    autocorr_p_safe = validate_finite(autocorr_p, "autocorr_p_value")
                     statistical_tests['autocorrelation'] = {
-                        'ljungbox_p_value': autocorr_p,
-                        'has_autocorrelation': autocorr_p <= 0.05
+                        'ljungbox_p_value': autocorr_p_safe,
+                        'has_autocorrelation': autocorr_p_safe <= 0.05
                     }
                     
-                    if autocorr_p <= 0.05:
+                    if autocorr_p_safe <= 0.05:
                         warnings.append("Significant autocorrelation detected in price changes")
                         recommendations.append("Consider modeling autocorrelation in trading strategy")
                 
@@ -183,9 +191,11 @@ class Step05EnhancedValidator:
                 self.logger.info("📊 Analyzing volume-price relationships...")
                 
                 volume_price_corr = data['volume'].corr(data['close'].pct_change().abs())
-                details['volume_price_correlation'] = float(volume_price_corr) if not pd.isna(volume_price_corr) else 0.0
+                # Use safe math operations for correlation validation
+                volume_price_corr_safe = validate_finite(volume_price_corr, "volume_price_correlation") if not pd.isna(volume_price_corr) else 0.0
+                details['volume_price_correlation'] = float(volume_price_corr_safe)
                 
-                if volume_price_corr < 0.3:
+                if volume_price_corr_safe < 0.3:
                     warnings.append("Low volume-price correlation detected")
                     recommendations.append("Review volume data quality")
                 
@@ -194,17 +204,21 @@ class Step05EnhancedValidator:
                 volume_skewness = volume_changes.skew()
                 volume_kurtosis = volume_changes.kurtosis()
                 
+                # Use safe math operations for volume statistics
+                volume_skewness_safe = validate_finite(volume_skewness, "volume_skewness")
+                volume_kurtosis_safe = validate_finite(volume_kurtosis, "volume_kurtosis")
+                
                 details['volume_statistics'] = {
-                    'correlation': float(volume_price_corr),
-                    'skewness': float(volume_skewness),
-                    'kurtosis': float(volume_kurtosis)
+                    'correlation': float(volume_price_corr_safe),
+                    'skewness': float(volume_skewness_safe),
+                    'kurtosis': float(volume_kurtosis_safe)
                 }
                 
-                if abs(volume_skewness) > 2:
-                    warnings.append(f"High volume skewness: {volume_skewness:.2f}")
+                if abs(volume_skewness_safe) > 2:
+                    warnings.append(f"High volume skewness: {volume_skewness_safe:.2f}")
                 
-                if volume_kurtosis > 5:
-                    warnings.append(f"High volume kurtosis: {volume_kurtosis:.2f}")
+                if volume_kurtosis_safe > 5:
+                    warnings.append(f"High volume kurtosis: {volume_kurtosis_safe:.2f}")
             
             # 4. Price level validation
             self.logger.info("📊 Validating price levels...")
@@ -250,12 +264,12 @@ class Step05EnhancedValidator:
                 warnings.append(f"High percentage of missing values: {missing_percentage:.1%}")
                 recommendations.append("Review data collection process for missing values")
             
-            # Calculate overall score
+            # Calculate overall score using safe math operations
             score = 1.0
-            score -= len(errors) * 0.2
-            score -= len(warnings) * 0.1
-            score -= min(total_ohlc_errors * 0.01, 0.3)
-            score -= min(extreme_moves * 0.001, 0.2)
+            score = safe_divide(score - len(errors) * 0.2, 1.0, score)
+            score = safe_divide(score - len(warnings) * 0.1, 1.0, score)
+            score = safe_divide(score - min(total_ohlc_errors * 0.01, 0.3), 1.0, score)
+            score = safe_divide(score - min(extreme_moves * 0.001, 0.2), 1.0, score)
             score = max(score, 0.0)
             
             passed = len(errors) == 0 and score > 0.7
@@ -448,10 +462,10 @@ class Step05EnhancedValidator:
                     self.logger.warning(f"⚠️ Seasonality detection failed: {e}")
                     details['seasonality_error'] = str(e)
             
-            # Calculate overall score
+            # Calculate overall score using safe math operations
             score = 1.0
-            score -= len(errors) * 0.3
-            score -= len(warnings) * 0.1
+            score = safe_divide(score - len(errors) * 0.3, 1.0, score)
+            score = safe_divide(score - len(warnings) * 0.1, 1.0, score)
             score = max(score, 0.0)
             
             passed = len(errors) == 0
@@ -684,8 +698,8 @@ class Step05EnhancedValidator:
                     statistical_anomalies.append(f"High regime label variance: {regime_bias_score:.3f}")
                     recommendations.append("Labels vary significantly across regimes - potential regime bias")
             
-            # Calculate overall bias score
-            bias_score = len(bias_types) * 0.2 + len(statistical_anomalies) * 0.1
+            # Calculate overall bias score using safe math operations
+            bias_score = safe_divide(len(bias_types) * 0.2 + len(statistical_anomalies) * 0.1, 1.0, 0.0)
             bias_score = min(bias_score, 1.0)
             
             bias_detected = len(bias_types) > 0 or len(statistical_anomalies) > 0
@@ -888,11 +902,11 @@ class Step05EnhancedValidator:
                         warnings.append("High variance in label confidence")
                         recommendations.append("Standardize confidence calculation process")
             
-            # Calculate overall score
+            # Calculate overall score using safe math operations
             score = 1.0
-            score -= len(errors) * 0.3
-            score -= len(warnings) * 0.1
-            score -= min(impossible_rate * 2, 0.3)
+            score = safe_divide(score - len(errors) * 0.3, 1.0, score)
+            score = safe_divide(score - len(warnings) * 0.1, 1.0, score)
+            score = safe_divide(score - min(impossible_rate * 2, 0.3), 1.0, score)
             score = max(score, 0.0)
             
             passed = len(errors) == 0 and score > 0.7

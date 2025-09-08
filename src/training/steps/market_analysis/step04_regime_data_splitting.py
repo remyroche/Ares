@@ -6,7 +6,25 @@ from ..standardized_parquet_handler import standardized_parquet_handler
     StepResult, RegimeDataResult, StepResultStatus, standardize_result
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
+# Core decorators imports
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates,
+    log_execution_time,
+    cached,
+    error_boundary,
+    timeout,
+    retry
+)
+# Core errors imports
+from src.core.errors import (
+    AppError,
+    ValidationError,
+    DataIntegrityError,
+    NotFoundError,
+    TimeoutError
+)
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
     validate_positive, validate_range, MathValidationError
@@ -81,7 +99,33 @@ except Exception:
         return _decorator
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.common_operations import (
+    ensure_directory, 
+    safe_json_dump,
+    safe_json_load,
+    safe_read_parquet,
+    safe_to_parquet,
+    get_logger,
+    format_bytes,
+    chunked_iterable,
+    parallel_map,
+    safe_dict_get,
+    safe_float,
+    safe_int,
+    optimize_dataframe_dtypes,
+    validate_dataframe_schema,
+    validate_data_quality
+)
+from src.utils.math_validation import (
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_kelly_calculation,
+    validate_positive,
+    validate_range,
+    MathValidationError
+)
+from src.utils.parquet_utils import get_parquet_utils
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # M1 Hardware Optimizations
@@ -359,6 +403,9 @@ class RegimeDataSplittingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+
+        # Initialize parquet utilities
+        self.parquet_utils = get_parquet_utils()
 
         # Initialize M1 Hardware Optimizations
         self._init_m1_optimizations()

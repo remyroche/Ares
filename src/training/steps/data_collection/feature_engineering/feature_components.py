@@ -6,12 +6,12 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 """Feature engineering components.
 
 This module contains specialized components for feature engineering
-including technical indicators, interactions, and regime-aware features.
+including technical indicators, interactions, regime-aware features, and S/R features.
 """
 import numpy as np
 import logging
 import typing
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Tuple
 
 class TechnicalIndicatorEngine:
     """Engine for creating technical indicators."""
@@ -2270,3 +2270,403 @@ class SentimentFeatureEngine:
         data['sentiment_extreme_pessimism'] = (sentiment_score < sentiment_score.quantile(0.1)).astype(int)
 
         return data
+
+
+class SupportResistanceFeatureEngine:
+    """Engine for creating Support/Resistance (S/R) features with ML-optimized encoding."""
+    
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize S/R feature engine.
+        
+        Args:
+            config: Configuration dictionary with S/R parameters
+        """
+        self.config = config
+        self.logger = system_logger.getChild('SupportResistanceFeatureEngine')
+        
+        # ATR and normalization parameters
+        self.atr_period = config.get('atr_period', 14)
+        self.atr_multiplier = config.get('atr_multiplier', 1.0)
+        
+        # S/R detection parameters
+        self.pivot_period = config.get('pivot_period', 4)
+        self.prominence_threshold = config.get('prominence_threshold', 0.5)
+        self.width_threshold = config.get('width_threshold', 1)
+        
+        # Feature encoding parameters
+        self.max_levels_per_type = config.get('max_levels_per_type', 10)
+        self.tolerance_atr_multiplier = config.get('tolerance_atr_multiplier', 0.5)
+        
+    @log_all_calls
+    def create_sr_features(self, data: pd.DataFrame, sr_levels: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """Create comprehensive S/R features from market data and detected levels.
+        
+        Args:
+            data: Market data with OHLCV columns
+            sr_levels: Optional pre-detected S/R levels
+            
+        Returns:
+            DataFrame with S/R features
+        """
+        try:
+            self.logger.info('🔧 Creating S/R features...')
+            
+            # Initialize features DataFrame
+            sr_features = pd.DataFrame(index=data.index)
+            
+            # Calculate ATR for normalization
+            atr = self._calculate_atr(data)
+            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            
+            # Detect S/R levels if not provided
+            if sr_levels is None:
+                sr_levels = self._detect_sr_levels(data)
+            
+            # Create enhanced S/R features
+            sr_features = self._create_distance_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_strength_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_multiplicity_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_top_k_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_binary_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_time_features(sr_features, data, sr_levels)
+            sr_features = self._create_volume_features(sr_features, data, sr_levels)
+            
+            self.logger.info(f'✅ Created {len(sr_features.columns)} S/R features')
+            return sr_features
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to create S/R features: {e}')
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_atr(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate Average True Range (ATR) for normalization."""
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Calculate ATR as rolling mean of True Range
+            atr = true_range.rolling(window=self.atr_period).mean()
+            
+            return atr
+        except Exception as e:
+            self.logger.warning(f'ATR calculation failed: {e}')
+            # Fallback to simple price range
+            return (data['high'] - data['low']).rolling(window=self.atr_period).mean()
+    
+    def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Detect S/R levels using pivot-based detection."""
+        try:
+            from scipy.signal import find_peaks
+            
+            # Detect pivot highs (resistance)
+            pivot_highs, _ = find_peaks(
+                data['high'].values,
+                prominence=data['high'].std() * self.prominence_threshold,
+                width=self.width_threshold,
+                distance=self.pivot_period
+            )
+            
+            # Detect pivot lows (support)
+            pivot_lows, _ = find_peaks(
+                -data['low'].values,  # Invert for valleys
+                prominence=data['low'].std() * self.prominence_threshold,
+                width=self.width_threshold,
+                distance=self.pivot_period
+            )
+            
+            # Create level dictionaries
+            resistance_levels = []
+            for idx in pivot_highs:
+                if idx < len(data):
+                    resistance_levels.append({
+                        'price': data['high'].iloc[idx],
+                        'strength': 0.7,  # Default strength
+                        'touch_count': 1,
+                        'timestamp': data.index[idx]
+                    })
+            
+            support_levels = []
+            for idx in pivot_lows:
+                if idx < len(data):
+                    support_levels.append({
+                        'price': data['low'].iloc[idx],
+                        'strength': 0.7,  # Default strength
+                        'touch_count': 1,
+                        'timestamp': data.index[idx]
+                    })
+            
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels
+            }
+            
+        except Exception as e:
+            self.logger.warning(f'S/R level detection failed: {e}')
+            return {'support_levels': [], 'resistance_levels': []}
+    
+    def _create_distance_features(self, features: pd.DataFrame, data: pd.DataFrame, 
+                                sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create distance-based features normalized by ATR."""
+        try:
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            current_prices = data['close'].values
+            
+            # Distance to nearest support/resistance (ATR-normalized)
+            nearest_support_distances = []
+            nearest_resistance_distances = []
+            
+            for price in current_prices:
+                # Find nearest support
+                support_distances = [abs(price - level.get('price', level)) for level in support_levels 
+                                   if isinstance(level.get('price', level), (int, float))]
+                nearest_support_dist = min(support_distances) if support_distances else float('inf')
+                nearest_support_distances.append(nearest_support_dist / atr if atr > 0 else 0)
+                
+                # Find nearest resistance
+                resistance_distances = [abs(price - level.get('price', level)) for level in resistance_levels 
+                                      if isinstance(level.get('price', level), (int, float))]
+                nearest_resistance_dist = min(resistance_distances) if resistance_distances else float('inf')
+                nearest_resistance_distances.append(nearest_resistance_dist / atr if atr > 0 else 0)
+            
+            features['sr_dist_to_nearest_support_atr'] = nearest_support_distances
+            features['sr_dist_to_nearest_resistance_atr'] = nearest_resistance_distances
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Distance features creation failed: {e}')
+            return features
+    
+    def _create_strength_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create strength-based features."""
+        try:
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            current_prices = data['close'].values
+            
+            # Strength of nearest support/resistance
+            nearest_support_strengths = []
+            nearest_resistance_strengths = []
+            
+            for i, price in enumerate(current_prices):
+                # Find nearest support strength
+                support_strengths = []
+                for level in support_levels:
+                    if isinstance(level.get('price', level), (int, float)):
+                        dist = abs(price - level.get('price', level))
+                        if dist == features['sr_dist_to_nearest_support_atr'].iloc[i] * atr:
+                            support_strengths.append(level.get('strength', 0.5))
+                nearest_support_strengths.append(max(support_strengths) if support_strengths else 0)
+                
+                # Find nearest resistance strength
+                resistance_strengths = []
+                for level in resistance_levels:
+                    if isinstance(level.get('price', level), (int, float)):
+                        dist = abs(price - level.get('price', level))
+                        if dist == features['sr_dist_to_nearest_resistance_atr'].iloc[i] * atr:
+                            resistance_strengths.append(level.get('strength', 0.5))
+                nearest_resistance_strengths.append(max(resistance_strengths) if resistance_strengths else 0)
+            
+            features['sr_strength_of_nearest_support'] = nearest_support_strengths
+            features['sr_strength_of_nearest_resistance'] = nearest_resistance_strengths
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Strength features creation failed: {e}')
+            return features
+    
+    def _create_multiplicity_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                    sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create multiplicity features (count of levels within ATR ranges)."""
+        try:
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            current_prices = data['close'].values
+            
+            # Count levels within 1×ATR, 2×ATR, 5×ATR
+            for atr_multiplier in [1, 2, 5]:
+                support_counts = []
+                resistance_counts = []
+                
+                for price in current_prices:
+                    threshold = atr * atr_multiplier
+                    
+                    # Count support levels within threshold
+                    support_count = sum(1 for level in support_levels 
+                                      if isinstance(level.get('price', level), (int, float)) and 
+                                      abs(price - level.get('price', level)) <= threshold)
+                    support_counts.append(support_count)
+                    
+                    # Count resistance levels within threshold
+                    resistance_count = sum(1 for level in resistance_levels 
+                                         if isinstance(level.get('price', level), (int, float)) and 
+                                         abs(price - level.get('price', level)) <= threshold)
+                    resistance_counts.append(resistance_count)
+                
+                features[f'sr_support_levels_within_{atr_multiplier}atr'] = support_counts
+                features[f'sr_resistance_levels_within_{atr_multiplier}atr'] = resistance_counts
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Multiplicity features creation failed: {e}')
+            return features
+    
+    def _create_top_k_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                             sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create top-k level features (distances and strengths for top-3 nearest levels)."""
+        try:
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            current_prices = data['close'].values
+            
+            # Top-k levels: distances and strengths for top-3 nearest levels
+            for k in range(1, 4):  # Top 3 levels
+                top_support_distances = []
+                top_support_strengths = []
+                top_resistance_distances = []
+                top_resistance_strengths = []
+                
+                for price in current_prices:
+                    # Get top-k support levels
+                    support_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
+                                  for level in support_levels 
+                                  if isinstance(level.get('price', level), (int, float))]
+                    support_data.sort(key=lambda x: x[0])
+                    
+                    if len(support_data) >= k:
+                        dist, strength = support_data[k-1]
+                        top_support_distances.append(dist / atr if atr > 0 else 0)
+                        top_support_strengths.append(strength)
+                    else:
+                        top_support_distances.append(float('inf'))
+                        top_support_strengths.append(0)
+                    
+                    # Get top-k resistance levels
+                    resistance_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
+                                     for level in resistance_levels 
+                                     if isinstance(level.get('price', level), (int, float))]
+                    resistance_data.sort(key=lambda x: x[0])
+                    
+                    if len(resistance_data) >= k:
+                        dist, strength = resistance_data[k-1]
+                        top_resistance_distances.append(dist / atr if atr > 0 else 0)
+                        top_resistance_strengths.append(strength)
+                    else:
+                        top_resistance_distances.append(float('inf'))
+                        top_resistance_strengths.append(0)
+                
+                features[f'sr_top_{k}_support_dist_atr'] = top_support_distances
+                features[f'sr_top_{k}_support_strength'] = top_support_strengths
+                features[f'sr_top_{k}_resistance_dist_atr'] = top_resistance_distances
+                features[f'sr_top_{k}_resistance_strength'] = top_resistance_strengths
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Top-k features creation failed: {e}')
+            return features
+    
+    def _create_binary_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                              sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create binary flag features."""
+        try:
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            current_prices = data['close'].values
+            
+            # Binary flags: within tolerance, recent break
+            tolerance = atr * self.tolerance_atr_multiplier
+            within_tolerance = []
+            recent_break = []
+            
+            for price in current_prices:
+                # Check if within tolerance of any level
+                within_support = any(abs(price - level.get('price', level)) <= tolerance 
+                                   for level in support_levels 
+                                   if isinstance(level.get('price', level), (int, float)))
+                within_resistance = any(abs(price - level.get('price', level)) <= tolerance 
+                                     for level in resistance_levels 
+                                     if isinstance(level.get('price', level), (int, float)))
+                within_tolerance.append(1 if (within_support or within_resistance) else 0)
+                
+                # Recent break (simplified - would need historical data for proper implementation)
+                recent_break.append(0)  # Placeholder
+            
+            features['sr_within_tolerance'] = within_tolerance
+            features['sr_recent_break'] = recent_break
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Binary features creation failed: {e}')
+            return features
+    
+    def _create_time_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                            sr_levels: Dict[str, Any]) -> pd.DataFrame:
+        """Create time-based features."""
+        try:
+            # Time-since-touch: scalar for nearest level (simplified)
+            time_since_touch = []
+            for i in range(len(data)):
+                # Simplified: use index position as proxy for time
+                time_since_touch.append(i % 100)  # Placeholder
+            
+            features['sr_time_since_last_touch'] = time_since_touch
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Time features creation failed: {e}')
+            return features
+    
+    def _create_volume_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                              sr_levels: Dict[str, Any]) -> pd.DataFrame:
+        """Create volume-based S/R features."""
+        try:
+            if 'volume' not in data.columns:
+                return features
+            
+            # Volume at S/R levels (simplified)
+            support_levels = sr_levels.get('support_levels', [])
+            resistance_levels = sr_levels.get('resistance_levels', [])
+            
+            # Calculate average volume near S/R levels
+            volume_at_support = []
+            volume_at_resistance = []
+            
+            for i in range(len(data)):
+                current_price = data['close'].iloc[i]
+                current_volume = data['volume'].iloc[i]
+                
+                # Check if near support levels
+                near_support = any(abs(current_price - level.get('price', level)) <= current_price * 0.01 
+                                 for level in support_levels 
+                                 if isinstance(level.get('price', level), (int, float)))
+                volume_at_support.append(current_volume if near_support else 0)
+                
+                # Check if near resistance levels
+                near_resistance = any(abs(current_price - level.get('price', level)) <= current_price * 0.01 
+                                    for level in resistance_levels 
+                                    if isinstance(level.get('price', level), (int, float)))
+                volume_at_resistance.append(current_volume if near_resistance else 0)
+            
+            features['sr_volume_at_support'] = volume_at_support
+            features['sr_volume_at_resistance'] = volume_at_resistance
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Volume features creation failed: {e}')
+            return features

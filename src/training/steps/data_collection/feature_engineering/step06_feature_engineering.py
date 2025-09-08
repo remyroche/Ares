@@ -15,7 +15,7 @@ from src.training.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 try:
-    from src.training.steps.data_collection.feature_engineering.feature_components import TechnicalIndicatorEngine, FeatureInteractionEngine, RegimeAwareFeatureEngine
+    from src.training.steps.data_collection.feature_engineering.feature_components import TechnicalIndicatorEngine, FeatureInteractionEngine, RegimeAwareFeatureEngine, SupportResistanceFeatureEngine
 except ImportError:
 
     class TechnicalIndicatorEngine:
@@ -39,6 +39,15 @@ except ImportError:
         def __init__(self, config: Dict[str, Any]) -> None:
             self.config = config
             self.logger = logging.getLogger(__name__)
+
+    class SupportResistanceFeatureEngine:
+        @log_important_calls
+        def __init__(self, config: Dict[str, Any]) -> None:
+            self.config = config
+            self.logger = logging.getLogger(__name__)
+        
+        def create_sr_features(self, data: pd.DataFrame, sr_levels: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+            return pd.DataFrame(index=data.index)
 from typing import Any, Dict, List, Tuple
 import sys
 import os
@@ -98,6 +107,7 @@ class FeatureEngineeringStep(BaseStep):
         self.technical_engine = None
         self.interaction_engine = None
         self.regime_engine = None
+        self.sr_engine = None
     @log_step_functions
 
     def _initialize_step(self) -> None:
@@ -108,6 +118,8 @@ class FeatureEngineeringStep(BaseStep):
                 self.interaction_engine = FeatureInteractionEngine(self.feature_config)
             if self.feature_config.get('use_regime_features', True):
                 self.regime_engine = RegimeAwareFeatureEngine()
+            if self.feature_config.get('use_sr_features', True):
+                self.sr_engine = SupportResistanceFeatureEngine(self.feature_config.get('sr_config', {}))
             self.logger.info('✅ Feature engineering components initialized')
         except ImportError as e:
             self.logger.warning(f'⚠️ Some feature components not available: {e}')
@@ -260,6 +272,16 @@ class FeatureEngineeringStep(BaseStep):
                 engineered = self.regime_engine.create_regime_features(engineered, pipeline_state.get('regime_characteristics', {}))
             else:
                 engineered = self._create_basic_regime_features(engineered)
+        
+        # Add S/R features
+        if self.feature_config.get('use_sr_features', True):
+            if self.sr_engine:
+                sr_levels = pipeline_state.get('sr_levels', None)
+                sr_features = self.sr_engine.create_sr_features(engineered, sr_levels)
+                engineered = pd.concat([engineered, sr_features], axis=1)
+            else:
+                engineered = self._create_basic_sr_features(engineered)
+        
         engineered = self._add_time_features(engineered)
         return engineered
 
@@ -329,6 +351,19 @@ class FeatureEngineeringStep(BaseStep):
         return data
     @log_all_calls
 
+    def _create_basic_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create basic S/R features as fallback."""
+        try:
+            # Simple distance-based features
+            data['sr_price_position'] = (data['close'] - data['low'].rolling(20).min()) / (data['high'].rolling(20).max() - data['low'].rolling(20).min())
+            data['sr_near_high'] = (data['close'] >= data['high'].rolling(20).max() * 0.98).astype(int)
+            data['sr_near_low'] = (data['close'] <= data['low'].rolling(20).min() * 1.02).astype(int)
+            return data
+        except Exception as e:
+            self.logger.warning(f'Basic S/R features creation failed: {e}')
+            return data
+
+    @log_all_calls
     def _add_time_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add time-based features.
         
@@ -524,7 +559,7 @@ class FeatureEngineeringStep(BaseStep):
                 validation_summary = get_step06_validation_summary()
             except Exception as e:
                 self.logger.warning(f'Could not get validation summary: {e}')
-        internal_stats = {'feature_engineering_config': {'use_technical_indicators': self.feature_config.get('use_technical_indicators', True), 'use_interaction_features': self.feature_config.get('use_interaction_features', True), 'use_regime_features': self.feature_config.get('use_regime_features', True), 'use_dynamic_lookback': self.feature_config.get('use_dynamic_lookback', True), 'feature_selection_enabled': self.feature_config.get('feature_selection', {}).get('enabled', True)}, 'component_availability': {'technical_engine': self.technical_engine is not None, 'interaction_engine': self.interaction_engine is not None, 'regime_engine': self.regime_engine is not None}, 'validation_status': {'validation_framework_available': VALIDATION_AVAILABLE, 'comprehensive_validation_enabled': True}}
+        internal_stats = {'feature_engineering_config': {'use_technical_indicators': self.feature_config.get('use_technical_indicators', True), 'use_interaction_features': self.feature_config.get('use_interaction_features', True), 'use_regime_features': self.feature_config.get('use_regime_features', True), 'use_sr_features': self.feature_config.get('use_sr_features', True), 'use_dynamic_lookback': self.feature_config.get('use_dynamic_lookback', True), 'feature_selection_enabled': self.feature_config.get('feature_selection', {}).get('enabled', True)}, 'component_availability': {'technical_engine': self.technical_engine is not None, 'interaction_engine': self.interaction_engine is not None, 'regime_engine': self.regime_engine is not None, 'sr_engine': self.sr_engine is not None}, 'validation_status': {'validation_framework_available': VALIDATION_AVAILABLE, 'comprehensive_validation_enabled': True}}
         comprehensive_report = {'timestamp': datetime.now().isoformat(), 'validation_summary': validation_summary, 'internal_statistics': internal_stats, 'recommendations': self._generate_step06_feature_recommendations(internal_stats), 'function_call_analysis': self._analyze_step06_function_calls(), 'performance_analysis': self._analyze_step06_performance()}
         self.logger.info('✅ Comprehensive step06 feature engineering report generated')
         return comprehensive_report
@@ -547,6 +582,8 @@ class FeatureEngineeringStep(BaseStep):
             recommendations.append('Initialize interaction engine for feature interactions')
         if not stats['component_availability']['regime_engine']:
             recommendations.append('Initialize regime engine for regime-aware features')
+        if not stats['component_availability']['sr_engine']:
+            recommendations.append('Initialize S/R engine for support/resistance features')
         if not stats['validation_status']['validation_framework_available']:
             recommendations.append('Enable validation framework for better error tracking and reporting')
         return recommendations
@@ -554,7 +591,7 @@ class FeatureEngineeringStep(BaseStep):
 
     def _analyze_step06_function_calls(self) -> Dict[str, Any]:
         """Analyze function call patterns for step06 feature engineering."""
-        return {'main_execution_method': 'execute_logic', 'feature_engineering_methods': ['_engineer_features_for_split', '_apply_basic_indicators', '_create_basic_interactions', '_create_basic_regime_features', '_add_time_features'], 'feature_selection_methods': ['_perform_feature_selection', '_calculate_feature_statistics'], 'validation_methods': ['validate_inputs', 'validate_outputs']}
+        return {'main_execution_method': 'execute_logic', 'feature_engineering_methods': ['_engineer_features_for_split', '_apply_basic_indicators', '_create_basic_interactions', '_create_basic_regime_features', '_create_basic_sr_features', '_add_time_features'], 'feature_selection_methods': ['_perform_feature_selection', '_calculate_feature_statistics'], 'validation_methods': ['validate_inputs', 'validate_outputs']}
     @log_all_calls
 
     def _analyze_step06_performance(self) -> Dict[str, Any]:

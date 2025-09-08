@@ -11,6 +11,7 @@ from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""

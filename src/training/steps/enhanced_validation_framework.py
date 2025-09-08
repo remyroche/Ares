@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Validation Framework for Training Steps
 
@@ -271,7 +272,7 @@ class EnhancedValidator:
                     file_path = output_path / output_file
                     if file_path.suffix == '.parquet':
                         try:
-                            df = pd.read_parquet(file_path)
+                            df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             if df.empty:
                                 return ValidationResult(
                                     passed=False,

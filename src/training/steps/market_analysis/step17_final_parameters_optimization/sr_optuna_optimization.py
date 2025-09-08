@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 '\nS/R Parameter Optimization with Optuna\n\nThis module provides comprehensive optimization of Support/Resistance parameters\nusing Optuna, integrating with the existing HPO framework. It optimizes:\n    pass\n\n1. S/R Strength Score Weights\n2. S/R Level Detection Parameters\n3. S/R Breakout Thresholds\n4. S/R Zone Multipliers\n5. S/R Confidence Thresholds\n\nThe optimization uses multi-objective optimization to balance:\n    pass\n- Trading performance (Sharpe ratio, win rate, profit factor)\n- Risk management (max drawdown, VaR)\n- Feature quality (signal clarity, noise reduction)\n'
 import asyncio

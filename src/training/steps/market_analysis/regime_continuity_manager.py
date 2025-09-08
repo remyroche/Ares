@@ -5,6 +5,7 @@ import pandas as pd
 
 import pandas as pd
 import pandas as pd
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 try:
     pass
@@ -130,7 +131,7 @@ class RegimeContinuityManager:
             if not regime_file.exists():
                 self.logger.error(f'❌ Regime data not found: {regime_file}')
                 return None
-            data = pd.read_parquet(regime_file)
+            data = standardized_parquet_handler.read_parquet_standardized(regime_file)
             self.logger.info(f'✅ Loaded regime data: {len(data)} rows')
             return data
         except Exception as e:

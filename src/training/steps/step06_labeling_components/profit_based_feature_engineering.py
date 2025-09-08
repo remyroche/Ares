@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Tuple, Optional, List, Dict, Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Profit-Based Feature Engineering System.
 

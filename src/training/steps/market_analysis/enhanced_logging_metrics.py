@@ -5,6 +5,7 @@ from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 '\nEnhanced Logging and Metrics System for Market Analysis Pipeline\n\nThis module provides comprehensive logging with emojis and detailed metrics\nfor troubleshooting and monitoring the market analysis pipeline.\n'
 import logging

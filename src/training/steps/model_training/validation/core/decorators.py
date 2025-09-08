@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Decorators for validation."""
 
 from functools import wraps

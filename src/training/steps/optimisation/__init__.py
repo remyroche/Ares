@@ -13,6 +13,7 @@ import time
 
 import pandas as pd
 import os
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Optimization Package for Trading Pipeline.
 
 This package contains all the components for optimization:

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 19: Monte Carlo Validation Validator."""
 
 import asyncio

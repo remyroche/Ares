@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Comprehensive Optimisation Pipeline Validator.
 
 This module provides comprehensive validation for the optimisation pipeline including:
@@ -68,7 +69,7 @@ class OptimisationPipelineValidator(BaseValidator):
                 
                 # Load and validate data
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     
                     if df.empty:
                         validation_metrics['data_quality_issues'].append({

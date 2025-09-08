@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pandas as pd
 from src.core.decorators import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     handles_errors,
     traced,
     validates,

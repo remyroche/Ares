@@ -6,6 +6,7 @@ from typing import Tuple
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Step 6: Feature Engineering - Refactored to use BaseStep.\n\nThis module implements comprehensive feature engineering including technical indicators,\ninteraction terms, and regime-aware features.\n'
 from pathlib import Path
@@ -536,7 +537,7 @@ class FeatureEngineeringStep(BaseStep):
             for split_name, data in pipeline_state['engineered_data'].items():
                 if isinstance(data, pd.DataFrame):
                     file_path = output_dir / f'{split_name}_engineered.parquet'
-                    data.to_parquet(file_path)
+                    standardized_parquet_handler.write_parquet_standardized(data, file_path)
                     self.logger.info(f'💾 Saved {split_name} engineered data to {file_path}')
         if 'selected_features' in pipeline_state:
             features_path = output_dir / 'selected_features.json'

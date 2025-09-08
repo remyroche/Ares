@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validator for Step 16: Saving."""
 

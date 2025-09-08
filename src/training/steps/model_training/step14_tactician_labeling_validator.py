@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 8: Tactician Labeling."""
 
 import asyncio
@@ -223,7 +224,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 signals_parquet,
                                 columns = True,
                             ):
-                                signals_data = pd.read_parquet(
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],
                                 )
@@ -236,7 +237,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         with log_io_operation(
                             self.logger, "read_parquet", signals_parquet,
                         ):
-                            signals_data = pd.read_parquet(signals_parquet)
+                            signals_data = standardized_parquet_handler.read_parquet_standardized(signals_parquet)
                 else:
                     with open(signals_pickle, "rb") as f:
                         signals_data = pickle.load(f)
@@ -386,7 +387,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 labels_parquet,
                                 columns = True,
                             ):
-                                labels_data = pd.read_parquet(
+                                labels_data = standardized_parquet_handler.read_parquet_standardized(
                                     labels_parquet, columns=["timestamp", "label"],
                                 )
                             with contextlib.suppress(Exception):
@@ -398,7 +399,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         with log_io_operation(
                             self.logger, "read_parquet", labels_parquet,
                         ):
-                            labels_data = pd.read_parquet(labels_parquet)
+                            labels_data = standardized_parquet_handler.read_parquet_standardized(labels_parquet)
                 else:
                     with open(labels_pickle, "rb") as f:
                         labels_data = pickle.load(f)
@@ -437,7 +438,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 signals_parquet,
                                 columns = True,
                             ):
-                                signals_data = pd.read_parquet(
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(
                                     signals_parquet,
                                     columns=["timestamp", "signal", "confidence"],
                                 )
@@ -446,7 +447,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             with log_io_operation(
                                 self.logger, "read_parquet", signals_parquet,
                             ):
-                                signals_data = pd.read_parquet(signals_parquet)
+                                signals_data = standardized_parquet_handler.read_parquet_standardized(signals_parquet)
                     else:
                         with open(signals_pickle, "rb") as f:
                             signals_data = pickle.load(f)

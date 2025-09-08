@@ -6,6 +6,9 @@ from .core.decorators import traced, validates
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
+import logging
+from ..standardized_parquet_handler import standardized_parquet_handler
+
 
 class HMMFeatureEnhancer:
     """Enhances HMM features with additional derived features for Step 5 compatibility."""

@@ -3,6 +3,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Step 1.5: Data Converter with Real-time Validation
@@ -199,7 +200,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(klines_path):
                 self.logger.info(f'📖 Loading klines data from {klines_path}')
-                df = pd.read_parquet(klines_path)
+                df = standardized_parquet_handler.read_parquet_standardized(klines_path)
                 
                 # Validate klines data
                 validated_klines = self._validate_dataframe(df, DataType.KLINES, "klines")
@@ -217,7 +218,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(aggtrades_path):
                 self.logger.info(f'📖 Loading aggtrades data from {aggtrades_path}')
-                df = pd.read_parquet(aggtrades_path)
+                df = standardized_parquet_handler.read_parquet_standardized(aggtrades_path)
                 
                 # Validate aggtrades data
                 validated_aggtrades = self._validate_dataframe(df, DataType.AGGTRADES, "aggtrades")
@@ -235,7 +236,7 @@ class EnhancedUnifiedDataConverter:
             
             if os.path.exists(futures_path):
                 self.logger.info(f'📖 Loading futures data from {futures_path}')
-                df = pd.read_parquet(futures_path)
+                df = standardized_parquet_handler.read_parquet_standardized(futures_path)
                 
                 # Validate futures data
                 validated_futures = self._validate_dataframe(df, DataType.FUTURES, "futures")
@@ -507,7 +508,7 @@ class EnhancedUnifiedDataConverter:
             filename = f"unified_{exchange}_{symbol}_{timeframe}_validated.parquet"
             filepath = os.path.join(unified_path, filename)
             
-            df.to_parquet(filepath, index=False)
+            standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
             
             self.logger.info(f'✅ Saved {len(df)} unified rows to {filename}')
             
@@ -550,7 +551,7 @@ class EnhancedUnifiedDataConverter:
                 return False
             
             # Load and validate unified data
-            df = pd.read_parquet(unified_filepath)
+            df = standardized_parquet_handler.read_parquet_standardized(unified_filepath)
             
             # Basic quality checks
             quality_score = self._calculate_unified_quality_score(df)

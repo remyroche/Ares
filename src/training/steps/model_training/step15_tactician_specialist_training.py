@@ -1,4 +1,3 @@
-
 """Step 15: Tactician Specialist Training with Standardized Data Quality Management.
 
 This step performs tactician specialist model training with S/R level integration
@@ -14,7 +13,9 @@ import os
 import pickle
 
 from datetime import datetime
-
+import logging
+import random
+from ..standardized_parquet_handler import standardized_parquet_handler
 from ....utils.logger import system_logger
 from ....core.decorators import handles_errors
 from ....config.environment import get_environment_settings
@@ -471,7 +472,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     # Fallback to standard loading
                     if os.path.exists(labeled_file_parquet):
                         try:
-                            labeled_data = pd.read_parquet(labeled_file_parquet)
+                            labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
                         except Exception:
                             with open(labeled_file_pickle, 'rb') as f:
                                 labeled_data = pickle.load(f)
@@ -482,7 +483,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 # Standard loading
                 if os.path.exists(labeled_file_parquet):
                     try:
-                        labeled_data = pd.read_parquet(labeled_file_parquet)
+                        labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
                     except Exception:
                         with open(labeled_file_pickle, 'rb') as f:
                             labeled_data = pickle.load(f)

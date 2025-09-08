@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
+
 
 """
 Comprehensive Pipeline Validators for Data Collection
@@ -117,7 +120,7 @@ class DataCollectionValidator:
                     # Try to read the file to check structure
                     if file_path.endswith('.parquet'):
                         try:
-                            df = pd.read_parquet(file_path)
+                            df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             file_validations[file_path] = {
                                 "rows": len(df),
                                 "columns": list(df.columns),
@@ -231,7 +234,7 @@ class DataCollectionValidator:
             
             # Validate converted data structure and quality
             try:
-                df = pd.read_parquet(converted_file)
+                df = standardized_parquet_handler.read_parquet_standardized(converted_file)
                 
                 # Check required columns
                 required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
@@ -398,7 +401,7 @@ class DataCollectionValidator:
                     continue
                 
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     
                     # Basic structure validation
                     if len(df) == 0:

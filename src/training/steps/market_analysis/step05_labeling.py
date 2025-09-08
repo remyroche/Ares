@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 5: Labeling with Standardized Data Quality Management.
 
@@ -737,7 +738,7 @@ class LabelingStep:
             session = optimization_context.get('data_manager_session')
             if not session:
                 # Fallback to standard loading
-                return pd.read_parquet(file_path)
+                return standardized_parquet_handler.read_parquet_standardized(file_path)
 
             # Use optimized data manager for loading
             data_id = f"{file_path.stem}_data"
@@ -755,7 +756,7 @@ class LabelingStep:
 
         except Exception as e:
             self.logger.warning(f"Optimized data loading failed, falling back to standard loading: {e}")
-            return pd.read_parquet(file_path)
+            return standardized_parquet_handler.read_parquet_standardized(file_path)
 
     async def _generate_comprehensive_labels_optimized(
         self,
@@ -1115,7 +1116,7 @@ class LabelingStep:
             session = optimization_context.get('data_manager_session')
             if not session:
                 # Fallback to standard saving
-                data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(data, output_path)
                 safe_json_dump(metadata, metadata_path, indent=2, default=str)
                 return True
 
@@ -1128,7 +1129,7 @@ class LabelingStep:
         except Exception as e:
             self.logger.warning(f"Optimized data saving failed, falling back to standard saving: {e}")
             try:
-                data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(data, output_path)
                 safe_json_dump(metadata, metadata_path, indent=2, default=str)
                 return True
             except Exception as fallback_error:
@@ -1269,7 +1270,7 @@ class LabelingStep:
                 data = await self._load_data_optimized(triple_barrier_path, optimization_context)
             else:
                 self.logger.info('📖 Using standard pandas loading')
-                data = pd.read_parquet(triple_barrier_path)
+                data = standardized_parquet_handler.read_parquet_standardized(triple_barrier_path)
             try:
                 from src.utils.regime_data_access import ensure_regime_labels, get_regime_column
                 data = ensure_regime_labels(data, exchange=exchange, symbol=symbol, timeframe=timeframe, data_dir=data_dir)
@@ -1295,7 +1296,7 @@ class LabelingStep:
                 )
             else:
                 self.logger.info('💾 Using standard parquet saving')
-                data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(data, output_path)
                 safe_json_dump(metadata, metadata_path, indent=2, default=str)
                 success = True
 
@@ -1473,7 +1474,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=Non
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     step_config = {'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, 'labeling': {'enable_meta_labeling': True, 'enable_trend_labels': True, 'enable_volatility_labels': True, 'composite_label_strategy': 'weighted_combination'}, 'vectorized_labelling_orchestrator': {'auto_recalculate_hmm_barriers': True, 'hmm_barrier_regime_column': 'hmm_regime', 'time_barrier_minutes': 30, 'max_lookahead': 100, 'profit_take_multiplier': 0.002, 'stop_loss_multiplier': 0.001}, **config}
     step = LabelingStep(step_config)
     await step.initialize()

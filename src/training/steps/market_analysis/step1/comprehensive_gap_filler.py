@@ -4,6 +4,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 import pandas as pd
 
 from src.utils.logger import system_logger
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 #!/usr/bin/env python3
 
@@ -61,7 +62,7 @@ class ComprehensiveGapFiller:
         try:
             # Read the file (Parquet or CSV)
             if file_path.suffix.lower() == ".parquet":
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df = pd.read_csv(file_path)
             else:
@@ -118,7 +119,7 @@ class ComprehensiveGapFiller:
         try:
             # Read the file (Parquet or CSV)
             if file_path.suffix.lower() == ".parquet":
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df = pd.read_csv(file_path)
             else:
@@ -178,7 +179,7 @@ class ComprehensiveGapFiller:
         try:
             # Read the file (Parquet or CSV)
             if file_path.suffix.lower() == ".parquet":
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df = pd.read_csv(file_path)
             else:
@@ -729,7 +730,7 @@ class ComprehensiveGapFiller:
                 if file_path.exists():
                     # Read existing file (Parquet or CSV)
                     if file_path.suffix.lower() == ".parquet":
-                        df_existing = pd.read_parquet(file_path)
+                        df_existing = standardized_parquet_handler.read_parquet_standardized(file_path)
                     elif file_path.suffix.lower() == ".csv":
                         df_existing = pd.read_csv(file_path)
                     else:
@@ -754,7 +755,7 @@ class ComprehensiveGapFiller:
 
                     # Save back in the same format
                     if file_path.suffix.lower() == ".parquet":
-                        df_combined.to_parquet(
+                        standardized_parquet_handler.write_parquet_standardized(df_combined, 
                             file_path, compression="zstd", index = False
                         )
                     elif file_path.suffix.lower() == ".csv":
@@ -818,7 +819,7 @@ class ComprehensiveGapFiller:
             all_1m_data: list[pd.DataFrame] = []
             for file_path in klines_files:
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     all_1m_data.append(df)
                 except Exception:
                     continue
@@ -928,7 +929,7 @@ class ComprehensiveGapFiller:
 
         try:
             output_path.parent.mkdir(parents = True, exist_ok = True)
-            df.to_parquet(output_path, compression="zstd", index = False)
+            standardized_parquet_handler.write_parquet_standardized(df, output_path, compression="zstd", index = False)
             return output_path
         except Exception:
             return None

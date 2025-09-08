@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Modular Orchestrator.
 
 This is the main orchestrator for the unified regime intelligence system,

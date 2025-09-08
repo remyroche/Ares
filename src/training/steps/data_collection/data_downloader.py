@@ -1,4 +1,5 @@
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data downloader adapter for training steps.
 
 This module provides a unified interface for downloading data

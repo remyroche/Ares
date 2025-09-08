@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring.
 from src.utils.logger import system_logger
 
@@ -414,7 +415,7 @@ class HealthCheckSystem:
                             if file.endswith('.parquet'):
                                 file_path = os.path.join(root, file)
                                 try:
-                                    df = pd.read_parquet(file_path, nrows = 1)
+                                    df = standardized_parquet_handler.read_parquet_standardized(file_path, nrows = 1)
                                     if df.empty:
                                         issues.append(f'Empty parquet file: {file_path}')
                                 except Exception as e:
@@ -849,7 +850,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             self.logger.info(f'   ✅ File exists, size: {file_size:,} bytes')
             self.logger.info(f'   📋 CHECK 2: Loading parquet file')
             try:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 validation_results['checks_passed'].append('file_load_success')
                 validation_results['data_quality_metrics']['total_records'] = len(df)
                 validation_results['data_quality_metrics']['total_columns'] = len(df.columns)

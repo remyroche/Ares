@@ -9,6 +9,7 @@ from src.utils.math_validation import (
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 5: Labeling (Enhanced Implementation with M1 Optimizations).
 
@@ -226,7 +227,7 @@ class LabelingStep:
                 df = await self.data_manager.load_data_async(str(path))
             else:
                 # Fallback to standard loading
-                df = pd.read_parquet(path)
+                df = standardized_parquet_handler.read_parquet_standardized(path)
 
             if df is not None and 'timestamp' in df.columns and (not isinstance(df.index, pd.DatetimeIndex)):
                 try:
@@ -401,7 +402,7 @@ class LabelingStep:
             await self.data_manager.save_data_async(data_to_save, str(out_path))
         else:
             # Standard saving
-            data_to_save.to_parquet(out_path)
+            standardized_parquet_handler.write_parquet_standardized(data_to_save, out_path)
 
         # Create metadata with performance metrics
         try:

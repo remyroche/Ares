@@ -5,6 +5,7 @@ from scipy.signal import find_peaks
 import warnings
 import numpy as np
 import time
+import numpy as np
 
 # Try to import Numba for JIT compilation
 try:
@@ -25,6 +26,7 @@ from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
 
 import hashlib
+import logging
 
 """
 Enhanced S/R Detection Module with Advanced Performance Optimizations.
@@ -94,7 +96,6 @@ For typical dataset with 50 swing points:
 This results in ~250-750x theoretical speedup while maintaining accuracy.
 """
 
-import numpy as np
 warnings.filterwarnings('ignore')
 
 # Numba-optimized functions for SR detection
@@ -2086,7 +2087,6 @@ class EnhancedSRDetector:
             if len(indices) < 3:
                 return []
 
-            import numpy as np
             params = []
             n = len(indices)
 
@@ -2131,7 +2131,6 @@ class EnhancedSRDetector:
     def _calculate_line_params_vectorized(self, x_points: List[int], y_points: List[float]) -> Tuple[float, float, float]:
         """Vectorized line parameter calculation for better performance with advanced statistics."""
         try:
-            import numpy as np
 
             if len(x_points) != len(y_points) or len(x_points) < 2:
                 return 0.0, 0.0, 0.0
@@ -2182,7 +2181,6 @@ class EnhancedSRDetector:
     def _batch_calculate_line_params(self, indices_list: List[List[int]], values_list: List[List[float]]) -> List[Tuple[float, float, float]]:
         """Batch calculate line parameters for multiple triplets using vectorized operations."""
         try:
-            import numpy as np
 
             if not indices_list or not values_list:
                 return []
@@ -2210,7 +2208,6 @@ class EnhancedSRDetector:
                                            max_candidates: int = 50) -> List[Dict]:
         """Find best channel candidates using intelligent pairing with advanced quality filtering."""
         try:
-            import numpy as np
 
             # Advanced quality filtering
             def quality_filter(params: List[Dict], min_quality: float = 0.6) -> List[Dict]:
@@ -2263,7 +2260,6 @@ class EnhancedSRDetector:
     def _slope_based_clustering(self, high_params: List[Dict], low_params: List[Dict], max_count: int) -> List[Dict]:
         """Cluster lines by slope similarity for efficient pairing."""
         try:
-            import numpy as np
 
             candidates = []
 
@@ -2344,7 +2340,6 @@ class EnhancedSRDetector:
     def _geometric_similarity_matching(self, high_params: List[Dict], low_params: List[Dict], max_count: int) -> List[Dict]:
         """Match lines based on geometric similarity and channel formation potential."""
         try:
-            import numpy as np
 
             candidates = []
 
@@ -2394,7 +2389,6 @@ class EnhancedSRDetector:
             if not params:
                 return []
 
-            import numpy as np
 
             # Extract quality metrics
             r2_values = np.array([abs(p.get('r2', 0)) for p in params])
@@ -2441,7 +2435,6 @@ class EnhancedSRDetector:
     def _select_significant_swings(self, indices: List[int], values: List[float], max_count: int, price_data: np.ndarray) -> Tuple[List[int], List[float]]:
         """Select the most significant swing points based on price movement and timing."""
         try:
-            import numpy as np
 
             if len(indices) <= max_count:
                 return indices, values

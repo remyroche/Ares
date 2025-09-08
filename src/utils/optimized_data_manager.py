@@ -5,8 +5,6 @@ This module provides optimized data storage, access, and management utilities
 for maximum performance in machine learning workflows.
 """
 
-import pandas as pd
-import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -30,6 +28,8 @@ import sqlite3
 import os
 import uuid
 import shutil
+import numpy as np
+import pandas as pd
 
 try:
     from src.utils.pipeline_standards import PipelineStandards

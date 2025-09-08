@@ -45,6 +45,8 @@ from src.utils.decorators import (
     cached
 )
 from src.utils.enhanced_memory_management import (
+import logging
+
     MemoryMonitor,
     MemoryConfig,
     optimize_dataframe_dtypes,

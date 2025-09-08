@@ -7,6 +7,7 @@ import json
 import re
 from collections import defaultdict, Counter
 from pathlib import Path
+import numpy as np
 
 def extract_dependency_data():
     """Extract real dependency data from the interaction mapping results"""

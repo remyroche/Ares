@@ -7,6 +7,7 @@ from logging import error
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid, missing
 from ..core.decorators import handles_errors
+import time
 
 # src/components/modular_tactician.py
 

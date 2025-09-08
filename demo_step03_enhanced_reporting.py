@@ -17,6 +17,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.market_analysis.hmm_clustering.step03_enhanced_reporting import Step03EnhancedReporter
+import time
 
 def generate_sample_market_data() -> pd.DataFrame:
     """Generate sample market data for demonstration."""

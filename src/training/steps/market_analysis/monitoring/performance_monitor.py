@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """Performance Monitoring System.
 
 This module provides comprehensive performance monitoring for function calls.
@@ -17,6 +19,8 @@ import asyncio
 
 try:
     import psutil
+import time
+
 except ImportError:
     psutil = None
 

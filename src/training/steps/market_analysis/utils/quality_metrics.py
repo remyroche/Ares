@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 """Quality Metrics Calculation Module for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -8,8 +11,8 @@ for feature matrices and matrix operations results.
 """
 from typing import Any, Dict, List
 
-import numpy as np
-import pandas as pd
+import logging
+import os
 
 # Optional dependencies with fallback handling
 try:

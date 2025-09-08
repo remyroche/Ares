@@ -92,6 +92,8 @@ from src.training.steps.market_analysis.regime_continuity_decorator import per_r
 # Financial Metrics Logging import
 try:
     from src.training.steps.backtesting.step20_financial_logging import Step20FinancialLogger
+import logging
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

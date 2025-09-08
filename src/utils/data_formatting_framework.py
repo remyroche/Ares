@@ -30,6 +30,11 @@ except ImportError:
     # Try alternative import path
     try:
         from data_utils import (
+import logging
+import re
+import time
+import typing
+
             safe_dataframe_operation, validate_dataframe,
             safe_numpy_operation, validate_numpy_array, get_data_info
         )

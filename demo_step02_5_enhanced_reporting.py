@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Demonstration of Step 2.5 Enhanced Reporting System
 
@@ -6,11 +9,11 @@ This script demonstrates the comprehensive reporting capabilities
 for step02_5_sr_optimization with detailed metrics and visualizations.
 """
 
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 import logging
+import sys
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

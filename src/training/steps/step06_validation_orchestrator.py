@@ -24,6 +24,8 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 try:
     from .step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
+import time
+
     VALIDATION_FRAMEWORK_AVAILABLE = True
 except ImportError as e:
     logging.warning(f'Step06 validation framework not available: {e}')

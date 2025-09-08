@@ -48,6 +48,7 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
                     # Try to import error classes for better handling
                     try:
                         from src.utils.logger import system_logger
+import logging
 
                         error_msg = f"Error in {func.__name__}"
                         if context:

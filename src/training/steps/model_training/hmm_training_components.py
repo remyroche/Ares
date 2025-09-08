@@ -19,6 +19,7 @@ from sklearn.metrics import recall_score
 import optuna
 
 import lightgbm as lgb
+import logging
 
 class HMMModelTrainer:
     """Trains HMM-based models with various algorithms."""

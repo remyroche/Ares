@@ -12,6 +12,7 @@ from .training.core.training_manager import create_training_manager
 from src.utils.logger import system_logger
 
 import sys
+import logging
 
 async def run_basic_training_example() -> None:
     """Run a basic training pipeline example."""

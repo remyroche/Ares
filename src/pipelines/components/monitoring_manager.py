@@ -7,6 +7,7 @@ from ..core.decorators import (
 )
 from .core.domain import PerformanceLevel
 from ..utils.logger import system_logger
+import logging
 
 """
 Monitoring manager for pipeline components (minimal scaffold).

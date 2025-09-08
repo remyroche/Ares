@@ -21,6 +21,7 @@ from src.utils.performance import performance_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
 import logging
+import numpy as np
 
 def _safe_load_model(filepath: Path, logger: logging.Logger) -> Any:
     """

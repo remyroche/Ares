@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from sklearn.metrics import accuracy_score, log_loss
 from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
+import logging
 
 class WeightOptimizer:
     """Handles weight optimization for ensemble models."""

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Base Pipeline Class - Enhanced with Plugin Architecture and Standardized Initialization
 

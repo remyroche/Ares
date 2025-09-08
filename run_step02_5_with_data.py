@@ -16,6 +16,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.data_collection.data_preparation.step02_5_sr_optimization import SROptimizationStep
+import logging
 
 def get_memory_usage():
     """Get current memory usage in MB."""

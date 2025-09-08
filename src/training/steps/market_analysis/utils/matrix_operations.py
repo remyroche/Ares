@@ -38,6 +38,9 @@ except ImportError:
 try:
     import scipy.sparse as sp
     import scipy.sparse.linalg as spla
+import logging
+import time
+
     SCIPY_SPARSE_AVAILABLE = True
 except ImportError:
     SCIPY_SPARSE_AVAILABLE = False

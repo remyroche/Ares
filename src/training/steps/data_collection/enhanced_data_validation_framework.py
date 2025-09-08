@@ -32,6 +32,7 @@ from typing import List
 from typing import Callable
 import numpy as np
 import pandas as pd
+import logging
 
 logger = system_logger.getChild('EnhancedDataValidation')
 

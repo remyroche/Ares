@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from ...utils.logger import system_logger
 from src.core.error_classes import execution_error, initialization_error
+import logging
 
 class CandlestickPatternAnalyzer:
     """

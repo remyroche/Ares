@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
+import numpy as np
 
 try:
     import psutil

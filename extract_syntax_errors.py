@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from collections import defaultdict
 import subprocess
+import numpy as np
 
 def run_demo_and_capture_errors():
     """Run the demo and capture syntax errors."""

@@ -24,6 +24,8 @@ import inspect
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Callable
+import numpy as np
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 

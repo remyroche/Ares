@@ -16,6 +16,8 @@ import os
 import platform
 
 import numpy as np
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +196,6 @@ class M1CPUOptimizer:
         task_type: str = "general"
     ) -> List[T]:
         """Process DataFrame in parallel chunks."""
-        import pandas as pd
 
         if chunk_size is None:
             # Calculate optimal chunk size
@@ -217,7 +218,6 @@ class M1CPUOptimizer:
 
     def optimize_numpy_operations(self):
         """Optimize NumPy operations for M1."""
-        import numpy as np
 
         # Set thread count for NumPy
         optimal_threads = min(self.system_info['cpu_count'], 8)

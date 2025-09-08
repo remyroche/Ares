@@ -7,6 +7,8 @@ Currently a placeholder that will be fully implemented in Phase 2.
 
 from typing import Dict, Any, Optional, List
 from src.utils.logger import system_logger
+import logging
+import pandas as pd
 
 logger = system_logger.getChild('Step10SequenceBuilder')
 

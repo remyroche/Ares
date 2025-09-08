@@ -10,6 +10,8 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 from scipy import stats
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
+import logging
+import time
 
 class QualityMetricsCalculator:
     """Calculates comprehensive quality metrics for market data."""

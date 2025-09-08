@@ -5,6 +5,9 @@ import numpy as np
 import warnings
 import pandas as pd
 from ..standardized_parquet_handler import standardized_parquet_handler
+import logging
+import typing
+import numpy as np
 
 'Enhanced Regime Discovery Feature Engineering for Step 3.\n\nThis module creates regime-aware features specifically designed for regime discovery,\nfocusing on features that help distinguish between different market regimes.\n'
 warnings.filterwarnings('ignore')
@@ -964,4 +967,3 @@ if __name__ == '__main__':
     print(f'Feature columns: {list(features.columns)}')
     print('\nFeature Statistics:')
     print(features.describe())
-import numpy as np

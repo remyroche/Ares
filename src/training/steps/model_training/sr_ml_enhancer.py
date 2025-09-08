@@ -27,6 +27,10 @@ try:
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor
     from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import cross_val_score
+import json
+import logging
+import time
+
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

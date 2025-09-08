@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.training.steps.step08_enhanced_reporting import Step08EnhancedReporter
 from src.utils.logger import system_logger
+import logging
+import time
 
 def create_sample_market_data(num_samples: int = 10000) -> pd.DataFrame:
     """Create sample market data for demonstration."""

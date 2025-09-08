@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 'SR (Support/Resistance) model explainer for SHAP and LIME integration.\n\nThis module provides explainability for SR level detection models, enabling\ntraceability of support/resistance decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
+import logging
 
 try:
     SHAP_AVAILABLE = True

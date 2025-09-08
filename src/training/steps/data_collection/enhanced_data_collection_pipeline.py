@@ -2,6 +2,7 @@
 import numpy as np
 from src.core.errors.base import ValidationError
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
 
 """
 Enhanced Data Collection Pipeline
@@ -34,6 +35,9 @@ from .decorators.data_operation_decorators import (
     SecurityLevel
 )
 from .utils.data_operations_utils import (
+import time
+import typing
+
     DataFormatter,
     DataAnalyzer,
     DataAccessManager,
@@ -49,7 +53,6 @@ from .utils.data_operations_utils import (
     ValidationError,
     ProcessingError
 )
-import pandas as pd
 
 from .monitoring.pipeline_monitor import (
     PipelineMonitor,

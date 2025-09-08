@@ -38,6 +38,8 @@ pyarrow = PipelineStandards.safe_import('pyarrow', None)
 # Import decorators directly
 try:
     from src.core.decorators import (
+import json
+
         handles_errors, handle_file_operations, secure_klines_download_operation,
         validate_data_quality, secure_data_processing, prevent_data_leakage,
         resource_monitor, memory_efficient, quality_gate, circuit_breaker_protection,

@@ -5,6 +5,7 @@ Generic base classes with proper type constraints for reusable components.
 from abc import ABC, abstractmethod
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 from src.custom_types import ConfigDict, PerformanceMetrics, TradingComponent
+import logging
 
 ConfigT = TypeVar('ConfigT', bound = ConfigDict)
 DataT = TypeVar('DataT')

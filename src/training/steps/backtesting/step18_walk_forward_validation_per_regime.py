@@ -2,6 +2,28 @@ from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
 
+# Import enhanced components
+from src.utils.common_operations import (
+    format_datetime, get_current_datetime, safe_file_exists,
+    ensure_directory, safe_json_dump, safe_json_load,
+    validate_file_path, get_file_size, check_disk_space,
+    create_directory_if_not_exists, get_timestamp
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_numeric_range, is_finite_number
+)
+from src.utils.parquet_utils import ParquetUtils
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, 
+    timeout, error_boundary, compose, validate_data_quality, 
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
+
 """Step 18: Walk Forward Validation - Per-Regime Implementation.
 
 This module provides per-HMM regime walk forward validation functionality, ensuring that
@@ -17,6 +39,8 @@ from .utils.pipeline_standards import pipeline_standards
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import datetime
+import random
+import time
 
 import pandas as pd
 
@@ -29,11 +53,178 @@ try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
+import logging
+import os
+import time
+
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
 
 logger = get_logger('Step18WalkForwardValidationPerRegime')
+
+class RetryConfig:
+    """Configuration for retry mechanisms."""
+    def __init__(self, max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 60.0, 
+                 exponential_base: float = 2.0, jitter: bool = True):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.exponential_base = exponential_base
+        self.jitter = jitter
+
+async def retry_with_backoff(func, *args, retry_config: RetryConfig = None, **kwargs):
+    """Retry function with exponential backoff and jitter."""
+    if retry_config is None:
+        retry_config = RetryConfig()
+    
+    last_exception = None
+    
+    for attempt in range(retry_config.max_retries + 1):
+        try:
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+        except Exception as e:
+            last_exception = e
+            
+            if attempt == retry_config.max_retries:
+                logger.error(f"❌ All {retry_config.max_retries} retry attempts failed for {func.__name__}")
+                raise e
+            
+            # Calculate delay with exponential backoff
+            delay = min(
+                retry_config.base_delay * (retry_config.exponential_base ** attempt),
+                retry_config.max_delay
+            )
+            
+            # Add jitter to prevent thundering herd
+            if retry_config.jitter:
+                delay *= (0.5 + random.random() * 0.5)
+            
+            logger.warning(f"⚠️ Attempt {attempt + 1} failed for {func.__name__}: {e}. Retrying in {delay:.2f}s")
+            await asyncio.sleep(delay)
+    
+    raise last_exception
+
+class ErrorRecoveryManager:
+    """Manages error recovery strategies for different types of failures."""
+    
+    def __init__(self):
+        self.recovery_strategies = {
+            'data_loading': self._recover_data_loading_error,
+            'validation_computation': self._recover_validation_error,
+            'file_io': self._recover_file_io_error,
+            'memory': self._recover_memory_error,
+            'timeout': self._recover_timeout_error
+        }
+    
+    async def recover_from_error(self, error_type: str, error: Exception, context: Dict[str, Any]) -> Any:
+        """Attempt to recover from a specific type of error."""
+        if error_type in self.recovery_strategies:
+            try:
+                return await self.recovery_strategies[error_type](error, context)
+            except Exception as recovery_error:
+                logger.error(f"❌ Recovery failed for {error_type}: {recovery_error}")
+                return None
+        else:
+            logger.warning(f"⚠️ No recovery strategy for error type: {error_type}")
+            return None
+    
+    async def _recover_data_loading_error(self, error: Exception, context: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Recover from data loading errors."""
+        logger.info("🔄 Attempting data loading recovery...")
+        
+        # Try loading with reduced data size
+        if 'regime_id' in context:
+            regime_id = context['regime_id']
+            symbol = context.get('symbol', 'ETHUSDT')
+            exchange = context.get('exchange', 'BINANCE')
+            data_dir = context.get('data_dir', 'data_cache')
+            
+            # Try with smaller sample
+            try:
+                data = await self._load_regime_validation_data(
+                    symbol, exchange, '1m', data_dir, regime_id
+                )
+                if data is not None and len(data) > 100:
+                    # Sample smaller dataset
+                    sampled_data = data.sample(n=min(1000, len(data)), random_state=42)
+                    logger.info(f"✅ Data loading recovery successful: {len(sampled_data)} samples")
+                    return sampled_data
+            except Exception as e:
+                logger.warning(f"⚠️ Data loading recovery failed: {e}")
+        
+        return None
+    
+    async def _recover_validation_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Recover from validation computation errors."""
+        logger.info("🔄 Attempting validation recovery...")
+        
+        # Return simplified validation results
+        return {
+            'accuracy': 0.5,
+            'precision': 0.5,
+            'recall': 0.5,
+            'f1_score': 0.5,
+            'data_source': 'recovery_fallback',
+            'recovery_used': True
+        }
+    
+    async def _recover_file_io_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """Recover from file I/O errors."""
+        logger.info("🔄 Attempting file I/O recovery...")
+        
+        # Try alternative file paths or create temporary files
+        if 'file_path' in context:
+            file_path = Path(context['file_path'])
+            temp_path = file_path.parent / f"temp_{file_path.name}"
+            
+            try:
+                # Try writing to temp location
+                if 'data' in context:
+                    with open(temp_path, 'w') as f:
+                        json.dump(context['data'], f, indent=2)
+                    logger.info(f"✅ File I/O recovery successful: {temp_path}")
+                    return True
+            except Exception as e:
+                logger.warning(f"⚠️ File I/O recovery failed: {e}")
+        
+        return False
+    
+    async def _recover_memory_error(self, error: Exception, context: Dict[str, Any]) -> Any:
+        """Recover from memory errors."""
+        logger.info("🔄 Attempting memory recovery...")
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        # Try with reduced data size
+        if 'data' in context and hasattr(context['data'], 'shape'):
+            data = context['data']
+            if len(data) > 1000:
+                reduced_data = data.head(500)
+                logger.info(f"✅ Memory recovery successful: reduced to {len(reduced_data)} samples")
+                return reduced_data
+        
+        return None
+    
+    async def _recover_timeout_error(self, error: Exception, context: Dict[str, Any]) -> Any:
+        """Recover from timeout errors."""
+        logger.info("🔄 Attempting timeout recovery...")
+        
+        # Try with reduced complexity or smaller dataset
+        if 'timeout_seconds' in context:
+            new_timeout = context['timeout_seconds'] * 0.5
+            logger.info(f"✅ Timeout recovery: reducing timeout to {new_timeout}s")
+            return new_timeout
+        
+        return None
+
+# Global error recovery manager
+error_recovery_manager = ErrorRecoveryManager()
 
 class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
     """Walk forward validation step that processes each regime separately."""
@@ -108,7 +299,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             return False
 
     async def execute_parallel_regime_validation(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_ids: List[int], force_rerun: bool = False, max_concurrent: int = 3) -> Dict[int, bool]:
-        """Execute walk forward validation for multiple regimes in parallel.
+        """Execute walk forward validation for multiple regimes in parallel with enhanced error handling and resource management.
 
         Args:
             symbol: Trading symbol
@@ -125,21 +316,36 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
         validation_start_time = asyncio.get_event_loop().time()
         results = {}
         errors = []
+        timeout_seconds = 300  # 5 minutes per regime
 
         try:
             self.logger.info(f'🚀 Starting parallel walk forward validation for {len(regime_ids)} regimes')
             self.logger.info(f'⚙️ Configuration: max_concurrent={max_concurrent}, force_rerun={force_rerun}')
 
-            # Validate inputs
+            # Enhanced input validation with fast-fail
             if not regime_ids:
                 self.logger.error('❌ No regime IDs provided for validation')
                 return {}
 
-            if max_concurrent < 1:
-                self.logger.warning('⚠️ Invalid max_concurrent value, using default of 3')
+            if not isinstance(regime_ids, list) or not all(isinstance(rid, int) for rid in regime_ids):
+                self.logger.error('❌ Invalid regime_ids: must be list of integers')
+                return {}
+
+            if max_concurrent < 1 or max_concurrent > 10:
+                self.logger.warning(f'⚠️ Invalid max_concurrent value ({max_concurrent}), using default of 3')
                 max_concurrent = 3
 
-            # Create semaphore to limit concurrent executions
+            # Validate regime IDs are within reasonable range
+            invalid_regimes = [rid for rid in regime_ids if rid < 0 or rid > 50]
+            if invalid_regimes:
+                self.logger.warning(f'⚠️ Invalid regime IDs detected: {invalid_regimes}')
+                regime_ids = [rid for rid in regime_ids if 0 <= rid <= 50]
+
+            if not regime_ids:
+                self.logger.error('❌ No valid regime IDs after filtering')
+                return {}
+
+            # Create semaphore to limit concurrent executions with timeout protection
             semaphore = asyncio.Semaphore(max_concurrent)
 
             async def validate_single_regime(regime_id: int) -> Tuple[int, bool]:
@@ -149,14 +355,25 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
                         self.logger.info(f'🔄 Starting validation for regime {regime_id}')
                         self.logger.debug(f'📊 Regime {regime_id} - Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}')
 
-                        success = await self.execute_per_regime_walk_forward_validation(
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            data_dir=data_dir,
-                            force_rerun=force_rerun,
-                            regime_id=regime_id
-                        )
+                        # Add timeout protection for individual regime validation
+                        try:
+                            success = await asyncio.wait_for(
+                                self.execute_per_regime_walk_forward_validation(
+                                    symbol=symbol,
+                                    exchange=exchange,
+                                    timeframe=timeframe,
+                                    data_dir=data_dir,
+                                    force_rerun=force_rerun,
+                                    regime_id=regime_id
+                                ),
+                                timeout=timeout_seconds
+                            )
+                        except asyncio.TimeoutError:
+                            regime_duration = asyncio.get_event_loop().time() - regime_start_time
+                            error_msg = f'Regime {regime_id} validation timed out after {timeout_seconds}s (actual: {regime_duration:.2f}s)'
+                            self.logger.error(f'⏰ {error_msg}')
+                            errors.append(error_msg)
+                            return regime_id, False
 
                         regime_duration = asyncio.get_event_loop().time() - regime_start_time
                         status = "SUCCESS" if success else "FAILED"
@@ -165,10 +382,15 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
                         if not success:
                             self.logger.warning(f'⚠️ Regime {regime_id} validation failed - check logs for details')
 
+                        # Log performance metrics
+                        if regime_duration > 60:  # More than 1 minute
+                            self.logger.warning(f'⚠️ Regime {regime_id} took longer than expected: {regime_duration:.2f}s')
+
                         return regime_id, success
 
                     except asyncio.CancelledError:
-                        self.logger.warning(f'🛑 Regime {regime_id} validation was cancelled')
+                        regime_duration = asyncio.get_event_loop().time() - regime_start_time
+                        self.logger.warning(f'🛑 Regime {regime_id} validation was cancelled after {regime_duration:.2f}s')
                         raise
                     except Exception as e:
                         regime_duration = asyncio.get_event_loop().time() - regime_start_time
@@ -178,19 +400,48 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
                         errors.append(error_msg)
                         return regime_id, False
 
-            # Execute validations in parallel with timeout protection
+            # Execute validations in parallel with enhanced error handling and resource management
             self.logger.info(f'🎯 Executing {len(regime_ids)} regime validations with concurrency limit of {max_concurrent}')
-
+            
+            # Add overall timeout for the entire parallel operation
+            overall_timeout = timeout_seconds * len(regime_ids) // max_concurrent + 60  # Add buffer
+            
             try:
                 tasks = [validate_single_regime(regime_id) for regime_id in regime_ids]
-                completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Use asyncio.gather with return_exceptions=True for better error handling
+                completed_results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=overall_timeout
+                )
+                
+                self.logger.info(f'✅ All {len(regime_ids)} regime validations completed within {overall_timeout}s timeout')
 
+            except asyncio.TimeoutError:
+                self.logger.error(f'⏰ Overall parallel validation timed out after {overall_timeout}s')
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # Wait for cancellation to complete
+                await asyncio.gather(*tasks, return_exceptions=True)
+                return {regime_id: False for regime_id in regime_ids}
+                
             except asyncio.CancelledError:
                 self.logger.warning('🛑 Parallel validation was cancelled')
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
                 raise
             except Exception as e:
-                self.logger.error(f'❌ Error during parallel execution: {e}')
+                self.logger.error(f'❌ Critical error during parallel execution: {e}')
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
                 # Continue with result processing even if gather failed
+                completed_results = []
 
             # Process results with enhanced error handling
             successful_results = 0
@@ -483,7 +734,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             return None
 
     async def _load_regime_validation_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: int) -> Optional[pd.DataFrame]:
-        """Load real market data for regime-specific validation.
+        """Load real market data for regime-specific validation with memory optimization and error recovery.
 
         Args:
             symbol: Trading symbol
@@ -495,40 +746,145 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
         Returns:
             DataFrame with regime-specific market data or None
         """
+        retry_config = RetryConfig(max_retries=2, base_delay=0.5, max_delay=10.0)
+        
+        async def _load_data_with_retry():
+            try:
+                # Memory optimization: Check available memory first
+                available_memory = self._check_available_memory()
+                if available_memory < 1024**3:  # Less than 1GB
+                    self.logger.warning(f'⚠️ Low available memory: {available_memory / 1024**3:.1f}GB')
+                
+                # Try to load regime-specific training data first with memory-efficient approach
+                regime_data_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_regime_{timeframe}_cluster_{regime_id}_train.parquet'
+                if regime_data_path.exists():
+                    # Use memory-efficient parquet reading
+                    data = await self._load_parquet_memory_efficient(regime_data_path, max_rows=10000)
+                    if data is not None:
+                        self.logger.info(f'✅ Loaded regime-specific training data: {regime_data_path} ({len(data)} rows)')
+                        return data
+
+                # Fallback to labeled regime data with chunked reading
+                labeled_data_path = Path(data_dir) / f'{exchange}_{symbol}_labeled_regimes.csv'
+                if labeled_data_path.exists():
+                    data = await self._load_csv_memory_efficient(labeled_data_path, regime_id, max_rows=5000)
+                    if data is not None and not data.empty:
+                        self.logger.info(f'✅ Loaded labeled regime data for regime {regime_id}: {len(data)} samples')
+                        return data
+
+                # Final fallback to general labeled data
+                general_labeled_path = Path('data') / f'{exchange}_{symbol}_labeled_regimes.csv'
+                if general_labeled_path.exists():
+                    data = await self._load_csv_memory_efficient(general_labeled_path, regime_id, max_rows=5000)
+                    if data is not None and not data.empty:
+                        self.logger.info(f'✅ Loaded general labeled data for regime {regime_id}: {len(data)} samples')
+                        return data
+
+                self.logger.warning(f'⚠️ No regime-specific data found for regime {regime_id}')
+                return None
+
+            except Exception as e:
+                # Attempt error recovery
+                context = {
+                    'regime_id': regime_id,
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'data_dir': data_dir,
+                    'timeframe': timeframe
+                }
+                
+                recovered_data = await error_recovery_manager.recover_from_error('data_loading', e, context)
+                if recovered_data is not None:
+                    return recovered_data
+                
+                raise e
+        
         try:
-            # Try to load regime-specific training data first
-            regime_data_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_regime_{timeframe}_cluster_{regime_id}_train.parquet'
-            if regime_data_path.exists():
-                data = standardized_parquet_handler.read_parquet_standardized(regime_data_path)
-                self.logger.info(f'✅ Loaded regime-specific training data: {regime_data_path}')
-                return data
-
-            # Fallback to labeled regime data
-            labeled_data_path = Path(data_dir) / f'{exchange}_{symbol}_labeled_regimes.csv'
-            if labeled_data_path.exists():
-                data = pd.read_csv(labeled_data_path)
-                # Filter for specific regime
-                if 'hmm_state' in data.columns:
-                    regime_data = data[data['hmm_state'] == regime_id]
-                    if not regime_data.empty:
-                        self.logger.info(f'✅ Loaded labeled regime data for regime {regime_id}: {len(regime_data)} samples')
-                        return regime_data
-
-            # Final fallback to general labeled data
-            general_labeled_path = Path('data') / f'{exchange}_{symbol}_labeled_regimes.csv'
-            if general_labeled_path.exists():
-                data = pd.read_csv(general_labeled_path)
-                if 'hmm_state' in data.columns:
-                    regime_data = data[data['hmm_state'] == regime_id]
-                    if not regime_data.empty:
-                        self.logger.info(f'✅ Loaded general labeled data for regime {regime_id}: {len(regime_data)} samples')
-                        return regime_data
-
-            self.logger.warning(f'⚠️ No regime-specific data found for regime {regime_id}')
-            return None
-
+            return await retry_with_backoff(_load_data_with_retry, retry_config=retry_config)
         except Exception as e:
             self.logger.error(f'❌ Error loading regime validation data for regime {regime_id}: {e}')
+            return None
+
+    def _check_available_memory(self) -> int:
+        """Check available system memory in bytes."""
+        try:
+            import psutil
+            return psutil.virtual_memory().available
+        except ImportError:
+            # Fallback: assume 4GB available
+            return 4 * 1024**3
+        except Exception:
+            return 2 * 1024**3
+
+    async def _load_parquet_memory_efficient(self, file_path: Path, max_rows: int = 10000) -> Optional[pd.DataFrame]:
+        """Load parquet file with memory optimization."""
+        try:
+            # Read only essential columns and limit rows
+            essential_columns = ['close', 'volume', 'timestamp', 'hmm_state', 'composite_cluster_id']
+            
+            # First, check file size
+            file_size = file_path.stat().st_size
+            if file_size > 100 * 1024**2:  # Larger than 100MB
+                self.logger.info(f'📊 Large parquet file detected ({file_size / 1024**2:.1f}MB), using memory-efficient loading')
+                
+                # Use chunked reading for large files
+                chunk_size = min(1000, max_rows)
+                chunks = []
+                
+                for chunk in pd.read_parquet(file_path, columns=essential_columns, chunksize=chunk_size):
+                    chunks.append(chunk)
+                    if len(chunks) * chunk_size >= max_rows:
+                        break
+                
+                if chunks:
+                    data = pd.concat(chunks, ignore_index=True)
+                    # Limit to max_rows
+                    if len(data) > max_rows:
+                        data = data.head(max_rows)
+                    return data
+            else:
+                # Small file, load normally but with row limit
+                data = pd.read_parquet(file_path, columns=essential_columns)
+                if len(data) > max_rows:
+                    data = data.head(max_rows)
+                return data
+                
+        except Exception as e:
+            self.logger.error(f'❌ Error loading parquet file {file_path}: {e}')
+            return None
+
+    async def _load_csv_memory_efficient(self, file_path: Path, regime_id: int, max_rows: int = 5000) -> Optional[pd.DataFrame]:
+        """Load CSV file with memory optimization and regime filtering."""
+        try:
+            # Use chunked reading for CSV files
+            chunk_size = 1000
+            regime_data_chunks = []
+            total_rows_processed = 0
+            
+            for chunk in pd.read_csv(file_path, chunksize=chunk_size):
+                total_rows_processed += len(chunk)
+                
+                # Filter for specific regime if hmm_state column exists
+                if 'hmm_state' in chunk.columns:
+                    regime_chunk = chunk[chunk['hmm_state'] == regime_id]
+                    if not regime_chunk.empty:
+                        regime_data_chunks.append(regime_chunk)
+                
+                # Stop if we have enough data or processed too many rows
+                if len(regime_data_chunks) * chunk_size >= max_rows or total_rows_processed > max_rows * 10:
+                    break
+            
+            if regime_data_chunks:
+                data = pd.concat(regime_data_chunks, ignore_index=True)
+                # Limit to max_rows
+                if len(data) > max_rows:
+                    data = data.head(max_rows)
+                return data
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f'❌ Error loading CSV file {file_path}: {e}')
             return None
 
     async def _perform_real_validation_fold(self, calibrated_specialists: Dict[str, Any], fold_idx: int, validation_method: str, regime_id: int, regime_data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -610,110 +966,129 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             return (0.7, 0.3)
 
     async def _calculate_real_performance_metrics(self, train_data: pd.DataFrame, test_data: pd.DataFrame, calibrated_specialists: Dict[str, Any], regime_id: int) -> Dict[str, Any]:
-        """Calculate real performance metrics from market data."""
+        """Calculate real performance metrics from market data with memory optimization and vectorized computations."""
         try:
+            # Memory optimization: Use only essential data
+            if len(test_data) > 1000:
+                self.logger.info(f'📊 Large test dataset ({len(test_data)} rows), sampling for performance calculation')
+                test_data = test_data.sample(n=min(1000, len(test_data)), random_state=42)
+            
             # Extract price data for returns calculation
             if 'close' in test_data.columns:
-                test_prices = test_data['close'].values
+                # Use numpy arrays for memory efficiency and vectorized operations
+                test_prices = test_data['close'].values.astype(np.float32)  # Use float32 to save memory
+                
+                # Vectorized returns calculation - much faster than loop
                 test_returns = np.diff(test_prices) / test_prices[:-1]
-
-                if len(test_returns) > 0:
-                    # Calculate basic trading metrics
-                    positive_returns = test_returns[test_returns > 0]
-                    negative_returns = test_returns[test_returns < 0]
-
-                    win_rate = len(positive_returns) / len(test_returns) if len(test_returns) > 0 else 0.5
-                    avg_win = np.mean(positive_returns) if len(positive_returns) > 0 else 0.0
-                    avg_loss = abs(np.mean(negative_returns)) if len(negative_returns) > 0 else 0.0
-
-                    # Calculate Sharpe ratio
-                    if len(test_returns) > 1:
-                        sharpe_ratio = np.mean(test_returns) / np.std(test_returns) if np.std(test_returns) > 0 else 0.0
-                        sharpe_ratio = np.clip(sharpe_ratio * np.sqrt(252), -5, 5)  # Annualized, clipped
-                    else:
-                        sharpe_ratio = 0.0
-
-                    # Calculate Sortino ratio (downside deviation)
-                    downside_returns = test_returns[test_returns < 0]
-                    if len(downside_returns) > 0:
-                        sortino_ratio = np.mean(test_returns) / np.std(downside_returns) if np.std(downside_returns) > 0 else 0.0
-                        sortino_ratio = np.clip(sortino_ratio * np.sqrt(252), -5, 5)  # Annualized, clipped
-                    else:
-                        sortino_ratio = sharpe_ratio  # Fallback if no downside risk
-
-                    # Calculate Calmar ratio (return / max drawdown)
-                    cumulative_returns = np.cumprod(1 + test_returns)
-                    running_max = np.maximum.accumulate(cumulative_returns)
-                    drawdowns = (running_max - cumulative_returns) / running_max
-                    max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
-                    total_return = (cumulative_returns[-1] - 1) if len(cumulative_returns) > 0 else 0.0
-                    calmar_ratio = total_return / max_drawdown if max_drawdown > 0 else 0.0
-
-                    # Calculate profit factor
-                    gross_profit = np.sum(positive_returns) if len(positive_returns) > 0 else 0.0
-                    gross_loss = abs(np.sum(negative_returns)) if len(negative_returns) > 0 else 0.0
-                    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
-
-                    # Regime-specific performance adjustment
-                    performance_multiplier = self._get_regime_performance_multiplier(regime_id)
-
-                    return {
-                        'accuracy': win_rate * performance_multiplier,
-                        'precision': min(1.0, win_rate * 0.9),
-                        'recall': min(1.0, win_rate * 0.85),
-                        'f1_score': 2 * win_rate * 0.85 / (win_rate + 0.85) if (win_rate + 0.85) > 0 else 0.0,
-                        'sharpe_ratio': sharpe_ratio,
-                        'sortino_ratio': sortino_ratio,
-                        'calmar_ratio': calmar_ratio,
-                        'max_drawdown': max_drawdown,
-                        'win_rate': win_rate,
-                        'profit_factor': profit_factor,
-                        'total_return': total_return,
-                        'avg_win': avg_win,
-                        'avg_loss': avg_loss,
-                        'data_source': 'real_market_data'
-                    }
-                else:
-                    self.logger.warning(f'⚠️ Insufficient return data for regime {regime_id}')
+                
+                # Use vectorized operations for performance metrics
+                return await self._calculate_vectorized_metrics(test_returns, regime_id)
             else:
                 self.logger.warning(f'⚠️ No close price data available for regime {regime_id}')
-
-            # Fallback to mock metrics if real calculation fails
-            return {
-                'accuracy': 0.6,
-                'precision': 0.55,
-                'recall': 0.52,
-                'f1_score': 0.53,
-                'sharpe_ratio': 0.8,
-                'sortino_ratio': 0.9,
-                'calmar_ratio': 1.2,
-                'max_drawdown': 0.15,
-                'win_rate': 0.55,
-                'profit_factor': 1.1,
-                'total_return': 0.05,
-                'avg_win': 0.01,
-                'avg_loss': 0.008,
-                'data_source': 'fallback_mock_data'
-            }
-
+                return self._get_fallback_metrics()
         except Exception as e:
             self.logger.error(f'❌ Error calculating real performance metrics for regime {regime_id}: {e}')
-            return {
-                'accuracy': 0.5,
-                'precision': 0.5,
-                'recall': 0.5,
-                'f1_score': 0.5,
-                'sharpe_ratio': 0.0,
-                'sortino_ratio': 0.0,
-                'calmar_ratio': 0.0,
-                'max_drawdown': 0.0,
-                'win_rate': 0.5,
-                'profit_factor': 1.0,
-                'total_return': 0.0,
-                'avg_win': 0.0,
-                'avg_loss': 0.0,
-                'data_source': 'error_fallback'
+            return self._get_fallback_metrics()
+
+    @handles_errors(default_return=self._get_fallback_metrics(), context="calculate_vectorized_metrics")
+    async def _calculate_vectorized_metrics(self, test_returns: np.ndarray, regime_id: int) -> Dict[str, Any]:
+        """Calculate performance metrics using vectorized operations with math validation."""
+        try:
+            if len(test_returns) == 0:
+                return self._get_fallback_metrics()
+            
+            # Vectorized boolean operations for win/loss classification
+            positive_mask = test_returns > 0
+            negative_mask = test_returns < 0
+            
+            # Vectorized calculations - much faster than loops
+            positive_returns = test_returns[positive_mask]
+            negative_returns = test_returns[negative_mask]
+            
+            # Basic metrics using vectorized operations
+            win_rate = np.mean(positive_mask).astype(np.float32)
+            avg_win = np.mean(positive_returns) if len(positive_returns) > 0 else 0.0
+            avg_loss = abs(np.mean(negative_returns)) if len(negative_returns) > 0 else 0.0
+            
+            # Vectorized Sharpe ratio calculation with safe division
+            if len(test_returns) > 1:
+                mean_return = np.mean(test_returns)
+                std_return = np.std(test_returns)
+                sharpe_ratio = safe_divide(mean_return, std_return) * safe_sqrt(252) if std_return > 0 else 0.0
+                sharpe_ratio = np.clip(sharpe_ratio, -5, 5)  # Clipped for stability
+            else:
+                sharpe_ratio = 0.0
+            
+            # Vectorized Sortino ratio calculation with safe division
+            if len(negative_returns) > 0:
+                downside_std = np.std(negative_returns)
+                sortino_ratio = safe_divide(np.mean(test_returns), downside_std) * safe_sqrt(252) if downside_std > 0 else 0.0
+                sortino_ratio = np.clip(sortino_ratio, -5, 5)
+            else:
+                sortino_ratio = sharpe_ratio
+            
+            # Vectorized drawdown calculation with safe division
+            cumulative_returns = np.cumprod(1 + test_returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdowns = safe_divide(running_max - cumulative_returns, running_max)
+            max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
+            
+            # Vectorized profit factor calculation with safe division
+            gross_profit = np.sum(positive_returns) if len(positive_returns) > 0 else 0.0
+            gross_loss = abs(np.sum(negative_returns)) if len(negative_returns) > 0 else 0.0
+            profit_factor = safe_divide(gross_profit, gross_loss) if gross_loss > 0 else float('inf')
+            
+            # Calmar ratio with safe division
+            total_return = (cumulative_returns[-1] - 1) if len(cumulative_returns) > 0 else 0.0
+            calmar_ratio = safe_divide(total_return, max_drawdown) if max_drawdown > 0 else 0.0
+            
+            # Regime-specific performance adjustment
+            performance_multiplier = self._get_regime_performance_multiplier(regime_id)
+            
+            result = {
+                'accuracy': float(win_rate * performance_multiplier),
+                'precision': float(min(1.0, win_rate * 0.9)),
+                'recall': float(min(1.0, win_rate * 0.85)),
+                'f1_score': float(2 * win_rate * 0.85 / (win_rate + 0.85)) if (win_rate + 0.85) > 0 else 0.0,
+                'sharpe_ratio': float(sharpe_ratio),
+                'sortino_ratio': float(sortino_ratio),
+                'calmar_ratio': float(calmar_ratio),
+                'max_drawdown': float(max_drawdown),
+                'win_rate': float(win_rate),
+                'profit_factor': float(profit_factor),
+                'total_return': float(total_return),
+                'avg_win': float(avg_win),
+                'avg_loss': float(avg_loss),
+                'data_source': 'vectorized_real_market_data'
             }
+            
+            # Memory cleanup
+            del test_returns, positive_mask, negative_mask, cumulative_returns, running_max, drawdowns
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f'❌ Error in vectorized metrics calculation: {e}')
+            return self._get_fallback_metrics()
+
+    def _get_fallback_metrics(self) -> Dict[str, Any]:
+        """Get fallback metrics when calculation fails."""
+        return {
+            'accuracy': 0.5,
+            'precision': 0.5,
+            'recall': 0.5,
+            'f1_score': 0.5,
+            'sharpe_ratio': 0.0,
+            'sortino_ratio': 0.0,
+            'calmar_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.5,
+            'profit_factor': 1.0,
+            'total_return': 0.0,
+            'avg_win': 0.0,
+            'avg_loss': 0.0,
+            'data_source': 'error_fallback'
+        }
 
     def _get_regime_performance_multiplier(self, regime_id: int) -> float:
         """Get performance multiplier based on regime characteristics."""

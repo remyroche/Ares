@@ -40,6 +40,9 @@ class Step11AnalystCreationValidator:
         self.logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
         try:
+            # Fast fail: Validate input parameters
+            if not self._validate_input_parameters(symbol, exchange, data_dir, training_input):
+                return False
             # Check if analyst models directory exists
             analyst_models_dir = Path(data_dir) / "analyst_models"
             if not analyst_models_dir.exists():
@@ -163,6 +166,68 @@ class Step11AnalystCreationValidator:
 
         except Exception as e:
             self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
+            return False
+
+    def _validate_input_parameters(self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]) -> bool:
+        """Validate input parameters with comprehensive checks."""
+        try:
+            # Validate symbol
+            if not symbol or not isinstance(symbol, str) or len(symbol.strip()) == 0:
+                self.logger.error("❌ Invalid symbol: must be non-empty string")
+                return False
+            
+            # Validate exchange
+            if not exchange or not isinstance(exchange, str) or len(exchange.strip()) == 0:
+                self.logger.error("❌ Invalid exchange: must be non-empty string")
+                return False
+            
+            # Validate data directory
+            if not data_dir or not isinstance(data_dir, str):
+                self.logger.error("❌ Invalid data_dir: must be non-empty string")
+                return False
+            
+            data_path = Path(data_dir)
+            if not data_path.exists():
+                self.logger.error(f"❌ Data directory does not exist: {data_dir}")
+                return False
+            
+            if not data_path.is_dir():
+                self.logger.error(f"❌ Data directory is not a directory: {data_dir}")
+                return False
+            
+            # Validate training input
+            if not isinstance(training_input, dict):
+                self.logger.error("❌ training_input must be a dictionary")
+                return False
+            
+            # Check for required keys in training_input
+            required_keys = ['regime_data', 'features', 'targets']
+            missing_keys = [key for key in required_keys if key not in training_input]
+            if missing_keys:
+                self.logger.error(f"❌ Missing required keys in training_input: {missing_keys}")
+                return False
+            
+            # Validate regime data structure
+            regime_data = training_input.get('regime_data', {})
+            if not isinstance(regime_data, dict) or not regime_data:
+                self.logger.error("❌ regime_data must be a non-empty dictionary")
+                return False
+            
+            # Validate each regime
+            for regime_name, regime_info in regime_data.items():
+                if not isinstance(regime_info, dict):
+                    self.logger.error(f"❌ Invalid regime_info type for {regime_name}")
+                    return False
+                
+                if 'features' not in regime_info or 'targets' not in regime_info:
+                    self.logger.error(f"❌ Missing features or targets for regime {regime_name}")
+                    return False
+            
+            self.logger.info("✅ Input parameter validation passed")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error validating input parameters: {e}")
             return False
 
 @validates()

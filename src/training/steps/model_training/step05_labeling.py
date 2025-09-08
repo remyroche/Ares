@@ -5,6 +5,8 @@ from pathlib import Path
 import json
 from src.training.base_step import BaseStep
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
 
 """
 Step 5: Labeling - Refactored to use BaseStep.
@@ -47,6 +49,7 @@ class LabelingStep(BaseStep):
         try:
             if self.labeling_config.get('use_triple_barrier', True):
                 from .labeling_components import TripleBarrierLabeler
+
                 self.triple_barrier_labeler = TripleBarrierLabeler(self.labeling_config.get('barrier_config', {}))
             if self.labeling_config.get('use_meta_labeling', True):
                 from src.analyst.meta_labeling_system import MetaLabelingSystem

@@ -1,7 +1,10 @@
 from collections.abc import Callable
 import pandas as pd
 
-from src.utils.decorators import (
+import typing
+import src.utils.decorators
+import numpy as np
+
     traced,
     validates,
 )

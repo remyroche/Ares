@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery import run_step
 from src.utils.logger import system_logger
+import logging
 
 logger = system_logger.getChild('Step03OptimizationTest')
 

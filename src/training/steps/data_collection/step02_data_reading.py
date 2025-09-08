@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import functools
 import pandas as pd
+import collections
+import numpy as np
 
 # Enhanced function monitoring framework
 class FunctionCallStatus(Enum):

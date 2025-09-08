@@ -41,6 +41,8 @@ try:
     except ImportError:
         try:
             from shap import TreeExplainer, KernelExplainer
+import logging
+
         except ImportError:
             TreeExplainer = None
             KernelExplainer = None

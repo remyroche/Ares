@@ -26,6 +26,8 @@ from src.utils.decorators import (
     validates
 )
 from src.core.decorators import log_execution_time
+import logging
+import time
 
 # Project setup
 project_root = Path(__file__).parent.parent.parent

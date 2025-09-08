@@ -74,12 +74,12 @@ except ImportError:
     def log_step_metrics(*args: Any, **kwargs: Any) -> None:
         return None
 
-# Import enhanced reporting system
+# Import financial metrics logging system
 try:
-    from src.training.steps.market_analysis.step04_enhanced_reporting import Step04EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from .step04_5_financial_logging import Step04_5FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+    FINANCIAL_LOGGING_AVAILABLE = False
 
 # Initialize logger using common utilities
 logger = get_logger('Step4TripleBarrierMethod')
@@ -107,17 +107,17 @@ class TripleBarrierMethodStep:
             memory_threshold=0.8
         )
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE:
+        # Initialize financial metrics logging system
+        if FINANCIAL_LOGGING_AVAILABLE:
             try:
-                self.enhanced_reporter = Step04EnhancedReporter()
-                self.logger.info('✅ Enhanced reporting system initialized successfully')
+                self.financial_logger = None  # Will be initialized per execution
+                self.logger.info('✅ Financial metrics logging system available')
             except Exception as e:
-                self.logger.warning(f'⚠️ Enhanced reporting system failed to initialize: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'⚠️ Financial metrics logging system failed to initialize: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('ℹ️ Enhanced reporting system not available, using basic reporting')
-            self.enhanced_reporter = None
+            self.logger.info('ℹ️ Financial metrics logging system not available, using basic reporting')
+            self.financial_logger = None
 
         self._initialize_components()
 
@@ -569,69 +569,43 @@ class TripleBarrierMethodStep:
                 success = await self._save_labeled_data(labeled_data, output_path)
                 
                 if success:
-                    # Generate enhanced comprehensive report if available
-                    if self.enhanced_reporter is not None:
+                    # Generate financial metrics logging if available
+                    if FINANCIAL_LOGGING_AVAILABLE and labeled_data is not None:
                         try:
-                            self.logger.info('📊 Generating enhanced comprehensive report for Step04_5...')
+                            self.logger.info('📊 Generating financial metrics logging for Step04_5...')
 
                             # Prepare triple barrier results
                             triple_barrier_results = {
                                 'success': True,
-                                'total_signals': len(labeled_data) if labeled_data is not None else 0,
-                                'signal_distribution': self._analyze_signal_distribution(labeled_data) if labeled_data is not None else {},
-                                'profit_targets_hit': labeled_data['label'].value_counts().get(1, 0) if labeled_data is not None and 'label' in labeled_data.columns else 0,
-                                'stop_losses_hit': labeled_data['label'].value_counts().get(-1, 0) if labeled_data is not None and 'label' in labeled_data.columns else 0,
-                                'timeouts': labeled_data['label'].value_counts().get(0, 0) if labeled_data is not None and 'label' in labeled_data.columns else 0,
-                                'avg_profit_target': triple_barrier_config.get('profit_take_multiplier', 0.002),
-                                'avg_stop_loss': triple_barrier_config.get('stop_loss_multiplier', 0.001),
-                                'avg_timeout_days': triple_barrier_config.get('timeout_period_days', 5),
-                                'signal_confidence': 0.85,  # Would need to be calculated
-                                'signal_purity': 0.78,      # Would need to be calculated
-                                'false_signal_rate': 0.12,  # Would need to be calculated
-                                'effectiveness_score': 0.76 # Would need to be calculated
+                                'total_signals': len(labeled_data),
+                                'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002),
+                                'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001),
+                                'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 7200),  # 5 days in minutes
+                                'signal_generation_rate': len(labeled_data) / (time.time() - step_start) if (time.time() - step_start) > 0 else 0,
+                                'label_success_rate': 1.0
                             }
 
                             # Prepare performance data
                             execution_time_total = time.time() - step_start
                             performance_data = {
-                                'execution_time': execution_time_total,
-                                'memory_usage': 0,  # Would need to be measured
-                                'cpu_usage': 0,     # Would need to be measured
-                                'signal_generation_rate': len(labeled_data) / execution_time_total if labeled_data is not None and execution_time_total > 0 else 0,
-                                'label_creation_time': execution_time_total * 0.8,  # Estimate
-                                'barrier_calculation_time': execution_time_total * 0.15,  # Estimate
-                                'validation_time': execution_time_total * 0.05,  # Estimate
-                                'total_signals_generated': len(labeled_data) if labeled_data is not None else 0,
-                                'successful_labels': len(labeled_data) if labeled_data is not None else 0,
-                                'failed_labels': 0,
-                                'label_success_rate': 1.0 if labeled_data is not None else 0.0,
-                                'profit_target_achieved': triple_barrier_results['profit_targets_hit'],
-                                'stop_loss_hit': triple_barrier_results['stop_losses_hit'],
-                                'timeout_reached': triple_barrier_results['timeouts']
+                                'execution_time_seconds': execution_time_total,
+                                'memory_usage_mb': 0,  # Would need to be measured
+                                'signal_generation_rate': len(labeled_data) / execution_time_total if execution_time_total > 0 else 0
                             }
 
-                            # Generate comprehensive report
-                            comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
-                                data_splitting_results={},  # No data splitting results for this step
-                                triple_barrier_results=triple_barrier_results,
-                                regime_data=data,  # Original data without labels
-                                performance_data=performance_data,
-                                symbol=symbol,
-                                exchange=exchange,
-                                timeframe=timeframe,
-                                step_type="triple_barrier_method"
+                            # Initialize and use financial logger
+                            financial_logger = Step04_5FinancialLogger(symbol, exchange, timeframe)
+                            financial_logger.log_step_execution(
+                                labeled_data=labeled_data,
+                                label_stats=label_stats,
+                                execution_data=performance_data,
+                                triple_barrier_results=triple_barrier_results
                             )
 
-                            # Save comprehensive report
-                            saved_files = self.enhanced_reporter.save_comprehensive_report(
-                                report=comprehensive_report,
-                                base_filename=f"step04_5_enhanced_{symbol}_{exchange}_{timeframe}"
-                            )
-
-                            self.logger.info(f'✅ Enhanced comprehensive report saved for Step04_5: {saved_files}')
+                            self.logger.info('✅ Financial metrics logging completed for Step04_5')
 
                         except Exception as e:
-                            self.logger.warning(f'⚠️ Enhanced reporting failed for Step04_5, continuing with basic reporting: {e}')
+                            self.logger.warning(f'⚠️ Financial metrics logging failed for Step04_5, continuing with basic reporting: {e}')
 
                     return {
                         'status': 'success',

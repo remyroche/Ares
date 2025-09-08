@@ -10,8 +10,7 @@ import asyncio
 import time
 from src.utils.decorators import CachePolicy, authenticated, cached, circuit_breaker, compose, handles_errors, log_call, requires_role, retry, timeout, traced, validate_schema, validates
 from src.core.errors import ValidationError, register_exception_mapping
-import logging
-import numpy as np
+
 import pandas as pd
 import random
 

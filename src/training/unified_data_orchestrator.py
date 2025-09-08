@@ -12,7 +12,6 @@ from src.core.domain import quality_gate, secure_data_processing, prevent_data_l
 
 # src/training/unified_data_orchestrator.py
 
-
 """Unified Data Orchestrator - Single Source of Truth for Data Operations."
 
 This module provides a centralized, unified approach to all data operations including:
@@ -46,9 +45,6 @@ from src.training.data_sharing_manager import DataSharingManager
 from src.training.steps.unified_data_loader import UnifiedDataLoader
 from src.utils.logger import system_logger
 import pandas as pd
-import numpy as np
-import logging
-
 
 class UnifiedDataOrchestrator:
     """Unified Data Orchestrator - Single source of truth for all data operations."
@@ -1547,10 +1543,8 @@ class UnifiedDataOrchestrator:
             ),
         }
 
-
 # Global instance
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
-
 
 def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
     """Get or create the global unified data orchestrator instance."""
@@ -1562,9 +1556,6 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
         _unified_data_orchestrator.config = config
 
     return _unified_data_orchestrator
-
-
-
 
 async def cleanup_unified_data_orchestrator() -> None:
     """Cleanup the global unified data orchestrator."""

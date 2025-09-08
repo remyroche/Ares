@@ -7,8 +7,6 @@ import logging
 from datetime import datetime
 from typing import Any
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
-import numpy as np
-import time
 
 logger = logging.getLogger(__name__)
 

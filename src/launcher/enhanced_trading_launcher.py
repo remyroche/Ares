@@ -40,8 +40,7 @@ from src.utils.warning_symbols import (
    invalid,
    warning,
 )
-import logging
-import time
+
 from typing import TYPE_CHECKING
 from src.integration.paper_trading_integration import (
     PaperTradingIntegration,

@@ -23,7 +23,7 @@ except ImportError:
 
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
-from functools import lru_cache
+
 import hashlib
 
 """
@@ -99,8 +99,6 @@ This results in ~250-750x theoretical speedup while maintaining accuracy.
 
 import numpy as np
 warnings.filterwarnings('ignore')
-import logging
-
 
 # Numba-optimized functions for SR detection
 if NUMBA_AVAILABLE:
@@ -2084,7 +2082,6 @@ class EnhancedSRDetector:
         except Exception as e:
             self.logger.error(f'Optimized channel detection failed: {e}')
             return []
-
 
     def _precompute_line_parameters(self, indices: List[int], values: List[float]) -> List[Dict]:
         """Pre-compute line parameters for all possible triplets using vectorized operations."""

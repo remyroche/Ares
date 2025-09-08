@@ -22,8 +22,6 @@ except Exception:
 from src.tactician.enhanced_order_manager import EnhancedOrderManager, OrderRequest, OrderSide, OrderType
 from ...utils.logger import system_logger
 from src.utils.warning_symbols import failed, missing, invalid
-import numpy as np
-import logging
 
 class ExecutionStrategy(Enum):
     """Execution strategy types."""

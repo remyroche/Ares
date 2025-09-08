@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from enum import Enum
 import pandas as pd
-import time
 
 T = TypeVar('T')
 

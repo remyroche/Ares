@@ -6,22 +6,20 @@ including intelligent parallel processing, thread optimization, and CPU-specific
 """
 
 import multiprocessing
-import concurrent.futures
-import threading
+
 import logging
-import time
+
 from typing import Any, Dict, List, Optional, Callable, TypeVar, Union
 from functools import partial
 import psutil
 import os
 import platform
-import pandas as pd
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
-
 
 class M1CPUOptimizer:
     """CPU optimizer for M1 Macs with intelligent parallel processing."""
@@ -277,7 +275,6 @@ class M1CPUOptimizer:
 
         return scaled_workers
 
-
 class M1BatchProcessor:
     """Batch processor optimized for M1 architecture."""
 
@@ -342,7 +339,6 @@ class M1BatchProcessor:
 
         return results
 
-
 # Global instance
 _m1_cpu_optimizer = None
 
@@ -353,7 +349,6 @@ def get_m1_cpu_optimizer() -> M1CPUOptimizer:
         _m1_cpu_optimizer = initialize_m1_cpu_optimizer()
     return _m1_cpu_optimizer
 
-
 def initialize_m1_cpu_optimizer() -> M1CPUOptimizer:
     """Initialize M1 CPU optimizer with optimal settings."""
     optimizer = M1CPUOptimizer()
@@ -362,7 +357,6 @@ def initialize_m1_cpu_optimizer() -> M1CPUOptimizer:
     optimizer.optimize_numpy_operations()
 
     return optimizer
-
 
 def parallel_map(
     func: Callable[[Any], T],
@@ -378,7 +372,6 @@ def parallel_map(
 
     return optimizer.parallel_process(items, func, task_type)
 
-
 def parallel_dataframe_operation(
     df: 'pd.DataFrame',
     operation: Callable[['pd.DataFrame'], T],
@@ -387,7 +380,6 @@ def parallel_dataframe_operation(
     """Convenience function for parallel DataFrame operations."""
     optimizer = get_m1_cpu_optimizer()
     return optimizer.parallel_dataframe_processing(df, operation, task_type=task_type)
-
 
 def parallel_monte_carlo_simulation(
     historical_data: np.ndarray,
@@ -438,7 +430,6 @@ def parallel_monte_carlo_simulation(
                 combined_results[key].extend(result[key])
 
     return combined_results
-
 
 def optimized_monte_carlo_worker(
     historical_data: np.ndarray,

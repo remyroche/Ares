@@ -5,14 +5,11 @@ Enhanced ML Performance Tracker (minimal scaffold)
 Provides compilation-safe scaffolding for enhanced ML tracking.
 """
 
-
 from enum import Enum
 from typing import Any
 
 from ..utils.logger import system_logger
 from src.core.decorators import handles_errors
-import logging
-
 
 class ModelType(Enum):
     XGBOOST = "xgboost"
@@ -25,12 +22,10 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
 
-
 class PredictionType(Enum):
     REGRESSION = "regression"
     CLASSIFICATION = "classification"
     PROBABILITY = "probability"
-
 
 class EnhancedMLTracker:
     """Minimal Enhanced ML Tracker placeholder."""

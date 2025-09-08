@@ -19,8 +19,6 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
 from src.utils.logger import system_logger
-import json
-import logging
 
 @dataclass
 class EfficiencyConfig:

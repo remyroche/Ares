@@ -7,10 +7,10 @@ intelligent performance monitoring.
 """
 
 import asyncio
-import sys
+
 import json
 import numpy as np
-import torch
+
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -47,7 +47,6 @@ except ImportError:
     Step20FinancialLogger = None
 
 logger = get_logger('Step20ABTestingPerRegime')
-
 
 class PerRegimeABTestingStep(ABTestingStep):
     """AB testing step that processes each regime separately with M1 optimizations."""

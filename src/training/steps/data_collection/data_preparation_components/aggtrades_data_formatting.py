@@ -5,7 +5,6 @@ import glob
 import os
 import shutil
 from pathlib import Path
-import typing
 
 def check_file_format(file_path: Union[str, Path]) -> bool | None:
     """Check if a CSV file follows the correct format.

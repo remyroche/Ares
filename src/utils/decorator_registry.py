@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
-import numpy as np
+
 try:
     from .logger import log_error_with_context
     import time

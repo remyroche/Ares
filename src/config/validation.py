@@ -1,9 +1,6 @@
 # src/config/validation.py
 
-
 from typing import Any
-import logging
-
 
 def _require_keys(
     d: dict[str, Any],
@@ -14,7 +11,6 @@ def _require_keys(
     for k in keys:
         if k not in d:
             errors.append(f"Missing key '{k}' in {ctx}")
-
 
 def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
@@ -52,7 +48,6 @@ def validate_system_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 
     return len(errors) == 0, errors
 
-
 def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not isinstance(config, dict):
@@ -73,7 +68,6 @@ def validate_trading_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
 
     return len(errors) == 0, errors
 
-
 def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not isinstance(config, dict):
@@ -89,7 +83,6 @@ def validate_training_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
         errors.append("DATA_CONFIG.default_lookback_days must be an int")
 
     return len(errors) == 0, errors
-
 
 def validate_complete_config(config: dict[str, Any]) -> tuple[bool, list[str]]:
     """Validate the combined top-level config structure and sections."""

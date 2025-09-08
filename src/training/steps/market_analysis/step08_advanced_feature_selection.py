@@ -11,10 +11,9 @@ import numpy as np
 import asyncio
 import json
 import os
-import warnings
+
 from datetime import datetime
 from pathlib import Path
-from contextlib import nullcontext
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
@@ -1783,7 +1782,6 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.warning(f"Sparse matrix feature selection failed: {e}")
             return X, {'error': str(e), 'method': 'dense_fallback'}
-
 
 async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     try:

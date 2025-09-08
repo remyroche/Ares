@@ -1,4 +1,4 @@
-import typing
+
 from .utils.compat import handle_specific_errors
 from .core.decorators import handles_errors
 
@@ -10,9 +10,6 @@ that map old decorator signatures to the new core decorators.
 from functools import wraps
 import asyncio
 from typing import Any, Callable, Dict, Tuple, Type
-
-
-
 
 def handle_errors(
     *,
@@ -26,7 +23,6 @@ def handle_errors(
     Ignores unsupported legacy kwargs (e.g., context).
     """
     return _handles_errors(*exceptions, fallback=default_return)
-
 
 def handle_specific_errors(
     *,

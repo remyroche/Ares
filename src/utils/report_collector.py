@@ -22,10 +22,6 @@ from .utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
 )
 from .logger import system_logger
-import logging
-import time
-import typing
-
 
 class ReportCollector:
     """Centralized collector for all pipeline reports."""
@@ -372,10 +368,8 @@ class ReportCollector:
         except Exception as e:
             self.logger.error(f"❌ Failed to restore original functions: {e}")
 
-
 # Global report collector instance
 _global_report_collector = None
-
 
 def get_report_collector() -> ReportCollector:
     """Get the global report collector instance."""
@@ -384,13 +378,11 @@ def get_report_collector() -> ReportCollector:
         _global_report_collector = ReportCollector()
     return _global_report_collector
 
-
 def initialize_report_collector(base_reports_dir: str = "reports") -> ReportCollector:
     """Initialize the global report collector with custom base directory."""
     global _global_report_collector
     _global_report_collector = ReportCollector(base_reports_dir)
     return _global_report_collector
-
 
 def collect_report(
     report_content: str,

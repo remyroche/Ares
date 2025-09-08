@@ -14,14 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 from src.utils.warning_symbols import (
     failed,
 )
-import numpy as np
-import logging
-import time
-
 
 class ProgressManager:
     """Manages progress saving and loading for training steps."""

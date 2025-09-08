@@ -6,7 +6,7 @@ including file saving, report generation, and data export capabilities.
 """
 
 import json
-import os
+
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional, Union
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild('TrainingReports')
-
 
 class CentralizedReportManager:
     """Centralized manager for all training reports and data exports."""
@@ -101,10 +100,8 @@ class CentralizedReportManager:
             logger.error(f"❌ Failed to save report: {e}")
             return None
 
-
 # Global report manager instance
 _report_manager = CentralizedReportManager()
-
 
 def save_training_report(data: Any,
                         step_name: str,
@@ -159,7 +156,6 @@ def save_training_report(data: Any,
         logger.error(f"❌ Failed to save training report: {e}")
         return None
 
-
 def get_report_path(step_name: str,
                    report_type: str,
                    symbol: Optional[str] = None,
@@ -177,7 +173,6 @@ def get_report_path(step_name: str,
     subdirectory = step_name
 
     return _report_manager.base_path / subdirectory / f"{filename}.json"
-
 
 def list_reports(step_name: Optional[str] = None) -> Dict[str, list]:
     """List all available reports, optionally filtered by step."""
@@ -198,4 +193,3 @@ def list_reports(step_name: Optional[str] = None) -> Dict[str, list]:
     except Exception as e:
         logger.error(f"❌ Failed to list reports: {e}")
         return {}
-

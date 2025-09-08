@@ -12,8 +12,6 @@ import inspect
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
-import logging
-
 
 class FunctionCallTracker:
     """Comprehensive function call tracking and validation system."""
@@ -136,7 +134,6 @@ class FunctionCallTracker:
             'session_duration_seconds': time.time() - self.start_time
         }
 
-
 def comprehensive_function_tracker(logger):
     """Decorator for comprehensive function call tracking."""
     def decorator(func):
@@ -208,6 +205,5 @@ def comprehensive_function_tracker(logger):
         
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
     return decorator
-
 
 __all__ = ['FunctionCallTracker', 'comprehensive_function_tracker']

@@ -22,8 +22,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 import functools
 import pandas as pd
-import numpy as np
-import collections
 
 # Enhanced function monitoring framework
 class FunctionCallStatus(Enum):
@@ -695,8 +693,7 @@ def _retry_function_call_sync(func: Callable, args: tuple, kwargs: dict, retry_a
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import safe_read_parquet
-from pathlib import Path as _Path
-import json as _json
+
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)

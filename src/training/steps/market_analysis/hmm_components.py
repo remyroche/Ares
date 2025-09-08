@@ -16,8 +16,6 @@ from sklearn.cluster import KMeans
 from src.utils.logger import system_logger
 
 from hmmlearn import hmm
-import logging
-
 
 class HMMRegimeAnalyzer:
     """Analyzes market regimes using Hidden Markov Models."""

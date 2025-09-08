@@ -9,8 +9,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 import optuna
 from sklearn.model_selection import cross_val_score
 from src.utils.logger import system_logger
-import logging
-import numpy as np
 
 class HyperparameterOptimizer:
     """Handles hyperparameter optimization for analyst models."""

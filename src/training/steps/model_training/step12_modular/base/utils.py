@@ -6,7 +6,7 @@ This module contains shared utility functions for Step 12.
 
 import os
 import json
-import logging
+
 from typing import Any, Dict, List, Union
 
 from .imports import system_logger

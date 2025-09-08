@@ -151,7 +151,6 @@ def test_optional_dependencies():
     
     return results
 
-
 def main():
     """Main verification function."""
     print("🔍 Step03 Enhanced Monitoring System - Import Verification")

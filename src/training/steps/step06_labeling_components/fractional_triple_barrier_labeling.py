@@ -1,7 +1,6 @@
 # src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 
 """Fractional Triple Barrier Labeling for enhanced model training.
@@ -12,14 +11,9 @@ gradient flow and more nuanced risk management.
 
 from typing import Any
 
-
-from src.utils.logger import system_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 import numpy as np
 import pandas as pd
-import logging
-
-
 
 class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.
@@ -274,7 +268,6 @@ class FractionalTripleBarrierLabeling:
         max_conf = self.fractional_config["max_confidence_threshold"]
         return np.clip(final_confidence, min_conf, max_conf)
 
-
     def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> dict[str, Any]:
         """Get statistics about fractional labels."""
         return {
@@ -288,6 +281,4 @@ class FractionalTripleBarrierLabeling:
             "neutral_labels": (labeled_data["fractional_label"] == 0).sum(),
         }
 
-
 # src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
-from src.utils.logger import system_logger

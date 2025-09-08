@@ -18,8 +18,6 @@ from src.utils.warning_symbols import (
 )
 from .progress_manager import ProgressManager
 from src.config.training_modes import apply_mode_parameters_to_config, get_step_specific_parameters
-import logging
-
 
 class StepOrchestrator:
     """Orchestrates training step execution with progress management using TrainingManager."""

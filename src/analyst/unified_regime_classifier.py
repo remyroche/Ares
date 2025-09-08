@@ -28,9 +28,8 @@ try:
     from src.tactician.sr_levels.sr_breakout_predictor_enhanced import SRBreakoutPredictor
 except ImportError:
     SRBreakoutPredictor = None
-import json
+
 import logging
-import time
 
 try:
     from src.utils.logger import system_logger

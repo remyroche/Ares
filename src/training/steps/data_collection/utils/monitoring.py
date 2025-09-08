@@ -20,7 +20,6 @@ try:
 except ImportError:
     psutil = None
 
-
 class FunctionCallStatus(Enum):
     """Status of function call monitoring."""
     PENDING = 'pending'
@@ -28,7 +27,6 @@ class FunctionCallStatus(Enum):
     COMPLETED = 'completed'
     FAILED = 'failed'
     TIMEOUT = 'timeout'
-
 
 @dataclass
 class FunctionCallMetrics:
@@ -48,7 +46,6 @@ class FunctionCallMetrics:
     error_message: Optional[str] = None
     stack_trace: Optional[str] = None
 
-
 @dataclass
 class FunctionCallReport:
     """Comprehensive report for a function call."""
@@ -65,7 +62,6 @@ class FunctionCallReport:
     warnings: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
 
-
 @dataclass
 class FunctionInteractionReport:
     """Report summarizing function interactions."""
@@ -78,7 +74,6 @@ class FunctionInteractionReport:
     error_summary: Dict[str, int] = field(default_factory=dict)
     call_hierarchy: Dict[str, List[str]] = field(default_factory=dict)
     function_call_details: List[FunctionCallReport] = field(default_factory=list)
-
 
 class FunctionCallMonitor:
     """Main function call monitoring system."""
@@ -222,10 +217,8 @@ class FunctionCallMonitor:
             function_call_details=self.call_history.copy()
         )
 
-
 # Global function monitor instance
 function_monitor = FunctionCallMonitor()
-
 
 def comprehensive_function_monitoring(
     validate_inputs: bool = True,
@@ -334,7 +327,6 @@ def comprehensive_function_monitoring(
             return sync_wrapper
 
     return decorator
-
 
 # Export the key components
 __all__ = [

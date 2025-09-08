@@ -13,13 +13,13 @@ with advanced optimization strategies, multi-objective optimization, and perform
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional, Union
-import asyncio
+
 import time
 import logging
 from dataclasses import dataclass
 import json
 import hashlib
-import concurrent.futures
+
 from pathlib import Path
 import threading
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -42,7 +42,6 @@ try:
 except ImportError:
     JOBLIB_AVAILABLE = False
     joblib = None
-
 
 @dataclass
 class AdvancedParameterSpace:
@@ -141,7 +140,6 @@ class AdvancedParameterSpace:
                 "min_economic_significance": 0.001  # Minimum economic significance
             }
 
-
 @dataclass
 class OptimizationCache:
     """Cache for optimization results and warm-starting."""
@@ -183,7 +181,6 @@ class OptimizationCache:
         except Exception as e:
             logger.warning(f"Failed to save cache: {e}")
 
-
 @dataclass
 class MultiFidelityConfig:
     """Configuration for multi-fidelity optimization."""
@@ -210,7 +207,6 @@ class MultiFidelityConfig:
                 "medium": 0.85, # 85% expected accuracy
                 "high": 0.95   # 95% expected accuracy
             }
-
 
 class ParallelBayesianOptimizer:
     """Parallel Bayesian optimizer with multi-fidelity support."""
@@ -472,7 +468,6 @@ class ParallelBayesianOptimizer:
         features_str = f"{features.shape}_{features.columns.tolist()}"
         combined = f"{data_str}_{features_str}"
         return hashlib.sha256(combined.encode()).hexdigest()[:16]
-
 
 class EnhancedBayesianOptimizer:
     """Enhanced Bayesian optimizer with expanded parameter space and multi-objective optimization."""

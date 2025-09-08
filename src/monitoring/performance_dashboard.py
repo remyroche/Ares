@@ -5,12 +5,10 @@ from src.core.decorators import handles_errors, log_execution_time, cached
 
 # src/monitoring/performance_dashboard.py
 
-
 """
 Performance Dashboard for Dual Model System
 Real-time monitoring and visualization of system performance metrics.
 """
-
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,9 +19,6 @@ from src.utils.logger import system_logger
 if TYPE_CHECKING:
     import asyncio
     from datetime import datetime
-import logging
-import time
-
 
 @dataclass
 class DashboardMetrics:
@@ -36,7 +31,6 @@ class DashboardMetrics:
     confidence_metrics: dict[str, float]
     alerts: list[dict[str, Any]]
     optimization_opportunities: list[dict[str, Any]]
-
 
 class PerformanceDashboard:
     """Real-time performance dashboard."""
@@ -82,10 +76,8 @@ class PerformanceDashboard:
         self.logger.info("✅ Performance Dashboard initialized successfully")
         return True
 
-
 # Global dashboard instance
 performance_dashboard: PerformanceDashboard | None = None
-
 
 async def setup_performance_dashboard(
     config: dict[str, Any] | None = None

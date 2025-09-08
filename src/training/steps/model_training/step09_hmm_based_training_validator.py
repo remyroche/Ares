@@ -8,7 +8,6 @@ from pathlib import Path
 
 from src.utils.logger import system_logger
 from ....utils.common_operations import safe_file_exists, validate_dataframe_schema
-import logging
 
 class HMMTrainingValidator:
     """Validator for HMM-based training step."""

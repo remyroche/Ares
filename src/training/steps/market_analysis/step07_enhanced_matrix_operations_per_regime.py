@@ -22,12 +22,8 @@ from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 import numpy as np
 import pandas as pd
-import logging
-import typing
-
 
 logger = get_logger('Step7EnhancedMatrixOperationsPerRegime')
-
 
 class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
     """Enhanced matrix operations step that processes each regime separately."""
@@ -619,7 +615,6 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
             'converged': gmm.converged_
         }
 
-
 @traced(span_name='run_per_regime_matrix_operations_step')
 @validates()
 @handles_errors
@@ -672,7 +667,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 7: Per-Regime Enhanced Matrix Operations failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

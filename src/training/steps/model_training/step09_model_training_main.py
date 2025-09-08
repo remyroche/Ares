@@ -42,11 +42,6 @@ from src.utils.logger import (
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from src.training.steps.model_training import run_model_training_pipeline
-import json
-import logging
-import numpy as np
-import pandas as pd
-import typing
 
 @handles_errors(Exception, fallback = False, log_level="ERROR")
 @validates(strict = True)

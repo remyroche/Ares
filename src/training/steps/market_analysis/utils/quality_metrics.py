@@ -6,8 +6,7 @@ This module provides comprehensive quality metrics calculation and reporting
 for feature matrices and matrix operations results.
 """
 from typing import Any, Dict, List
-import logging
-import os
+
 import numpy as np
 import pandas as pd
 
@@ -23,7 +22,6 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
-
 
 class QualityMetricsCalculator:
     """Quality metrics calculation for feature matrices."""
@@ -539,7 +537,6 @@ class QualityMetricsCalculator:
         except Exception as e:
             self.logger.error(f'Error generating detailed quality report: {str(e)}')
             return f'Error generating report: {str(e)}'
-
 
 __all__ = ['QualityMetricsCalculator']
 

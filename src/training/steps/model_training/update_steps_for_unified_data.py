@@ -7,9 +7,6 @@ to use the new unified Parquet partitioned data format.
 """
 
 from typing import Any
-import json
-import logging
-import os
 
 # List of all training steps that need to be updated
 TRAINING_STEPS: list[str] = [
@@ -30,11 +27,9 @@ TRAINING_STEPS: list[str] = [
     "step16_saving",
 ]
 
-
 def get_unified_data_loader_import() -> str:
     """Get the import statement for the unified data loader."""
     return "from src.training.steps.unified_data_loader import get_unified_data_loader"
-
 
 def get_unified_data_loading_code(
     symbol_var: str = "symbol",
@@ -88,7 +83,6 @@ def get_unified_data_loading_code(
             self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
     """
-
 
 def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     """Get step-specific guidance for updating."""
@@ -181,7 +175,6 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
         {"lookback_days": 180, "timeframe": "1m", "notes": "Standard data loading"},
     )
 
-
 def generate_step_update_template(step_name: str) -> str:
     """Generate a template for updating a specific step."""
     guidance = get_step_specific_guidance(step_name)
@@ -214,7 +207,6 @@ def generate_step_update_template(step_name: str) -> str:
 #     # Process regime data as needed
 """
 
-
 def main() -> None:
     """Main function to generate update guidance."""
     high_complexity_areas = {
@@ -241,7 +233,6 @@ def main() -> None:
         # Generate template (could be written to disk or printed)
         template = generate_step_update_template(step)
         print(template)
-
 
 if __name__ == "__main__":
     import asyncio

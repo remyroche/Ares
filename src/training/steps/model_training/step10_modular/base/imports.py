@@ -31,7 +31,6 @@ OPTIONAL_MODULES = [
     "xgboost",
 ]
 
-
 class SafeImportManager:
     """Safe import manager for Step 10 dependencies."""
 
@@ -129,7 +128,6 @@ class SafeImportManager:
             "failed_modules": [name for name, _ in self.failed_imports]
         }
 
-
 # Global import manager instance
 safe_import_manager = SafeImportManager()
 
@@ -183,7 +181,6 @@ else:
     TensorDataset = None
     prune = None
 
-
 def validate_step10_imports() -> bool:
     """Validate all Step 10 imports and dependencies.
 
@@ -200,7 +197,6 @@ def validate_step10_imports() -> bool:
         for warning in validation["warnings"]:
             logger.warning(f"  {warning}")
         return False
-
 
 def get_import_summary() -> Dict[str, Any]:
     """Get summary of import status.

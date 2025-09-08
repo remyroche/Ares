@@ -13,7 +13,6 @@ from .base_interfaces import (
 
 # src/interfaces/__init__.py
 
-
 __all__ = [
     "IAnalyst",
     "IStrategist",

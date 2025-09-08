@@ -14,7 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from typing import Optional, Tuple, List, Dict, Any
 
 # Import step07's feature selection functionality
-from src.training.steps.market_analysis.step07_enhanced_matrix_operations import Step7EnhancedMatrixOperations
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 try:
@@ -28,9 +28,9 @@ except Exception as e:
     logger.error(f"Unexpected error loading M1 GPU utils: {e}")
 
 import joblib
-import functools
+
 import traceback
-import inspect
+
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
 # Import the correct PipelineStandards to avoid conflicts
@@ -43,7 +43,6 @@ from src.utils.step02_5_utilities import (
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.reports import save_training_report
 from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
-import logging
 
 # Import optional modules with error handling
 try:
@@ -2013,7 +2012,6 @@ class SROptimizationStep(BaseStep):
             features[f'bb_lower_{window}'] = sma - (std * 2)
             features[f'bb_position_{window}'] = (data['close'] - features[f'bb_lower_{window}']) / (features[f'bb_upper_{window}'] - features[f'bb_lower_{window}'])
 
-
         # ATR (Average True Range)
         for period in [7, 14, 21]:
             high_low = data['high'] - data['low']
@@ -2022,14 +2020,12 @@ class SROptimizationStep(BaseStep):
             tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             features[f'atr_{period}'] = tr.rolling(period).mean()
 
-
         # Stochastic Oscillator
         for k_period, d_period in [(14, 3), (21, 5)]:
             lowest_low = data['low'].rolling(k_period).min()
             highest_high = data['high'].rolling(k_period).max()
             features[f'stoch_k_{k_period}'] = ((data['close'] - lowest_low) / (highest_high - lowest_low)) * 100
             features[f'stoch_d_{k_period}_{d_period}'] = features[f'stoch_k_{k_period}'].rolling(d_period).mean()
-
 
         # Williams %R
         for period in [14, 21]:
@@ -2052,14 +2048,12 @@ class SROptimizationStep(BaseStep):
             features['vwap'] = data_copy['cumulative_price_volume'] / data_copy['cumulative_volume']
             features['vwap_deviation'] = (data['close'] - features['vwap']) / features['vwap'] * 100
 
-
         # Commodity Channel Index (CCI)
         for period in [14, 20]:
             tp = (data['high'] + data['low'] + data['close']) / 3
             sma_tp = tp.rolling(period).mean()
             mad = (tp - sma_tp).abs().rolling(period).mean()
             features[f'cci_{period}'] = (tp - sma_tp) / (0.015 * mad)
-
 
         # Momentum
         for period in [5, 10, 20]:

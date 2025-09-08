@@ -14,16 +14,15 @@ import logging
 from contextlib import contextmanager
 import time
 from collections import deque
-import threading
+
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
 import traceback
-import sys
+
 import os
 
 logger = logging.getLogger(__name__)
-
 
 # Comprehensive Error Handling Framework
 class OptimizationError(Exception):
@@ -44,31 +43,25 @@ class OptimizationError(Exception):
             'traceback': traceback.format_exc()
         }
 
-
 class GPUError(OptimizationError):
     """GPU-related errors."""
     pass
-
 
 class MemoryError(OptimizationError):
     """Memory-related errors."""
     pass
 
-
 class MatrixOperationError(OptimizationError):
     """Matrix operation errors."""
     pass
-
 
 class DataProcessingError(OptimizationError):
     """Data processing errors."""
     pass
 
-
 class ConfigurationError(OptimizationError):
     """Configuration-related errors."""
     pass
-
 
 @dataclass
 class ErrorRecoveryResult:
@@ -78,7 +71,6 @@ class ErrorRecoveryResult:
     recovery_method: str
     execution_time: float
     error_details: Dict[str, Any] = field(default_factory=dict)
-
 
 class ErrorHandler:
     """Comprehensive error handler with recovery mechanisms."""
@@ -331,7 +323,6 @@ class ErrorHandler:
 
         return len(successful_recoveries) / len(recovery_attempts) if recovery_attempts else 0.0
 
-
 # Error handling decorators
 def with_error_handling(operation_name: str = None, enable_recovery: bool = True,
                        log_errors: bool = True, reraise: bool = True):
@@ -385,7 +376,6 @@ def with_error_handling(operation_name: str = None, enable_recovery: bool = True
         return wrapper
     return decorator
 
-
 def with_gpu_fallback(operation_name: str = None):
     """Decorator that provides GPU fallback to CPU."""
     def decorator(func: Callable) -> Callable:
@@ -418,7 +408,6 @@ def with_gpu_fallback(operation_name: str = None):
 
         return wrapper
     return decorator
-
 
 def with_memory_optimization(operation_name: str = None, max_retries: int = 3):
     """Decorator that optimizes memory usage and handles memory errors."""
@@ -472,7 +461,6 @@ def with_memory_optimization(operation_name: str = None, max_retries: int = 3):
         return wrapper
     return decorator
 
-
 # Global error handler instance
 _global_error_handler = None
 
@@ -483,7 +471,6 @@ def get_global_error_handler() -> ErrorHandler:
         _global_error_handler = ErrorHandler()
     return _global_error_handler
 
-
 class BatchOptimizationStrategy(Enum):
     """Batch size optimization strategies."""
     ADAPTIVE = "adaptive"
@@ -491,14 +478,12 @@ class BatchOptimizationStrategy(Enum):
     PERFORMANCE_BASED = "performance_based"
     HYBRID = "hybrid"
 
-
 class OperationComplexity(Enum):
     """Matrix operation complexity levels."""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     VERY_HIGH = "very_high"
-
 
 @dataclass
 class BatchOptimizationMetrics:
@@ -510,7 +495,6 @@ class BatchOptimizationMetrics:
     throughput: float
     efficiency_score: float
     timestamp: float = field(default_factory=time.time)
-
 
 @dataclass
 class DynamicBatchOptimizer:
@@ -767,7 +751,6 @@ class DynamicBatchOptimizer:
         self.current_batch_sizes.clear()
         self.adaptation_factors.clear()
         self.logger.info("🔄 Batch optimizer learning state reset")
-
 
 class EnhancedMatrixOperations:
     """Enhanced matrix operations with GPU acceleration and memory optimization."""
@@ -1541,7 +1524,6 @@ class EnhancedMatrixOperations:
 
         return stats
 
-
 # Global instance
 _enhanced_matrix_ops = None
 
@@ -1552,31 +1534,26 @@ def get_enhanced_matrix_operations() -> EnhancedMatrixOperations:
         _enhanced_matrix_ops = EnhancedMatrixOperations()
     return _enhanced_matrix_ops
 
-
 # Convenience functions
 def gpu_matrix_multiply(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """GPU-accelerated matrix multiplication."""
     ops = get_enhanced_matrix_operations()
     return ops.matrix_multiply(a, b)
 
-
 def correlation_matrix_gpu(data: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
     """GPU-accelerated correlation matrix."""
     ops = get_enhanced_matrix_operations()
     return ops.correlation_matrix(data)
-
 
 def eigendecomposition_gpu(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """GPU-accelerated eigendecomposition."""
     ops = get_enhanced_matrix_operations()
     return ops.eigendecomposition(matrix)
 
-
 def svd_gpu(matrix: np.ndarray, k: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """GPU-accelerated SVD."""
     ops = get_enhanced_matrix_operations()
     return ops.svd_decomposition(matrix, k)
-
 
 def optimize_batch_size(operation_name: str, data_shape: Tuple[int, ...],
                        complexity: OperationComplexity = OperationComplexity.MEDIUM,
@@ -1591,7 +1568,6 @@ def optimize_batch_size(operation_name: str, data_shape: Tuple[int, ...],
         # Fallback to simple calculation
         return min(10000, np.prod(data_shape))
 
-
 def record_batch_performance(operation_name: str, batch_size: int, execution_time: float,
                            memory_usage: float, data_processed: int):
     """Record performance metrics for batch optimization learning."""
@@ -1601,14 +1577,12 @@ def record_batch_performance(operation_name: str, batch_size: int, execution_tim
             operation_name, batch_size, execution_time, memory_usage, data_processed
         )
 
-
 def get_batch_optimization_stats() -> Dict[str, Any]:
     """Get batch optimization statistics."""
     ops = get_enhanced_matrix_operations()
     if ops.batch_optimizer:
         return ops.batch_optimizer.get_optimization_stats()
     return {}
-
 
 def sparse_matrix_multiply(a: Union[sparse.spmatrix, np.ndarray],
                           b: Union[sparse.spmatrix, np.ndarray],
@@ -1617,13 +1591,11 @@ def sparse_matrix_multiply(a: Union[sparse.spmatrix, np.ndarray],
     ops = get_enhanced_matrix_operations()
     return ops.sparse_matrix_multiply(a, b, format)
 
-
 def sparse_svd(matrix: sparse.spmatrix, k: Optional[int] = None,
               solver: str = 'arpack') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Sparse SVD decomposition."""
     ops = get_enhanced_matrix_operations()
     return ops.sparse_svd(matrix, k, solver)
-
 
 def sparse_eigen(matrix: sparse.spmatrix, k: int = 10,
                 which: str = 'LM') -> Tuple[np.ndarray, np.ndarray]:
@@ -1631,20 +1603,17 @@ def sparse_eigen(matrix: sparse.spmatrix, k: int = 10,
     ops = get_enhanced_matrix_operations()
     return ops.sparse_eigen(matrix, k, which)
 
-
 def create_sparse_matrix(matrix: np.ndarray,
                         sparsity_threshold: float = 0.1) -> Union[sparse.spmatrix, np.ndarray]:
     """Create sparse matrix from dense matrix if beneficial."""
     ops = get_enhanced_matrix_operations()
     return ops.create_sparse_from_dense(matrix, sparsity_threshold)
 
-
 def sparse_solve(a: sparse.spmatrix, b: np.ndarray,
                 solver: str = 'spsolve') -> np.ndarray:
     """Solve sparse linear system."""
     ops = get_enhanced_matrix_operations()
     return ops.sparse_solve_linear(a, b, solver)
-
 
 # Custom matrix operations support
 class CustomMatrixOperation:
@@ -1691,7 +1660,6 @@ class CustomMatrixOperation:
             'average_execution_time': np.mean([s['execution_time'] for s in successful]) if successful else 0,
             'success_rate': len(successful) / len(self.performance_stats) if self.performance_stats else 0
         }
-
 
 class CustomMatrixOperationsRegistry:
     """Registry for custom matrix operations."""
@@ -1742,7 +1710,6 @@ class CustomMatrixOperationsRegistry:
             }
         }
 
-
 # Global registry instance
 _custom_ops_registry = None
 
@@ -1753,24 +1720,20 @@ def get_custom_operations_registry() -> CustomMatrixOperationsRegistry:
         _custom_ops_registry = CustomMatrixOperationsRegistry()
     return _custom_ops_registry
 
-
 def register_custom_matrix_operation(name: str, operation_func: Callable, **kwargs) -> None:
     """Register a custom matrix operation."""
     registry = get_custom_operations_registry()
     registry.register_operation(name, operation_func, **kwargs)
-
 
 def execute_custom_matrix_operation(name: str, *args, **kwargs) -> Any:
     """Execute a custom matrix operation."""
     registry = get_custom_operations_registry()
     return registry.execute_operation(name, *args, **kwargs)
 
-
 def list_custom_matrix_operations() -> List[str]:
     """List all registered custom matrix operations."""
     registry = get_custom_operations_registry()
     return registry.list_operations()
-
 
 # Extend EnhancedMatrixOperations with custom operations support
 def add_custom_operation_to_enhanced_ops():
@@ -1807,7 +1770,6 @@ def add_custom_operation_to_enhanced_ops():
 
 # Initialize custom operations support
 add_custom_operation_to_enhanced_ops()
-
 
 # Example custom operations
 def register_default_custom_operations():

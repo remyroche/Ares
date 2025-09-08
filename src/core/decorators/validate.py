@@ -15,10 +15,8 @@ from .compose import P, R, uniform_wrapper
 from ..errors.base import ValidationError
 
 import pydantic
-import logging
-import numpy as np
-import pandas as pd
 
+import pandas as pd
 
 # Try to import optional validation libraries
 try:
@@ -33,7 +31,6 @@ try:
 except ImportError:
     pydantic = None
     PYDANTIC_AVAILABLE = False
-
 
 def validates(
     *,
@@ -163,7 +160,6 @@ def validates(
 
     return uniform_wrapper("validates", sync_handler, async_handler)
 
-
 def validate_schema(
     schema: type | dict[str, type],
     *,
@@ -274,7 +270,6 @@ def validate_schema(
         sync_handler,
         async_handler,
     )
-
 
 def validate_dataframe(
     *,
@@ -452,9 +447,7 @@ def validate_dataframe(
 
     return uniform_wrapper("validate_dataframe", sync_handler, async_handler)
 
-
 # Helper functions
-
 
 def _validate_param(
     name: str,
@@ -492,7 +485,6 @@ def _validate_param(
             value = value,
         )
 
-
 def _coerce_value(value: Any, target_type: type) -> Any:
     """Attempt to coerce a value to the target type."""
     try:
@@ -501,7 +493,6 @@ def _coerce_value(value: Any, target_type: type) -> Any:
         return value
     except (ValueError, TypeError):
         return value
-
 
 def _validate_against_schema(
     value: Any,

@@ -13,8 +13,6 @@ from enum import Enum
 from typing import Any
 
 from ..utils.logger import system_logger
-import logging
-
 
 class DriftType(Enum):
     """Drift types for model monitoring."""
@@ -24,7 +22,6 @@ class DriftType(Enum):
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
 
-
 class ModelStatus(Enum):
     """Model status enumeration."""
 
@@ -32,7 +29,6 @@ class ModelStatus(Enum):
     WARNING = "warning"
     CRITICAL = "critical"
     RETRAINING = "retraining"
-
 
 @dataclass
 class ModelDriftAlert:
@@ -47,7 +43,6 @@ class ModelDriftAlert:
     features_affected: list[str]
     severity: str  # "low", "medium", "high", "critical"
     description: str
-
 
 @dataclass
 class ModelPerformance:
@@ -65,7 +60,6 @@ class ModelPerformance:
     feature_importance_stability: float = 0.0
     concept_drift_score: float = 0.0
     data_drift_score: float = 0.0
-
 
 class MLMonitor:
     """

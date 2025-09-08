@@ -12,7 +12,6 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import error as validation_error
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
-import time
 
 try:
     from src.training.steps.model_training.validation.core.domain import ParquetDatasetManager

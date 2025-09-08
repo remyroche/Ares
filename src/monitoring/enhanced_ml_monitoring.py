@@ -8,7 +8,6 @@ Comprehensive monitoring for ML models and ensembles with detailed explanations
 using SHAP/LIME for trade decisions across backtesting, paper trading, and live trading.
 """
 
-
 import json
 from enum import Enum
 from pathlib import Path
@@ -20,18 +19,12 @@ from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import datetime
-import logging
-import time
-import typing
-
-
 
 class TradingMode(Enum):
     """Trading execution modes."""
     BACKTEST = "backtest"
     PAPER = "paper"
     LIVE = "live"
-
 
 class ModelType(Enum):
     """ML model types."""
@@ -41,7 +34,6 @@ class ModelType(Enum):
     ENSEMBLE = "ensemble"
     TRANSITION = "transition"
     SR_PREDICTOR = "sr_predictor"
-
 
 @dataclass
 class HMMRegimeInfo:
@@ -53,7 +45,6 @@ class HMMRegimeInfo:
     regime_duration: int  # Number of periods in current regime
     regime_stability_score: float
     next_regime_probabilities: Dict[str, float] = None
-
 
 @dataclass
 class TradeContext:
@@ -68,7 +59,6 @@ class TradeContext:
     hmm_regime_info: Optional[HMMRegimeInfo] = None
     market_conditions: Optional[Dict[str, Any]] = None
 
-
 @dataclass
 class TradingIndicator:
     """Trading indicators and their weights."""
@@ -78,7 +68,6 @@ class TradingIndicator:
     confidence: float
     risk_score: float
     description: str
-
 
 @dataclass
 class MLModelDecision:
@@ -94,7 +83,6 @@ class MLModelDecision:
     processing_time_ms: float = 0.0
     model_version: str = "unknown"
 
-
 @dataclass
 class EnsembleDecision:
     """Ensemble decision with per-model details."""
@@ -107,7 +95,6 @@ class EnsembleDecision:
     voting_mechanism: str
     consensus_score: float
     disagreement_level: float
-
 
 @dataclass
 class TradeDecision:
@@ -135,7 +122,6 @@ class TradeDecision:
     execution_time_ms: float = 0.0
     success_metrics: Optional[Dict[str, float]] = None
 
-
 @dataclass
 class ModelPerformanceMetrics:
     """Performance metrics for individual models."""
@@ -162,7 +148,6 @@ class ModelPerformanceMetrics:
     concept_drift_score: float
     data_drift_score: float
 
-
 @dataclass
 class EnsemblePerformanceMetrics:
     """Performance metrics for ensembles."""
@@ -183,7 +168,6 @@ class EnsemblePerformanceMetrics:
     
     # Individual model contributions
     model_contributions: Dict[str, float]
-
 
 class EnhancedMLMonitor:
     """

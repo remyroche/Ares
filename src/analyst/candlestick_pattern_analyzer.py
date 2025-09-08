@@ -1,14 +1,12 @@
 from .core.decorators import handles_errors
 """Candlestick pattern analyzer for advanced feature engineering."""
 
-import logging
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List
 
 from ...utils.logger import system_logger
 from src.core.error_classes import execution_error, initialization_error
-
 
 class CandlestickPatternAnalyzer:
     """
@@ -661,7 +659,6 @@ class CandlestickPatternAnalyzer:
     def print_message(self, message: str) -> None:
         """Print message with proper formatting."""
         print(message)
-
 
 def initialization_error(message: str) -> str:
     """Format initialization error message."""

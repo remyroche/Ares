@@ -5,7 +5,6 @@ This module provides backward compatibility for the refactored system coordinato
 The actual implementation is now split across modules in src/supervisor/coordinator/.
 """
 
-
 # Import all the components from the new structure
 from .supervisor.components import (
     CircuitBreaker,

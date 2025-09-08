@@ -26,7 +26,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import os
 
 # Get dynamic symbol configuration
 _settings = get_environment_settings()
@@ -112,8 +111,7 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 # SR Breakout Predictor will be imported directly where needed
 enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 import psutil
-import numpy
-import pandas
+
 PSUTIL_AVAILABLE = psutil is not None
 
 def create_fallback_logger() -> Any:
@@ -1490,7 +1488,6 @@ class HMMRegimeDiscoveryStep:
             for col in technical_cols:
                 if col in hmm_features.columns:
                     hmm_features[col] = hmm_features[col].ffill()
-
 
             # Get timestamps for time-constrained filling
             timestamps = pd.to_datetime(df['timestamp'], unit='ms')
@@ -3229,8 +3226,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger.info('=' * 80)
         return False
 
-
-
     def _calculate_persistence(self, states: Any) -> Any:
         """Calculate state persistence (how long we stay in current state)."""
         try:
@@ -3342,7 +3337,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         except Exception:
             return {}
 
-
     def _calculate_cluster_stability_scores(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
         """Calculate cluster stability scores."""
         try:
@@ -3350,7 +3344,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             return stability
         except Exception:
             return np.ones(len(cluster_labels))
-
 
     def _calculate_momentum_intensity(self, features: Any, cluster_mask: Any) -> float:
         """Calculate momentum intensity for a cluster."""
@@ -3749,7 +3742,6 @@ if __name__ == '__main__':
         print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print('=' * 80)
         gc.collect()
-
 
 if __name__ == '__main__':
     try:

@@ -14,7 +14,6 @@ from .core.enums import (
     PerformanceLevel,
     performance_monitor,
 )
-import logging
 
 """
 Live trading pipeline implementation (minimal scaffold).

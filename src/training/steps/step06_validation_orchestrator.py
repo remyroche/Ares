@@ -46,8 +46,6 @@ except ImportError as e:
         FAILED = 'failed'
         TIMEOUT = 'timeout'
 
-import time
-
 try:
     from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine
     COMPONENTS_AVAILABLE = True

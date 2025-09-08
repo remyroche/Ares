@@ -55,9 +55,8 @@ except ImportError:
 
 import psutil
 import pandas as pd
-import logging
-from typing import Dict, Any, List, Optional
 
+from typing import Dict, Any, List, Optional
 
 logger = system_logger.getChild('OptimisationStepValidators')
 

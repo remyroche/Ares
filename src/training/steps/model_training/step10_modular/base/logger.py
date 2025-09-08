@@ -6,10 +6,8 @@ unified regime intelligence system.
 
 import logging
 from typing import Optional
-from src.utils.logger import system_logger
 
 STEP10_LOGGER_NAME = "Step10_UnifiedRegimeIntelligence"
-
 
 def setup_step10_logger(level: Optional[str] = None) -> logging.Logger:
     """Setup and configure Step 10 logger.
@@ -48,7 +46,6 @@ def setup_step10_logger(level: Optional[str] = None) -> logging.Logger:
 
     return logger
 
-
 def get_step10_logger() -> logging.Logger:
     """Get the Step 10 logger instance.
 
@@ -56,7 +53,6 @@ def get_step10_logger() -> logging.Logger:
         Step 10 logger instance
     """
     return logging.getLogger(STEP10_LOGGER_NAME)
-
 
 def log_step10_initialization(config: dict) -> None:
     """Log Step 10 initialization details.
@@ -85,7 +81,6 @@ def log_step10_initialization(config: dict) -> None:
     else:
         logger.info("   Architecture Optimization: ❌ Disabled")
 
-
 def log_step10_training_start(config: dict) -> None:
     """Log Step 10 training start.
 
@@ -99,7 +94,6 @@ def log_step10_training_start(config: dict) -> None:
     logger.info(f"   Batch Size: {config.get('batch_size', 'N/A')}")
     logger.info(f"   Epochs: {config.get('epochs', 'N/A')}")
     logger.info(f"   Validation Split: {config.get('validation_split', 'N/A')}")
-
 
 def log_step10_training_complete(metrics: dict) -> None:
     """Log Step 10 training completion.
@@ -115,7 +109,6 @@ def log_step10_training_complete(metrics: dict) -> None:
             logger.info(f"   {key}: {value:.4f}")
         else:
             logger.info(f"   {key}: {value}")
-
 
 def log_step10_error(error: Exception, context: str = "") -> None:
     """Log Step 10 errors with context.

@@ -10,7 +10,7 @@ This module provides advanced pipeline orchestration for HMM regime discovery wi
 """
 
 import asyncio
-import concurrent.futures
+
 import time
 from typing import Dict, Any, List, Tuple, Optional, Union, Callable
 from dataclasses import dataclass, field
@@ -22,7 +22,6 @@ import json
 from collections import defaultdict, deque
 import networkx as nx
 import psutil
-import gc
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -36,7 +35,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class TaskStatus(Enum):
     """Task execution status."""
     PENDING = "pending"
@@ -45,14 +43,12 @@ class TaskStatus(Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
 
-
 class TaskPriority(Enum):
     """Task execution priority."""
     LOW = 1
     NORMAL = 2
     HIGH = 3
     CRITICAL = 4
-
 
 @dataclass
 class Task:
@@ -78,7 +74,6 @@ class Task:
     error: Optional[str] = None
     execution_time: Optional[float] = None
 
-
 @dataclass
 class ResourceMetrics:
     """Resource usage metrics."""
@@ -87,7 +82,6 @@ class ResourceMetrics:
     memory_mb: float = 0.0
     disk_usage_percent: float = 0.0
     network_io: Dict[str, float] = field(default_factory=dict)
-
 
 @dataclass
 class PipelineMetrics:
@@ -100,7 +94,6 @@ class PipelineMetrics:
     average_task_time: float = 0.0
     resource_utilization: Dict[str, float] = field(default_factory=dict)
     bottleneck_tasks: List[str] = field(default_factory=list)
-
 
 class ResourceManager:
     """Resource-aware task scheduling."""
@@ -189,7 +182,6 @@ class ResourceManager:
             'current_concurrent_tasks': self.current_tasks,
             'max_concurrent_tasks': self.max_concurrent_tasks
         }
-
 
 class TaskCache:
     """Intelligent task result caching."""
@@ -291,7 +283,6 @@ class TaskCache:
             'hit_rate': hit_rate,
             'total_requests': total_requests
         }
-
 
 class DAGExecutor:
     """DAG-based task execution engine."""
@@ -597,7 +588,6 @@ class DAGExecutor:
             'task_errors': {tid: t.error for tid, t in self.tasks.items() if t.error is not None}
         }
 
-
 # =============================================================================
 # STEP03 SPECIFIC PIPELINE
 # =============================================================================
@@ -792,7 +782,6 @@ class Step03PipelineOrchestrator:
             }
         }
 
-
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
@@ -814,14 +803,12 @@ def create_step03_pipeline_config(**kwargs) -> Dict[str, Any]:
     default_config.update(kwargs)
     return default_config
 
-
 def get_step03_pipeline_orchestrator(config: Dict[str, Any] = None) -> Step03PipelineOrchestrator:
     """Get Step03 pipeline orchestrator instance."""
     if config is None:
         config = create_step03_pipeline_config()
 
     return Step03PipelineOrchestrator(config)
-
 
 if __name__ == "__main__":
     # Example usage

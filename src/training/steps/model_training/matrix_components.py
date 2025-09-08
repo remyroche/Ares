@@ -62,17 +62,15 @@ All optimizations include automatic fallback mechanisms for reliability.
 
 from typing import List, Dict, Any, Tuple, Optional, Callable
 import asyncio
-import concurrent.futures
-import logging
+
 import time
 import os
 from dataclasses import dataclass
-from functools import wraps
 
 import pandas as pd
 import numpy as np
 import torch
-import torch.nn as nn
+
 from torch.utils.data import DataLoader, TensorDataset
 
 # Try to import Numba for JIT compilation
@@ -105,7 +103,6 @@ from ....utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from ....training.diverse_lookback_optimizer import DiverseLookbackOptimizer
-
 
 # Numba-optimized functions for performance-critical operations
 if NUMBA_AVAILABLE:
@@ -219,7 +216,6 @@ if NUMBA_AVAILABLE:
 
         return corr_matrix
 
-
 @dataclass
 class AsyncTask:
     """Represents an async matrix computation task."""
@@ -228,7 +224,6 @@ class AsyncTask:
     kwargs: Dict[str, Any]
     task_id: str
     priority: int = 1
-
 
 class AsyncMatrixProcessor:
     """Handles async matrix processing with concurrent operations."""
@@ -359,7 +354,6 @@ class AsyncMatrixProcessor:
         # Shutdown executor
         self.executor.shutdown(wait=True)
         self.logger.info("✅ Async matrix processor shut down")
-
 
 class MatrixProcessor:
     """Handles matrix computations with GPU acceleration support."""

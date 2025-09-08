@@ -112,8 +112,6 @@ except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False
 project_root = Path(__file__).parent.parent.parent
 import sys
-import collections
-import json
 
 sys.path.insert(0, str(project_root))
 # Import the correct PipelineStandards to avoid conflicts
@@ -2468,7 +2466,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             )
         )
 
-
 async def _execute_step07_with_optimizations(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Execute step07 with enhanced optimizations."""
     if data_dir is None:
@@ -2486,7 +2483,6 @@ async def _execute_step07_with_optimizations(symbol: str, exchange: str, timefra
     except Exception as e:
         system_logger.error(f'❌ Step 7 failed: {str(e)}')
         return False
-
 
 async def _execute_step07_standard(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Execute step07 with standard implementation (fallback)."""

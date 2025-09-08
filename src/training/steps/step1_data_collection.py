@@ -66,7 +66,6 @@ def validate_data(func):
     """Fallback decorator when validation decorators are not available."""
     return func
 
-
 class Step1DataCollection:
     """
     Step 1: Data Collection
@@ -214,7 +213,6 @@ class Step1DataCollection:
             self.logger.exception(f"Error getting data summary: {e}")
             return {'error': str(e)}
 
-
 # Main execution function
 async def main():
     """Main execution function for Step1 data collection."""
@@ -236,7 +234,6 @@ async def main():
         print(f"Data summary: {summary}")
     else:
         print("❌ Data collection failed")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -24,10 +24,6 @@ from .utils.common import (
     safe_json_dump, safe_json_load, safe_file_exists
 )
 from .logger import system_logger
-import logging
-import time
-import typing
-
 
 class ReportManager:
     """Centralized manager for all report generation and organization."""
@@ -693,10 +689,8 @@ class ReportManager:
         
         return "\n".join(text_lines)
 
-
 # Global report manager instance
 _global_report_manager = None
-
 
 def get_report_manager() -> ReportManager:
     """Get the global report manager instance."""
@@ -704,7 +698,6 @@ def get_report_manager() -> ReportManager:
     if _global_report_manager is None:
         _global_report_manager = ReportManager()
     return _global_report_manager
-
 
 def initialize_report_manager(base_reports_dir: str = "reports") -> ReportManager:
     """Initialize the global report manager with custom base directory."""

@@ -6,7 +6,7 @@ identified in the audit while maintaining core functionality.
 """
 
 import sys
-import warnings
+
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -16,11 +16,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Required dependencies - no fallbacks
-import numpy as np
+
 import pandas as pd
-import torch
-import numba
-import psutil
+
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from src.training.base_step import BaseStep

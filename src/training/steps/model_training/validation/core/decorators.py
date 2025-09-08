@@ -2,8 +2,6 @@
 
 from functools import wraps
 from typing import Any, Callable
-import time
-import logging
 
 def cached(func: Callable) -> Callable:
     """Cache decorator."""

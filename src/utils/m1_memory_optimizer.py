@@ -8,10 +8,10 @@ including intelligent memory management, chunked processing, and memory-efficien
 import gc
 import logging
 import psutil
-import weakref
+
 import threading
 import tracemalloc
-import os
+
 import subprocess
 from typing import Any, Dict, List, Optional, Generator, Callable, TypeVar, Set
 from contextlib import contextmanager
@@ -24,7 +24,6 @@ import time
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
-
 
 class M1MemoryOptimizer:
     """Memory optimizer for M1 Macs with intelligent resource management."""
@@ -545,7 +544,6 @@ class M1MemoryOptimizer:
             'leak_snapshots_count': len(self.leak_snapshots)
         }
 
-
 class M1DataManager:
     """Data manager optimized for M1 memory architecture."""
 
@@ -618,7 +616,6 @@ class M1DataManager:
 
         self.logger.info(f"💾 Saved data to {file_path} ({format}, {compression})")
 
-
 # Global instance
 _m1_memory_optimizer = None
 
@@ -628,7 +625,6 @@ def get_m1_memory_optimizer() -> M1MemoryOptimizer:
     if _m1_memory_optimizer is None:
         _m1_memory_optimizer = M1MemoryOptimizer()
     return _m1_memory_optimizer
-
 
 def create_memory_efficient_dataframe(*args, **kwargs) -> pd.DataFrame:
     """Create DataFrame with memory optimizations."""
@@ -640,7 +636,6 @@ def create_memory_efficient_dataframe(*args, **kwargs) -> pd.DataFrame:
             df[col] = df[col].astype('category')
 
     return df
-
 
 def memory_efficient_groupby(df: pd.DataFrame, by: str, agg_func: str = 'mean') -> pd.DataFrame:
     """Memory-efficient groupby operation with final re-aggregation."""

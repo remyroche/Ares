@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
@@ -27,7 +26,6 @@ from .utils.status import (
     failed,
     initialization_error,
 )
-
 
 class WaveletFeaturePrecomputer:
     """Pre-computation system for wavelet features.
@@ -422,7 +420,6 @@ class WaveletFeaturePrecomputer:
             self.logger.error(f"Error clearing cache: {e}")
             return False
 
-
 async def main() -> None:
     """Main function for pre-computation script."""
     try:
@@ -487,7 +484,6 @@ async def main() -> None:
 
     except Exception as e:
         print(f"Error in main: {e}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

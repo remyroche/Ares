@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import logging
-
 from src.utils.warning_symbols import (
     missing,
 )
@@ -15,8 +13,6 @@ from src.utils.warning_symbols import (
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-
 
 class Step11ConfidenceCalibrationValidator(BaseValidator):
     """Validator for Step 11: Confidence Calibration."""

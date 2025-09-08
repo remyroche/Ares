@@ -44,12 +44,8 @@ except ImportError:
     per_regime_step = None
     pipeline_standards = None
 import numpy as np
-import logging
-import typing
-
 
 logger = get_logger('Step17FinalParametersOptimizationPerRegime')
-
 
 class PerRegimeFinalParametersOptimizationStep(Step17FinalParametersOptimization):
     """Final parameters optimization step that processes each regime separately."""
@@ -1011,7 +1007,6 @@ class PerRegimeFinalParametersOptimizationStep(Step17FinalParametersOptimization
             self.logger.error(f"❌ Error saving parameters optimization results for regime {regime_id}: {e}")
             return False
 
-
 @traced(span_name='run_per_regime_parameters_optimization_step')
 @validates()
 @handles_errors
@@ -1068,7 +1063,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 17: Per-Regime Final Parameters Optimization failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

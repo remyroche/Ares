@@ -1,10 +1,17 @@
 # src/training/steps/step13_analyst_ensemble_creation.py
 
 import os
-from typing import Any, Optional, Tuple
+import gc
+import time
+import asyncio
+from typing import Any, Optional, Tuple, Dict, List
+from pathlib import Path
+from contextlib import asynccontextmanager
 
 import joblib
 import pandas as pd
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -75,6 +82,23 @@ class AnalystEnsembleCreationStep:
         self.standards = pipeline_standards
         self.logger = logger
         self.financial_logger = None
+        
+        # Performance tracking
+        self.performance_metrics = {
+            'start_time': None,
+            'memory_usage_start': None,
+            'model_load_times': {},
+            'ensemble_creation_time': 0.0,
+            'weight_calculation_time': 0.0,
+            'total_memory_used': 0.0
+        }
+        
+        # Validation cache
+        self._validation_cache = {}
+        self._model_cache = {}
+        
+        # Fast fail validation results
+        self._fast_fail_results = {}
 
         # Initialize enhanced reporting system
         if ENHANCED_REPORTING_AVAILABLE and Step13EnhancedReporter is not None:
@@ -135,13 +159,120 @@ class AnalystEnsembleCreationStep:
             self.step_optimizer = None
 
     @log_all_calls
-
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
             missing_modules = dependency_status["missing_modules"]
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
+    
+    def _fast_fail_validation(self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]) -> bool:
+        """Fast fail validation for early error detection."""
+        try:
+            # Check input data structure
+            if not self._validate_input_data_structure(training_input):
+                return False
+            
+            # Check data directory accessibility
+            if not self._validate_data_directory(data_dir):
+                return False
+            
+            # Check memory availability
+            if not self._validate_memory_availability():
+                return False
+            
+            # Check configuration validity
+            if not self._validate_configuration():
+                return False
+            
+            self.logger.info("✅ Fast fail validation passed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Fast fail validation failed: {e}")
+            return False
+    
+    def _validate_input_data_structure(self, training_input: dict[str, Any]) -> bool:
+        """Validate input data structure."""
+        required_keys = ['enhanced_models', 'regime_data', 'config']
+        missing_keys = [key for key in required_keys if key not in training_input]
+        
+        if missing_keys:
+            self.logger.error(f"❌ Missing required keys in training_input: {missing_keys}")
+            return False
+        
+        if not training_input.get('enhanced_models'):
+            self.logger.error("❌ No enhanced models found - cannot create ensemble")
+            return False
+        
+        return True
+    
+    def _validate_data_directory(self, data_dir: str) -> bool:
+        """Validate data directory accessibility."""
+        try:
+            if not os.path.exists(data_dir):
+                self.logger.error(f"❌ Data directory does not exist: {data_dir}")
+                return False
+            
+            if not os.access(data_dir, os.R_OK):
+                self.logger.error(f"❌ Data directory is not readable: {data_dir}")
+                return False
+            
+            if not os.access(data_dir, os.W_OK):
+                self.logger.warning(f"⚠️ Data directory is not writable: {data_dir}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating data directory: {e}")
+            return False
+    
+    def _validate_memory_availability(self) -> bool:
+        """Validate memory availability for operations."""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            
+            # Require at least 1GB available memory
+            min_memory_gb = 1.0
+            available_gb = memory.available / (1024**3)
+            
+            if available_gb < min_memory_gb:
+                self.logger.error(f"❌ Insufficient memory: {available_gb:.2f}GB available, {min_memory_gb}GB required")
+                return False
+            
+            self.logger.info(f"✅ Memory check passed: {available_gb:.2f}GB available")
+            return True
+            
+        except ImportError:
+            self.logger.warning("⚠️ psutil not available, skipping memory validation")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error checking memory: {e}")
+            return False
+    
+    def _validate_configuration(self) -> bool:
+        """Validate configuration parameters."""
+        try:
+            # Check required configuration keys
+            required_config_keys = ['timeframe', 'symbol', 'exchange']
+            missing_config_keys = [key for key in required_config_keys if key not in self.config]
+            
+            if missing_config_keys:
+                self.logger.error(f"❌ Missing required configuration keys: {missing_config_keys}")
+                return False
+            
+            # Validate timeframe format
+            timeframe = self.config.get('timeframe')
+            if timeframe and not isinstance(timeframe, str):
+                self.logger.error(f"❌ Invalid timeframe format: {timeframe}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating configuration: {e}")
+            return False
 
     @handles_errors(
         exceptions=(Exception,),
@@ -163,7 +294,20 @@ class AnalystEnsembleCreationStep:
             bool: True if successful
 
         """
+        # Initialize performance tracking
+        self.performance_metrics['start_time'] = time.time()
+        try:
+            import psutil
+            self.performance_metrics['memory_usage_start'] = psutil.virtual_memory().percent
+        except ImportError:
+            pass
+        
         self.logger.info("🚀 Starting Step 7: Analyst Ensemble Creation with Optimization")
+        
+        # Fast fail validation
+        if not self._fast_fail_validation(symbol, exchange, data_dir, training_input):
+            self.logger.error("❌ Fast fail validation failed, aborting execution")
+            return False
         
         # Initialize financial logger
         timeframe = self.config.get('timeframe', '1h')
@@ -239,8 +383,8 @@ class AnalystEnsembleCreationStep:
                     symbol, exchange, data_dir, training_input,
                 )
 
-            # Load enhanced models from Step 6
-            ensemble_models = self._load_enhanced_models(enhanced_models_dir)
+            # Load enhanced models from Step 6 with memory optimization
+            ensemble_models = await self._load_enhanced_models_optimized(enhanced_models_dir)
 
             if not ensemble_models:
                 self.logger.warning(
@@ -250,8 +394,8 @@ class AnalystEnsembleCreationStep:
                     symbol, exchange, data_dir, training_input,
                 )
 
-            # Create ensemble
-            ensemble_result = self._create_ensemble(
+            # Create ensemble with optimized weight calculation
+            ensemble_result = await self._create_ensemble_optimized(
                 ensemble_models, symbol, exchange, data_dir,
             )
 
@@ -394,54 +538,150 @@ class AnalystEnsembleCreationStep:
         except Exception as e:
             self.logger.exception(f"❌ Error in Step 7: {e}")
             return False
+        finally:
+            # Cleanup and performance logging
+            await self._cleanup_and_log_performance()
     @log_all_calls
-
-    def _load_enhanced_models(self, enhanced_models_dir: str) -> dict[str, Any]:
-        """Load enhanced models from Step 6."""
+    async def _load_enhanced_models_optimized(self, enhanced_models_dir: str) -> dict[str, Any]:
+        """Load enhanced models from Step 6 with memory optimization and parallel loading."""
         try:
             ensemble_models: dict[str, Any] = {}
 
             if not os.path.exists(enhanced_models_dir):
                 return ensemble_models
 
-            # Look for model files in the enhanced models directory
+            # Get all model files first
+            model_files = []
             for regime_dir in os.listdir(enhanced_models_dir):
                 regime_path = os.path.join(enhanced_models_dir, regime_dir)
                 if os.path.isdir(regime_path):
-                    ensemble_models[regime_dir] = {}
-
                     for model_file in os.listdir(regime_path):
                         if model_file.endswith(".joblib"):
                             model_path = os.path.join(regime_path, model_file)
-                            try:
-                                model = joblib.load(model_path)
-                                model_name = model_file.replace(".joblib", "")
-                                ensemble_models[regime_dir][model_name] = model
-                                self.logger.info(
-                                    f"📦 Loaded model: {regime_dir}/{model_name}",
-                                )
-                            except Exception as e:
-                                self.logger.warning(
-                                    f"⚠️ Failed to load model {model_path}: {e}",
-                                )
-
+                            model_files.append((regime_dir, model_file, model_path))
+            
+            if not model_files:
+                self.logger.warning("⚠️ No model files found in enhanced_models_dir")
+                return ensemble_models
+            
+            # Load models in parallel with memory optimization
+            loaded_models = await self._load_models_parallel(model_files)
+            
+            # Organize loaded models by regime
+            for regime_dir, model_name, model_data in loaded_models:
+                if regime_dir not in ensemble_models:
+                    ensemble_models[regime_dir] = {}
+                ensemble_models[regime_dir][model_name] = model_data
+            
+            self.logger.info(f"✅ Loaded {len(loaded_models)} models across {len(ensemble_models)} regimes")
             return ensemble_models
 
         except Exception as e:
             self.logger.exception(f"❌ Error loading enhanced models: {e}")
             return {}
+    
+    async def _load_models_parallel(self, model_files: List[Tuple[str, str, str]]) -> List[Tuple[str, str, Any]]:
+        """Load models in parallel with memory optimization."""
+        loaded_models = []
+        
+        # Use ThreadPoolExecutor for I/O bound operations
+        with ThreadPoolExecutor(max_workers=min(4, len(model_files))) as executor:
+            # Submit all loading tasks
+            future_to_model = {
+                executor.submit(self._load_single_model, regime_dir, model_file, model_path): (regime_dir, model_file)
+                for regime_dir, model_file, model_path in model_files
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_model):
+                regime_dir, model_file = future_to_model[future]
+                try:
+                    model_data = future.result()
+                    if model_data is not None:
+                        model_name = model_file.replace(".joblib", "")
+                        loaded_models.append((regime_dir, model_name, model_data))
+                        self.logger.info(f"📦 Loaded model: {regime_dir}/{model_name}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to load model {regime_dir}/{model_file}: {e}")
+        
+        return loaded_models
+    
+    def _load_single_model(self, regime_dir: str, model_file: str, model_path: str) -> Optional[Any]:
+        """Load a single model with validation."""
+        try:
+            # Validate model file before loading
+            if not self._validate_model_file(model_path):
+                return None
+            
+            # Load model
+            model = joblib.load(model_path)
+            
+            # Validate loaded model
+            if not self._validate_loaded_model(model, regime_dir, model_file):
+                return None
+            
+            return model
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to load model {model_path}: {e}")
+            return None
+    
+    def _validate_model_file(self, model_path: str) -> bool:
+        """Validate model file before loading."""
+        try:
+            if not os.path.exists(model_path):
+                self.logger.error(f"❌ Model file does not exist: {model_path}")
+                return False
+            
+            if not os.access(model_path, os.R_OK):
+                self.logger.error(f"❌ Model file is not readable: {model_path}")
+                return False
+            
+            # Check file size (basic corruption check)
+            file_size = os.path.getsize(model_path)
+            if file_size < 1024:  # Less than 1KB is suspicious
+                self.logger.warning(f"⚠️ Model file is very small: {file_size} bytes")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating model file {model_path}: {e}")
+            return False
+    
+    def _validate_loaded_model(self, model: Any, regime_dir: str, model_file: str) -> bool:
+        """Validate loaded model."""
+        try:
+            if model is None:
+                self.logger.error(f"❌ Loaded model is None: {regime_dir}/{model_file}")
+                return False
+            
+            # Check if model has required methods (basic validation)
+            if hasattr(model, 'predict') and not callable(getattr(model, 'predict')):
+                self.logger.error(f"❌ Model predict method is not callable: {regime_dir}/{model_file}")
+                return False
+            
+            # Check for common model attributes
+            if hasattr(model, 'feature_importances_') and model.feature_importances_ is not None:
+                if len(model.feature_importances_) == 0:
+                    self.logger.warning(f"⚠️ Model has empty feature importances: {regime_dir}/{model_file}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating loaded model {regime_dir}/{model_file}: {e}")
+            return False
     @log_all_calls
-
-    def _create_ensemble(
+    async def _create_ensemble_optimized(
         self, ensemble_models: dict[str, Any], symbol: str, exchange: str, data_dir: str,
     ) -> dict[str, Any]:
-        """Create ensemble from loaded models."""
+        """Create ensemble from loaded models with optimized weight calculation."""
         try:
+            start_time = time.time()
+            
             # Apply optimized feature selection for ensemble creation
             try:
                 import os
                 from src.training.optimized_feature_selection_manager import (
-
                     OptimizedFeatureSelectionManager,
                 )
 
@@ -513,23 +753,187 @@ class AnalystEnsembleCreationStep:
                     },
                 }
 
-            # Assign equal weights to all models for now
-            for regime, models in ensemble_models.items():
-                if models:
-                    ensemble_result["ensemble_weights"][regime] = {
-                        model_name: 1.0 / max(1, len(models)) for model_name in models
-                    }
+            # Calculate optimized weights using vectorized operations
+            weight_start_time = time.time()
+            ensemble_weights = await self._calculate_ensemble_weights_optimized(ensemble_models)
+            self.performance_metrics['weight_calculation_time'] = time.time() - weight_start_time
+            
+            ensemble_result["ensemble_weights"] = ensemble_weights
+            
+            # Validate ensemble weights
+            if not self._validate_ensemble_weights(ensemble_weights):
+                self.logger.warning("⚠️ Ensemble weight validation failed, using equal weights")
+                ensemble_result["ensemble_weights"] = self._create_equal_weights(ensemble_models)
 
+            self.performance_metrics['ensemble_creation_time'] = time.time() - start_time
+            
             self.logger.info(
-                f"🎯 Created ensemble with {ensemble_result['ensemble_metadata']['model_count']} models",
+                f"🎯 Created ensemble with {ensemble_result['ensemble_metadata']['model_count']} models in {self.performance_metrics['ensemble_creation_time']:.2f}s",
             )
             return ensemble_result
 
         except Exception as e:
             self.logger.exception(f"❌ Error creating ensemble: {e}")
             return {}
+    
+    async def _calculate_ensemble_weights_optimized(self, ensemble_models: dict[str, Any]) -> dict[str, dict[str, float]]:
+        """Calculate ensemble weights using vectorized operations."""
+        try:
+            ensemble_weights = {}
+            
+            for regime, models in ensemble_models.items():
+                if not models:
+                    continue
+                
+                # Extract performance metrics for all models in regime
+                model_names = list(models.keys())
+                performance_scores = []
+                
+                for model_name in model_names:
+                    model = models[model_name]
+                    score = self._extract_model_performance_score(model)
+                    performance_scores.append(score)
+                
+                # Vectorized weight calculation
+                if performance_scores:
+                    scores_array = np.array(performance_scores)
+                    
+                    # Normalize scores to [0, 1] range
+                    if scores_array.max() > scores_array.min():
+                        normalized_scores = (scores_array - scores_array.min()) / (scores_array.max() - scores_array.min())
+                    else:
+                        normalized_scores = np.ones_like(scores_array)
+                    
+                    # Apply softmax for weight distribution
+                    weights = self._softmax(normalized_scores)
+                    
+                    # Ensure weights sum to 1.0
+                    weights = weights / weights.sum()
+                    
+                    # Create weight dictionary
+                    ensemble_weights[regime] = {
+                        model_name: float(weight) 
+                        for model_name, weight in zip(model_names, weights)
+                    }
+                else:
+                    # Fallback to equal weights
+                    ensemble_weights[regime] = {
+                        model_name: 1.0 / len(model_names) 
+                        for model_name in model_names
+                    }
+            
+            return ensemble_weights
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating ensemble weights: {e}")
+            return self._create_equal_weights(ensemble_models)
+    
+    def _extract_model_performance_score(self, model: Any) -> float:
+        """Extract performance score from model."""
+        try:
+            # Try to get score from model attributes
+            if hasattr(model, 'score_') and model.score_ is not None:
+                return float(model.score_)
+            
+            if hasattr(model, 'best_score_') and model.best_score_ is not None:
+                return float(model.best_score_)
+            
+            if hasattr(model, 'cv_results_') and model.cv_results_ is not None:
+                cv_results = model.cv_results_
+                if 'mean_test_score' in cv_results:
+                    return float(np.mean(cv_results['mean_test_score']))
+            
+            # Default score based on model type
+            return 0.8  # Default performance score
+            
+        except Exception as e:
+            self.logger.debug(f"Could not extract performance score: {e}")
+            return 0.8  # Default performance score
+    
+    def _softmax(self, x: np.ndarray) -> np.ndarray:
+        """Apply softmax function for weight normalization."""
+        try:
+            # Subtract max for numerical stability
+            x_shifted = x - np.max(x)
+            exp_x = np.exp(x_shifted)
+            return exp_x / np.sum(exp_x)
+        except Exception:
+            # Fallback to uniform distribution
+            return np.ones_like(x) / len(x)
+    
+    def _validate_ensemble_weights(self, ensemble_weights: dict[str, dict[str, float]]) -> bool:
+        """Validate ensemble weights."""
+        try:
+            for regime, weights in ensemble_weights.items():
+                if not weights:
+                    self.logger.error(f"❌ Empty weights for regime {regime}")
+                    return False
+                
+                # Check weight sum is approximately 1.0
+                weight_sum = sum(weights.values())
+                if not np.isclose(weight_sum, 1.0, atol=1e-6):
+                    self.logger.error(f"❌ Weights for regime {regime} sum to {weight_sum}, not 1.0")
+                    return False
+                
+                # Check all weights are non-negative
+                if any(w < 0 for w in weights.values()):
+                    self.logger.error(f"❌ Negative weights found in regime {regime}")
+                    return False
+                
+                # Check for NaN or infinite values
+                if any(not np.isfinite(w) for w in weights.values()):
+                    self.logger.error(f"❌ Non-finite weights found in regime {regime}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating ensemble weights: {e}")
+            return False
+    
+    def _create_equal_weights(self, ensemble_models: dict[str, Any]) -> dict[str, dict[str, float]]:
+        """Create equal weights for all models."""
+        ensemble_weights = {}
+        
+        for regime, models in ensemble_models.items():
+            if models:
+                ensemble_weights[regime] = {
+                    model_name: 1.0 / len(models) for model_name in models
+                }
+        
+        return ensemble_weights
     @log_all_calls
-
+    async def _cleanup_and_log_performance(self):
+        """Cleanup resources and log performance metrics."""
+        try:
+            # Force garbage collection
+            gc.collect()
+            
+            # Log performance metrics
+            if self.performance_metrics['start_time']:
+                total_time = time.time() - self.performance_metrics['start_time']
+                self.logger.info(f"⏱️ Total execution time: {total_time:.2f}s")
+                self.logger.info(f"📊 Ensemble creation time: {self.performance_metrics['ensemble_creation_time']:.2f}s")
+                self.logger.info(f"⚖️ Weight calculation time: {self.performance_metrics['weight_calculation_time']:.2f}s")
+                
+                # Log memory usage if available
+                try:
+                    import psutil
+                    current_memory = psutil.virtual_memory().percent
+                    if self.performance_metrics['memory_usage_start']:
+                        memory_delta = current_memory - self.performance_metrics['memory_usage_start']
+                        self.logger.info(f"💾 Memory usage delta: {memory_delta:+.1f}%")
+                except ImportError:
+                    pass
+            
+            # Clear caches
+            self._validation_cache.clear()
+            self._model_cache.clear()
+            
+        except Exception as e:
+            self.logger.debug(f"Error in cleanup: {e}")
+    
+    @log_all_calls
     def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
         """Get sample data for feature selection from existing features."""
         try:

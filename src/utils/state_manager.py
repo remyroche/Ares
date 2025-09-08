@@ -244,38 +244,3 @@ class StateManager:
 state_manager: StateManager | None = None
 
 
-async def setup_state_manager(
-    config: dict[str, Any] | None = None,
-) -> StateManager | None:
-    """Setup global state manager.
-
-    Args:
-        config: Optional configuration dictionary
-
-    Returns:
-        Optional[StateManager]: Global state manager instance
-    """
-    try:
-        global state_manager
-
-        if config is None:
-            # Fallback implementation for config
-            config = {
-                "state_manager": {
-                    "state_file": "state/state.json",
-                    "auto_save": True,
-                    "save_interval": 60,
-                },
-            }
-
-        # Create state manager
-        state_manager = StateManager(config)
-
-        # Initialize state manager
-        success = await state_manager.initialize()
-        if success:
-            return state_manager
-        return None
-
-    except Exception:
-        return None

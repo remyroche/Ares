@@ -1488,34 +1488,3 @@ class Analyst:
         except Exception:
             self.logger.error("❌ Error stopping Analyst: {e}")
 
-
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="analyst setup",
-)
-async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
-    """
-    Setup and initialize Analyst.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Analyst: Initialized analyst or None if failed
-    """
-    try:
-        if config is None:
-            config = {}
-
-        analyst = Analyst(config)
-
-        if await analyst.initialize():
-            system_logger.info("✅ Analyst setup completed successfully")
-            return analyst
-        system_logger.error("❌ Analyst setup failed")
-        return None
-
-    except Exception:
-        system_logger.exception("❌ Error setting up Analyst")
-        return None

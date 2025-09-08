@@ -134,6 +134,21 @@ class DataReadingStep(BaseStep):
             elif data_path_obj.is_dir():
                 parquet_files = list(data_path_obj.glob('**/*.parquet'))
                 if not parquet_files:
+                    # Attempt centralized auto re-collection
+                    self.logger.warning(f"⚠️ No parquet files found in directory: {data_path}. Attempting auto re-collection...")
+                    try:
+                        from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                        _qm = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                        symbol_q = training_input.get('symbol', symbol)
+                        exchange_q = training_input.get('exchange', exchange)
+                        timeframe_q = training_input.get('timeframe', timeframe)
+                        import asyncio as _asyncio
+                        _asyncio.get_event_loop()
+                        _asyncio.run(_qm.get_data_for_step3_step4(symbol_q, exchange_q, timeframe_q))
+                        parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                    except Exception as _qe:
+                        self.logger.warning(f"Auto re-collection failed: {_qe}")
+                if not parquet_files:
                     raise ValueError(f'No parquet files found in directory: {data_path}')
                 self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
                 dataframes = []
@@ -141,6 +156,10 @@ class DataReadingStep(BaseStep):
                     self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
                     df = parquet_utils.safe_read_parquet(str(file_path))
                     if df is not None and (not df.empty):
+                        try:
+                            df = PipelineStandards(self.logger).enforce_schema(df, 'unified')
+                        except Exception as _se:
+                            self.logger.warning(f"Schema enforcement failed for {file_path.name}: {_se}")
                         dataframes.append(df)
                 if not dataframes:
                     raise ValueError(f'Failed to read any data from parquet files in {data_path}')
@@ -149,7 +168,35 @@ class DataReadingStep(BaseStep):
             else:
                 raise ValueError(f'Path does not exist: {data_path}')
             if data is None or data.empty:
-                raise ValueError(f'Failed to read data from {data_path}')
+                # Attempt centralized auto re-collection and one retry
+                self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")
+                try:
+                    from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                    _qm2 = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                    symbol_q2 = training_input.get('symbol', symbol)
+                    exchange_q2 = training_input.get('exchange', exchange)
+                    timeframe_q2 = training_input.get('timeframe', timeframe)
+                    import asyncio as _asyncio
+                    _asyncio.get_event_loop()
+                    _asyncio.run(_qm2.get_data_for_step3_step4(symbol_q2, exchange_q2, timeframe_q2))
+                    if data_path_obj.is_dir():
+                        parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                        if parquet_files:
+                            dataframes = []
+                            for file_path in parquet_files:
+                                df = parquet_utils.safe_read_parquet(str(file_path))
+                                if df is not None and (not df.empty):
+                                    try:
+                                        df = PipelineStandards(self.logger).enforce_schema(df, 'unified')
+                                    except Exception as _se2:
+                                        self.logger.warning(f"Schema enforcement failed for retry {file_path.name}: {_se2}")
+                                    dataframes.append(df)
+                            if dataframes:
+                                data = pd.concat(dataframes, ignore_index = True)
+                except Exception as _qe2:
+                    self.logger.warning(f"Auto re-collection retry failed: {_qe2}")
+                if data is None or data.empty:
+                    raise ValueError(f'Failed to read data from {data_path}')
             self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns')
         except Exception as e:
             self.logger.error(f'❌ Failed to read data: {e}')
@@ -169,6 +216,15 @@ class DataReadingStep(BaseStep):
         if missing_cols:
             self.logger.warning(f'⚠️ Missing OHLCV columns: {missing_cols}')
         validation_results = self._validate_data_quality(data)
+        # Warmup zero logic for volume and key features
+        try:
+            warmup_rows = min(50, len(data))
+            if 'volume' in data.columns:
+                post_warmup_zeros = (data['volume'].iloc[warmup_rows:] == 0).sum()
+                if post_warmup_zeros > 0:
+                    self.logger.warning(f"⚠️ Found {post_warmup_zeros} zero volume rows beyond warmup ({warmup_rows})")
+        except Exception as _zw:
+            self.logger.debug(f"Zero warmup check skipped: {_zw}")
         pipeline_state['validated_data'] = data
         pipeline_state['data_validation_results'] = validation_results
         pipeline_state['data_info'] = {'shape': data.shape, 'columns': list(data.columns), 'index_type': str(type(data.index)), 'memory_usage_mb': data.memory_usage(deep = True).sum() / 1024 / 1024, 'date_range': {'start': str(data.index.min()) if hasattr(data.index, 'min') else None, 'end': str(data.index.max()) if hasattr(data.index, 'max') else None}}

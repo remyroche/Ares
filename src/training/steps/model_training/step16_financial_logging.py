@@ -1,660 +1,224 @@
 """
-Financial metrics logging for Step16 Confidence Calibration.
+Financial metrics logging for Step16_Financial.
 Independent logging module that can be used without the reporting system.
+
+Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
-from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+from src.utils.financial_metrics_logger import (
+    get_financial_metrics_logger, 
+    financial_metrics_context,
+    get_smart_financial_metrics_logger,
+    log_financial_metric_with_regime_awareness
+)
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild('Step16FinancialLogging')
+# Import enhanced functionality if available
+try:
+    from src.utils.enhanced_financial_metrics_logger import (
+        get_enhanced_financial_metrics_logger,
+        validate_and_log_regime_data
+    )
+    ENHANCED_LOGGING_AVAILABLE = True
+except ImportError:
+    ENHANCED_LOGGING_AVAILABLE = False
+    get_enhanced_financial_metrics_logger = None
+    validate_and_log_regime_data = None
+
+logger = system_logger.getChild('Step16Financiallogging')
 
 
-class Step16FinancialLogger:
-    """Independent financial metrics logger for Step16 Confidence Calibration."""
+class Step16FinancialloggingFinancialLogger:
+    """Independent financial metrics logger for Step16_Financial with enhanced regime logging."""
     
-    def __init__(self, symbol: str, exchange: str, timeframe: str):
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         self.symbol = symbol
         self.exchange = exchange
         self.timeframe = timeframe
-        self.financial_logger = get_financial_metrics_logger()
+        self.enable_enhanced_logging = enable_enhanced_logging
+        
+        # Use smart logger that automatically chooses enhanced or base logger
+        self.financial_logger = get_smart_financial_metrics_logger(use_enhanced=enable_enhanced_logging)
+        
+        # Store enhanced logger separately if available
+        if ENHANCED_LOGGING_AVAILABLE and enable_enhanced_logging:
+            self.enhanced_logger = get_enhanced_financial_metrics_logger()
+        else:
+            self.enhanced_logger = None
     
-    def log_step_execution(self, calibration_results: Dict[str, Any], model_performance: Dict[str, Any], 
-                          regime_data: Dict[str, Any], validation_results: Dict[str, Any], 
-                          threshold_analysis: Dict[str, Any]) -> None:
-        """Log comprehensive financial metrics for Step16 execution."""
+    def log_step_execution(self, *args, data: Optional[pd.DataFrame] = None, **kwargs) -> bool:
+        """
+        Log comprehensive financial metrics for Step16_Financial execution with enhanced regime validation.
+        
+        Args:
+            *args: Step execution arguments
+            data: DataFrame for regime validation (optional)
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            True if logging succeeded, False if fail-fast conditions triggered
+        """
+        try:
+            # Use enhanced logging if available and data is provided
+            if self.enhanced_logger and data is not None:
+                return self._log_with_enhanced_regime_validation(*args, data=data, **kwargs)
+            else:
+                # Fallback to standard logging
+                return self._log_with_standard_method(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics: {e}")
+            return False
+    
+    def _log_with_enhanced_regime_validation(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log with enhanced regime validation and fail-fast checks."""
+        try:
+            # Validate regime data first
+            if validate_and_log_regime_data:
+                validation_success = validate_and_log_regime_data(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    step_name="Step16_Financial",
+                    data=data,
+                    regime_column='composite_cluster_id'
+                )
+                
+                if not validation_success:
+                    logger.error("🚨 Regime validation failed for Step16_Financial")
+                    return False
+            
+            # Log step start
+            self.financial_logger.log_step_start("Step16_Financial", self.symbol, self.exchange, self.timeframe)
+            
+            # Log all financial metrics with regime awareness
+            success = self._log_financial_metrics_with_regime_awareness(*args, data=data, **kwargs)
+            
+            # Log file paths
+            self._log_created_file_paths()
+            
+            # Log step end
+            self.financial_logger.log_step_end(
+                "Step16_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=success
+            )
+            
+            return success
+            
+        except Exception as e:
+            self.financial_logger.log_step_end(
+                "Step16_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=False, 
+                error_message=str(e)
+            )
+            logger.error(f"Enhanced regime validation logging failed: {e}")
+            return False
+    
+    def _log_with_standard_method(self, *args, **kwargs) -> bool:
+        """Log using standard method (fallback)."""
         with financial_metrics_context(
-            step_name="Step16_Confidence_Calibration",
+            step_name="Step16_Financial",
             symbol=self.symbol,
             exchange=self.exchange,
             timeframe=self.timeframe
         ):
             try:
-                self.financial_logger.log_step_start("Step16_Confidence_Calibration", self.symbol, self.exchange, self.timeframe)
+                self.financial_logger.log_step_start("Step16_Financial", self.symbol, self.exchange, self.timeframe)
                 
                 # Log all financial metrics
-                self._log_financial_metrics_from_results(calibration_results, model_performance, regime_data, validation_results, threshold_analysis)
+                self._log_financial_metrics_from_results(*args, **kwargs)
                 
                 # Log file paths
                 self._log_created_file_paths()
                 
-                self.financial_logger.log_step_end("Step16_Confidence_Calibration", self.symbol, self.exchange, self.timeframe, success=True)
+                self.financial_logger.log_step_end("Step16_Financial", self.symbol, self.exchange, self.timeframe, success=True)
+                
+                return True
                 
             except Exception as e:
-                self.financial_logger.log_step_end("Step16_Confidence_Calibration", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
+                self.financial_logger.log_step_end("Step16_Financial", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
                 logger.error(f"Failed to log financial metrics: {e}")
+                return False
     
-    def _log_financial_metrics_from_results(self, calibration_results: Dict[str, Any], model_performance: Dict[str, Any], 
-                                          regime_data: Dict[str, Any], validation_results: Dict[str, Any], 
-                                          threshold_analysis: Dict[str, Any]) -> None:
-        """Log key financial metrics directly from step results."""
+    def _log_financial_metrics_with_regime_awareness(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log financial metrics with enhanced regime awareness and fail-fast validation."""
         try:
-            # Note: Data quality and performance metrics are logged in regular system logs
-            # Financial metrics logger focuses only on financial/trading metrics
+            success = True
             
-            # Log calibration performance metrics
-            if calibration_results:
-                calibration_metrics = calibration_results.get('calibration_metrics', {})
-                if calibration_metrics:
-                    if 'calibration_error' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="calibration_error",
-                            metric_value=calibration_metrics['calibration_error'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'expected_calibration_error' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="expected_calibration_error",
-                            metric_value=calibration_metrics['expected_calibration_error'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'maximum_calibration_error' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="maximum_calibration_error",
-                            metric_value=calibration_metrics['maximum_calibration_error'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'brier_score' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="brier_score",
-                            metric_value=calibration_metrics['brier_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'reliability_diagram_score' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="reliability_diagram_score",
-                            metric_value=calibration_metrics['reliability_diagram_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'calibration_curve_area' in calibration_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="calibration_curve_area",
-                            metric_value=calibration_metrics['calibration_curve_area'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                
-                # Log probability estimation metrics
-                prob_metrics = calibration_results.get('probability_metrics', {})
-                if prob_metrics:
-                    if 'probability_accuracy' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_accuracy",
-                            metric_value=prob_metrics['probability_accuracy'],
-                            metric_type="performance",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'probability_precision' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_precision",
-                            metric_value=prob_metrics['probability_precision'],
-                            metric_type="performance",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'probability_recall' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_recall",
-                            metric_value=prob_metrics['probability_recall'],
-                            metric_type="performance",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'probability_f1_score' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_f1_score",
-                            metric_value=prob_metrics['probability_f1_score'],
-                            metric_type="performance",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'probability_calibration_score' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_calibration_score",
-                            metric_value=prob_metrics['probability_calibration_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'confidence_interval_coverage' in prob_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="confidence_interval_coverage",
-                            metric_value=prob_metrics['confidence_interval_coverage'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                
-                # Log uncertainty quantification metrics
-                uncertainty_metrics = calibration_results.get('uncertainty_metrics', {})
-                if uncertainty_metrics:
-                    if 'uncertainty_accuracy' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="uncertainty_accuracy",
-                            metric_value=uncertainty_metrics['uncertainty_accuracy'],
-                            metric_type="performance",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'uncertainty_calibration_score' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="uncertainty_calibration_score",
-                            metric_value=uncertainty_metrics['uncertainty_calibration_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'uncertainty_reliability_score' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="uncertainty_reliability_score",
-                            metric_value=uncertainty_metrics['uncertainty_reliability_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'aleatoric_uncertainty_score' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="aleatoric_uncertainty_score",
-                            metric_value=uncertainty_metrics['aleatoric_uncertainty_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'epistemic_uncertainty_score' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="epistemic_uncertainty_score",
-                            metric_value=uncertainty_metrics['epistemic_uncertainty_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'total_uncertainty_score' in uncertainty_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="total_uncertainty_score",
-                            metric_value=uncertainty_metrics['total_uncertainty_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
+            # Log step success with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_success",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step16_Financial",
+                data=data
+            )
             
-            # Log threshold optimization metrics
-            if threshold_analysis:
-                if 'optimal_threshold' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="optimal_threshold",
-                        metric_value=threshold_analysis['optimal_threshold'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'threshold_f1_score' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="threshold_f1_score",
-                        metric_value=threshold_analysis['threshold_f1_score'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'threshold_precision' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="threshold_precision",
-                        metric_value=threshold_analysis['threshold_precision'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'threshold_recall' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="threshold_recall",
-                        metric_value=threshold_analysis['threshold_recall'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'threshold_accuracy' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="threshold_accuracy",
-                        metric_value=threshold_analysis['threshold_accuracy'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'cost_benefit_ratio' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="cost_benefit_ratio",
-                        metric_value=threshold_analysis['cost_benefit_ratio'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'decision_boundary_stability' in threshold_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="decision_boundary_stability",
-                        metric_value=threshold_analysis['decision_boundary_stability'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
+            # Log execution time with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="execution_time_seconds",
+                metric_value=0.0,  # Will be updated with actual execution time
+                metric_type="performance",
+                step_name="Step16_Financial",
+                data=data
+            )
             
-            # Log regime calibration metrics
-            if regime_data:
-                if 'total_regimes_processed' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_regimes_processed",
-                        metric_value=float(regime_data['total_regimes_processed']),
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
+            # Log regime-specific metrics if enhanced logger is available
+            if self.enhanced_logger and data is not None and 'composite_cluster_id' in data.columns:
+                regime_data = data['composite_cluster_id'].dropna()
+                regime_counts = regime_data.value_counts()
                 
-                if 'cross_regime_calibration_consistency' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="cross_regime_calibration_consistency",
-                        metric_value=regime_data['cross_regime_calibration_consistency'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'regime_calibration_adaptation_score' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="regime_calibration_adaptation_score",
-                        metric_value=regime_data['regime_calibration_adaptation_score'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                # Log regime-specific calibration scores
-                if 'regime_calibration' in regime_data:
-                    regime_calibration = regime_data['regime_calibration']
-                    for regime_id, regime_metrics in regime_calibration.items():
-                        if isinstance(regime_metrics, dict):
-                            if 'regime_calibration_score' in regime_metrics:
-                                self.financial_logger.log_financial_metric(
-                                    symbol=self.symbol,
-                                    exchange=self.exchange,
-                                    timeframe=self.timeframe,
-                                    metric_name=f"regime_{regime_id}_calibration_score",
-                                    metric_value=regime_metrics['regime_calibration_score'],
-                                    metric_type="trading",
-                                    step_name="Step16_Confidence_Calibration",
-                                    regime_id=str(regime_id)
-                                )
-                            
-                            if 'regime_calibration_error' in regime_metrics:
-                                self.financial_logger.log_financial_metric(
-                                    symbol=self.symbol,
-                                    exchange=self.exchange,
-                                    timeframe=self.timeframe,
-                                    metric_name=f"regime_{regime_id}_calibration_error",
-                                    metric_value=regime_metrics['regime_calibration_error'],
-                                    metric_type="trading",
-                                    step_name="Step16_Confidence_Calibration",
-                                    regime_id=str(regime_id)
-                                )
-            
-            # Log model reliability metrics
-            if calibration_results:
-                reliability_metrics = calibration_results.get('reliability_metrics', {})
-                if reliability_metrics:
-                    if 'reliability_score' in reliability_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="reliability_score",
-                            metric_value=reliability_metrics['reliability_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'trustworthiness_score' in reliability_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="trustworthiness_score",
-                            metric_value=reliability_metrics['trustworthiness_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'robustness_score' in reliability_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="robustness_score",
-                            metric_value=reliability_metrics['robustness_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'stability_score' in reliability_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="stability_score",
-                            metric_value=reliability_metrics['stability_score'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-                    
-                    if 'confidence_reliability_correlation' in reliability_metrics:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="confidence_reliability_correlation",
-                            metric_value=reliability_metrics['confidence_reliability_correlation'],
-                            metric_type="trading",
-                            step_name="Step16_Confidence_Calibration"
-                        )
-            
-            # Log calibration validation metrics
-            if validation_results:
-                if 'validation_accuracy' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="validation_accuracy",
-                        metric_value=validation_results['validation_accuracy'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'validation_precision' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="validation_precision",
-                        metric_value=validation_results['validation_precision'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'validation_recall' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="validation_recall",
-                        metric_value=validation_results['validation_recall'],
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'cross_validation_calibration_score' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="cross_validation_calibration_score",
-                        metric_value=validation_results['cross_validation_calibration_score'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'out_of_sample_calibration_error' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="out_of_sample_calibration_error",
-                        metric_value=validation_results['out_of_sample_calibration_error'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'calibration_stability_score' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="calibration_stability_score",
-                        metric_value=validation_results['calibration_stability_score'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'temporal_calibration_consistency' in validation_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="temporal_calibration_consistency",
-                        metric_value=validation_results['temporal_calibration_consistency'],
-                        metric_type="trading",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-            
-            # Log calibration execution metrics
-            if calibration_results:
-                if 'total_models_calibrated' in calibration_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_models_calibrated",
-                        metric_value=float(calibration_results['total_models_calibrated']),
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'calibration_duration' in calibration_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="calibration_duration",
-                        metric_value=float(calibration_results['calibration_duration']),
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-                
-                if 'data_points_processed' in calibration_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="data_points_processed",
-                        metric_value=float(calibration_results['data_points_processed']),
-                        metric_type="performance",
-                        step_name="Step16_Confidence_Calibration"
-                    )
-            
-            # Log comprehensive trading performance estimation
-            if calibration_results and threshold_analysis and regime_data and validation_results:
-                # Estimate trading performance based on confidence calibration results
-                calibration_error = calibration_results.get('calibration_metrics', {}).get('expected_calibration_error', 0.1)
-                probability_accuracy = calibration_results.get('probability_metrics', {}).get('probability_accuracy', 0.5)
-                optimal_threshold = threshold_analysis.get('optimal_threshold', 0.5)
-                regime_consistency = regime_data.get('cross_regime_calibration_consistency', 0.5)
-                reliability_score = calibration_results.get('reliability_metrics', {}).get('reliability_score', 0.5)
-                
-                # Estimate returns based on calibration quality
-                calibration_quality = 1.0 - calibration_error  # Lower error = higher quality
-                combined_score = (probability_accuracy + calibration_quality + regime_consistency + reliability_score) / 4
-                estimated_return = (combined_score * 0.03) - ((1 - combined_score) * 0.015)  # Estimate
-                estimated_volatility = 0.02  # Default estimate
-                
-                # Estimate trading metrics
-                total_models = calibration_results.get('total_models_calibrated', 3)
-                total_regimes = regime_data.get('total_regimes_processed', 3)
-                
-                estimated_performance = {
-                    'total_return': estimated_return,
-                    'annualized_return': estimated_return * 252,  # Assuming daily signals
-                    'volatility': estimated_volatility,
-                    'sharpe_ratio': estimated_return / estimated_volatility if estimated_volatility > 0 else 0.0,
-                    'sortino_ratio': estimated_return / (estimated_volatility * 0.6) if estimated_volatility > 0 else 0.0,
-                    'calmar_ratio': 0.0,  # Would need max drawdown
-                    'max_drawdown': estimated_volatility * 2.0,  # Estimate
-                    'max_drawdown_duration': 30,  # Default estimate
-                    'var_95': estimated_volatility * 1.6,  # Estimate
-                    'cvar_95': estimated_volatility * 2.0,  # Estimate
-                    'win_rate': combined_score,
-                    'profit_factor': 1.0 + (combined_score - 0.5) * 3.0,
-                    'avg_win': 0.03,  # Default estimate
-                    'avg_loss': 0.015,  # Default estimate
-                    'largest_win': 0.07,  # Default estimate
-                    'largest_loss': estimated_volatility * 2.0,  # Estimate
-                    'total_trades': int(total_models * total_regimes * 1.5),  # Estimate 1.5 trades per model per regime
-                    'winning_trades': int(total_models * total_regimes * 1.5 * combined_score),
-                    'losing_trades': int(total_models * total_regimes * 1.5 * (1 - combined_score)),
-                    'additional_metrics': {
-                        'calibration_error': calibration_error,
-                        'probability_accuracy': probability_accuracy,
-                        'optimal_threshold': optimal_threshold,
-                        'regime_consistency': regime_consistency,
-                        'reliability_score': reliability_score,
-                        'total_models_calibrated': total_models,
-                        'total_regimes_processed': total_regimes,
-                        'brier_score': calibration_results.get('calibration_metrics', {}).get('brier_score', 0.0),
-                        'reliability_diagram_score': calibration_results.get('calibration_metrics', {}).get('reliability_diagram_score', 0.0),
-                        'probability_calibration_score': calibration_results.get('probability_metrics', {}).get('probability_calibration_score', 0.0),
-                        'confidence_interval_coverage': calibration_results.get('probability_metrics', {}).get('confidence_interval_coverage', 0.0),
-                        'uncertainty_calibration_score': calibration_results.get('uncertainty_metrics', {}).get('uncertainty_calibration_score', 0.0),
-                        'aleatoric_uncertainty_score': calibration_results.get('uncertainty_metrics', {}).get('aleatoric_uncertainty_score', 0.0),
-                        'epistemic_uncertainty_score': calibration_results.get('uncertainty_metrics', {}).get('epistemic_uncertainty_score', 0.0),
-                        'threshold_f1_score': threshold_analysis.get('threshold_f1_score', 0.0),
-                        'decision_boundary_stability': threshold_analysis.get('decision_boundary_stability', 0.0),
-                        'cost_benefit_ratio': threshold_analysis.get('cost_benefit_ratio', 0.0),
-                        'regime_calibration_adaptation_score': regime_data.get('regime_calibration_adaptation_score', 0.0),
-                        'trustworthiness_score': calibration_results.get('reliability_metrics', {}).get('trustworthiness_score', 0.0),
-                        'robustness_score': calibration_results.get('reliability_metrics', {}).get('robustness_score', 0.0),
-                        'stability_score': calibration_results.get('reliability_metrics', {}).get('stability_score', 0.0),
-                        'confidence_reliability_correlation': calibration_results.get('reliability_metrics', {}).get('confidence_reliability_correlation', 0.0),
-                        'validation_accuracy': validation_results.get('validation_accuracy', 0.0),
-                        'cross_validation_calibration_score': validation_results.get('cross_validation_calibration_score', 0.0),
-                        'calibration_stability_score': validation_results.get('calibration_stability_score', 0.0),
-                        'temporal_calibration_consistency': validation_results.get('temporal_calibration_consistency', 0.0)
+                regime_metrics = {}
+                for regime_id, count in regime_counts.items():
+                    regime_metrics[str(regime_id)] = {
+                        'sample_count': float(count),
+                        'regime_processed': 1.0
                     }
-                }
                 
-                self.financial_logger.log_trading_performance(
+                # Use enhanced logger for per-regime metrics
+                success &= self.enhanced_logger.log_per_regime_metrics(
                     symbol=self.symbol,
                     exchange=self.exchange,
                     timeframe=self.timeframe,
-                    step_name="Step16_Confidence_Calibration",
-                    **estimated_performance
+                    step_name="Step16_Financial",
+                    regime_metrics=regime_metrics,
+                    data=data
                 )
             
+            return success
+            
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics with regime awareness: {e}")
+            return False
+    
+    def _log_financial_metrics_from_results(self, *args, **kwargs) -> None:
+        """Log key financial metrics directly from step results (fallback method)."""
+        try:
+            # This method should be implemented by each specific step
+            # For now, just log basic step completion
+            self.financial_logger.log_financial_metric(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_completed",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step16_Financial"
+            )
         except Exception as e:
             logger.error(f"Failed to log financial metrics from results: {e}")
     
@@ -670,9 +234,43 @@ class Step16FinancialLogger:
                     metric_name="metrics_file_path",
                     metric_value=0.0,
                     metric_type="file_path",
-                    step_name="Step16_Confidence_Calibration",
+                    step_name="Step16_Financial",
                     additional_data={'file_path': str(self.financial_logger.current_file_path)}
                 )
-            logger.info("📁 File paths logged for Step16")
+            logger.info("📁 File paths logged for Step16_Financial")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
+
+
+# Enhanced Step16Financiallogging Financial Logger with Regime-Aware Decorator Support
+class EnhancedStep16FinancialloggingFinancialLogger(Step16FinancialloggingFinancialLogger):
+    """Enhanced Step16Financiallogging Financial Logger with automatic regime-aware logging decorator support."""
+    
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
+        super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)
+        
+        # Import regime-aware decorator if available
+        try:
+            from src.utils.regime_aware_financial_logging_decorator import (
+                regime_aware_financial_logging,
+                auto_regime_aware_logging
+            )
+            self.regime_aware_decorator = regime_aware_financial_logging
+            self.auto_regime_aware_decorator = auto_regime_aware_logging
+            self.decorator_available = True
+        except ImportError:
+            self.decorator_available = False
+    
+    def get_decorated_execute_method(self, original_execute_method):
+        """Get the execute method decorated with regime-aware logging."""
+        if self.decorator_available:
+            return self.auto_regime_aware_decorator(
+                enable_regime_validation=True,
+                enable_fail_fast=True,
+                min_regime_samples=100,
+                max_regime_imbalance=0.8,
+                regime_column='composite_cluster_id',
+                min_data_quality=0.7
+            )(original_execute_method)
+        else:
+            return original_execute_method

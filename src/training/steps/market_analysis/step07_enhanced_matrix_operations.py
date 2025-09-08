@@ -4,6 +4,15 @@ import logging
 import torch
 from ....utils.logger import get_system_logger_with_comprehensive_integration
 from ....core.decorators import handles_errors, log_execution_time, cached, CachePolicy, log_call, circuit_breaker, validates
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
 
 """Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
 
@@ -2298,6 +2307,14 @@ class Step7EnhancedMatrixOperations:
         self.logger.info(f'💾 Saved matrix operations results to {self.output_dir}')
         return output_files
 
+@critical_async_process('matrix_operations')
+@monitor_critical_process('matrix_operations')
+@enhanced_async_error_handler(
+    error_severity=ErrorSeverity.CRITICAL,
+    error_category=ErrorCategory.BUSINESS_LOGIC,
+    should_fail_fast=True,
+    step_name='matrix_operations'
+)
 async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """
     Run Step 7: Enhanced Matrix Operations with comprehensive optimizations.
@@ -2314,23 +2331,142 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         True if successful, False otherwise
     """
     try:
+        # Validate inputs
+        if not symbol or not exchange or not timeframe:
+            raise ValueError("Missing required parameters: symbol, exchange, timeframe")
+        
+        if not data_dir:
+            from src.utils.pipeline_standards import pipeline_standards
+            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        
+        # Validate data directory exists
+        data_path = Path(data_dir)
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+        
+        # Check for required input files
+        required_files = [
+            f"{exchange}_{symbol}_features_per_regime.parquet",
+            f"{exchange}_{symbol}_regime_data.parquet"
+        ]
+        
+        missing_files = []
+        for file_name in required_files:
+            file_path = data_path / file_name
+            if not file_path.exists():
+                missing_files.append(file_name)
+        
+        if missing_files:
+            raise FileNotFoundError(f"Missing required input files: {missing_files}")
+        
         # Use enhanced step optimization framework if available
         if STEP_OPTIMIZATIONS_AVAILABLE:
             try:
                 from src.utils.enhanced_step_optimizations import get_step_optimization_manager
                 step_optimizer = get_step_optimization_manager()
                 async with step_optimizer.optimized_execution_context("step07_enhanced_matrix_operations"):
-                    return await _execute_step07_with_optimizations(
+                    result = await _execute_step07_with_optimizations(
                         symbol, exchange, timeframe, data_dir, force_rerun, **kwargs
                     )
+                    
+                    if not result:
+                        raise RuntimeError("Matrix operations execution failed")
+                    
+                    # Validate expected outputs were created
+                    validator = EnhancedValidator()
+                    expected_outputs = [
+                        f'{exchange}_{symbol}_matrix_operations.parquet',
+                        f'{exchange}_{symbol}_matrix_metrics.json'
+                    ]
+                    
+                    validation_result = await validator.validate_process_completion(
+                        'matrix_operations', expected_outputs, data_dir, ValidationLevel.CRITICAL
+                    )
+                    
+                    if not validation_result.passed:
+                        raise CriticalProcessError(
+                            f"Matrix operations completed but validation failed: {validation_result.message}",
+                            ErrorRecord(
+                                error_id=f"matrix_operations_validation_failure_{int(time.time())}",
+                                error_type="ValidationError",
+                                error_message=validation_result.message,
+                                severity=ErrorSeverity.CRITICAL,
+                                category=ErrorCategory.VALIDATION,
+                                context=ErrorContext(
+                                    function_name="run_step",
+                                    step_name="matrix_operations"
+                                ),
+                                stack_trace="",
+                                should_fail_fast=True
+                            )
+                        )
+                    
+                    return True
+                    
             except Exception as e:
                 logger.warning(f"Enhanced step optimization failed, using standard execution: {e}")
 
         # Fallback to standard execution
-        return await _execute_step07_standard(symbol, exchange, timeframe, data_dir, force_rerun, **kwargs)
+        result = await _execute_step07_standard(symbol, exchange, timeframe, data_dir, force_rerun, **kwargs)
+        
+        if not result:
+            raise RuntimeError("Matrix operations standard execution failed")
+        
+        # Validate expected outputs were created
+        validator = EnhancedValidator()
+        expected_outputs = [
+            f'{exchange}_{symbol}_matrix_operations.parquet',
+            f'{exchange}_{symbol}_matrix_metrics.json'
+        ]
+        
+        validation_result = await validator.validate_process_completion(
+            'matrix_operations', expected_outputs, data_dir, ValidationLevel.CRITICAL
+        )
+        
+        if not validation_result.passed:
+            raise CriticalProcessError(
+                f"Matrix operations completed but validation failed: {validation_result.message}",
+                ErrorRecord(
+                    error_id=f"matrix_operations_validation_failure_{int(time.time())}",
+                    error_type="ValidationError",
+                    error_message=validation_result.message,
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.VALIDATION,
+                    context=ErrorContext(
+                        function_name="run_step",
+                        step_name="matrix_operations"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
+        
+        return True
+        
+    except CriticalProcessError as e:
+        logger.critical(f'🚨 CRITICAL PROCESS ERROR in Matrix Operations: {e}')
+        # Re-raise to trigger fail-fast behavior
+        raise
     except Exception as e:
-        logger.error(f"❌ Step 7 execution failed: {e}")
-        return False
+        logger.critical(f'🚨 CRITICAL ERROR in Matrix Operations: {e}')
+        
+        # Convert to CriticalProcessError for fail-fast behavior
+        raise CriticalProcessError(
+            f"Matrix operations failed with critical error: {e}",
+            ErrorRecord(
+                error_id=f"matrix_operations_critical_error_{int(time.time())}",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.BUSINESS_LOGIC,
+                context=ErrorContext(
+                    function_name="run_step",
+                    step_name="matrix_operations"
+                ),
+                stack_trace="",
+                should_fail_fast=True
+            )
+        )
 
 
 async def _execute_step07_with_optimizations(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:

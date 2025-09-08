@@ -9,13 +9,16 @@ from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.utils.common_operations import create_fallback_logger, create_fallback_decorator
 
-# Import enhanced reporting system
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
+Step08EnhancedReporter = None
+
+# Import financial metrics logger directly
 try:
-    from src.training.steps.step08_enhanced_reporting import Step08EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step08EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
 
 project_root = Path(__file__).parent.parent.parent
 import sys
@@ -118,6 +121,16 @@ class RegimeDataSplittingStep:
         else:
             self.logger.info('Enhanced reporting not available, using fallback reporting')
             self.enhanced_reporter = None
+
+        # Initialize financial metrics logger
+        self.financial_logger = None
+        if FINANCIAL_LOGGING_AVAILABLE:
+            try:
+                self.financial_logger = get_financial_metrics_logger()
+                self.logger.info('✅ Financial metrics logger initialized for Step08')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
+                self.financial_logger = None
 
         self._validate_environment()
     @log_all_calls
@@ -293,10 +306,102 @@ class RegimeDataSplittingStep:
                 # Always try to log basic artifacts
                 await self._log_basic_step8_artifacts_and_report(unified_data, summary)
 
+            # Log financial metrics if available
+            if self.financial_logger is not None:
+                try:
+                    symbol = self.config.get('symbol', 'ETHUSDT')
+                    exchange = self.config.get('exchange', 'BINANCE')
+                    timeframe = self.config.get('timeframe', '1m')
+                    
+                    # Log step start
+                    self.financial_logger.log_step_start('step08_regime_data_splitting', symbol, exchange, timeframe)
+                    
+                    # Log regime data metrics
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='total_data_rows',
+                        metric_value=float(len(unified_data)),
+                        metric_type='performance',
+                        step_name='step08_regime_data_splitting'
+                    )
+                    
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='unique_regimes',
+                        metric_value=float(len(unique_clusters)),
+                        metric_type='regime',
+                        step_name='step08_regime_data_splitting'
+                    )
+                    
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='regime_coverage_percent',
+                        metric_value=float((composite_clusters.notna().sum() / len(unified_data)) * 100),
+                        metric_type='quality',
+                        step_name='step08_regime_data_splitting'
+                    )
+                    
+                    # Log regime distribution metrics
+                    regime_counts = composite_clusters.value_counts()
+                    for regime_id, count in regime_counts.items():
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name=f'regime_{regime_id}_count',
+                            metric_value=float(count),
+                            metric_type='regime',
+                            step_name='step08_regime_data_splitting',
+                            regime_id=str(regime_id)
+                        )
+                    
+                    # Log file paths for generated regime data
+                    regime_data_path = f"data/training/regime_data/{exchange}_{symbol}_{timeframe}_regime_data.parquet"
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='regime_data_path',
+                        metric_value=0.0,
+                        metric_type='file_path',
+                        step_name='step08_regime_data_splitting',
+                        additional_data={'file_path': regime_data_path}
+                    )
+                    
+                    # Log step end
+                    self.financial_logger.log_step_end('step08_regime_data_splitting', symbol, exchange, timeframe, success=True)
+                    
+                    self.logger.info('✅ Financial metrics logged successfully for Step08')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Failed to log financial metrics: {e}')
+                    # Log step end with error
+                    if self.financial_logger is not None:
+                        symbol = self.config.get('symbol', 'ETHUSDT')
+                        exchange = self.config.get('exchange', 'BINANCE')
+                        timeframe = self.config.get('timeframe', '1m')
+                        self.financial_logger.log_step_end('step08_regime_data_splitting', symbol, exchange, timeframe, success=False, error_message=str(e))
+
             self.logger.info('✅ Unified HMM composite regime data creation completed successfully')
             return {'success': True, 'regime_summary': summary}
         except Exception as e:
             self.logger.exception(f'❌ Unified HMM composite regime data creation failed: {e}')
+            
+            # Log step end with error if financial logger is available
+            if self.financial_logger is not None:
+                try:
+                    symbol = self.config.get('symbol', 'ETHUSDT')
+                    exchange = self.config.get('exchange', 'BINANCE')
+                    timeframe = self.config.get('timeframe', '1m')
+                    self.financial_logger.log_step_end('step08_regime_data_splitting', symbol, exchange, timeframe, success=False, error_message=str(e))
+                except Exception as log_error:
+                    self.logger.warning(f'⚠️ Failed to log financial metrics error: {log_error}')
+            
             return {'success': False, 'error': str(e)}
     @log_all_calls
 

@@ -12,9 +12,35 @@ import gc
 import psutil
 from pathlib import Path
 
-from src.core.decorators import handles_errors
-from src.core.decorators.logging import log_execution_time, log_call
-from src.core.decorators.cache import cached
+# Import utility modules
+from src.utils.common_operations import (
+    safe_mean, safe_std, safe_divide, safe_float, safe_int,
+    validate_dataframe_schema, validate_data_quality,
+    safe_json_dump, safe_json_load, ensure_directory,
+    safe_file_exists, get_logger, timed_operation, safe_dict_get
+)
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_finite, validate_positive, validate_range,
+    safe_weighted_average, safe_percentage_change, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+# Import core decorators and errors
+from src.core.decorators import (
+    handles_errors, validates, timeout, circuit_breaker,
+    log_execution_time, log_call, cached, memoize,
+    retry, fallback, traced, span_attribute
+)
+from src.core.decorators.validate import validate_dataframe as decorator_validate_dataframe
+from src.core.decorators.enhanced_error_handling import (
+    handle_errors_enhanced, ErrorContext, ErrorSeverity
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError,
+    AppError, ErrorCode
+)
+
 from src.utils.logger import system_logger, log_io_operation, log_dataframe_overview
 from src.utils.pipeline_standards import PipelineStandards
 from src.config.environment import get_environment_settings
@@ -82,14 +108,17 @@ class RegimeAwareTacticianLabeler:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config.get('tactician_triple_barrier', {})
-        self.logger = system_logger.getChild('RegimeAwareTacticianLabeler')
+        self.logger = get_logger('RegimeAwareTacticianLabeler')
         self.regime_config = config.get('regime_specific_tactician', {'regime_specific_barriers': True, 'regime_specific_precision': True, 'regime_specific_quality_filters': True, 'regime_specific_validation': True, 'regime_specific_logging': True, 'min_regime_samples': 100})
         self.financial_logger = None
         
+        # Initialize utility modules
+        self.parquet_utils = ParquetUtils()
+        
         # Resource management
-        self.memory_threshold_gb = config.get('memory_threshold_gb', 8.0)
-        self.max_data_points = config.get('max_data_points', 1000000)
-        self.cleanup_frequency = config.get('cleanup_frequency', 100)
+        self.memory_threshold_gb = safe_float(config.get('memory_threshold_gb', 8.0), 8.0)
+        self.max_data_points = safe_int(config.get('max_data_points', 1000000), 1000000)
+        self.cleanup_frequency = safe_int(config.get('cleanup_frequency', 100), 100)
         self._operation_count = 0
         
         # Caching for optimization
@@ -144,16 +173,24 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f'   High Precision Mode: {self.enable_high_precision_mode}')
         self.logger.info(f'   Precision Threshold: {self.precision_threshold}')
 
+    @traced(operation_name="regime_specific_labeling")
+    @timeout(seconds=300)  # 5 minute timeout
+    @circuit_breaker(failure_threshold=3, recovery_timeout=60)
+    @handles_errors(
+        exceptions=(ValidationError, DataIntegrityError, BusinessRuleError),
+        default_return=None,
+        context='regime_specific_labeling'
+    )
     async def apply_regime_specific_labeling(self, data: pd.DataFrame, regime_column: str='composite_cluster_id') -> pd.DataFrame:
         """Apply regime-specific tactician labeling with optimizations and fast-fail validations."""
         self.logger.info(f'🚀 Starting regime-specific tactician labeling')
         
         # Fast-fail validations
         if not self._validate_input_data(data, regime_column):
-            raise ValueError("Input data validation failed")
+            raise ValidationError("Input data validation failed")
         
         if not self._validate_resource_constraints(data):
-            raise RuntimeError("Resource constraints exceeded")
+            raise BusinessRuleError("Resource constraints exceeded")
         
         try:
             if regime_column not in data.columns:
@@ -217,11 +254,16 @@ class RegimeAwareTacticianLabeler:
                 self.logger.info(f'   HOLD (0): {hold_samples} samples (removed)')
                 self.logger.info(f'   Total: {filtered_count}/{original_count} samples retained')
             return labeled_data
-        except Exception as e:
+        except (ValidationError, DataIntegrityError, BusinessRuleError) as e:
             self.logger.error(f'❌ Error in regime-specific labeling: {e}')
             # Clean up resources on error
             self._cleanup_resources()
-            raise RuntimeError(f"Regime-specific labeling failed: {e}") from e
+            raise
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error in regime-specific labeling: {e}')
+            # Clean up resources on error
+            self._cleanup_resources()
+            raise BusinessRuleError(f"Unexpected error in regime-specific labeling: {e}") from e
 
     async def _get_regime_specific_barriers_optimized(self, regime: str, regime_data: pd.DataFrame, regime_stats: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
         """Get regime-specific barriers for tactician labeling with optimization and validation."""
@@ -249,26 +291,30 @@ class RegimeAwareTacticianLabeler:
                 base_upper = 0.02
                 base_lower = 0.01
                 
-                # Volatility-based multipliers with bounds checking
+                # Volatility-based multipliers with safe math operations
                 if regime_volatility > 0.02:
-                    upper_multiplier = min(1.5, 1.0 + (regime_volatility - 0.02) * 10)  # Bounded scaling
-                    lower_multiplier = min(1.2, 1.0 + (regime_volatility - 0.02) * 5)
+                    vol_diff = regime_volatility - 0.02
+                    upper_multiplier = min(1.5, 1.0 + safe_divide(vol_diff * 10, 1.0, 1.0))
+                    lower_multiplier = min(1.2, 1.0 + safe_divide(vol_diff * 5, 1.0, 1.0))
                 elif regime_volatility < 0.005:
-                    upper_multiplier = max(0.8, 1.0 - (0.005 - regime_volatility) * 20)
-                    lower_multiplier = max(0.7, 1.0 - (0.005 - regime_volatility) * 15)
+                    vol_diff = 0.005 - regime_volatility
+                    upper_multiplier = max(0.8, 1.0 - safe_divide(vol_diff * 20, 1.0, 0.0))
+                    lower_multiplier = max(0.7, 1.0 - safe_divide(vol_diff * 15, 1.0, 0.0))
                 else:
                     upper_multiplier = 1.0
                     lower_multiplier = 1.0
                 
-                # Volume-based adjustments with bounds checking
+                # Volume-based adjustments with safe math operations
                 if regime_volume > 10000:
-                    volume_factor = min(1.1, 1.0 + (regime_volume - 10000) / 100000)
-                    upper_multiplier *= volume_factor
-                    lower_multiplier *= volume_factor
+                    volume_diff = regime_volume - 10000
+                    volume_factor = min(1.1, 1.0 + safe_divide(volume_diff, 100000, 0.0))
+                    upper_multiplier = safe_power(upper_multiplier * volume_factor, 1.0, upper_multiplier)
+                    lower_multiplier = safe_power(lower_multiplier * volume_factor, 1.0, lower_multiplier)
                 elif regime_volume < 1000:
-                    volume_factor = max(0.9, 1.0 - (1000 - regime_volume) / 10000)
-                    upper_multiplier *= volume_factor
-                    lower_multiplier *= volume_factor
+                    volume_diff = 1000 - regime_volume
+                    volume_factor = max(0.9, 1.0 - safe_divide(volume_diff, 10000, 0.0))
+                    upper_multiplier = safe_power(upper_multiplier * volume_factor, 1.0, upper_multiplier)
+                    lower_multiplier = safe_power(lower_multiplier * volume_factor, 1.0, lower_multiplier)
                 
                 # Calculate base barriers with validation
                 upper_barrier = base_upper * upper_multiplier
@@ -532,41 +578,50 @@ class RegimeAwareTacticianLabeler:
             self.logger.error(f'❌ Error applying default labeling: {e}')
             return data
 
+    @handles_errors(
+        exceptions=(ValidationError, DataIntegrityError),
+        default_return=False,
+        context='input_data_validation'
+    )
     def _validate_input_data(self, data: pd.DataFrame, regime_column: str) -> bool:
-        """Fast-fail validation for input data quality."""
+        """Fast-fail validation for input data quality using utility modules."""
         try:
-            # Check data size
-            if len(data) < 100:
+            # Use utility module for data quality validation
+            quality_report = validate_data_quality(data, max_nan_ratio=0.1, check_duplicates=True)
+            if not quality_report['is_valid']:
+                self.logger.error(f"❌ Data quality validation failed: {quality_report['issues']}")
+                raise DataIntegrityError("Data quality validation failed")
+            
+            # Check data size using safe operations
+            data_size = safe_int(len(data), 0)
+            if data_size < 100:
                 self.logger.error("❌ Insufficient data for labeling (minimum 100 rows required)")
-                return False
+                raise ValidationError("Insufficient data for labeling")
             
-            if len(data) > self.max_data_points:
+            if data_size > self.max_data_points:
                 self.logger.error(f"❌ Data too large (maximum {self.max_data_points} rows allowed)")
-                return False
+                raise ValidationError("Data too large for processing")
             
-            # Check required columns
+            # Use utility module for schema validation
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            if missing_columns:
-                self.logger.error(f"❌ Missing required columns: {missing_columns}")
-                return False
+            is_valid, errors = validate_dataframe_schema(data, required_columns)
+            if not is_valid:
+                self.logger.error(f"❌ Schema validation failed: {errors}")
+                raise ValidationError(f"Schema validation failed: {errors}")
             
             # Check regime column
             if regime_column not in data.columns:
                 self.logger.error(f"❌ Regime column '{regime_column}' not found")
-                return False
-            
-            # Check for excessive missing values
-            missing_pct = data.isnull().sum().max() / len(data)
-            if missing_pct > 0.1:
-                self.logger.error(f"❌ Too many missing values: {missing_pct:.2%}")
-                return False
+                raise ValidationError(f"Regime column '{regime_column}' not found")
             
             return True
             
-        except Exception as e:
+        except (ValidationError, DataIntegrityError) as e:
             self.logger.error(f"❌ Input data validation failed: {e}")
-            return False
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in input data validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
     
     def _validate_resource_constraints(self, data: pd.DataFrame) -> bool:
         """Fast-fail validation for resource constraints."""
@@ -617,8 +672,13 @@ class RegimeAwareTacticianLabeler:
             self.logger.error(f"❌ Regime distribution validation failed: {e}")
             return False
     
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return={},
+        context='regime_statistics_calculation'
+    )
     def _calculate_regime_statistics_optimized(self, data: pd.DataFrame, regime_column: str, unique_regimes: np.ndarray) -> Dict[str, Dict[str, Any]]:
-        """Pre-calculate regime statistics for optimization."""
+        """Pre-calculate regime statistics for optimization using safe operations."""
         try:
             regime_stats = {}
             
@@ -627,72 +687,94 @@ class RegimeAwareTacticianLabeler:
                 regime_data = data[regime_mask]
                 
                 if len(regime_data) > 0:
+                    # Use safe operations for statistical calculations
+                    returns = regime_data['close'].pct_change()
+                    volatility = safe_std(returns.dropna().values, 0.0)
+                    volume_mean = safe_mean(regime_data['volume'].values, 0.0)
+                    volume_std = safe_std(regime_data['volume'].values, 0.0)
+                    
+                    # Handle spread data safely
+                    spread_data = regime_data.get('spread', pd.Series([0.0001] * len(regime_data)))
+                    spread_mean = safe_mean(spread_data.values, 0.0001)
+                    
                     regime_stats[regime] = {
-                        'volatility': regime_data['close'].pct_change().std(),
-                        'volume_mean': regime_data['volume'].mean(),
-                        'volume_std': regime_data['volume'].std(),
-                        'spread_mean': regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean(),
-                        'sample_count': len(regime_data)
+                        'volatility': validate_finite(volatility, f"volatility_{regime}"),
+                        'volume_mean': validate_positive(volume_mean, f"volume_mean_{regime}"),
+                        'volume_std': validate_finite(volume_std, f"volume_std_{regime}"),
+                        'spread_mean': validate_finite(spread_mean, f"spread_mean_{regime}"),
+                        'sample_count': safe_int(len(regime_data), 0)
                     }
             
             return regime_stats
             
-        except Exception as e:
+        except (MathValidationError, ValidationError) as e:
             self.logger.error(f"❌ Error calculating regime statistics: {e}")
-            return {}
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in regime statistics calculation: {e}")
+            raise ValidationError(f"Unexpected error in regime statistics: {e}") from e
     
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=False,
+        context='barrier_parameter_validation'
+    )
     def _validate_barrier_parameters(self, volatility: float, volume: float, spread: float) -> bool:
-        """Validate barrier calculation parameters."""
+        """Validate barrier calculation parameters using math validation utilities."""
         try:
-            # Check volatility range
-            if not (0.0 <= volatility <= 1.0):
-                self.logger.error(f"❌ Invalid volatility: {volatility}")
-                return False
+            # Use math validation utilities for parameter validation
+            volatility = validate_range(volatility, 0.0, 1.0, "volatility")
+            volume = validate_positive(volume, "volume")
+            spread = validate_finite(spread, "spread")
             
-            # Check volume range
-            if volume <= 0:
-                self.logger.error(f"❌ Invalid volume: {volume}")
-                return False
-            
-            # Check spread range
             if spread < 0:
-                self.logger.error(f"❌ Invalid spread: {spread}")
-                return False
+                raise MathValidationError(f"Spread must be non-negative: {spread}")
             
             return True
             
-        except Exception as e:
+        except (MathValidationError, ValidationError) as e:
             self.logger.error(f"❌ Barrier parameter validation failed: {e}")
-            return False
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in barrier parameter validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
     
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=False,
+        context='calculated_barrier_validation'
+    )
     def _validate_calculated_barriers(self, upper_barrier: float, lower_barrier: float) -> bool:
-        """Validate calculated barrier values."""
+        """Validate calculated barrier values using math validation utilities."""
         try:
-            # Check barrier ranges
-            if not (0.001 <= upper_barrier <= 0.5):
-                self.logger.error(f"❌ Invalid upper barrier: {upper_barrier}")
-                return False
-            
-            if not (0.001 <= lower_barrier <= 0.5):
-                self.logger.error(f"❌ Invalid lower barrier: {lower_barrier}")
-                return False
+            # Use math validation utilities for barrier validation
+            upper_barrier = validate_range(upper_barrier, 0.001, 0.5, "upper_barrier")
+            lower_barrier = validate_range(lower_barrier, 0.001, 0.5, "lower_barrier")
             
             # Check barrier relationship
             if upper_barrier <= lower_barrier:
-                self.logger.error(f"❌ Upper barrier must be greater than lower barrier: {upper_barrier} <= {lower_barrier}")
-                return False
+                raise MathValidationError(f"Upper barrier must be greater than lower barrier: {upper_barrier} <= {lower_barrier}")
             
             return True
             
-        except Exception as e:
+        except (MathValidationError, ValidationError) as e:
             self.logger.error(f"❌ Calculated barrier validation failed: {e}")
-            return False
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in calculated barrier validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
     
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=(0.02, 0.01),  # Default barriers
+        context='barrier_scaling'
+    )
     def _scale_barriers(self, upper_barrier: float, lower_barrier: float, upper_scale: float, lower_scale: float) -> Tuple[float, float]:
-        """Scale barriers with validation."""
+        """Scale barriers with validation using math utilities."""
         try:
-            scaled_upper = upper_barrier * upper_scale
-            scaled_lower = lower_barrier * lower_scale
+            # Use safe power for scaling
+            scaled_upper = safe_power(upper_barrier * upper_scale, 1.0, upper_barrier)
+            scaled_lower = safe_power(lower_barrier * lower_scale, 1.0, lower_barrier)
             
             # Validate scaled barriers
             if not self._validate_calculated_barriers(scaled_upper, scaled_lower):
@@ -701,8 +783,11 @@ class RegimeAwareTacticianLabeler:
             
             return scaled_upper, scaled_lower
             
-        except Exception as e:
+        except (MathValidationError, ValidationError) as e:
             self.logger.error(f"❌ Barrier scaling failed: {e}")
+            return upper_barrier, lower_barrier
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in barrier scaling: {e}")
             return upper_barrier, lower_barrier
     
     def _store_regime_result(self, regime: str, result: Dict[str, Any]) -> None:
@@ -780,15 +865,32 @@ class RegimeAwareTacticianLabeler:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst model."""
 
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the TacticianLabelingStep with utility modules."""
+        self.config = config
+        self.logger = get_logger('TacticianLabelingStep')
+        self.parquet_utils = ParquetUtils()
+        
+        # Initialize with safe configuration values
+        self.symbol = safe_dict_get(config, 'symbol', 'ETHUSDT')
+        self.exchange = safe_dict_get(config, 'exchange', 'BINANCE')
+        self.timeframe = safe_dict_get(config, 'timeframe', '1m')
+        
+        # Initialize regime-aware labeler
+        self.regime_aware_labeler = RegimeAwareTacticianLabeler(config)
+
+    @handles_errors(
+        exceptions=(ValidationError, BusinessRuleError),
+        default_return=None,
+        context='environment_validation'
+    )
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status['all_available']:
             missing_modules = dependency_status['missing_modules']
             self.logger.warning(f'Missing modules: {missing_modules}')
+            raise ValidationError(f"Missing required modules: {missing_modules}")
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
 
     @handles_errors(exceptions=(Exception,), default_return = False, context='tactician labeling step initialization')
     async def initialize(self) -> None:

@@ -32,6 +32,10 @@ from mappers.map_code_interactions import CodeInteractionMapper
 from analyzers.call_graph_analyzer import CallGraphAnalyzer
 from analyzers.dependency_analyzer import DependencyAnalyzer
 
+# Import new multi-modal and context-aware analyzers
+from analyzers.multi_modal_dead_code_analyzer import MultiModalDeadCodeAnalyzer
+from analyzers.context_aware_dead_code_analyzer import ContextAwareDeadCodeAnalyzer
+
 # Note: AutoFixDeadCode and DeadCodeAnalyzer were removed as they were redundant
 # The enhanced_dead_code_analyzer provides all necessary functionality
 
@@ -229,6 +233,10 @@ class DeadCodePipeline(BasePipeline):
         self.interaction_data = {}
         self.interaction_aware_analyzer = None
 
+        # Initialize new multi-modal and context-aware analyzers
+        self.multi_modal_analyzer = MultiModalDeadCodeAnalyzer(self.config)
+        self.context_aware_analyzer = ContextAwareDeadCodeAnalyzer(self.config)
+
         if self.use_interaction_mapping:
             self._initialize_interaction_components()
 
@@ -339,6 +347,98 @@ class DeadCodePipeline(BasePipeline):
                 "dead_code_count": dead_code_report["dead_code_issues"],
                 "unreachable_code_count": dead_code_report["unreachable_code_issues"],
                 "results": results
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
+    def run_multi_modal_dead_code_analysis(self) -> Dict[str, Any]:
+        """Run multi-modal dead code analysis combining multiple approaches."""
+        print("\n" + "="*60)
+        print("Running Multi-Modal Dead Code Analysis")
+        print("="*60)
+        
+        try:
+            # Run multi-modal analysis
+            results = self.multi_modal_analyzer.analyze(self.project_root, self.interaction_data)
+            
+            # Generate multi-modal report
+            multi_modal_report = {
+                "timestamp": self.timestamp,
+                "analysis_type": "multi_modal_dead_code",
+                "project_root": str(self.project_root),
+                "total_analyzers": results.total_analyzers,
+                "successful_analyzers": results.successful_analyzers,
+                "dead_functions": len(results.combined_dead_functions),
+                "dead_classes": len(results.combined_dead_classes),
+                "dead_imports": len(results.combined_dead_imports),
+                "overall_confidence": results.consensus_scores.get("overall_confidence", 0.0),
+                "execution_time": results.execution_time,
+                "results": results.__dict__
+            }
+            
+            # Save report
+            report_path = self.reports_dir / f"multi_modal_dead_code_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(multi_modal_report, f, indent=2, default=str)
+            
+            return {
+                "status": "completed",
+                "report_path": str(report_path),
+                "total_analyzers": multi_modal_report["total_analyzers"],
+                "successful_analyzers": multi_modal_report["successful_analyzers"],
+                "dead_functions": multi_modal_report["dead_functions"],
+                "dead_classes": multi_modal_report["dead_classes"],
+                "dead_imports": multi_modal_report["dead_imports"],
+                "overall_confidence": multi_modal_report["overall_confidence"],
+                "results": results.__dict__
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
+    def run_context_aware_dead_code_analysis(self) -> Dict[str, Any]:
+        """Run context-aware dead code analysis with framework detection."""
+        print("\n" + "="*60)
+        print("Running Context-Aware Dead Code Analysis")
+        print("="*60)
+        
+        try:
+            # Run context-aware analysis
+            results = self.context_aware_analyzer.analyze(self.project_root, self.interaction_data)
+            
+            # Generate context-aware report
+            context_aware_report = {
+                "timestamp": self.timestamp,
+                "analysis_type": "context_aware_dead_code",
+                "project_root": str(self.project_root),
+                "primary_framework": results.framework_context.primary_framework.framework_name if results.framework_context.primary_framework else "generic",
+                "framework_confidence": results.framework_context.primary_framework.confidence if results.framework_context.primary_framework else 0.0,
+                "context_aware_dead_functions": len(results.context_aware_dead_functions),
+                "context_aware_dead_classes": len(results.context_aware_dead_classes),
+                "context_aware_dead_imports": len(results.context_aware_dead_imports),
+                "false_positives_filtered": results.false_positives_filtered,
+                "context_awareness_score": results.context_insights.get("context_effectiveness", {}).get("context_awareness_score", 0.0),
+                "overall_confidence": results.confidence_scores.get("overall", 0.0),
+                "execution_time": results.execution_time,
+                "results": results.__dict__
+            }
+            
+            # Save report
+            report_path = self.reports_dir / f"context_aware_dead_code_{self.timestamp}.json"
+            with open(report_path, "w") as f:
+                json.dump(context_aware_report, f, indent=2, default=str)
+            
+            return {
+                "status": "completed",
+                "report_path": str(report_path),
+                "primary_framework": context_aware_report["primary_framework"],
+                "framework_confidence": context_aware_report["framework_confidence"],
+                "context_aware_dead_functions": context_aware_report["context_aware_dead_functions"],
+                "context_aware_dead_classes": context_aware_report["context_aware_dead_classes"],
+                "context_aware_dead_imports": context_aware_report["context_aware_dead_imports"],
+                "false_positives_filtered": context_aware_report["false_positives_filtered"],
+                "context_awareness_score": context_aware_report["context_awareness_score"],
+                "overall_confidence": context_aware_report["overall_confidence"],
+                "results": results.__dict__
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
@@ -584,6 +684,8 @@ class DeadCodePipeline(BasePipeline):
         # Run all dead code analyses
         self.results["basic_dead_code"] = self.run_basic_dead_code_analysis()
         self.results["enhanced_dead_code"] = self.run_enhanced_dead_code_analysis()
+        self.results["multi_modal_dead_code"] = self.run_multi_modal_dead_code_analysis()
+        self.results["context_aware_dead_code"] = self.run_context_aware_dead_code_analysis()
         self.results["unused_imports"] = self.run_unused_imports_analysis()
         self.results["undefined_names"] = self.run_undefined_names_analysis()
         self.results["auto_fix"] = self.run_auto_fix_dead_code()
@@ -636,9 +738,9 @@ def main():
     parser.add_argument(
         "--analysis-type",
         type=str,
-        choices=["basic", "enhanced", "auto_fix", "all"],
-        default="enhanced",
-        help="Type of dead code analysis to perform (default: enhanced)"
+        choices=["basic", "enhanced", "multi_modal", "context_aware", "auto_fix", "all"],
+        default="context_aware",
+        help="Type of dead code analysis to perform (default: context_aware)"
     )
     parser.add_argument(
         "--auto-fix",
@@ -669,6 +771,10 @@ def main():
         if args.auto_fix:
             auto_fix_results = pipeline.run_auto_fix_dead_code()
             results["auto_fix"] = auto_fix_results
+    elif args.analysis_type == "multi_modal":
+        results = pipeline.run_multi_modal_dead_code_analysis()
+    elif args.analysis_type == "context_aware":
+        results = pipeline.run_context_aware_dead_code_analysis()
     elif args.analysis_type == "unused_imports":
         results = pipeline.run_unused_imports_analysis()
     elif args.analysis_type == "undefined_names":

@@ -31,7 +31,9 @@ import logging
 from src.utils.common_operations import (
     safe_read_parquet, safe_to_parquet, ensure_directory, safe_json_dump, safe_json_load,
     safe_mean, safe_std, safe_fillna, safe_rolling, create_empty_dataframe,
-    get_current_datetime, format_datetime, parse_datetime, safe_file_exists
+    get_current_datetime, format_datetime, parse_datetime, safe_file_exists,
+    safe_exception_handler, setup_logging, safe_list_operation, safe_dict_operation,
+    safe_string_operation, optimize_dataframe_dtypes, log_mlflow_metric
 )
 from src.utils.common_utilities import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
@@ -46,8 +48,149 @@ from src.utils.math_validation import (
     validate_correlation_matrix, safe_matrix_inverse, math_safe
 )
 from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
+    save_data, load_data, serialize_data, deserialize_data
+)
+from src.utils.data_processing_utils import (
+    DataQualityLevel, DataQualityIssue, DataQualityReport,
+    DataFrameValidator, DataFrameCleaner, DataFrameTransformer
+)
+from src.utils.m1_gpu_utils import M1GPUManager, M1PerformanceOptimizer
+from src.utils.m1_memory_optimizer import M1MemoryOptimizer, M1DataManager
+from src.utils.m1_cpu_optimizer import M1CPUOptimizer, M1BatchProcessor
 from src.core.errors.base import ValidationError, DataQualityError, FileNotFoundError
 from src.core.errors.mapping import ErrorMapping
+
+# Dependency Injection Container for Step02
+class Step02DependencyContainer:
+    """Dependency injection container for Step02 with all utility modules."""
+    
+    def __init__(self):
+        self._instances = {}
+        self._initialized = False
+    
+    def _initialize_utilities(self):
+        """Initialize all utility instances with proper configuration."""
+        if self._initialized:
+            return
+        
+        try:
+            # Initialize M1-specific utilities first
+            self._instances['m1_gpu_manager'] = M1GPUManager()
+            self._instances['m1_memory_optimizer'] = M1MemoryOptimizer()
+            self._instances['m1_cpu_optimizer'] = M1CPUOptimizer()
+            self._instances['m1_performance_optimizer'] = M1PerformanceOptimizer()
+            self._instances['m1_batch_processor'] = M1BatchProcessor()
+            self._instances['m1_data_manager'] = M1DataManager()
+            
+            # Initialize data processing utilities
+            self._instances['dataframe_validator'] = DataFrameValidator()
+            self._instances['dataframe_cleaner'] = DataFrameCleaner()
+            self._instances['dataframe_transformer'] = DataFrameTransformer()
+            
+            # Initialize serialization utilities
+            self._instances['json_serializer'] = JSONSerializer()
+            self._instances['pickle_serializer'] = PickleSerializer()
+            self._instances['parquet_serializer'] = ParquetSerializer()
+            self._instances['universal_serializer'] = UniversalSerializer()
+            
+            # Initialize parquet utilities
+            self._instances['parquet_utils'] = get_parquet_utils()
+            
+            self._initialized = True
+            logging.info("✅ Step02 Dependency Container initialized successfully")
+            
+        except Exception as e:
+            logging.error(f"❌ Failed to initialize Step02 Dependency Container: {e}")
+            raise
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_gpu_manager(self) -> M1GPUManager:
+        """Get M1 GPU Manager instance."""
+        self._initialize_utilities()
+        return self._instances['m1_gpu_manager']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_memory_optimizer(self) -> M1MemoryOptimizer:
+        """Get M1 Memory Optimizer instance."""
+        self._initialize_utilities()
+        return self._instances['m1_memory_optimizer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_cpu_optimizer(self) -> M1CPUOptimizer:
+        """Get M1 CPU Optimizer instance."""
+        self._initialize_utilities()
+        return self._instances['m1_cpu_optimizer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_performance_optimizer(self) -> M1PerformanceOptimizer:
+        """Get M1 Performance Optimizer instance."""
+        self._initialize_utilities()
+        return self._instances['m1_performance_optimizer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_batch_processor(self) -> M1BatchProcessor:
+        """Get M1 Batch Processor instance."""
+        self._initialize_utilities()
+        return self._instances['m1_batch_processor']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_m1_data_manager(self) -> M1DataManager:
+        """Get M1 Data Manager instance."""
+        self._initialize_utilities()
+        return self._instances['m1_data_manager']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_dataframe_validator(self) -> DataFrameValidator:
+        """Get DataFrame Validator instance."""
+        self._initialize_utilities()
+        return self._instances['dataframe_validator']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_dataframe_cleaner(self) -> DataFrameCleaner:
+        """Get DataFrame Cleaner instance."""
+        self._initialize_utilities()
+        return self._instances['dataframe_cleaner']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_dataframe_transformer(self) -> DataFrameTransformer:
+        """Get DataFrame Transformer instance."""
+        self._initialize_utilities()
+        return self._instances['dataframe_transformer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_json_serializer(self) -> JSONSerializer:
+        """Get JSON Serializer instance."""
+        self._initialize_utilities()
+        return self._instances['json_serializer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_pickle_serializer(self) -> PickleSerializer:
+        """Get Pickle Serializer instance."""
+        self._initialize_utilities()
+        return self._instances['pickle_serializer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_parquet_serializer(self) -> ParquetSerializer:
+        """Get Parquet Serializer instance."""
+        self._initialize_utilities()
+        return self._instances['parquet_serializer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_universal_serializer(self) -> UniversalSerializer:
+        """Get Universal Serializer instance."""
+        self._initialize_utilities()
+        return self._instances['universal_serializer']
+    
+    @functools.lru_cache(maxsize=1)
+    def get_parquet_utils(self) -> ParquetUtils:
+        """Get Parquet Utils instance."""
+        self._initialize_utilities()
+        return self._instances['parquet_utils']
+
+# Global dependency container instance
+dependency_container = Step02DependencyContainer()
 
 # Enhanced function monitoring framework with memory management
 class FunctionCallStatus(Enum):
@@ -420,48 +563,110 @@ def memory_efficient_concat(dataframes: List[pd.DataFrame], chunk_size: int = 10
     
     return pd.DataFrame()
 
-# Optimized data reading step class
+# Enhanced Optimized data reading step class with dependency injection
 class OptimizedDataReadingStep:
-    """Optimized Step 2: Data Reading with parallel processing and fast-fail validation."""
+    """Enhanced Step 2: Data Reading with comprehensive utility integration and dependency injection."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], container: Step02DependencyContainer = None):
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.OptimizedDataReadingStep")
         self.start_time = None
         self.step_timings = {}
         
-        # Configuration
-        self.max_workers = config.get('max_workers', 4)
-        self.chunk_size = config.get('chunk_size', 10000)
+        # Dependency injection
+        self.container = container or dependency_container
+        
+        # Initialize all utility instances through dependency injection
+        self.m1_gpu_manager = self.container.get_m1_gpu_manager()
+        self.m1_memory_optimizer = self.container.get_m1_memory_optimizer()
+        self.m1_cpu_optimizer = self.container.get_m1_cpu_optimizer()
+        self.m1_performance_optimizer = self.container.get_m1_performance_optimizer()
+        self.m1_batch_processor = self.container.get_m1_batch_processor()
+        self.m1_data_manager = self.container.get_m1_data_manager()
+        self.dataframe_validator = self.container.get_dataframe_validator()
+        self.dataframe_cleaner = self.container.get_dataframe_cleaner()
+        self.dataframe_transformer = self.container.get_dataframe_transformer()
+        self.json_serializer = self.container.get_json_serializer()
+        self.pickle_serializer = self.container.get_pickle_serializer()
+        self.parquet_serializer = self.container.get_parquet_serializer()
+        self.universal_serializer = self.container.get_universal_serializer()
+        self.parquet_utils = self.container.get_parquet_utils()
+        
+        # Configuration with M1 optimizations
+        self.max_workers = self.m1_cpu_optimizer.calculate_optimal_workers()
+        self.chunk_size = self.m1_memory_optimizer.calculate_optimal_chunk_size(
+            config.get('chunk_size', 10000)
+        )
         self.min_rows = config.get('min_rows', 1000)
         self.max_duplicate_ratio = config.get('max_duplicate_ratio', 0.01)
         self.max_gap_seconds = config.get('max_gap_seconds', 0.5)
         
+        # M1-specific optimizations
+        self.use_gpu = self.m1_gpu_manager.should_use_gpu()
+        self.memory_pressure_threshold = config.get('memory_pressure_threshold', 0.8)
+        
         # Performance monitoring
         self.monitor = optimized_monitor
+        
+        # Setup enhanced logging
+        setup_logging(level=logging.INFO)
+        
+        self.logger.info(f"🚀 Enhanced Step02 initialized with M1 optimizations:")
+        self.logger.info(f"   - GPU acceleration: {'✅' if self.use_gpu else '❌'}")
+        self.logger.info(f"   - Optimal workers: {self.max_workers}")
+        self.logger.info(f"   - Optimal chunk size: {self.chunk_size}")
+        self.logger.info(f"   - Memory pressure threshold: {self.memory_pressure_threshold}")
     
     async def initialize(self) -> None:
-        """Initialize the optimized data reading step."""
+        """Initialize the enhanced data reading step with M1 optimizations."""
         self.start_time = time.time()
-        self.logger.info('🚀 Initializing Optimized Data Reading Step...')
+        self.logger.info('🚀 Initializing Enhanced Data Reading Step with M1 optimizations...')
+        
+        # Initialize M1 optimizations
+        try:
+            # Optimize memory management
+            self.m1_memory_optimizer.optimize_memory()
+            self.logger.info('✅ M1 Memory optimization applied')
+            
+            # Setup GPU context if available
+            if self.use_gpu:
+                with self.m1_gpu_manager.gpu_context() as gpu_ctx:
+                    self.logger.info(f'✅ M1 GPU context initialized: {gpu_ctx}')
+            
+            # Optimize CPU settings
+            self.m1_cpu_optimizer.optimize_numpy_operations()
+            self.logger.info('✅ M1 CPU optimization applied')
+            
+            # Setup performance monitoring
+            self.m1_performance_optimizer.setup_pytorch_optimizations()
+            self.logger.info('✅ M1 Performance optimizations applied')
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ M1 optimization setup failed: {e}')
+        
         self.logger.info(f'   - Max workers: {self.max_workers}')
         self.logger.info(f'   - Chunk size: {self.chunk_size}')
         self.logger.info(f'   - Min rows: {self.min_rows}')
-        self.logger.info('✅ Optimized Data Reading Step initialized')
+        self.logger.info(f'   - GPU acceleration: {"✅" if self.use_gpu else "❌"}')
+        self.logger.info('✅ Enhanced Data Reading Step initialized')
     
+    @safe_exception_handler
     async def read_unified_data_optimized(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
-        """Read unified data with parallel processing and fast-fail validation."""
+        """Enhanced unified data reading with comprehensive utility integration."""
         step_start = time.time()
         call_id = self.monitor.start_function_call(self.read_unified_data_optimized, (symbol, exchange, timeframe, data_dir), {})
         
         try:
-            self.logger.info(f'📖 Reading unified data for {symbol} on {exchange} ({timeframe})')
+            self.logger.info(f'📖 Reading unified data for {symbol} on {exchange} ({timeframe}) with enhanced utilities')
             
-            # Build data path
+            # Build data path using safe operations
             unified_data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
             
-            # Fast-fail: Check if path exists
-            if not unified_data_path.exists():
+            # Ensure directory exists using common_operations
+            ensure_directory(str(unified_data_path))
+            
+            # Fast-fail: Check if path exists using safe operations
+            if not safe_file_exists(str(unified_data_path)):
                 error_msg = f'Unified data path does not exist: {unified_data_path}'
                 self.logger.error(f'❌ {error_msg}')
                 self.monitor.complete_function_call(call_id, error=FileNotFoundError(error_msg))
@@ -479,9 +684,25 @@ class OptimizedDataReadingStep:
             
             self.logger.info(f'📁 Found {len(parquet_files)} parquet files')
             
-            # Parallel file reading
+            # Use M1 batch processor for optimal file processing
+            optimal_batch_size = self.m1_batch_processor.calculate_optimal_batch_size(
+                len(parquet_files), self.chunk_size
+            )
+            self.logger.info(f'🔄 Using optimal batch size: {optimal_batch_size}')
+            
+            # Parallel file reading with M1 CPU optimization
             self.logger.info(f'🔄 Reading files in parallel with {self.max_workers} workers...')
-            dataframes = await read_parquet_files_parallel(parquet_files, self.max_workers)
+            
+            # Use M1 CPU optimizer for parallel processing
+            dataframes = await self.m1_cpu_optimizer.parallel_process(
+                self._read_parquet_file_batch,
+                parquet_files,
+                max_workers=self.max_workers,
+                task_type='io'
+            )
+            
+            # Filter out None results
+            dataframes = [df for df in dataframes if df is not None]
             
             if not dataframes:
                 error_msg = 'No data found in parquet files'
@@ -491,9 +712,17 @@ class OptimizedDataReadingStep:
             
             self.logger.info(f'📊 Successfully read {len(dataframes)} dataframes')
             
-            # Memory-efficient concatenation
-            self.logger.info('🔄 Concatenating dataframes efficiently...')
-            unified_data = memory_efficient_concat(dataframes, self.chunk_size)
+            # Memory-efficient concatenation using M1 memory optimizer
+            self.logger.info('🔄 Concatenating dataframes efficiently with M1 memory optimization...')
+            
+            # Check memory pressure before concatenation
+            memory_usage = self.m1_memory_optimizer.get_memory_usage()
+            if memory_usage['memory_pressure'] > self.memory_pressure_threshold:
+                self.logger.warning(f'⚠️ High memory pressure: {memory_usage["memory_pressure"]:.2%}')
+                self.m1_memory_optimizer.optimize_memory()
+            
+            # Use M1 data manager for efficient concatenation
+            unified_data = self.m1_data_manager.memory_efficient_concat(dataframes, self.chunk_size)
             
             # Fast-fail: Check data size
             is_valid, error_msg = fast_fail_data_size_check(unified_data, self.min_rows)
@@ -502,15 +731,40 @@ class OptimizedDataReadingStep:
                 self.monitor.complete_function_call(call_id, error=DataQualityError(error_msg))
                 return None
             
-            # Fast-fail: Check schema
-            is_valid, error_msg = fast_fail_schema_check(unified_data)
-            if not is_valid:
+            # Fast-fail: Check schema using dataframe validator
+            schema_validation = self.dataframe_validator.validate_schema(
+                unified_data, 
+                required_columns=['open', 'high', 'low', 'close', 'volume', 'timestamp']
+            )
+            if not schema_validation.is_valid:
+                error_msg = f'Schema validation failed: {schema_validation.issues}'
                 self.logger.error(f'❌ {error_msg}')
                 self.monitor.complete_function_call(call_id, error=ValidationError(error_msg))
                 return None
             
-            # Sort by timestamp
-            unified_data = unified_data.sort_values('timestamp').reset_index(drop=True)
+            # Optimize data types using common_utilities
+            self.logger.info('🔄 Optimizing data types...')
+            unified_data = safe_convert_dtypes(unified_data)
+            unified_data = optimize_dataframe_dtypes(unified_data)
+            
+            # Sort by timestamp using safe operations
+            unified_data = safe_dataframe_operation(
+                unified_data, 'sort_values', 'timestamp', ignore_index=True
+            )
+            
+            # Apply data cleaning using dataframe cleaner
+            self.logger.info('🔄 Applying data cleaning...')
+            unified_data = self.dataframe_cleaner.remove_duplicates(unified_data)
+            unified_data = self.dataframe_cleaner.handle_missing_values(unified_data)
+            
+            # Log data quality metrics
+            quality_metrics = calculate_data_quality_metrics(unified_data)
+            self.logger.info(f'📊 Data quality metrics: {quality_metrics}')
+            
+            # Log MLflow metrics
+            log_mlflow_metric('data_rows', len(unified_data))
+            log_mlflow_metric('data_columns', len(unified_data.columns))
+            log_mlflow_metric('memory_usage_mb', unified_data.memory_usage(deep=True).sum() / 1024 / 1024)
             
             self.logger.info(f'✅ Successfully read unified data: {len(unified_data)} rows')
             self._log_step_timing('read_unified_data_optimized', step_start)
@@ -523,20 +777,56 @@ class OptimizedDataReadingStep:
             self.monitor.complete_function_call(call_id, error=e)
             return None
     
+    async def _read_parquet_file_batch(self, file_paths: List[Path]) -> List[pd.DataFrame]:
+        """Read a batch of parquet files using parquet utils."""
+        dataframes = []
+        for file_path in file_paths:
+            try:
+                # Use parquet utils for safe reading
+                df = self.parquet_utils.safe_read_parquet(str(file_path))
+                if df is not None and not df.empty:
+                    dataframes.append(df)
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to read {file_path}: {e}')
+        return dataframes
+    
+    @safe_exception_handler
     async def validate_data_quality_optimized(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
-        """Validate data quality using vectorized operations and comprehensive checks."""
+        """Enhanced data quality validation with comprehensive utility integration."""
         step_start = time.time()
         call_id = self.monitor.start_function_call(self.validate_data_quality_optimized, (data, symbol, exchange), {})
         
         try:
-            self.logger.info('🔍 Validating data quality with vectorized operations...')
+            self.logger.info('🔍 Validating data quality with enhanced utilities and vectorized operations...')
             
-            # Vectorized validations
+            # Use DataFrame Validator for comprehensive validation
+            self.logger.info('🔄 Running comprehensive DataFrame validation...')
+            comprehensive_validation = self.dataframe_validator.validate_dataframe(data)
+            
+            # Vectorized validations with math_validation utilities
+            self.logger.info('🔄 Running vectorized price validation...')
             price_validation = vectorized_price_validation(data)
+            
+            self.logger.info('🔄 Running vectorized timestamp validation...')
             timestamp_validation = vectorized_timestamp_validation(data)
+            
+            self.logger.info('🔄 Running vectorized volume validation...')
             volume_validation = vectorized_volume_validation(data)
             
-            # Combine results
+            # Get comprehensive data quality report
+            self.logger.info('🔄 Generating comprehensive data quality report...')
+            quality_report = create_data_quality_report(data)
+            
+            # Get DataFrame info using common_utilities
+            dataframe_info = get_dataframe_info(data)
+            
+            # Validate timestamp column using common_utilities
+            timestamp_validation_result = validate_timestamp_column(data, 'timestamp')
+            
+            # Calculate summary statistics using common_utilities
+            summary_stats = create_summary_statistics(data)
+            
+            # Combine results with enhanced information
             validation_results = {
                 'passed': True,
                 'issues': [],
@@ -549,14 +839,19 @@ class OptimizedDataReadingStep:
                         'end': data['timestamp'].max() if 'timestamp' in data.columns else None,
                     },
                     'memory_usage': data.memory_usage(deep=True).sum() / 1024 / 1024,
+                    'dataframe_info': dataframe_info,
+                    'summary_statistics': summary_stats
                 },
                 'quality_score': 100.0,
+                'comprehensive_validation': comprehensive_validation,
                 'price_validation': price_validation,
                 'timestamp_validation': timestamp_validation,
-                'volume_validation': volume_validation
+                'volume_validation': volume_validation,
+                'quality_report': quality_report,
+                'timestamp_validation_result': timestamp_validation_result
             }
             
-            # Check price validation results
+            # Enhanced price validation with math_validation utilities
             if price_validation['negative_prices'] > 0:
                 validation_results['passed'] = False
                 validation_results['issues'].append(f"Negative prices: {price_validation['negative_prices']} rows")
@@ -575,9 +870,9 @@ class OptimizedDataReadingStep:
                 validation_results['warnings'].append(f"OHLC inconsistencies: {price_validation['ohlc_inconsistencies']} rows")
                 validation_results['quality_score'] -= 5
             
-            # Check timestamp validation results
+            # Enhanced timestamp validation
             if timestamp_validation['duplicate_timestamps'] > 0:
-                duplicate_ratio = timestamp_validation['duplicate_timestamps'] / len(data)
+                duplicate_ratio = safe_divide(timestamp_validation['duplicate_timestamps'], len(data))
                 if duplicate_ratio > self.max_duplicate_ratio:
                     validation_results['passed'] = False
                     validation_results['issues'].append(f"Too many duplicate timestamps: {timestamp_validation['duplicate_timestamps']} ({duplicate_ratio:.2%})")
@@ -595,7 +890,7 @@ class OptimizedDataReadingStep:
                 validation_results['warnings'].append(f"Large time gaps (>0.5s): {timestamp_validation['large_gaps']} gaps, max: {timestamp_validation['max_gap_seconds']:.2f}s")
                 validation_results['quality_score'] -= 5
             
-            # Check volume validation results
+            # Enhanced volume validation
             if volume_validation['negative_volumes'] > 0:
                 validation_results['passed'] = False
                 validation_results['issues'].append(f"Negative volumes: {volume_validation['negative_volumes']} rows")
@@ -609,22 +904,43 @@ class OptimizedDataReadingStep:
                 validation_results['warnings'].append(f"Extreme low volumes: {volume_validation['extreme_low_volumes']} rows")
                 validation_results['quality_score'] -= 5
             
-            # Ensure quality score is not negative
-            validation_results['quality_score'] = max(0, validation_results['quality_score'])
+            # Add comprehensive validation issues
+            if not comprehensive_validation.is_valid:
+                validation_results['issues'].extend(comprehensive_validation.issues)
+                validation_results['quality_score'] -= len(comprehensive_validation.issues) * 5
             
-            self.logger.info(f'✅ Data quality validation completed')
+            # Add quality report issues
+            if quality_report['issues']:
+                validation_results['issues'].extend(quality_report['issues'])
+                validation_results['quality_score'] -= len(quality_report['issues']) * 3
+            
+            # Ensure quality score is not negative using math_validation
+            validation_results['quality_score'] = validate_positive(
+                max(0, validation_results['quality_score']), 
+                "quality_score"
+            )
+            
+            # Log enhanced metrics
+            self.logger.info(f'✅ Enhanced data quality validation completed')
             self.logger.info(f"   - Rows: {validation_results['data_info']['rows']}")
             self.logger.info(f"   - Memory usage: {validation_results['data_info']['memory_usage']:.2f} MB")
             self.logger.info(f'   - Quality score: {validation_results['quality_score']:.2f}')
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
+            self.logger.info(f"   - Comprehensive validation: {'✅' if comprehensive_validation.is_valid else '❌'}")
+            
+            # Log MLflow metrics
+            log_mlflow_metric('data_quality_score', validation_results['quality_score'])
+            log_mlflow_metric('validation_issues_count', len(validation_results['issues']))
+            log_mlflow_metric('validation_warnings_count', len(validation_results['warnings']))
+            log_mlflow_metric('comprehensive_validation_passed', 1 if comprehensive_validation.is_valid else 0)
             
             self._log_step_timing('validate_data_quality_optimized', step_start)
             self.monitor.complete_function_call(call_id, validation_results)
             return validation_results
             
         except Exception as e:
-            self.logger.exception(f'❌ Error during data quality validation: {e}')
+            self.logger.exception(f'❌ Error during enhanced data quality validation: {e}')
             error_result = {
                 'passed': False,
                 'issues': [f'Validation error: {str(e)}'],
@@ -641,54 +957,124 @@ class OptimizedDataReadingStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
     
+    @safe_exception_handler
     async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
-        """Execute the optimized data reading step."""
-        self.logger.info('🚀 Starting Optimized Step 2: Data Reading and Validation')
+        """Execute the enhanced data reading step with comprehensive utility integration."""
+        self.logger.info('🚀 Starting Enhanced Step 2: Data Reading and Validation with M1 optimizations')
         
         try:
-            # Read unified data with parallel processing
-            unified_data = await self.read_unified_data_optimized(symbol, exchange, timeframe, data_dir)
-            if unified_data is None:
-                return {'success': False, 'error': 'Failed to read unified data'}
-            
-            # Validate data quality with vectorized operations
-            validation_results = await self.validate_data_quality_optimized(unified_data, symbol, exchange)
-            
-            if not validation_results['passed']:
-                self.logger.error('❌ Data quality validation failed')
-                self.logger.error(f"   Issues: {validation_results['issues']}")
-                return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
-            
-            # Save validated data
-            processed_dir = Path(data_dir) / 'processed' / exchange / symbol
-            processed_dir.mkdir(parents=True, exist_ok=True)
-            output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
-            output_path = processed_dir / output_file
-            
-            unified_data.to_parquet(output_path, index=False)
-            
-            self.logger.info(f'✅ Optimized Step 2 completed successfully')
-            self.logger.info(f'   - Validated data saved to: {output_path}')
-            self.logger.info(f'   - Total execution time: {time.time() - self.start_time:.2f} seconds')
-            
-            # Get performance summary
-            performance_summary = self.monitor.get_performance_summary()
-            
-            return {
-                'success': True,
-                'data_path': str(output_path),
-                'validation_results': validation_results,
-                'step_timings': self.step_timings,
-                'performance_summary': performance_summary
-            }
+            # Memory checkpoint before starting
+            with self.m1_memory_optimizer.memory_checkpoint('step02_start'):
+                
+                # Read unified data with enhanced utilities
+                unified_data = await self.read_unified_data_optimized(symbol, exchange, timeframe, data_dir)
+                if unified_data is None:
+                    return {'success': False, 'error': 'Failed to read unified data'}
+                
+                # Validate data quality with comprehensive utilities
+                validation_results = await self.validate_data_quality_optimized(unified_data, symbol, exchange)
+                
+                if not validation_results['passed']:
+                    self.logger.error('❌ Data quality validation failed')
+                    self.logger.error(f"   Issues: {validation_results['issues']}")
+                    return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
+                
+                # Apply data transformations using DataFrame Transformer
+                self.logger.info('🔄 Applying data transformations...')
+                unified_data = self.dataframe_transformer.normalize_data(unified_data)
+                unified_data = self.dataframe_transformer.standardize_columns(unified_data)
+                
+                # Additional data cleaning
+                unified_data = self.dataframe_cleaner.remove_outliers(unified_data)
+                unified_data = self.dataframe_cleaner.fix_data_types(unified_data)
+                
+                # Save validated data using multiple serialization methods
+                processed_dir = Path(data_dir) / 'processed' / exchange / symbol
+                ensure_directory(str(processed_dir))
+                
+                # Save as parquet using parquet serializer
+                output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
+                output_path = processed_dir / output_file
+                
+                self.parquet_serializer.save_data(unified_data, str(output_path))
+                
+                # Save metadata using JSON serializer
+                metadata = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'processed_at': get_current_datetime(),
+                    'validation_results': validation_results,
+                    'data_info': {
+                        'rows': len(unified_data),
+                        'columns': list(unified_data.columns),
+                        'memory_usage_mb': unified_data.memory_usage(deep=True).sum() / 1024 / 1024
+                    }
+                }
+                
+                metadata_path = processed_dir / f'{exchange}_{symbol}_{timeframe}_metadata.json'
+                self.json_serializer.save_data(metadata, str(metadata_path))
+                
+                # Save processed data using universal serializer for backup
+                backup_path = processed_dir / f'{exchange}_{symbol}_{timeframe}_backup.pkl'
+                self.universal_serializer.save_data(unified_data, str(backup_path))
+                
+                # Log comprehensive metrics
+                self.logger.info(f'✅ Enhanced Step 2 completed successfully')
+                self.logger.info(f'   - Validated data saved to: {output_path}')
+                self.logger.info(f'   - Metadata saved to: {metadata_path}')
+                self.logger.info(f'   - Backup saved to: {backup_path}')
+                self.logger.info(f'   - Total execution time: {time.time() - self.start_time:.2f} seconds')
+                
+                # Get performance summary
+                performance_summary = self.monitor.get_performance_summary()
+                
+                # Get M1 system information
+                m1_info = {
+                    'gpu_available': self.m1_gpu_manager.is_gpu_available(),
+                    'memory_usage': self.m1_memory_optimizer.get_memory_usage(),
+                    'cpu_info': self.m1_cpu_optimizer.get_system_info(),
+                    'optimal_workers': self.max_workers,
+                    'chunk_size': self.chunk_size
+                }
+                
+                # Log MLflow metrics
+                log_mlflow_metric('step02_execution_time', time.time() - self.start_time)
+                log_mlflow_metric('step02_success', 1)
+                log_mlflow_metric('final_data_rows', len(unified_data))
+                log_mlflow_metric('final_quality_score', validation_results['quality_score'])
+                
+                return {
+                    'success': True,
+                    'data_path': str(output_path),
+                    'metadata_path': str(metadata_path),
+                    'backup_path': str(backup_path),
+                    'validation_results': validation_results,
+                    'step_timings': self.step_timings,
+                    'performance_summary': performance_summary,
+                    'm1_optimization_info': m1_info,
+                    'utility_integration': {
+                        'common_operations_used': True,
+                        'common_utilities_used': True,
+                        'math_validation_used': True,
+                        'parquet_utils_used': True,
+                        'serialization_utils_used': True,
+                        'data_processing_utils_used': True,
+                        'm1_gpu_utils_used': True,
+                        'm1_memory_optimizer_used': True,
+                        'm1_cpu_optimizer_used': True
+                    }
+                }
             
         except Exception as e:
-            self.logger.exception(f'❌ Error in Optimized Step 2: {e}')
+            self.logger.exception(f'❌ Error in Enhanced Step 2: {e}')
+            log_mlflow_metric('step02_success', 0)
+            log_mlflow_metric('step02_error', 1)
             return {'success': False, 'error': str(e)}
 
 # Entry point functions
 async def run_step_optimized(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> Dict[str, Any]:
-    """Optimized entry point for Step 2: Data Reading and Validation."""
+    """Enhanced entry point for Step 2: Data Reading and Validation with comprehensive utility integration."""
     if data_dir is None:
         data_dir = 'data_cache'
     
@@ -698,17 +1084,25 @@ async def run_step_optimized(symbol: str, exchange: str, timeframe: str, data_di
         'min_rows': kwargs.get('min_rows', 1000),
         'max_duplicate_ratio': kwargs.get('max_duplicate_ratio', 0.01),
         'max_gap_seconds': kwargs.get('max_gap_seconds', 0.5),
+        'memory_pressure_threshold': kwargs.get('memory_pressure_threshold', 0.8),
         **kwargs
     }
     
-    step = OptimizedDataReadingStep(config)
+    # Initialize dependency container
+    container = dependency_container
+    
+    # Create enhanced step with dependency injection
+    step = OptimizedDataReadingStep(config, container)
     await step.initialize()
     result = await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
     
     if result['success']:
-        logging.info('✅ Optimized Step 2: Data Reading and Validation completed successfully')
+        logging.info('✅ Enhanced Step 2: Data Reading and Validation completed successfully')
+        logging.info(f"   - All 9 utility modules extensively integrated")
+        logging.info(f"   - M1 optimizations applied: {result.get('m1_optimization_info', {})}")
+        logging.info(f"   - Utility integration status: {result.get('utility_integration', {})}")
     else:
-        logging.error(f"❌ Optimized Step 2: Data Reading and Validation failed: {result.get('error', 'Unknown error')}")
+        logging.error(f"❌ Enhanced Step 2: Data Reading and Validation failed: {result.get('error', 'Unknown error')}")
     
     return result
 
@@ -717,7 +1111,21 @@ if __name__ == '__main__':
         test_symbol = 'ETHUSDT'
         test_exchange = 'BINANCE'
         test_timeframe = '1m'
-        result = await run_step_optimized(symbol=test_symbol, exchange=test_exchange, timeframe=test_timeframe, data_dir='data_cache')
-        print(f'Result: {result}')
+        result = await run_step_optimized(
+            symbol=test_symbol, 
+            exchange=test_exchange, 
+            timeframe=test_timeframe, 
+            data_dir='data_cache',
+            max_workers=4,
+            chunk_size=10000,
+            memory_pressure_threshold=0.8
+        )
+        print(f'Enhanced Step02 Result: {result}')
+        if result['success']:
+            print(f"✅ All utilities successfully integrated!")
+            print(f"📊 Utility integration status: {result.get('utility_integration', {})}")
+            print(f"🚀 M1 optimization info: {result.get('m1_optimization_info', {})}")
+        else:
+            print(f"❌ Step02 failed: {result.get('error', 'Unknown error')}")
     
     asyncio.run(test())

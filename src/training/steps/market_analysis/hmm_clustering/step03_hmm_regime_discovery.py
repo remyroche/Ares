@@ -21,6 +21,13 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))

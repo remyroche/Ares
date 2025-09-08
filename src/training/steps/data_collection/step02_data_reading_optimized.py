@@ -27,6 +27,28 @@ import gc
 import psutil
 import logging
 
+# Import utility modules
+from src.utils.common_operations import (
+    safe_read_parquet, safe_to_parquet, ensure_directory, safe_json_dump, safe_json_load,
+    safe_mean, safe_std, safe_fillna, safe_rolling, create_empty_dataframe,
+    get_current_datetime, format_datetime, parse_datetime, safe_file_exists
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, validate_positive,
+    validate_range, safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe
+)
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.errors.base import ValidationError, DataQualityError, FileNotFoundError
+from src.core.errors.mapping import ErrorMapping
+
 # Enhanced function monitoring framework with memory management
 class FunctionCallStatus(Enum):
     """Status of function calls."""
@@ -227,8 +249,9 @@ def fast_fail_data_size_check(data: pd.DataFrame, min_rows: int = 1000) -> Tuple
     return True, None
 
 # Vectorized validation functions
+@math_safe
 def vectorized_price_validation(data: pd.DataFrame) -> Dict[str, Any]:
-    """Vectorized price validation using pandas operations."""
+    """Vectorized price validation using pandas operations and math_validation."""
     price_cols = ['open', 'high', 'low', 'close']
     results = {}
     
@@ -252,6 +275,16 @@ def vectorized_price_validation(data: pd.DataFrame) -> Dict[str, Any]:
         (data['close'] <= data['high'])
     )
     results['ohlc_inconsistencies'] = (~ohlc_valid).sum()
+    
+    # Calculate price statistics using math_validation
+    for col in price_cols:
+        if col in data.columns:
+            col_data = data[col].dropna()
+            if len(col_data) > 0:
+                results[f'{col}_mean'] = safe_mean(col_data.tolist())
+                results[f'{col}_std'] = safe_std(col_data.tolist())
+                results[f'{col}_min'] = validate_finite(col_data.min(), f"{col}_min")
+                results[f'{col}_max'] = validate_finite(col_data.max(), f"{col}_max")
     
     return results
 
@@ -320,14 +353,15 @@ def vectorized_volume_validation(data: pd.DataFrame) -> Dict[str, Any]:
     
     return results
 
-# Parallel file reading functions
+# Parallel file reading functions using parquet_utils
 async def read_parquet_file_async(file_path: Path) -> Optional[pd.DataFrame]:
-    """Asynchronously read a single parquet file."""
+    """Asynchronously read a single parquet file using parquet_utils."""
     try:
-        # Run the file reading in a thread pool
+        # Use parquet_utils for safe reading
+        parquet_utils = get_parquet_utils()
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            df = await loop.run_in_executor(executor, pd.read_parquet, file_path)
+            df = await loop.run_in_executor(executor, parquet_utils.safe_read_parquet, str(file_path))
         return df
     except Exception as e:
         logging.error(f"Error reading {file_path}: {e}")
